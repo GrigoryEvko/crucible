@@ -1,0 +1,2 @@
+extern "C" int crucible_plant_nowhere(int);
+int nowhere_entry(int value) { return crucible_plant_nowhere(value); }

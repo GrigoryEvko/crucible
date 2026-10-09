@@ -1,18 +1,20 @@
-# A planted ledger: each runtime symbol of the planted configuration, with its mark.  The rule judges the symbols
-# of each build, so a control of the throws and the classes holds its symbols too.
+# A planted ledger: each import of the planted configuration, with its mark.  The rule judges the imports of each
+# build, so a control of the throws and the classes holds its imports too.  The vtable of Elsewhere is an import of
+# the archive libelsewhere.a of the link line.
 format 1
 rule artifact-symbols
 configuration planted kind planted
 configuration planted tier planted
-@build/libcrucible.a | allow | 1 | __gxx_personality_v0 | -
-@build/libcrucible.a | ratchet | 1 | _ZNSt20bad_array_new_lengthD1Ev | -
-@build/libcrucible.a | ratchet | 1 | _ZNSt9bad_allocD1Ev | -
-@build/libcrucible.a | ratchet | 1 | _ZTISt20bad_array_new_length | -
-@build/libcrucible.a | ratchet | 1 | _ZTISt9bad_alloc | -
-@build/libcrucible.a | ratchet | 1 | _ZTVSt20bad_array_new_length | -
-@build/libcrucible.a | ratchet | 1 | _ZTVSt9bad_alloc | -
-@build/libcrucible.a | ratchet | 1 | __cxa_allocate_exception | -
-@build/libcrucible.a | ratchet | 1 | __cxa_throw | -
-@build/libfoundation.a | allow | 1 | __gxx_personality_v0 | -
-@build/libfoundation.a | ratchet | 1 | __cxa_begin_catch | -
-@build/libfoundation.a | ratchet | 1 | __cxa_end_catch | -
+@build/libcrucible.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | -
+@build/libcrucible.a | ratchet | 1 | _ZNSt20bad_array_new_lengthD1Ev@CXXABI_1.3.8 | -
+@build/libcrucible.a | ratchet | 1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | -
+@build/libcrucible.a | ratchet | 1 | _ZTISt20bad_array_new_length@CXXABI_1.3.8 | -
+@build/libcrucible.a | ratchet | 1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | -
+@build/libcrucible.a | ratchet | 1 | _ZTVSt20bad_array_new_length@CXXABI_1.3.8 | -
+@build/libcrucible.a | ratchet | 1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | -
+@build/libcrucible.a | ratchet | 1 | __cxa_allocate_exception@CXXABI_1.3 | -
+@build/libcrucible.a | ratchet | 1 | __cxa_throw@CXXABI_1.3 | -
+@build/libcrucible.a | static-ratchet | 1 | _ZTV9Elsewhere | -
+@build/libfoundation.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | -
+@build/libfoundation.a | ratchet | 1 | __cxa_begin_catch@CXXABI_1.3 | -
+@build/libfoundation.a | ratchet | 1 | __cxa_end_catch@CXXABI_1.3 | -

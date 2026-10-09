@@ -1,2 +1,0 @@
-#include <cstdlib>
-const char* environment_entry() { return std::getenv("CRUCIBLE_PLANT"); }

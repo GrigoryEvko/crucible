@@ -1,5 +1,6 @@
 # A call of std::string_view::substr in a live function of the library crucible, outside the base.  The call
 # throws through the helper std::__throw_out_of_range_fmt, and the ledger counts no such reference of the
 # archive, so the count rises.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp helper.cpp

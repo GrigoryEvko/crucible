@@ -1,4 +1,6 @@
-# The shapes that the rule accepts with no row: an error path that returns, a catch with no throw, a reference to
-# a vtable that another object defines, and a throw of a failed allocation.
+# The shapes that the rule accepts with no row: an error path that returns, a catch with no throw, and a throw of
+# a failed allocation.  A reference to a vtable that an archive of a link line defines is an import of that archive.
+library planted_tree externs.cpp
+archive elsewhere elsewhere.cpp
 library foundation base.cpp catches.cpp
 library crucible base.cpp references.cpp allocation.cpp

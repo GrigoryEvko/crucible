@@ -1,3 +1,4 @@
 # A throw of an int in a live function of the library crucible.  No row admits it.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp throws.cpp

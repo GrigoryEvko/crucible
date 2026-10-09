@@ -1,0 +1,5 @@
+# A planted ledger: the planted configuration with no import.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted

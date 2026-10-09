@@ -1,0 +1,3 @@
+extern "C" int crucible_plant_host_call(int);
+extern "C" int crucible_plant_static_call(int);
+int linked_entry(int value) { return crucible_plant_host_call(value) + crucible_plant_static_call(value); }

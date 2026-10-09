@@ -1,3 +1,4 @@
 # A row of the kind downcast tries to admit a reference to __dynamic_cast.  The rule refuses a row of that kind.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp weak_downcast.cpp

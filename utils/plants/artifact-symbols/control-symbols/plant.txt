@@ -1,5 +1,7 @@
-# The ledger holds each runtime symbol of the planted configuration: the guard functions and the personality
-# routine of the allowlist for a function-local static, the unwinder of the support library of GCC that its
-# cleanup calls, a std::thread call, memcpy of the allowlist of the C runtime and atexit of libc_nonshared.a.
+# The ledger holds each import of the planted configuration: the guard functions and the personality routine of
+# the allowlist for a function-local static, the unwinder of the support library of GCC that its cleanup calls,
+# a std::thread call, and atexit of libc_nonshared.a with no version.  Each version is the same on x86_64 and on
+# aarch64, so the control holds no import of glibc with a version from before GLIBC_2.17.
+library planted_tree externs.cpp
 library foundation base.cpp threads.cpp
 library crucible base.cpp guard.cpp glibc.cpp

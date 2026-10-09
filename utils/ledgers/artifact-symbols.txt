@@ -1,24 +1,30 @@
-# The ledger of the rule artifact-symbols: the libstdc++ symbols and the C runtime symbols of the libraries
-# foundation, fixy and crucible for each build kind, and the throws and the polymorphic classes of the static
-# libraries of the tree that the tree cannot remove.  `python3 utils/bin/guard explain artifact-symbols` tells
-# the rule, and the head comment of utils/assay/guard/engines/elf/artifact_symbols.py gives the rules.
+# The ledger of the rule artifact-symbols: the imports of each static library of the root for each build kind,
+# and the throws and the polymorphic classes of these libraries that the tree cannot remove.
+# `python3 utils/bin/guard explain artifact-symbols` tells the rule, and the head comment of
+# utils/assay/guard/engines/elf/artifact_symbols.py gives the rules.
 #
 # The configuration rows of a kind:  configuration KIND kind KIND  and  configuration KIND tier TIER
-#   The ledger holds the symbols of the build kind KIND (BUILD_DIR/build-kind.txt) on the target tier TIER
+#   The ledger holds the imports of the build kind KIND (BUILD_DIR/build-kind.txt) on the target tier TIER
 #   of utils/assay/core/target.py.  The first configuration is the base.  The largest count of each key
 #   over the configurations judges a build of a kind that the ledger does not hold.  Such a build prints
 #   its rows, and `guard write --rule artifact-symbols --import LOG` or `--add-configuration` puts them
 #   here.
 #
-# A symbol row of the base:  @build/LIBRARY | MARK | 1 | SYMBOL | -
-#   An object of the archive LIBRARY has an undefined reference to SYMBOL, and the libstdc++ of the
-#   compiler defines it.  MARK is allow for a symbol of the allowlist of plan section 13.4, and ratchet for
-#   each other symbol.  At the S4 gate, no ratchet row can stay.
-#   A C runtime symbol has the MARK libc-allow or libc-ratchet: libstdc++ does not export it, and a file of
-#   the C runtime of the compiler defines it.  libc-allow marks a call that GCC makes itself, a function of
-#   the support library of GCC, and a call of glibc that a door of fixy keeps (rule R5).  At the S4 gate,
-#   libfixy.a holds no libc-ratchet row.
-# A difference row of another kind:  @KIND | @build/LIBRARY | MARK | +1 | SYMBOL | -
+# An import row of the base:  @build/LIBRARY | MARK | 1 | IMPORT | -
+#   An object of the archive LIBRARY references a name that no library of the root defines, and a provider
+#   defines it.  IMPORT is SYMBOL@VERSION for an import of a shared library, with the default version of
+#   the name, and the name alone for an import of an archive or of a start file.  MARK gives the family of
+#   the provider:
+#     allow, ratchet            libstdc++.so of the compiler.  allow marks the allowlist of plan section 13.4
+#     libc-allow, libc-ratchet  a file of the runtime of the compiler.  libc-allow marks a call that GCC
+#                               makes itself, a function of the support library of GCC, and a call of glibc
+#                               that a door of fixy keeps (rule R5)
+#     static-ratchet            an archive of a link line of the build, such as libstdc++exp.a
+#     crt-allow, crt-ratchet    a start file or an end file.  crt-allow marks __dso_handle beside an
+#                               allowed __cxa_atexit
+#     host-ratchet              a shared library of a link line of the build, such as libbpf.so
+#   At the S4 gate, no ratchet row can stay, and libfixy.a holds no libc-ratchet row.
+# A difference row of another kind:  @KIND | @build/LIBRARY | MARK | +1 | IMPORT | -
 #
 # A row of no configuration:  @build/ARCHIVE | throw | admit | TEXT | REASON
 #                         and  @build/ARCHIVE | vtable | admit | TEXT | REASON
@@ -30,10 +36,10 @@
 #   The archive has COUNT live references to the throw helper HELPER of libstdc++.  A difference row of
 #   another kind gives its difference.  The count can only fall.
 #
-# A new symbol fails the test.  A row whose symbol goes fails too, until the same commit writes the rows
-# of the kind again:
+# A new import fails the test, and so does an import with no provider.  A row whose import goes fails too,
+# until the same commit writes the rows of the kind again:
 #   python3 utils/bin/guard write --rule artifact-symbols --build-dir build
-# The write refuses a new ratchet or libc-ratchet symbol and a count of helper-throw above its row.  The head
+# The write refuses a new import with a ratchet mark and a count of helper-throw above its row.  The head
 # comment of the rule gives the reasons for --raise.
 format 1
 rule artifact-symbols
@@ -45,121 +51,397 @@ configuration x86_64-debug-tsan kind x86_64-debug-tsan
 configuration x86_64-debug-tsan tier x86-64-eb53fd1c
 configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
 configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
-@build/libcrucible.a | allow | 1 | __gxx_personality_v0 | -
-@build/libcrucible.a | helper-throw | 13 | _ZSt24__throw_out_of_range_fmtPKcz | -
-@build/libcrucible.a | libc-allow | 1 | __floatuntidf | -
-@build/libcrucible.a | libc-allow | 1 | __stack_chk_fail | -
-@build/libcrucible.a | libc-allow | 1 | __tls_get_addr | -
-@build/libcrucible.a | libc-allow | 1 | __udivti3 | -
-@build/libcrucible.a | libc-allow | 1 | memcmp | -
-@build/libcrucible.a | libc-allow | 1 | memcpy | -
-@build/libcrucible.a | libc-allow | 1 | memset | -
-@build/libcrucible.a | libc-ratchet | 1 | __errno_location | -
-@build/libcrucible.a | libc-ratchet | 1 | __memcpy_chk | -
-@build/libcrucible.a | libc-ratchet | 1 | bind | -
-@build/libcrucible.a | libc-ratchet | 1 | clock_gettime | -
-@build/libcrucible.a | libc-ratchet | 1 | getsockopt | -
-@build/libcrucible.a | libc-ratchet | 1 | if_nametoindex | -
-@build/libcrucible.a | libc-ratchet | 1 | ioctl | -
-@build/libcrucible.a | libc-ratchet | 1 | memchr | -
-@build/libcrucible.a | libc-ratchet | 1 | recv | -
-@build/libcrucible.a | libc-ratchet | 1 | recvmsg | -
-@build/libcrucible.a | libc-ratchet | 1 | send | -
-@build/libcrucible.a | libc-ratchet | 1 | setsockopt | -
-@build/libcrucible.a | ratchet | 1 | _ZNSt3_V215system_categoryEv | -
-@build/libcrucible.a | ratchet | 1 | _ZNSt3_V216generic_categoryEv | -
-@build/libcrucible.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
-@build/libcrucible.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -
-@build/libcrucible.a | ratchet | 1 | _ZSt9terminatev | -
-@build/libcrucible_cipher.a | helper-throw | 2 | _ZSt16__throw_bad_castv | -
-@build/libcrucible_cipher.a | helper-throw | 1 | _ZSt19__throw_logic_errorPKc | -
-@build/libcrucible_cipher.a | helper-throw | 18 | _ZSt20__throw_length_errorPKc | -
-@build/libcrucible_perf.a | helper-throw | 42 | _ZSt20__throw_length_errorPKc | -
-@build/libcrucible_vigil.a | helper-throw | 5 | _ZSt19__throw_logic_errorPKc | -
-@build/libcrucible_vigil.a | helper-throw | 11 | _ZSt20__throw_length_errorPKc | -
+@build/libcrucible.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | helper-throw | 13 | _ZSt24__throw_out_of_range_fmtPKcz | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | __floatuntidf@GCC_4.2.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | __tls_get_addr@GLIBC_2.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | __udivti3@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | memcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | memcpy@GLIBC_2.14 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | __memcpy_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | bind@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | clock_gettime@GLIBC_2.17 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | getsockopt@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | if_nametoindex@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | ioctl@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | memchr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | recv@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | recvmsg@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | send@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | libc-ratchet | 1 | setsockopt@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | ratchet | 1 | _ZNSt3_V215system_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | ratchet | 1 | _ZNSt3_V216generic_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz@GLIBCXX_3.4.20 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible.a | ratchet | 1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | helper-throw | 2 | _ZSt16__throw_bad_castv | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | helper-throw | 1 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | helper-throw | 18 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-allow | 1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-allow | 1 | memcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-allow | 1 | memcpy@GLIBC_2.14 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | __memcpy_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | abort@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | close@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | fdatasync@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | fsync@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | malloc@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | memchr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | openat@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | renameat@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | unlinkat@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | libc-ratchet | 1 | write@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path11parent_pathEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNKSt5ctypeIcE13_M_widen_initEv@GLIBCXX_3.4.11 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSi4readEPcl@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSi5seekgElSt12_Ios_Seekdir@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSi5tellgEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSo5writeEPKcl@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt10filesystem18create_directoriesERKNS_7__cxx114pathE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt10filesystem6statusERKNS_7__cxx114pathE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path5_ListC1Ev@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt12__basic_fileIcED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE5closeEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEEC1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt14basic_ifstreamIcSt11char_traitsIcEED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt14basic_ofstreamIcSt11char_traitsIcEED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt6localeD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt8ios_baseC2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt8ios_baseD2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt9basic_iosIcSt11char_traitsIcEE4initEPSt15basic_streambufIcS1_E@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt16__throw_bad_castv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt19__throw_logic_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt20__throw_length_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt7getlineIcSt11char_traitsIcESaIcEERSt13basic_istreamIT_T0_ES7_RNSt7__cxx1112basic_stringIS4_S5_T1_EES4_@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTTSt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTTSt14basic_ofstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt13basic_filebufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt14basic_ofstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt15basic_streambufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZTVSt9basic_iosIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _ZdlPvm@CXXABI_1.3.9 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | _Znwm@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | __cxa_begin_catch@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | __cxa_end_catch@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_cipher.a | ratchet | 1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | allow | 1 | __cxa_guard_acquire@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | allow | 1 | __cxa_guard_release@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | helper-throw | 42 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_link__destroy@LIBBPF_0.0.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map__fd@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map__initial_value@LIBBPF_0.5.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map__name@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map__set_initial_value@LIBBPF_0.0.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map_lookup_elem@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_map_update_elem@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__close@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__find_map_by_name@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__find_program_by_name@LIBBPF_0.0.7 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__load@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__next_map@LIBBPF_0.6.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__next_program@LIBBPF_0.6.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_object__open_mem@LIBBPF_0.0.6 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_program__attach@LIBBPF_0.0.7 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_program__attach_perf_event@LIBBPF_0.0.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_program__autoload@LIBBPF_0.1.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_program__section_name@LIBBPF_0.2.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | bpf_program__set_autoload@LIBBPF_0.1.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | libbpf_get_error@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | host-ratchet | 1 | libbpf_set_print@LIBBPF_0.0.1 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-allow | 1 | __popcountdi2@GCC_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-allow | 1 | memcpy@GLIBC_2.14 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-allow | 1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | __fprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | __isoc23_strtoull@GLIBC_2.38 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | __vfprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | close@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | faccessat@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | getenv@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | getpid@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | mmap@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | munmap@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | stderr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | strerror@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | strlen@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | strncmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | syscall@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | libc-ratchet | 1 | sysconf@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNKSt12__basic_fileIcE7is_openEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSirsERi@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt12__basic_fileIcED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE5closeEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEEC1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt3_V215system_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt6localeD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt8ios_baseC2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt8ios_baseD2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt9basic_iosIcSt11char_traitsIcEE4initEPSt15basic_streambufIcS1_E@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZSt20__throw_length_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTTSt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTVSt13basic_filebufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTVSt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTVSt15basic_streambufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZTVSt9basic_iosIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _ZdlPvm@CXXABI_1.3.9 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | _Znwm@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | __cxa_begin_catch@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | __cxa_end_catch@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_perf.a | ratchet | 1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | allow | 1 | __cxa_guard_acquire@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | allow | 1 | __cxa_guard_release@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | crt-allow | 1 | __dso_handle | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | helper-throw | 5 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | helper-throw | 11 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | __cxa_atexit@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | __popcountdi2@GCC_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | __tls_get_addr@GLIBC_2.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | memcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | memcpy@GLIBC_2.14 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | __fprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | __libc_single_threaded@GLIBC_2.32 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | __memset_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | abort@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | aligned_alloc@GLIBC_2.16 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | calloc@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | clock_gettime@GLIBC_2.17 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | close@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | free@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | malloc@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | memchr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | open@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | pthread_self@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | read@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | sched_getaffinity@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | sched_setaffinity@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | sched_yield@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | libc-ratchet | 1 | stderr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List3endEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List5beginEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path7compareERKS1_@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt10filesystem18create_directoriesERKNS_7__cxx114pathE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path5_ListC1ERKS2_@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path5_ListC1Ev@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt10filesystem7__cxx114pathdVERKS1_@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt3_V215system_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt3_V216generic_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE@GLIBCXX_3.4.22 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt6thread4joinEv@GLIBCXX_3.4.11 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt6thread6_StateD2Ev@GLIBCXX_3.4.22 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZNSt8__detail13__notify_implEPKvbRKNS_16__wait_args_baseE@GLIBCXX_3.4.35 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZSt19__throw_logic_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZSt20__throw_length_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZTINSt6thread6_StateE@GLIBCXX_3.4.22 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZTVN10__cxxabiv120__si_class_type_infoE@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZdlPvm@CXXABI_1.3.9 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZdlPvmSt11align_val_t@CXXABI_1.3.11 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _Znwm@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | _ZnwmSt11align_val_t@CXXABI_1.3.11 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libcrucible_vigil.a | ratchet | 1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libcrucible_vigil.a | vtable | admit | std::thread::_State_impl< | std::jthread starts each thread through std::thread::_State_impl, a polymorphic class template of libstdc++.  src/BackgroundThread.cpp starts the thread of the background pipeline with std::jthread by design (CLAUDE.md §IX)
-@build/libfixy.a | allow | 1 | __gxx_personality_v0 | -
-@build/libfixy.a | libc-allow | 1 | __stack_chk_fail | -
-@build/libfixy.a | libc-allow | 1 | memcmp | -
-@build/libfixy.a | libc-allow | 1 | memcpy | -
-@build/libfixy.a | libc-allow | 1 | memmove | -
-@build/libfixy.a | libc-allow | 1 | memset | -
-@build/libfixy.a | libc-allow | 1 | pthread_attr_destroy | -
-@build/libfixy.a | libc-allow | 1 | pthread_attr_init | -
-@build/libfixy.a | libc-allow | 1 | pthread_attr_setaffinity_np | -
-@build/libfixy.a | libc-allow | 1 | pthread_attr_setguardsize | -
-@build/libfixy.a | libc-allow | 1 | pthread_attr_setstacksize | -
-@build/libfixy.a | libc-allow | 1 | pthread_create | -
-@build/libfixy.a | libc-allow | 1 | pthread_join | -
-@build/libfixy.a | libc-allow | 1 | pthread_self | -
-@build/libfixy.a | libc-allow | 1 | pthread_setname_np | -
-@build/libfixy.a | libc-ratchet | 1 | __errno_location | -
-@build/libfixy.a | libc-ratchet | 1 | __fprintf_chk | -
-@build/libfixy.a | libc-ratchet | 1 | memchr | -
-@build/libfixy.a | libc-ratchet | 1 | strlen | -
-@build/libfixy.a | libc-ratchet | 1 | syscall | -
-@build/libfixy.a | libc-ratchet | 1 | sysconf | -
-@build/libfixy.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE | -
-@build/libfixy.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv | -
-@build/libfixy.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path5_ListC1Ev | -
-@build/libfixy.a | ratchet | 1 | _ZSt19__throw_logic_errorPKc | -
-@build/libfixy.a | ratchet | 1 | _ZSt20__throw_length_errorPKc | -
-@build/libfixy.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
-@build/libfixy.a | ratchet | 1 | _ZdlPvm | -
-@build/libfixy.a | ratchet | 1 | _Znwm | -
-@build/libfixy.a | ratchet | 1 | __cxa_call_terminate | -
+@build/libfixy.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | memcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | memcpy@GLIBC_2.14 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_attr_destroy@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_attr_init@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setaffinity_np@GLIBC_2.32 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setguardsize@GLIBC_2.34 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setstacksize@GLIBC_2.34 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_create@GLIBC_2.34 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_join@GLIBC_2.34 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_self@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-allow | 1 | pthread_setname_np@GLIBC_2.34 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | __fprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | memchr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | strlen@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | syscall@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | libc-ratchet | 1 | sysconf@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZNSt10filesystem7__cxx114path5_ListC1Ev@GLIBCXX_3.4.26 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZSt19__throw_logic_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZSt20__throw_length_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _ZdlPvm@CXXABI_1.3.9 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | _Znwm@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfixy.a | ratchet | 1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | throw | admit | NumaCounters.cpp.o | The std::filesystem::path of src/fixy/os/NumaCounters.cpp builds a std::string, which throws std::length_error and std::logic_error through libstdc++.  The file door of fixy takes a std::filesystem::path at this time, and the path type of the Os family replaces it
 @build/libfixy.a | throw | admit | Topology.cpp.o | The sysfs probe of src/fixy/os/Topology.cpp grows std::vector<int> and builds std::string, and the two throw std::length_error and std::logic_error through libstdc++.  The Region family and the path type of the Os family replace them
-@build/libfoundation.a | allow | 1 | __gxx_personality_v0 | -
-@build/libfoundation.a | libc-allow | 1 | __stack_chk_fail | -
-@build/libfoundation.a | libc-allow | 1 | memset | -
-@build/libfoundation.a | libc-ratchet | 1 | __fprintf_chk | -
-@build/libfoundation.a | libc-ratchet | 1 | abort | -
-@build/libfoundation.a | libc-ratchet | 1 | flockfile | -
-@build/libfoundation.a | libc-ratchet | 1 | funlockfile | -
-@build/libfoundation.a | libc-ratchet | 1 | fwrite | -
-@build/libfoundation.a | libc-ratchet | 1 | getenv | -
-@build/libfoundation.a | libc-ratchet | 1 | stderr | -
-@build/libfoundation.a | libc-ratchet | 1 | strcmp | -
-@build/libfoundation.a | libc-ratchet | 1 | strlen | -
-@build/libfoundation.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
-@x86_64-debug-tsan | @build/libcrucible.a | libc-allow | +1 | _Unwind_Resume | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libcrucible_cipher.a | helper-throw | +4 | _ZSt19__throw_logic_errorPKc | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libcrucible_cipher.a | helper-throw | -5 | _ZSt20__throw_length_errorPKc | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libcrucible_vigil.a | helper-throw | -2 | _ZSt19__throw_logic_errorPKc | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libcrucible_vigil.a | helper-throw | -4 | _ZSt20__throw_length_errorPKc | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libfixy.a | libc-allow | +1 | _Unwind_Resume | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | __errno_location | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | read | the symbols of the TSan build
-@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | write | the symbols of the TSan build
-@x86_64-debug-ubsan-strict | @build/libcrucible.a | libc-ratchet | +1 | __recv_chk | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible.a | libc-ratchet | -1 | recv | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible.a | ratchet | +1 | _ZTINSt3_V214error_categoryE | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | helper-throw | -9 | _ZSt20__throw_length_errorPKc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | helper-throw | -21 | _ZSt20__throw_length_errorPKc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | helper-throw | -1 | _ZSt19__throw_logic_errorPKc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | helper-throw | -5 | _ZSt20__throw_length_errorPKc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | libc-allow | +1 | _Unwind_Resume | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZNSt20bad_array_new_lengthD1Ev | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTISt20bad_array_new_length | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTISt9bad_alloc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTVSt20bad_array_new_length | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTVSt9bad_alloc | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | __cxa_allocate_exception | the symbols of the UBSan-strict build
-@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | __cxa_throw | the symbols of the UBSan-strict build
-@x86_64-release | @build/libcrucible.a | helper-throw | +2 | _ZSt24__throw_out_of_range_fmtPKcz | -
-@x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
-@x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt9terminatev | -
-@x86_64-release | @build/libcrucible_cipher.a | helper-throw | +4 | _ZSt19__throw_logic_errorPKc | -
-@x86_64-release | @build/libcrucible_cipher.a | helper-throw | -10 | _ZSt20__throw_length_errorPKc | -
-@x86_64-release | @build/libcrucible_perf.a | helper-throw | -28 | _ZSt20__throw_length_errorPKc | -
-@x86_64-release | @build/libcrucible_vigil.a | helper-throw | -1 | _ZSt19__throw_logic_errorPKc | -
-@x86_64-release | @build/libcrucible_vigil.a | helper-throw | -3 | _ZSt20__throw_length_errorPKc | -
-@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev | -
-@x86_64-release | @build/libfixy.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
-@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZTISt9bad_alloc | -
-@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZTVSt9bad_alloc | -
-@x86_64-release | @build/libfixy.a | ratchet | +1 | __cxa_allocate_exception | -
-@x86_64-release | @build/libfixy.a | ratchet | +1 | __cxa_throw | -
-@x86_64-release | @build/libfoundation.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
+@build/libfoundation.a | allow | 1 | __gxx_personality_v0@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-allow | 1 | __stack_chk_fail@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-allow | 1 | memset@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | __fprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | abort@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | flockfile@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | funlockfile@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | fwrite@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | getenv@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | stderr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | strcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | libc-ratchet | 1 | strlen@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@build/libfoundation.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible.a | libc-allow | +1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_cipher.a | helper-throw | +4 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_cipher.a | helper-throw | -5 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_cipher.a | ratchet | +1 | _ZNSt9basic_iosIcSt11char_traitsIcEE8setstateESt12_Ios_Iostate@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_perf.a | libc-allow | +1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_perf.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | helper-throw | -2 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | helper-throw | -4 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | libc-allow | -1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | ratchet | +1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | ratchet | +1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | ratchet | +1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libfixy.a | libc-allow | +1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | read@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-tsan | @build/libfoundation.a | libc-ratchet | +1 | write@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible.a | libc-ratchet | +1 | __recv_chk@GLIBC_2.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible.a | libc-ratchet | -1 | recv@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible.a | ratchet | +1 | _ZTINSt3_V214error_categoryE@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | helper-throw | -9 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | libc-ratchet | +1 | strlen@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNKSt9basic_iosIcSt11char_traitsIcEE4failEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNKSt9basic_iosIcSt11char_traitsIcEEntEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt13basic_filebufIcSt11char_traitsIcEEC1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNSt14basic_ifstreamIcSt11char_traitsIcEEC1ERKNSt7__cxx1112basic_stringIcS1_SaIcEEESt13_Ios_Openmode@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNSt14basic_ofstreamIcSt11char_traitsIcEE5closeEv@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNSt14basic_ofstreamIcSt11char_traitsIcEEC1ERKNSt7__cxx1112basic_stringIcS1_SaIcEEESt13_Ios_Openmode@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZNSt20bad_array_new_lengthD1Ev@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt8ios_baseC2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt9basic_iosIcSt11char_traitsIcEE4initEPSt15basic_streambufIcS1_E@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISi@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISo@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt13basic_filebufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt14basic_ofstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt15basic_streambufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt5ctypeIcE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt8ios_base@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTISt9basic_iosIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZTTSt14basic_ofstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | _ZTVSt14basic_ofstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | +1 | _ZTVSt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_cipher.a | ratchet | -1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | helper-throw | -21 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZNSiC2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZNSiD2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | -1 | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZNSt14basic_ifstreamIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | -1 | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZNSt9basic_iosIcSt11char_traitsIcEED2Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISi@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISt13basic_filebufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISt14basic_ifstreamIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISt15basic_streambufIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISt8ios_base@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_perf.a | ratchet | +1 | _ZTISt9basic_iosIcSt11char_traitsIcEE@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | helper-throw | -1 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | helper-throw | -5 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | libc-ratchet | +1 | strlen@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZNSt20bad_array_new_lengthD1Ev@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZTISt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZTVNSt6thread6_StateE@GLIBCXX_3.4.22 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZTVSt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | libc-allow | +1 | _Unwind_Resume@GCC_3.0 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZNSt20bad_array_new_lengthD1Ev@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTISt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTVSt20bad_array_new_length@CXXABI_1.3.8 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-debug-ubsan-strict | @build/libfixy.a | ratchet | +1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible.a | helper-throw | +2 | _ZSt24__throw_out_of_range_fmtPKcz | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_cipher.a | helper-throw | +4 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_cipher.a | helper-throw | -10 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_cipher.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_cipher.a | ratchet | -1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_cipher.a | ratchet | -1 | __cxa_call_terminate@CXXABI_1.3.15 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | helper-throw | -28 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | libc-allow | -1 | __popcountdi2@GCC_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | libc-allow | -1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | ratchet | -1 | _ZNSt3_V215system_categoryEv@GLIBCXX_3.4.21 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | ratchet | +1 | _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE15_M_replace_coldEPcmPKcmm@GLIBCXX_3.4.31 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_perf.a | ratchet | -1 | _ZSt9terminatev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | helper-throw | -1 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | helper-throw | -3 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | libc-allow | -1 | __popcountdi2@GCC_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | libc-allow | -1 | memcmp@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | libc-allow | -1 | memmove@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | libc-ratchet | -1 | __memset_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | +1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | +1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | +1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libcrucible_vigil.a | ratchet | +1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZTISt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | +1 | _ZTVSt9bad_alloc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | +1 | __cxa_allocate_exception@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfixy.a | ratchet | +1 | __cxa_throw@CXXABI_1.3 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
+@x86_64-release | @build/libfoundation.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION

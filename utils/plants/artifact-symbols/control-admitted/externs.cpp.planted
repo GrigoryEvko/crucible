@@ -1,0 +1,4 @@
+extern "C" int crucible_plant_extern(int value) { return value; }
+extern "C" int crucible_plant_seed() { return 7; }
+extern "C" void crucible_plant_at_exit() {}
+int may_fail(int value) { return value; }

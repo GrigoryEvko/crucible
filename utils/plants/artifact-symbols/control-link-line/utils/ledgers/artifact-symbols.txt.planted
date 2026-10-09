@@ -1,0 +1,7 @@
+# A planted ledger: the import of the shared library and the import of the archive of the link line.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | host-ratchet | 1 | crucible_plant_host_call | -
+@build/libcrucible.a | static-ratchet | 1 | crucible_plant_static_call | -

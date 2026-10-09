@@ -1,4 +1,5 @@
 # A call of getenv in the library foundation gives a C runtime symbol that the ledger of the planted
 # configuration does not hold.
+library planted_tree externs.cpp
 library foundation base.cpp getenv.cpp
 library crucible base.cpp

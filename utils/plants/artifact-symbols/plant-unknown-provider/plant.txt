@@ -1,0 +1,5 @@
+# A call of a function that no library of the root, no file of the runtime and no library of a link line defines.
+# The import has no provider, and no row can admit it.
+library planted_tree externs.cpp
+library foundation base.cpp
+library crucible base.cpp nowhere.cpp

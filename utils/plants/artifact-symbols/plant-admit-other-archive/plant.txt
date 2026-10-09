@@ -1,3 +1,4 @@
 # A throw row of the archive libfoundation.a does not admit the same throw in the archive libcrucible.a.
+library planted_tree externs.cpp
 library foundation base.cpp throws.cpp
 library crucible base.cpp throws.cpp

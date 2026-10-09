@@ -6,8 +6,8 @@ THE READERS
     nm, readelf or c++filt, and the ELF magic, in a different module.  These
     modules use it:
       * The rule artifact-symbols reads the symbols and the relocations of
-        the members of the static libraries, and the dynamic symbols of
-        libstdc++.so.
+        the members of the static libraries.  It also reads the symbols of
+        each provider of an import, with the versions of a shared library.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.sections reads the section .crucible.quarantine of an

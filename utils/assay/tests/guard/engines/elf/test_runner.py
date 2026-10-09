@@ -134,7 +134,30 @@ def directory_cases(expect: testing.Expect) -> None:
                 "artifacts": [{"path": "libtest_lib.a"}],
                 "paths": {"source": "test"},
             },
-            {"name": "tool", "type": "EXECUTABLE", "artifacts": [{"path": "tool"}], "paths": {"source": "."}},
+            {
+                "name": "tool",
+                "type": "EXECUTABLE",
+                "artifacts": [{"path": "tool"}],
+                "paths": {"source": "."},
+                "link": {
+                    "commandFragments": [
+                        {"fragment": "-O1", "role": "flags"},
+                        {"fragment": "libfoundation.a", "role": "libraries"},
+                        {"fragment": "-Wl,-rpath,/opt/run", "role": "libraries"},
+                        {"fragment": "/opt/host/libhost.so", "role": "libraries"},
+                        {"fragment": "-lstdc++exp -pthread", "role": "libraries"},
+                        {"fragment": "../outside/libother.a", "role": "libraries"},
+                        {"fragment": "/opt/host/libhost.so", "role": "libraries"},
+                    ]
+                },
+            },
+            {
+                "name": "plugin",
+                "type": "MODULE_LIBRARY",
+                "artifacts": [{"path": "plugin.so"}],
+                "paths": {"source": "."},
+                "link": {"commandFragments": [{"fragment": "-lplugin_only", "role": "libraries"}]},
+            },
         ]
         cmake.plant(build, cache=cache, targets=targets, source=str(root), build=str(build))
         context = runner.ElfContext(root, build)
@@ -142,6 +165,16 @@ def directory_cases(expect: testing.Expect) -> None:
         expect(
             "the static libraries are the STATIC_LIBRARY targets with the source root as their source directory",
             context.libraries() == {"foundation": build / "libfoundation.a"},
+        )
+        expect(
+            "the link libraries are the words -l and the paths outside the build directory, once each, with no flag",
+            context.link_libraries()
+            == (
+                "/opt/host/libhost.so",
+                "-lstdc++exp",
+                str(build.resolve().parent / "outside/libother.a"),
+                "-lplugin_only",
+            ),
         )
         expect(
             "the objects of a target are the objects that ninja -t inputs gives, as absolute paths",
@@ -191,6 +224,8 @@ def manifest_cases(expect: testing.Expect) -> None:
             ("tier", "tier TIER"),
             ("cache NAME", "cache NAME VALUE"),
             ("library one", "library NAME UNIT..."),
+            ("archive one", "archive NAME UNIT..."),
+            ("shared one", "shared NAME UNIT..."),
             ("unit target u.cpp", "unit TARGET UNIT | WORD..."),
             ("kind a | b", "kind KIND"),
         )
@@ -250,6 +285,22 @@ def compile_cases(expect: testing.Expect) -> None:
         expect(
             "a library row compiles each unit, and ar puts the objects into the archive libNAME.a",
             sorted(built.libraries) == ["crucible", "foundation"] and members == ["a.cpp.o", "b.cpp.o"],
+        )
+        (tree / runner.MANIFEST).write_text(
+            "library foundation a.cpp\narchive extra b.cpp\nshared host a.cpp\n", encoding="utf-8"
+        )
+        linked = runner.planted_build(tree, scratch / "linked", compiler)
+        names = [Path(item).name for item in linked.link_libraries]
+        host = Path(linked.link_libraries[1]) if len(linked.link_libraries) == 2 else None
+        exported = set()
+        if host is not None:
+            with elf.mapped(host) as library:
+                exported = {symbol.name for symbol in library.dynamic_symbols() if symbol.is_defined}
+        expect(
+            "an archive row and a shared row give libraries of a link line, and no library of the root",
+            sorted(linked.libraries) == ["foundation"]
+            and names == ["libextra.a", "libhost.so"]
+            and "_Z13planted_entryi" in exported,
         )
         (tree / "c.cpp").write_text(BROKEN_UNIT, encoding="utf-8")
         (tree / runner.MANIFEST).write_text("library foundation c.cpp\n", encoding="utf-8")

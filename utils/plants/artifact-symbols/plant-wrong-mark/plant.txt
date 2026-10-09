@@ -1,3 +1,4 @@
 # The row of a guard function of the allowlist gives the mark ratchet, and the symbol has the mark allow.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp guard.cpp

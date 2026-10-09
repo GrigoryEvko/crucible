@@ -1,0 +1,5 @@
+struct Elsewhere {
+    Elsewhere() = default;
+    virtual int tag() const;
+};
+int Elsewhere::tag() const { return 3; }

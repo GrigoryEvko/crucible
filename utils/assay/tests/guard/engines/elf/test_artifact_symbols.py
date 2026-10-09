@@ -2,8 +2,9 @@
 
 THE CASES
     The cases hold these parts of the rule:
-      * The class and the mark of a symbol
-      * The files of the C runtime of the compiler, and the owner of a name
+      * The class of a symbol, and the mark and the entity of an import
+      * The providers of the compiler and of a link line, and the owner of a
+        name
       * The shapes of the ledger
       * The throws, the downcasts and the classes of planted archives
       * The run and the write of the rule on a planted build directory.
@@ -13,10 +14,13 @@ THE CASES
 
 THE PLANTED BUILD DIRECTORY
     Scratch compiles the units of UNITS, and it makes the archives of the
-    libraries foundation, fixy and crucible from them.  It writes a build
-    kind, a reply of the file API with the three libraries and the compiler,
-    and a ledger.  A case changes the units of a library, the kind or the
-    ledger, and then it runs or writes the rule.
+    libraries planted_tree, foundation, fixy and crucible from them.  It also
+    makes a shared library and an archive of LINKED_UNITS in a directory that
+    is not the build directory.  It writes a build kind, a reply of the file
+    API and a ledger.
+    The reply holds the libraries, the compiler, and a program with a link
+    line.  A case changes the units of a library, the link line, the kind or
+    the ledger, and then it runs or writes the rule.
 """
 
 import sys
@@ -106,6 +110,20 @@ UNITS = {
     "void copy_entry(char* to, const char* from, unsigned long size) { std::memcpy(to, from, size); }\n"
     "int exit_entry() { return std::atexit(crucible_symbols_at_exit); }\n",
     "thrower": "int thrower_entry(int input) {\n    if (input < 0) { throw input; }\n    return input;\n}\n",
+    # The definitions of the names that the other units reference.  The library planted_tree of the root holds them.
+    "externs": 'extern "C" int crucible_symbols_extern(int value) { return value; }\n'
+    'extern "C" int crucible_symbols_seed() { return 7; }\nextern "C" void crucible_symbols_at_exit() {}\n',
+    # The users of a function of a shared library, of an archive of a link line, and of no provider.
+    "host_user": 'extern "C" int crucible_host_call(int);\nint host_entry(int value) { return crucible_host_call(value); }\n',
+    "static_user": 'extern "C" int crucible_static_call(int);\n'
+    "int static_entry(int value) { return crucible_static_call(value); }\n",
+    "nowhere": 'extern "C" int crucible_symbols_nowhere(int);\n'
+    "int nowhere_entry(int value) { return crucible_symbols_nowhere(value); }\n",
+}
+# The definitions of the shared library and of the archive of a link line.
+LINKED_UNITS = {
+    "host_impl": 'extern "C" int crucible_host_call(int value) { return value + 1; }\n',
+    "static_impl": 'extern "C" int crucible_static_call(int value) { return value + 2; }\n',
 }
 # A compiler that prints the target of an aarch64 GCC with no target flag.  It runs the patched compiler for each
 # other command.  It has no -march value, and it gives its target through -mcpu.
@@ -128,6 +146,11 @@ def planted_rule() -> rule_registry.Rule:
 def errors_of(findings: Iterable[check_report.Finding]) -> list[str]:
     """Return the message of each error."""
     return [item.message for item in findings if item.level == "error"]
+
+
+def bare(entity: str) -> str:
+    """Return the name of an import with no version (THE VERSIONS)."""
+    return entity.partition(artifact_symbols.VERSION_MARK)[0]
 
 
 def parsed(text: str) -> rule_ledger.Ledger:
@@ -207,65 +230,103 @@ def class_cases(expect: testing.Expect) -> None:
         ]
         == [artifact_symbols.ALLOW, artifact_symbols.ALLOW, artifact_symbols.RATCHET, artifact_symbols.RATCHET],
     )
-    planted = artifact_symbols.Runtime(
-        {name: "libc.so.6" for name in ("memcpy", "getenv", "pthread_create", "__cxa_atexit")}
-        | {"__udivti3": "libgcc.a"},
-        frozenset({"__udivti3"}),
-    )
-    allow, ratchet = artifact_symbols.LIBC_ALLOW, artifact_symbols.LIBC_RATCHET
-    for library, symbol, wanted in (
-        ("foundation", "memcpy", allow),
-        ("foundation", "__udivti3", allow),
-        ("foundation", "getenv", ratchet),
-        ("foundation", "pthread_create", ratchet),
-        ("fixy", "pthread_create", allow),
-        ("crucible", "pthread_create", ratchet),
-        ("crucible", "__cxa_atexit", allow),
-        ("fixy", "__cxa_atexit", ratchet),
+    support = frozenset({"__udivti3"})
+    module = artifact_symbols
+    for library, symbol, family, wanted in (
+        ("foundation", "memcpy", module.RUNTIME, module.LIBC_ALLOW),
+        ("foundation", "__udivti3", module.RUNTIME, module.LIBC_ALLOW),
+        ("foundation", "getenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("foundation", "pthread_create", module.RUNTIME, module.LIBC_RATCHET),
+        ("fixy", "pthread_create", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "pthread_create", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
+        ("fixy", "__cxa_atexit", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible_vigil", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible_vigil", "getenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible", "__cxa_guard_acquire", module.LIBSTDCXX, module.ALLOW),
+        ("crucible", "_ZSt9terminatev", module.LIBSTDCXX, module.RATCHET),
+        ("crucible_vigil", "__dso_handle", module.CRT, module.CRT_ALLOW),
+        ("fixy", "__dso_handle", module.CRT, module.CRT_RATCHET),
+        ("crucible", "data_start", module.CRT, module.CRT_RATCHET),
+        ("crucible_perf", "bpf_object__open", module.HOST, module.HOST_RATCHET),
+        ("crucible", "_ZNSt12__basic_fileIcED1Ev", module.STATIC, module.STATIC_RATCHET),
     ):
         expect(
-            f"the C runtime allowlist of {library} gives {symbol} the mark {wanted}",
-            artifact_symbols.libc_mark_of(library, symbol, planted) == wanted,
+            f"an import {symbol} of the family {family} in {library} has the mark {wanted}",
+            module.mark_for(library, symbol, family, support) == wanted,
         )
+    expect(
+        "an import of a shared library has the entity SYMBOL@VERSION, and an import of an archive the name alone",
+        module.entity_of("memcpy", "GLIBC_2.14") == "memcpy@GLIBC_2.14" and module.entity_of("atexit", "") == "atexit",
+    )
+    expect(
+        "the names of the linker have no provider",
+        module.is_linker_name("_GLOBAL_OFFSET_TABLE_")
+        and module.is_linker_name("__start_crucible_probes")
+        and not module.is_linker_name("memcpy"),
+    )
 
 
-def runtime_cases(expect: testing.Expect) -> None:
-    """Hold the files of the C runtime of the compiler and the owner of each kind of name (THE C RUNTIME SYMBOLS)."""
+def provider_cases(expect: testing.Expect) -> None:
+    """Hold the providers of the compiler and of a link line, and the owner of each kind of name (THE PROVIDERS)."""
     compiler = runner.plant_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
     if compiler is None:
         return
-    runtime = artifact_symbols.runtime_of(compiler)
-    owners = {
-        name: runtime.owners.get(name, "") for name in ("memcpy", "atexit", "sqrt", "__udivti3", "_Unwind_Resume")
-    }
+    providers = artifact_symbols.providers_of(compiler, ("-lstdc++exp", "-lm"))
+    names = ("memcpy", "atexit", "sqrt", "__udivti3", "_Unwind_Resume", "__dso_handle", "__cxa_guard_acquire")
+
+    def owner(name: str) -> tuple[str, str, str]:
+        """Return the family, the file name and the version of the owner of a name, or empty texts."""
+        found = providers.owners.get(name)
+        return (found.family, found.label, found.versions[name]) if found is not None else ("", "", "")
+
+    owners = {name: owner(name)[:2] for name in names}
     expect(
-        "the owner of a name is the first file of the C runtime that gives it",
+        "the owner of a name is the first provider in the sequence of a link",
         owners
         == {
-            "memcpy": "libc.so.6",
-            "atexit": "libc_nonshared.a",
-            "sqrt": "libm.so.6",
-            "__udivti3": "libgcc.a",
-            "_Unwind_Resume": "libgcc_eh.a",
+            "memcpy": (artifact_symbols.RUNTIME, "libc.so.6"),
+            "atexit": (artifact_symbols.RUNTIME, "libc_nonshared.a"),
+            "sqrt": (artifact_symbols.RUNTIME, "libm.so.6"),
+            "__udivti3": (artifact_symbols.RUNTIME, "libgcc_s.so.1"),
+            "_Unwind_Resume": (artifact_symbols.RUNTIME, "libgcc_s.so.1"),
+            "__dso_handle": (artifact_symbols.CRT, "crtbegin.o"),
+            "__cxa_guard_acquire": (artifact_symbols.LIBSTDCXX, owners["__cxa_guard_acquire"][1]),
         },
     )
     expect(
-        "the dynamic loader of libc.so.6 owns __tls_get_addr",
-        runtime.owners.get("__tls_get_addr", "").startswith("ld-linux"),
+        "a shared library gives the default version of a name, and an archive no version",
+        owner("memcpy")[2] == "GLIBC_2.14" and owner("atexit")[2] == "" and owner("__udivti3")[2].startswith("GCC_"),
     )
+    expect("the dynamic loader of libc.so.6 owns __tls_get_addr", owner("__tls_get_addr")[1].startswith("ld-linux"))
     expect(
         "the support library holds the helpers and the unwinder, and no function of the C library",
-        {"__udivti3", "_Unwind_Resume"} <= runtime.support and "memcpy" not in runtime.support,
+        {"__udivti3", "_Unwind_Resume"} <= providers.support and "memcpy" not in providers.support,
     )
     expect(
-        "a name of the sanitizer runtime is in no file of the C runtime",
-        "__asan_report_load8" not in runtime.owners,
+        "a sanitizer runtime owns only a name that no other provider defines",
+        owner("__asan_report_load8")[0] == artifact_symbols.SANITIZER and owner("malloc")[1] == "libc.so.6",
+    )
+    expect(
+        "a word -l of a link line gives a provider of the family static for an archive, and -lm gives none",
+        any(
+            item.family == artifact_symbols.STATIC and item.label == "libstdc++exp.a"
+            for item in providers.owners.values()
+        )
+        and not any(
+            item.label.startswith("libm.so") and item.family != artifact_symbols.RUNTIME
+            for item in providers.owners.values()
+        ),
     )
     said = raised(partial(artifact_symbols.runtime_file, compiler, "libc.so"))
     expect("the linker script libc.so is refused", "linker script" in said)
     said = raised(partial(artifact_symbols.runtime_file, compiler, "libno-such-runtime.so.9"))
-    expect("a name that the compiler does not find is refused", "not a file" in said)
+    expect("a name that the compiler does not find is refused", "names no file" in said)
+    said = raised(partial(artifact_symbols.providers_of, compiler, ("-lno_such_planted_library",)))
+    expect("a word -l that the compiler does not find is refused", "finds no libno_such_planted_library.so" in said)
+    said = raised(partial(artifact_symbols.providers_of, compiler, ("/no/such/planted/libx.so",)))
+    expect("a path of a link line that is not a file is refused", "not a file" in said)
 
 
 def ledger_cases(expect: testing.Expect) -> None:
@@ -462,11 +523,22 @@ class Scratch:
         self.ledger.write_text(HEAD, encoding="utf-8")
         self.extra: dict[str, str | tuple[str, str]] = {}
         self.missing: list[str] = []
+        self.links: list[str] = []
         for unit, source in UNITS.items():
             (self.objects / f"{unit}.cpp").write_text(source, encoding="utf-8")
             compiled(compiler, self.objects / f"{unit}.cpp", self.objects / f"{unit}.o")
+        for unit, source in LINKED_UNITS.items():
+            (self.objects / f"{unit}.cpp").write_text(source, encoding="utf-8")
+        self.host = root / "linked" / "libplantedhost.so"
+        self.static = root / "linked" / "libplantedstatic.a"
+        self.host.parent.mkdir()
+        command = [compiler, "-shared", "-fPIC", str(self.objects / "host_impl.cpp"), "-o", str(self.host)]
+        proc.require(proc.run(proc.Command(command, timeout_s=proc.TOOL_S)))
+        compiled(compiler, self.objects / "static_impl.cpp", self.objects / "static_impl.o")
+        archived(self.static, [self.objects / "static_impl.o"])
         self.units: dict[str, list[str]] = {}
         self.set_kind(KIND)
+        self.archive("planted_tree", ["externs"])
         self.archive("foundation", ["base", "threads"])
         self.archive("fixy", ["base"])
         self.archive("crucible", ["glibc", "base"])
@@ -489,7 +561,7 @@ class Scratch:
             "CMAKE_CXX_COMPILER": ("FILEPATH", self.compiler),
             **self.extra,
         }
-        targets = [
+        targets: list[dict[str, object]] = [
             {
                 "name": name,
                 "type": runner.STATIC_LIBRARY,
@@ -498,6 +570,16 @@ class Scratch:
             }
             for name in [*self.units, *self.missing]
         ]
+        fragments = [{"fragment": item, "role": runner.LIBRARY_ROLE} for item in ["libcrucible.a", *self.links]]
+        targets.append(
+            {
+                "name": "planted_program",
+                "type": "EXECUTABLE",
+                "artifacts": [{"path": "planted_program"}],
+                "paths": {"source": "."},
+                "link": {"commandFragments": fragments},
+            }
+        )
         cmake.plant(self.build, cache=cache, targets=targets, source=str(self.root), build=str(self.build))
 
     def run(self) -> tuple[int, list[check_report.Finding], str]:
@@ -560,8 +642,16 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     crucible_rows = {key.entity: key.kind for key in written.expected(KIND) if key.path == "@build/libcrucible.a"}
     expect(
-        "memcpy of glibc gets the mark libc-allow, and atexit of libc_nonshared.a the mark libc-ratchet",
-        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET},
+        "memcpy of glibc gets the mark libc-allow with its version, and atexit of libc_nonshared.a the mark "
+        "libc-ratchet with no version",
+        {bare(entity): kind for entity, kind in crucible_rows.items()}
+        == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET}
+        and any(entity.startswith("memcpy@GLIBC_") for entity in crucible_rows)
+        and "atexit" in crucible_rows,
+    )
+    expect(
+        "a reference to a name that a different library of the root defines gives no row",
+        "crucible_symbols_extern" not in scratch.ledger_text() and "libplanted_tree.a" not in scratch.ledger_text(),
     )
     status, found, _ = scratch.run()
     expect(
@@ -603,7 +693,9 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 1 and guard_errors != [] and all("allowlist" in message for message in guard_errors),
     )
     status, _ = scratch.write()
-    guard_rows = {key.entity: key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfoundation.a"}
+    guard_rows = {
+        bare(key.entity): key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfoundation.a"
+    }
     expect(
         "a write writes the allowlist symbols without --raise: the mark allow, and libc-allow for the unwinder",
         status == 0
@@ -618,8 +710,8 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
     good = scratch.ledger_text()
     scratch.ledger.write_text(
         good.replace(
-            "libfoundation.a | allow | 1 | __cxa_guard_acquire |",
-            "libfoundation.a | ratchet | 1 | __cxa_guard_acquire |",
+            "libfoundation.a | allow | 1 | __cxa_guard_acquire@",
+            "libfoundation.a | ratchet | 1 | __cxa_guard_acquire@",
         ),
         encoding="utf-8",
     )
@@ -812,6 +904,53 @@ def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.ledger.write_text(good, encoding="utf-8")
 
 
+def link_line_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold an import with no provider, an import of a shared library and of an archive of a link line."""
+    good = scratch.ledger_text()
+
+    def kinds() -> dict[str, str]:
+        """Return the kind of each error of the build by its entity."""
+        context = runner.ElfContext(scratch.root, scratch.build)
+        return {item.entity: item.kind for item in artifact_symbols.findings(context) if item.level == "error"}
+
+    scratch.archive("crucible", ["glibc", "base", "nowhere"])
+    status, _, _ = scratch.run()
+    expect(
+        "an import that no provider defines is an error of the kind unknown-provider",
+        status == 1 and kinds().get("crucible_symbols_nowhere") == artifact_symbols.UNKNOWN_PROVIDER,
+    )
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
+    expect(
+        "a write with --raise writes no row for an import with no provider, and the run still fails",
+        status == 0 and "crucible_symbols_nowhere" not in scratch.ledger_text() and scratch.run()[0] == 1,
+    )
+    scratch.archive("crucible", ["glibc", "base", "host_user", "static_user"])
+    found = kinds()
+    expect(
+        "an import of a library that no link line names has no provider",
+        [found.get(name) for name in ("crucible_host_call", "crucible_static_call")]
+        == [artifact_symbols.UNKNOWN_PROVIDER] * 2,
+    )
+    scratch.links = [str(scratch.host), str(scratch.static), "-Wl,-rpath,/planted/run"]
+    scratch.plant()
+    found = kinds()
+    expect(
+        "the shared library of a link line gives a host-ratchet import, and its archive a static-ratchet import",
+        found.get("crucible_host_call") == artifact_symbols.HOST_RATCHET
+        and found.get("crucible_static_call") == artifact_symbols.STATIC_RATCHET,
+    )
+    status, text = scratch.write()
+    expect("a write refuses a new host or static import without --raise", status == 1 and "not written" in text)
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
+    expect(
+        "after a write with --raise the build with the link line passes",
+        status == 0 and "| host-ratchet | 1 | crucible_host_call |" in scratch.ledger_text() and scratch.run()[0] == 0,
+    )
+    scratch.links = []
+    scratch.ledger.write_text(good, encoding="utf-8")
+    scratch.archive("crucible", ["glibc", "base"])
+
+
 def build_cases(expect: testing.Expect) -> None:
     """Run each case of the planted build directory, in sequence."""
     compiler = runner.plant_compiler()
@@ -825,10 +964,11 @@ def build_cases(expect: testing.Expect) -> None:
         configuration_cases(expect, scratch)
         tier_cases(expect, scratch)
         admit_cases(expect, scratch)
+        link_line_cases(expect, scratch)
 
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (class_cases, runtime_cases, ledger_cases, artifact_cases, build_cases)
+        __name__.removeprefix("assay."), argv, (class_cases, provider_cases, ledger_cases, artifact_cases, build_cases)
     )

@@ -1,3 +1,4 @@
 # A runtime downcast of a polymorphic class: a reference to __dynamic_cast, and a typeinfo and a vtable.
+library planted_tree externs.cpp
 library foundation base.cpp rtti.cpp
 library crucible base.cpp

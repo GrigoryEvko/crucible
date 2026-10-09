@@ -1,0 +1,1 @@
+extern "C" int crucible_plant_static_call(int value) { return value + 2; }

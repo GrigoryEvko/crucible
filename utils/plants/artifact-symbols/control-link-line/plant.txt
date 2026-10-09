@@ -1,0 +1,7 @@
+# A call of a function of a shared library of a link line, and of a function of an archive of a link line.  The
+# ledger holds the host-ratchet import and the static-ratchet import.
+library planted_tree externs.cpp
+shared plantedhost host_impl.cpp
+archive plantedstatic static_impl.cpp
+library foundation base.cpp
+library crucible base.cpp linked.cpp

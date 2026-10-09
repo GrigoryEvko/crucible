@@ -1,4 +1,4 @@
-"""artifact-symbols — a static library of the tree throws nothing, has no polymorphic type, and gets no runtime symbol.
+"""artifact-symbols — a static library of the tree throws nothing, has no polymorphic type, and gets no new import.
 
 THE TWO PROPERTIES
     -fno-exceptions and -fno-rtti are not in this build, and the opt-out
@@ -59,35 +59,72 @@ THE THROW HELPERS
     only fall.  The migration to the types of the base removes the
     containers and the views of the standard library.
 
-THE LIBSTDC++ SYMBOLS
-    Rule R5 of misc/01_10_2026_quarantine.md says that no object of
-    libcrucible.a uses a libstdc++ symbol that a short allowlist does not
-    hold.  Until the link guard of the S4 gate, the ledger holds the
-    libstdc++ symbols of the libraries foundation, fixy and crucible.  Then a
-    library gets no new libstdc++ symbol.  A libstdc++ symbol of a library
-    obeys these two conditions:
-      * An object of the archive has an undefined reference to the symbol.
-      * The libstdc++ of the compiler gives the symbol in its dynamic symbol
-        table.  "COMPILER -print-file-name=libstdc++.so" names that shared
-        library.
-    The kind of the finding is the mark of the symbol: `allow` for a symbol
-    of the allowlist of plan section 13.4 (ALLOWLIST), else `ratchet`.
+THE IMPORTS
+    Rule R5 of misc/01_10_2026_quarantine.md says that the objects of
+    libcrucible.a use only the libstdc++ symbols and the C runtime symbols
+    of a short allowlist.  The same rule applies to each binary other
+    than the vessel library.  Until the link guard of the S4 gate, the
+    ledger holds the imports of each static library of the root.  A library
+    then gets no new import.  An import of a library is a name that an
+    object of its archive references.  No archive of the root holds that
+    name with a section.  The rule finds the owner of each import (THE
+    PROVIDERS), and the family of the owner gives the mark of its row (THE
+    MARKS).
 
-THE C RUNTIME SYMBOLS
-    Rule R5 also covers the C runtime.  The ledger holds the C runtime
-    symbols of the libraries foundation, fixy and crucible, and a library
-    gets no new one.  A C runtime symbol of a library obeys these two
-    conditions:
-      * An object of the archive has an undefined reference to the symbol,
-        and libstdc++ does not export it.
-      * A file of the C runtime of the compiler gives the symbol.  The files
-        are the shared libraries and the archives of RUNTIME_FILES, and the
-        dynamic loader, which is the interpreter of libc.so.6.
-        "COMPILER -print-file-name=FILE" names each file.
-    A symbol of the sanitizer runtime or of the linker is in no such file,
-    and the rule does not read it.  The kind of the finding is `libc-allow`
-    for a symbol of the allowlist of its library (LIBC_ALLOWLISTS), else
-    `libc-ratchet`.  Each allowlist holds these symbols:
+THE PROVIDERS
+    A provider is a file that can give an import.  The first provider of
+    this sequence that gives the name is its owner:
+      libstdc++  the libstdc++.so of the compiler
+      runtime    the files of RUNTIME_FILES in the sequence of a link, and the
+                 dynamic loader after libc_nonshared.a.  The loader is the
+                 interpreter of libc.so.6
+      static     each archive of a link line of the build, such as
+                 libstdc++exp.a (assay.guard.engines.elf.runner, THE BUILD)
+      crt        the start files and the end files of CRT_FILES
+      host       each shared library of a link line of the build, such as
+                 libbpf.so
+      sanitizer  the runtimes of SANITIZER_FILES
+    A sanitizer runtime gives many functions of the C library.  It owns a
+    name only when no other provider gives the name.  The call
+    "COMPILER -print-file-name=FILE" names each file of the compiler.  The
+    same call finds the file of a word -lNAME of a link line: libNAME.so,
+    else libNAME.a.  A word -l of a library of the runtime (RUNTIME_WORDS)
+    adds no provider.  A shared library gives its dynamic symbols, and an
+    archive gives the global symbols of its members.
+
+    A name of the linker (LINKER_NAMES, LINKER_PREFIXES), such as
+    _GLOBAL_OFFSET_TABLE_, has no owner and no row.  An import that no
+    provider gives is an error of the kind unknown-provider, and no row
+    admits it.
+
+THE VERSIONS
+    The entity of an import of a shared library is SYMBOL@VERSION.  VERSION
+    is the default version of the name in the dynamic symbols of the owner,
+    such as memcpy@GLIBC_2.14.  A version that nm prints after "@" and not
+    after "@@" is hidden, and a link cannot use it.  A name with only such
+    versions is not a name of that library.  The entity of each other import
+    is the name alone.
+
+THE MARKS
+    The kind of the finding of an import is its mark:
+      `allow`, `ratchet`            libstdc++.  `allow` marks a symbol of
+                                    the allowlist of plan section 13.4
+                                    (ALLOWLIST)
+      `libc-allow`, `libc-ratchet`  runtime.  `libc-allow` marks a symbol of
+                                    the allowlist of its library (THE
+                                    ALLOWLISTS)
+      `static-ratchet`              static
+      `crt-allow`, `crt-ratchet`    crt.  `crt-allow` marks __dso_handle in
+                                    a library with __cxa_atexit in its
+                                    allowlist
+      `host-ratchet`                host
+    A static object with a destructor gives __dso_handle to __cxa_atexit.
+    An import of a sanitizer runtime gives no row, because only a build with
+    that sanitizer has it.
+
+THE ALLOWLISTS
+    The C runtime allowlist of a library (LIBC_ALLOWLISTS) holds these
+    symbols:
       * The calls that GCC makes itself (COMPILER_CALLS), and each function
         of the support library of GCC (SUPPORT_ARCHIVES), such as __udivti3
         and _Unwind_Resume.
@@ -95,7 +132,8 @@ THE C RUNTIME SYMBOLS
         door (DOOR_CALLS).  The plan names these calls.  When a door must
         make a related call, the change that adds the door adds the call to
         the set.
-      * For crucible, __cxa_atexit, which plan section 13.4 admits.
+      * For crucible and each other library of the root, __cxa_atexit, which
+        plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
 
 THE CLASS OF A SYMBOL
@@ -114,19 +152,18 @@ THE LEDGER
     assay.core.ledger:
         configuration KIND kind KIND
         configuration KIND tier TIER
-        @build/LIBRARY | MARK | 1 | SYMBOL | -
-        @KIND | @build/LIBRARY | MARK | +1 | SYMBOL | -
+        @build/LIBRARY | MARK | 1 | IMPORT | -
+        @KIND | @build/LIBRARY | MARK | +1 | IMPORT | -
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
         @KIND | @build/ARCHIVE | helper-throw | DELTA | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
-    MARK is one of MARKS: `allow` and `ratchet` for a libstdc++ symbol, and
-    `libc-allow` and `libc-ratchet` for a C runtime symbol.  A row
-    helper-throw gives the references of an archive that is not of the base
-    to a throw helper (THE THROW HELPERS).  The symbols change
-    with the build, because the inlining, the sanitizers and the macro
-    _GLIBCXX_ASSERTIONS change the references.  A configuration
-    is a build kind on a target tier (assay.core.target).  The first
+    MARK is one of MARKS (THE MARKS), and IMPORT is the entity of THE
+    VERSIONS.  A row helper-throw gives the references of an archive that is
+    not of the base to a throw helper (THE THROW HELPERS).  The imports
+    change with the build, because the inlining, the sanitizers and the
+    macro _GLIBCXX_ASSERTIONS change the references.  A configuration is a
+    build kind on a target tier (assay.core.target).  The first
     configuration is the base, and a row of a different configuration gives
     its difference.  LIBRARY and ARCHIVE are the file name of the archive.
 
@@ -146,31 +183,31 @@ THE LEDGER
 
 THE VERDICT
     assay.core.ledger judges the findings.  A finding with no row is an
-    error, and a row of a symbol that goes is an error too.  A row throw or
+    error, and a row of an import that goes is an error too.  A row throw or
     vtable that admits nothing of the build is an error.  The exception is a
     row throw that names a function or an object of its archive
-    (quiet_rows).  The
-    inlining of one configuration can remove a throw that a different
-    configuration keeps.  Such a row gives no error, and a write keeps it.  Each library with
-    rows gives one warning.  These archives are errors, because the rule
-    read nothing there:
+    (quiet_rows).  The inlining of one configuration can remove a throw that
+    a different configuration keeps.  Such a row gives no error, and a write
+    keeps it.  Each library with rows gives one warning.  These archives are
+    errors, because the rule read nothing there:
       * An archive that the ELF reader cannot read
       * An archive with no symbol
-      * A symbol library with no undefined reference.
+      * An archive of IMPORTING_LIBRARIES with no undefined reference.
 
 THE WRITE
     `guard write --rule artifact-symbols --build-dir DIR` writes the
-    configuration and the symbol rows of the build.  A write of the base
-    keeps the symbols of each different configuration.  The write gives a
-    row to a new `allow` or `libc-allow` symbol, and it refuses a new
-    `ratchet` or `libc-ratchet` symbol.  It also refuses a count of
-    helper-throw above its row.  --raise also writes such a symbol or count.
-    Use it only for one of RAISE_REASONS, and give the reason in the commit.  A write keeps each
-    row throw or vtable that admits a finding, and it removes each such row
-    that admits nothing.  It adds no such row: a person writes it with its
-    reason.  --import LOG puts the rows of a configuration that a CI leg
-    printed into the ledger (assay.core.configuration.import_rows).  The
-    import refuses a row that does not have a shape of THE LEDGER.
+    configuration and the import rows of the build.  A write of the base
+    keeps the imports of each different configuration.  The write gives a
+    row to a new import with the mark `allow`, `libc-allow` or `crt-allow`, and it refuses a new import with
+    a ratchet mark (RATCHET_MARKS).  It also refuses a count of helper-throw
+    above its row.  --raise also writes such an import or count.  Use it
+    only for one of RAISE_REASONS, and give the reason in the commit.  A
+    write keeps each row throw or vtable that admits a finding, and it
+    removes each such row that admits nothing.  It adds no such row: a
+    person writes it with its reason.  --import LOG puts the rows of a
+    configuration that a CI leg printed into the ledger
+    (assay.core.configuration.import_rows).  The import refuses a row that
+    does not have a shape of THE LEDGER.
 
 THE POLICY
     The configuration of a build is its build kind and its tier, and its
@@ -178,9 +215,9 @@ THE POLICY
     each build, and no build skips the rule because of its configuration.
     The rows of the configuration with the name of the build judge it.  The
     largest count of each key over the configurations judges a build of a
-    name that the ledger does not hold (assay.core.ledger, THE MAXIMUM).  A
-    symbol that a different configuration counts then gives no error, and a
-    new symbol gives an error.  The run prints the rows of a configuration
+    name that the ledger does not hold (assay.core.ledger, THE MAXIMUM).  An
+    import that a different configuration counts then gives no error, and a
+    new import gives an error.  The run prints the rows of a configuration
     other than the base after a failure.  It also prints them each time when
     the ledger does not hold the configuration.  A write from a build of a
     configuration that the ledger does not hold writes nothing and fails,
@@ -191,7 +228,7 @@ NOT APPLICABLE
       * A build with no build-kind.txt
       * A build that has not made each library.
 
-Complexity: linear in the symbols and the relocations of the libraries and of the C runtime, with one run of c++filt.
+Complexity: linear in the symbols and the relocations of the libraries and of the providers, with one run of c++filt.
 """
 
 from collections import Counter
@@ -211,19 +248,35 @@ from assay.readers import elf
 
 RULE = "artifact-symbols"
 LIBRARY_PREFIX = "@build/"
-# The target names of the libraries of the part of the libstdc++ symbols.
-SYMBOL_LIBRARIES = ("foundation", "fixy", "crucible")
 # The libraries that the root must make.  Without them, the rule cannot read the correct set of archives.
 REQUIRED_LIBRARIES = ("foundation", "crucible")
+# The libraries that reference the runtime in each build.  An archive of one of them with no undefined reference is an
+# archive that the rule did not read (THE VERDICT).
+IMPORTING_LIBRARIES = ("foundation", "fixy", "crucible")
 # The two facts of a configuration of the ledger (THE LEDGER).
 FACTS = frozenset({build_config.KIND_KEY, build_config.TIER_KEY})
+# The families of the providers, in the sequence of THE PROVIDERS.
+LIBSTDCXX = "libstdc++"
+RUNTIME = "runtime"
+STATIC = "static"
+CRT = "crt"
+HOST = "host"
+SANITIZER = "sanitizer"
+# The marks of an import (THE MARKS).
 ALLOW = "allow"
 RATCHET = "ratchet"
 LIBC_ALLOW = "libc-allow"
 LIBC_RATCHET = "libc-ratchet"
-MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET)
-# The marks of a symbol that a write refuses with no --raise.
-RATCHET_MARKS = (RATCHET, LIBC_RATCHET)
+STATIC_RATCHET = "static-ratchet"
+CRT_ALLOW = "crt-allow"
+CRT_RATCHET = "crt-ratchet"
+HOST_RATCHET = "host-ratchet"
+MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET, STATIC_RATCHET, CRT_ALLOW, CRT_RATCHET, HOST_RATCHET)
+# The marks of an import that a write refuses with no --raise.
+RATCHET_MARKS = (RATCHET, LIBC_RATCHET, STATIC_RATCHET, CRT_RATCHET, HOST_RATCHET)
+# The kind of an import that no provider gives (THE PROVIDERS).  No row admits it.
+UNKNOWN_PROVIDER = "unknown-provider"
+VERSION_MARK = "@"
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
 # The kind of a reference to a throw helper in an archive that is not of the base (THE THROW HELPERS).
@@ -237,20 +290,64 @@ ADMITTED_KINDS = (THROW, VTABLE)
 ALLOWLIST = frozenset(
     {"__cxa_guard_acquire", "__cxa_guard_release", "__cxa_guard_abort", "__cxa_atexit", "__gxx_personality_v0"}
 )
-# The files of the C runtime (THE C RUNTIME SYMBOLS).  True marks a shared library, and its dynamic symbols count.
-# False marks an archive, and the global symbols of its members count.  The first file that gives a name is its owner,
-# and the dynamic loader comes after libm.so.6.  libc_nonshared.a holds the part of glibc that each program links
-# statically, such as atexit.  libgcc_s.so.1 is the shared library of the support library of GCC.
+# The shared library of libstdc++ of the compiler.
+LIBSTDCXX_FILE = "libstdc++.so"
+# The files of the runtime (THE PROVIDERS), in the sequence of the link that the driver of g++ makes.  True marks a
+# shared library, and its dynamic symbols count.  False marks an archive, and the global symbols of its members count.
+# libgcc_s.so.1 is the shared library of the support library of GCC.  libc_nonshared.a holds the part of glibc that
+# each program links statically, such as atexit.  The driver links libgcc_eh.a only for a static link, and it comes
+# last.
 RUNTIME_FILES = (
-    ("libc.so.6", True),
     ("libm.so.6", True),
-    ("libc_nonshared.a", False),
-    ("libgcc.a", False),
-    ("libgcc_eh.a", False),
     ("libgcc_s.so.1", True),
+    ("libgcc.a", False),
+    ("libatomic.so", True),
+    ("libc.so.6", True),
+    ("libc_nonshared.a", False),
+    ("libgcc_eh.a", False),
 )
+# The C library.  Its interpreter is the dynamic loader, which comes after libc_nonshared.a.
+LIBC_FILE = "libc.so.6"
+LOADER_AFTER = "libc_nonshared.a"
+# The start files and the end files that the driver links.
+CRT_FILES = ("crt1.o", "crti.o", "crtbegin.o", "crtbeginS.o", "crtend.o", "crtendS.o", "crtn.o")
+# The runtimes of the sanitizers.  A toolchain with no such runtime gives no provider for it.  libasan_preinit.o
+# gives no global name, and it is no provider.
+SANITIZER_FILES = (("libasan.so", True), ("libubsan.so", True), ("libtsan.so", True))
+# The words -l of a link line that name a library of the runtime.  Such a word adds no provider.
+RUNTIME_WORDS = frozenset({"-lc", "-lm", "-lpthread", "-ldl", "-lrt", "-lgcc", "-lgcc_s", "-lstdc++", "-latomic"})
+# The names that the linker makes itself, with no provider (THE PROVIDERS).
+LINKER_NAMES = frozenset(
+    {
+        "_GLOBAL_OFFSET_TABLE_",
+        "_DYNAMIC",
+        "_TLS_MODULE_BASE_",
+        "__GNU_EH_FRAME_HDR",
+        "__ehdr_start",
+        "__executable_start",
+        "__bss_start",
+        "_edata",
+        "edata",
+        "_end",
+        "end",
+        "_etext",
+        "__etext",
+        "etext",
+        "__init_array_start",
+        "__init_array_end",
+        "__fini_array_start",
+        "__fini_array_end",
+        "__preinit_array_start",
+        "__preinit_array_end",
+    }
+)
+# The prefixes of the names that the linker makes for each section with the name of an identifier.
+LINKER_PREFIXES = ("__start_", "__stop_")
 # The support library of GCC: the helpers of the arithmetic and the unwinder that GCC calls itself.
 SUPPORT_ARCHIVES = ("libgcc.a", "libgcc_eh.a")
+# The registration of the destructor of a static object.  __dso_handle of the start files goes with it (THE MARKS).
+ATEXIT = "__cxa_atexit"
+CRT_ALLOWLIST = frozenset({"__dso_handle"})
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
 # The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).  The thread door
@@ -273,12 +370,14 @@ DOOR_CALLS = frozenset(
         "free",
     }
 )
-# The allowlist of the C runtime symbols of each symbol library, by its target name, without the support library.
+# The C runtime allowlist of each library, by its target name, without the support library (THE ALLOWLISTS).  Each
+# other library of the root has the allowlist of crucible.
 LIBC_ALLOWLISTS = {
     "foundation": COMPILER_CALLS,
     "fixy": COMPILER_CALLS | DOOR_CALLS,
-    "crucible": COMPILER_CALLS | {"__cxa_atexit"},
+    "crucible": COMPILER_CALLS | {ATEXIT},
 }
+TREE_ALLOWLIST = LIBC_ALLOWLISTS["crucible"]
 CLASSES = ("alloc", "abi", "std", "gnu", "c", "other")
 ABI_PREFIXES = ("__cxa_", "__gxx_")
 ABI_SCOPE = "__cxxabiv1"
@@ -308,7 +407,7 @@ RAISE_REASONS = (
 )
 # The three shapes of a base row (THE LEDGER).
 ROW_SHAPE = (
-    "a row is '@build/LIBRARY | allow|ratchet|libc-allow|libc-ratchet | 1 | SYMBOL | -', "
+    f"a row is '@build/LIBRARY | {'|'.join(MARKS)} | 1 | IMPORT | -', "
     "'@build/ARCHIVE | helper-throw | COUNT | HELPER | -', or '@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
 )
 
@@ -329,7 +428,8 @@ class Artifact:
     """The read of one static library: its name, its symbol count, its undefined names, its throws and its classes.
 
     `undefined` gives the members that reference each undefined name.  `defined` holds the member and the name of
-    each symbol that the archive holds with a section.
+    each symbol that the archive holds with a section.  `exported` holds each such name that is not local, which a
+    reference of a different object can use.
     """
 
     name: str
@@ -337,6 +437,7 @@ class Artifact:
     undefined: Mapping[str, frozenset[str]]
     references: tuple[Reference, ...]
     defined: tuple[tuple[str, str], ...]
+    exported: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,8 +445,8 @@ class Examination:
     """The findings of one build, judged, with the facts that the run prints and the write uses.
 
     `configuration` is the build kind and the tier of the build, or None when the ledger cannot be read.  `judged`
-    gives the rows that judge the build (THE POLICY).  `symbols` gives the count of each key of a libstdc++ symbol, of
-    a C runtime symbol and of a throw helper, and `admitted` the count of each key that a row throw or vtable admits.
+    gives the rows that judge the build (THE POLICY).  `symbols` gives the count of each key of an import and of a
+    throw helper, and `admitted` the count of each key that a row throw or vtable admits.
     """
 
     findings: tuple[check_report.Finding, ...]
@@ -358,14 +459,25 @@ class Examination:
 
 
 @dataclass(frozen=True, slots=True)
-class Runtime:
-    """The C runtime of a compiler (THE C RUNTIME SYMBOLS).
+class Provider:
+    """One file that can give an import: its file name, its family, and its names (THE PROVIDERS).
 
-    `owners` gives each name its owner: the first file of the sequence of runtime_of() that gives the name.
-    `support` holds each function of the support library of GCC.
+    `versions` gives the default version of each name that the file gives, or an empty version (THE VERSIONS).
     """
 
-    owners: Mapping[str, str]
+    label: str
+    family: str
+    versions: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class Providers:
+    """The providers of a build (THE PROVIDERS).
+
+    `owners` gives each name its owner.  `support` holds each function of the support library of GCC.
+    """
+
+    owners: Mapping[str, Provider]
     support: frozenset[str]
 
 
@@ -391,6 +503,36 @@ def mark_of(symbol: str) -> str:
     return ALLOW if symbol in ALLOWLIST else RATCHET
 
 
+def libc_allowlist(library: str) -> frozenset[str]:
+    """Return the C runtime allowlist of a library by its target name (THE ALLOWLISTS)."""
+    return LIBC_ALLOWLISTS.get(library, TREE_ALLOWLIST)
+
+
+def mark_for(library: str, symbol: str, family: str, support: frozenset[str]) -> str:
+    """Return the mark of an import of a library from a provider of a family (THE MARKS).
+
+    `library` is the target name of the library, and `support` holds the functions of the support library of GCC.
+    The family is not sanitizer, because such an import has no row.
+    """
+    if family == LIBSTDCXX:
+        return mark_of(symbol)
+    if family == RUNTIME:
+        return LIBC_ALLOW if symbol in libc_allowlist(library) or symbol in support else LIBC_RATCHET
+    if family == CRT:
+        return CRT_ALLOW if symbol in CRT_ALLOWLIST and ATEXIT in libc_allowlist(library) else CRT_RATCHET
+    return STATIC_RATCHET if family == STATIC else HOST_RATCHET
+
+
+def entity_of(symbol: str, version: str) -> str:
+    """Return the entity of an import: SYMBOL@VERSION, or the name alone with no version (THE VERSIONS)."""
+    return f"{symbol}{VERSION_MARK}{version}" if version else symbol
+
+
+def is_linker_name(symbol: str) -> bool:
+    """Return True for a name that the linker makes itself (THE PROVIDERS)."""
+    return symbol in LINKER_NAMES or symbol.startswith(LINKER_PREFIXES)
+
+
 # ── The ledger ─────────────────────────────────────────────────────
 
 
@@ -411,7 +553,7 @@ def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
         if not key.path.startswith(LIBRARY_PREFIX) or not key.entity or not (is_symbol or is_admit):
             problems.append((entry.line, ROW_SHAPE))
     if rule_ledger.base_counts(ledger.base) and not ledger.configurations:
-        problems.append((0, "the ledger has symbol rows and no configuration row"))
+        problems.append((0, "the ledger has import rows and no configuration row"))
     for configuration in ledger.configurations:
         for key, count in ledger.expected(configuration.name).items():
             if count != 1 and key.kind != HELPER_THROW:
@@ -500,6 +642,7 @@ def read_artifact(path: Path) -> Artifact:
         undefined: dict[str, set[str]] = {}
         defined: list[tuple[str, str]] = []
         references: list[Reference] = []
+        exported: set[str] = set()
         for member in members:
             for symbol in member.symbols():
                 named += bool(symbol.name)
@@ -507,6 +650,8 @@ def read_artifact(path: Path) -> Artifact:
                     undefined.setdefault(symbol.name, set()).add(member.name)
                 elif symbol.is_defined:
                     defined.append((member.name, symbol.name))
+                    if not symbol.is_local:
+                        exported.add(symbol.name)
             references += [
                 Reference(live, symbol, member.name, thrown, function)
                 for live, symbol, thrown, function in member_references(member)
@@ -526,116 +671,177 @@ def read_artifact(path: Path) -> Artifact:
         {name: frozenset(items) for name, items in undefined.items()},
         tuple(references),
         tuple(defined),
+        frozenset(exported),
     )
 
 
-def runtime_file(compiler: str, name: str) -> Path:
-    """Return the ELF file of the runtime of the compiler that "COMPILER -print-file-name=NAME" names.
+def found_file(compiler: str, name: str) -> Path | None:
+    """Return the file that "COMPILER -print-file-name=NAME" names, or None when the compiler finds no such file.
 
     Raises:
-        runner.BuildError: If the compiler does not run, or it names no ELF file or archive.  A linker script, such as
-            libc.so, is no such file
+        runner.BuildError: If the compiler does not run
     """
     try:
         done = proc.require(proc.run(proc.Command([compiler, f"-print-file-name={name}"], timeout_s=proc.QUICK_S)))
     except proc.ToolFailed as problem:
         raise runner.BuildError(f"{compiler} does not name its {name}: {problem}") from None
     path = Path(done.out.strip())
-    if not path.is_absolute() or not path.is_file():
-        raise runner.BuildError(
-            f"{compiler} -print-file-name={name} gives {str(path)!r}, which is not a file.  The rule reads the "
-            f"runtime of the compiler of the build"
-        )
-    resolved = path.resolve()
-    with resolved.open("rb") as handle:
-        magic = handle.read(len(elf.ARCHIVE_MAGIC))
-    if not magic.startswith(elf.MAGIC) and magic != elf.ARCHIVE_MAGIC:
-        raise runner.BuildError(
-            f"{compiler} -print-file-name={name} gives {resolved}, which is not an ELF file or an archive.  The rule "
-            f"reads no linker script"
-        )
-    return resolved
+    return path.resolve() if path.is_absolute() and path.is_file() else None
 
 
-def defined_names(path: Path, is_shared: bool) -> frozenset[str]:
-    """Return the global names with a section of a file of the runtime.
-
-    A shared library gives its dynamic symbols, and an archive gives the symbols of each member.
+def is_archive(path: Path, shown: str) -> bool:
+    """Return True for an archive, and False for an ELF file.
 
     Raises:
-        runner.BuildError: If the ELF reader cannot read the file, or reads no such name from it
+        runner.BuildError: If the file is not an archive and not an ELF file, such as the linker script libc.so
     """
+    with path.open("rb") as handle:
+        magic = handle.read(len(elf.ARCHIVE_MAGIC))
+    if magic.startswith(elf.MAGIC):
+        return False
+    if magic == elf.ARCHIVE_MAGIC:
+        return True
+    raise runner.BuildError(
+        f"{shown} gives {path}, which is not an ELF file or an archive.  The rule reads no linker script"
+    )
+
+
+def runtime_file(compiler: str, name: str) -> Path:
+    """Return the ELF file or the archive of the runtime of the compiler that "COMPILER -print-file-name=NAME" names.
+
+    Raises:
+        runner.BuildError: If the compiler does not run, or it names no ELF file or archive.  A linker script, such as
+            libc.so, is no such file
+    """
+    path = found_file(compiler, name)
+    if path is None:
+        raise runner.BuildError(
+            f"{compiler} -print-file-name={name} names no file.  The rule reads the runtime of the compiler of the build"
+        )
+    is_archive(path, f"{compiler} -print-file-name={name}")
+    return path
+
+
+def read_provider(path: Path, is_shared: bool, family: str) -> Provider:
+    """Read one provider: the default version of each global name with a section of the file (THE VERSIONS).
+
+    A shared library gives its dynamic symbols, and a name with only hidden
+    versions is no name of the library.  An archive or an object gives the
+    symbols of each member, with no version.  A start file or an end file,
+    such as crtn.o, can give no global name.  Complexity: linear in the
+    symbols of the file.
+
+    Raises:
+        runner.BuildError: If the ELF reader cannot read the file, or reads no such name from a file that must give one
+    """
+    versions: dict[str, str] = {}
     try:
         if is_shared:
             with elf.mapped(path) as library:
-                names = frozenset(symbol.name for symbol in library.dynamic_symbols() if symbol.is_defined)
+                for symbol in library.dynamic_symbols():
+                    if symbol.is_defined and not symbol.is_local and not symbol.is_hidden_version:
+                        versions[symbol.name] = symbol.version
         else:
-            names = frozenset(
-                symbol.name
-                for member in elf.members(path)
-                for symbol in member.symbols()
-                if symbol.is_defined and not symbol.is_local
-            )
+            for member in elf.members(path):
+                versions.update(
+                    (symbol.name, "") for symbol in member.symbols() if symbol.is_defined and not symbol.is_local
+                )
     except (OSError, elf.ElfError) as problem:
         raise runner.BuildError(f"the symbols of {path} cannot be read: {problem}") from None
-    if not names:
+    if not versions and family != CRT:
         raise runner.BuildError(
-            f"the ELF reader reads no global name with a section from {path}, and the rule has no runtime to compare "
+            f"the ELF reader reads no global name with a section from {path}, and the rule has no provider to compare "
             f"with"
         )
-    return names
+    return Provider(path.name, family, versions)
 
 
-def libstdcxx_exports(compiler: str) -> frozenset[str]:
-    """Return the names that the libstdc++ of the compiler gives in its dynamic symbol table, with a section.
+def link_file(compiler: str, word: str) -> Path:
+    """Return the file of one library of a link line: a word -lNAME or an absolute path (THE PROVIDERS).
 
-    Raises:
-        runner.BuildError: If the compiler names no libstdc++.so, the file is not an ELF shared library, or the ELF
-            reader reads no such name
-    """
-    return defined_names(runtime_file(compiler, "libstdc++.so"), is_shared=True)
-
-
-def runtime_of(compiler: str) -> Runtime:
-    """Read the C runtime of the compiler: the files of RUNTIME_FILES and the dynamic loader.
-
-    The dynamic loader is the interpreter of libc.so.6.  Complexity: linear in the symbols of the files.
+    The compiler finds libNAME.so, else libNAME.a, for a word -lNAME.
 
     Raises:
-        runner.BuildError: If a file cannot be found or read, or libc.so.6 names no dynamic loader
+        runner.BuildError: If the compiler finds no file for the word, or the path is not a file
     """
-    files = [(runtime_file(compiler, name), is_shared) for name, is_shared in RUNTIME_FILES]
-    libc = files[0][0]
-    try:
-        loader = elf.interpreter(libc)
-    except (OSError, elf.ElfError) as problem:
-        raise runner.BuildError(f"the interpreter of {libc} cannot be read: {problem}") from None
-    if loader is None or not Path(loader).is_absolute() or not Path(loader).is_file():
+    if not word.startswith(runner.LIBRARY_FLAG):
+        given = Path(word)
+        if not given.is_file():
+            raise runner.BuildError(f"the link line names the library {word}, which is not a file")
+        return given
+    name = word.removeprefix(runner.LIBRARY_FLAG)
+    path = found_file(compiler, f"lib{name}.so") or found_file(compiler, f"lib{name}.a")
+    if path is None:
         raise runner.BuildError(
-            f"{libc} names no dynamic loader that is a file ({loader!r}).  The rule reads the loader for __tls_get_addr"
+            f"{compiler} finds no lib{name}.so and no lib{name}.a for the word {word} of a link line"
         )
-    files.insert(2, (Path(loader).resolve(), True))
-    owners: dict[str, str] = {}
-    support: set[str] = set()
-    for path, is_shared in files:
-        names = defined_names(path, is_shared)
-        for name in names:
-            owners.setdefault(name, path.name)
-        if path.name in SUPPORT_ARCHIVES:
-            support |= names
-    return Runtime(owners, frozenset(support))
+    return path
 
 
-def libc_mark_of(library: str, symbol: str, runtime: Runtime) -> str:
-    """Return `libc-allow` for a symbol of the allowlist of a library, else `libc-ratchet` (THE C RUNTIME SYMBOLS).
+def provider_files(compiler: str, links: Sequence[str]) -> list[tuple[Path, bool, str]]:
+    """Return each file of a provider, with its shared flag and its family, in the sequence of THE PROVIDERS.
 
-    `library` is the target name of the library: foundation, fixy or crucible.
+    Raises:
+        runner.BuildError: If a file of the compiler cannot be found, or libc.so.6 names no dynamic loader
     """
-    return LIBC_ALLOW if symbol in LIBC_ALLOWLISTS[library] or symbol in runtime.support else LIBC_RATCHET
+    files = [(runtime_file(compiler, LIBSTDCXX_FILE), True, LIBSTDCXX)]
+    runtime = {name: runtime_file(compiler, name) for name, _ in RUNTIME_FILES}
+    for name, is_shared in RUNTIME_FILES:
+        files.append((runtime[name], is_shared, RUNTIME))
+        if name == LOADER_AFTER:
+            libc = runtime[LIBC_FILE]
+            try:
+                loader = elf.interpreter(libc)
+            except (OSError, elf.ElfError) as problem:
+                raise runner.BuildError(f"the interpreter of {libc} cannot be read: {problem}") from None
+            if loader is None or not Path(loader).is_absolute() or not Path(loader).is_file():
+                raise runner.BuildError(
+                    f"{libc} names no dynamic loader that is a file ({loader!r}).  The rule reads the loader for "
+                    f"__tls_get_addr"
+                )
+            files.append((Path(loader), True, RUNTIME))
+    linked = [link_file(compiler, word) for word in links if word not in RUNTIME_WORDS]
+    archives = {path: is_archive(path, f"the link line of the build names {path}") for path in linked}
+    files += [(path, False, STATIC) for path in linked if archives[path]]
+    crt = [found_file(compiler, name) for name in CRT_FILES]
+    files += [(path, False, CRT) for path in crt if path is not None]
+    files += [(path, True, HOST) for path in linked if not archives[path]]
+    for name, is_shared in SANITIZER_FILES:
+        path = found_file(compiler, name)
+        if path is not None:
+            files.append((path, is_shared, SANITIZER))
+    return files
+
+
+def providers_of(compiler: str, links: Sequence[str]) -> Providers:
+    """Read the providers of a build: the runtime of the compiler and the libraries of the link lines.
+
+    `links` gives each library of a link line (runner.ElfContext.link_libraries).  A provider of the family sanitizer
+    owns a name only when no other provider gives it.  Complexity: linear in the symbols of the files.
+
+    Raises:
+        runner.BuildError: If a file cannot be found or read
+    """
+    owners: dict[str, Provider] = {}
+    support: set[str] = set()
+    sanitizers: list[Provider] = []
+    for path, is_shared, family in provider_files(compiler, links):
+        provider = read_provider(path, is_shared, family)
+        if family == SANITIZER:
+            sanitizers.append(provider)
+            continue
+        for name in provider.versions:
+            owners.setdefault(name, provider)
+        if path.name in SUPPORT_ARCHIVES:
+            support |= provider.versions.keys()
+    for provider in sanitizers:
+        for name in provider.versions:
+            owners.setdefault(name, provider)
+    return Providers(owners, frozenset(support))
 
 
 def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Mapping[str, str], frozenset[str]]:
-    """Read each static library of the root, and give the target name of each archive of a symbol library.
+    """Read each static library of the root, and give the target name of each archive.
 
     The third item holds the archives of the base libraries (BASE_LIBRARIES).
 
@@ -654,15 +860,16 @@ def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Map
     if unbuilt:
         raise runner.NotApplicable(f"the build has not made {', '.join(unbuilt)}.  Build the target all")
     artifacts = {path.name: read_artifact(path) for path in libraries.values()}
-    symbol_libraries = {libraries[name].name: name for name in SYMBOL_LIBRARIES if name in libraries}
-    empty = sorted(name for name in symbol_libraries if not artifacts[name].undefined)
+    targets = {path.name: name for name, path in libraries.items()}
+    importing = [libraries[name].name for name in IMPORTING_LIBRARIES if name in libraries]
+    empty = sorted(archive for archive in importing if not artifacts[archive].undefined)
     if empty:
         raise runner.BuildError(
             f"the ELF reader reads no undefined reference from {', '.join(empty)}, and the rule read nothing there.  "
             f"An archive that calls nothing is not an archive that uses no runtime symbol"
         )
     base_archives = frozenset(libraries[name].name for name in BASE_LIBRARIES if name in libraries)
-    return artifacts, symbol_libraries, base_archives
+    return artifacts, targets, base_archives
 
 
 # ── The findings ───────────────────────────────────────────────────
@@ -803,82 +1010,87 @@ def helper_findings(
     return found
 
 
-def libstdcxx_finding(archive: str, symbol: str, shown: str, used: str, write: str) -> check_report.Finding:
-    """Return the finding of one libstdc++ symbol of a symbol library (THE LIBSTDC++ SYMBOLS).
+def import_message(
+    archive: str, library: str, entity: str, provider: Provider, mark: str, shown: str, used: str
+) -> str:
+    """Return the message of one import of a library (THE MARKS).
 
-    `shown` is the demangled name, and `used` names the members that reference the symbol.
+    `library` is the target name of the archive, `mark` the mark of the import, `shown` its demangled name, and `used`
+    names the members that reference it.
     """
-    if mark_of(symbol) == ALLOW:
-        said = (
-            f"{archive} uses {shown} ({symbol}) in {used}, a symbol of the allowlist of plan section 13.4.  Write the "
-            f"ledger again: {write}"
+    if mark == ALLOW:
+        return f"{archive} uses {shown} in {used} ({entity}), a symbol of the allowlist of plan section 13.4"
+    if mark == RATCHET:
+        return (
+            f"{archive} uses the libstdc++ symbol {shown} in {used} ({entity}), of the class "
+            f"{classify(entity.partition(VERSION_MARK)[0])}.  A change can only remove a libstdc++ use (rule R5): use a "
+            f"type of fixy or foundation"
         )
-    else:
-        said = (
-            f"{archive} uses the libstdc++ symbol {shown} ({symbol}), of the class {classify(symbol)}, in {used}.  A "
-            f"change can only remove a libstdc++ use (rule R5): use a type of fixy or foundation"
-        )
-    return finding(f"{LIBRARY_PREFIX}{archive}", mark_of(symbol), symbol, said)
+    if mark in (LIBC_ALLOW, CRT_ALLOW):
+        return f"{archive} uses {entity} of {provider.label} in {used}, a symbol of the allowlist of {library}"
+    return (
+        f"{archive} uses the {provider.family} symbol {entity} of {provider.label} in {used}.  A change can only "
+        f"remove such a use (rule R5): call a door of fixy/os, or use a type of fixy or foundation"
+    )
 
 
-def libc_finding(
-    archive: str, library: str, symbol: str, runtime: Runtime, used: str, write: str
-) -> check_report.Finding:
-    """Return the finding of one C runtime symbol of a symbol library (THE C RUNTIME SYMBOLS).
-
-    `library` is the target name of the archive, and `used` names the members that reference the symbol.
-    """
-    mark = libc_mark_of(library, symbol, runtime)
-    owner = runtime.owners[symbol]
-    if mark == LIBC_ALLOW:
-        said = (
-            f"{archive} uses {symbol} of {owner} in {used}, a symbol of the allowlist of rule R5 for the library "
-            f"{library}.  Write the ledger again: {write}"
-        )
-    else:
-        said = (
-            f"{archive} uses the C runtime symbol {symbol} of {owner} in {used}.  A change can only remove a C "
-            f"runtime use (rule R5): call a door of fixy/os, or use a type of fixy or foundation"
-        )
-    return finding(f"{LIBRARY_PREFIX}{archive}", mark, symbol, said)
-
-
-def symbol_findings(
+def import_findings(
     artifacts: Mapping[str, Artifact],
-    symbol_libraries: Mapping[str, str],
-    exports: frozenset[str],
-    runtime: Runtime,
+    targets: Mapping[str, str],
+    providers: Providers,
     names: Mapping[str, str],
     build_shown: str,
-) -> list[check_report.Finding]:
-    """Return one finding for each runtime symbol of each symbol library.
+) -> tuple[list[check_report.Finding], list[check_report.Finding]]:
+    """Return the findings of the imports of each library, and the findings of the imports with no provider.
 
-    `symbol_libraries` gives the target name of each archive.  A name that libstdc++ exports is a libstdc++ symbol
-    (THE LIBSTDC++ SYMBOLS).  Each other name that a file of the C runtime gives is a C runtime symbol (THE C RUNTIME
-    SYMBOLS).  Complexity: linear in the undefined names of the archives.
+    `targets` gives the target name of each archive.  An import of a sanitizer runtime gives no finding (THE MARKS).
+    Complexity: linear in the undefined names of the archives.
     """
-    write = f"`python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
+    write = f"Write the ledger again: `python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
+    tree = frozenset().union(*(artifact.exported for artifact in artifacts.values()))
     found: list[check_report.Finding] = []
-    for archive in sorted(symbol_libraries):
+    unknown: list[check_report.Finding] = []
+    for archive in sorted(targets):
+        path = f"{LIBRARY_PREFIX}{archive}"
         for symbol, members in sorted(artifacts[archive].undefined.items()):
+            if symbol in tree or is_linker_name(symbol):
+                continue
             used = build_census.names_text(members)
-            if symbol in exports:
-                found.append(libstdcxx_finding(archive, symbol, names[symbol], used, write))
-            elif symbol in runtime.owners:
-                found.append(libc_finding(archive, symbol_libraries[archive], symbol, runtime, used, write))
-    return found
+            provider = providers.owners.get(symbol)
+            if provider is None:
+                said = (
+                    f"{archive} references {symbol} in {used}, and no provider of the build gives it: no library of "
+                    f"the root, no file of the runtime of the compiler and no library of a link line.  Put the "
+                    f"library that holds it on the link line, or remove the reference"
+                )
+                unknown.append(finding(path, UNKNOWN_PROVIDER, symbol, said))
+                continue
+            if provider.family == SANITIZER:
+                continue
+            mark = mark_for(targets[archive], symbol, provider.family, providers.support)
+            entity = entity_of(symbol, provider.versions[symbol])
+            said = import_message(archive, targets[archive], entity, provider, mark, names[symbol], used)
+            if mark not in RATCHET_MARKS:
+                said = f"{said}.  {write}"
+            found.append(finding(path, mark, entity, said))
+    return found, unknown
 
 
 def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
-    """Return the marks of the runtime symbols of each library, and the classes of its libstdc++ ratchet symbols."""
+    """Return the count of each mark of the imports of each library, and the classes of its libstdc++ ratchet symbols."""
     texts: list[str] = []
     for path in sorted({item.path for item in symbols}):
         marks = Counter(item.kind for item in symbols if item.path == path)
-        classes = Counter(classify(item.entity) for item in symbols if item.path == path and item.kind == RATCHET)
+        classes = Counter(
+            classify(item.entity.partition(VERSION_MARK)[0])
+            for item in symbols
+            if item.path == path and item.kind == RATCHET
+        )
         shown = ", ".join(f"{name} {classes[name]}" for name in CLASSES if classes[name]) or "none"
+        counted = ", ".join(f"{marks[mark]} {mark}" for mark in MARKS if marks[mark] and mark != RATCHET)
         texts.append(
-            f"{path.removeprefix(LIBRARY_PREFIX)} {marks[ALLOW]} allow and {marks[RATCHET]} ratchet ({shown}), "
-            f"{marks[LIBC_ALLOW]} libc-allow and {marks[LIBC_RATCHET]} libc-ratchet"
+            f"{path.removeprefix(LIBRARY_PREFIX)} {marks[RATCHET]} ratchet ({shown})"
+            + (f", {counted}" if counted else "")
         )
     return "; ".join(texts) or "none"
 
@@ -902,18 +1114,17 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
             f"the ledger cannot be read: {problem}",
         )
         return Examination((unread,), rule_ledger.empty(rule))
-    artifacts, symbol_libraries, base_archives = read_libraries(context)
+    artifacts, targets, base_archives = read_libraries(context)
     tier = context.tier()
     configuration = build_config.BuildConfiguration(
         kind, ((build_config.KIND_KEY, kind), (build_config.TIER_KEY, tier))
     )
     judged = build_config.judging(RULE, ledger, configuration)
-    exports = libstdcxx_exports(context.compiler())
-    runtime = runtime_of(context.compiler())
+    providers = providers_of(context.compiler(), context.link_libraries())
     wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
     wanted |= {reference.symbol for artifact in artifacts.values() for reference in artifact.references}
     wanted |= {symbol for artifact in artifacts.values() for _, symbol in artifact.defined}
-    wanted |= {symbol for name in symbol_libraries for symbol in artifacts[name].undefined if symbol in exports}
+    wanted |= {symbol for artifact in artifacts.values() for symbol in artifact.undefined}
     ordered = sorted(wanted)
     try:
         names = dict(zip(ordered, elf.demangle(ordered), strict=True))
@@ -923,20 +1134,20 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
     admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
     classes = class_findings(artifacts, names, admit_rows, counted, base_archives)
-    runtime_symbols = symbol_findings(artifacts, symbol_libraries, exports, runtime, names, context.build_shown())
+    imports, unknown = import_findings(artifacts, targets, providers, names, context.build_shown())
     helpers = helper_findings(artifacts, base_archives, names)
-    symbols = [*runtime_symbols, *helpers]
+    symbols = [*imports, *helpers]
     quiet = quiet_rows(admits, artifacts, names, {rule_ledger.key_of(item) for item in classes})
     view = replace(ledger, base={key: entry for key, entry in ledger.base.items() if key not in quiet})
     verdict = rule_ledger.compare(rule, view, [*classes, *symbols], judged.name)
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
         f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "
-        f"base), {len(runtime_symbols)} runtime symbols in {len(symbol_libraries)} libraries of {kind} on {tier}: "
-        f"{symbol_classes(runtime_symbols)}, judged against {judged.words}"
+        f"base), {len(imports)} imports of {kind} on {tier}: {symbol_classes(imports)}, judged against "
+        f"{judged.words}"
     )
     return Examination(
-        (*row_problems(ledger), *verdict),
+        (*row_problems(ledger), *unknown, *verdict),
         ledger,
         configuration,
         judged,
@@ -992,7 +1203,7 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the configuration and the symbol rows of the build (THE WRITE).
+    """Write the configuration and the import rows of the build (THE WRITE).
 
     Returns:
         0 when the ledger is written.  1 when the write refuses a symbol or the build cannot be read.  2 for the mode
@@ -1029,14 +1240,14 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         return 1
     name = configuration.name
     if target.name is None:
-        # A symbol row belongs to a configuration.  A ledger with no configuration then gets the build as its base.
+        # An import row belongs to a configuration.  A ledger with no configuration then gets the build as its base.
         base = rule_ledger.Configuration(name, configuration.facts)
         target = build_config.WriteTarget(replace(ledger, configurations=(base,)), name, False)
-    # A configuration that the write adds gets its symbols against each configuration (THE MAXIMUM).
+    # A configuration that the write adds gets its imports against each configuration (THE MAXIMUM).
     held = ledger.expected(rule_ledger.MAXIMUM) if target.is_added else ledger.expected(target.name)
     new_ratchet = sorted(key for key in examination.symbols if key.kind in RATCHET_MARKS and key not in held)
     for key in new_ratchet:
-        check_report.write_line(f"guard write: {key.path} gets the ratchet symbol {key.entity}", is_error=True)
+        check_report.write_line(f"guard write: {key.path} gets the {key.kind} import {key.entity}", is_error=True)
     risen = sorted(
         key for key, count in examination.symbols.items() if key.kind == HELPER_THROW and count > held.get(key, 0)
     )
@@ -1048,7 +1259,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         )
     if (new_ratchet or risen) and request.mode != rule_ledger.WriteMode.RAISE:
         check_report.write_line(
-            f"guard write: the ledger of {RULE} is not written: {len(new_ratchet)} new ratchet symbols and "
+            f"guard write: the ledger of {RULE} is not written: {len(new_ratchet)} new imports with a ratchet mark and "
             f"{len(risen)} risen counts of throw helpers.  Remove the uses.  Give --raise only for "
             f"{', for '.join(RAISE_REASONS)}, and give the reason in the commit",
             is_error=True,
@@ -1067,7 +1278,8 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     )
     rule_ledger.store(written, request.root)
     check_report.write_line(
-        f"guard write: wrote {len(examination.symbols)} symbol rows of {name} on {configuration.tier} to "
+        f"guard write: wrote {len(examination.symbols)} rows of imports and throw helpers of {name} on "
+        f"{configuration.tier} to "
         f"{rule_ledger.shown_path(RULE)}"
     )
     return 0

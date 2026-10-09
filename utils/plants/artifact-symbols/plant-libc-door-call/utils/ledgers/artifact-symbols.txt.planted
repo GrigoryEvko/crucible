@@ -3,4 +3,4 @@ format 1
 rule artifact-symbols
 configuration planted kind planted
 configuration planted tier planted
-@build/libcrucible.a | libc-allow | 1 | clock_gettime | -
+@build/libcrucible.a | libc-allow | 1 | clock_gettime@GLIBC_2.17 | -

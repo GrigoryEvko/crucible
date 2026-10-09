@@ -1,3 +1,4 @@
 # A polymorphic class with no downcast: a defined typeinfo and a defined vtable that no row admits.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp polymorphic.cpp

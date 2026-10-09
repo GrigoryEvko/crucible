@@ -1,9 +1,9 @@
 # A planted ledger: a throw row that names the object of the call of substr in the base library foundation, and
-# the runtime symbol of the planted configuration.  The rule judges the symbols of each build, so a control of the
-# throws holds its symbols too.
+# the import of the planted configuration.  The rule judges the imports of each build, so a control of the throws
+# holds its imports too.
 format 1
 rule artifact-symbols
 configuration planted kind planted
 configuration planted tier planted
-@build/libfoundation.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -
+@build/libfoundation.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz@GLIBCXX_3.4.20 | -
 @build/libfoundation.a | throw | admit | helper.cpp.o | a planted throw through a helper of libstdc++

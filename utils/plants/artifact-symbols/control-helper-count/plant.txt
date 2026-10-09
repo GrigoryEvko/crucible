@@ -1,4 +1,5 @@
 # A call of std::string_view::substr in a live function of the library crucible, outside the base, and a row
 # helper-throw that counts its reference to the helper std::__throw_out_of_range_fmt.
+library planted_tree externs.cpp
 library foundation base.cpp
 library crucible base.cpp helper.cpp
