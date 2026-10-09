@@ -1,0 +1,8 @@
+// The table of the plant gives this file the enforce mode error.  The finding
+// in the region is opted-out and no error, and a unit with no report gives it
+// a note.  The region gives a note at the use of its begin macro.
+#include <foundation/Quarantine.h>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test needs a raw pointer")
+int* opted_pointer = nullptr;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

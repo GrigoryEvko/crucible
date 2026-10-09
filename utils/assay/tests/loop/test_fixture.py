@@ -1373,11 +1373,11 @@ class StoreTest:
 
         neg_no_region holds a raw array with no region, and its census holds
         the finding of the array.  neg_region holds the same array inside a
-        region, and its census holds no such finding.  The planted rule table
-        gives neg/ the enforce mode error, and the plugin gives no diagnostic
-        of an opted-out finding there.  A planted copy of the header with
-        macros that give nothing makes the census of the region fixture hold
-        the finding.  No finding fails a fixture.
+        region, and its census holds the opted-out finding and the region.
+        The planted rule table gives neg/ the enforce mode error, and the
+        plugin gives a note of an opted-out finding there too.  A planted copy
+        of the header with macros that give nothing makes the census of the
+        region fixture hold the finding.  No finding fails a fixture.
         """
         if not self.plant_plugin_tree():
             return
@@ -1389,6 +1389,11 @@ class StoreTest:
                         and self.has_census(fixture, "c-array-object", line, "raw_values") == is_found,
                         f"the census of {fixture} {'holds' if is_found else 'does not hold'} the array at line {line}: "
                         f"{result[0]} {stamp} {census} {result[1]}")
+        _, census = self.census_of("neg_region")
+        kinds = sorted(item[0] for item in census or ())
+        self.expect(self.has_census("neg_region", "opted-out", 4, "c-array-object raw_values")
+                    and kinds == ["opted-out", "region"],
+                    f"the census of neg_region holds the opted-out finding and its region: {census}")
 
 
 CHECKS: tuple[Callable[[StoreTest], None], ...] = (

@@ -1466,6 +1466,7 @@ struct Region {
     int begin_line = 0;
     int end_line = 0;  // zero while the region is open
     location_t begin = UNKNOWN_LOCATION;
+    location_t use = UNKNOWN_LOCATION;  // the use of the begin macro in the file, at begin_line
     std::string reason;
 };
 

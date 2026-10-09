@@ -235,10 +235,11 @@ def comparison_cases(expect: testing.Expect) -> None:
         == [("unit.cpp:8", "the 'pre' contract specifier is not permitted in this tree")],
     )
     expect(
-        "derived_notes() gives a note for each finding of the rule quarantine, also an opted-out one",
+        "derived_notes() gives a note for each finding of the rule quarantine, also an opted-out one and a region",
         witness.derived_notes([finding(3), contract, region, opted])
         == [
             ("unit.cpp:3", "quarantine: std-object std::vector"),
+            ("unit.cpp:5", "quarantine: region PROBE: a reason"),
             ("unit.cpp:6", "quarantine: opted-out raw-pointer-object int*"),
         ],
     )
@@ -309,6 +310,7 @@ def judgement_cases(expect: testing.Expect) -> None:
     section = sections.Section("00ab", findings)
     notes = (
         ("unit.cpp:3", "quarantine: std-object std::vector (std::vector<int>)"),
+        ("unit.cpp:5", "quarantine: region PROBE: a reason"),
         ("unit.cpp:6", "quarantine: opted-out raw-pointer-object int*"),
         ("other.cpp:2", "quarantine: c-library-call memset"),
     )

@@ -5,3 +5,15 @@ compile report enforced.cpp
 exit report fail
 finding report quarantine raw-pointer-object enforced.cpp:4:6 | enforced_pointer
 error report enforced.cpp:4 | quarantine: raw-pointer-object enforced_pointer;
+
+# A finding in a region of a file of the mode error is no error.  The report
+# holds the opted-out finding and the region.
+compile region-report enforced_region.cpp
+exit region-report pass
+finding region-report quarantine region enforced_region.cpp:6:1 | PROBE: the test needs a raw pointer
+finding region-report quarantine opted-out enforced_region.cpp:7:6 | raw-pointer-object opted_pointer
+
+# A unit with no report and no object gives a note for the opted-out finding
+# also in a file of the mode error, and a note for the region.
+compile region-notes enforced_region.cpp out=no stage=syntax notes=region-report
+exit region-notes pass

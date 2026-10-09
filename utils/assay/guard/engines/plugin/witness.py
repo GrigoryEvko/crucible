@@ -108,8 +108,9 @@ THE DERIVED DIAGNOSTICS
     The key notes=OTHER says that each finding row of OTHER gives a note
     "quarantine: KIND ENTITY" at its location, other than a finding of the
     rules of EACH_MODE_RULES, which give an error in each mode.  A region
-    line is no finding and gives no diagnostic.  OTHER has the root ".", and
-    its paths are paths of the tree.
+    line is no finding.  It gives the note "quarantine: region REASON" at the
+    macro that opens the region, on the line of the region line.  OTHER has
+    the root ".", and its paths are paths of the tree.
 
 THE TABLES
     The quarantine plugin and assay.core.ruletable read the rule table, and
@@ -728,14 +729,14 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
 
 
 def derived_notes(findings: Iterable[plugin_sections.Finding]) -> list[tuple[str, str]]:
-    """Return the note of each finding that the mode report makes a note, also of each opted-out one.
+    """Return the note of each finding that the mode report makes a note, also of each opted-out one and each region.
 
     The rules of EACH_MODE_RULES give an error in each mode and no note (THE DERIVED DIAGNOSTICS).
     """
     return [
         (f"{finding.file}:{finding.line}", f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity}")
         for finding in findings
-        if finding.kind != REGION and finding.rule not in EACH_MODE_RULES
+        if finding.rule not in EACH_MODE_RULES
     ]
 
 

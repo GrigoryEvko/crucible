@@ -183,7 +183,7 @@ Complexity: linear in the finding lines of the build, and O(k log k) for k rows 
 
 import bisect
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import configuration as build_config
@@ -290,9 +290,8 @@ def reasons_of(census: runner.Census) -> tuple[dict[quarantine_sections.Finding,
     for item in census.of_rule(RULE):
         if item.kind != OPTED_OUT:
             continue
-        starts = census.regions.get(item.file, ())
-        index = bisect.bisect_right(starts, (item.line, LAST_CHARACTER)) - 1
-        if index < 0:
+        reason = reason_at(census.regions.get(item.file, ()), item.line)
+        if reason is None:
             problems.append(
                 check_report.Finding(
                     "error",
@@ -305,8 +304,19 @@ def reasons_of(census: runner.Census) -> tuple[dict[quarantine_sections.Finding,
                 )
             )
             continue
-        reasons[item] = starts[index][1]
+        reasons[item] = reason
     return reasons, problems
+
+
+def reason_at(starts: Sequence[tuple[int, str]], line: int) -> str | None:
+    """Return the reason of the region with the last first line at or before `line`, or None with no such region.
+
+    `starts` holds the first line and the reason of each region of one file, in sorted sequence (THE OPT-OUT
+    REGIONS).  The rule fixture-quarantine gives each opted-out finding of a census its reason with it too.
+    Complexity: O(log r) for r regions.
+    """
+    index = bisect.bisect_right(starts, (line, LAST_CHARACTER)) - 1
+    return starts[index][1] if index >= 0 else None
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:

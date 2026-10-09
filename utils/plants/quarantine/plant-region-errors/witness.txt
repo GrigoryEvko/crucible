@@ -42,6 +42,7 @@ compile code-on-lines code_on_region_lines.cpp out=no
 exit code-on-lines fail
 error code-on-lines code_on_region_lines.cpp:4 | write 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' alone on its line
 error code-on-lines code_on_region_lines.cpp:6 | write 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' alone on its line
+note code-on-lines code_on_region_lines.cpp:4 | quarantine: region PROBE: a region with code before its begin
 
 compile language language_region.cpp out=no
 exit language fail
@@ -65,6 +66,7 @@ compile end-wrapper region_end_wrapper.cpp out=no
 exit end-wrapper fail
 error end-wrapper region_end_wrapper.cpp:8 | the macro 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' is used inside another macro
 error end-wrapper {repo}/include/foundation/Quarantine.h:* | this 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region has no 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING'
+note end-wrapper region_end_wrapper.cpp:10 | quarantine: region PROBE: a region that a macro closes
 note end-wrapper region_end_wrapper.cpp:11 | quarantine: opted-out raw-pointer-object inside_pointer
 
 compile leaked opt_out.cpp plugin=no stage=syntax

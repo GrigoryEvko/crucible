@@ -65,7 +65,10 @@ The quarantine plugin
 Each compile of the tree loads the quarantine plugin, and the compile of a
 fixture keeps it.  The driver sets the plugin argument mode= to report
 (`_report_mode`).  A finding is then a note, and a finding in a file of the
-enforce mode error is an error.  A fixture stops on its own error, and the
+enforce mode error is an error.  An opted-out finding is a note in each file.
+Each region of the unit is a note too, at the macro that opens it.  The
+census then gives each opted-out finding the reason of its region.  A
+fixture stops on its own error, and the
 compile writes no object.  The plugin then gives each finding as a result
 "quarantine: KIND ENTITY" of the SARIF log (assay.readers.sarif, THE
 DIAGNOSTICS OF THE PLUGIN).

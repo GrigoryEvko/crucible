@@ -400,6 +400,19 @@ def unit_cases(expect: testing.Expect) -> None:
         == "PROBE: a region | std-object std::vector"
         and quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )
+    starts = [(4, "PROBE: one"), (9, "ABI: two")]
+    expect(
+        "reason_at() gives the reason of the region with the last first line at or before a line, and None before "
+        "each region",
+        (
+            quarantine.reason_at(starts, 4),
+            quarantine.reason_at(starts, 8),
+            quarantine.reason_at(starts, 30),
+            quarantine.reason_at(starts, 3),
+            quarantine.reason_at([], 5),
+        )
+        == ("PROBE: one", "PROBE: one", "ABI: two", None, None),
+    )
     expect(
         "the stamp of a compile command is the value of the plugin argument stamp=",
         (

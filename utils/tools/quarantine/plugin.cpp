@@ -62,7 +62,11 @@
 //                    scope include decides an include kind, and the mode of
 //                    the scope all decides each other kind (EnforceRow in
 //                    plugin.h)
-//     mode=error     each finding that no region opts out is an error
+//     mode=error     each finding that no region opts out is an error.  In
+//                    each mode, a unit with no section and no report file
+//                    gives a note for each opted-out finding, and for each
+//                    region at the use of its begin macro
+//                    (assay.readers.sarif, THE DIAGNOSTICS OF THE PLUGIN)
 //     out=DIR        also write the report of the unit to a file in DIR
 //     stamps=DIR     the directory of the mode stamps (THE DEPENDENCIES)
 //     stamp=TEXT     the head line of the section holds it; a new value makes
@@ -504,15 +508,21 @@ void report(bool can_add_dependencies) {
                      "quarantine: %s %s; use a type or an entity of fixy or foundation.  A region of %qs is "
                      "only for a reason class of CLAUDE.md section XXII",
                      kind.c_str(), entity.c_str(), kBeginMacro);
-        } else if (!is_error && state.out_dir.empty() && !has_section) {
+        } else if ((is_out || !is_error) && state.out_dir.empty() && !has_section) {
+            // An opted-out finding is no error in each mode, and a unit with
+            // no report gives it a note also in a file of the mode error.
             inform(finding.spelling, "quarantine: %s %s", kind.c_str(), entity.c_str());
         }
     }
     // Each region, for the ledger of the rule quarantine.  A region is no
-    // finding.
+    // finding.  A unit with no report gives a note for each region too, so
+    // that a census of the notes gives each opted-out finding its reason.
     for (const Region& region : state.regions) {
         lines.push_back(report_line(rule_name(Rule::quarantine), kRegionKind, *region.file, region.begin_line, 1,
                                     region.reason));
+        if (state.out_dir.empty() && !has_section) {
+            inform(region.use, "quarantine: %s %s", kRegionKind, region.reason.c_str());
+        }
     }
     if (has_section) {
         write_section(lines);

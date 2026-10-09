@@ -13,7 +13,9 @@
 // error in each build.  A finding inside a region is reported as opted-out and
 // is not an error.  The report gives each region of the unit a line of the
 // kind region, and the ledger of the rule quarantine counts the regions of
-// each file and reason.
+// each file and reason.  A unit that writes no report and no section gives
+// each region a note at the use of its begin macro, so that a census of the
+// notes gives each opted-out finding the reason of its region.
 
 #include "plugin.h"
 
@@ -237,6 +239,7 @@ void handle_begin_pragma(cpp_reader*) {
     region.file = place.file;
     region.begin_line = place.line;
     region.begin = location;
+    region.use = expansion;
     region.reason = std::move(reason);
     state.regions.push_back(std::move(region));
 }

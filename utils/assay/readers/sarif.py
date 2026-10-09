@@ -39,8 +39,12 @@ THE DIAGNOSTICS OF THE PLUGIN
     The quarantine plugin of utils/tools/quarantine/ gives each finding as a
     result with the message "quarantine: KIND ENTITY", when the compile
     writes no object and no report.  A note of the mode report has no more
-    text.  An error adds "; " and its advice.  is_plugin_result() finds such a
-    result, and plugin_finding() gives its kind and its entity.
+    text.  An error adds "; " and its advice.  An opted-out finding is a note
+    in each mode, with the kind opted-out.  Each opt-out region is a note
+    "quarantine: region REASON" at the macro that opens it.  A reader then
+    gives each opted-out finding the reason of its region.
+    is_plugin_result() finds such a result, and plugin_finding() gives its
+    kind and its entity.
 
     The plugin names the file of a finding by the path of `realpath()` (THE
     FILES of utils/tools/quarantine/plugin.h).  GCC names the file of the

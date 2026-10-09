@@ -9,9 +9,11 @@ THE CENSUS
     record of each one (assay.core.record).  It counts the findings of the
     kinds of the rule quarantine of the registry, each finding one time.  The
     entity of a row is the entity of the rule quarantine (THE ENTITY of
-    assay.guard.engines.plugin.quarantine).  The log of a compile holds no
-    region of the plugin.  The row of an opted-out finding then holds the kind
-    and the entity of the finding in the region, and no reason.
+    assay.guard.engines.plugin.quarantine).  The census holds each region of
+    the source, with its first line and its reason.  The region of an
+    opted-out finding is the region with the last first line at or before its
+    line.  The row of the finding holds the reason of that region, as in the
+    rule quarantine (THE OPT-OUT REGIONS of that module).
 
 THE PROBLEMS
     A fixture with a compile command that loads no quarantine plugin has no
@@ -23,6 +25,8 @@ THE PROBLEMS
       * the census holds a stamp that is not the stamp argument of the compile
         command of the fixture.  The plugin, the rule table or the configure
         changed after the run
+      * the census holds an opted-out finding with no region at or before its
+        line
       * the record cannot be read.
     Each problem is an error, and `guard write` writes no ledger with one.
     The rule does not apply when no compile command of a fixture loads the
@@ -246,16 +250,15 @@ def read_fixtures(root: Path, build_dir: Path | None) -> tuple[FixtureFacts, ...
     return tuple(facts)
 
 
-def entity_of(kind: str, entity: str) -> str:
+def entity_of(kind: str, entity: str, reason: str) -> str:
     """Return the entity of the row of one finding of a census (THE CENSUS).
 
-    An opted-out finding gives the kind and the entity of the finding in its region.  Each other kind gives the entity
-    of the rule quarantine.
+    An opted-out finding gives the reason of its region, and the kind and the entity of the finding in it.  Each other
+    kind gives the entity of the rule quarantine, and `reason` has no effect.
     """
     if kind != quarantine.OPTED_OUT:
         return quarantine.entity_key(kind, entity)
-    inner, _, rest = " ".join(entity.split()).partition(" ")
-    return quarantine.joined(inner, quarantine.entity_key(inner, rest))
+    return quarantine.opted_out_key(reason, entity)
 
 
 def problem_of(item: FixtureFacts, build_shown: str) -> str:
@@ -316,12 +319,28 @@ def census_of(fixtures: Sequence[FixtureFacts], kinds: frozenset[str], build_sho
         if problem:
             found.append(check_report.Finding("error", item.source, 0, RULE, problem))
             continue
-        for kind, line, column, entity in item.census or ():
+        census = item.census or ()
+        starts = sorted((line, entity) for kind, line, _, entity in census if kind == quarantine.REGION)
+        for kind, line, column, entity in census:
             if kind.partition(":")[0] not in kinds:
                 continue
             text = f"{kind} {item.source}:{line}:{column} {entity}"
-            found.append(check_report.Finding("error", item.source, line, RULE, text, kind, entity_of(kind, entity)))
+            reason = quarantine.reason_at(starts, line) if kind == quarantine.OPTED_OUT else ""
+            if reason is None:
+                found.append(check_report.Finding("error", item.source, line, RULE, no_region_problem(item, text)))
+                continue
+            found.append(
+                check_report.Finding("error", item.source, line, RULE, text, kind, entity_of(kind, entity, reason))
+            )
     return FixtureCensus(len(counted_fixtures) - len(missing), tuple(found))
+
+
+def no_region_problem(item: FixtureFacts, text: str) -> str:
+    """Return the problem of an opted-out finding of a census with no region at or before its line (THE PROBLEMS)."""
+    return (
+        f"the census of the fixture {item.name} holds the opted-out finding {text!r}, and no region of the source at "
+        f"or before its line.  The plugin gives a note for each region of a unit with no report: run the fixture again"
+    )
 
 
 def findings(context: FixtureContext) -> list[check_report.Finding]:

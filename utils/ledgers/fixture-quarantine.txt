@@ -18,9 +18,9 @@
 #                                  The number of findings of the kind KIND and the entity ENTITY in
 #                                  the source FILE of a fixture, in the base configuration.  THE
 #                                  ENTITY of utils/assay/guard/engines/plugin/quarantine.py gives the
-#                                  entity of each kind.  The log of a compile holds no region, so an
-#                                  opted-out row holds the kind and the entity of the finding in the
-#                                  region, and no reason.  A kind with no entity has the cell "-".
+#                                  entity of each kind.  An opted-out row holds the reason of its
+#                                  region, and the kind and the entity of the finding in it, as in
+#                                  utils/ledgers/quarantine.txt.  A kind with no entity has the cell "-".
 #   @NAME | FILE | KIND | DELTA | ENTITY | -
 #                                  The count of the configuration NAME, as a difference from the
 #                                  base count (+N or -N).

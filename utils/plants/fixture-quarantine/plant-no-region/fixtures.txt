@@ -1,0 +1,8 @@
+# The census of neg_beta holds an opted-out finding and no region of the source at or before its line.  The region
+# of line 6 opens after the finding.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | c-library-call | 7 | abort
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values
+finding neg_beta | region | 6 | PROBE: a planted reason
