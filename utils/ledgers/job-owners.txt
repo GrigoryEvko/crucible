@@ -96,8 +96,6 @@ utils/assay/readers/tsast.py | print | 3 | _self_test | A use of today.  The cha
 utils/assay/readers/tsast.py | print | 1 | _self_test.check | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/tsast.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/setup/gcc.py | git | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/setup/gcc.py | print | 11 | build | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/setup/gcc.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/setup/install.py | print | 1 | export_github_path | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/setup/install.py | print | 2 | fetched | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/setup/install.py | print | 4 | install | A use of today.  The change that calls the owner of the job lowers the count

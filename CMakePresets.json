@@ -89,6 +89,28 @@
       }
     },
     {
+      "name": "syntax-x86-64-v3",
+      "inherits": "default",
+      "displayName": "GCC 16, -march=x86-64-v3, parse only: the AVX2 arms for the quarantine ledgers (loop syntax)",
+      "binaryDir": "${sourceDir}/build-syntax-x86-64-v3",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
+        "CRUCIBLE_SYNTAX_ONLY": "ON"
+      }
+    },
+    {
+      "name": "syntax-aarch64",
+      "inherits": "default",
+      "displayName": "Cross GCC 16 for aarch64, parse only: the aarch64 arms for the quarantine ledgers (loop syntax)",
+      "binaryDir": "${sourceDir}/build-syntax-aarch64",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchain-gcc16-aarch64.cmake",
+        "_comment_bpf": "include/crucible/perf/bpf/vmlinux.h holds the kernel types of x86_64, and clang cannot compile a BPF program of aarch64 with it",
+        "CRUCIBLE_HAVE_BPF": "OFF",
+        "CRUCIBLE_SYNTAX_ONLY": "ON"
+      }
+    },
+    {
       "name": "ubsan-strict",
       "inherits": "default",
       "displayName": "GCC 16 + full UBSan on every target, signed overflow undefined",

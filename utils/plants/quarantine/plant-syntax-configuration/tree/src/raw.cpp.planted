@@ -1,0 +1,15 @@
+// A quarantined unit of src/ with one call of close in an arm that only a
+// compile for x86-64-v3 compiles: the arm needs AVX2 and no AVX-512.
+#include <unistd.h>
+
+namespace planted {
+
+int release(int descriptor) {
+#if defined(__AVX2__) && !defined(__AVX512BW__)
+    return ::close(descriptor);
+#else
+    return descriptor;
+#endif
+}
+
+}  // namespace planted

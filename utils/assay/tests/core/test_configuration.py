@@ -16,6 +16,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import testing
+from assay.readers import cmake
 
 RULE = "quarantine"
 KIND = "c-library-call"
@@ -68,6 +69,19 @@ def cache_cases(expect: testing.Expect) -> None:
             expect("a build with no build-kind.txt is a ConfigurationError", False)
         except build_config.ConfigurationError as problem:
             expect("a build with no build-kind.txt is a ConfigurationError", "build-kind.txt" in str(problem))
+        expect("a build with no CMake cache is no parse build", not build_config.is_parse_build(Path(work)))
+        cmake.plant(Path(work), cache={build_config.SYNTAX_OPTION: ("BOOL", "ON")})
+        expect("a build whose cache sets the syntax option is a parse build", build_config.is_parse_build(Path(work)))
+        cmake.plant(Path(work), cache={build_config.SYNTAX_OPTION: ("BOOL", "OFF")})
+        expect(
+            "a build whose cache clears the syntax option is no parse build",
+            not build_config.is_parse_build(Path(work)),
+        )
+    expect(
+        "the syntax option is a key and a word of the name",
+        build_config.SYNTAX_OPTION in build_config.CONFIGURATION
+        and ("syntax", build_config.SYNTAX_OPTION) in build_config.NAME_OPTIONS,
+    )
 
 
 def judging_cases(expect: testing.Expect) -> None:

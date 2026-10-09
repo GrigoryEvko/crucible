@@ -1,0 +1,7 @@
+# A planted pin table whose package of a cross target is a git source, which `setup gcc --target` cannot unpack.
+format 1
+pin cmake via=archive version=4.4.2 platform=linux-aarch64 source=https://example.invalid/cmake-aarch64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
+pin cmake via=archive version=4.4.2 platform=linux-x86_64 source=https://example.invalid/cmake-x86_64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
+pin gcc via=git version=16.2.1 source=https://github.com/gcc-mirror/gcc.git commit=0000000000000000000000000000000000000000 | a planted pin of the compiler
+pin python via=host version=3.14 | a planted minimum version of Python
+pin sysroot-aarch64 via=git version=2.43 source=https://example.invalid/glibc.git commit=0000000000000000000000000000000000000000 | a planted package of a cross target that is no archive

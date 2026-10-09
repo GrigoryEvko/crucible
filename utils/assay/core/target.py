@@ -136,8 +136,20 @@ def build_tier(build_dir: Path, compiler: str, commands: Iterable[str] = ()) -> 
     """
     base = target_tier(compiler, target_flags(build_dir))
     natives = sorted({word for command in commands for word in command.split() if word in NATIVE_FLAGS})
-    extra = sorted({tier for tier in (target_tier(compiler, [flag]) for flag in natives) if tier != base})
+    extra = sorted({tier for tier in (native_tier(compiler, flag) for flag in natives) if tier not in ("", base)})
     return "+".join([base, *extra])
+
+
+def native_tier(compiler: str, flag: str) -> str:
+    """Return the tier of one native flag, or an empty text when the compiler refuses the flag.
+
+    A cross compiler has no native target, and `loop syntax` drops each native flag of its compiles.  A compiler that
+    refuses a native flag then adds no tier.
+    """
+    try:
+        return target_tier(compiler, [flag])
+    except TierError:
+        return ""
 
 
 def not_held(check: str, what: str, tier: str, held: Iterable[tuple[str, str]], consequence: str,
@@ -245,6 +257,15 @@ def self_test() -> int:
         release_tier = build_tier(scratch, str(compiler), ["g++ -O3 -march=native -c bench.cpp"])
         expect("a native flag of the build flags adds no second tier", release_tier.startswith("znver5-")
                and "+" not in release_tier, release_tier)
+        cross = scratch / "cross-g++"
+        cross.write_text(f"#!{sys.executable}\nimport sys\n"
+                         f"sys.exit(1) if '-march=native' in sys.argv else print({AARCH64_HELP!r})\n",
+                         encoding="utf-8")
+        cross.chmod(0o755)
+        cmake.plant(scratch, cache={"CMAKE_BUILD_TYPE": ("STRING", "Debug"), "CMAKE_CXX_FLAGS": ("STRING", "")})
+        cross_tier = build_tier(scratch, str(cross), ["g++ -O3 -march=native -c bench.cpp"])
+        expect("a compiler that refuses a native flag adds no tier for it", cross_tier == tier_of(AARCH64_HELP),
+               cross_tier)
     log = ("build+test aarch64 / default\tQuarantine ratchet\t2026-10-02T21:00:00Z check-row: kind | a | b\n"
            "noise\ncheck-row: k | lib.a | allow | abi | __cxa_guard_acquire | x\n")
     expect("rows_in_log reads each row after its prefix",

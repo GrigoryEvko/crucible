@@ -19,6 +19,8 @@ THE ROWS OF THE TABLE (the rule tool-pins of utils/registry.txt)
                         that stopped (NAME-VERSION.partial)
       oracle-source     the pins of assay.oracle.sources.SOURCES: the row is a
                         git source on GitHub or an archive
+      cross-package     the pins of assay.setup.gcc.CROSS_PINS: the row is an
+                        archive with a source and a sha256 field
     A row with no holder is an error, and a new pin then gets a check before
     it lands.  Only the row of this host gets the check of its holder.  The
     rows of cmake give one version for each platform.  THE CHECK OF A BUILD
@@ -367,6 +369,7 @@ class Holder(enum.StrEnum):
     HOST = "host"
     ORACLE_TOOLCHAIN = "oracle-toolchain"
     ORACLE_SOURCE = "oracle-source"
+    CROSS_PACKAGE = "cross-package"
 
 
 # The pin of the minimum version of Python, which each master holds (assay.core.pins).
@@ -400,6 +403,8 @@ def holder(name: str) -> Holder | None:
         return Holder.ORACLE_TOOLCHAIN
     if name in sources.SOURCES:
         return Holder.ORACLE_SOURCE
+    if name in gcc.CROSS_PINS:
+        return Holder.CROSS_PACKAGE
     return None
 
 
@@ -504,6 +509,14 @@ def oracle_source_findings(pin: pin_table.Pin) -> list[check_report.Finding]:
     return []
 
 
+def cross_package_findings(pin: pin_table.Pin) -> list[check_report.Finding]:
+    """Check that a pin of a package of a cross target is an archive with a source and a SHA-256 (assay.setup.gcc)."""
+    if pin.via == pin_table.Via.ARCHIVE and pin.source and pin.digest:
+        return []
+    return [row_error(pin, "cross-package", f"the pin {pin.name} is a package of a cross target, and `setup gcc "
+                                            f"--target` unpacks only an archive with a source and a sha256 field")]
+
+
 def check_table(request: TableCheck) -> list[check_report.Finding]:
     """Hold each row of the pin table to its holder (THE ROWS OF THE TABLE), and give each error.
 
@@ -546,6 +559,8 @@ def check_table(request: TableCheck) -> list[check_report.Finding]:
             findings += oracle_toolchain_findings(pin, oracle_root)
         elif kind == Holder.ORACLE_SOURCE:
             findings += oracle_source_findings(pin)
+        elif kind == Holder.CROSS_PACKAGE:
+            findings += cross_package_findings(pin)
     if request.build_dir is not None:
         try:
             findings += build_findings(read_pin(table), request.build_dir, request.proc_root, request.pid)

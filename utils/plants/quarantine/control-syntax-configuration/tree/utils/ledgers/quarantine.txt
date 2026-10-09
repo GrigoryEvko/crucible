@@ -1,0 +1,8 @@
+# The ledger of the control.  The base configuration counts no finding of
+# src/raw.cpp, and the configuration of the parse build for x86-64-v3 counts
+# the one call of close of the arm.
+format 1
+rule quarantine
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan-syntax kind x86_64-debug-asan-syntax
+@x86_64-debug-asan-syntax | src/raw.cpp | c-library-call | +1 | close | -

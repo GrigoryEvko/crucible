@@ -20,6 +20,14 @@ THE OBJECT
     the package names the section, and the rule structured-reads refuses each
     other read of it.
 
+THE REPORT OF A PARSE BUILD
+    A build of a configuration that only parses has no object (`loop syntax`,
+    CRUCIBLE_SYNTAX_ONLY).  Its driver gives each unit the report directory
+    report_directory(): SYNTAX_DIRECTORY, and then the path of the object
+    below the build directory.  The plugin writes one report file there.  The
+    driver writes the stamp of the compile command of the unit into the file
+    STAMP_FILE of the same directory.  read_report() reads the two.
+
 `guard sections OBJECT...` prints the finding lines of objects, and `guard
 selftest tests.readers.test_sections` does the test of the module.
 """
@@ -44,6 +52,12 @@ NOT_FINDINGS = frozenset((OPTED_OUT, REGION))
 # The spelling of a rule and of a kind of a finding line (parse_line).
 RULE = re.compile(r"[a-z][a-z0-9-]*")
 KIND = re.compile(r"[a-z][a-z0-9-]*(:\S+)?")
+# The directory of a parse build that holds the report directory of each unit (THE REPORT OF A PARSE BUILD).
+SYNTAX_DIRECTORY = Path("quarantine") / "syntax"
+# The file of a report directory that holds the stamp of the compile command of its unit.
+STAMP_FILE = "stamp"
+# The suffix of a report file of the plugin argument out=.
+REPORT_SUFFIX = ".quarantine"
 
 
 class SectionError(ValueError):
@@ -131,6 +145,36 @@ def read(path: str | os.PathLike[str]) -> Section | None:
     except elf.ElfError as problem:
         raise SectionError(str(problem)) from None
     return parse_section(b"".join(parts), os.fspath(path)) if parts else None
+
+
+def report_directory(build_dir: Path, object_path: str | os.PathLike[str]) -> Path:
+    """Return the report directory of one object of a parse build (THE REPORT OF A PARSE BUILD)."""
+    return build_dir / SYNTAX_DIRECTORY / os.path.relpath(object_path, build_dir)
+
+
+def read_report(directory: Path) -> Section | None:
+    """Return the findings of the one report file of a report directory and the stamp of that directory.
+
+    The result is None when the directory holds no stamp or no report file.  A line of the report that starts with #
+    is a comment.  Complexity: linear in the length of the report.
+
+    Raises:
+        SectionError: If the directory holds more than one report file, or a line does not have the format
+        OSError: If a file cannot be read
+    """
+    stamp_path = directory / STAMP_FILE
+    reports = sorted(directory.glob(f"*{REPORT_SUFFIX}")) if directory.is_dir() else []
+    if not stamp_path.is_file() or not reports:
+        return None
+    if len(reports) > 1:
+        raise SectionError(f"{directory} holds {len(reports)} report files, and a unit writes one")
+    lines = reports[0].read_text(encoding="utf-8").splitlines()
+    findings = tuple(
+        parse_line(line, f"{reports[0]}: line {number}")
+        for number, line in enumerate(lines, start=1)
+        if line and not line.startswith("#")
+    )
+    return Section(stamp_path.read_text(encoding="utf-8").strip(), findings)
 
 
 def print_objects(paths: list[str]) -> ExitCode:

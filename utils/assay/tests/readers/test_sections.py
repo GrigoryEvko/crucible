@@ -137,6 +137,29 @@ def object_cases(expect: testing.Expect) -> None:
         expect("the command fails for an object with no section", absent_status == ExitCode.FINDINGS)
 
 
+def report_cases(expect: testing.Expect) -> None:
+    """Check report_directory() and read_report() on planted report directories of a parse build."""
+    with tempfile.TemporaryDirectory(prefix="sections-report-") as scratch_text:
+        build = Path(scratch_text)
+        directory = sections.report_directory(build, build / "CMakeFiles" / "t.dir" / "a.cpp.o")
+        expect(
+            "the report directory is the place of the object below the syntax directory",
+            directory == build / sections.SYNTAX_DIRECTORY / "CMakeFiles" / "t.dir" / "a.cpp.o",
+        )
+        expect("a missing directory has no report", sections.read_report(directory) is None)
+        directory.mkdir(parents=True)
+        report_text = TEXT.decode().replace("# crucible-guard 2 stamp=00ab", "# unit a.cpp")
+        (directory / f"a.cpp.0123456789abcdef{sections.REPORT_SUFFIX}").write_text(report_text, encoding="utf-8")
+        expect("a report with no stamp file is no report", sections.read_report(directory) is None)
+        (directory / sections.STAMP_FILE).write_text("00ab\n", encoding="utf-8")
+        expect(
+            "read_report reads the stamp file and each finding line, and skips the comment",
+            sections.read_report(directory) == sections.Section("00ab", FINDINGS),
+        )
+        (directory / f"b.cpp.0123456789abcdef{sections.REPORT_SUFFIX}").write_text(report_text, encoding="utf-8")
+        expect("read_report refuses two report files", refuses(lambda: sections.read_report(directory)))
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (parse_cases, object_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (parse_cases, object_cases, report_cases))

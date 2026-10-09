@@ -87,6 +87,42 @@ configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-tsan TORCH_DIR unset
+configuration x86_64-debug-asan-syntax kind x86_64-debug-asan
+configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+znver5-f612fd24
+configuration x86_64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan-syntax CMAKE_CXX_FLAGS -march=x86-64-v3
+configuration x86_64-debug-asan-syntax CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan-syntax CRUCIBLE_TSAN off
+configuration x86_64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan-syntax CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan-syntax CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan-syntax CRUCIBLE_PGO off
+configuration x86_64-debug-asan-syntax CRUCIBLE_BENCH off
+configuration x86_64-debug-asan-syntax CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan-syntax CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan-syntax CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan-syntax TORCH_DIR unset
+configuration x86_64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
+configuration aarch64-debug-asan-syntax kind aarch64-debug-asan
+configuration aarch64-debug-asan-syntax tier default-ddafb5bb
+configuration aarch64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
+configuration aarch64-debug-asan-syntax CMAKE_CXX_FLAGS unset
+configuration aarch64-debug-asan-syntax CRUCIBLE_SANITIZE on
+configuration aarch64-debug-asan-syntax CRUCIBLE_TSAN off
+configuration aarch64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
+configuration aarch64-debug-asan-syntax CRUCIBLE_ANALYZER off
+configuration aarch64-debug-asan-syntax CRUCIBLE_VERIFY off
+configuration aarch64-debug-asan-syntax CRUCIBLE_PGO off
+configuration aarch64-debug-asan-syntax CRUCIBLE_BENCH off
+configuration aarch64-debug-asan-syntax CRUCIBLE_FUZZ off
+configuration aarch64-debug-asan-syntax CRUCIBLE_EXAMPLES on
+configuration aarch64-debug-asan-syntax CRUCIBLE_HAVE_BPF off
+configuration aarch64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration aarch64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE unset
+configuration aarch64-debug-asan-syntax TORCH_DIR unset
+configuration aarch64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
 include/crucible/CKernel.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
 include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
@@ -124,3 +160,5 @@ include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source get
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | the predicates of a self-contained type read std::ranges::range, view, borrowed_range and range_value_t, and the walk of a range reads std::ranges::begin and end
 include/fixy/os/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
+@aarch64-debug-asan-syntax | include/crucible/SwissTable.h | heavy-include | +1 | <arm_neon.h> | -
+@aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | heavy-include | +1 | <arm_neon.h> | -

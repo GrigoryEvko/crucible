@@ -8,9 +8,11 @@ THE CONFIGURATION
     different configuration compiles other objects or other preprocessor
     arms.  Its findings, its symbols and its totals can then be different.
 
-    The name of a configuration is its build kind, with -bench when
-    CRUCIBLE_BENCH is on and -fuzz when CRUCIBLE_FUZZ is on, for example
-    x86_64-debug-asan.  CRUCIBLE_SENSE_HUB_V2 is no key.  Each build compiles
+    The name of a configuration is its build kind, for example
+    x86_64-debug-asan.  The name adds -bench when CRUCIBLE_BENCH is on, -fuzz
+    when CRUCIBLE_FUZZ is on and -syntax when CRUCIBLE_SYNTAX_ONLY is on.  A build with
+    CRUCIBLE_SYNTAX_ONLY only parses its units (is_parse_build(), `loop
+    syntax`).  CRUCIBLE_SENSE_HUB_V2 is no key.  Each build compiles
     the SenseHub v2 sources in two object libraries, with and without
     CRUCIBLE_SENSE_HUB_EXTENDED, and that option then changes no finding line.
     A rule can read fewer facts.  The rule artifact-symbols reads only the
@@ -92,9 +94,12 @@ CONFIGURATION = (
     "CRUCIBLE_SENSE_HUB_EXTENDED",
     "CRUCIBLE_VALGRIND_INCLUDE",
     "TORCH_DIR",
+    "CRUCIBLE_SYNTAX_ONLY",
 )
-# The two options that add a word to the name of a configuration.
-NAME_OPTIONS = (("bench", "CRUCIBLE_BENCH"), ("fuzz", "CRUCIBLE_FUZZ"))
+# The cache option of a build that only parses its units (is_parse_build()).
+SYNTAX_OPTION = "CRUCIBLE_SYNTAX_ONLY"
+# The options that add a word to the name of a configuration.
+NAME_OPTIONS = (("bench", "CRUCIBLE_BENCH"), ("fuzz", "CRUCIBLE_FUZZ"), ("syntax", SYNTAX_OPTION))
 CMAKE_FALSE = frozenset({"", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND"})
 BASE_WORDS = "the base rows"
 
@@ -155,6 +160,18 @@ def normalized(kind: str, value: str) -> str:
     if kind in ("PATH", "FILEPATH"):
         return "unset" if is_false else "set"
     return value if value.strip() else "unset"
+
+
+def is_parse_build(build_dir: Path) -> bool:
+    """Return True when the CMake cache of the build sets SYNTAX_OPTION: the build then only parses its units.
+
+    A cache that cannot be read gives False, and the caller then reads the objects of the build.
+    """
+    try:
+        entry = cmake.cache(build_dir).get(SYNTAX_OPTION)
+    except cmake.CmakeError:
+        return False
+    return entry is not None and normalized("BOOL", entry.value) == "on"
 
 
 def read_configuration(build_dir: Path, commands: Iterable[str]) -> BuildConfiguration:

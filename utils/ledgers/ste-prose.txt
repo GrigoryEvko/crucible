@@ -514,7 +514,6 @@ utils/assay/guard/engines/tsast/hw_axis_rows.py | refused-word | 1 | row_of: ord
 utils/assay/guard/engines/tsast/hw_axis_rows.py | refused-word | 1 | row_of: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 1 | <module>: acquire | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 2 | <module>: beside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 3 | <module>: cross | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 1 | <module>: need | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | refused-word | 2 | <module>: qualified | A text of today.  The change that writes the text again in STE lowers the count
@@ -636,7 +635,6 @@ utils/assay/loop/derive/aten_ops.py | refused-word | 4 | <module>: carry | A tex
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: classification | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 2 | <module>: compute | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: contiguous | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: cross | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 2 | <module>: distinct | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 6 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: exactly | A text of today.  The change that writes the text again in STE lowers the count
@@ -2364,12 +2362,8 @@ utils/assay/readers/tsast.py | refused-word | 2 | using_names: every | A text of
 utils/assay/readers/tsast.py | refused-word | 1 | using_names: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/readers/tsast.py | refused-word | 1 | using_names: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/readers/tsast.py | semicolon | 1 | Node.tokens | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/gcc.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/gcc.py | refused-word | 2 | <module>: flex | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/gcc.py | refused-word | 3 | <module>: need | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/gcc.py | refused-word | 1 | <module>: order | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/gcc.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/setup/gcc.py | refused-word | 1 | <module>: would | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/setup/gcc.py | refused-word | 1 | <module>: need | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/gcc.py | refused-word | 1 | build: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/gcc.py | refused-word | 1 | extract: beside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/setup/gcc.py | refused-word | 1 | patches: order | A text of today.  The change that writes the text again in STE lowers the count

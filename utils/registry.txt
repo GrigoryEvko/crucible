@@ -165,6 +165,7 @@ term annotation category=noun-19 | a type annotation of Python: the type of a pa
 term block category=noun-19 | a block of source code: the statements that a with, a try, an if or an except holds
 term bump category=noun-19 | a bump pointer and a bump arena: an allocator that moves one pointer forward for each allocation
 term capability category=noun-19 | a value of a type of the effect system that gives the right to one effect, such as the capability Alloc
+term cross category=noun-19 | a cross compiler and a cross package: a compiler that operates on one architecture and writes the machine code of a different architecture, and a package that such a compiler uses
 term escape category=verb-2b | to write a backslash before a character of a text: a reader then reads the character, and not a mark of the grammar
 term evaluate category=verb-3a | to calculate the value of an expression, as the compiler does in a constant evaluation
 term evaluation category=noun-19 | a constant evaluation of C++: the calculation of an expression at compile time

@@ -11,6 +11,13 @@ THE SECTIONS
     of the kind region is no finding: the census keeps the first line and the
     reason of each opt-out region of each file.
 
+    A build of a configuration that only parses has no object
+    (assay.core.configuration.is_parse_build).  `loop syntax` parses each
+    unit of all there.  The runner reads the report file of each unit in its
+    report directory (assay.readers.sections, THE REPORT OF A PARSE BUILD).
+    The stamp file of that directory has the function of the stamp of a
+    section.
+
 THE PROBLEMS
     The census gives a problem for each object with a compile that loads the
     plugin and with no section.  It also gives a problem for each section
@@ -170,17 +177,18 @@ def stamp_of(command: str) -> str | None:
     return rest.split(None, 1)[0] if rest and not rest[0].isspace() else ""
 
 
-def plugin_objects(build_dir: Path, root: Path) -> list[tuple[Path, str, str]]:
+def plugin_objects(build_dir: Path, root: Path, has_objects: bool = True) -> list[tuple[Path, str, str]]:
     """Return each object of all with a compile that loads the plugin, with the stamp and the compile command.
 
-    Complexity: linear in the rows of the compile database and the inputs of all.
+    has_objects is False for a build of a configuration that only parses, which has no object.  Complexity: linear
+    in the rows of the compile database and the inputs of all.
 
     Raises:
         NotApplicable: If the build made only some targets, or its generator is not Ninja
         BuildError: If the compile database or the inputs of all cannot be read
     """
     try:
-        objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, root)}
+        objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, root, has_objects)}
         rows = compdb.entries(build_dir)
     except build_census.NotApplicable as reason:
         raise NotApplicable(str(reason)) from None
@@ -204,6 +212,27 @@ def read_object(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
         section = quarantine_sections.read(path)
     except (OSError, quarantine_sections.SectionError) as problem:
         return ObjectSection(shown, stamp, None, str(problem))
+    return ObjectSection(shown, stamp, section)
+
+
+def read_parsed(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
+    """Read the report of one unit of a parse build (THE SECTIONS).  A missing report or a different stamp is a problem."""
+    shown = build_census.shown(path, build_dir)
+    rerun = f"Run `python3 utils/bin/loop syntax {build_dir}` again"
+    try:
+        section = quarantine_sections.read_report(quarantine_sections.report_directory(build_dir, path))
+    except (OSError, quarantine_sections.SectionError) as problem:
+        return ObjectSection(shown, stamp, None, f"{problem}.  {rerun}")
+    if section is None:
+        return ObjectSection(shown, stamp, None, f"the parse build has no report of the unit of this object.  {rerun}")
+    if section.stamp != stamp:
+        return ObjectSection(
+            shown,
+            stamp,
+            None,
+            f"the report holds the stamp {section.stamp!r}, and the compile command has the stamp {stamp!r}.  The "
+            f"plugin, the rule table or the configure step changed after the parse.  {rerun}",
+        )
     return ObjectSection(shown, stamp, section)
 
 
@@ -271,11 +300,13 @@ def read_census(build_dir: Path, root: Path) -> Census:
         raise NotApplicable(
             f"{build_census.shown(build_dir, root)} has no build-kind.txt, which cmake/BuildLauncher.cmake writes"
         )
-    objects = plugin_objects(build_dir, root)
+    is_parse = build_config.is_parse_build(build_dir)
+    objects = plugin_objects(build_dir, root, has_objects=not is_parse)
     if not objects:
         raise NotApplicable("no compile of the target all loads the quarantine plugin")
+    reader = read_parsed if is_parse else read_object
     with ThreadPoolExecutor(max_workers=READERS) as pool:
-        items = list(pool.map(lambda item: read_object(item[0], item[1], build_dir), objects))
+        items = list(pool.map(lambda item: reader(item[0], item[1], build_dir), objects))
     return census_of(items, [command for _, _, command in objects])
 
 

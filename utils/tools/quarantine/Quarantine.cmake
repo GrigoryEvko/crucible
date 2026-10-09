@@ -31,6 +31,11 @@
 #   code it compiles gives the plugin a reference to a symbol that cc1plus does
 #   not define, and cc1plus then cannot load the plugin.  A configure with no
 #   toolchain file builds the plugin with the compiler of the build.
+#   A plugin of a cross compiler is code of the host.  The cross toolchain file
+#   cmake/Toolchain-gcc16-aarch64.cmake then names the patched g++ of the host
+#   as CRUCIBLE_PLUGIN_BUILD_CXX.  That g++ compiles and links the plugin with
+#   the plugin headers of the cross compiler, and the cc1plus of the cross
+#   compiler loads it.  With no such name, the compiler of the plugin builds it.
 #
 # THE INPUTS OF A COMPILE
 #   `loop stamps` (utils/assay/loop/stamps.py) runs at each configure.  It writes the
@@ -77,6 +82,14 @@ if(NOT CRUCIBLE_QUARANTINE_MODE MATCHES "^(REPORT|ERROR)$")
     "Each build loads the quarantine plugin, and REPORT is the default.")
 endif()
 
+# The build directory of a configuration that only parses (CLAUDE.md section
+# XXII, The ratchet), such as a build of the presets syntax-x86-64-v3 and
+# syntax-aarch64.  `loop syntax BUILD_DIR` parses each unit of the target all
+# with -fsyntax-only and the plugin.  The rules of the engine plugin then read
+# the report file of each unit, and not the section of its object.  The option
+# adds the word syntax to the name of the configuration.
+option(CRUCIBLE_SYNTAX_ONLY "The units of this build directory are only parsed, by loop syntax" OFF)
+
 # The sources of the plugin: one unit for each rule family, and the headers
 # that each unit includes.  rows_reader.cpp is the host program of the rule
 # rows-readers, and no part of the plugin.
@@ -104,16 +117,19 @@ if(DEFINED CRUCIBLE_TOOLCHAIN_CXX)
 else()
   set(CRUCIBLE_PLUGIN_CXX "${CRUCIBLE_REAL_CXX}")
 endif()
+if(NOT DEFINED CRUCIBLE_PLUGIN_BUILD_CXX)
+  set(CRUCIBLE_PLUGIN_BUILD_CXX "${CRUCIBLE_PLUGIN_CXX}")
+endif()
 
 # The flags that build the plugin.  GCC is built without RTTI, and the plugin
-# loads into cc1plus, so it finds the libstdc++ of the compiler through an
-# rpath.
+# loads into cc1plus, so it finds the libstdc++ of the compiler that builds it
+# through an rpath.  The plugin headers are those of the compiler of the plugin.
 execute_process(
   COMMAND "${CRUCIBLE_PLUGIN_CXX}" -print-file-name=plugin
   OUTPUT_VARIABLE _crucible_quarantine_gcc_plugin_dir
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(
-  COMMAND "${CRUCIBLE_PLUGIN_CXX}" -print-file-name=libstdc++.so
+  COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" -print-file-name=libstdc++.so
   OUTPUT_VARIABLE _crucible_quarantine_libstdcxx
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 get_filename_component(_crucible_quarantine_library_dir "${_crucible_quarantine_libstdcxx}" DIRECTORY)
@@ -153,6 +169,10 @@ else()
 endif()
 set(_crucible_quarantine_compiler_key
   "${_crucible_quarantine_driver_hash} ${CRUCIBLE_QUARANTINE_COMPILE_FLAGS} ${CRUCIBLE_QUARANTINE_LINK_FLAGS}")
+if(NOT CRUCIBLE_PLUGIN_BUILD_CXX STREQUAL CRUCIBLE_PLUGIN_CXX)
+  file(SHA256 "${CRUCIBLE_PLUGIN_BUILD_CXX}" _crucible_quarantine_build_driver_hash)
+  string(APPEND _crucible_quarantine_compiler_key " build=${_crucible_quarantine_build_driver_hash}")
+endif()
 if(EXISTS "${_crucible_quarantine_cc1plus}")
   if(DEFINED CRUCIBLE_CC1PLUS_SHA256 AND NOT DEFINED CACHE{CRUCIBLE_CC1PLUS_SHA256}
      AND CRUCIBLE_CC1PLUS STREQUAL _crucible_quarantine_cc1plus)
@@ -195,7 +215,7 @@ if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_record
     set(_crucible_quarantine_object "${_crucible_quarantine_objects_dir}/${_crucible_quarantine_unit}.o")
     list(APPEND _crucible_quarantine_objects "${_crucible_quarantine_object}")
     list(APPEND _crucible_quarantine_compiles
-      COMMAND "${CRUCIBLE_PLUGIN_CXX}" ${CRUCIBLE_QUARANTINE_COMPILE_FLAGS}
+      COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" ${CRUCIBLE_QUARANTINE_COMPILE_FLAGS}
               "-ffile-prefix-map=${CMAKE_CURRENT_LIST_DIR}=." -c -o "${_crucible_quarantine_object}"
               "${CMAKE_CURRENT_LIST_DIR}/${_crucible_quarantine_unit}.cpp")
   endforeach()
@@ -209,7 +229,7 @@ if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_record
     endif()
   endforeach()
   execute_process(
-    COMMAND "${CRUCIBLE_PLUGIN_CXX}" ${CRUCIBLE_QUARANTINE_LINK_FLAGS} -o "${CRUCIBLE_QUARANTINE_PLUGIN}"
+    COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" ${CRUCIBLE_QUARANTINE_LINK_FLAGS} -o "${CRUCIBLE_QUARANTINE_PLUGIN}"
             ${_crucible_quarantine_objects}
     WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     RESULT_VARIABLE _crucible_quarantine_result

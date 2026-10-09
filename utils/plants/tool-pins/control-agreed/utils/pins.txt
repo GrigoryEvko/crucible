@@ -1,5 +1,5 @@
 # A planted pin table: CMake for two platforms, the compiler, the minimum Python, a tool, a pin of the toolchain of the
-# oracle and an oracle source.
+# oracle, an oracle source and a package of a cross target.
 format 1
 pin cmake via=archive version=4.4.2 platform=linux-aarch64 source=https://example.invalid/cmake-aarch64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
 pin cmake via=archive version=4.4.2 platform=linux-x86_64 source=https://example.invalid/cmake-x86_64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of CMake
@@ -9,3 +9,4 @@ pin ruff via=pip version=0.16.4 platform=linux-aarch64 source=https://example.in
 pin ruff via=pip version=0.16.4 platform=linux-x86_64 source=https://example.invalid/ruff-x86_64.whl sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of a tool
 pin sbt via=archive version=1.10.7 source=https://example.invalid/sbt-1.10.7.tgz sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted pin of the toolchain of the oracle
 pin coar via=git version=2025-01-27 source=https://github.com/hiroshi-unno/coar commit=0000000000000000000000000000000000000000 | a planted oracle source
+pin sysroot-aarch64 via=archive version=2.43 source=https://example.invalid/sysroot.rpm sha256=0000000000000000000000000000000000000000000000000000000000000000 | a planted package of a cross target

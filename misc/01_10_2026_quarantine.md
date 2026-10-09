@@ -2336,7 +2336,7 @@ Before each heavy command, run `free -g`. Wait while the "available" column is b
 | A raw system call is invisible to a sanitizer | TSan reports a false race, a raw blocking call hangs under TSan, ASan misses a bad buffer | R18: annotations in one code path, and the intercepted call only for a blocking call under TSan |
 | A host turns `io_uring` off | The I/O door fails on that host | The plain-syscall fallback of G6, chosen by a probe at start-up |
 | A raw system call is missing on an old kernel | `ENOSYS`, because glibc gave a fallback and the door gives none | The minimum kernel version of R4, checked at start-up |
-| An aarch64 defect stays hidden | No local build covers aarch64, so a defect shows only after a daily sync | One person reads the run after each sync (D11). Optional: a local aarch64 cross-compiler that only compiles and runs the ratchet |
+| An aarch64 defect stays hidden | No local build compiles or runs an object of aarch64, so a defect of the code shows only after a daily sync | One person reads the run after each sync (D11). The parse build of the preset `syntax-aarch64` gives each aarch64 arm to the plugin with a cross compiler, and the ratchet counts its findings (CLAUDE.md §XXII "The ratchet") |
 | A wrong futex protocol | Lost wakeups or wakeups with no cause in the base waits | One futex door, tested under load and under TSan |
 
 ### 21.1 Options that the owner decided against (2026-10-03)

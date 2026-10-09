@@ -128,10 +128,12 @@ def names_text(names: Iterable[str]) -> str:
     return head + (f" and {rest} more" if rest > 0 else "")
 
 
-def objects_of_all(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
+def objects_of_all(build_dir: Path, root: Path, has_objects: bool = True) -> list[tuple[Path, str]]:
     """Return each object of the target all, with its source as a message shows it.
 
-    Complexity: linear in the rows of the compile database and the inputs of all.
+    A build of a configuration that only parses has no object (`loop syntax`).  For such a build, has_objects is
+    False, and a missing object is no problem.  Complexity: linear in the rows of the compile database and the inputs
+    of all.
 
     Raises:
         NotApplicable: If the generator of the build is not Ninja, or an object of all is missing, because the build
@@ -161,7 +163,7 @@ def objects_of_all(build_dir: Path, root: Path) -> list[tuple[Path, str]]:
             objects[output] = shown(os.path.normpath(compile_entry.file), root)
     if not objects:
         raise CensusError(f"no row of {database} is an input of the target all")
-    missing = [path for path in objects if not os.path.isfile(path)]
+    missing = [path for path in objects if has_objects and not os.path.isfile(path)]
     if missing:
         raise NotApplicable(
             f"{len(missing)} of the {len(objects)} objects of the target all do not exist, so the "

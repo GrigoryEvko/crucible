@@ -478,6 +478,38 @@ def census_cases(expect: testing.Expect) -> None:
     expect("a context with no build directory does not apply", is_refused)
 
 
+def parsed_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold the read of the report of one unit of a parse build: a match, a missing report and a different stamp."""
+    build = scratch.root / "parse-build"
+    object_path = build / "CMakeFiles" / "t.dir" / "a.cpp.o"
+    missing = runner.read_parsed(object_path, "s", build)
+    expect(
+        "a unit with no report is a problem that names loop syntax",
+        missing.section is None and "loop syntax" in missing.problem,
+    )
+    directory = quarantine_sections.report_directory(build, object_path)
+    directory.mkdir(parents=True)
+    (directory / f"a.cpp.0000000000000000{quarantine_sections.REPORT_SUFFIX}").write_text(
+        "# unit a.cpp\nquarantine std-entity a.cpp:3:1 std::swap\n", encoding="utf-8"
+    )
+    (directory / quarantine_sections.STAMP_FILE).write_text("s\n", encoding="utf-8")
+    matched = runner.read_parsed(object_path, "s", build)
+    expect(
+        "a report with the stamp of the compile command gives its findings",
+        matched.problem == "" and matched.section is not None and len(matched.section.findings) == 1,
+    )
+    other = runner.read_parsed(object_path, "t", build)
+    expect(
+        "a report of another stamp is a problem that names loop syntax",
+        other.section is None and "stamp 's'" in other.problem and "loop syntax" in other.problem,
+    )
+    census = runner.census_of([matched, other])
+    expect(
+        "the census of a parse build counts a report as a section",
+        len(census.findings) == 1 and len(census.problems) == 1,
+    )
+
+
 # ── The rule quarantine ────────────────────────────────────────────
 
 
@@ -1113,6 +1145,7 @@ def ledger_cases(expect: testing.Expect) -> None:
         bench_cases(expect, scratch)
         problem_cases(expect, scratch)
         ledger_problem_cases(expect, scratch)
+        parsed_cases(expect, scratch)
 
 
 # ── The rule contract-specifier ────────────────────────────────────

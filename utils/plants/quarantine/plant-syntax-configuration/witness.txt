@@ -1,0 +1,12 @@
+# A parse compile with -march=x86-64-v3 compiles the arm, as `loop syntax`
+# does in the build of the preset syntax-x86-64-v3.  The ledger holds the
+# configuration of that build, and its rows judge the build.  No row counts
+# the call of close, so the call is an error (THE POLICY of
+# assay.core.configuration).
+
+compile raw src/raw.cpp rules=utils/rule-table.txt stage=syntax
+flag raw -march=x86-64-v3
+exit raw pass
+judge raw
+configuration x86_64-debug-asan-syntax
+finding raw quarantine c-library-call src/raw.cpp:9:19 | close
