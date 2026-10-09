@@ -40,10 +40,16 @@
 //         quarantined   a file that a quarantine row of the table holds
 //         unclassified  a file under the source root or in the build
 //                       directory that no row holds
+//         exempt        a file that a host row or a kernel row holds: a host
+//                       build tool that links a foreign API, or kernel C
+//                       that a different compiler compiles.  The quarantine
+//                       rule does not apply to it, and its row gives the
+//                       reason
 //         outside       a system header, a file outside the source root, or
 //                       a scratch buffer
-//     The longest path of a layer row or a quarantine row decides.  The
-//     plugin gives an error for each unclassified file that a unit reads.
+//     The longest path of a layer row, a quarantine row, a host row or a
+//     kernel row decides.  The plugin gives an error for each unclassified
+//     file that a unit reads.
 //     The contract rule and the opt-out regions apply to each file under the
 //     source root and in the build directory.  The quarantine rule applies to
 //     a quarantined file only, and its rule of the library names also applies
@@ -385,6 +391,7 @@ enum class FileClass : std::uint8_t {
     base,
     quarantined,
     unclassified,
+    exempt,
 };
 
 // The prefix of the path of a file of the build directory.  The rule table
@@ -429,6 +436,7 @@ inline bool owns_place(FileClass file_class, Scope scope) {
         case FileClass::quarantined:
             return true;
         case FileClass::unclassified:
+        case FileClass::exempt:
             return scope == Scope::tree;
         case FileClass::outside:
             return false;
@@ -461,6 +469,12 @@ struct EnforceRow {
 
 struct LanguageRow {
     int layer = -1;  // the index of the layer whose allowance caps the outside includes
+    std::vector<std::string> paths;
+};
+
+// One host row or kernel row: the paths of an exempt class (THE FILES).
+struct ExemptRow {
+    std::string kind;  // host or kernel
     std::vector<std::string> paths;
 };
 
@@ -617,6 +631,7 @@ struct RuleTable {
     std::vector<DoorRow> doors;
     std::vector<AdmitRow> admits;
     std::vector<std::string> quarantines;
+    std::vector<ExemptRow> exempts;
     std::vector<EnforceRow> enforces;
     std::vector<LanguageRow> languages;
     std::vector<SealRow> seals;
@@ -1573,6 +1588,16 @@ inline void classify_by_table(FileEntry& entry) {
             entry.layer = -1;
             best_length = path.size();
             is_found = true;
+        }
+    }
+    for (const ExemptRow& row : state.table.exempts) {
+        for (const std::string& path : row.paths) {
+            if (row_holds(path, entry.relative) && (!is_found || path.size() > best_length)) {
+                entry.file_class = FileClass::exempt;
+                entry.layer = -1;
+                best_length = path.size();
+                is_found = true;
+            }
         }
     }
     if (!is_found) {

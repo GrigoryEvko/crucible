@@ -1,0 +1,3 @@
+#pragma once
+#include <cstring>
+inline int tool_length(const char* text) { return static_cast<int>(std::strlen(text)); }

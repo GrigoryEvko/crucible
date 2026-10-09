@@ -75,6 +75,16 @@
 #       with the same last name in a different directory.
 #   quarantine PATH
 #       Each file under PATH is quarantined.
+#   host PATH... | REASON
+#       Each file under a PATH is a file of a host build tool that links a
+#       foreign API, such as the tree API of GCC.  The quarantine rule does
+#       not apply to it, and the reason tells why.  Another tool joins only
+#       with a row of its own and its reason.  No PATH holds a base file
+#   kernel PATH... | REASON
+#       Each file under a PATH is kernel C that a different compiler
+#       compiles, such as a BPF program that Clang compiles.  The quarantine
+#       rule does not apply to it, and the reason tells why.  No PATH holds a
+#       base file
 #   enforce PATH MODE [include]
 #       MODE is report or error.  Each finding in a file under PATH that has
 #       error mode is a compile error in each build.  A finding in report mode
@@ -208,7 +218,8 @@
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
-#   layer row and a quarantine row decide the class of a file in this way.
+#   layer row, a quarantine row, a host row and a kernel row decide the class
+#   of a file in this way.
 #   The plugin gives an error for a file under the source root or in the
 #   build directory that no layer row and no quarantine row holds.  A file
 #   that no enforce row holds has report mode.  The longest PATH of a row of
@@ -314,6 +325,9 @@ quarantine src/
 quarantine test/
 quarantine utils/tools/
 quarantine vessel/
+
+host utils/tools/quarantine/ | The GCC plugin of the rule quarantine.  It links the tree API of GCC, which no base type replaces, and the host compiler builds it at configure time with no plugin
+kernel include/crucible/canopy/bpf/ include/crucible/cntp/_wip/bpf/ include/crucible/cntp/bpf/ include/crucible/cntp/dataplane/bpf/ include/crucible/cog/bpf/ include/crucible/observe/bpf/ include/crucible/perf/bpf/ include/crucible/topology/bpf/ include/crucible/warden/bpf/ | The BPF programs and their headers: kernel C that Clang compiles for the BPF target.  No C++ unit includes these files, so the C++ base and the plugin do not reach them
 
 enforce @build/ report
 enforce bench/ report

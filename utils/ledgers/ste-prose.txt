@@ -257,7 +257,6 @@ utils/assay/core/rows.py | refused-word | 1 | parse: blank | A text of today.  T
 utils/assay/core/rows.py | refused-word | 1 | parse: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/rows.py | refused-word | 1 | split_row: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ruletable.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/ruletable.py | refused-word | 1 | RuleTable.class_of: decide | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ruletable.py | refused-word | 1 | RuleTable: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ruletable.py | refused-word | 1 | RuleTable: outside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ruletable.py | refused-word | 1 | RuleTable: whose | A text of today.  The change that writes the text again in STE lowers the count

@@ -14,7 +14,6 @@ utils/assay/core/meter.py | arg-type | 1 | open_instruction_counter | An error o
 utils/assay/core/meter.py | arg-type | 1 | open_instruction_counter.Library | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/meter.py | type-arg | 1 | open_instruction_counter.CLong | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/rows.py | no-redef | 1 | split_row | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/core/ruletable.py | assignment | 1 | RuleTable.class_of | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/ruletable.py | call-overload | 1 | parse_admit | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/guard/engines/meta/history.py | arg-type | 1 | ledger_rises | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/affected.py | var-annotated | 1 | run | An error of mypy of today.  The change that gives the code its types lowers the count

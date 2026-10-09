@@ -6,7 +6,11 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny
+table tables/a-host-row-with-no-reason.txt refused 1 | a host row is 'host PATH... \| REASON', with each PATH of a host build tool that links a foreign API, and the reason is necessary
+table tables/a-kernel-row-with-a-path-of-the-build-directory.txt refused 1 | a kernel row is 'kernel PATH... \| REASON', with each PATH of kernel C that a different compiler compiles, and the reason is necessary
+table tables/an-exempt-path-in-the-base.txt refused 2 | the path a/tool/ of an exempt row holds a file of the base, and the base is never exempt
+table tables/a-path-in-a-quarantine-row-and-a-host-row.txt refused 2 | the path t/ is also in a quarantine row
 table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row

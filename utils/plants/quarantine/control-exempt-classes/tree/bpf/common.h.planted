@@ -1,0 +1,4 @@
+#pragma once
+struct kernel_event {
+    unsigned int values[4];
+};

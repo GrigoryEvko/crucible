@@ -1,0 +1,11 @@
+# The rule table of this plant.  tool/ holds a host build tool and bpf/
+# holds kernel C.  A base file of include/fixy/ includes a header of each.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+
+quarantine app/
+
+host tool/ | a planted host build tool that links a foreign API
+kernel bpf/ | planted kernel C that a different compiler compiles

@@ -1,0 +1,11 @@
+# The rule table of this control.  tool/ holds a host build tool and bpf/
+# holds kernel C, so the quarantine rule does not apply to their files.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+
+quarantine app/
+
+host tool/ | a planted host build tool that links a foreign API
+kernel bpf/ | planted kernel C that a different compiler compiles

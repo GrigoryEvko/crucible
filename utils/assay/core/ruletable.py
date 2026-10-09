@@ -44,6 +44,17 @@ INCLUDE_SCOPE = "include"
 # The errors of an `allow` row and of an enforce row that do not obey the format of their words.  rule_table.cpp
 # gives the same texts.
 ALLOW_FORMAT = "an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets"
+# The two classes of a file that the quarantine rule does not apply to (class_of).  A host build tool links a foreign
+# API, and a different compiler compiles kernel C.  rule_table.cpp gives the same texts for the errors of their rows.
+EXEMPT_KINDS = ("host", "kernel")
+HOST_FORMAT = (
+    "a host row is 'host PATH... | REASON', with each PATH of a host build tool that links a foreign API, and the "
+    "reason is necessary"
+)
+KERNEL_FORMAT = (
+    "a kernel row is 'kernel PATH... | REASON', with each PATH of kernel C that a different compiler compiles, and the "
+    "reason is necessary"
+)
 ENFORCE_FORMAT = (
     "an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode "
     "to the include kinds"
@@ -54,6 +65,8 @@ ROW_KINDS = (
     "door",
     "admit",
     "quarantine",
+    "host",
+    "kernel",
     "enforce",
     "language",
     "seal",
@@ -176,6 +189,18 @@ class Allow:
     layer: str
     header: str
     until: str = ""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Exempt:
+    """One host row or kernel row: the kind, the paths and the reason.
+
+    The quarantine rule does not apply to a file that such a row holds, and the reason tells why.
+    """
+
+    kind: str
+    paths: tuple[str, ...]
+    reason: str
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -331,6 +356,8 @@ class RuleTable:
     # The function of each primitive row, and each system call of a deny row, in the sequence of the file.
     primitives: tuple[str, ...] = ()
     denied_syscalls: tuple[str, ...] = ()
+    # The host rows and the kernel rows, in the sequence of the file.
+    exempts: tuple[Exempt, ...] = ()
 
     def homes_of(self, rule: str) -> tuple[Home, ...]:
         """Return the home rows of one rule, in the sequence of the file."""
@@ -343,13 +370,14 @@ class RuleTable:
     def class_of(self, rel: str) -> tuple[str, Layer | None]:
         """Return the class of a path relative to the source root, and its layer.
 
-        The longest path of a layer row or a quarantine row that holds the
-        file decides.  Complexity: O(rows).
+        The longest path of a layer row, a quarantine row, a host row or a kernel row that holds the file gives the
+        class.  Complexity: O(rows).
 
         Returns:
-            ("base", layer), ("quarantined", None) or ("", None) when no row holds the file
+            ("base", layer), ("quarantined", None), ("host", None), ("kernel", None) or ("", None) when no row holds
+            the file
         """
-        best = ("", None)
+        best: tuple[str, Layer | None] = ("", None)
         best_length = -1
         for layer in self.layers:
             for path in layer.paths:
@@ -358,6 +386,10 @@ class RuleTable:
         for path in self.quarantines:
             if holds(path, rel) and len(path) > best_length:
                 best, best_length = ("quarantined", None), len(path)
+        for exempt in self.exempts:
+            for path in exempt.paths:
+                if holds(path, rel) and len(path) > best_length:
+                    best, best_length = (exempt.kind, None), len(path)
         return best
 
     def mode_of(self, rel: str) -> str:
@@ -686,6 +718,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     in_path_lines: list[tuple[str, str]] = []
     language_lines: list[tuple[str, str]] = []
     language_paths: list[tuple[str, str]] = []
+    exempts: list[Exempt] = []
+    exempt_lines: list[tuple[str, str]] = []  # each path of a host row or a kernel row, and its file and line
     cites: list[Cite] = []
     cite_lines: dict[str, int] = {}  # the predicate of each cite row, and its line
     grants: list[Grant] = []
@@ -773,6 +807,17 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 raise TableError(f"{where}: the path {args[0]} is also in {class_paths[args[0]]}")
             class_paths[args[0]] = "a quarantine row"
             quarantines.append(args[0])
+        elif kind in EXEMPT_KINDS:
+            refusal = HOST_FORMAT if kind == "host" else KERNEL_FORMAT
+            if not args or not reason or any(path.startswith(BUILD_PREFIX) for path in args):
+                raise TableError(f"{where}: {refusal}")
+            for path in args:
+                _check_path(path, where)
+                if path in class_paths:
+                    raise TableError(f"{where}: the path {path} is also in {class_paths[path]}")
+                class_paths[path] = f"a {kind} row"
+                exempt_lines.append((path, where))
+            exempts.append(Exempt(kind, tuple(args), reason))
         elif kind == "language":
             if len(args) < 2:
                 raise TableError(f"{where}: a language row is 'language LAYER PATH...'")
@@ -920,10 +965,14 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
         if not any(holds(layer_path, path) for layer in layers for layer_path in layer.paths):
             raise TableError(f"{where}: the path {path} of the language row is in no layer.  A path of the "
                              f"language must be a path of the base")
+    for path, where in exempt_lines:
+        if any(holds(layer_path, path) or holds(path, layer_path) for layer in layers for layer_path in layer.paths):
+            raise TableError(f"{where}: the path {path} of an exempt row holds a file of the base, and the base is "
+                             f"never exempt")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
                      tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls), tuple(primitives),
-                     tuple(denied))
+                     tuple(denied), tuple(exempts))
 
 
 def load(path: Path = TABLE) -> RuleTable:

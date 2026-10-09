@@ -155,6 +155,16 @@ constexpr const char* kEnforceFormat =
     "an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode "
     "to the include kinds";
 
+// The errors of a host row and of a kernel row that do not obey the format of
+// their words.  ruletable.HOST_FORMAT and ruletable.KERNEL_FORMAT give the
+// same texts.
+constexpr const char* kHostFormat =
+    "a host row is 'host PATH... | REASON', with each PATH of a host build tool that links a foreign API, and the "
+    "reason is necessary";
+constexpr const char* kKernelFormat =
+    "a kernel row is 'kernel PATH... | REASON', with each PATH of kernel C that a different compiler compiles, and "
+    "the reason is necessary";
+
 // The error of an admit row that does not obey the format of its words.
 constexpr const char* kAdmitFormat =
     "an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', "
@@ -503,6 +513,7 @@ bool load_rule_table(const std::string& path) {
     std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
     std::vector<std::pair<std::string, int>> language_layers;  // the layer name of each language row, and its line
     std::vector<std::pair<std::string, int>> language_path_lines;  // each path of a language row, and its line
+    std::vector<std::pair<std::string, int>> exempt_path_lines;  // each path of a host or a kernel row, and its line
     // The entry of each admit row as the table spells it, the root of each
     // seal row and the header of each heavy and light row, and the line of each.
     crucible_rows::KeyLines admit_lines;
@@ -635,6 +646,22 @@ bool load_rule_table(const std::string& path) {
             }
             add_class_path(args[0], "a quarantine row");
             table.quarantines.push_back(args[0]);
+        } else if (kind == "host" || kind == "kernel") {
+            bool is_valid_row = !args.empty() && !reason.empty();
+            for (const std::string& exempt_path : args) {
+                is_valid_row = is_valid_row && is_plain_path(exempt_path) && !has_prefix(exempt_path, kBuildPrefix);
+            }
+            if (!is_valid_row) {
+                refuse(kind == "host" ? kHostFormat : kKernelFormat);
+                continue;
+            }
+            ExemptRow exempt{kind, {}};
+            for (const std::string& exempt_path : args) {
+                add_class_path(exempt_path, "a " + kind + " row");
+                exempt_path_lines.emplace_back(exempt_path, line_number);
+                exempt.paths.push_back(exempt_path);
+            }
+            table.exempts.push_back(std::move(exempt));
         } else if (kind == "enforce") {
             bool has_scope = args.size() == 3 && args[2] == "include";
             if ((args.size() != 2 && !has_scope) || (args[1] != "report" && args[1] != "error")
@@ -841,8 +868,9 @@ bool load_rule_table(const std::string& path) {
                 table.denied_syscalls.insert(table.denied_syscalls.end(), args.begin(), args.end());
             }
         } else {
-            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny");
+            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, "
+                   "language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and "
+                   "deny");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {
@@ -893,6 +921,22 @@ bool load_rule_table(const std::string& path) {
     };
     refuse_outside_base(in_path_lines, "an in restriction");
     refuse_outside_base(language_path_lines, "a language row");
+    // A host row and a kernel row hold no file of the base, and no layer path
+    // is under one of their paths.
+    for (const auto& [exempt_path, exempt_line] : exempt_path_lines) {
+        bool is_base = false;
+        for (const LayerRow& layer : table.layers) {
+            for (const std::string& layer_path : layer.paths) {
+                is_base = is_base || row_holds(layer_path, exempt_path) || row_holds(exempt_path, layer_path);
+            }
+        }
+        if (is_base) {
+            error("quarantine: %s:%d: the path %s of an exempt row holds a file of the base, and the base is never "
+                  "exempt",
+                  path.c_str(), exempt_line, exempt_path.c_str());
+            is_valid = false;
+        }
+    }
     if (!is_valid) {
         return false;
     }

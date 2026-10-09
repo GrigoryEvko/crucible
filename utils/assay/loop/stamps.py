@@ -5,7 +5,8 @@ It reads the rule table through utils/assay/core/ruletable.py and writes these
 files under the directory OUT:
 
     facts.txt     The rows that decide a finding: each layer, allow, door,
-                  admit, quarantine, language, seal, heavy and light row, with
+                  admit, quarantine, host, kernel, language, seal, heavy and
+                  light row, with
                   the restrictions of each admit row and with no reason, no
                   measure, no comment and no `until` family.  A new measure of
                   the header costs that moves no header between heavy and
@@ -57,6 +58,9 @@ from assay.core import ruletable as layer_rules
 SOURCE_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".cxx", ".def", ".h", ".hh", ".hpp", ".hxx", ".inc", ".inl",
                              ".ipp", ".tcc"))
 MODES_DIRECTORY = "modes"
+# The classes of a file with a mode stamp.  The quarantine rule does not apply to a file of a host row or of a kernel
+# row, and that file has no mode stamp.
+MODE_CLASSES = frozenset(("base", "quarantined"))
 
 
 def facts_text(table: layer_rules.RuleTable) -> str:
@@ -90,6 +94,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
             words.append(f"in {' '.join(sorted(admit.in_paths))}")
         lines.append(f"admit {' '.join(words)}")
     lines += [f"quarantine {path}" for path in table.quarantines]
+    lines += [f"{exempt.kind} {' '.join(sorted(exempt.paths))}" for exempt in table.exempts]
     lines += [f"language {layer} {' '.join(sorted(paths))}" for layer, paths in table.languages]
     lines += [f"seal {seal.root} {' '.join(sorted(seal.prefixes))}" for seal in table.seals]
     lines += [f"{'heavy' if cost.is_heavy else 'light'} {cost.header}" for cost in table.header_costs]
@@ -146,7 +151,7 @@ def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -
     modes: dict[str, str] = {}
     for relative in sorted(candidates):
         file_class, _ = table.class_of(relative)
-        if file_class:
+        if file_class in MODE_CLASSES:
             modes[relative] = f"{table.mode_of(relative)} {table.include_mode_of(relative)}"
     return modes
 
@@ -273,6 +278,10 @@ def self_test() -> int:
         expect("an allow row with `until` is a fact, and its family is not",
                "allow low <cstdint> until\n" in (out / "facts.txt").read_text(encoding="utf-8")
                and "Scalar" not in (out / "facts.txt").read_text(encoding="utf-8"))
+        run(reordered + "host app/util.h | a planted host tool\n")
+        expect("a host row is a fact, and a file of a host row gets no mode stamp",
+               "host app/util.h\n" in (out / "facts.txt").read_text(encoding="utf-8")
+               and "app/util.h" not in stamps() and "app/main.cpp" in stamps())
         run(reordered)
 
         written, _ = run(reordered.replace("arity 1", "arity 2"))

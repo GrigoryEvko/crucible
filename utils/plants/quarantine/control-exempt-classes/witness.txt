@@ -1,0 +1,7 @@
+# A quarantined unit includes a header of a host row and a header of a
+# kernel row.  The quarantine rule does not apply to the two files, so their
+# library calls, raw pointers and C arrays give no finding.  No row leaves
+# them unclassified, so the plugin gives no error, also in the mode error.
+
+compile app app/main.cpp mode=error out=no
+exit app pass

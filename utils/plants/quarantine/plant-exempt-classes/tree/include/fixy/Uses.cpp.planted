@@ -1,0 +1,7 @@
+#if defined(PLANT_HOST)
+#include "../../tool/Tool.h"
+#endif
+#if defined(PLANT_KERNEL)
+#include "../../bpf/common.h"
+#endif
+int uses_entry(int value) { return value + 1; }

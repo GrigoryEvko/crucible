@@ -1,0 +1,16 @@
+# A base file can include no file of a host row and no file of a kernel row:
+# such a file has no layer.  Each include is an upward-include, an error in
+# the mode error.
+
+compile clean include/fixy/Uses.cpp mode=error out=no
+exit clean pass
+
+compile host include/fixy/Uses.cpp mode=error out=no
+flag host -DPLANT_HOST
+exit host fail
+error host include/fixy/Uses.cpp:2 | quarantine: upward-include tool/Tool.h (no layer) from the layer low;
+
+compile kernel include/fixy/Uses.cpp mode=error out=no
+flag kernel -DPLANT_KERNEL
+exit kernel fail
+error kernel include/fixy/Uses.cpp:5 | quarantine: upward-include bpf/common.h (no layer) from the layer low;

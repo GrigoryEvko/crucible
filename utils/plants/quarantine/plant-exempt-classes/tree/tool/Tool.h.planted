@@ -1,0 +1,2 @@
+#pragma once
+inline int tool_entry(int value) { return value; }
