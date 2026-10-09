@@ -117,6 +117,9 @@ PLUGIN_FIXTURES = {
     # The region fixture again, with a planted copy of the header first in the
     # search list (PLANTED_HEADERS).
     "neg/neg_region_empty_header.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
+    # The region fixture with no reason to fail: it compiles, and the census
+    # comes from the section of its object.
+    "neg/neg_region_compiles.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY,
 }
 # A copy of foundation/Quarantine.h whose macros give nothing, also with the
 # plugin.  The array in the region of a fixture is then no opted-out finding.
@@ -599,8 +602,9 @@ class StoreTest:
         newest["returncode"] = 0
         entry.write_bytes(store.encode_entry(planted))
         compiled = self.run("neg_convert", *CONVERT)
-        self.expect(compiled[0] == 1 and "compiled successfully" in compiled[2],
-                    f"a stored exit code 0 fails the fixture: {compiled[0]}")
+        self.expect(compiled[0] == 0 and self.has(compiled[3], f"compiled ({store._SUCCEEDED})"),
+                    f"a stored exit code 0 is a miss, because the census of a compile that succeeds reads its object: "
+                    f"{compiled[0]} {compiled[3]}")
 
     def check_cpu_budget(self) -> None:
         """With no instruction count, the driver judges the CPU time of a compile with the rule fixture-cpu.
@@ -1289,6 +1293,30 @@ class StoreTest:
         self.expect(plain[0] == 0 and self.census_of("neg_size") == (None, None),
                     f"a fixture whose command loads no plugin has no census: {self.census_of('neg_size')}")
 
+    def check_section_census(self) -> None:
+        """The census of a fixture that compiles comes from the section of its object, and the store keeps no such run.
+
+        neg_region_compiles holds a raw array in a region and no reason to
+        fail.  Its compile succeeds, and the fixture fails.  The census holds
+        the opted-out finding and the region, from the section.  A second run
+        compiles again, because the store keeps no object, and it gives the
+        same census.
+        """
+        if not self.plant_plugin_tree():
+            return
+        self.settle()
+        expected = {("region", 3), ("opted-out", 4)}
+        for attempt in ("first", "second"):
+            result = self.run("neg_region_compiles", *OWN)
+            stamp, census = self.census_of("neg_region_compiles")
+            found = {(kind, line) for kind, line, _, _ in census or ()}
+            self.expect(result[0] == 1 and self.has(result[3], "compiled (")
+                        and not self.has(result[3], "the result comes from the store")
+                        and stamp is not None and found == expected
+                        and self.has_census("neg_region_compiles", "opted-out", 4, "c-array-object raw_values"),
+                        f"the {attempt} run compiles, fails the fixture, and writes the census of the section: "
+                        f"{result[0]} {stamp} {census} {result[3]}")
+
     def plant_plugin_tree(self) -> bool:
         """Add the plugin fixtures, the planted headers, a rule table and a compile row for each fixture to the tree.
 
@@ -1430,6 +1458,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_plugin_extra_error,
     StoreTest.check_region_macros,
     StoreTest.check_plugin_census,
+    StoreTest.check_section_census,
 )
 
 SEARCH_LIST = """\
@@ -1604,16 +1633,19 @@ def check_census_words(failures: list[str]) -> None:
         planted_record(sarif.Kind.ERROR, None, str(source), 7, 1, "the expected error of the fixture"),
     ))
     failed = store.CompileResult(1, "", 0.1, 0.0, None, log=log)
+    directory, output = Path("/w"), Path("/w/no-such-directory/neg_census.o")
     expected = ("0123abcd", (("c-library-call", 4, 5, "abort"), ("std-object", 3, 9, "std::byte")))
-    if store.fixture_census(failed, argv, source) != expected:
+    if store.fixture_census(failed, argv, directory, source, output) != expected:
         failures.append(f"the census holds each finding of the plugin in the source one time, with no advice and no "
-                        f"other file: {store.fixture_census(failed, argv, source)}")
+                        f"other file: {store.fixture_census(failed, argv, directory, source, output)}")
     succeeded = store.CompileResult(0, "", 0.1, 0.0, None, log=log)
-    if store.fixture_census(succeeded, argv, source) is not None:
-        failures.append("a compile that succeeds gives no census, because the plugin writes into the object")
-    if store.fixture_census(failed, ["g++", "-c", "a.cpp"], source) is not None:
+    rooted = [*argv, f"{PLUGIN_ARGUMENT}root=/w"]
+    if store.fixture_census(succeeded, rooted, directory, source, output) is not None:
+        failures.append("a compile that succeeds reads the section of its object and not the log, and no object gives "
+                        "no census")
+    if store.fixture_census(failed, ["g++", "-c", "a.cpp"], directory, source, output) is not None:
         failures.append("a command that loads no plugin gives no census")
-    if store.fixture_census(store.CompileResult(1, "", 0.1, 0.0, None), argv, source) is not None:
+    if store.fixture_census(store.CompileResult(1, "", 0.1, 0.0, None), argv, directory, source, output) is not None:
         failures.append("a compile with no log gives no census")
 
 

@@ -20,8 +20,9 @@ THE PROBLEMS
     census and no count.  For each other fixture, these conditions are
     problems:
       * the fixture has no record, because it did not run in the build
-      * the record holds no census.  The compile of the fixture succeeded,
-        and the fixture fails, or an earlier driver wrote the record
+      * the record holds no census.  The compile wrote no log, or it
+        succeeded and its object holds no section of the plugin, or an
+        earlier driver wrote the record
       * the census holds a stamp that is not the stamp argument of the compile
         command of the fixture.  The plugin, the rule table or the configure
         changed after the run
@@ -270,8 +271,8 @@ def problem_of(item: FixtureFacts, build_shown: str) -> str:
         return f"the record of the fixture {item.name} cannot count: {item.problem}.  {rerun}"
     if item.census is None or item.census_stamp is None:
         return (
-            f"the record of the fixture {item.name} holds no census.  The compile of the fixture succeeded, and the "
-            f"fixture fails, or an earlier driver wrote the record.  {rerun}"
+            f"the record of the fixture {item.name} holds no census.  The compile wrote no log, or it succeeded and its "
+            f"object holds no section of the plugin, or an earlier driver wrote the record.  {rerun}"
         )
     if item.census_stamp != item.stamp:
         return (

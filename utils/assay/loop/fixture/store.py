@@ -84,9 +84,12 @@ run holds the census and the stamp argument of the plugin (The record of a
 run), and the rule fixture-quarantine counts them.
 
 A compile that succeeds writes an object, and the plugin then writes its
-findings into the section of the object and not into the log.  A command
-that loads no quarantine plugin has no stamp argument.  In these two
-conditions, and with no log, the record holds no census.
+findings into the section of the object and not into the log.  The census of
+such a compile holds the lines of the rule quarantine in the source, from the
+section (`section_census`).  The store keeps no object.  It then keeps no
+compile that succeeds, and a stored result of such a compile is a miss.  A
+command that loads no quarantine plugin has no stamp argument, and its record
+holds no census.  A compile with no log or no section gives no census too.
 
 The plugin is a file that the command names, and the key of a stored result
 holds the bytes of the plugin (item 1 below).  A new build of the plugin then
@@ -642,8 +645,15 @@ _PLUGIN_LOAD = ("-fplugin=", "--plugin=")
 QUARANTINE_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 _MODE_ARGUMENT = f"{QUARANTINE_ARGUMENT}mode="
 _STAMP_ARGUMENT = f"{QUARANTINE_ARGUMENT}stamp="
+_ROOT_ARGUMENT = f"{QUARANTINE_ARGUMENT}root="
 # The mode of the plugin in the compile of a fixture (The quarantine plugin).
 _CENSUS_MODE = "report"
+# The rule of the lines of the section of an object that make the census of a compile that succeeds (The quarantine
+# plugin).
+_SECTION_CENSUS_RULE = "quarantine"
+# Why the store keeps no compile that succeeds: the census reads the object of the compile, and the store keeps no
+# object (The quarantine plugin).
+_SUCCEEDED = "the compile succeeded, and its census reads the object of a new compile"
 
 
 def _report_mode(argv: list[str]) -> list[str]:
@@ -659,20 +669,27 @@ def census_stamp(argv: list[str]) -> str | None:
     return next((arg[len(_STAMP_ARGUMENT):] for arg in argv if arg.startswith(_STAMP_ARGUMENT)), None)
 
 
-def fixture_census(result: CompileResult, argv: list[str],
-                   source: Path) -> tuple[str, tuple[cost_record.CensusFinding, ...]] | None:
+def fixture_census(result: CompileResult, argv: list[str], directory: Path, source: Path,
+                   output: Path) -> tuple[str, tuple[cost_record.CensusFinding, ...]] | None:
     """Return the stamp argument of the plugin and the findings of the plugin in the source of the fixture.
 
-    The findings are the results of the plugin in the log with the file
-    `source`, each one time, in sorted sequence.  A result names its file by
-    the path of sarif.plugin_path(), as the plugin names the file of a
-    finding.  `source` is a path of `realpath()`.  The result is None when the
-    command loads no quarantine plugin, when the compile succeeded, and when
-    the compile wrote no log (The quarantine plugin).  The cost is O(n log n)
-    in the results of the log.
+    The findings of a compile with an error are the results of the plugin in
+    the log with the file `source`, each one time, in sorted sequence.  A
+    result names its file by the path of sarif.plugin_path(), as the plugin
+    names the file of a finding.  `source` is a path of `realpath()`.  The
+    findings of a compile that succeeded come from the section of its object
+    `output` (`section_census`).  The result is None when the command loads
+    no quarantine plugin, and when the compile wrote no log or no section
+    (The quarantine plugin).  The cost is O(n log n) in the results of the
+    log or the lines of the section.
     """
     stamp = census_stamp(argv)
-    if stamp is None or result.log is None or result.returncode == 0:
+    if stamp is None:
+        return None
+    if result.returncode == 0:
+        from_section = section_census(argv, directory, source, output, stamp)
+        return None if from_section is None else (stamp, from_section)
+    if result.log is None:
         return None
     found: set[cost_record.CensusFinding] = set()
     for record in result.log.diagnostics:
@@ -680,6 +697,34 @@ def fixture_census(result: CompileResult, argv: list[str],
             kind, entity = sarif.plugin_finding(record)
             found.add((kind, record.line, record.column, entity))
     return stamp, tuple(sorted(found))
+
+
+def section_census(argv: list[str], directory: Path, source: Path, output: Path,
+                   stamp: str) -> tuple[cost_record.CensusFinding, ...] | None:
+    """Return the lines of the rule quarantine in the source of the fixture, from the section of its object.
+
+    A compile that succeeds writes an object, and the plugin writes its
+    findings into the section of the object and not into the log.  The lines
+    of the rule quarantine are each finding that the rule fixture-quarantine
+    counts, also each opted-out finding and each region.  A line names its
+    file relative to the root argument of the plugin.  The result is None
+    when the command has no root argument, or when the object has no section.
+    It is None when the section cannot be read or holds a different stamp
+    too.  The cost is O(n log n) in the lines of the section.
+    """
+    root = next((arg[len(_ROOT_ARGUMENT):] for arg in argv if arg.startswith(_ROOT_ARGUMENT)), None)
+    if root is None:
+        return None
+    sections = _sections_module()
+    try:
+        section = sections.read(output)
+    except (sections.SectionError, OSError):
+        return None
+    if section is None or section.stamp != stamp:
+        return None
+    shown = os.path.relpath(source, os.path.realpath(os.path.join(directory, root)))
+    return tuple(sorted({(item.kind, item.line, item.column, item.entity) for item in section.findings
+                         if item.rule == _SECTION_CENSUS_RULE and item.file == shown}))
 
 
 def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Path) -> list[str]:
@@ -2430,6 +2475,13 @@ def _cost_meter_module() -> ModuleType:
     return cost_meter
 
 
+def _sections_module() -> ModuleType:
+    """Return the module utils/assay/readers/sections.py, which only the census of a compile that succeeds reads."""
+    from assay.readers import sections as plugin_sections
+
+    return plugin_sections
+
+
 def _shown(path: Path) -> str:
     """Return a path relative to the root of the tree when it is in the tree, else the path itself."""
     try:
@@ -2739,7 +2791,9 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     `store_reason` tells why `store` is None.  The key and the stored result
     hold the marks of `roots` in place of the source root and the build root.
     A stored result whose compile is over the error threshold of the rule that
-    holds the error level is a miss, so the driver measures again.
+    holds the error level is a miss, so the driver measures again.  A stored
+    result of a compile with no error is a miss too.  The store keeps no such
+    compile, because its census reads the object (The quarantine plugin).
     """
     depfile = Path(argv[-1])
     env = compile_environment(os.environ)
@@ -2754,6 +2808,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         digests.save()
         if stored is not None and budget.is_over_error(fixture_name, stored):
             stored, reason = None, f"the stored compile {budget.excess_text(stored)} than the error threshold"
+        if stored is not None and stored.returncode == 0:
+            stored, reason = None, _SUCCEEDED
         if stored is not None:
             _note(fixture_name, f"the result comes from the store (entry {key})")
             return stored, True
@@ -2790,7 +2846,9 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             is_stored, why = False, dependency_reason
         elif result.log is None:
             is_stored, why = False, result.log_problem
-        elif result.returncode not in (0, 1):
+        elif result.returncode == 0:
+            is_stored, why = False, _SUCCEEDED
+        elif result.returncode != 1:
             # A signal or an internal error of the compiler can give a different
             # output on the next run.
             is_stored, why = False, f"the exit code is {result.returncode}"
@@ -3057,7 +3115,8 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
                                       roots, sarif_log)
-    write_run_record(build_dir, fixture_name, result, is_stored, fixture_census(result, argv, source))
+    write_run_record(build_dir, fixture_name, result, is_stored,
+                     fixture_census(result, argv, directory, source, output))
     verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
     own_reason = 0
