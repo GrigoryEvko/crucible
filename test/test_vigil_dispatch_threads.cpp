@@ -6,6 +6,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>
+#include <foundation/effects/Ctx.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include "test_abort_probe.h"
@@ -73,16 +74,20 @@ void test_second_producer_is_rejected() {
 // it passes every type check.  The cold gates therefore also check the
 // thread at run time: the mutable view of each table, and the ring and the
 // metadata log of the Vigil.  Each one ends the process on a thread that
-// does not hold the claim, and admits the thread that holds it.
+// does not hold the claim, and admits the thread that holds it.  The claim
+// of the Vigil also refuses a second claim from the other thread.
 void test_cold_gates_reject_a_context_on_another_thread() {
     Vigil vigil;
     const VigilFgCtx fg = vigil.mint_producer_context();
 
+    bool is_vigil_claim_rejected = false;
     bool is_schema_view_rejected = false;
     bool is_ckernel_view_rejected = false;
     bool is_ring_rejected = false;
     bool is_meta_log_rejected = false;
     std::thread intruder([&] {
+        is_vigil_claim_rejected =
+            crucible::test::aborts([&vigil] { static_cast<void>(vigil.mint_producer_context()); });
         is_schema_view_rejected =
             crucible::test::aborts([&fg] { static_cast<void>(global_schema_table().mint_mutable_view(fg)); });
         is_ckernel_view_rejected =
@@ -92,6 +97,7 @@ void test_cold_gates_reject_a_context_on_another_thread() {
     });
     intruder.join();
 
+    assert(is_vigil_claim_rejected && "the claim of the Vigil admitted a second thread");
     assert(is_schema_view_rejected && "the schema table view admitted a thread that holds no claim");
     assert(is_ckernel_view_rejected && "the kernel table view admitted a thread that holds no claim");
     assert(is_ring_rejected && "the ring admitted a thread that holds no claim");
@@ -106,25 +112,34 @@ void test_cold_gates_reject_a_context_on_another_thread() {
     crucible::test::pass("  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
 }
 
+// A brand of this test.  Its claim obeys the rule of each brand, and the
+// Vigil holds the same claim for its own brand.  Two live claims of this
+// brand hold no metadata log, and two live Vigils hold two logs of 176 MB.
+struct ClaimBrand {
+    ::foundation::effects::host::ProducerClaim<ClaimBrand> claim;
+};
+
 // The cold gate of a table asks which thread holds the live claims of the
 // brand, so one thread at a time holds them.  A second thread that claims
-// another Vigil while this thread holds a claim ends the process.
+// another object of the brand while this thread holds a claim ends the
+// process.
 void test_second_thread_cannot_claim_the_brand() {
     bool is_second_claim_rejected = false;
     {
-        Vigil first;
-        static_cast<void>(first.mint_producer_context());
+        ClaimBrand first;
+        static_cast<void>(first.claim.mint_producer_context());
 
         std::thread other([&is_second_claim_rejected] {
-            Vigil second;
+            ClaimBrand second;
             is_second_claim_rejected =
-                crucible::test::aborts([&second] { static_cast<void>(second.mint_producer_context()); });
+                crucible::test::aborts([&second] { static_cast<void>(second.claim.mint_producer_context()); });
         });
         other.join();
     }
     assert(is_second_claim_rejected && "a second thread claimed the brand while this thread held a claim");
 
-    // After the first Vigil is gone, another thread claims the brand.
+    // The Vigils of the cases above are gone, so another thread claims the
+    // brand of the Vigil.
     bool is_later_claim_admitted = false;
     std::thread later_thread([&is_later_claim_admitted] {
         Vigil later;

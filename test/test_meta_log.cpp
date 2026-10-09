@@ -103,14 +103,15 @@ static void test_reset_zeroes_both_pointers() {
 
 static void test_copy_run_across_the_end() {
     MetaLog log;
-    // Filling and then draining leaves the head three slots from the
-    // end of the ring, which is the only way to reach the wrap without
-    // holding a full buffer of live entries.
+    // The three counters start three slots from the end of the ring.  The
+    // next append then passes the end.  A fill and a drain of the ring hold a
+    // second buffer of 176 MB, and the ring holds 176 MB too.  The
+    // reset is correct only when no other thread uses the log, and this test
+    // has one thread.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
-    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x4000)));
-    std::vector<TensorMeta> junk(near_end, m);
-    (void)log.try_append(junk.data(), near_end);
-    log.advance_tail(near_end);
+    log.head.reset_under_quiescence(near_end);
+    log.tail.reset_under_quiescence(near_end);
+    log.cached_tail_.reset_under_quiescence(near_end);
     assert(log.size().peek() == 0);
 
     // Five entries into three remaining slots: the batch straddles the
