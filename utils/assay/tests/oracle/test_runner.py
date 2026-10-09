@@ -16,7 +16,8 @@ THE PARTS
     of the drift of assay.oracle.runner, which are Python work.  Only
     golden.csv gives the sequence of the units, and the parts are then
     disjoint.  The group oracle of `guard selftest` gives this module its
-    part, and the other modules of the group run in the last part.
+    part.  The test of the store has parts of its own, and the module of the
+    group with no parts runs in the last part.
 
 THE STORE
     The store of assay.oracle.unit_store keeps the result of each unit.  A

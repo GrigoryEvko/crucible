@@ -22,7 +22,15 @@ THE SPELLED ROOTS
     store then kept no result.  `guard selftest oracle` runs the module with
     the other modules of its group.
 
-`guard selftest tests.oracle.test_unit_store` runs the test alone.
+THE PARTS
+    With `--part K/N`, part 0 runs the cases of the store, and part 1 modulo
+    N runs the cases of the spelled roots.  Part N - 1 runs the cases of
+    sweep_sources().  Each of the first two groups waits one time for the
+    settle period of the store.  The two waits then go to two parts of the
+    group oracle.  No part then holds the two waits and a part of the units of
+    test_runner.
+
+`guard selftest tests.oracle.test_unit_store [--part K/N]` runs the test alone.
 """
 
 import contextlib
@@ -35,8 +43,14 @@ from pathlib import Path
 
 from assay.core import cache as cache_dir
 from assay.core import paths, proc, testing
+from assay.core import report as check_report
+from assay.core.exit import ExitCode
+from assay.guard import selftest
 from assay.loop.fixture import store as compile_store
 from assay.oracle.unit_store import UnitStore
+
+# The group oracle gives this module the part of the call (THE PARTS).
+PARTED = True
 
 # The wait after the setup.  Each file of the setup is then older than the settle period of the store.
 SETTLED_S = compile_store._SETTLE_NS / 1e9 + 0.2
@@ -331,18 +345,43 @@ def sweep_cases(expect: testing.Expect) -> None:
             )
 
 
-def unit_store_cases(expect: testing.Expect) -> None:
-    """Run the cases of the store and of the spelled roots, each in a scratch directory of its own."""
+def compiler_of(expect: testing.Expect) -> str | None:
+    """Return the patched compiler of the cases, or None after a case that does not hold when no variable names it."""
     cxx = testing.patched_compiler()
-    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", bool(cxx) and Path(cxx).is_file())
-    if not cxx or not Path(cxx).is_file():
-        return
-    with tempfile.TemporaryDirectory(prefix="unit_store_test_") as scratch:
-        store_cases(expect, cxx, Path(scratch))
-    with tempfile.TemporaryDirectory(prefix="unit_store_spelled_") as scratch:
-        spelled_root_cases(expect, cxx, Path(scratch))
+    is_there = bool(cxx) and Path(cxx).is_file()
+    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", is_there)
+    return cxx if is_there else None
+
+
+def store_group(expect: testing.Expect) -> None:
+    """Run the cases of the store in a scratch directory of their own."""
+    cxx = compiler_of(expect)
+    if cxx is not None:
+        with tempfile.TemporaryDirectory(prefix="unit_store_test_") as scratch:
+            store_cases(expect, cxx, Path(scratch))
+
+
+def spelled_root_group(expect: testing.Expect) -> None:
+    """Run the cases of the spelled roots in a scratch directory of their own."""
+    cxx = compiler_of(expect)
+    if cxx is not None:
+        with tempfile.TemporaryDirectory(prefix="unit_store_spelled_") as scratch:
+            spelled_root_cases(expect, cxx, Path(scratch))
 
 
 def main(argv: list[str]) -> int:
-    """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (sweep_cases, unit_store_cases))
+    """Run the cases of one part, and write one line for each (THE PARTS)."""
+    module = __name__.removeprefix("assay.")
+    part = selftest.parsed_part(argv)
+    if part is None:
+        check_report.write_line(f"usage: guard selftest {module} [--part K/N], with 0 <= K < N", is_error=True)
+        return ExitCode.USAGE
+    index, count = part
+    groups: list[testing.Group] = []
+    if index == 0:
+        groups.append(store_group)
+    if index == 1 % count:
+        groups.append(spelled_root_group)
+    if index == count - 1:
+        groups.append(sweep_cases)
+    return testing.run(module, [], groups)

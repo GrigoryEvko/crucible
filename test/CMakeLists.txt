@@ -426,7 +426,9 @@ set_tests_properties(cache_dir_self_test PROPERTIES
 # The group has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each part
 # is one test.  Part K builds each unit whose position in the list of units,
 # modulo the count of parts, is K, and the last part also runs the tests of
-# the group that have no parts.  The parts then hold each unit one time, and
+# the group that have no parts.  The test of the store gives its two waits for
+# the settle period to parts 0 and 1, and its other cases to the last part.
+# The parts then hold each unit one time, and
 # no part takes much more than one compile of its largest unit.  The store of
 # utils/assay/oracle/unit_store.py keeps the result of each unit, so a part
 # builds only the units whose inputs changed.  A part that takes each result
