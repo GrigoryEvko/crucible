@@ -34,7 +34,9 @@ THE LEDGER
     `guard write --rule static-tls --build-dir DIR --reason TEXT` writes the
     rows of the kind of the build.  A row keeps its reason, and the write
     removes each row of the kind with a member that is not more than the
-    error threshold.
+    error threshold.  written() gives the new ledger from the members and the
+    ledger, and it reads no build.  write() reads the build and stores the
+    ledger, and it tells when the ledger has no change.
 
 THE ERRORS
     The rule fails closed.  These builds are errors, because the rule cannot
@@ -52,6 +54,7 @@ Complexity: linear in the symbols of the members of the libraries.
 """
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -246,6 +249,42 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 # ── The write ──────────────────────────────────────────────────────
 
 
+def written(
+    budget: check_report.Budget,
+    kind: str,
+    members: Sequence[MemberTls],
+    ledger: rule_ledger.Ledger,
+    reason: str | None,
+) -> rule_ledger.Ledger:
+    """Return the ledger with the rows of the build kind KIND written again from the members of the build (THE LEDGER).
+
+    Each row of a different kind stays.  A member over the error threshold gets a row with its value, and the reason
+    of its earlier row or REASON.  Each other row of the kind goes.  Complexity: linear in the members and the rows.
+
+    Raises:
+        rule_ledger.LedgerError: If a member over the error threshold has no row and the call gives no reason
+    """
+    base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
+    unexplained: list[str] = []
+    for member in members:
+        if member.value <= budget.error:
+            continue
+        path, entity = cost_meter.item_cells(member.item, cost_meter.ITEM_OUTPUT)
+        key = rule_ledger.Key(path, kind, entity)
+        earlier = ledger.base.get(key)
+        why = earlier.reason if earlier is not None else reason
+        if not why:
+            unexplained.append(member.item)
+            continue
+        base[key] = rule_ledger.Entry(key, member.value, why)
+    if unexplained:
+        raise rule_ledger.LedgerError(
+            f"{', '.join(unexplained)} is more than the error threshold and has no row.  Give the reason of its row "
+            f"with --reason"
+        )
+    return replace(ledger, base=base)
+
+
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     """Write the rows of the kind of the build (THE LEDGER).
 
@@ -265,40 +304,21 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     context = runner.ElfContext(request.root, request.build_dir)
     try:
         kind = context.kind()
-        budget = budget_of(rule)
-        members = measured(context)
         ledger = rule_ledger.read(rule, request.root)
+        new = written(budget_of(rule), kind, measured(context), ledger, request.reason)
     except runner.NotApplicable as reason:
         check_report.write_line(f"guard write: the rule {RULE} does not apply: {reason}", is_error=True)
         return runner.SKIPPED
-    except (runner.BuildError, rows_grammar.RowsError, OSError) as problem:
+    except (runner.BuildError, rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
         return 1
-    base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
-    unexplained: list[str] = []
-    for member in members:
-        if member.value <= budget.error:
-            continue
-        path, entity = cost_meter.item_cells(member.item, cost_meter.ITEM_OUTPUT)
-        key = rule_ledger.Key(path, kind, entity)
-        earlier = ledger.base.get(key)
-        why = earlier.reason if earlier is not None else request.reason
-        if not why:
-            unexplained.append(member.item)
-            continue
-        base[key] = rule_ledger.Entry(key, member.value, why)
-    if unexplained:
-        check_report.write_line(
-            f"guard write: the ledger of {RULE} is not written: {', '.join(unexplained)} is more than the error "
-            f"threshold and has no row.  Give the reason of its row with --reason",
-            is_error=True,
-        )
-        return 1
-    is_new = not rule_ledger.ledger_path(RULE, request.root).is_file()
-    written = replace(ledger, base=base, comment=LEDGER_COMMENT if is_new else ledger.comment)
-    if is_new and not base:
-        check_report.write_line(f"guard write: no member of {kind} is over the error threshold, and {RULE} has no rows")
-        return 0
-    rule_ledger.store(written, request.root)
-    check_report.write_line(f"guard write: wrote {len(base)} rows of {RULE} to {rule_ledger.shown_path(RULE)}")
+    if not rule_ledger.ledger_path(RULE, request.root).is_file():
+        if not new.base:
+            told = f"no member of {kind} is over the error threshold, and {RULE} has no rows"
+            check_report.write_line(f"guard write: {told}")
+            return 0
+        new = replace(new, comment=LEDGER_COMMENT)
+    changed = rule_ledger.store(new, request.root)
+    told = "" if changed else ", with no change"
+    check_report.write_line(f"guard write: {rule_ledger.shown_path(RULE)} holds {len(new.base)} rows{told}")
     return 0

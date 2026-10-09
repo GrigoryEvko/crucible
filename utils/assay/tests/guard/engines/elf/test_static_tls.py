@@ -206,11 +206,12 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         and [(key.path, key.kind, entry.value, entry.reason) for key, entry in ledger.base.items()]
         == [("@build/libcrucible.a(header.cpp.o)", KIND, 512, "a planted buffer")],
     )
-    status, _ = scratch.write(rule)
+    status, text = scratch.write(rule)
     expect(
-        "a second write keeps the reason of the row",
+        "a second write keeps the reason of the row, and it says that the ledger has no change",
         status == 0
-        and [entry.reason for entry in rule_ledger.read(rule, scratch.root).base.values()] == ["a planted buffer"],
+        and [entry.reason for entry in rule_ledger.read(rule, scratch.root).base.values()] == ["a planted buffer"]
+        and "with no change" in text,
     )
     scratch.archive("crucible", ["plain"])
     scratch.directory()
@@ -224,8 +225,49 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect("the mode raise does not apply to the policy max", status == 2)
 
 
+def written_cases(expect: testing.Expect) -> None:
+    """Hold the ledger that written() gives from the members of a build, with no build (THE LEDGER)."""
+    budget = static_tls.budget_of(planted_rule())
+    item = "libcrucible.a(header.cpp.o)"
+    other = rule_ledger.Key("@build/libfixy.a(slot.cpp.o)", "other-kind", "")
+    gone = rule_ledger.Key("@build/libfixy.a(old.cpp.o)", KIND, "")
+    ledger = rule_ledger.Ledger(
+        RULE,
+        rule_registry.Policy.MAX,
+        "",
+        base={
+            other: rule_ledger.Entry(other, 300, "a row of a different kind"),
+            gone: rule_ledger.Entry(gone, 300, "a row of a member that went"),
+        },
+    )
+    big = static_tls.MemberTls(item, 512, ("_ZN10foundation6bufferE",))
+    small = static_tls.MemberTls("libfoundation.a(counter.cpp.o)", 4, ("counter",))
+    new = static_tls.written(budget, KIND, (big, small), ledger, "a planted buffer")
+    rows = {key.path: (key.kind, entry.value, entry.reason) for key, entry in new.base.items()}
+    expect(
+        "written() keeps a row of a different kind, writes the member over the error threshold, and removes the rest",
+        rows
+        == {
+            other.path: ("other-kind", 300, "a row of a different kind"),
+            f"@build/{item}": (KIND, 512, "a planted buffer"),
+        },
+    )
+    kept = static_tls.written(budget, KIND, (big,), new, None)
+    expect(
+        "written() keeps the reason of an earlier row when the call gives none",
+        [entry.reason for key, entry in kept.base.items() if key.kind == KIND] == ["a planted buffer"],
+    )
+    try:
+        static_tls.written(budget, KIND, (big,), ledger, None)
+        said = ""
+    except rule_ledger.LedgerError as problem:
+        said = str(problem)
+    expect("written() refuses a member over the error threshold with no row and no reason", item in said)
+
+
 def cases(expect: testing.Expect) -> None:
     """Run each case on one planted tree."""
+    written_cases(expect)
     compiler = runner.plant_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
     if compiler is None:
