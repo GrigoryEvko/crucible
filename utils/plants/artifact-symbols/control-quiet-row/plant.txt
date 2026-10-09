@@ -1,0 +1,4 @@
+# A throw row names a function of the library foundation, and the function of this build does not throw.
+# The inlining of a different configuration can keep the throw, so the row passes and admits nothing.
+library foundation base.cpp quiet.cpp
+library crucible base.cpp

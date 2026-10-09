@@ -1,0 +1,1 @@
+int quiet_entry(int value) noexcept { return value + 2; }

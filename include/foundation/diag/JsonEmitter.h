@@ -121,6 +121,16 @@ template <typename Record, std::size_t N>
     return true;
 }
 
+// The part of a view from START, with LENGTH characters at the maximum.  A
+// START past the end gives an empty part at the end.  std::string_view::substr
+// throws std::out_of_range for such a START, and this function has no throw.
+[[nodiscard]] constexpr std::string_view view_part(std::string_view view, std::size_t start,
+                                                   std::size_t length = std::string_view::npos) noexcept {
+    const std::size_t first = start < view.size() ? start : view.size();
+    const std::size_t rest = view.size() - first;
+    return std::string_view{view.data() + first, length < rest ? length : rest};
+}
+
 // A sink takes the bytes of a record: the counter below, or a stream
 // through file_json_sink.  Each answers false when it refuses a byte, and
 // the writer stops at the first false.  One writer then serves the count
@@ -300,8 +310,8 @@ template <JsonSink S, class Unused = void>
     const bool has_function_delimiter = at != std::string_view::npos;
     std::string_view loc = context;
     if (has_function_delimiter) {
-        loc = context.substr(0, at);
-        pos.function = context.substr(at + 1);
+        loc = detail::view_part(context, 0, at);
+        pos.function = detail::view_part(context, at + 1);
     } else {
         pos.function = context;
     }
@@ -315,7 +325,7 @@ template <JsonSink S, class Unused = void>
     }
 
     std::uint_least32_t tail = 0;
-    if (!detail::parse_u32(loc.substr(last_colon + 1), tail)) {
+    if (!detail::parse_u32(detail::view_part(loc, last_colon + 1), tail)) {
         pos.file = loc;
         return pos;
     }
@@ -323,9 +333,9 @@ template <JsonSink S, class Unused = void>
     const std::size_t prev_colon = last_colon == 0 ? std::string_view::npos : loc.rfind(':', last_colon - 1);
     if (prev_colon != std::string_view::npos) {
         std::uint_least32_t parsed_line = 0;
-        const std::string_view line_field = loc.substr(prev_colon + 1, last_colon - prev_colon - 1);
+        const std::string_view line_field = detail::view_part(loc, prev_colon + 1, last_colon - prev_colon - 1);
         if (detail::parse_u32(line_field, parsed_line)) {
-            pos.file = loc.substr(0, prev_colon);
+            pos.file = detail::view_part(loc, 0, prev_colon);
             pos.line = parsed_line;
             pos.column = tail;
             return pos;
@@ -336,7 +346,7 @@ template <JsonSink S, class Unused = void>
         }
     }
 
-    pos.file = loc.substr(0, last_colon);
+    pos.file = detail::view_part(loc, 0, last_colon);
     pos.line = tail;
     return pos;
 }

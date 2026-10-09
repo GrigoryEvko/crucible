@@ -6,8 +6,9 @@ THE TWO PROPERTIES
     flags hold all the same, and the artifact is the guarantee.  The rule
     reads each static library of the root CMakeLists.txt
     (assay.guard.engines.elf.runner, THE BUILD), and it refuses:
-      throw     a reference to __cxa_throw or __cxa_rethrow in a live
-                function.  An error path is std::expected or an abort
+      throw     a reference to __cxa_throw, to __cxa_rethrow or to a throw
+                helper of libstdc++ (THE THROW HELPERS) in a live function.
+                An error path is std::expected or an abort
       downcast  a reference to __dynamic_cast or __cxa_bad_cast
       vtable    a typeinfo or a vtable that the archive holds: a polymorphic
                 type
@@ -38,6 +39,25 @@ THE THROWS OF THE ALLOCATOR
     last typeinfo that its section references before the call.  A throw
     loads it as the second argument of __cxa_throw.  The rule admits a throw
     of one of the two types.  A rethrow has no type.
+
+THE THROW HELPERS
+    A member function of a library class can throw through a function of
+    libstdc++ in the scope std.  Examples are std::string_view::substr,
+    which calls std::__throw_out_of_range_fmt, and std::vector::push_back,
+    which calls std::__throw_length_error.  The helper calls __cxa_throw in
+    libstdc++.so, and the archive references only the helper.  A throw
+    helper is each function of the scope std with a name that starts with
+    __throw_ (is_throw_helper).  The rule admits std::__throw_bad_alloc and
+    std::__throw_bad_array_new_length, the helpers of the two types above.
+
+    In an archive of the base libraries foundation and fixy
+    (BASE_LIBRARIES), each other helper is a throw finding.  Only a row
+    throw with its reason admits it.  In each other archive, each live
+    reference to such a helper is a finding of the kind helper-throw.  Its
+    key is the archive and the mangled name of the helper, and the ledger
+    counts the references of each key in each configuration.  The count can
+    only fall.  The migration to the types of the base removes the
+    containers and the views of the standard library.
 
 THE LIBSTDC++ SYMBOLS
     Rule R5 of misc/01_10_2026_quarantine.md says that no object of
@@ -96,10 +116,14 @@ THE LEDGER
         configuration KIND tier TIER
         @build/LIBRARY | MARK | 1 | SYMBOL | -
         @KIND | @build/LIBRARY | MARK | +1 | SYMBOL | -
+        @build/ARCHIVE | helper-throw | COUNT | HELPER | -
+        @KIND | @build/ARCHIVE | helper-throw | DELTA | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
     MARK is one of MARKS: `allow` and `ratchet` for a libstdc++ symbol, and
-    `libc-allow` and `libc-ratchet` for a C runtime symbol.  The symbols change
+    `libc-allow` and `libc-ratchet` for a C runtime symbol.  A row
+    helper-throw gives the references of an archive that is not of the base
+    to a throw helper (THE THROW HELPERS).  The symbols change
     with the build, because the inlining, the sanitizers and the macro
     _GLIBCXX_ASSERTIONS change the references.  A configuration
     is a build kind on a target tier (assay.core.target).  The first
@@ -109,18 +133,25 @@ THE LEDGER
     The rows throw and vtable belong to no configuration (assay.core.ledger,
     THE PART OF NO CONFIGURATION), and each build of each kind judges them.
     A row throw admits a throw in a function of its archive when the
-    demangled name of the function holds TEXT.  A row vtable admits the
-    typeinfo and the vtable of a class in the same way.  The entity of each
-    such finding is then TEXT.  The inlining moves a throw from one
-    function to a different function between a Debug build and a Release
-    build.  TEXT names the site in a way that each configuration shares.  A
-    finding that no row admits has its full name as its entity.  The rule
+    demangled name of the function holds TEXT.  It also admits the throw
+    when the name of the object of the function holds TEXT.  A row vtable
+    admits the typeinfo and the vtable of a class when its name
+    holds TEXT.  The entity of each such finding is then TEXT.  The inlining
+    moves a throw from one function to a different function between a Debug
+    build, a Release build and a build with a sanitizer.  TEXT names the
+    site in a way that each configuration shares.  An object name, such as
+    Topology.cpp.o, names a site in each configuration.  A finding that no
+    row admits has its full name as its entity.  The rule
     refuses a row of a different kind, and no row can admit a downcast.
 
 THE VERDICT
     assay.core.ledger judges the findings.  A finding with no row is an
     error, and a row of a symbol that goes is an error too.  A row throw or
-    vtable that admits nothing of the build is an error.  Each library with
+    vtable that admits nothing of the build is an error.  The exception is a
+    row throw that names a function or an object of its archive
+    (quiet_rows).  The
+    inlining of one configuration can remove a throw that a different
+    configuration keeps.  Such a row gives no error, and a write keeps it.  Each library with
     rows gives one warning.  These archives are errors, because the rule
     read nothing there:
       * An archive that the ELF reader cannot read
@@ -132,9 +163,9 @@ THE WRITE
     configuration and the symbol rows of the build.  A write of the base
     keeps the symbols of each different configuration.  The write gives a
     row to a new `allow` or `libc-allow` symbol, and it refuses a new
-    `ratchet` or `libc-ratchet` symbol.  --raise also writes a new such
-    symbol.  Use it only for one of
-    RAISE_REASONS, and give the reason in the commit.  A write keeps each
+    `ratchet` or `libc-ratchet` symbol.  It also refuses a count of
+    helper-throw above its row.  --raise also writes such a symbol or count.
+    Use it only for one of RAISE_REASONS, and give the reason in the commit.  A write keeps each
     row throw or vtable that admits a finding, and it removes each such row
     that admits nothing.  It adds no such row: a person writes it with its
     reason.  --import LOG puts the rows of a configuration that a CI leg
@@ -147,8 +178,9 @@ NOT APPLICABLE
       * A build that has not made each library
       * A build of the UBSan-strict preset.  Its checks of the dynamic type
         put the typeinfo of library classes into the archives.
-    A build of a configuration that the ledger does not hold judges the
-    throws and the classes only.  It prints one line with its tier and the
+    A build of a configuration that the ledger does not hold judges only
+    the throws and the classes.  It does not judge its symbols and its
+    counts of helper-throw.  It prints one line with its tier and the
     tiers of the ledger, and the rows of the build for --import.  A run of a
     configuration other than the base also prints its rows after a failure.
     The base has no such rows, because a write writes them
@@ -190,6 +222,10 @@ MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET)
 RATCHET_MARKS = (RATCHET, LIBC_RATCHET)
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
+# The kind of a reference to a throw helper in an archive that is not of the base (THE THROW HELPERS).
+HELPER_THROW = "helper-throw"
+# The target names of the libraries of the base, where each throw helper is a throw finding.
+BASE_LIBRARIES = ("foundation", "fixy")
 DOWNCAST = "downcast"
 VTABLE = "vtable"
 ADMITTED_KINDS = (THROW, VTABLE)
@@ -244,9 +280,15 @@ ABI_PREFIXES = ("__cxa_", "__gxx_")
 ABI_SCOPE = "__cxxabiv1"
 GNU_SCOPE = "__gnu_cxx"
 THROW_SYMBOLS = ("__cxa_throw", "__cxa_rethrow")
+# A throw helper of libstdc++ is a function of the scope std with a name that starts with __throw_ (THE THROW HELPERS).
+# Its mangled name is the prefix, the length of the name in digits, and the name.
+STD_FUNCTION_PREFIX = "_ZSt"
+THROW_HELPER_MARK = "__throw_"
 DOWNCAST_SYMBOLS = ("__dynamic_cast", "__cxa_bad_cast")
 # The typeinfo of std::bad_alloc and of std::bad_array_new_length (THE THROWS OF THE ALLOCATOR).
 ALLOCATION_FAILURES = frozenset({"_ZTISt9bad_alloc", "_ZTISt20bad_array_new_length"})
+# The throw helpers of the same two failures: std::__throw_bad_alloc() and std::__throw_bad_array_new_length().
+ALLOCATION_HELPERS = frozenset({"_ZSt17__throw_bad_allocv", "_ZSt28__throw_bad_array_new_lengthv"})
 TYPEINFO_MARK = "_ZTI"
 FUNCTION_PREFIXES = (".text.unlikely.", ".text.hot.", ".text.startup.", ".text.exit.", ".text.")
 # The prefixes of the sections that hold no function: the debug information and the unwind tables.
@@ -262,10 +304,10 @@ RAISE_REASONS = (
     "a new build kind or target",
     "a class of symbols that the rule did not read before",
 )
-# The two shapes of a base row (THE LEDGER).
+# The three shapes of a base row (THE LEDGER).
 ROW_SHAPE = (
-    "a row is '@build/LIBRARY | allow|ratchet|libc-allow|libc-ratchet | 1 | SYMBOL | -', or "
-    "'@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
+    "a row is '@build/LIBRARY | allow|ratchet|libc-allow|libc-ratchet | 1 | SYMBOL | -', "
+    "'@build/ARCHIVE | helper-throw | COUNT | HELPER | -', or '@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
 )
 
 
@@ -362,7 +404,7 @@ def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
             )
             problems.append((0, shape))
     for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
-        is_symbol = key.kind in MARKS and entry.value != rule_ledger.ADMIT_VALUE
+        is_symbol = (key.kind in MARKS or key.kind == HELPER_THROW) and entry.value != rule_ledger.ADMIT_VALUE
         is_admit = key.kind in ADMITTED_KINDS and entry.value == rule_ledger.ADMIT_VALUE
         if not key.path.startswith(LIBRARY_PREFIX) or not key.entity or not (is_symbol or is_admit):
             problems.append((entry.line, ROW_SHAPE))
@@ -370,7 +412,7 @@ def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
         problems.append((0, "the ledger has symbol rows and no configuration row"))
     for configuration in ledger.configurations:
         for key, count in ledger.expected(configuration.name).items():
-            if count != 1:
+            if count != 1 and key.kind != HELPER_THROW:
                 shape = (
                     f"the configuration {configuration.name} gives {key.entity} of {key.path} the count {count}, "
                     f"and a symbol has the count 0 or 1"
@@ -407,8 +449,22 @@ def admitting_text(rows: Sequence[rule_ledger.Key], path: str, kind: str, subjec
 # ── The artifact ───────────────────────────────────────────────────
 
 
+def is_throw_helper(symbol: str) -> bool:
+    """Return True for the mangled name of a throw helper of libstdc++, such as _ZSt20__throw_length_errorPKc."""
+    if not symbol.startswith(STD_FUNCTION_PREFIX):
+        return False
+    rest = symbol[len(STD_FUNCTION_PREFIX) :]
+    digits = len(rest) - len(rest.lstrip("0123456789"))
+    return digits > 0 and rest[digits:].startswith(THROW_HELPER_MARK)
+
+
+def is_throw(symbol: str) -> bool:
+    """Return True for a symbol that throws: __cxa_throw, __cxa_rethrow or a throw helper of libstdc++."""
+    return symbol in THROW_SYMBOLS or is_throw_helper(symbol)
+
+
 def member_references(member: elf.Member) -> list[tuple[bool, str, str, str]]:
-    """Return each reference of one member to a throw, as WHERE A THROW STANDS tells.
+    """Return each reference of one member to a throw or a throw helper, as WHERE A THROW STANDS tells.
 
     Each item is True when the function is live, the symbol, the typeinfo that
     a throw throws or "-", and the function or the section that holds the
@@ -430,7 +486,7 @@ def member_references(member: elf.Member) -> list[tuple[bool, str, str, str]]:
         referenced.add(target)
         if target.startswith(TYPEINFO_MARK):
             typeinfo = target
-        if target in THROW_SYMBOLS:
+        if is_throw(target):
             hits.append((target, relocation.section, typeinfo if target == THROW_SYMBOLS[0] else "-"))
     found: list[tuple[bool, str, str, str]] = []
     for symbol, hit_section, thrown in hits:
@@ -588,8 +644,10 @@ def libc_mark_of(library: str, symbol: str, runtime: Runtime) -> str:
     return LIBC_ALLOW if symbol in LIBC_ALLOWLISTS[library] or symbol in runtime.support else LIBC_RATCHET
 
 
-def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Mapping[str, str]]:
+def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Mapping[str, str], frozenset[str]]:
     """Read each static library of the root, and give the target name of each archive of a symbol library.
+
+    The third item holds the archives of the base libraries (BASE_LIBRARIES).
 
     Raises:
         runner.NotApplicable: If the build has not made each library
@@ -613,7 +671,8 @@ def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Map
             f"the ELF reader reads no undefined reference from {', '.join(empty)}, and the rule read nothing there.  "
             f"An archive that calls nothing is not an archive that uses no runtime symbol"
         )
-    return artifacts, symbol_libraries
+    base_archives = frozenset(libraries[name].name for name in BASE_LIBRARIES if name in libraries)
+    return artifacts, symbol_libraries, base_archives
 
 
 # ── The findings ───────────────────────────────────────────────────
@@ -625,12 +684,17 @@ def finding(path: str, kind: str, entity: str, message: str) -> check_report.Fin
 
 
 def class_findings(
-    artifacts: Mapping[str, Artifact], names: Mapping[str, str], rows: Sequence[rule_ledger.Key], counted: Counter[str]
+    artifacts: Mapping[str, Artifact],
+    names: Mapping[str, str],
+    rows: Sequence[rule_ledger.Key],
+    counted: Counter[str],
+    base_archives: frozenset[str],
 ) -> list[check_report.Finding]:
     """Return the findings of the throws, the downcasts and the classes of the libraries (THE TWO PROPERTIES).
 
     `names` gives the demangled name of each name, and `rows` the keys of the rows throw and vtable in the sequence of
-    their lines.  `counted` gets the count of the throws of the allocator.
+    their lines.  `counted` gets the count of the throws of the allocator.  A throw helper is a throw finding only in
+    an archive of `base_archives`, and helper_findings() gives it in each other archive.
     """
     found: list[check_report.Finding] = []
     for archive in sorted(artifacts):
@@ -640,22 +704,25 @@ def class_findings(
         for reference in artifact.references:
             if not reference.is_live:
                 continue
-            if reference.thrown in ALLOCATION_FAILURES:
+            if reference.thrown in ALLOCATION_FAILURES or reference.symbol in ALLOCATION_HELPERS:
                 counted["allocation"] += 1
                 continue
+            if is_throw_helper(reference.symbol) and archive not in base_archives:
+                continue
             function = names[reference.function]
+            thrower = names.get(reference.symbol, reference.symbol)
             found.append(
                 finding(
                     path,
                     THROW,
-                    admitting_text(rows, path, THROW, function) or function,
-                    f"{archive} references {reference.symbol} in {reference.member}, in {function}.  Something in "
-                    f"this artifact throws.  An error path in this tree is std::expected or an abort, never a throw.  "
-                    f"A throw that a library header makes and the tree cannot remove takes a row with its reason",
+                    admitting_text(rows, path, THROW, f"{reference.member} {function}") or function,
+                    f"{archive} references {thrower} in {reference.member}, in {function}.  Something in this "
+                    f"artifact throws.  An error path in this tree is std::expected or an abort, never a throw.  A "
+                    f"throw that a library header makes and the tree cannot remove takes a row with its reason",
                 )
             )
-        for symbol in THROW_SYMBOLS:
-            if symbol in artifact.undefined and symbol not in attributed:
+        for symbol in sorted(name for name in artifact.undefined if is_throw(name)):
+            if symbol not in attributed:
                 found.append(
                     finding(
                         path,
@@ -690,6 +757,57 @@ def class_findings(
                     f"{archive} holds {text} in {member}.  A polymorphic type got into the artifact.  Dispatch is a "
                     f"kind enum plus static_cast, and each virtual of the tree is in a planning document.  A class of "
                     f"a library that the tree uses by design takes a row with its reason",
+                )
+            )
+    return found
+
+
+def quiet_rows(
+    admits: Mapping[rule_ledger.Key, rule_ledger.Entry],
+    artifacts: Mapping[str, Artifact],
+    names: Mapping[str, str],
+    found: set[rule_ledger.Key],
+) -> set[rule_ledger.Key]:
+    """Return the rows throw that admit no finding of the build and name a function or an object of their archive.
+
+    The site of such a row stays in the archive, and the inlining of the build removed its throw (THE VERDICT).
+    `found` holds the keys of the findings of the build.  Complexity: linear in the rows times the symbols that the
+    archives hold.
+    """
+    quiet: set[rule_ledger.Key] = set()
+    for key in admits:
+        artifact = artifacts.get(key.path.removeprefix(LIBRARY_PREFIX))
+        if key.kind != THROW or key in found or artifact is None:
+            continue
+        if any(key.entity in f"{member} {names.get(symbol, symbol)}" for member, symbol in artifact.defined):
+            quiet.add(key)
+    return quiet
+
+
+def helper_findings(
+    artifacts: Mapping[str, Artifact], base_archives: frozenset[str], names: Mapping[str, str]
+) -> list[check_report.Finding]:
+    """Return one finding for each live reference to a throw helper in an archive that is not of the base.
+
+    The allocation helpers give no finding.  Each finding has the key of its archive and helper.  The ledger then
+    counts the references of each archive and helper (THE THROW HELPERS).  Complexity: linear in the references.
+    """
+    found: list[check_report.Finding] = []
+    for archive in sorted(set(artifacts) - base_archives):
+        for reference in artifacts[archive].references:
+            if not reference.is_live or not is_throw_helper(reference.symbol):
+                continue
+            if reference.symbol in ALLOCATION_HELPERS:
+                continue
+            found.append(
+                finding(
+                    f"{LIBRARY_PREFIX}{archive}",
+                    HELPER_THROW,
+                    reference.symbol,
+                    f"{archive} references the throw helper {names.get(reference.symbol, reference.symbol)} in "
+                    f"{reference.member}, in {names[reference.function]}.  A container or a view of the standard "
+                    f"library throws there.  The count of each archive and helper can only fall: use a type of fixy "
+                    f"or foundation",
                 )
             )
     return found
@@ -799,7 +917,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
             f"the ledger cannot be read: {problem}",
         )
         return Examination((unread,), rule_ledger.empty(rule))
-    artifacts, symbol_libraries = read_libraries(context)
+    artifacts, symbol_libraries, base_archives = read_libraries(context)
     tier = context.tier()
     configuration = plugin_runner.BuildConfiguration(
         kind, ((plugin_runner.KIND_KEY, kind), (plugin_runner.TIER_KEY, tier))
@@ -808,6 +926,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
     exports = libstdcxx_exports(context.compiler())
     runtime = runtime_of(context.compiler())
     wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
+    wanted |= {reference.symbol for artifact in artifacts.values() for reference in artifact.references}
     wanted |= {symbol for artifact in artifacts.values() for _, symbol in artifact.defined}
     wanted |= {symbol for name in symbol_libraries for symbol in artifacts[name].undefined if symbol in exports}
     ordered = sorted(wanted)
@@ -818,14 +937,19 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
     admits = ledger.admits()
     admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
-    classes = class_findings(artifacts, names, admit_rows, counted)
-    symbols = symbol_findings(artifacts, symbol_libraries, exports, runtime, names, context.build_shown())
+    classes = class_findings(artifacts, names, admit_rows, counted, base_archives)
+    runtime_symbols = symbol_findings(artifacts, symbol_libraries, exports, runtime, names, context.build_shown())
+    helpers = helper_findings(artifacts, base_archives, names)
+    symbols = [*runtime_symbols, *helpers]
+    quiet = quiet_rows(admits, artifacts, names, {rule_ledger.key_of(item) for item in classes})
     view = ledger if held else replace(ledger, configurations=(), base=admits, deltas={})
+    view = replace(view, base={key: entry for key, entry in view.base.items() if key not in quiet})
     judged = rule_ledger.compare(rule, view, [*classes, *(symbols if held else [])], kind if held else None)
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
-        f"{counted['allocation']} throws of the allocator), {len(symbols)} runtime symbols in "
-        f"{len(symbol_libraries)} libraries of {kind} on {tier}: {symbol_classes(symbols)}"
+        f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "
+        f"base), {len(runtime_symbols)} runtime symbols in {len(symbol_libraries)} libraries of {kind} on {tier}: "
+        f"{symbol_classes(runtime_symbols)}"
     )
     return Examination(
         (*row_problems(ledger), *judged),
@@ -833,7 +957,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
         configuration,
         held,
         Counter(rule_ledger.key_of(item) for item in symbols),
-        Counter(key for key in map(rule_ledger.key_of, classes) if key in admits),
+        Counter(key for key in map(rule_ledger.key_of, classes) if key in admits) + Counter(quiet),
         summary,
     )
 
@@ -879,7 +1003,11 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
     if not examination.is_held:
         check_report.write_line(
             plugin_runner.held_line(
-                RULE, ledger, configuration, "The check judges the throws and the classes of the build, not its symbols"
+                RULE,
+                ledger,
+                configuration,
+                "The check judges the throws and the classes of the build, and not its symbols and its counts of "
+                "throw helpers",
             )
         )
     if not examination.is_held or status != 0:
@@ -924,10 +1052,20 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     new_ratchet = sorted(key for key in examination.symbols if key.kind in RATCHET_MARKS and key not in held)
     for key in new_ratchet:
         check_report.write_line(f"guard write: {key.path} gets the ratchet symbol {key.entity}", is_error=True)
-    if new_ratchet and request.mode != rule_ledger.WriteMode.RAISE:
+    risen = sorted(
+        key for key, count in examination.symbols.items() if key.kind == HELPER_THROW and count > held.get(key, 0)
+    )
+    for key in risen:
         check_report.write_line(
-            f"guard write: the ledger of {RULE} is not written: {len(new_ratchet)} new ratchet symbols.  Remove the "
-            f"uses.  Give --raise only for {', for '.join(RAISE_REASONS)}, and give the reason in the commit",
+            f"guard write: {key.path} has {examination.symbols[key]} references to the throw helper {key.entity}, "
+            f"and the ledger holds {held.get(key, 0)}",
+            is_error=True,
+        )
+    if (new_ratchet or risen) and request.mode != rule_ledger.WriteMode.RAISE:
+        check_report.write_line(
+            f"guard write: the ledger of {RULE} is not written: {len(new_ratchet)} new ratchet symbols and "
+            f"{len(risen)} risen counts of throw helpers.  Remove the uses.  Give --raise only for "
+            f"{', for '.join(RAISE_REASONS)}, and give the reason in the commit",
             is_error=True,
         )
         return 1

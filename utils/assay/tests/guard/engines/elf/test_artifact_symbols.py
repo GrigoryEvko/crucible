@@ -75,6 +75,10 @@ FIXTURES = {
     # A function that throws std::bad_alloc and an int: the int throw stays a finding.
     "mixed": "#include <new>\nint mixed_entry(int input) {\n    if (input < 0) { throw std::bad_alloc(); }\n"
     "    if (input > 9) { throw input; }\n    return input;\n}\n",
+    # A call of std::string_view::substr, which throws through the helper std::__throw_out_of_range_fmt.
+    "helper": "#include <cstddef>\n#include <string_view>\n"
+    "std::size_t helper_entry(std::string_view text, std::size_t start) {\n"
+    "    return text.substr(start).size();\n}\n",
     # A weak reference to the downcast of the C++ runtime: a weak undefined symbol, and not a strong one.
     "weak_downcast": 'extern "C" [[gnu::weak]] void* __dynamic_cast(const void*, const void*, const void*, long);\n'
     "void* weak_downcast_entry(const void* pointer) noexcept {\n"
@@ -320,6 +324,7 @@ def artifact_cases(expect: testing.Expect) -> None:
             archived(scratch / f"lib{unit}.a", [scratch / f"{unit}.o"])
         artifacts = {f"lib{unit}.a": artifact_symbols.read_artifact(scratch / f"lib{unit}.a") for unit in FIXTURES}
         wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
+        wanted |= {reference.symbol for artifact in artifacts.values() for reference in artifact.references}
         wanted |= {symbol for artifact in artifacts.values() for _, symbol in artifact.defined}
         ordered = sorted(wanted)
         names = dict(zip(ordered, elf.demangle(ordered), strict=True))
@@ -327,10 +332,11 @@ def artifact_cases(expect: testing.Expect) -> None:
         rows = list(ledger.admits())
         counted: Counter[str] = Counter()
 
-        def found(unit: str, keys: list[rule_ledger.Key] = rows) -> list[check_report.Finding]:
-            """Return the findings of the archive of one unit."""
+        def found(unit: str, keys: list[rule_ledger.Key] = rows, is_base: bool = True) -> list[check_report.Finding]:
+            """Return the findings of the archive of one unit, as an archive of the base or of a different library."""
             archive = f"lib{unit}.a"
-            return artifact_symbols.class_findings({archive: artifacts[archive]}, names, keys, counted)
+            base = frozenset({archive}) if is_base else frozenset()
+            return artifact_symbols.class_findings({archive: artifacts[archive]}, names, keys, counted, base)
 
         def kinds(unit: str) -> list[str]:
             """Return the kind of each finding of the archive of one unit."""
@@ -375,6 +381,33 @@ def artifact_cases(expect: testing.Expect) -> None:
         expect(
             "a weak reference to the downcast gives a finding",
             [(item.kind, item.entity) for item in weak] == [(artifact_symbols.DOWNCAST, "__dynamic_cast")],
+        )
+        helper_symbol = "_ZSt24__throw_out_of_range_fmtPKcz"
+        in_base = found("helper")
+        expect(
+            "a throw helper in an archive of the base is a throw finding in its function",
+            [item.kind for item in in_base] == [artifact_symbols.THROW]
+            and "std::__throw_out_of_range_fmt(char const*, ...) in helper.o, in helper_entry(" in in_base[0].message,
+        )
+        expect("a throw helper in a different archive gives no throw finding", found("helper", is_base=False) == [])
+        helper_archive = {"libhelper.a": artifacts["libhelper.a"]}
+        outside = artifact_symbols.helper_findings(helper_archive, frozenset(), names)
+        expect(
+            "a throw helper in a different archive is a finding helper-throw with the key of its archive and helper",
+            [(item.path, item.kind, item.entity) for item in outside]
+            == [("@build/libhelper.a", artifact_symbols.HELPER_THROW, helper_symbol)],
+        )
+        expect(
+            "an archive of the base gives no finding helper-throw",
+            artifact_symbols.helper_findings(helper_archive, frozenset({"libhelper.a"}), names) == [],
+        )
+        expect(
+            "the mangled names of the throw helpers and of the throws are recognized",
+            artifact_symbols.is_throw_helper(helper_symbol)
+            and artifact_symbols.is_throw_helper("_ZSt20__throw_length_errorPKc")
+            and not artifact_symbols.is_throw_helper("_ZSt4swapIiEvRT_S1_")
+            and not artifact_symbols.is_throw_helper("_ZSt__throw_x")
+            and artifact_symbols.is_throw("__cxa_rethrow"),
         )
         (scratch / "libjunk.a").write_text("not an archive\n", encoding="utf-8")
         said = raised(partial(artifact_symbols.read_artifact, scratch / "libjunk.a"))

@@ -1,0 +1,6 @@
+#include <cstddef>
+#include <string_view>
+
+std::size_t helper_entry(std::string_view text, std::size_t start) {
+    return text.substr(start).size();
+}

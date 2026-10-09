@@ -1,0 +1,7 @@
+# A planted ledger: each runtime symbol of the planted configuration, and the count of the throw helper.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | helper-throw | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -
+@build/libcrucible.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -

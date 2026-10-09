@@ -732,7 +732,7 @@ void process(const TraceEntry* entry) {
 
 **Cost of violation:** use-after-free, double-free, memory corruption, RCE.
 
-**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — the rule `artifact-symbols` holds that on the artifact rather than a flag holding it on our TUs.
+**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. No code of the tree throws through `__cxa_throw`. A container or a view of the standard library can throw inside libstdc++, and §XII tells how the rule `artifact-symbols` holds each such path on the artifact.
 
 **Discipline:**
 - All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
@@ -879,7 +879,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason |
+| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. No code of the tree throws through `__cxa_throw`: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason. Each throw helper of libstdc++, such as `std::__throw_length_error`, is a finding too. The base admits one only with a row `throw`, and each other library holds its helpers on a count that only falls (§XII) |
 | RTTI | **not a flag** — the rule `artifact-symbols` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that a row `vtable` of `utils/ledgers/artifact-symbols.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
@@ -985,12 +985,14 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 ### Common (every build)
 
 **Neither `-fno-exceptions` nor `-fno-rtti` is in this build.** Both were listed
-here as common flags and neither has ever been on a compile line. The properties
-they stood for do hold — measured 2026-09-20: zero `__cxa_throw` references and
-zero typeinfo or vtable definitions in `libcrucible.a` in every preset — and
-the rule `artifact-symbols` is what holds them, on the artifact, where a
-throw arriving through an instantiated library header is also visible. Adding the
-flags is the wrong repair; the opt-out table in §III says why for each.
+here as common flags and neither has ever been on a compile line. Measured
+2026-09-20: zero `__cxa_throw` references and zero typeinfo or vtable
+definitions in `libcrucible.a` in every preset. The rule `artifact-symbols`
+holds these facts on the artifact, where a throw that an instantiated library
+header gives is also visible. A container or a view of the standard library
+still throws inside libstdc++, through a throw helper such as
+`std::__throw_length_error`. The rule holds each such reference too (§XII).
+Adding the flags is the wrong repair; the opt-out table in §III says why for each.
 
 ```
 -std=c++26                           C++26, with no GNU dialect
@@ -1978,7 +1980,7 @@ CRUCIBLE_HOT void scan(
 
 ## XII. Error Handling and Debug Assertions
 
-Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `guard_artifact_symbols` (`guard check --rule artifact-symbols`, `utils/assay/guard/engines/elf/artifact_symbols.py`) reads each static library that the root `CMakeLists.txt` defines. It finds them in the code model of the CMake file API, so a new library joins with no edit. It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. A row `throw` of `utils/ledgers/artifact-symbols.txt` admits each other throw that a library header makes, with its reason. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
+No code of the tree throws through `__cxa_throw`. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below. The ci_guard test `guard_artifact_symbols` (`guard check --rule artifact-symbols`, `utils/assay/guard/engines/elf/artifact_symbols.py`) reads each static library that the root `CMakeLists.txt` defines. It finds them in the code model of the CMake file API, so a new library joins with no edit. It fails when a library references `__cxa_throw` or `__cxa_rethrow` in a function that a link can keep. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and their two throw helpers, the failure of an allocation inside libstdc++, which ends the process as an exhausted memory does. A row `throw` of `utils/ledgers/artifact-symbols.txt` admits each other throw that a library header makes, with its reason. A container or a view of the standard library also throws inside libstdc++, through a throw helper: a function of the scope `std` with a name that starts with `__throw_`, such as `std::__throw_length_error`. In the base libraries foundation and fixy, each reference to a throw helper is a throw, and only a row `throw` with its reason admits it. Each other library holds a count of its references to each helper in the configuration rows of the ledger, and the count can only fall. The test reads no shared library, no test executable and not the vessel. Three tiers of error response:
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
@@ -2469,7 +2471,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `cache-size` | The size of one cache under the root of `utils/assay/core/cache.py`, from a sample of its files, as a multiple of its row of `LIMITS` | 1 | 2 | The test `guard_cache_size` | Test run |
 | `history` | A threshold of a measured rule above its lowest committed value, a ledger above its lowest committed row count, and a raised count of `utils/ledgers/quarantine.txt`, from the git history. A rebase row of `utils/ledgers/history.txt` starts the lowest count of a ledger again at a commit that changed its key or its format | Each one, with the commits that raised it | A rise whose commits give no measurement of the rule, a raise of a quarantine count whose commit changes neither the plugin nor the rule table, and a raised count of `opted-out` or `region` whose commit does not give the reason of its region, unless `utils/ledgers/history.txt` admits it. A rebase row at a commit that did not change the key or the format of its ledger | The test `guard_history` | Test run |
 | `quarantine` | The distinct findings of the quarantine plugin in each file, kind and entity, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory with a row of `utils/ledgers/quarantine.txt` | A count above or below its ledger row, and a finding in a file that the ledger does not hold | The test `guard_plugin` | Test run, CI build job |
-| `artifact-symbols` | The libstdc++ symbols and the C runtime symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)") | Each library of the ledger | A symbol with no row, or a row whose symbol goes | The test `guard_artifact_symbols` | Test run |
+| `artifact-symbols` | The libstdc++ symbols and the C runtime symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)"), and the references of each other static library to each throw helper of libstdc++ (§XII) | Each library of the ledger | A symbol with no row, a row whose symbol goes, and a count of a throw helper above or below its row | The test `guard_artifact_symbols` | Test run |
 | `static-tls` | The bytes of the base thread-local variables of one member of a static library of the root (§XXII "Static TLS (R19)") | 64 bytes | 256 bytes | The test `guard_static_tls` | Test run |
 | `fixture-cpu` | The user and system CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |

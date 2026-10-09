@@ -1,0 +1,4 @@
+# A planted ledger: a throw row that names the object of the call of substr in the base library foundation.
+format 1
+rule artifact-symbols
+@build/libfoundation.a | throw | admit | helper.cpp.o | a planted throw through a helper of libstdc++

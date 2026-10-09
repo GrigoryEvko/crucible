@@ -1,0 +1,4 @@
+# A call of std::string_view::substr in a live function of the base library foundation, and a throw row
+# with its reason that admits the throw through the helper std::__throw_out_of_range_fmt.
+library foundation base.cpp helper.cpp
+library crucible base.cpp

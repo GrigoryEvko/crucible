@@ -1,0 +1,4 @@
+# A planted ledger: a throw row that names a function of the library foundation with no throw in this build.
+format 1
+rule artifact-symbols
+@build/libfoundation.a | throw | admit | quiet_entry | a planted row of a throw that this build does not keep

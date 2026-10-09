@@ -45,6 +45,14 @@ static_assert(!record_fields_are<Probe>(too_long), "A roster entry no field answ
 
 }  // namespace record_roster_self_test
 
+// A part inside the view is the part that substr gives.  A start past the end
+// gives an empty part, where substr throws std::out_of_range.
+static_assert(view_part("abc", 1) == "bc");
+static_assert(view_part("abc", 1, 1) == "b");
+static_assert(view_part("abc", 0, 99) == "abc");
+static_assert(view_part("abc", 3).empty());
+static_assert(view_part("abc", 9).empty());
+
 }  // namespace detail
 
 }  // namespace foundation::diag
