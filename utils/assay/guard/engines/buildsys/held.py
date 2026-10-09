@@ -44,6 +44,14 @@ THE RECORDS OF A FIXTURE
     each compile of a fixture to BUILD/neg-compile/NAME/NAME.sarif.  The
     regexes of the fixture are the words of its test command.
 
+THE WRITE
+    A held rule of the policy max has no module of its own.  `guard write`
+    then calls written() of this module.  WRITERS gives the function that writes
+    the ledger of each such rule.  The function of test-memory is written()
+    of assay.guard.engines.buildsys.test_time, which writes the ledgers of
+    test-time and test-memory from the records of the tests.  A held rule
+    with no row in WRITERS has no write, and `guard write` refuses it.
+
 THE FINDINGS
     A measured rule with two equal thresholds gives a warning only.  The
     witness of a held rule then counts each finding of a plant, also a
@@ -69,7 +77,7 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.buildsys import cost_budgets, header_constexpr, planted
+from assay.guard.engines.buildsys import cost_budgets, header_constexpr, planted, test_time
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -263,6 +271,34 @@ HOLDERS: dict[str, Judge] = {
     "loop-fixture": fixture_findings,
     "cmake": cmake_findings,
 }
+
+
+type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]
+
+# The function that writes the ledger of each held rule of the policy max (THE WRITE).
+WRITERS: dict[str, Writer] = {
+    "test-memory": test_time.written,
+}
+
+
+def written(
+    rule: rule_registry.Rule, context: meta_runner.RuleContext, ledger: rule_ledger.Ledger, reason: str | None
+) -> rule_ledger.Ledger:
+    """Return the new ledger of a held rule from the function of WRITERS (THE WRITE).
+
+    Raises:
+        rule_ledger.LedgerError: If WRITERS has no function of the rule, or the context is not the context of a build
+        NotApplicable: If the build of the context gives no input of the write
+    """
+    writer = WRITERS.get(rule.id)
+    if writer is None:
+        raise rule_ledger.LedgerError(
+            f"the rule {rule.id} has the holder {rule.held_by}, and no function writes its ledger.  Add the function "
+            f"to WRITERS of assay.guard.engines.buildsys.held"
+        )
+    if not isinstance(context, BuildContext):
+        raise rule_ledger.LedgerError(f"the rule {rule.id} reads a build, and the context of the write has no build")
+    return writer(context, ledger, reason)
 
 
 def held_findings(rule: rule_registry.Rule, context: meta_runner.RuleContext) -> list[check_report.Finding]:

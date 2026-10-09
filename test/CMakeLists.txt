@@ -5100,6 +5100,12 @@ crucible_script_test(NAME assay_guard_engines_meta_test_clang_format
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.meta.test_clang_format)
 set_tests_properties(assay_guard_engines_meta_test_clang_format PROPERTIES LABELS "ci_guard;meta"
   SKIP_RETURN_CODE 77)
+# The test of the ledger writes compiles the planted headers of the plants of
+# header-constexpr-ops, so it gets the compiler of this build.
+crucible_script_test(NAME assay_guard_engines_buildsys_test_ledger_writes
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.buildsys.test_ledger_writes)
+set_tests_properties(assay_guard_engines_buildsys_test_ledger_writes PROPERTIES LABELS "ci_guard;meta"
+  ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}")
 # The test of the CMake reader configures a scratch project, so it gets the programs of this build.
 crucible_script_test(NAME assay_readers_test_cmake
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_cmake)

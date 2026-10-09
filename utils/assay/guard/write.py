@@ -14,7 +14,9 @@ when the rule changed what it reports, and give the reason in the commit.
 --admit also writes a row for each new finding, with the reason of --reason.
 A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
-gives the new ledger, and --reason gives the reason of a changed row.
+gives the new ledger, and --reason gives the reason of a changed row.  A held
+rule of such a policy has no module of its own.  The command then calls
+written() of assay.guard.engines.buildsys.held (THE WRITE of that module).
 
 The module of a rule can name kinds in REFUSED_KINDS, and no row admits a
 finding of such a kind (assay.guard.engines.meta.runner, THE REFUSED KINDS).
@@ -63,6 +65,8 @@ from assay.guard import check
 
 # The policies with rows that --path can divide by their path.
 PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
+# The policies of a rule that judges its ledger itself.  The module of such a rule writes the ledger.
+JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
 
 
 def main(argv: list[str]) -> int:
@@ -94,7 +98,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--import", dest="import_log", type=Path, default=None, metavar="LOG")
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     options = parser.parse_args(argv)
-    chosen = check.selected(registry, [options.rule], [])
+    requested = registry.rules.get(options.rule)
+    is_held_write = requested is not None and requested.held_by is not None and requested.policy in JUDGED_POLICIES
+    chosen = [requested] if requested is not None and is_held_write else check.selected(registry, [options.rule], [])
     if isinstance(chosen, str):
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
@@ -140,7 +146,11 @@ def main(argv: list[str]) -> int:
             check_report.write_line(f"guard write: {refresh(context)}")
             return 0
         ledger = rule_ledger.read(rule, root)
-        if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
+        if rule.policy in JUDGED_POLICIES and rule.held_by is not None:
+            from assay.guard.engines.buildsys import held
+
+            written = held.written(rule, context, ledger, options.reason)
+        elif rule.policy in JUDGED_POLICIES:
             written = runner.rule_module(rule).written(context, ledger, options.reason)
         else:
             found = context.findings_of(rule)

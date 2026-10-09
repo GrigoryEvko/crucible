@@ -21,7 +21,8 @@ THE RULE header-constexpr-ops
         <layer>/<path>.h | limit | reason
 
     That list holds the admitted items of the rule, because CMake reads it.
-    No file of utils/ledgers/ holds them.  A header of
+    The rule has the policy none, as compile-first has, and no file of
+    utils/ledgers/ holds its items (THE WRITE).  A header of
     test/layer/crucible-not-standalone.txt has no one-line unit.  The rule
     compiles each listed header two times: at the threshold and at the limit
     of its row.  It reads the diagnostics of each compile from its SARIF log
@@ -41,6 +42,20 @@ THE RULE header-constexpr-ops
       listed       a warning for each listed header, with each evaluation over the threshold
     The entity of a finding is the header, relative to include/, when the
     finding names one.
+
+THE WRITE
+    `guard write --rule header-constexpr-ops --build-dir BUILD_DIR` writes
+    test/layer/header-constexpr-ops.txt again (ops_refresh()).  The list can
+    only become shorter, and the write only removes these rows:
+      * A row of a header that is not in include/
+      * A row with a limit that is not more than the threshold
+      * A row that names its header a second time
+      * A row of a header that compiles alone at the threshold.
+    The write keeps each other row with its limit and its reason, and it
+    keeps the head comment.  It refuses a list with a row that does not have
+    its shape or gives no reason, and a listed header with no one-line unit.
+    A person corrects such a row, because the write cannot know its limit or
+    its reason.
 
 THE RULE header-standalone
     test/layer/crucible-not-standalone.txt names each crucible header that
@@ -72,6 +87,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -292,18 +308,22 @@ def threshold_of(context: BuildContext) -> int | check_report.Finding:
 
 def limit_rows(
     context: BuildContext, rows: Sequence[rows_grammar.Row], threshold: int
-) -> tuple[list[LimitRow], list[check_report.Finding]]:
-    """Return the rows of test/layer/header-constexpr-ops.txt, and an error for each row that does not obey its shape.
+) -> tuple[list[LimitRow], list[check_report.Finding], set[int]]:
+    """Return the rows of test/layer/header-constexpr-ops.txt, an error for each incorrect row, and the lines to remove.
 
-    Complexity: linear in the rows.
+    The lines to remove are the lines of the rows that the write removes
+    (THE WRITE).  Complexity: linear in the rows.
     """
     found: list[LimitRow] = []
     problems: list[check_report.Finding] = []
+    removable: set[int] = set()
     seen: set[str] = set()
 
-    def refuse(row: rows_grammar.Row, message: str) -> None:
-        """Add the error of one row."""
+    def refuse(row: rows_grammar.Row, message: str, can_remove: bool = False) -> None:
+        """Add the error of one row, and its line to the lines to remove when the write removes the row."""
         problems.append(finding("error", LIST, row.line, OPS_RULE, message, "list", row.words[0]))
+        if can_remove:
+            removable.add(row.line)
 
     for row in rows:
         header = row.words[0]
@@ -314,7 +334,7 @@ def limit_rows(
         if len(row.words) != 1 or limit < 0:
             refuse(row, "the row does not have its shape.  A row is `<layer>/<path>.h | limit | reason`")
         elif header.split("/")[0] not in LAYERS or not (context.root / INCLUDE / header).is_file():
-            refuse(row, f"{header} is not a header in {INCLUDE}/.  Remove the row")
+            refuse(row, f"{header} is not a header in {INCLUDE}/.  Remove the row", can_remove=True)
         elif not row.cells[1]:
             refuse(row, f"the row of {header} gives no reason.  Tell which evaluation makes the higher limit necessary")
         elif limit <= threshold:
@@ -322,13 +342,14 @@ def limit_rows(
                 row,
                 f"the limit {limit} of {header} is not more than the threshold {threshold} of {REGISTRY}.  "
                 f"Remove the row",
+                can_remove=True,
             )
         elif header in seen:
-            refuse(row, f"{header} has a row before this one.  Remove one of them")
+            refuse(row, f"{header} has a row before this one.  Remove one of them", can_remove=True)
         else:
             seen.add(header)
             found.append(LimitRow(header, limit, row.line))
-    return found, problems
+    return found, problems, removable
 
 
 def headers_with_units(root: Path, not_standalone: Sequence[rows_grammar.Row]) -> list[str]:
@@ -360,7 +381,7 @@ def ops_findings(context: BuildContext) -> list[check_report.Finding]:
     excluded = list_rows(context, NOT_STANDALONE, OPS_RULE) if (context.root / NOT_STANDALONE).is_file() else ()
     if isinstance(excluded, check_report.Finding):
         return [excluded]
-    limited, found = limit_rows(context, rows, threshold)
+    limited, found, _ = limit_rows(context, rows, threshold)
     try:
         entries = context.entries()
     except compdb.CompdbError as problem:
@@ -473,6 +494,53 @@ def judged_row(row: LimitRow, threshold: int, low: Outcome, high: Outcome) -> ch
         "listed",
         row.header,
     )
+
+
+def ops_refresh(context: BuildContext) -> str:
+    """Write test/layer/header-constexpr-ops.txt again with no row that the write removes, and tell the result.
+
+    THE WRITE gives the rows that the write removes.  Complexity: one compile
+    of each listed header at the threshold.
+
+    Raises:
+        NotApplicable: If the call gives no build directory
+        rule_ledger.LedgerError: If the threshold, the list or the compile database does not read.  Also if a row does
+            not have its shape or gives no reason, or if a listed header has no one-line unit
+    """
+    build = context.require_build()
+    threshold = threshold_of(context)
+    if isinstance(threshold, check_report.Finding):
+        raise rule_ledger.LedgerError(threshold.text())
+    rows = list_rows(context, LIST, OPS_RULE)
+    if isinstance(rows, check_report.Finding):
+        raise rule_ledger.LedgerError(rows.text())
+    limited, problems, removable = limit_rows(context, rows, threshold)
+    uncorrected = [problem.text() for problem in problems if problem.line not in removable]
+    if uncorrected:
+        raise rule_ledger.LedgerError(".  ".join(uncorrected))
+    try:
+        units = {os.path.normpath(entry.file): entry for entry in context.entries()} if limited else {}
+    except compdb.CompdbError as problem:
+        raise rule_ledger.LedgerError(f"the rule cannot read the one-line units: {problem}") from None
+    chosen: dict[str, compdb.CompileEntry] = {}
+    for row in limited:
+        unit = units.get(os.path.normpath(unit_path(build, row.header)))
+        if unit is None:
+            raise rule_ledger.LedgerError(
+                f"the compile database holds no one-line unit of {row.header}.  Configure the build again"
+            )
+        chosen[row.header] = unit
+    outcomes = map_compiles(limited, lambda row: compile_alone(chosen[row.header], threshold, context.root))
+    removable |= {row.line for row, outcome in zip(limited, outcomes, strict=True) if outcome.passes}
+    kept = [row for row in rows if row.line not in removable]
+    path = context.root / LIST
+    rows_grammar.write(
+        path,
+        rows_grammar.head_comment(path.read_text(encoding="utf-8")),
+        [],
+        [((row.words[0],), rows_grammar.render(row.words, row.cells)) for row in kept],
+    )
+    return f"{LIST} holds {len(kept)} rows, and the write removed {len(removable)}"
 
 
 def standalone_rows(
@@ -593,6 +661,6 @@ def standalone_findings(context: BuildContext) -> list[check_report.Finding]:
 
 # The keys are text constants, because assay.guard.engines.meta.runner reads the table with the ast module.
 RULES = {
-    "header-constexpr-ops": meta_runner.Member(ops_findings),
+    "header-constexpr-ops": meta_runner.Member(ops_findings, refresh=ops_refresh),
     "header-standalone": meta_runner.Member(standalone_findings),
 }

@@ -40,9 +40,13 @@ THE WRITE
     `guard write --rule test-time --build-dir BUILD_DIR` writes the rows of
     the kind of the build again, from the records of the build directory.
     Each registered test with a last record over the error threshold of
-    test-time gets a row with its wall time.  A row keeps its reason, and a
-    new row takes the reason of --reason, or DEFAULT_REASON.  A row of a
-    different kind stays.
+    test-time gets a row with its wall time.  `guard write --rule test-memory`
+    writes the ledger of test-memory in the same way, with the peak memory of
+    each record in GB.  test-memory has a holder and no module of its own.
+    The write then calls written() through assay.guard.engines.buildsys.held
+    (THE WRITE of that module).  A row keeps its reason, and a new row takes
+    the reason of --reason, or DEFAULT_REASON.  A row of a different kind
+    stays.
 
 Complexity: linear in the words of the registered tests, the records and the ledger rows.
 """
@@ -55,6 +59,7 @@ from dataclasses import replace
 from assay.core import budget as cost_budget
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 from assay.core import report as check_report
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
@@ -156,16 +161,24 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
     return found
 
 
+def measure_of(rule_id: str, record: cost_record.TestRecord) -> float:
+    """Return the measure of a record in the unit of the rule: the wall time for test-time, the peak GB for test-memory."""
+    return record.cost.wall_s if rule_id == RULE else record.cost.peak_rss_kb / cost_meter.KB_PER_GB
+
+
 def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of test-time with the rows of the kind of the build written again from the records (THE WRITE).
+    """Return the ledger of test-time or test-memory with the rows of the kind of the build written again (THE WRITE).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the build has no kind
-        rule_ledger.LedgerError: If the test list or a record does not read
+        rule_ledger.LedgerError: If the ledger is not the ledger of a rule of LEDGER_RULES, or the test list or a record
+            does not read
     """
+    if ledger.rule not in LEDGER_RULES:
+        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(LEDGER_RULES)}")
     build = context.require_build()
     kind = context.kind()
-    budget = context.budget(RULE)
+    budget = context.budget(ledger.rule)
     try:
         names = {test.name for test in ctest_reader.tests(build)}
         records = ctest_reader.costs(build)
@@ -173,10 +186,11 @@ def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | Non
         raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
     base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
     for name, record in sorted(records.items()):
-        if name not in names or check_report.classify(record.cost.wall_s, budget) != "error":
+        measure = measure_of(ledger.rule, record)
+        if name not in names or check_report.classify(measure, budget) != "error":
             continue
         key = rule_ledger.Key("", kind, name)
         earlier = ledger.base.get(key)
         kept = earlier.reason if earlier is not None else reason or DEFAULT_REASON
-        base[key] = rule_ledger.Entry(key, round(record.cost.wall_s, 2), kept)
+        base[key] = rule_ledger.Entry(key, round(measure, 2), kept)
     return replace(ledger, base=base)
