@@ -34,7 +34,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from assay.core import cache as cache_dir
-from assay.core import proc, testing
+from assay.core import paths, proc, testing
 from assay.loop.fixture import store as compile_store
 from assay.oracle.unit_store import UnitStore
 
@@ -297,6 +297,40 @@ def spelled_root_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
     )
 
 
+def sweep_cases(expect: testing.Expect) -> None:
+    """sweep_sources() holds the byte limit of the sources, and it keeps a directory that a unit can use."""
+    with tempfile.TemporaryDirectory(prefix="unit_store_sweep_") as scratch:
+        root = Path(scratch)
+        store = UnitStore("c++", (), (), root / "scratch", store_root=root / "store")
+        # Four directories of 40 KB each: three with a use some hours ago, and one with a use a minute ago.  The time
+        # of the write of a directory stands for the clock.
+        ages = {"aa": 5 * 3600.0, "bb": 4 * 3600.0, "cc": 3 * 3600.0, "dd": 60.0}
+        for name, age in ages.items():
+            directory = store.sources_root / name / (name * 32)
+            directory.mkdir(parents=True)
+            (directory / "unit.cpp").write_bytes(b"x" * (40 << 10))
+            written = directory.stat().st_mtime
+            os.utime(directory, (written - age, written - age))
+        # A directory takes 0 or 4 KB of its own on the file systems of the host.  The limit gives one result in the two
+        # conditions.
+        removed = store.sweep_sources(max_bytes=90 << 10)
+        kept = [path.name for path in paths.listing(store.sources_root) if path.is_dir() and paths.listing(path)]
+        expect(
+            "over the size limit, the sweep removes the directories with the oldest use, and keeps a directory with a "
+            "use in the last two hours",
+            removed == 3 and kept == ["dd"],
+        )
+        expect(
+            "a second sweep in the same day is not due when a recent sample is under the limit",
+            store.sweep_sources(max_bytes=90 << 10) == 0,
+        )
+        with environment_variable(cache_dir.ROOT_VARIABLE, "off"):
+            expect(
+                "with the caches off there is no store, and the sweep removes nothing",
+                UnitStore("c++", (), (), root / "scratch").sweep_sources() == 0,
+            )
+
+
 def unit_store_cases(expect: testing.Expect) -> None:
     """Run the cases of the store and of the spelled roots, each in a scratch directory of its own."""
     cxx = testing.patched_compiler()
@@ -311,4 +345,4 @@ def unit_store_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (unit_store_cases,))
+    return testing.run(__name__.removeprefix("assay."), argv, (sweep_cases, unit_store_cases))

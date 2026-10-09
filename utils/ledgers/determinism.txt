@@ -29,7 +29,6 @@ utils/assay/loop/stamps.py | listing | 1 | source_files | A finding of today.  T
 utils/assay/oracle/runner.py | listing | 1 | _write_tests | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/oracle/runner.py | listing | 2 | evaluate_semantics | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/oracle/unit_store.py | listing | 1 | Unit.holds_only_sources | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/unit_store.py | listing | 1 | UnitStore.sweep_sources | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/oracle/unit_store.py | wall-clock | 1 | UnitStore.build | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/oracle/unit_store.py | wall-clock | 1 | UnitStore.sweep_sources | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/readers/tsast.py | listing | 1 | _self_test_cache | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

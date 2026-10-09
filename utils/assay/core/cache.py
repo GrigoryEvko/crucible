@@ -134,7 +134,9 @@ FULL_WALK = 60_000
 LIMITS: dict[str, int] = {
     "tsast": 2 << 30,
     "neg": 1 << 30,
-    # The pinned toolchain and the checkouts of the proofs are about 1.1 GB of it.
+    # The pinned toolchain and the checkouts of the proofs are about 1.1 GB of it.  The results of the units have the
+    # limit LIMIT_BYTES and their sources the limit SOURCES_LIMIT_BYTES of utils/assay/oracle/unit_store.py, 256 MB
+    # each.
     "session_oracle": 2 << 30,
     "clang-format": 64 << 20,
     # The hits of the rule prose-bans, one small entry for each file: 27 MB for the 6496 files of one tree on 2026-10-08.

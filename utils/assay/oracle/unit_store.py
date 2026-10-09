@@ -32,8 +32,11 @@ THE SOURCES
     first.  A lookup and a store make sure that the directory holds only the
     sources and temporary files.  The name of a temporary file starts with a
     dot, and no include names it.  A run gives each directory that it uses a
-    new time when the last one is older than cache_dir.TOUCH_INTERVAL.  One
-    run each day removes each directory with no use for cache_dir.MAX_AGE.
+    new time when the last one is older than cache_dir.TOUCH_INTERVAL.  The
+    directories have the age limit cache_dir.MAX_AGE and the byte limit
+    SOURCES_LIMIT_BYTES (UnitStore.sweep_sources()).  The byte limit keeps
+    each directory with a use in the last SOURCES_IN_USE_S, because a unit
+    of a run can read it.
 
 THE KEY OF A STATIC UNIT
     compile_key of the store hashes the identity of the compiler, the
@@ -115,6 +118,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import cache as cache_dir
+from assay.core import paths as tree_paths
 from assay.core import proc
 from assay.loop.fixture import store as compile_store
 from assay.readers import elf
@@ -125,6 +129,11 @@ STORE_NAME = "session_oracle"
 FORMAT = "crucible-session-oracle-units 1"
 # The size limit of the entries of the store.
 LIMIT_BYTES = 256 << 20
+# The byte limit of the source directories (THE SOURCES).  The sources of each unit of one tree were 33 MB on
+# 2026-10-09.  The limit then holds approximately eight versions of them.
+SOURCES_LIMIT_BYTES = 256 << 20
+# A source directory with a use in this period can be in use by a unit of a run.  The byte limit keeps it.
+SOURCES_IN_USE_S = 2 * cache_dir.TOUCH_INTERVAL
 # The file name of the digest memo of one caller, in the memo directory of the store.
 DIGEST_MEMO_NAME = "units-{}.digests"
 # The time limit of the run of a program, in seconds.
@@ -213,6 +222,22 @@ class _Inputs:
 def _digest(data: bytes) -> str:
     """Return the SHA-256 of ``data`` as hexadecimal text."""
     return hashlib.sha256(data).hexdigest()
+
+
+def _source_directories(sources_root: Path) -> list[cache_dir.Entry]:
+    """Return each source directory below the fan-out directories of the sources, with its bytes and its last use.
+
+    The bytes of a directory are the bytes of its files and of the directory, and its last use is its mtime (THE
+    SOURCES).  Complexity: one stat of each directory and of each file in it.
+    """
+    found: list[cache_dir.Entry] = []
+    for directory in cache_dir.entries(sources_root):
+        with contextlib.suppress(OSError):
+            if not directory.path.is_dir():
+                continue
+            files = sum(cache_dir.allocated(item.lstat()) for item in tree_paths.listing(directory.path))
+            found.append(cache_dir.Entry(directory.path, directory.size + files, directory.used))
+    return found
 
 
 def _kept(data: bytes) -> str:
@@ -387,23 +412,33 @@ class UnitStore:
             cache_dir.mark_used(directory, directory.stat().st_mtime)
         return paths
 
-    def sweep_sources(self) -> int:
-        """Remove each source directory with no use for cache_dir.MAX_AGE, when the turn of this store is due.
+    def sweep_sources(self, max_bytes: int = SOURCES_LIMIT_BYTES) -> int:
+        """Hold the source directories in their limits, when the turn of the sources is due (THE SOURCES).
 
-        Return the count of removed directories.  O(directories).
+        A directory with no use for cache_dir.MAX_AGE goes.  Over the byte
+        limit, the directories with the oldest use go until the remaining
+        directories hold less than cache_dir.EVICT_TO of the limit.  A
+        directory with a use in the last SOURCES_IN_USE_S can be in use, and
+        only its age removes it.  The turn is due one time each day, or when a
+        sample of the sources is over the limit.
+
+        Return the count of removed directories.  Complexity: O(d log d) for d directories, and one stat of each
+        file of each directory.
         """
         if self.store is None or not self.sources_root.is_dir():
             return 0
         removed = 0
-        with cache_dir.eviction_turn(self.sources_root) as has_turn:
+        with cache_dir.eviction_turn(self.sources_root, max_bytes=max_bytes) as has_turn:
             if not has_turn:
                 return 0
-            expired = time.time() - cache_dir.MAX_AGE
-            for directory in self.sources_root.glob("*/*"):
+            now = time.time()
+            found = _source_directories(self.sources_root)
+            idle = [entry for entry in found if now - entry.used > SOURCES_IN_USE_S]
+            in_use = sum(entry.size for entry in found) - sum(entry.size for entry in idle)
+            for entry in cache_dir.victims(idle, max(max_bytes - in_use, 0), now=now):
                 with contextlib.suppress(OSError):
-                    if directory.is_dir() and directory.stat().st_mtime < expired:
-                        shutil.rmtree(directory)
-                        removed += 1
+                    shutil.rmtree(entry.path)
+                    removed += 1
         return removed
 
     # ── The keys ────────────────────────────────────────────────────
