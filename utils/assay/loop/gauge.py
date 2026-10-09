@@ -22,8 +22,8 @@ THE MEASUREMENT
        foundation::detail::breakpoint() in include/foundation/Platform.h.  A
        touch or a comment does not change the preprocessed text, so ccache and
        the store of the fixtures would give each result again.  The parse
-       tree of utils/assay/readers/tsast.py finds the body.  Then the run builds
-       the tree and runs each test with ctest.
+       tree of utils/assay/readers/tsast.py finds the body (THE EDIT).  Then
+       the run builds the tree and runs each test with ctest.
     4. After the runs, it measures a build with nothing to do and a second
        configure (closing_steps()).  Then it runs the rule reconfigure-noop
        with the master guard of the copy.  The rule configures the build
@@ -42,6 +42,28 @@ THE MEASUREMENT
     from one counter that each process inherits (utils/assay/core/meter.py,
     THE INSTRUCTION COUNT).  The judged value of each measured rule is the
     median over the runs.
+
+THE EDIT
+    The edit writes the shape that the .clang-format of the tree gives.  The
+    statement goes on a line of its own, with the indent of the line of the
+    definition and one more indent step.  When the body is on one line, each
+    statement of the body goes on a line of its own too.  clang-format puts a
+    body on the line of its declaration only when the body holds one
+    statement.  Before each build, check_edit_format() runs the pinned
+    clang-format of the rule clang-format on the edited header.  When the
+    formatter changes the header, the gauge stops before the build.  Each run
+    of the test guard_clang_format of the copy then gives a failure.  With no
+    install of the pin, the gauge prints a note, and that test does not apply.
+
+THE TESTS WITH A FAILURE
+    Each test step gives ctest the option --output-junit, with a report in
+    the directory of the logs.  When the status of a step is not 0, the gauge
+    immediately prints FAILED and the status of the step.  For a test step,
+    it also prints the name of each test with the status fail in the report
+    (assay.readers.ctest).  A skipped test has the status notrun, and it is
+    no failure.  At the end, the gauge prints each such step again, and it
+    exits with 1.  A failure in the warm test run is a failure of the commit
+    before the edit.
 
 THE MEASURED RULES
     edit-build-instructions and edit-test-instructions hold the error level.
@@ -106,6 +128,7 @@ from assay.core.paths import REPO_ROOT
 from assay.loop import gauge_cold, gauge_sample
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_reader
+from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_files
 from assay.readers import tsast
 from assay.setup import pins as cmake_pin
@@ -113,6 +136,11 @@ from assay.setup import pins as cmake_pin
 EDIT_HEADER = Path("include/foundation/Platform.h")
 EDIT_NAMESPACE = ("foundation", "detail")
 EDIT_FUNCTION = "breakpoint"
+# The bits of the random mark of each run, and the mark with the most digits.
+MARK_BITS = 62
+LONGEST_MARK = (1 << MARK_BITS) - 1
+# The IndentWidth of the .clang-format of the tree: the indent step of a statement in its block.
+INDENT_WIDTH = 4
 QUIET_OTHERS_PCT = 10.0
 # The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.
 WALL_JOBS = 192
@@ -172,24 +200,36 @@ class GaugeRecord:
 # ── The edit ───────────────────────────────────────────────────────────────
 
 
-def edit_offset(header: Path) -> int:
-    """Return the byte offset just after the opening brace of the body of the edited function.
+@dataclass(frozen=True, slots=True)
+class EditSite:
+    """The body of the edited function: the offsets of its first and its last character, and the indent of the line of
+    its definition."""
 
-    The parse tree finds the function definition with the name EDIT_FUNCTION in the namespace EDIT_NAMESPACE.
+    open_brace: int
+    close_brace: int
+    indent: bytes
+
+
+def edit_site(header: Path) -> EditSite:
+    """Return the body of the edited function (THE EDIT).
+
+    The parse tree finds the function definition with the name EDIT_FUNCTION in the namespace EDIT_NAMESPACE.  The
+    indent is the white space at the start of the first line of the definition.
 
     Args:
         header: The header
 
     Returns:
-        The offset
+        The site of the edit
 
     Raises:
-        GaugeError: If the header has no such function with a body
+        GaugeError: If the header has no such function with a body, or the body holds no statement
     """
     tree = next(tsast.parse([header]))
     data = header.read_bytes()
     starts = [0]
     starts.extend(index + 1 for index, byte in enumerate(data) if byte == 0x0A)
+    name = "::".join((*EDIT_NAMESPACE, EDIT_FUNCTION))
     for node in tree.find("function_definition"):
         declarator = node.child_by_field("declarator")
         body = node.child_by_field("body")
@@ -197,27 +237,80 @@ def edit_offset(header: Path) -> int:
             continue
         if tsast.namespace_path(node) != EDIT_NAMESPACE:
             continue
-        row, column = body.start
-        offset = starts[row] + column
-        if data[offset:offset + 1] == b"{":
-            return offset + 1
-    raise GaugeError(f"{header} holds no definition of {'::'.join((*EDIT_NAMESPACE, EDIT_FUNCTION))}() with a body.  "
-                     f"Give EDIT_HEADER, EDIT_NAMESPACE and EDIT_FUNCTION of utils/assay/loop/gauge.py a "
-                     f"function of a base header that each translation unit includes")
+        open_brace = starts[body.start[0]] + body.start[1]
+        close_brace = starts[body.end[0]] + body.end[1] - 1
+        if data[open_brace:open_brace + 1] != b"{" or data[close_brace:close_brace + 1] != b"}":
+            continue
+        if not tsast.non_comment_children(body):
+            raise GaugeError(f"the body of {name}() in {header} holds no statement.  clang-format puts a body of one "
+                             f"statement on the line of its declaration, and the edit writes a body of more lines.  "
+                             f"Give the function a statement, or give the gauge a different edit site")
+        line_start = starts[node.start[0]]
+        indent_end = line_start
+        while data[indent_end:indent_end + 1] in (b" ", b"\t"):
+            indent_end += 1
+        return EditSite(open_brace, close_brace, data[line_start:indent_end])
+    raise GaugeError(f"{header} holds no definition of {name}() with a body.  Give EDIT_HEADER, EDIT_NAMESPACE and "
+                     f"EDIT_FUNCTION of utils/assay/loop/gauge.py a function of a base header that each translation "
+                     f"unit includes")
 
 
-def edited_text(original: bytes, offset: int, mark: int) -> bytes:
-    """Return the header with the statement of one run after the opening brace of the body.
+def edited_text(original: bytes, site: EditSite, mark: int) -> bytes:
+    """Return the header with the statement of one run at the start of the body, in the shape of the .clang-format.
+
+    The statement goes on a line of its own.  Its indent is the indent of the line of the definition and one more
+    indent step.  When the body is on one line, each statement of the body goes on a line of its own too.  The last
+    character of the body then goes on the last line.
 
     Args:
         original: The bytes of the header before the first run
-        offset: The offset of edit_offset()
+        site: The site of edit_site()
         mark: The number of the run, which no earlier run used
 
     Returns:
         The bytes of the edited header
     """
-    return original[:offset] + f" static_cast<void>({mark}LL);".encode() + original[offset:]
+    inner = site.indent + b" " * INDENT_WIDTH
+    statement = b"\n" + inner + f"static_cast<void>({mark}LL);".encode()
+    after_open = site.open_brace + 1
+    body = original[after_open:site.close_brace]
+    if b"\n" in body:
+        return original[:after_open] + statement + original[after_open:]
+    return (original[:after_open] + statement + b"\n" + inner + body.strip() + b"\n" + site.indent
+            + original[site.close_brace:])
+
+
+def check_edit_format(tree: Path) -> str | None:
+    """Make sure that the pinned clang-format makes no change to the edited header of a tree (THE EDIT).
+
+    Args:
+        tree: The root of the tree, which holds the .clang-format of the tree and the edited header
+
+    Returns:
+        None when the formatter makes no change to the header, or a note when the pinned clang-format is not installed
+
+    Raises:
+        GaugeError: If the formatter changes the header, cannot format all of it, or gives no verdict
+    """
+    from assay.guard.engines.meta import clang_format
+    from assay.guard.engines.meta.runner import NotApplicable
+
+    try:
+        program = clang_format.formatter()
+    except NotApplicable as problem:
+        return f"the gauge does not check the format of the edit, and the test guard_clang_format does not apply: {problem}"
+    verdict = clang_format.single_verdict(tree, program, EDIT_HEADER.as_posix())
+    if not verdict.kind:
+        return None
+    if verdict.kind == "drift":
+        what = f"changes {verdict.detail} place(s) of {EDIT_HEADER} after the edit, the first at line {verdict.line}"
+    elif verdict.kind == "incomplete":
+        what = f"cannot format all of {EDIT_HEADER} after the edit"
+    else:
+        what = f"gives no verdict on {EDIT_HEADER} after the edit: {verdict.detail}"
+    raise GaugeError(f"the pinned clang-format {what}.  Each run of the test guard_clang_format of the copy then gives "
+                     f"a failure.  Make edited_text() of utils/assay/loop/gauge.py write the shape of the .clang-format "
+                     f"of the tree")
 
 
 # ── The copy ───────────────────────────────────────────────────────────────
@@ -305,6 +398,49 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
         path = facts.get("critical_path")
         step.critical_path = tuple(str(item) for item in path) if isinstance(path, list) else ()
     return step
+
+
+def junit_report(logs: Path, name: str) -> Path:
+    """Return the JUnit report of one test step, in the directory of the logs (THE TESTS WITH A FAILURE)."""
+    return logs / f"{name}.junit.xml"
+
+
+def failed_tests(report: Path) -> list[str]:
+    """Return the sorted names of the tests with the status fail in the JUnit report of one test step.
+
+    A skipped test has the status notrun, and it is no failure (THE TESTS WITH A FAILURE).
+
+    Raises:
+        ctest_reader.CtestError: If the report cannot be read
+    """
+    statuses = ctest_reader.results(report)
+    return sorted(name for name, status in statuses.items() if status is ctest_reader.TestStatus.FAIL)
+
+
+def failure_line(result: StepResult, report: Path | None) -> str:
+    """Return the line of one step with a status that is not 0.  For a test step, the line names each test with a failure.
+
+    Args:
+        result: The measures of the step
+        report: The JUnit report of a test step, or None for a different step
+    """
+    line = f"{result.name}: status {result.status}"
+    if report is None:
+        return line
+    try:
+        names = failed_tests(report)
+    except ctest_reader.CtestError as problem:
+        return f"{line}, and no test name is known: {problem}"
+    if not names:
+        return f"{line}, and the JUnit report {report} names no test with a failure"
+    return f"{line}, {len(names)} test(s) with a failure: {', '.join(names)}"
+
+
+def failure_report(failures: list[str], logs: Path, what: str) -> str:
+    """Return the report of the steps with a status that is not 0: each step with its tests, and the logs."""
+    lines = [f"edit-loop-gauge: FAILED: {what}, and the gauge exits with 1.  The logs are in {logs}."]
+    lines.extend(f"edit-loop-gauge:   {failure}" for failure in failures)
+    return "\n".join(lines)
 
 
 def median_of(results: list[StepResult]) -> Median:
@@ -601,19 +737,31 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
           f"file(s) in the source work tree that the copy does not hold, preset {options.preset}, {jobs} jobs, "
           f"{options.runs} run(s), work directory {work}")
     build_command: list[str] = []
+    test_command: list[str] = []
     results: list[StepResult] = []
+    failures: list[str] = []
 
-    def step(name: str, command: list[str]) -> StepResult:
+    def step(name: str, command: list[str], report: Path | None = None) -> StepResult:
+        if report is not None:
+            report.unlink(missing_ok=True)
         result = run_step(name, command, tree, environment, logs, build if command is build_command else None)
         results.append(result)
         path = ""
         if result.critical_path:
             path = (f", peak {loop_history.cell(result.peak_memory_gb)} GB, critical path {result.critical_path_s:g} s: "
                     f"{' -> '.join(result.critical_path)}")
+        failure = ""
+        if result.status != 0:
+            failures.append(failure_line(result, report))
+            failure = f"\nedit-loop-gauge: FAILED {failures[-1]}"
         print(f"edit-loop-gauge: {name}: status {result.status}, {result.wall_s:.1f} s wall, {result.cpu_s:.0f} s CPU, "
               f"{loop_history.cell(result.instructions_g)} G instructions, others "
-              f"{loop_history.cell(result.others_pct)} %{path}", flush=True)
+              f"{loop_history.cell(result.others_pct)} %{path}{failure}", flush=True)
         return result
+
+    def test_step(name: str) -> StepResult:
+        report = junit_report(logs, name)
+        return step(name, [*test_command, "--output-junit", str(report)], report)
 
     # The first configure runs the cmake of PATH, and the configure step rejects
     # it when its version is not the pin.  Each later step runs the cmake and
@@ -634,27 +782,31 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     if options.reuse is None and not failed:
         failed = step("warm-build", build_command).status != 0
         if not failed:
-            step("warm-tests", test_command)
+            test_step("warm-tests")
     header = tree / EDIT_HEADER
     original = original_header(tree)
     header.write_bytes(original)
-    offset = edit_offset(header)
+    site = edit_site(header)
     runs: dict[str, list[StepResult]] = {"build": [], "tests": []}
     for run in range(1, options.runs + 1):
         if failed:
             break
-        header.write_bytes(edited_text(original, offset, secrets.randbits(62)))
+        header.write_bytes(edited_text(original, site, secrets.randbits(MARK_BITS)))
+        note = check_edit_format(tree)
+        if note is not None and run == 1:
+            check_report.write_line(f"edit-loop-gauge: {note}")
         built = step(f"edit-build-{run}", build_command)
         runs["build"].append(built)
         if built.status != 0:
             failed = True
             break
-        runs["tests"].append(step(f"edit-tests-{run}", test_command))
+        runs["tests"].append(test_step(f"edit-tests-{run}"))
     if not failed:
         closing_steps(step, build_command, configure_command, reconfigure_check(tree, build))
     failed = failed or any(result.status != 0 for result in results)
     if not runs["build"] or len(runs["tests"]) != len(runs["build"]):
-        print(f"edit-loop-gauge: a step failed before the runs completed.  The logs are in {logs}.")
+        what = "a step gave a status that is not 0 before the runs completed"
+        check_report.write_line(failure_report(failures, logs, what))
         return 1, True
     medians = {step_name: median_of(step_results) for step_name, step_results in runs.items()}
     print(table(results, medians))
@@ -674,7 +826,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         with options.record.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, separators=(",", ":")) + "\n")
     if failed:
-        print(f"edit-loop-gauge: a step failed.  The logs are in {logs}.")
+        check_report.write_line(failure_report(failures, logs, "a step gave a status that is not 0"))
         return 1, True
     return status, False
 
@@ -690,6 +842,92 @@ inline void breakpoint_if_debugging() noexcept {}
 [[gnu::always_inline]] inline void breakpoint() noexcept { __builtin_trap(); }
 }
 """
+# Two more edit sites in the namespace foundation::detail.  Each row gives the name of the case, the planted code,
+# and the code after the edit with the mark 42.
+PLANTED_SITES = (
+    ("a body of more lines gets the statement on a line of its own before its first statement",
+     "inline void breakpoint() noexcept {\n    __builtin_trap();\n}",
+     "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}"),
+    ("the edit of a member keeps the indent of the line of its definition",
+     "struct holder {\n    static void breakpoint() noexcept { __builtin_trap(); }\n};",
+     ("struct holder {\n    static void breakpoint() noexcept {\n        static_cast<void>(42LL);\n"
+      "        __builtin_trap();\n    }\n};")),
+)
+
+
+def format_case(record_case: Callable[[str, bool], None]) -> None:
+    """Make sure that the pinned clang-format makes no change to the edited header of this tree, with the longest mark.
+
+    The case copies the header and the .clang-format of the tree into a scratch tree, and it edits the copy.  With no
+    install of the pinned clang-format, the case prints that it does not run.  The test guard_clang_format then does
+    not apply too.
+
+    Args:
+        record_case: The recorder of one case of the self-test
+    """
+    from assay.guard.engines.meta import clang_format
+
+    name = f"the pinned clang-format makes no change to {EDIT_HEADER} of the tree after the edit"
+    with tempfile.TemporaryDirectory(prefix="edit-loop-gauge-") as work:
+        root = Path(work)
+        for configuration in clang_format.CONFIGURATION_FILES:
+            if (REPO_ROOT / configuration).is_file():
+                shutil.copyfile(REPO_ROOT / configuration, root / configuration)
+        header = root / EDIT_HEADER
+        header.parent.mkdir(parents=True)
+        original = (REPO_ROOT / EDIT_HEADER).read_bytes()
+        header.write_bytes(original)
+        header.write_bytes(edited_text(original, edit_site(header), LONGEST_MARK))
+        try:
+            note = check_edit_format(root)
+        except GaugeError as problem:
+            check_report.write_line(f"       {problem}")
+            record_case(name, False)
+            return
+        if note is not None:
+            check_report.write_line(f"  skip {name}: {note}")
+            return
+        record_case(name, True)
+
+
+PLANTED_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="planted" tests="5" failures="2" disabled="1" skipped="1">
+  <testcase name="test_passes" classname="test_passes" status="run"/>
+  <testcase name="test_times_out" classname="test_times_out" status="fail"><failure message="Timeout"/></testcase>
+  <testcase name="test_fails" classname="test_fails" status="fail"><failure message="Failed"/></testcase>
+  <testcase name="test_skipped" classname="test_skipped" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>
+  <testcase name="test_disabled" classname="test_disabled" status="disabled"/>
+</testsuite>
+"""
+
+
+def failure_cases(record_case: Callable[[str, bool], None]) -> None:
+    """Make sure that the line of a test step names each test with a failure.
+
+    The cases read a planted JUnit report (THE TESTS WITH A FAILURE).
+
+    Args:
+        record_case: The recorder of one case of the self-test
+    """
+    def stopped(name: str) -> StepResult:
+        return StepResult(name, 8, 1, 1, 0, None, None)
+
+    with tempfile.TemporaryDirectory(prefix="edit-loop-gauge-") as work:
+        logs = Path(work)
+        report = junit_report(logs, "edit-tests-1")
+        report.write_text(PLANTED_JUNIT, encoding="utf-8")
+        line = failure_line(stopped("edit-tests-1"), report)
+        record_case("the line of a test step names each test with a failure in sequence, and no skipped test",
+                    line == "edit-tests-1: status 8, 2 test(s) with a failure: test_fails, test_times_out")
+        missing = failure_line(stopped("edit-tests-2"), junit_report(logs, "edit-tests-2"))
+        record_case("the line of a test step with no JUnit report gives the status and tells why no test name is known",
+                    missing.startswith("edit-tests-2: status 8, and no test name is known: "))
+        record_case("the line of a step other than a test step gives its status",
+                    failure_line(stopped("edit-build-1"), None) == "edit-build-1: status 8")
+        text = failure_report([line], logs, "a step gave a status that is not 0")
+        record_case("the report of the measurement says FAILED and gives each step with a status that is not 0",
+                    text.startswith("edit-loop-gauge: FAILED: a step gave a status that is not 0")
+                    and f"edit-loop-gauge:   {line}" in text)
 
 
 def self_test() -> int:
@@ -710,21 +948,30 @@ def self_test() -> int:
         header = root / "Platform.h"
         header.write_bytes(PLANTED_HEADER.encode())
         try:
-            offset = edit_offset(header)
+            site = edit_site(header)
         except tsast.KitMissing:
             print("edit-loop-gauge --self-test: the parse-tree kit is not installed; run python3 utils/bin/setup install tree-sitter")
             return NOT_RUNNABLE
-        edited = edited_text(header.read_bytes(), offset, 42).decode()
-        expect("the edit goes into the body of foundation::detail::breakpoint, and not into another breakpoint",
-               "inline void breakpoint() noexcept { static_cast<void>(42LL); __builtin_trap(); }" in edited
+        edited = edited_text(header.read_bytes(), site, 42).decode()
+        expect("the edit goes into the body of foundation::detail::breakpoint, and not into another breakpoint, with "
+               "each statement on a line of its own",
+               "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}\n" in edited
                and "namespace other {\ninline void breakpoint() noexcept {}" in edited)
-        header.write_text(PLANTED_HEADER.replace("inline void breakpoint() noexcept { __builtin_trap(); }",
-                                                 "inline void breakpoint_moved() noexcept {}"), encoding="utf-8")
-        try:
-            edit_offset(header)
-            expect("a header with no edit site stops the gauge", False)
-        except GaugeError:
-            expect("a header with no edit site stops the gauge", True)
+        for name, planted, expected in PLANTED_SITES:
+            header.write_text(f"namespace foundation::detail {{\n{planted}\n}}\n", encoding="utf-8")
+            expect(name, expected in edited_text(header.read_bytes(), edit_site(header), 42).decode())
+        for name, planted in (("a header with no edit site stops the gauge",
+                               PLANTED_HEADER.replace("inline void breakpoint() noexcept { __builtin_trap(); }",
+                                                      "inline void breakpoint_moved() noexcept {}")),
+                              ("a body with no statement stops the gauge",
+                               "namespace foundation::detail {\ninline void breakpoint() noexcept {}\n}\n")):
+            header.write_text(planted, encoding="utf-8")
+            try:
+                edit_site(header)
+                expect(name, False)
+            except GaugeError:
+                expect(name, True)
+        format_case(expect)
 
         source = root / "source"
         source.mkdir()
@@ -739,6 +986,7 @@ def self_test() -> int:
         (copy / "tracked.txt").write_text("edited in the copy\n", encoding="utf-8")
         expect("an edit of the copy does not change the source",
                (source / "tracked.txt").read_text(encoding="utf-8") == "changed in the work tree\n")
+    failure_cases(expect)
 
     def result(name: str, wall: float, cpu: float, share: float | None, count: float | None) -> StepResult:
         return StepResult(name, 0, wall, cpu, cpu / 10, share, count)

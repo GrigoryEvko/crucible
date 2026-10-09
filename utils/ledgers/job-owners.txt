@@ -57,7 +57,7 @@ utils/assay/loop/fuzz.py | print | 1 | self_test.expect | A use of today.  The c
 utils/assay/loop/gauge.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/gauge.py | cache-root | 1 | measure | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/gauge.py | print | 7 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/gauge.py | print | 6 | measure | A use of today.  The change that calls the owner of the job lowers the count
+utils/assay/loop/gauge.py | print | 4 | measure | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/gauge.py | print | 1 | measure.step | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/gauge.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/gauge.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count

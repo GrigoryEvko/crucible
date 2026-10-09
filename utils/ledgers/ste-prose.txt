@@ -948,9 +948,6 @@ utils/assay/loop/gauge.py | refused-word | 1 | GaugeError: little | A text of to
 utils/assay/loop/gauge.py | refused-word | 1 | clone_tree: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/gauge.py | refused-word | 1 | clone_tree: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/gauge.py | refused-word | 1 | clone_tree: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/gauge.py | refused-word | 1 | edit_offset: brace | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/gauge.py | refused-word | 1 | edit_offset: just | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/gauge.py | refused-word | 1 | edited_text: brace | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/gauge.py | refused-word | 1 | edited_text: original | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/gauge.py | refused-word | 1 | judge: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/gauge.py | refused-word | 1 | judge_others: place | A text of today.  The change that writes the text again in STE lowers the count
