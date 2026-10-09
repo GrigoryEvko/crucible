@@ -20,8 +20,8 @@
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
 //         include.cpp      the family include closure: the include rules, the
-//                          seals, the heavy headers, the names of a higher
-//                          root and the provenance of each place
+//                          door units, the seals, the heavy headers, the names
+//                          of a higher root and the provenance of each place
 //         unit.cpp         the family unit fact: the contract semantic of the
 //                          unit and the optimize options of each function
 //         home.cpp         the family home: where a definition or a
@@ -160,6 +160,12 @@
 //     upward-name           a declaration of the namespace of a higher project
 //                           root in a base file, or a reference to such a
 //                           declaration that a base file spells
+//     The rule door-unit (include.cpp, THE DOOR UNITS):
+//     header-door           an include of a door header by its owner, when the
+//                           owner is no source file
+//     mixed-headers         the include that adds the second family of system
+//                           headers to a door file: the Linux UAPI headers and
+//                           the headers of the C library
 //     The rule contract-semantic (unit.cpp, in each mode):
 //     contract-semantic     a unit whose contract semantic is not ignore and
 //                           whose command line defines
@@ -596,6 +602,7 @@ enum class Rule : std::uint8_t {
     detsafe_ledger,
     heavy_include,
     layer_boundary,
+    door_unit,
     contract_semantic,
     fast_math_override,
     mint_pattern,
@@ -704,6 +711,8 @@ enum class Kind : std::uint8_t {
     heavy_include,
     unmeasured_header,
     upward_name,
+    header_door,
+    mixed_headers,
     contract_semantic,
     fast_math_override,
     mint_record,
@@ -788,6 +797,8 @@ inline const char* rule_name(Rule rule) {
             return "heavy-include";
         case Rule::layer_boundary:
             return "layer-boundary";
+        case Rule::door_unit:
+            return "door-unit";
         case Rule::contract_semantic:
             return "contract-semantic";
         case Rule::fast_math_override:
@@ -912,6 +923,10 @@ inline const char* kind_name(Kind kind) {
             return "unmeasured-header";
         case Kind::upward_name:
             return "upward-name";
+        case Kind::header_door:
+            return "header-door";
+        case Kind::mixed_headers:
+            return "mixed-headers";
         case Kind::contract_semantic:
             return "contract-semantic";
         case Kind::fast_math_override:
@@ -1060,6 +1075,9 @@ inline Rule rule_of(Kind kind) {
             return Rule::heavy_include;
         case Kind::upward_name:
             return Rule::layer_boundary;
+        case Kind::header_door:
+        case Kind::mixed_headers:
+            return Rule::door_unit;
         case Kind::contract_semantic:
             return Rule::contract_semantic;
         case Kind::fast_math_override:
@@ -1166,12 +1184,13 @@ inline bool is_each_mode_kind(Kind kind) {
 
 // True when a rule of the families declaration property (declaration.cpp),
 // expression shape (expression.cpp), owner (owner.cpp) and home (home.cpp)
-// gives the kind.  Such a finding is an error only in the mode error, no
-// opt-out region covers it, and no enforce mode changes it.  The module of its
-// rule judges it against the ledger of the rule.  plugin.cpp reports each
-// such line in one way (report_family).
+// gives the kind, or the rule door-unit (include.cpp).  Such a finding is an
+// error only in the mode error, no opt-out region covers it, and no enforce
+// mode changes it.  The module of its rule judges it against the ledger of the
+// rule.  plugin.cpp reports each such line in one way (report_family).
 inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
+        case Rule::door_unit:
         case Rule::mint_pattern:
         case Rule::no_raw_array_member:
         case Rule::permission_storage:
@@ -1264,6 +1283,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"heavy-include", "heavy-include"},
     {"heavy-include", "unmeasured-header"},
     {"layer-boundary", "upward-name"},
+    {"door-unit", "header-door"},
+    {"door-unit", "mixed-headers"},
     {"contract-semantic", "contract-semantic"},
     {"fast-math-override", "fast-math-override"},
     {"mint-pattern", "mint"},

@@ -1,0 +1,23 @@
+# The ledger of the rule door-unit: the doors that are headers, and the door files that include the
+# Linux UAPI headers and the headers of the C library.
+# A row PATH | KIND | N | ENTITY | REASON admits N findings of KIND with ENTITY in the file PATH.
+# A door is one source file, so no other unit gets its system declarations.  A door file includes the
+# headers of one family, because some declarations of the two families conflict.  Each reason names the
+# slice of misc/01_10_2026_quarantine.md that moves the door into a source file of src/fixy/os/.
+# A new finding is more than its count, and it fails.  A count above the findings of its row is stale,
+# and it fails too.  A reviewer writes each reason.  `python3 utils/bin/guard explain door-unit` tells
+# the rule, and `python3 utils/bin/guard write --rule door-unit` writes this file.
+format 1
+rule door-unit
+include/fixy/os/Io.h | header-door | 1 | <linux/io_uring.h> | the io_uring door is in the header, so each unit that includes fixy/os/Io.h gets the kernel declarations of io_uring.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
+include/fixy/os/Io.h | header-door | 1 | <sys/sendfile.h> | the sendfile door of zerocopy_transfer is in the header, and its signature holds ::off_t.  The slice Os results (4.1) takes the system type out of the signature and moves the door into a source file of src/fixy/os/.
+include/fixy/os/Io.h | mixed-headers | 1 | <linux/io_uring.h> and <sys/mman.h> | the door includes <linux/io_uring.h> and the glibc headers <sys/mman.h>, <sys/sendfile.h>, <sys/syscall.h> and <unistd.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/ and makes these system calls with foundation::os::raw_syscall.
+include/fixy/os/NumaPlacement.h | header-door | 1 | <linux/mempolicy.h> | the memory policy door is in the header, so each unit that includes fixy/os/NumaPlacement.h gets the kernel declarations of the memory policy.  The slice Os results (4.1) moves the door into src/fixy/os/NumaPlacement.cpp.
+include/fixy/os/NumaPlacement.h | mixed-headers | 1 | <linux/mempolicy.h> and <sys/syscall.h> | the door includes <linux/mempolicy.h> and the glibc headers <sys/syscall.h> and <unistd.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/NumaPlacement.cpp and makes its system calls with foundation::os::raw_syscall.
+include/fixy/os/Sched.h | header-door | 1 | <sys/resource.h> | the scheduler door is in the header, so each unit that includes fixy/os/Sched.h gets the declarations of <sys/resource.h>.  The slice Os results (4.1) gives the door a Result in place of its plain int, and moves it into a source file of src/fixy/os/.
+include/fixy/os/Socket.h | header-door | 1 | <linux/netlink.h> | the netlink socket door is in the header, so each unit that includes fixy/os/Socket.h gets the kernel declarations of netlink.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
+include/fixy/os/Socket.h | header-door | 1 | <sys/socket.h> | the socket calls of the netlink door are in the header, so each unit that includes fixy/os/Socket.h gets the socket declarations of glibc.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
+include/fixy/os/Socket.h | mixed-headers | 1 | <linux/netlink.h> and <sys/socket.h> | the door includes <linux/netlink.h> and the glibc header <sys/socket.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/ and makes its socket calls with foundation::os::raw_syscall.
+include/fixy/os/Time.h | header-door | 1 | <linux/ptp_clock.h> | the PTP clock door is in the header, and PtpClockReader::caps() returns ::ptp_clock_caps.  The slice Os results (4.1) gives a base record in place of the kernel struct, and moves the door into a source file of src/fixy/os/.
+include/fixy/os/Time.h | header-door | 1 | <sys/ioctl.h> | the ioctl call of the PTP clock door is in the header, so each unit that includes fixy/os/Time.h gets the ioctl declarations of glibc.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
+include/fixy/os/Time.h | mixed-headers | 1 | <linux/ptp_clock.h> and <fcntl.h> | the door includes <linux/ptp_clock.h> and the glibc headers <fcntl.h> and <sys/ioctl.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/ and makes its open and ioctl calls with foundation::os::raw_syscall.

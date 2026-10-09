@@ -1,0 +1,9 @@
+# The rule table of this plant.  The layer os holds include/foundation/, and
+# the door of <sys/socket.h> is a header of that layer.  Each file of src/ is
+# quarantined.
+
+layer os 0 include/foundation/
+
+quarantine src/
+
+door <sys/socket.h> include/foundation/os/Door.h

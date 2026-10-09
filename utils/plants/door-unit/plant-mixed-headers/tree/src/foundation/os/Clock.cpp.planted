@@ -1,0 +1,4 @@
+// A door file that includes the header of the C library first.
+
+#include <sys/ioctl.h>
+#include <linux/ptp_clock.h>

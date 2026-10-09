@@ -1,0 +1,16 @@
+# Each door file of the control is a source file, and it includes the system
+# headers of one family.  A header of the C++ library is in neither family.
+# A base file that is no door file can include the two families, because the
+# rule reads only the door files.
+
+compile uapi src/foundation/os/Uapi.cpp stage=c
+exit uapi pass
+judge uapi
+
+compile glibc src/foundation/os/Glibc.cpp stage=c
+exit glibc pass
+judge glibc
+
+compile mix src/mix.cpp stage=c
+exit mix pass
+judge mix

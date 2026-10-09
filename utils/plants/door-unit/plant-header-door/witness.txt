@@ -1,0 +1,12 @@
+# The door of <sys/socket.h> is a header of the base.  Each unit that
+# includes the header gets the system declarations of the door, so the
+# include of the door header by its owner is a finding.  In the mode error,
+# the finding is an error.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use door-unit header-door include/foundation/os/Door.h:3:0 | <sys/socket.h>
+
+compile error src/use.cpp mode=error out=no errors=use
+exit error fail

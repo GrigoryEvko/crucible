@@ -1,6 +1,6 @@
-// The family include closure: the include rules, the seals, the heavy headers,
-// the names of a higher root, the expansions of assert and the provenance of
-// each place.
+// The family include closure: the include rules, the door units, the seals,
+// the heavy headers, the names of a higher root, the expansions of assert and
+// the provenance of each place.
 //
 // The include rules apply to each #include directive that a base or a
 // quarantined file holds.  A base file can include a header of its own layer
@@ -10,6 +10,21 @@
 // ratchet counts it.  A door header can have only its door as includer.  A
 // file of the language gets the allowance of its own layer and of the layer of
 // its language row, whichever is lower.
+//
+// THE DOOR UNITS (the rule door-unit)
+//     A door is one source file, and its unit holds the system declarations of
+//     one family.  A source file has the extension .c, .cc, .cpp or .cxx.  An
+//     include of a door header by its OWNER gets header-door when the OWNER is
+//     no source file, because each unit that includes such an OWNER also gets
+//     its system declarations.  A door file is the OWNER of a door row.  It
+//     includes Linux UAPI headers or headers of the C library, and not the two
+//     families, because some of their declarations conflict.  The include that
+//     adds the second family to a door file gets mixed-headers, one time for
+//     each file.  A UAPI header has a first directory of kUapiDirectories.  A
+//     header of the C library is no UAPI header, and the directory of the C
+//     library holds it: the first directory of the search chain that holds
+//     <features.h>, which each header of glibc includes.  A header of the C++
+//     library or of the compiler is in neither family.
 //
 // THE SEALS (the rule detsafe-ledger)
 //     The include closure of a seal ROOT is ROOT and each file that a file of
@@ -129,6 +144,106 @@ void check_header_cost(const PendingInclude& pending, const FileEntry* target) {
     }
 }
 
+// ── The door units (THE DOOR UNITS) ─────────────────────────────────────
+
+// The top directories of the Linux UAPI headers that `make headers_install`
+// writes.  glibc writes scsi/ too, so scsi/ is no UAPI directory here.
+constexpr std::string_view kUapiDirectories[] = {"asm", "asm-generic", "drm", "linux", "misc",
+                                                 "mtd", "rdma",        "sound", "video", "xen"};
+
+// The family of a system header (THE DOOR UNITS).
+enum class HeaderFamily : std::uint8_t {
+    other,
+    uapi,
+    c_library,
+};
+
+// The first header of each family that a door file of the unit includes, and
+// whether the file has its finding mixed-headers.
+struct DoorFamilies {
+    std::string uapi;
+    std::string c_library;
+    bool is_mixed = false;
+};
+
+// The families of each door file of the unit, by its entry.
+std::unordered_map<const FileEntry*, DoorFamilies> door_families;
+
+// True when PATH has the extension of a source file.
+bool is_source_path(const std::string& path) {
+    for (std::string_view extension : {".c", ".cc", ".cpp", ".cxx"}) {
+        if (path.size() > extension.size()
+            && path.compare(path.size() - extension.size(), extension.size(), extension) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when a door row names FILE as its OWNER.  Complexity: O(door rows).
+bool is_door_file(const FileEntry& file) {
+    for (const DoorRow& door : state.table.doors) {
+        if (door.owner == file.relative) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The real path of the directory of the C library: the first directory of the
+// search chain of an angle include that holds <features.h>, or empty.  The
+// chain of a unit does not change, so the plugin finds the directory one time.
+// Complexity: O(directories of the chain), one time.
+const std::string& c_library_directory() {
+    static const std::string directory = [] {
+        for (cpp_dir* entry = get_added_cpp_dirs(INC_BRACKET); entry != nullptr; entry = entry->next) {
+            if (!real_path((std::string(entry->name) + "/features.h").c_str()).empty()) {
+                return real_path(entry->name);
+            }
+        }
+        return std::string{};
+    }();
+    return directory;
+}
+
+// The family of the header of a directive, whose TARGET is the file that it
+// enters, or null.
+HeaderFamily header_family(const PendingInclude& pending, const FileEntry* target) {
+    std::string_view spelled = pending.spelled;
+    std::string_view first = spelled.substr(0, spelled.find('/'));
+    bool has_directory = first.size() < spelled.size();
+    for (std::string_view directory : kUapiDirectories) {
+        if (has_directory && first == directory) {
+            return HeaderFamily::uapi;
+        }
+    }
+    const std::string& library = c_library_directory();
+    bool is_c_library = target != nullptr && !library.empty() && has_prefix(target->real, library + "/");
+    return is_c_library ? HeaderFamily::c_library : HeaderFamily::other;
+}
+
+// The families of a door file (THE DOOR UNITS): the include that adds the
+// second family gets mixed-headers, with the first header of each family.
+void check_door_families(const PendingInclude& pending, const FileEntry* target) {
+    const FileEntry& includer = *pending.place.file;
+    if (!is_door_file(includer)) {
+        return;
+    }
+    HeaderFamily family = header_family(pending, target);
+    if (family == HeaderFamily::other) {
+        return;
+    }
+    DoorFamilies& families = door_families[&includer];
+    std::string& first = family == HeaderFamily::uapi ? families.uapi : families.c_library;
+    if (first.empty()) {
+        first = "<" + pending.spelled + ">";
+    }
+    if (!families.is_mixed && !families.uapi.empty() && !families.c_library.empty()) {
+        families.is_mixed = true;
+        add_finding(Kind::mixed_headers, nullptr, pending.place, families.uapi + " and " + families.c_library);
+    }
+}
+
 // The include rules for one directive and its target.
 void check_include(const PendingInclude& pending, const FileEntry* target) {
     const FileEntry& includer = *pending.place.file;
@@ -144,11 +259,14 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
                     target->relative + " (" + what + ") from the layer " + layer_name(includer.layer));
         return;
     }
+    check_door_families(pending, target);
     for (const DoorRow& door : state.table.doors) {
         if (door.header == pending.spelled) {
             if (includer.relative != door.owner) {
                 add_finding(Kind::door_header, nullptr, pending.place,
                             "<" + pending.spelled + "> has the door " + door.owner);
+            } else if (!is_source_path(door.owner)) {
+                add_finding(Kind::header_door, nullptr, pending.place, "<" + pending.spelled + ">");
             }
             return;
         }

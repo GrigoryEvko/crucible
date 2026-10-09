@@ -1,0 +1,7 @@
+// A door file of the UAPI headers, which also includes a header of the C++
+// library.
+
+#include <linux/netlink.h>
+#include <linux/types.h>
+
+#include <cstdint>

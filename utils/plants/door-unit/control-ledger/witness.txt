@@ -1,0 +1,10 @@
+# The door of two headers is a header of the base, and it includes a Linux
+# UAPI header and a header of the C library.  Each finding has a ledger row
+# with its reason, so the module gives no error.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use door-unit header-door include/foundation/os/Socket.h:3:0 | <linux/netlink.h>
+finding use door-unit header-door include/foundation/os/Socket.h:4:0 | <sys/socket.h>
+finding use door-unit mixed-headers include/foundation/os/Socket.h:4:0 | <linux/netlink.h> and <sys/socket.h>

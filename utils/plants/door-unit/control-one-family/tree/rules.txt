@@ -1,0 +1,16 @@
+# The rule table of this control.  The layer os holds two door files: one
+# owns two Linux UAPI headers, and the other owns two headers of the C
+# library.  The allow rows let each base file include its other headers.
+
+layer os 0 include/foundation/ src/foundation/
+
+allow os <cstdint>
+allow os <linux/stddef.h>
+allow os <stdio.h>
+
+quarantine src/mix.cpp
+
+door <linux/netlink.h> src/foundation/os/Uapi.cpp
+door <linux/types.h> src/foundation/os/Uapi.cpp
+door <sys/socket.h> src/foundation/os/Glibc.cpp
+door <sys/ioctl.h> src/foundation/os/Glibc.cpp

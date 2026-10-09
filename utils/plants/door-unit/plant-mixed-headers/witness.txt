@@ -1,0 +1,15 @@
+# Each door file of the plant is a source file, and it includes a Linux UAPI
+# header and a header of the C library.  Some declarations of the two
+# families conflict, so the include that adds the second family is a finding.
+# The entity gives the first header of each family, the UAPI header first,
+# also when the door file includes the header of the C library first.
+
+compile socket src/foundation/os/Socket.cpp stage=c
+exit socket pass
+judge socket
+finding socket door-unit mixed-headers src/foundation/os/Socket.cpp:4:0 | <linux/netlink.h> and <sys/socket.h>
+
+compile clock src/foundation/os/Clock.cpp stage=c
+exit clock pass
+judge clock
+finding clock door-unit mixed-headers src/foundation/os/Clock.cpp:4:0 | <linux/ptp_clock.h> and <sys/ioctl.h>

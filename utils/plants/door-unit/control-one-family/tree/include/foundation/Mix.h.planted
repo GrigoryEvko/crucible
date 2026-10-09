@@ -1,0 +1,6 @@
+#pragma once
+
+// A base header that is no door file.
+
+#include <linux/stddef.h>
+#include <stdio.h>

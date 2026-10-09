@@ -1,0 +1,9 @@
+# The rule table of this plant.  The layer os holds the two door files, and
+# each door file owns a Linux UAPI header and a header of the C library.
+
+layer os 0 include/foundation/ src/foundation/
+
+door <linux/netlink.h> src/foundation/os/Socket.cpp
+door <sys/socket.h> src/foundation/os/Socket.cpp
+door <linux/ptp_clock.h> src/foundation/os/Clock.cpp
+door <sys/ioctl.h> src/foundation/os/Clock.cpp

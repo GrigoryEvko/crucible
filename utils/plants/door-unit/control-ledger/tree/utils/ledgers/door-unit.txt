@@ -1,0 +1,7 @@
+# The ledger of the control.  Each row admits one finding of the door header,
+# and each row gives a reason.
+format 1
+rule door-unit
+include/foundation/os/Socket.h | header-door | 1 | <linux/netlink.h> | the door of the control
+include/foundation/os/Socket.h | header-door | 1 | <sys/socket.h> | the door of the control
+include/foundation/os/Socket.h | mixed-headers | 1 | <linux/netlink.h> and <sys/socket.h> | the door of the control
