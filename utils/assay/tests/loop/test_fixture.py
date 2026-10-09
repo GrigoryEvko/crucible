@@ -1819,7 +1819,7 @@ def main(argv: list[str]) -> int:
     if shutil.which(cxx) is None:
         print("tests.loop.test_fixture --cxx COMPILER: the compiler cannot run", file=sys.stderr)
         return 3
-    # A time error becomes a warning when GITHUB_ACTIONS is true (cost_meter.ci_verdict).  The checks in this
+    # A time error becomes a warning when GITHUB_ACTIONS is true (assay.core.meter.ci_verdict).  The checks in this
     # process expect the levels of the build host.  Remove the variable, as run() does for each run of the driver.
     os.environ.pop("GITHUB_ACTIONS", None)
     failures: list[str] = []
