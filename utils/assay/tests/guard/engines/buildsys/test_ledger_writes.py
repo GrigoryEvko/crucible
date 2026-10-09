@@ -1,4 +1,4 @@
-"""The test of the writes of the rules test-time, test-memory and header-constexpr-ops (`guard write`).
+"""The test of the writes of the rules test-time, test-memory, fixture-cpu and header-constexpr-ops (`guard write`).
 
 `guard selftest tests.guard.engines.buildsys.test_ledger_writes` runs the
 test.  Each case makes a planted build with assay.guard.engines.buildsys.planted
@@ -103,14 +103,23 @@ def record_cases(expect: testing.Expect) -> None:
             "is not a ledger of" in raised(lambda: test_time.written(context, other, None)),
         )
         fixture_cpu = registry.rules["fixture-cpu"]
-        expect(
-            "written() of held refuses a held rule with no function in WRITERS, and names the table",
-            "WRITERS" in raised(lambda: held.written(fixture_cpu, context, rule_ledger.empty(fixture_cpu), None)),
-        )
+        writer = held.WRITERS.pop(fixture_cpu.id)
+        try:
+            expect(
+                "written() of held refuses a held rule with no function in WRITERS, and names the table",
+                "WRITERS" in raised(lambda: held.written(fixture_cpu, context, rule_ledger.empty(fixture_cpu), None)),
+            )
+            status, said = run_write(context, "fixture-cpu", "a planted reason")
+            expect(
+                "guard write refuses a held rule with no function in WRITERS, with status 1",
+                status == 1 and "is not written" in said and "WRITERS" in said,
+            )
+        finally:
+            held.WRITERS[fixture_cpu.id] = writer
         status, said = run_write(context, "fixture-cpu", "a planted reason")
         expect(
-            "guard write refuses a held rule with no function in WRITERS, with status 1",
-            status == 1 and "is not written" in said and "WRITERS" in said,
+            "guard write writes the ledger of fixture-cpu from the records of the fixtures of the build",
+            status == 0 and "fixture-cpu.txt holds 0 rows" in said,
         )
 
 

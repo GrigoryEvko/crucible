@@ -12,6 +12,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import testing
 from assay.guard.engines.buildsys import held, planted
@@ -136,10 +137,51 @@ def witness_cases(expect: testing.Expect) -> None:
         expect("a plant with no finding and a control with a warning fail", fails == 1)
 
 
+def fixture_write_cases(expect: testing.Expect) -> None:
+    """The write of the ledgers of the fixture driver: a row for each measure that the rule judges over its error."""
+    rows = (
+        BUILD_HEAD
+        + "fixture neg_slow test/neg/slow.cpp user=19 system=1\n"
+        + "fixture neg_heavy test/neg/heavy.cpp user=1 system=0 instructions=50\n"
+        + "fixture neg_counted test/neg/counted.cpp user=19 system=1 instructions=10\n"
+        + "fixture neg_fast test/neg/fast.cpp user=1 system=0 instructions=1\n"
+    )
+
+    def rows_of(ledger: rule_ledger.Ledger) -> dict[str, tuple[float | int | str, str]]:
+        """Return the value and the reason of each row of a ledger, by the name of its fixture."""
+        return {key.entity: (entry.value, entry.reason) for key, entry in ledger.base.items()}
+
+    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
+        context = context_of(Path(scratch), rows)
+        cpu, instructions = tree_rule(held.FIXTURE_CPU), tree_rule(held.FIXTURE_INSTRUCTIONS)
+        empty_cpu = rule_ledger.Ledger(cpu.id, rule_registry.Policy.MAX, "")
+        written_cpu = held.written(cpu, context, empty_cpu, "a planted slow fixture")
+        expect(
+            "fixture-cpu writes the fixture over 15 s with no instruction count, and no fixture with a count",
+            rows_of(written_cpu) == {"neg_slow": (20.0, "a planted slow fixture")},
+        )
+        empty_instructions = rule_ledger.Ledger(instructions.id, rule_registry.Policy.MAX, "")
+        written_instructions = held.written(instructions, context, empty_instructions, None)
+        expect(
+            "fixture-instructions writes the fixture over 45 G, with the default reason",
+            rows_of(written_instructions) == {"neg_heavy": (50.0, held.FIXTURE_REASON)},
+        )
+        again = held.written(cpu, context, written_cpu, None)
+        expect("a second write keeps the reason of the row", rows_of(again) == rows_of(written_cpu))
+    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
+        context = context_of(Path(scratch), rows + "fixture neg_unrun test/neg/unrun.cpp record=no\n")
+        try:
+            held.written(tree_rule(held.FIXTURE_CPU), context, empty_cpu, None)
+            said = ""
+        except rule_ledger.LedgerError as problem:
+            said = str(problem)
+        expect("a write refuses a build with a fixture that has no record", "neg_unrun" in said)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (gauge_cases, routing_cases, rule_holder_cases, cmake_cases, witness_cases),
+        (gauge_cases, routing_cases, rule_holder_cases, cmake_cases, witness_cases, fixture_write_cases),
     )

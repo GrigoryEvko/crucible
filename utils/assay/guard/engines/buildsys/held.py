@@ -49,8 +49,14 @@ THE WRITE
     then calls written() of this module.  WRITERS gives the function that writes
     the ledger of each such rule.  The function of test-memory is written()
     of assay.guard.engines.buildsys.test_time, which writes the ledgers of
-    test-time and test-memory from the records of the tests.  A held rule
-    with no row in WRITERS has no write, and `guard write` refuses it.
+    test-time and test-memory from the records of the tests.  The function of
+    fixture-cpu and fixture-instructions is fixture_written(), which writes
+    their ledgers from the records of the fixtures of the build.  A fixture
+    gets a row when the rule judges its measure at the error level and the
+    measure is over the error threshold.  The rule fixture-cpu judges the CPU
+    time only when the record has no instruction count.  The write refuses a
+    build with a fixture that has no record.  A held rule with no row in
+    WRITERS has no write, and `guard write` refuses it.
 
 THE FINDINGS
     A measured rule with two equal thresholds gives a warning only.  The
@@ -69,6 +75,7 @@ import contextlib
 import io
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
@@ -90,6 +97,13 @@ GAUGE_RECORDS = "gauge-records.jsonl"
 OVER_LIMIT = "over-limit"
 # The rule of the fixture driver that judges the errors that no regex of a fixture matches.
 OWN_REASON = "fixture-own-reason"
+# The two measured rules of the fixture driver (THE WRITE).  The reason of a new row of their ledgers when the write
+# gives none, and the instructions in one G, follow.
+FIXTURE_CPU = "fixture-cpu"
+FIXTURE_INSTRUCTIONS = "fixture-instructions"
+FIXTURE_RULES = (FIXTURE_CPU, FIXTURE_INSTRUCTIONS)
+FIXTURE_REASON = "the measure of one cold fixture compile"
+GIGA = 1e9
 
 type Judge = Callable[[rule_registry.Rule, BuildContext], list[check_report.Finding]]
 
@@ -174,6 +188,26 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     return found
 
 
+def fixture_tests(build: Path) -> list[tuple[str, Path, list[str]]]:
+    """Return the name, the source and the regexes of each fixture test of a build, in the sequence of the test list.
+
+    Complexity: linear in the tests of the build.
+
+    Raises:
+        ctest_reader.CtestError: If the tests of the build do not read
+    """
+    from assay.loop.fixture import store
+
+    found: list[tuple[str, Path, list[str]]] = []
+    for test in ctest_reader.tests(build):
+        words = build_census.fixture_words(list(test.command))
+        parsed = None if words is None else store.fixture_arguments(words)
+        if parsed is not None:
+            arguments = parsed[1]
+            found.append((arguments[2], Path(arguments[1]), list(arguments[3:])))
+    return found
+
+
 def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
     """Return the findings of the cost and of the errors of each fixture of the planted build, as `loop fixture`.
 
@@ -191,17 +225,11 @@ def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[ch
     ledgers = rule_ledger.ledger_path(rule.id, context.root).parent
     budget = store.cost_budget_at(registry if registry.is_file() else rule_registry.REGISTRY, ledgers)
     try:
-        tests = ctest_reader.tests(build)
+        tests = fixture_tests(build)
     except ctest_reader.CtestError as problem:
         raise unreadable("the tests of the build", problem) from None
     found: list[object] = []
-    for test in tests:
-        words = build_census.fixture_words(list(test.command))
-        parsed = None if words is None else store.fixture_arguments(words)
-        if parsed is None:
-            continue
-        _, arguments = parsed
-        source, name, regexes = Path(arguments[1]), arguments[2], arguments[3:]
+    for name, source, regexes in tests:
         unit, _, reason = build_census.read_fixture(build, name, str(source), context.root, False)
         if unit is not None:
             result = store.CompileResult(1, "", unit.cost.cpu_s or 0.0, 0.0, unit.cost.instructions)
@@ -273,11 +301,71 @@ HOLDERS: dict[str, Judge] = {
 }
 
 
+def fixture_measure(rule_id: str, cpu_s: float, instructions: int | None) -> float | None:
+    """Return the measure of the record of a fixture that the rule judges at the error level, or None (THE WRITE).
+
+    The rule fixture-instructions judges the instruction count in G.  The rule fixture-cpu judges the CPU time only
+    when the record has no instruction count.  With a count, an error of the CPU time is a warning.
+    """
+    if rule_id == FIXTURE_INSTRUCTIONS:
+        return None if instructions is None else instructions / GIGA
+    return cpu_s if instructions is None else None
+
+
+def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
+    """Return the ledger of fixture-cpu or fixture-instructions written again from the records of the build (THE WRITE).
+
+    A fixture with a measure over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`.  The row keeps
+    its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes.  Complexity: linear in the tests
+    of the build and in the records of the fixtures.
+
+    Raises:
+        NotApplicable: If the call gives no build directory
+        rule_ledger.LedgerError: If the ledger is not a ledger of the fixture driver, the tests do not read, or a
+            fixture has no record that counts
+    """
+    if ledger.rule not in FIXTURE_RULES:
+        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(FIXTURE_RULES)}")
+    build = context.require_build()
+    budget = context.budget(ledger.rule)
+    try:
+        tests = fixture_tests(build)
+    except ctest_reader.CtestError as problem:
+        raise rule_ledger.LedgerError(f"the tests of the build do not read: {problem}") from None
+    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    unread: list[str] = []
+    for name, _, _ in tests:
+        try:
+            record = cost_record.read_fixture(Path(cost_record.fixture_record_file(build, name)))
+        except cost_record.MissingRecord:
+            unread.append(f"{name} (no record)")
+            continue
+        except cost_record.RecordError as problem:
+            unread.append(f"{name} ({problem})")
+            continue
+        measure = fixture_measure(ledger.rule, record.cpu_s, record.instructions)
+        if measure is None or measure <= budget.error:
+            continue
+        key = rule_ledger.Key("", "", name)
+        earlier = ledger.base.get(key)
+        base[key] = rule_ledger.Entry(
+            key, round(measure, 2), earlier.reason if earlier is not None else reason or FIXTURE_REASON
+        )
+    if unread:
+        raise rule_ledger.LedgerError(
+            f"{len(unread)} fixtures have no record that counts, such as {unread[0]}.  Run each fixture of the build, "
+            f"then the write"
+        )
+    return replace(ledger, base=base)
+
+
 type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]
 
 # The function that writes the ledger of each held rule of the policy max (THE WRITE).
 WRITERS: dict[str, Writer] = {
     "test-memory": test_time.written,
+    FIXTURE_CPU: fixture_written,
+    FIXTURE_INSTRUCTIONS: fixture_written,
 }
 
 
