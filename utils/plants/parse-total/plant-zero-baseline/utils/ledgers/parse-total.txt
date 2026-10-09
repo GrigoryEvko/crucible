@@ -1,5 +1,6 @@
 # The ledger of a plant of the rule parse-total.
 format 1
 rule parse-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
 - | x86_64-debug-asan | 0 | fixtures | a planted baseline of 0
 - | x86_64-debug-asan | 0 | objects | a planted baseline of 0

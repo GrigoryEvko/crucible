@@ -1,3 +1,3 @@
-# The kind has a second total row of objects, a second row of one key: an error at the line of the row.
+# The configuration has a second total row of objects, a second row of one key: an error at the line of the row.
 format 1
 kind x86_64-debug-asan

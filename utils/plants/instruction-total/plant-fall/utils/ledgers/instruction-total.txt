@@ -1,5 +1,6 @@
 # The ledger of a plant of the rule instruction-total.
 format 1
 rule instruction-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
 - | x86_64-debug-asan | 10000000000 | fixtures | a planted build where a.o ran 2.84 G instructions
 - | x86_64-debug-asan | 4840000000 | objects | a planted build where a.o ran 2.84 G instructions

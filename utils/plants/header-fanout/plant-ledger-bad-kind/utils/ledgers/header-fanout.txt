@@ -1,5 +1,6 @@
 # The ledger of a plant of the rule header-fanout.
 format 1
 rule header-fanout
+configuration x86_64-debug-asan kind x86_64-debug-asan
 include/H00.h | x86_64-debug-asan | 100/2 | - | -
 include/H99.h | X86 | 100/2 | - | -

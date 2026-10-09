@@ -253,6 +253,28 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         "a baseline of digits reads as an accurate int above 2^53, a decimal as a float, and BYTES/READERS as text",
         values == {"sum": 9007199254740993, "part": 2.5, "h": "7/3"} and isinstance(values["sum"], int),
     )
+    configured = rule_ledger.parse(
+        "format 1\nrule base-rule\nconfiguration debug kind debug\nconfiguration release kind release\n"
+        "- | debug | 7/3 | h | -\n- | release | 8/3 | h | -\n",
+        "ledger.txt",
+        "base-rule",
+        rule_registry.Policy.BASELINE,
+    )
+    expect(
+        "a baseline ledger reads two configurations with rows that hold no count, and a difference row stays refused",
+        [item.name for item in configured.configurations] == ["debug", "release"]
+        and len(configured.base) == 2
+        and refuses(
+            lambda: rule_ledger.parse(
+                "format 1\nrule base-rule\nconfiguration debug kind debug\nconfiguration release kind release\n"
+                "@release | - | debug | +1 | h | -\n",
+                "ledger.txt",
+                "base-rule",
+                rule_registry.Policy.BASELINE,
+            ),
+            rows_grammar.RowsError,
+        ),
+    )
 
 
 def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:

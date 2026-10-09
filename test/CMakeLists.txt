@@ -5052,7 +5052,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # process module, the git module, the paths, the run of the cases, the reader
 # and writer of the cost records, the record class of the step meters, the
 # judge of the max rules, the runner and the planted
-# build of the engine build, the reader
+# build of the engine build, the configurations of the census totals, the reader
 # of the compile database, the Python reader, the reader of the reports of
 # mypy and ruff, the package scope, the STE table, the counted rules of the
 # engine plugin, the writer of the walk list and the writer of the header
@@ -5080,7 +5080,8 @@ endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing core.test_record core.test_value core.test_budget
         guard.engines.buildsys.test_runner
-        guard.engines.buildsys.test_planted guard.engines.buildsys.test_held readers.test_compdb readers.test_python
+        guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
+        readers.test_compdb readers.test_python
         readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary

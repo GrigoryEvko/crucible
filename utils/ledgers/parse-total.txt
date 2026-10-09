@@ -1,8 +1,15 @@
 # The ledger of the rule parse-total: the baseline of the bytes that the compiles of one build read.
 # `python3 utils/bin/guard explain parse-total` tells the rule, and
-# `python3 utils/bin/guard write --rule parse-total --build-dir BUILD` writes the rows of one build kind again.
+# `python3 utils/bin/guard write --rule parse-total --build-dir BUILD` writes the rows of one configuration
+# again.
 #
-# The two total rows of a kind:
+# The facts of a configuration:
+#   configuration NAME KEY VALUE
+#   The build kind, the target tier and each cache variable that changes the objects of all, as the
+#   configuration rows of utils/ledgers/quarantine.txt.  A build with other facts has no baseline here.
+#   The KIND cell of each row that follows holds the NAME of a configuration.
+#
+# The two total rows of a configuration:
 #   - | KIND | BYTES | objects | REASON
 #   - | KIND | BYTES | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the bytes of each file
@@ -20,6 +27,23 @@
 #   python3 utils/bin/guard write --rule parse-total --build-dir build --reason TEXT
 format 1
 rule parse-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan CRUCIBLE_TSAN off
+configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan CRUCIBLE_PGO off
+configuration x86_64-debug-asan CRUCIBLE_BENCH off
+configuration x86_64-debug-asan CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan TORCH_DIR unset
 - | x86_64-debug-asan | 5826/3010 | <system>/asm-generic/errno.h | -
 - | x86_64-debug-asan | 2450/3024 | <system>/bits/byteswap.h | -
 - | x86_64-debug-asan | 23828/858 | <system>/bits/confname.h | -

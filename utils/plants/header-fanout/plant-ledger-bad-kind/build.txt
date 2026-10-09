@@ -1,3 +1,4 @@
-# The kind X86 of a row is not a build kind of lowercase words: an error at the line of the row.
+# The KIND cell X86 of a row is not the name of a configuration in lowercase words: an error at the line of the
+# row.
 format 1
 kind x86_64-debug-asan

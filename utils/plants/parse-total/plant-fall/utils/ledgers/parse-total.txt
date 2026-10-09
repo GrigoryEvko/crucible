@@ -1,6 +1,7 @@
 # The ledger of a plant of the rule parse-total.
 format 1
 rule parse-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
 - | x86_64-debug-asan | 2100 | fixtures | the measure of a planted build with three objects
 - | x86_64-debug-asan | 7300 | objects | the measure of a planted build with three objects
 include/Base.h | x86_64-debug-asan | 1000/4 | - | -

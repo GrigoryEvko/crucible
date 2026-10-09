@@ -1,3 +1,4 @@
-# A total row of a different kind holds BYTES/READERS in place of one whole number: an error at the line of the row.
+# A total row of a different configuration holds BYTES/READERS in place of one whole number: an error at the line of
+# the row.
 format 1
 kind x86_64-debug-asan

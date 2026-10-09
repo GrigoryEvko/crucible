@@ -1,7 +1,13 @@
 # The ledger of the rule header-fanout: the headers of include/ whose bytes alone times readers were the
 # largest at the last write.  `python3 utils/bin/guard explain header-fanout` tells the rule, and
-# `python3 utils/bin/guard write --rule header-fanout --build-dir BUILD` writes the rows of one build kind
-# again.
+# `python3 utils/bin/guard write --rule header-fanout --build-dir BUILD` writes the rows of one
+# configuration again.
+#
+# The facts of a configuration:
+#   configuration NAME KEY VALUE
+#   The build kind, the target tier and each cache variable that changes the objects of all, as the
+#   configuration rows of utils/ledgers/quarantine.txt.  A build with other facts has no baseline here.
+#   The KIND cell of each row that follows holds the NAME of a configuration.
 #
 # A row:  HEADER | KIND | ALONE BYTES/READERS | - | -
 #   ALONE BYTES  the bytes that the sentinel of the header in test/layer includes after its source
@@ -13,6 +19,23 @@
 #   python3 utils/bin/guard write --rule header-fanout --build-dir build
 format 1
 rule header-fanout
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan CRUCIBLE_TSAN off
+configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan CRUCIBLE_PGO off
+configuration x86_64-debug-asan CRUCIBLE_BENCH off
+configuration x86_64-debug-asan CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan TORCH_DIR unset
 include/fixy/GradedFacade.h | x86_64-debug-asan | 2747524/2122 | - | -
 include/fixy/Mutation.h | x86_64-debug-asan | 3517567/967 | - | -
 include/fixy/Qtt.h | x86_64-debug-asan | 4082321/1757 | - | -

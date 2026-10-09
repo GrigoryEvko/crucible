@@ -29,12 +29,21 @@ THE KIND
     (assay.core.meter).  A ledger row of a measured rule applies only to a
     build of its kind.
 
+THE CONFIGURATION
+    configuration() gives the configuration of the build, as the engine
+    plugin gives it (THE CONFIGURATION of assay.guard.engines.plugin.runner).
+    The native flags of the compile commands of the objects of the target all
+    are part of its tier.  A rule with rows that change with the
+    configuration, such as the census totals, holds the rows of each
+    configuration with its facts.
+
 THE PLANTS
     A plant of a build rule holds the file build.txt, which tells what its
     planted build directory holds (assay.guard.engines.buildsys.planted).  The
     witness copies the plant to a throwaway repository and makes the planted
-    build there (planted.plant_context()).  The witness of a measured rule
-    with a holder runs the judge of the holder on that build
+    build there (planted.plant_context()).  A planted build gives its
+    configuration, and the context then runs no compiler.  The witness of a
+    measured rule with a holder runs the judge of the holder on that build
     (assay.guard.engines.buildsys.held).
 
 Complexity: one read of each input that a rule of the call reads.
@@ -50,6 +59,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta import runner as meta_runner
+from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
 from assay.readers import compdb
@@ -69,6 +79,7 @@ class BuildContext:
 
     __slots__ = (
         "_census",
+        "_configuration",
         "_entries",
         "_graph",
         "_kind",
@@ -91,8 +102,9 @@ class BuildContext:
         cache_limits: Mapping[str, int] | None = None,
         registry: rule_registry.Registry | None = None,
         paths: Sequence[str] = (),
+        configuration: plugin_runner.BuildConfiguration | None = None,
     ) -> None:
-        """Keep the root, the build directory, the root and the limits of the caches, the registry and the paths.
+        """Keep the root, the build directory, the caches, the registry, the paths and a planted configuration.
 
         Args:
             root: The root of the tree
@@ -102,6 +114,8 @@ class BuildContext:
             registry: The registry that gives the thresholds of the measured rules, or None for the registry of
                 this tree
             paths: The paths that the call names with --path (THE PATHS)
+            configuration: The configuration of a planted build, or None to read it from the build (THE
+                CONFIGURATION)
         """
         self.root = root
         self.build_dir = build_dir
@@ -115,6 +129,7 @@ class BuildContext:
         self._model: cmake_reader.CodeModel | None = None
         self._graph: ninja_reader.Graph | None = None
         self._kind: str | None = None
+        self._configuration = configuration
 
     def require_build(self) -> Path:
         """Return the build directory of the call (THE BUILD DIRECTORY).
@@ -179,6 +194,30 @@ class BuildContext:
                 )
             self._kind = found
         return self._kind
+
+    def configuration(self) -> plugin_runner.BuildConfiguration:
+        """Return the configuration of the build (THE CONFIGURATION).
+
+        Complexity: linear in the rows of the compile database and the inputs of all, and one compiler run for
+        each tier of the build.
+
+        Raises:
+            NotApplicable: If the call gives no build directory, or the build made only some targets, or its
+                generator is not Ninja
+            build_census.CensusError: If the inputs of all or the compile database cannot be read
+            compdb.CompdbError: If the build has no compile database
+            plugin_runner.BuildError: If the build has no build kind, its CMake cache cannot be read, or the compiler
+                does not print its target
+        """
+        if self._configuration is None:
+            build = self.require_build()
+            try:
+                objects = {str(path) for path, _ in build_census.objects_of_all(build, self.root)}
+            except build_census.NotApplicable as reason:
+                raise meta_runner.NotApplicable(str(reason)) from None
+            commands = [entry.command for entry in self.entries() if entry.output in objects]
+            self._configuration = plugin_runner.build_configuration(build, commands)
+        return self._configuration
 
     def census(self, read_files: bool = True) -> build_census.Census:
         """Return the census of the build (assay.readers.census), with the files of each unit when read_files.

@@ -1,0 +1,7 @@
+# The ledger of a plant of the rule instruction-total.
+format 1
+rule instruction-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-release kind x86_64-release
+- | x86_64-release | 10000000000 | fixtures | the measure of a planted build
+- | x86_64-release | 4000000000 | objects | the measure of a planted build

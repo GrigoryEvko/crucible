@@ -1,0 +1,4 @@
+# The ledger holds the configuration of the build, and it has total rows of a different configuration only: an
+# error that asks to write the rows of the configuration again.
+format 1
+kind x86_64-debug-asan

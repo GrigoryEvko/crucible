@@ -1,0 +1,4 @@
+# The rows name the configuration x86_64-debug-asan, and the ledger has no configuration row of it: an error at the
+# line of the first row.
+format 1
+kind x86_64-debug-asan

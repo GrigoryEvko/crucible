@@ -1,9 +1,15 @@
 # The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of one
 # build.  `python3 utils/bin/guard explain instruction-total` tells the rule, and
-# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the rows of one build
-# kind again.
+# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the rows of one
+# configuration again.
 #
-# The two rows of a kind:
+# The facts of a configuration:
+#   configuration NAME KEY VALUE
+#   The build kind, the target tier and each cache variable that changes the objects of all, as the
+#   configuration rows of utils/ledgers/quarantine.txt.  A build with other facts has no baseline here.
+#   The KIND cell of each row that follows holds the NAME of a configuration.
+#
+# The two rows of a configuration:
 #   - | KIND | INSTRUCTIONS | objects | REASON
 #   - | KIND | INSTRUCTIONS | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the user instructions
@@ -18,5 +24,22 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan CRUCIBLE_TSAN off
+configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan CRUCIBLE_PGO off
+configuration x86_64-debug-asan CRUCIBLE_BENCH off
+configuration x86_64-debug-asan CRUCIBLE_FUZZ off
+configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan TORCH_DIR unset
 - | x86_64-debug-asan | 8727423836718 | fixtures | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness
 - | x86_64-debug-asan | 9841082170241 | objects | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness

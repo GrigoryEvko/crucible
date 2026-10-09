@@ -1,5 +1,5 @@
-# The baseline of the kind is 0 bytes.  No change has a measure against it, and the rule does not divide by it: an
-# error that asks to write the baseline.
+# The baseline of the configuration is 0 bytes.  No change has a measure against it, and the rule does not divide
+# by it: an error that asks to write the baseline.
 format 1
 kind x86_64-debug-asan
 file include/Base.h size=1000

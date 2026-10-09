@@ -391,7 +391,9 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
                     f"with the value {ADMIT_VALUE}, which belongs to no "
                     f"configuration",
                 )
-    for item in ordered[1:]:
+    # Only a ledger of the policy count has difference rows and counts.  A ledger of a different policy, such as a
+    # baseline ledger of the census totals, holds the facts of its configurations and no count.
+    for item in ordered[1:] if policy == Policy.COUNT else ():
         if any(count < 0 for count in ledger.expected(item.name).values()):
             raise rows_grammar.RowsError(
                 shown, 0, f"a difference of the configuration {item.name} makes a count below 0"
