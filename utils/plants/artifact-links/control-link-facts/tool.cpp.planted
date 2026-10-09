@@ -1,0 +1,5 @@
+#include <cstdlib>
+volatile int planted_state = 0;
+[[gnu::constructor]] static void planted_init() { planted_state = 1; }
+static void planted_exit() { planted_state = 2; }
+int main() { return std::atexit(planted_exit); }

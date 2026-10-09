@@ -1,0 +1,3 @@
+# The ledger holds a needed library that the link of the planted program does not need.
+facts needed static-member init
+program examples planted_tool tool.cpp

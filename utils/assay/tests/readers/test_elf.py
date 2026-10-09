@@ -35,9 +35,12 @@ int throwing_entry(int value) {
 }
 Shape* make_shape() { static Shape shape; return &shape; }
 """
-# A unit of a shared library that calls the C library.  The library then gets libc.so.6 and a version of glibc.
+# A unit of a shared library that calls the C library.  The library then gets libc.so.6 and a version of glibc.  Its
+# constructor gives an entry of .init_array.
 LINKED_UNIT = """\
 #include <cstdio>
+volatile int linked_state = 0;
+[[gnu::constructor]] static void linked_init() { linked_state = 1; }
 int report(int value) { return std::printf("%d\\n", value); }
 """
 
@@ -99,7 +102,10 @@ def section_cases(expect: testing.Expect) -> None:
     is_same = shifted == same and hash(shifted) == hash(same)
     expect("two records with the same parts are equal and have one hash", is_same)
     expect("a record with a different part is different", shifted != elf.Section(8, ".data", 1, 2, 0, 8, 0, 0, 0))
-    expect("the text of a record names its class and its parts", repr(shifted).startswith("Section(entry_size=0, "))
+    expect(
+        "the text of a record names its class and its parts",
+        repr(shifted).startswith("Section(address=0, entry_size=0, "),
+    )
     expect("a record holds only the fields of its slots", has_no_field(shifted, "other"))
 
 
@@ -343,6 +349,10 @@ def dynamic_cases(expect: testing.Expect) -> None:
         "a file with no dynamic section has no entry",
         elf.Member(elf.make_file(planted_sections()), "x").dynamic() == (),
     )
+    expect(
+        "the directories of a run path are the parts between the colons, with no empty part",
+        elf.DynamicEntry(elf.DT_RUNPATH, 0, "/a/lib::$ORIGIN:").directories() == ("/a/lib", "$ORIGIN"),
+    )
 
 
 def group_cases(expect: testing.Expect) -> None:
@@ -580,6 +590,16 @@ def link_cases(expect: testing.Expect, cxx: str, scratch: Path) -> None:
         entries = library.dynamic()
         kinds = {item.kind for item in library.segments()}
         needs = library.version_needs()
+        file_type, machine, init = library.file_type(), library.machine(), library.init_functions()
+        text = library.named(".text")
+    expect(
+        "the shared library has the type ET_DYN, a machine of the tree and a .text at an address",
+        file_type == elf.ET_DYN and machine in elf.RELATIVE_TYPES and bool(text) and text[0].address > 0,
+    )
+    expect(
+        "the init array of the shared library names the constructor and frame_dummy",
+        "_ZL11linked_initv" in init and "frame_dummy" in init,
+    )
     tagged = {(item.tag, item.text) for item in entries}
     expect(
         "the dynamic section names libc.so.6, the soname and the run path",

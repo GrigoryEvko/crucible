@@ -301,6 +301,10 @@ include(utils/tools/quarantine/Quarantine.cmake)
 # clears the compiler launcher, and before the first target.
 include(cmake/BuildLauncher.cmake)
 
+# GNU ld writes the map of each link beside its output.  The rule
+# artifact-links reads the maps.
+include(cmake/LinkMap.cmake)
+
 # Ninja starts the compiles of the targets in cmake/compile-first.txt before
 # the other compiles of the tests.  The file defers its work to the end
 # of this directory, when each target exists.

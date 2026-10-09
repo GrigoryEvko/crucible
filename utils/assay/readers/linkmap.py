@@ -48,6 +48,11 @@ THE NAMES
     gives --no-demangle.  The reader keeps each name as the map gives it.
     The address and the length are numbers in hexadecimal with the prefix 0x.
 
+THE USERS
+    The rule artifact-links reads the archive members of the map of each
+    link with read_members().  cmake/LinkMap.cmake makes GNU ld write those
+    maps.
+
 `guard selftest tests.readers.test_linkmap` does the test of the module.
 """
 
@@ -304,3 +309,31 @@ def read(path: Path) -> LinkMap:
         OSError: If the file cannot be read
     """
     return parse(path.read_text(encoding="utf-8", errors="surrogateescape"), str(path))
+
+
+def read_members(path: Path) -> tuple[Inclusion, ...]:
+    """Read only the archive members of the map file of a link (THE MAP).
+
+    The read stops at the first heading after the archive members and the
+    shared libraries.  The memory map, the largest part of a map, then costs
+    nothing.  Complexity: linear in the lines before that heading.
+
+    Raises:
+        LinkMapError: If a line of the archive members does not have its shape, or the file has no heading of THE MAP
+        OSError: If the file cannot be read
+    """
+    reader = Reader(str(path))
+    has_heading = False
+    with path.open(encoding="utf-8", errors="surrogateescape") as handle:
+        for line, row in enumerate(handle, start=1):
+            heading = row.rstrip()
+            if heading in HEADINGS:
+                has_heading = True
+                if heading not in (INCLUDED, AS_NEEDED):
+                    break
+            reader.read_line(row.rstrip("\n"), line)
+    if not has_heading:
+        raise LinkMapError(f"{path}: the file has no heading of a map that GNU ld writes")
+    if reader.waiting:
+        raise LinkMapError(f"{path}: the item {reader.waiting} of the archive members has no next line")
+    return tuple(reader.members)

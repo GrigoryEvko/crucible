@@ -1,0 +1,4 @@
+# The link of the planted program takes the member atexit.oS of libc_nonshared.a, and the ledger holds no row of
+# it.
+facts needed static-member init
+program examples planted_tool tool.cpp

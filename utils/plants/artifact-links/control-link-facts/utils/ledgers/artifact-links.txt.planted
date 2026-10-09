@@ -1,0 +1,12 @@
+# A planted ledger: the facts of the planted program.
+format 1
+rule artifact-links
+configuration planted kind planted
+configuration planted tier planted
+@build/tools | init | 1 | _ZL12planted_initv | -
+@build/tools | init | 1 | frame_dummy | -
+@build/tools | needed | 1 | libc.so.6 | -
+@build/tools | needed | 1 | libgcc_s.so.1 | -
+@build/tools | needed | 1 | libm.so.6 | -
+@build/tools | needed | 1 | libstdc++.so.6 | -
+@build/tools | static-member | 1 | libc_nonshared.a(atexit.oS) | -

@@ -233,16 +233,15 @@ Complexity: linear in the symbols and the relocations of the libraries and of th
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from assay.core import configuration as build_config
-from assay.core import git, proc
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core import rows as rows_grammar
-from assay.guard.engines.elf import runner
+from assay.guard.engines.elf import configured, runner
 from assay.readers import census as build_census
 from assay.readers import elf
 
@@ -253,8 +252,6 @@ REQUIRED_LIBRARIES = ("foundation", "crucible")
 # The libraries that reference the runtime in each build.  An archive of one of them with no undefined reference is an
 # archive that the rule did not read (THE VERDICT).
 IMPORTING_LIBRARIES = ("foundation", "fixy", "crucible")
-# The two facts of a configuration of the ledger (THE LEDGER).
-FACTS = frozenset({build_config.KIND_KEY, build_config.TIER_KEY})
 # The families of the providers, in the sequence of THE PROVIDERS.
 LIBSTDCXX = "libstdc++"
 RUNTIME = "runtime"
@@ -441,24 +438,6 @@ class Artifact:
 
 
 @dataclass(frozen=True, slots=True)
-class Examination:
-    """The findings of one build, judged, with the facts that the run prints and the write uses.
-
-    `configuration` is the build kind and the tier of the build, or None when the ledger cannot be read.  `judged`
-    gives the rows that judge the build (THE POLICY).  `symbols` gives the count of each key of an import and of a
-    throw helper, and `admitted` the count of each key that a row throw or vtable admits.
-    """
-
-    findings: tuple[check_report.Finding, ...]
-    ledger: rule_ledger.Ledger
-    configuration: build_config.BuildConfiguration | None = None
-    judged: build_config.Judging | None = None
-    symbols: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
-    admitted: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
-    summary: str = ""
-
-
-@dataclass(frozen=True, slots=True)
 class Provider:
     """One file that can give an import: its file name, its family, and its names (THE PROVIDERS).
 
@@ -536,41 +515,19 @@ def is_linker_name(symbol: str) -> bool:
 # ── The ledger ─────────────────────────────────────────────────────
 
 
+def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
+    """Return True for a base row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable."""
+    is_symbol = (key.kind in MARKS or key.kind == HELPER_THROW) and entry.value != rule_ledger.ADMIT_VALUE
+    is_admit = key.kind in ADMITTED_KINDS and entry.value == rule_ledger.ADMIT_VALUE
+    return key.path.startswith(LIBRARY_PREFIX) and bool(key.entity) and (is_symbol or is_admit)
+
+
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each configuration and each row that does not have a shape of THE LEDGER."""
-    problems: list[tuple[int, str]] = []
-    for configuration in ledger.configurations:
-        facts = dict(configuration.facts)
-        if set(facts) != FACTS or facts[build_config.KIND_KEY] != configuration.name:
-            shape = (
-                f"the configuration {configuration.name} has the rows 'configuration KIND kind KIND' and "
-                f"'configuration KIND tier TIER', and no other"
-            )
-            problems.append((0, shape))
-    for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
-        is_symbol = (key.kind in MARKS or key.kind == HELPER_THROW) and entry.value != rule_ledger.ADMIT_VALUE
-        is_admit = key.kind in ADMITTED_KINDS and entry.value == rule_ledger.ADMIT_VALUE
-        if not key.path.startswith(LIBRARY_PREFIX) or not key.entity or not (is_symbol or is_admit):
-            problems.append((entry.line, ROW_SHAPE))
-    if rule_ledger.base_counts(ledger.base) and not ledger.configurations:
-        problems.append((0, "the ledger has import rows and no configuration row"))
-    for configuration in ledger.configurations:
-        for key, count in ledger.expected(configuration.name).items():
-            if count != 1 and key.kind != HELPER_THROW:
-                shape = (
-                    f"the configuration {configuration.name} gives {key.entity} of {key.path} the count {count}, "
-                    f"and a symbol has the count 0 or 1"
-                )
-                problems.append((ledger.line_of(key, configuration.name), shape))
-    return [
-        check_report.Finding("error", rule_ledger.shown_path(RULE), line, RULE, message) for line, message in problems
-    ]
+    """Return an error for each configuration and each row that does not have a shape of THE LEDGER.
 
-
-def import_refusal(ledger: rule_ledger.Ledger) -> str:
-    """Return the first problem of THE LEDGER in a ledger with the rows of a log, or an empty text."""
-    problems = row_problems(ledger)
-    return problems[0].message if problems else ""
+    A row of an import has the count 0 or 1 in each configuration.
+    """
+    return configured.ledger_problems(RULE, ledger, is_row, ROW_SHAPE, lambda key: key.kind != HELPER_THROW)
 
 
 def admitting_text(rows: Sequence[rule_ledger.Key], path: str, kind: str, subject: str) -> str | None:
@@ -1095,30 +1052,20 @@ def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
     return "; ".join(texts) or "none"
 
 
-def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination:
+def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.Inspection:
     """Read the libraries of the build, and judge their findings against the ledger (THE VERDICT).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
         runner.BuildError: If the build cannot be read
     """
-    kind = context.kind()
-    try:
-        ledger = rule_ledger.read(rule, context.root)
-    except (OSError, rows_grammar.RowsError) as problem:
-        unread = check_report.Finding(
-            "error",
-            rule_ledger.shown_path(RULE),
-            getattr(problem, "line", 0),
-            RULE,
-            f"the ledger cannot be read: {problem}",
-        )
-        return Examination((unread,), rule_ledger.empty(rule))
+    # A build with no build kind does not apply, also when its ledger cannot be read (NOT APPLICABLE).
+    context.kind()
+    ledger = configured.read_ledger(rule, context.root)
+    if isinstance(ledger, configured.Inspection):
+        return ledger
     artifacts, targets, base_archives = read_libraries(context)
-    tier = context.tier()
-    configuration = build_config.BuildConfiguration(
-        kind, ((build_config.KIND_KEY, kind), (build_config.TIER_KEY, tier))
-    )
+    configuration = configured.configuration_of(context)
     judged = build_config.judging(RULE, ledger, configuration)
     providers = providers_of(context.compiler(), context.link_libraries())
     wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
@@ -1143,10 +1090,10 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
         f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "
-        f"base), {len(imports)} imports of {kind} on {tier}: {symbol_classes(imports)}, judged against "
-        f"{judged.words}"
+        f"base), {len(imports)} imports of {configuration.name} on {context.tier()}: {symbol_classes(imports)}, "
+        f"judged against {judged.words}"
     )
-    return Examination(
+    return configured.Inspection(
         (*row_problems(ledger), *unknown, *verdict),
         ledger,
         configuration,
@@ -1176,110 +1123,26 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build, write its findings, and print the rows of a build that the ledger does not hold.
-
-    The run prints the rows of a configuration other than the base also after a failure (assay.core.configuration,
-    THE ROWS FOR AN IMPORT).
+    """Run the rule on the build, write its findings, and print its rows (assay.guard.engines.elf.configured).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
     """
-    try:
-        examination = examine(rule, context)
-    except runner.NotApplicable as reason:
-        check_report.write_line(f"{RULE}: {reason}.  The rule does not apply")
-        return runner.SKIPPED
-    status = check_report.emit(list(examination.findings), RULE, warnings_dir)
-    configuration, judged = examination.configuration, examination.judged
-    if configuration is None or judged is None:
-        return status
-    if judged.note:
-        check_report.write_line(judged.note)
-    check_report.write_line(examination.summary)
-    ledger = examination.ledger
-    if not build_config.is_held(ledger, configuration) or status != 0:
-        build_config.print_rows(RULE, ledger, configuration, examination.symbols, False)
-    return status
+    return configured.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
 
 
-def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the configuration and the import rows of the build (THE WRITE).
+def refusals(inspection: configured.Inspection, held: Mapping[rule_ledger.Key, int]) -> list[str]:
+    """Return a line for each new import with a ratchet mark and each risen count of a throw helper (THE WRITE)."""
+    return configured.risen_rows(inspection, held, (*RATCHET_MARKS, HELPER_THROW))
 
-    Returns:
-        0 when the ledger is written.  1 when the write refuses a symbol or the build cannot be read.  2 for the mode
-        admit.  SKIPPED when the rule does not apply
-    """
-    if request.import_log is not None:
-        return build_config.import_rows(rule, request.root, request.import_log, import_refusal)
-    if request.mode == rule_ledger.WriteMode.ADMIT:
-        check_report.write_line(
-            f"guard write: a person writes each row throw or vtable of {RULE} with its reason.  The mode admit does "
-            f"not apply",
-            is_error=True,
-        )
-        return 2
-    context = runner.ElfContext(request.root, request.build_dir)
-    try:
-        examination = examine(rule, context)
-    except runner.NotApplicable as reason:
-        check_report.write_line(f"guard write: the rule {RULE} does not apply: {reason}", is_error=True)
-        return runner.SKIPPED
-    except runner.BuildError as problem:
-        check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
-        return 1
-    ledger, configuration = examination.ledger, examination.configuration
-    problems = row_problems(ledger) if configuration is not None else list(examination.findings)
-    if configuration is None or problems:
-        check_report.write_line(
-            f"guard write: the ledger of {RULE} is not written: {problems[0].message}", is_error=True
-        )
-        return 1
-    target = build_config.write_target(RULE, ledger, configuration, request.add_configuration)
-    if isinstance(target, str):
-        check_report.write_line(f"guard write: {target}", is_error=True)
-        return 1
-    name = configuration.name
-    if target.name is None:
-        # An import row belongs to a configuration.  A ledger with no configuration then gets the build as its base.
-        base = rule_ledger.Configuration(name, configuration.facts)
-        target = build_config.WriteTarget(replace(ledger, configurations=(base,)), name, False)
-    # A configuration that the write adds gets its imports against each configuration (THE MAXIMUM).
-    held = ledger.expected(rule_ledger.MAXIMUM) if target.is_added else ledger.expected(target.name)
-    new_ratchet = sorted(key for key in examination.symbols if key.kind in RATCHET_MARKS and key not in held)
-    for key in new_ratchet:
-        check_report.write_line(f"guard write: {key.path} gets the {key.kind} import {key.entity}", is_error=True)
-    risen = sorted(
-        key for key, count in examination.symbols.items() if key.kind == HELPER_THROW and count > held.get(key, 0)
-    )
-    for key in risen:
-        check_report.write_line(
-            f"guard write: {key.path} has {examination.symbols[key]} references to the throw helper {key.entity}, "
-            f"and the ledger holds {held.get(key, 0)}",
-            is_error=True,
-        )
-    if (new_ratchet or risen) and request.mode != rule_ledger.WriteMode.RAISE:
-        check_report.write_line(
-            f"guard write: the ledger of {RULE} is not written: {len(new_ratchet)} new imports with a ratchet mark and "
-            f"{len(risen)} risen counts of throw helpers.  Remove the uses.  Give --raise only for "
-            f"{', for '.join(RAISE_REASONS)}, and give the reason in the commit",
-            is_error=True,
-        )
-        return 1
-    counts = {**examination.symbols, **examination.admitted}
-    written = rule_ledger.write_counts(
-        rule,
-        target.ledger,
-        counts,
-        target.name,
-        rule_ledger.WriteMode.RAISE,
-        request.reason,
-        git.moves(request.root),
-        keep_others=True,
-    )
-    rule_ledger.store(written, request.root)
-    check_report.write_line(
-        f"guard write: wrote {len(examination.symbols)} rows of imports and throw helpers of {name} on "
-        f"{configuration.tier} to "
-        f"{rule_ledger.shown_path(RULE)}"
-    )
-    return 0
+
+# The rows that a write refuses with no --raise, and the reasons for --raise (THE WRITE).
+WRITE_POLICY = configured.WritePolicy(
+    row_problems,
+    refusals,
+    RAISE_REASONS,
+    f"a person writes each row throw or vtable of {RULE} with its reason",
+    "rows of imports and throw helpers",
+)
+# The write of the configuration and the import rows of the build (THE WRITE, assay.guard.engines.elf.configured).
+write = configured.writer(examine, WRITE_POLICY)

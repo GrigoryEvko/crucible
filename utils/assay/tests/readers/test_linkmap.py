@@ -173,6 +173,11 @@ def link_cases(expect: testing.Expect) -> None:
         ]
         proc.require(proc.run(proc.Command(argv, timeout_s=proc.QUICK_S, cwd=scratch)))
         found = linkmap.read(scratch / "program.map")
+        head = linkmap.read_members(scratch / "program.map")
+        (scratch / "empty.map").write_text("no heading\n", encoding="utf-8")
+        refused_empty = refuses(lambda: linkmap.read_members(scratch / "empty.map"))
+    expect("read_members gives the archive members of read, and stops after them", head == found.members)
+    expect("read_members refuses a file with no heading of a map", refused_empty)
     members = {(Path(item.archive).name, item.member, item.symbol) for item in found.members}
     expect("the map names cpuinfo.o of libgcc.a for __cpu_model", ("libgcc.a", "cpuinfo.o", "__cpu_model") in members)
     loaded = [Path(item).name for item in found.loads]

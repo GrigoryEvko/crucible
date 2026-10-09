@@ -8,6 +8,9 @@ THE READERS
       * The rule artifact-symbols reads the symbols and the relocations of
         the members of the static libraries.  It also reads the symbols of
         each provider of an import, with the versions of a shared library.
+      * The rule artifact-links reads the dynamic section, the segments and
+        the init arrays of each linked artifact.  It also reads the sections,
+        the dynamic symbols and the versions from each shared library.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.sections reads the section .crucible.quarantine of an
@@ -77,6 +80,24 @@ THE GROUPS
     index of a member section.  The signature is the name of the symbol that
     sh_info names in the symbol table of sh_link.  A link keeps one COMDAT
     group of each signature.
+
+THE FILE TYPE
+    file_type() gives e_type of the ELF header.  ET_REL marks an object, and
+    ET_EXEC marks a program at one specified address.  ET_DYN marks a shared
+    library, or a program that the loader can put at each address (a PIE).
+    A PIE has the bit DF_1_PIE in its entry DT_FLAGS_1.  machine() gives
+    e_machine.
+
+THE INIT ARRAYS
+    init_functions() gives the function of each entry of .preinit_array and
+    .init_array of a linked file.  A relocation with a symbol at the entry,
+    such as the relocation of __asan_init from a shared library, gives that
+    symbol.  Else the entry holds the address of its function.  A relative
+    relocation of the type of the machine (RELATIVE_TYPES) can give the
+    address as its addend, and the address then comes from the relocation.
+    A packed relative relocation (SHT_RELR) keeps the address in the entry.
+    The name is the name of the function symbol at that address, in .symtab,
+    else in .dynsym.  A global symbol comes before a local symbol.
 
 THE NEEDED VERSIONS
     version_needs() gives each auxiliary entry of the table SHT_GNU_verneed:
@@ -150,6 +171,8 @@ SHT_DYNAMIC = 6
 SHT_NOBITS = 8
 SHT_REL = 9
 SHT_DYNSYM = 11
+SHT_INIT_ARRAY = 14
+SHT_PREINIT_ARRAY = 16
 SHT_GROUP = 17
 SHT_SYMTAB_SHNDX = 18
 SHT_GNU_VERDEF = 0x6FFFFFFD
@@ -164,6 +187,7 @@ STT_FUNC = 2
 STT_SECTION = 3
 STT_FILE = 4
 STT_TLS = 6
+STT_GNU_IFUNC = 10
 STB_LOCAL = 0
 STB_GLOBAL = 1
 STB_WEAK = 2
@@ -180,7 +204,24 @@ DT_NEEDED = 1
 DT_SONAME = 14
 DT_RPATH = 15
 DT_RUNPATH = 29
+DT_FLAGS_1 = 0x6FFFFFFB
 STRING_TAGS = frozenset({DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH})
+# The bit of DT_FLAGS_1 that marks a PIE (THE FILE TYPE).
+DF_1_PIE = 0x08000000
+# e_type of the ELF header (THE FILE TYPE).
+ET_REL = 1
+ET_EXEC = 2
+ET_DYN = 3
+# e_machine of the ELF header, and the type of a relative relocation of each machine (THE INIT ARRAYS).
+EM_X86_64 = 62
+EM_AARCH64 = 183
+RELATIVE_TYPES = {EM_X86_64: 8, EM_AARCH64: 1027}
+# The offsets of e_type and e_machine in the ELF header.
+TYPE_AT = 16
+MACHINE_AT = 18
+# The bytes of one entry of an init array on ELF64.
+WORD_SIZE = 8
+WORD = struct.Struct("<Q")
 # The flag of an auxiliary entry of SHT_GNU_verneed for a version that only a weak reference uses.
 VER_FLG_WEAK = 0x2
 # The bit of a version index that hides the version from a link (nm prints "@" and not "@@").
@@ -261,9 +302,9 @@ class Record:
 
 
 class Section(Record):
-    """One entry of the section header table, with its name."""
+    """One entry of the section header table, with its name.  `address` is the virtual address, sh_addr."""
 
-    __slots__ = ("entry_size", "flags", "index", "info", "kind", "link", "name", "offset", "size")
+    __slots__ = ("address", "entry_size", "flags", "index", "info", "kind", "link", "name", "offset", "size")
 
     def __init__(
         self,
@@ -276,6 +317,7 @@ class Section(Record):
         link: int,
         info: int,
         entry_size: int,
+        address: int = 0,
     ) -> None:
         """Hold the parts of one section header."""
         self.index = index
@@ -287,6 +329,7 @@ class Section(Record):
         self.link = link
         self.info = info
         self.entry_size = entry_size
+        self.address = address
 
     @property
     def is_code(self) -> bool:
@@ -443,6 +486,10 @@ class DynamicEntry(Record):
         self.value = value
         self.text = text
 
+    def directories(self) -> tuple[str, ...]:
+        """Return the directories of an entry DT_RUNPATH or DT_RPATH: the parts of its text between the colons."""
+        return tuple(part for part in self.text.split(":") if part)
+
 
 class Group(Record):
     """One group section: its index, its signature, its COMDAT flag and the index of each member (THE GROUPS)."""
@@ -549,7 +596,7 @@ class Member:
     def raw_entry(self, index: int, names: bytes) -> Section:
         """Return one entry of the section header table, with its name from the given section names."""
         row = SECTION_LAYOUT.unpack_from(self.buffer, self.start + self.table_offset + index * SECTION_HEADER_SIZE)
-        return Section(index, name_at(names, row[0]), row[1], row[2], row[4], row[5], row[6], row[7], row[9])
+        return Section(index, name_at(names, row[0]), row[1], row[2], row[4], row[5], row[6], row[7], row[9], row[3])
 
     def sections(self) -> tuple[Section, ...]:
         """Return each entry of the section header table.  Complexity: linear in the number of sections."""
@@ -840,6 +887,49 @@ class Member:
             raise ElfError(f"{self.where}: the segment of the interpreter is not fully in the file")
         begin = self.start + segment.offset
         return os.fsdecode(bytes(self.buffer[begin : begin + segment.file_size]).rstrip(b"\0"))
+
+    def file_type(self) -> int:
+        """Return e_type of the ELF header, such as ET_EXEC or ET_DYN (THE FILE TYPE)."""
+        (kind,) = struct.unpack_from("<H", self.buffer, self.start + TYPE_AT)
+        return int(kind)
+
+    def machine(self) -> int:
+        """Return e_machine of the ELF header, such as EM_X86_64."""
+        (machine,) = struct.unpack_from("<H", self.buffer, self.start + MACHINE_AT)
+        return int(machine)
+
+    def init_functions(self) -> tuple[str, ...]:
+        """Return the name of the function of each entry of .preinit_array and .init_array (THE INIT ARRAYS).
+
+        The entries of .preinit_array come first.  When the address of an
+        entry names no function, the entry gives an empty name.  Complexity:
+        linear in the entries, the relocations and the symbols.
+
+        Raises:
+            ElfError: If an array, a relocation table or a symbol table is not fully in the file
+        """
+        arrays = sorted(
+            (section for section in self.sections() if section.kind in (SHT_PREINIT_ARRAY, SHT_INIT_ARRAY)),
+            key=lambda section: (section.kind != SHT_PREINIT_ARRAY, section.index),
+        )
+        if not arrays:
+            return ()
+        relative_kind = RELATIVE_TYPES.get(self.machine(), -1)
+        relocations = self.relocations()
+        addends = {item.offset: item.addend for item in relocations if item.kind == relative_kind}
+        targets = {item.offset: item.symbol for item in relocations if item.kind != relative_kind and item.symbol}
+        functions: dict[int, str] = {}
+        symbols = self.symbols() or self.dynamic_symbols()
+        for symbol in sorted(symbols, key=lambda item: item.is_local):
+            if symbol.is_defined and symbol.kind in (STT_FUNC, STT_GNU_IFUNC):
+                functions.setdefault(symbol.value, symbol.name)
+        found: list[str] = []
+        for section in arrays:
+            data = self.data(section)
+            for position, (word,) in enumerate(WORD.iter_unpack(data[: len(data) - len(data) % WORD_SIZE])):
+                address = section.address + position * WORD_SIZE
+                found.append(targets.get(address) or functions.get(addends.get(address, word), ""))
+        return tuple(found)
 
     def dynamic(self) -> tuple[DynamicEntry, ...]:
         """Return each entry of the section SHT_DYNAMIC before DT_NULL, with the text of a string tag.

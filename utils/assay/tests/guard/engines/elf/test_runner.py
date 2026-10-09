@@ -113,7 +113,9 @@ def directory_cases(expect: testing.Expect) -> None:
         ninja.write_text(f"#!{sys.executable}\n{FAKE_NINJA}", encoding="utf-8")
         ninja.chmod(0o755)
         (build / "build-kind.txt").write_text(f"{KIND}\n", encoding="utf-8")
-        (build / "inputs.txt").write_text("CMakeFiles/f.dir/a.o\nCMakeFiles/f.dir/a.cpp\nlibx.a\n", encoding="utf-8")
+        (build / "inputs.txt").write_text(
+            "CMakeFiles/f.dir/a.o\nCMakeFiles/f.dir/a.cpp\nlibx.a\ntool\n", encoding="utf-8"
+        )
         cache: dict[str, str | tuple[str, str]] = {
             "CMAKE_GENERATOR": "Ninja",
             "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(ninja)),
@@ -165,6 +167,10 @@ def directory_cases(expect: testing.Expect) -> None:
         expect(
             "the static libraries are the STATIC_LIBRARY targets with the source root as their source directory",
             context.libraries() == {"foundation": build / "libfoundation.a"},
+        )
+        expect(
+            "the linked artifacts are the linked targets of the inputs of all, with the first directory of the source",
+            context.linked_artifacts() == (("", build / "tool"),),
         )
         expect(
             "the link libraries are the words -l and the paths outside the build directory, once each, with no flag",
@@ -226,6 +232,7 @@ def manifest_cases(expect: testing.Expect) -> None:
             ("library one", "library NAME UNIT..."),
             ("archive one", "archive NAME UNIT..."),
             ("shared one", "shared NAME UNIT..."),
+            ("program examples tool", "program DIRECTORY NAME UNIT..."),
             ("unit target u.cpp", "unit TARGET UNIT | WORD..."),
             ("kind a | b", "kind KIND"),
         )
@@ -301,6 +308,15 @@ def compile_cases(expect: testing.Expect) -> None:
             sorted(linked.libraries) == ["foundation"]
             and names == ["libextra.a", "libhost.so"]
             and "_Z13planted_entryi" in exported,
+        )
+        (tree / "main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+        (tree / runner.MANIFEST).write_text("program examples tool main.cpp\n", encoding="utf-8")
+        program = runner.planted_build(tree, scratch / "program", compiler)
+        placed = [(directory, path.relative_to(scratch / "program")) for directory, path in program.linked]
+        expect(
+            "a program row links the program in its directory, with its map adjacent to it",
+            placed == [("examples", Path("examples/tool"))]
+            and (scratch / "program" / "examples" / "tool.map").is_file(),
         )
         (tree / "c.cpp").write_text(BROKEN_UNIT, encoding="utf-8")
         (tree / runner.MANIFEST).write_text("library foundation c.cpp\n", encoding="utf-8")

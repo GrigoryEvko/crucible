@@ -1067,6 +1067,14 @@ each launcher imports it. The three commands `utils/bin/guard`, `utils/bin/loop`
 and `utils/bin/setup` start each Python module of the package `utils/assay`, and
 they refuse a Python older than 3.14.
 
+In each preset, `cmake/LinkMap.cmake` adds `-Wl,-Map=<TARGET>.map` to each link
+of an executable, a shared library and a module. GNU ld then writes the map of
+the link beside the artifact. The map names each archive member that the link
+takes, and the file and the symbol that made the link take it. The rule
+`artifact-links` (§XXII "The doors (R4, R5)") reads these maps. On 2026-10-09,
+the maps of the Debug build held 86 MB, and the relink of each artifact took
+2.3 s of wall time.
+
 In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the quarantine
 plugin of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and
 the plugin arguments on each C++ compile. The plugin applies the quarantine
@@ -2472,6 +2480,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `history` | A threshold of a measured rule above its lowest committed value, a ledger above its lowest committed row count, and a raised count of `utils/ledgers/quarantine.txt`, from the git history. A rebase row of `utils/ledgers/history.txt` starts the lowest count of a ledger again at a commit that changed its key or its format | Each one, with the commits that raised it | A rise whose commits give no measurement of the rule, a raise of a quarantine count whose commit changes neither the plugin nor the rule table, and a raised count of `opted-out` or `region` whose commit does not give the reason of its region, unless `utils/ledgers/history.txt` admits it. A rebase row at a commit that did not change the key or the format of its ledger | The test `guard_history` | Test run |
 | `quarantine` | The distinct findings of the quarantine plugin in each file, kind and entity, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory with a row of `utils/ledgers/quarantine.txt` | A count above or below its ledger row, and a finding in a file that the ledger does not hold | The test `guard_plugin` | Test run, CI build job |
 | `artifact-symbols` | The imports of each static library of the root, with the provider and the version of each import, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)"), and the references of each library outside the base to each throw helper of libstdc++ (§XII) | Each library of the ledger | An import with no row or with no provider, a row whose import goes, and a count of a throw helper above or below its row | The test `guard_artifact_symbols` | Test run |
+| `artifact-links` | The link facts of each executable, shared library and module of `all`, for each group and each build kind of `utils/ledgers/artifact-links.txt` (§XXII "The doors (R4, R5)") | None | A fact with no row, and a row whose fact goes | The test `guard_artifact_links` | Test run |
 | `static-tls` | The bytes of the base thread-local variables of one member of a static library of the root (§XXII "Static TLS (R19)") | 64 bytes | 256 bytes | The test `guard_static_tls` | Test run |
 | `fixture-cpu` | The user and system CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |
@@ -3110,6 +3119,10 @@ Until that gate, the rule `artifact-symbols` (`utils/assay/guard/engines/elf/art
 The first provider that defines an import is its owner, in this sequence: the `libstdc++.so` of the compiler, the files of the runtime of the compiler in the sequence of a link, each archive of a link line of the build, the start files and the end files, each shared library of a link line, and the sanitizer runtimes. The runtime is `libm.so.6`, `libgcc_s.so.1`, `libgcc.a`, `libatomic.so`, `libc.so.6`, `libc_nonshared.a`, the dynamic loader and `libgcc_eh.a`. A sanitizer runtime owns a name only when no other provider defines it, and its import gives no row. An import that no provider defines is an error, and no row admits it. The entity of an import of a shared library is SYMBOL@VERSION, with the default version of the name, such as `memcpy@GLIBC_2.14`. The entity of each other import is the name alone.
 
 The mark of a row gives the family of its owner. An import of `libstdc++.so` has the mark `allow` for the allowlist of plan §13.4, and `ratchet` for each other name. An import of the runtime has the mark `libc-allow` for the allowlist of its library, and `libc-ratchet` for each other name. Each allowlist holds the calls that GCC makes itself, such as `memcpy` and `__stack_chk_fail`, and each function of the support library of GCC, such as `__udivti3`. The allowlist of `libfixy.a` also holds the calls of glibc that a door keeps (decision D12 of the plan). The allowlist of `libcrucible.a` and of each other library of the root holds `__cxa_atexit`. An import of an archive of a link line, such as `libstdc++exp.a`, has the mark `static-ratchet`. An import of a start file has the mark `crt-allow` for `__dso_handle` beside an allowed `__cxa_atexit`, and `crt-ratchet` for each other name. An import of a shared library of a link line, such as `libbpf.so`, has the mark `host-ratchet`.
+
+The rule `artifact-links` (`utils/assay/guard/engines/elf/artifact_links.py`, the test `guard_artifact_links`) holds the link facts of each executable, shared library and module of the target `all`. The first directory of the source directory of the target gives the group of the artifact: `vessel`, `benches`, `tests`, or `tools` for each other directory. A fact is a kind and an entity. The kinds are each needed library, each directory of the run path, the file type, the interpreter, each needed version, each archive member from outside the build directory, each function of the init arrays, each indirect function, each section name and each text of `.comment`. The vessel also gives each import, as SYMBOL@VERSION. The rule reads the archive members from the map of the link (§V).
+
+`utils/ledgers/artifact-links.txt` holds each fact of each group with the count 1, for the configurations of the rule `artifact-symbols`. The paths of the compiler and of the build directory have the words `{toolchain}` and `{build}`. A new fact fails the test, and a row whose fact goes also fails the test, until the same commit writes the ledger again. `guard write --rule artifact-links` writes a new fact only with `--raise` and its reason, such as a new library on a link line.
 
 ### The admitted list and its audit
 
