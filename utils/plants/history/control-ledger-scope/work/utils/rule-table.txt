@@ -1,0 +1,1 @@
+# a planted rule table: the planted rule reads each test of the tree

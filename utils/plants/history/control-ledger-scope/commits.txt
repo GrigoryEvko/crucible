@@ -1,0 +1,4 @@
+# A commit changes the rule table and adds the rows of two tests that it does not change.  The rule reads more, so a
+# rebase row at that commit does not count the two rows as growth.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Time each test of the tree | The rule reads two more tests, which take 22 s and 23 s.

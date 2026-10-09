@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/quarantine.txt | rebase | admit | {commit 2} | the planted plugin reads one more name, and the commit changes no counted file

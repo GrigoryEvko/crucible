@@ -137,6 +137,22 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         and rule_ledger.version_keys("# head\na | b\n") == {("a | b",)}
         and rule_ledger.version_keys(None) == frozenset(),
     )
+    reasoned = text + "lib/a.a | throw | admit | helper | a reason row\n"
+    admits_only = "format 1\nrule admit-rule\nc.py | kind | admit | name | a reason\n"
+    expect(
+        "counted_keys() gives the keys of the rows with a count, and each key of a version with no such row",
+        rule_ledger.counted_keys(reasoned) == rule_ledger.version_keys(text)
+        and ("lib/a.a", "throw", "helper") in rule_ledger.version_keys(reasoned)
+        and rule_ledger.counted_keys(admits_only) == {("c.py", "kind", "name")}
+        and rule_ledger.counted_keys(None) == frozenset(),
+    )
+    expect(
+        "key_path() gives the PATH of a base row and of a difference row, and '' for no file and an earlier line",
+        [rule_ledger.key_path(key) for key in sorted(rule_ledger.version_keys(text))] == ["a.py", "a.py", "b.py"]
+        and rule_ledger.key_path(("-", "kind", "name")) == ""
+        and rule_ledger.key_path(("@arm", "-", "kind", "name")) == ""
+        and rule_ledger.key_path(("a | b",)) == "",
+    )
     with tempfile.TemporaryDirectory(prefix="test-ledger-") as scratch:
         root = Path(scratch)
         (root / rule_ledger.LEDGER_DIRECTORY).mkdir(parents=True)

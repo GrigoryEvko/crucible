@@ -1,0 +1,5 @@
+# A commit keys each counted row of a ledger again and changes the rule table.  A reason row with the value admit and
+# no count stays.  No counted key stayed, so a rebase row at that commit starts the lowest count again.  The commit
+# changes each file of its rows, so the rows do not show a larger scope.
+commit 1 | Count the old kind | The first counts.
+commit 2 | Count the new kind | The guard code counts each source by a new kind.

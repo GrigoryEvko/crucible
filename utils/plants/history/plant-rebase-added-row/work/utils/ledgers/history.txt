@@ -1,4 +1,4 @@
 # a planted ledger
 format 1
 rule history
-utils/ledgers/slow-row.txt | rebase | admit | {commit 2} | a rebase at a commit that only added a row
+utils/ledgers/slow-row.txt | rebase | admit | {commit 2} | a rebase at a commit that only added the row of a test that it adds

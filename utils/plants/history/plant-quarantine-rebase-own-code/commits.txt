@@ -1,0 +1,5 @@
+# A commit changes the plugin, adds a source file and adds the row of that file to the quarantine ledger.  The row is
+# of a file that the commit changes, so it can come from new code.  The commit does not make the scope of the rule
+# larger, and a rebase row at that commit is an error.
+commit 1 | Count each entity | The first counts.
+commit 2 | Add a probe and read one more name in the plugin | The new probe holds a std::span.

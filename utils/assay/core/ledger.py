@@ -1016,35 +1016,66 @@ def format_row(text: str | None) -> str | None:
     return rows[0] if rows[0].split(" ")[0] == "format" else ""
 
 
-def version_keys(text: str | None) -> frozenset[tuple[str, ...]]:
-    """Return the keys of the rows of one version of a ledger, of each format.
+def keyed_rows(text: str | None) -> tuple[tuple[tuple[str, ...], bool], ...]:
+    """Return the key of each row of one version of a ledger, of each format, and True for a row with a count.
 
     A version of format 1 gives the head, the KIND and the ENTITY of each base
     row.  It gives the head, the PATH, the KIND and the ENTITY of each
-    difference row.  A version of an earlier format gives each line that is
-    not empty and not a comment.  A version of format 1 that does not obey the
-    grammar gives its lines too.  Complexity: linear in the bytes of the text.
+    difference row.  A difference row holds a count.  A base row holds a count
+    when its VALUE is not the word admit.  A row with the value admit holds a
+    reason and no count (THE PART OF NO CONFIGURATION, and the policy admit).
+    A version of an earlier format gives each line that is not empty and not a
+    comment, as a row with a count.  A version of format 1 that does not obey
+    the grammar gives its lines too.  Complexity: linear in the bytes of the
+    text.
     """
     if text is None:
-        return frozenset()
-    lines = frozenset(
-        line.strip(" \t") for line in text.splitlines() if line.strip(" \t") and not line.lstrip().startswith("#")
+        return ()
+    lines = sorted(
+        {line.strip(" \t") for line in text.splitlines() if line.strip(" \t") and not line.lstrip().startswith("#")}
     )
     if format_row(text) != f"format {FORMAT}":
-        return frozenset((line,) for line in lines)
+        return tuple(((line,), True) for line in lines)
     try:
         rows = rows_grammar.parse(text, "a version of a ledger")
     except rows_grammar.RowsError:
-        return frozenset((line,) for line in lines)
-    keys: set[tuple[str, ...]] = set()
+        return tuple(((line,), True) for line in lines)
+    keyed: list[tuple[tuple[str, ...], bool]] = []
     for row in rows:
         if len(row.words) != 1:
             continue
         if is_delta_head(row.words[0]) and len(row.cells) == 5:
-            keys.add((row.words[0], row.cells[0], row.cells[1], row.cells[3]))
+            keyed.append(((row.words[0], row.cells[0], row.cells[1], row.cells[3]), True))
         elif len(row.cells) == 4:
-            keys.add((row.words[0], row.cells[0], row.cells[2]))
-    return frozenset(keys)
+            keyed.append(((row.words[0], row.cells[0], row.cells[2]), row.cells[1] != ADMIT_VALUE))
+    return tuple(keyed)
+
+
+def version_keys(text: str | None) -> frozenset[tuple[str, ...]]:
+    """Return the keys of the rows of one version of a ledger, of each format (keyed_rows())."""
+    return frozenset(key for key, _ in keyed_rows(text))
+
+
+def counted_keys(text: str | None) -> frozenset[tuple[str, ...]]:
+    """Return the keys of the rows of one version of a ledger that hold a count (keyed_rows()).
+
+    A version with no such row, such as a ledger of the policy admit, gives
+    each key.  A row with the value admit then counts, because it is the only
+    item of the ledger.
+    """
+    keyed = keyed_rows(text)
+    counted = frozenset(key for key, has_count in keyed if has_count)
+    return counted or frozenset(key for key, _ in keyed)
+
+
+def key_path(key: tuple[str, ...]) -> str:
+    """Return the PATH of a key of keyed_rows(), or "" for a row that names no file and for a line of an earlier format.
+
+    A difference row holds its PATH in its second word, and a base row in its head.
+    """
+    if len(key) == 4:
+        return path_of_head(key[1])
+    return path_of_head(key[0]) if len(key) == 3 else ""
 
 
 def history(rule: Rule, root: Path = REPO_ROOT, earlier: Iterable[str] = ()) -> list[tuple[str, str, int | None]]:

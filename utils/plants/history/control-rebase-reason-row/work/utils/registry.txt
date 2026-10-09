@@ -1,0 +1,4 @@
+# a planted registry
+format 1
+rule history engine=meta scope=utils/registry.txt ledger=admit doc=XV | a planted history rule | give the measurement
+rule size-count engine=build scope=builddir ledger=count doc=XV | a planted count | lower the count

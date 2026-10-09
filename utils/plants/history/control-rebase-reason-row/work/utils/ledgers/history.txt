@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/size-count.txt | rebase | admit | {commit 2} | the planted rule counts each source by its new kind, so no counted key stayed

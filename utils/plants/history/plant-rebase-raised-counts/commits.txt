@@ -1,0 +1,5 @@
+# A commit changes the plugin and raises a count of a key that the quarantine ledger held, in a file that it does not
+# change.  It adds no row, so it does not make the scope of the rule larger, and a rebase row at that commit is an
+# error.
+commit 1 | Count each entity | The first counts.
+commit 2 | Read one more name in the plugin | The plugin finds one more std::vector in a counted file.

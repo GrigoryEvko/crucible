@@ -1,0 +1,6 @@
+# a planted ledger
+format 1
+rule quarantine
+configuration default machine x86_64
+test/a.cpp | std-object | 2 | std::vector | -
+test/b.cpp | std-object | 1 | std::span | -

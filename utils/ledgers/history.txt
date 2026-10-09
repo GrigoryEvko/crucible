@@ -7,9 +7,10 @@
 # admits a raised count of opted-out or region whose commit does not give the reason of its region.
 # REASON gives the measurement or the reason that the commit did not give.  The row
 # utils/ledgers/RULE.txt | rebase | admit | COMMIT | REASON starts the lowest count of a ledger again
-# at a commit that changed its key or its format, and REASON tells the change.  COMMIT is the hash in
-# 9 characters.  A row that admits no finding is an error.  `python3 utils/bin/guard explain history`
-# tells the rule.
+# at a commit that changed its key or its format.  At a commit that made the scope of the rule larger,
+# the row does not count as growth the rows that the commit added in files that it did not change.
+# REASON tells the change.  COMMIT is the hash in 9 characters.  A row that admits no finding is an
+# error.  `python3 utils/bin/guard explain history` tells the rule.
 format 1
 rule history
 utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows

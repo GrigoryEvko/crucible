@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule history
+utils/ledgers/quarantine.txt | rebase | admit | {commit 2} | a rebase at a commit that added only the row of a probe that it adds

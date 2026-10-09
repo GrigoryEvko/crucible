@@ -1,0 +1,4 @@
+# A commit changes the plugin, raises a count and adds a row, in files that it does not change.  The plugin reads
+# more, so a rebase row at that commit gives no warning for the two raised counts.
+commit 1 | Count each entity | The first counts.
+commit 2 | Read one more name in the plugin | The plugin finds one more std::vector and a std::span.

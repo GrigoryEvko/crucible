@@ -283,9 +283,16 @@ def rebase_row(path: str, sha: str) -> str:
     return f"{path} | {history.REBASE_KIND} | admit | {sha[:9]} | the planted keys changed"
 
 
+def grew(found: list[check_report.Finding]) -> list[check_report.Finding]:
+    """Return the warnings of the slow ledger above its lowest count."""
+    return [item for item in found if item.path == SLOW_LEDGER and item.kind == "ledger-grew"]
+
+
 def rebase_cases(expect: Expect, scratch: Path) -> None:
-    """Start the lowest count of a ledger again at a commit that changed its key or its format, and refuse the other
-    rebase rows."""
+    """Start the lowest count of a ledger again at a commit that changed its key or its format.
+
+    Refuse each rebase row that names no rebase commit.
+    """
     tree = Scratch(scratch / "rebase")
     head = LEDGER_HEAD.format(rule="slow-row")
     tree.write(SLOW_LEDGER, head + "test/a | time | 21 | - | r\n")
@@ -293,11 +300,6 @@ def rebase_cases(expect: Expect, scratch: Path) -> None:
     tree.write(SLOW_LEDGER, head + "test/x | time | 21 | first | r\ntest/x | time | 22 | second | r\n")
     tree.write("utils/assay/guard/engines/buildsys/slow_row.py", "# the planted rule\n")
     rekeyed = tree.commit("Key the slow tests by case", "Each case of a test has a row.")
-
-    def grew(found: list[check_report.Finding]) -> list[check_report.Finding]:
-        """Return the warnings of the slow ledger above its lowest count."""
-        return [item for item in found if item.path == SLOW_LEDGER and item.kind == "ledger-grew"]
-
     tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed)]))
     status, found = tree.run()
     expect("a rebase at a commit that kept no key and changed the code of the guards starts the lowest count again, "
@@ -310,12 +312,12 @@ def rebase_cases(expect: Expect, scratch: Path) -> None:
            status == 1 and len(grew(found)) == 1
            and any(item.kind == history.ROW_KIND and "did not change the key or the format" in item.message
                    for item in found))
-    for ledger in (QUARANTINE_LEDGER, ADMISSIONS, BASE_LEDGER):
+    for ledger, said in ((QUARANTINE_LEDGER, "the tree holds no ledger"), (ADMISSIONS, "does not compare the row count"),
+                         (BASE_LEDGER, "does not compare the row count")):
         tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(ledger, rekeyed)]))
         status, found = tree.run()
         expect(f"a rebase row of {ledger} is an error",
-               status == 1 and any(item.kind == history.ROW_KIND and "does not compare the row count" in item.message
-                                   for item in found))
+               status == 1 and any(item.kind == history.ROW_KIND and said in item.message for item in found))
     size_ledger = "utils/ledgers/size-row.txt"
     tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, rekeyed), rebase_row(size_ledger, rekeyed)]))
     tree.write(size_ledger, "# an earlier format\nlink/a\n")
@@ -361,6 +363,78 @@ def rebase_cases(expect: Expect, scratch: Path) -> None:
     status, found = tree.run()
     expect("a rebase row of a ledger at its lowest count admits nothing, and the rule refuses it",
            status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message for item in found))
+
+
+def scope_cases(expect: Expect, scratch: Path) -> None:
+    """Make the scope of a rule larger, and check the rows that a rebase row does not count as growth (THE REBASE).
+
+    These are only the rows of the commit in files that it did not change.
+    """
+    tree = Scratch(scratch / "scope")
+    head = LEDGER_HEAD.format(rule="slow-row")
+    rule_module = "utils/assay/guard/engines/buildsys/slow_row.py"
+
+    def slow(*tests: str) -> str:
+        """Return the slow ledger with one row for each test."""
+        return head + "".join(f"{test} | time | 21 | - | r\n" for test in tests)
+
+    tree.write(SLOW_LEDGER, slow("test/a"))
+    tree.commit("Admit one slow test", "The test takes 21 s.")
+    tree.write("test/b", "a new slow test\n")
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b"))
+    debt = tree.commit("Add a slow test", "The new test takes 21 s.")
+    tree.write(rule_module, "# the planted rule reads each test\n")
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c", "test/d"))
+    wider = tree.commit("Time each test of the tree", "The rule reads two more tests.")
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, wider)]))
+    status, found = tree.run()
+    expect("a rebase at a larger scope does not count its rows of files that it did not change, and the growth of an "
+           "earlier commit still gives the warning",
+           status == 0 and len(grew(found)) == 1 and debt[:9] in grew(found)[0].message
+           and wider[:9] not in grew(found)[0].message.partition("Rows added:")[2]
+           and f"after the rebase at {wider[:9]}" in grew(found)[0].message
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 1 findings" in item.message for item in found))
+    tree.write(rule_module, "# the planted rule reads each test and each probe\n")
+    tree.write("test/f", "a new probe\n")
+    tree.write(SLOW_LEDGER, slow("test/a", "test/b", "test/c", "test/d", "test/e", "test/f"))
+    partial = tree.commit("Time each probe, and add a probe", "The rule reads one more test.")
+    tree.write(ADMISSIONS, admission_text([rebase_row(SLOW_LEDGER, wider), rebase_row(SLOW_LEDGER, partial)]))
+    status, found = tree.run()
+    expect("a larger scope that also adds the row of a file that it changes counts that row as growth, and each of "
+           "two rebase rows that changes the result admits its error",
+           status == 0 and len(grew(found)) == 1
+           and f"{partial[:9]} (Time each probe, and add a probe) from 5 to 6" in grew(found)[0].message
+           and any(item.path == ADMISSIONS and f"{SLOW_LEDGER} has 2 findings" in item.message for item in found))
+    tree.write(rule_module, "# the planted rule keys each test by its case\n")
+    tree.write(SLOW_LEDGER, head + "".join(f"case/{name} | time | 21 | - | r\n" for name in "abcdefg"))
+    rekeyed = tree.commit("Key each slow test by its case", "Each case has a row.")
+    rows = [rebase_row(SLOW_LEDGER, wider), rebase_row(SLOW_LEDGER, partial), rebase_row(SLOW_LEDGER, rekeyed)]
+    tree.write(ADMISSIONS, admission_text(rows))
+    status, found = tree.run()
+    stale = [item.message for item in found if item.path == ADMISSIONS and "admits no finding" in item.message]
+    expect("a rebase row at a larger scope before a change of the key admits nothing, and the rule refuses it",
+           status == 1 and len(stale) == 2 and any(wider[:9] in text for text in stale)
+           and any(partial[:9] in text for text in stale) and not grew(found))
+
+    quarantined = Scratch(scratch / "scope-quarantine")
+    span, vector, probe = ("test/a.cpp", "std::span"), ("test/a.cpp", "std::vector"), ("test/p.cpp", "std::vector")
+    for name in ("test/a.cpp", "test/p.cpp"):
+        quarantined.write(name, f"// {name}\n")
+    quarantined.write(QUARANTINE_LEDGER, rows_text({span: 1, probe: 1}))
+    quarantined.commit("Count each entity", "The first counts.")
+    quarantined.write("utils/tools/quarantine/plugin.cpp", "// one more name\n")
+    quarantined.write("test/p.cpp", "// test/p.cpp holds one more object\n")
+    quarantined.write(QUARANTINE_LEDGER, rows_text({span: 2, vector: 1, probe: 2}))
+    plugin = quarantined.commit("Read one more name, and add an object to a probe", "The plugin finds more.")
+    status, found = quarantined.run()
+    expect("with no rebase row, each count that a change of the plugin raised gives a warning",
+           status == 0 and len(standing_of(found)) == 3)
+    quarantined.write(ADMISSIONS, admission_text([rebase_row(QUARANTINE_LEDGER, plugin)]))
+    status, found = quarantined.run()
+    expect("a rebase of the quarantine ledger at a larger scope gives no warning for the counts that the commit raised "
+           "in files that it did not change, and the count of a file that it changed still warns",
+           status == 0 and [item.message.split(" ")[0] for item in standing_of(found)] == ["test/p.cpp"]
+           and any(item.path == ADMISSIONS and f"{QUARANTINE_LEDGER} has 1 findings" in item.message for item in found))
 
 
 def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | None = None) -> str:
@@ -737,6 +811,7 @@ def main(argv: list[str]) -> int:
         ledger_cases(expect, tree)
         move_cases(expect, scratch)
         rebase_cases(expect, scratch)
+        scope_cases(expect, scratch)
         quarantine_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)
     if failures:

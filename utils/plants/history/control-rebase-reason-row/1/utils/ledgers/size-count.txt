@@ -1,0 +1,6 @@
+# a planted ledger
+format 1
+rule size-count
+@build/libplanted.a | throw | admit | a_planted_helper | a planted reason row with no count
+src/a.cpp | old-kind | 1 | first | -
+src/b.cpp | old-kind | 1 | second | -
