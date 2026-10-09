@@ -43,6 +43,19 @@ THE DEPENDENCY LOG
     With no output, deps() gives each list of the log that an edge of the
     graph can use.  inputs(build_dir, target) runs `ninja -t inputs TARGET`.
 
+THE STEP OF A MISSING LIST
+    An output can be there with no record in the build log and no list in
+    the dependency log.  Ninja records the two after the step of the output
+    ends with no error.  The build launcher of the tree (`loop step`) writes
+    the record OUTPUT.cost of each step (assay.core.record).  When that
+    record names the output, it tells the cause:
+      * The step ended with no error.  The build stopped after the step and
+        before Ninja recorded it, for example when Ninja was killed.
+      * The step ended with an error, or the launcher rejected it.  Ninja
+        records no list of a step that ends with an error.
+    In the two cases, the next build runs the step again.  An output with no
+    record of a step came from a different build, or from no build.
+
 ERRORS
     NinjaError names the file or the command, and the program that writes
     the file.  NotNinja, a subclass, tells that a generator other than Ninja
@@ -65,6 +78,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import proc
+from assay.core import record as step_record
 from assay.readers import cmake
 
 GRAPH_NAME = "build.ninja"
@@ -445,8 +459,37 @@ def _parse_deps(text: str) -> list[tuple[str, DepsState, tuple[str, ...]]]:
     return [(output, state, tuple(files)) for output, state, files in lists]
 
 
+def _step_cause(path: str) -> str:
+    """Return the cause of a MISSING list from the record of the step of an output (THE STEP OF A MISSING LIST).
+
+    The text is empty when the output is not there, or when no record of a
+    step names it.  The caller found no record of the output in the build log.
+    """
+    if not os.path.isfile(path):
+        return ""
+    try:
+        step = step_record.read_of(Path(path))
+    except step_record.RecordError:
+        return ""
+    if step.output is None or os.path.realpath(step.output) != os.path.realpath(path):
+        return ""
+    shown = step_record.record_file(Path(path)).name
+    if step.result in ("built", "hit"):
+        return (
+            f"the step of the output ended with no error ({shown}), and {LOG_NAME} and {DEPS_NAME} hold no record of "
+            f"it: the build stopped after the step and before Ninja recorded it.  The next build runs the step again"
+        )
+    return (
+        f"the last step of the output did not succeed ({shown} gives the result {step.result} and the exit "
+        f"{step.exit}), and Ninja records no list of a step that ends with an error.  The next build runs the step again"
+    )
+
+
 def _why(build_dir: Path, output: str, state: DepsState, records: Mapping[str, LogRecord]) -> str:
-    """Return why the list of one output is not VALID (THE DEPENDENCY LOG), or an empty text for a VALID list."""
+    """Return why the list of one output is not VALID, or an empty text for a VALID list.
+
+    THE DEPENDENCY LOG and THE STEP OF A MISSING LIST give the reasons.
+    """
     if state == DepsState.VALID:
         return ""
     path = os.path.normpath(os.path.join(build_dir, output))
@@ -459,6 +502,9 @@ def _why(build_dir: Path, output: str, state: DepsState, records: Mapping[str, L
             f"Ninja ran the edge of the output ({LOG_NAME} holds its record) and recorded no list in {DEPS_NAME}.  "
             f"The edge has no `deps` variable, or a different ninja wrote {DEPS_NAME}"
         )
+    step = _step_cause(path)
+    if step:
+        return step
     return (
         f"{LOG_NAME} holds no record of the output: this Ninja did not build it in this build directory.  A "
         f"different build wrote the output, or no build made it"

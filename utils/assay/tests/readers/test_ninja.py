@@ -5,7 +5,9 @@ use no program, or a planted ninja that writes a planted output.  The last
 case builds a scratch graph with the ninja that the variable
 ASSAY_TEST_NINJA names, and the registration of the test sets it.  With no
 variable, the case uses the ninja of PATH.  Then it reads the dependency log
-that Ninja writes.  Each case writes one line.  Exit 0 when each case holds,
+that Ninja writes.  Two edges of the graph stop the build.  One edge writes
+its output and then kills its Ninja, as a stopped build does.  One edge writes
+its output and then ends with an error.  Each case writes one line.  Exit 0 when each case holds,
 else 1.
 """
 
@@ -16,7 +18,9 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from assay.core import meter as cost_meter
 from assay.core import proc, testing
+from assay.loop import step as launcher
 from assay.readers import cmake, ninja
 
 GRAPH_TEXT = (
@@ -37,7 +41,9 @@ GRAPH_TEXT = (
     "default all\n"
 )
 
-# The scratch graph of the last case: an edge that records its list, and an edge with no `deps` variable.
+# The scratch graph of the last case: an edge that records its list, and an edge with no `deps` variable.  The
+# command of the rule `stops` writes its output and then kills the Ninja that started it, as a stopped build does.
+# The command of the rule `fails` writes its output and then ends with an error.
 SCRATCH_GRAPH = (
     "rule listed\n"
     "  command = printf '%s: %s %s\\n' $out $in $header > $out.d && cp $in $out\n"
@@ -45,6 +51,14 @@ SCRATCH_GRAPH = (
     "  deps = gcc\n"
     "rule plain\n"
     "  command = cp $in $out\n"
+    "rule stops\n"
+    "  command = printf '%s: %s\\n' $out $in > $out.d && cp $in $out && kill -KILL $$PPID\n"
+    "  depfile = $out.d\n"
+    "  deps = gcc\n"
+    "rule fails\n"
+    "  command = printf '%s: %s\\n' $out $in > $out.d && cp $in $out && exit 1\n"
+    "  depfile = $out.d\n"
+    "  deps = gcc\n"
     "build valid.o: listed valid.c\n"
     "  header = valid.h\n"
     "build stale.o: listed stale.c\n"
@@ -53,7 +67,11 @@ SCRATCH_GRAPH = (
     "  header = gone.h\n"
     "build plain.o: plain plain.c\n"
     "build never.o: plain never.c\n"
-    "build all: phony valid.o stale.o gone.o plain.o never.o\n"
+    "build stopped.o: stops stopped.c\n"
+    "build failed.o: fails failed.c\n"
+    "build foreign.o: listed foreign.c\n"
+    "  header = foreign.h\n"
+    "build all: phony valid.o stale.o gone.o plain.o never.o stopped.o failed.o foreign.o\n"
     "default all\n"
 )
 
@@ -296,6 +314,24 @@ def scratch_ninja() -> str:
     return os.environ.get("ASSAY_TEST_NINJA") or shutil.which("ninja") or ""
 
 
+def stopped_steps(expect: testing.Expect, program: str, build: Path) -> None:
+    """Run the edge that stops its Ninja and the edge that ends with an error, and write the output of foreign.o.
+
+    The writer of the build launcher (assay.loop.step) then writes the record
+    of the two steps, as the launcher writes it adjacent to each output.
+    """
+    stopped = proc.run(proc.Command([program, "-C", str(build), "stopped.o"], timeout_s=proc.TOOL_S))
+    failed = proc.run(proc.Command([program, "-C", str(build), "failed.o"], timeout_s=proc.TOOL_S))
+    expect(
+        "the edge of stopped.o stops its Ninja and the edge of failed.o fails, after each one writes its output",
+        stopped.exit != 0 and failed.exit != 0 and (build / "stopped.o").is_file() and (build / "failed.o").is_file(),
+    )
+    (build / "foreign.o").write_bytes(b"")
+    for name, result, exit_code in (("stopped", "built", 0), ("failed", "failed", 1)):
+        run = cost_meter.Measurement(exit_code, 0.0, 0.0, 0.0, 0, 0.0, 0.0, None)
+        launcher.write("compile", str(build / f"{name}.o"), str(build / f"{name}.c"), run, result)
+
+
 def built_cases(expect: testing.Expect) -> None:
     """Build a scratch graph with Ninja, and read each state of the dependency log that Ninja writes."""
     program = scratch_ninja()
@@ -305,7 +341,7 @@ def built_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="assay-ninja-") as scratch:
         build = Path(scratch)
         ninja.plant_graph(build, SCRATCH_GRAPH)
-        for name in ("valid", "stale", "gone", "plain", "never"):
+        for name in ("valid", "stale", "gone", "plain", "never", "stopped", "failed", "foreign"):
             (build / f"{name}.c").write_text(f"int {name};\n", encoding="utf-8")
         cmake.plant(build, cache={"CMAKE_GENERATOR": "Ninja", "CMAKE_MAKE_PROGRAM": ("FILEPATH", program)})
         done = proc.run(
@@ -317,7 +353,8 @@ def built_cases(expect: testing.Expect) -> None:
         later = (build / "stale.o").stat().st_mtime + 100
         os.utime(build / "stale.o", (later, later))
         (build / "gone.o").unlink()
-        outputs = ["valid.o", "stale.o", "gone.o", "plain.o", "never.o"]
+        stopped_steps(expect, program, build)
+        outputs = ["valid.o", "stale.o", "gone.o", "plain.o", "never.o", "stopped.o", "failed.o", "foreign.o"]
         found = ninja.deps(build, outputs)
         expect(
             "a list that Ninja recorded is VALID, with the source and the header of the depfile",
@@ -338,6 +375,23 @@ def built_cases(expect: testing.Expect) -> None:
         expect(
             "an output that Ninja did not build has no list, and the reason says that the build log has no record",
             found["never.o"].state == ninja.DepsState.MISSING and "holds no record" in found["never.o"].why,
+        )
+        expect(
+            "an output of a step that ended before Ninja stopped has no list, and the reason says that the build stopped",
+            found["stopped.o"].state == ninja.DepsState.MISSING
+            and "the build stopped after the step" in found["stopped.o"].why
+            and "runs the step again" in found["stopped.o"].why,
+        )
+        expect(
+            "an output of a failed step has no list, and the reason gives the result and the exit of its record",
+            found["failed.o"].state == ninja.DepsState.MISSING
+            and "did not succeed" in found["failed.o"].why
+            and "the result failed and the exit 1" in found["failed.o"].why,
+        )
+        expect(
+            "an output with no record of a step has no list, and the reason says that a different build wrote it",
+            found["foreign.o"].state == ninja.DepsState.MISSING
+            and "A different build wrote the output" in found["foreign.o"].why,
         )
         expect(
             "deps with no output gives each list that an edge of the graph can use",
