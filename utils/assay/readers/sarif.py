@@ -42,6 +42,13 @@ THE DIAGNOSTICS OF THE PLUGIN
     text.  An error adds "; " and its advice.  is_plugin_result() finds such a
     result, and plugin_finding() gives its kind and its entity.
 
+    The plugin names the file of a finding by the path of `realpath()` (THE
+    FILES of utils/tools/quarantine/plugin.h).  GCC names the file of the
+    result by the path that the compile opened.  A compile with an include
+    directory of links, such as layer-roots/ of a build, then gives the path
+    through the link.  plugin_path() gives the path of `realpath()` for the
+    file of a result.  Then the two names of one file give one file.
+
     render() with a function `hidden` gives no line of a result that the
     function accepts, and no such result is an error head.  It keeps each
     context line that the text output prints before such a result, such as
@@ -54,7 +61,9 @@ THE DIAGNOSTICS OF THE PLUGIN
 `guard selftest tests.readers.test_sarif` does the test of the module.
 """
 
+import functools
 import json
+import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
@@ -75,6 +84,8 @@ TERMINATED = "compilation terminated."
 # (THE DIAGNOSTICS OF THE PLUGIN).
 PLUGIN_PREFIX = "quarantine: "
 ADVICE_SEPARATOR = "; "
+# The paths that plugin_path() keeps with their path of `realpath()` (THE DIAGNOSTICS OF THE PLUGIN).
+_REAL_PATHS = 4096
 
 
 class SarifError(ValueError):
@@ -654,6 +665,21 @@ def texts(log: Log) -> list[str]:
 def is_plugin_result(record: Diagnostic) -> bool:
     """Return True for a result of the quarantine plugin: a note or an error at the nest level 0 with PLUGIN_PREFIX."""
     return record.kind in (Kind.NOTE, Kind.ERROR) and record.nesting == 0 and record.message.startswith(PLUGIN_PREFIX)
+
+
+def plugin_path(record: Diagnostic) -> str:
+    """Return the path of `realpath()` for the file of a result of the plugin, or an empty text with no file.
+
+    GCC names the file of a result by the path that the compile opened, also a path through a link (THE DIAGNOSTICS OF
+    THE PLUGIN).  Complexity: one call of `realpath()` for each different path, with a bounded cache.
+    """
+    return _resolved(record.path) if record.path else ""
+
+
+@functools.lru_cache(maxsize=_REAL_PATHS)
+def _resolved(path: str) -> str:
+    """Return the path of `os.path.realpath()` for a path, as the plugin names the file of a finding."""
+    return os.path.realpath(path)
 
 
 def plugin_finding(record: Diagnostic) -> tuple[str, str]:

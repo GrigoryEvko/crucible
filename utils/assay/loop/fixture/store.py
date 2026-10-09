@@ -661,27 +661,19 @@ def fixture_census(result: CompileResult, argv: list[str],
     """Return the stamp argument of the plugin and the findings of the plugin in the source of the fixture.
 
     The findings are the results of the plugin in the log with the file
-    `source`, each one time, in sorted sequence.  The result is None when the
+    `source`, each one time, in sorted sequence.  A result names its file by
+    the path of sarif.plugin_path(), as the plugin names the file of a
+    finding.  `source` is a path of `realpath()`.  The result is None when the
     command loads no quarantine plugin, when the compile succeeded, and when
     the compile wrote no log (The quarantine plugin).  The cost is O(n log n)
-    in the results of the log, with one resolution of each different path.
+    in the results of the log.
     """
     stamp = census_stamp(argv)
     if stamp is None or result.log is None or result.returncode == 0:
         return None
-    resolved: dict[str, bool] = {}
     found: set[cost_record.CensusFinding] = set()
     for record in result.log.diagnostics:
-        if not sarif.is_plugin_result(record) or not record.path:
-            continue
-        is_source = resolved.get(record.path)
-        if is_source is None:
-            try:
-                is_source = Path(record.path).resolve() == source
-            except OSError:
-                is_source = record.path == str(source)
-            resolved[record.path] = is_source
-        if is_source:
+        if sarif.is_plugin_result(record) and sarif.plugin_path(record) == str(source):
             kind, entity = sarif.plugin_finding(record)
             found.add((kind, record.line, record.column, entity))
     return stamp, tuple(sorted(found))

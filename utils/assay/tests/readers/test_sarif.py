@@ -11,6 +11,7 @@ compile, with no caret display.
 """
 
 import json
+import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -259,6 +260,37 @@ def plugin_cases(expect: testing.Expect) -> None:
         hidden.errors == (compiler,) and hidden.heads == (1,) and hidden.groups == (0, 0),
     )
     expect("render() with no function gives each line of the plugin too", len(sarif.render(log).lines) == 5)
+    with tempfile.TemporaryDirectory(prefix="test-sarif-") as scratch:
+        include = Path(scratch) / "include" / "foundation"
+        include.mkdir(parents=True)
+        (include / "Platform.h").write_text("#pragma once\n", encoding="utf-8")
+        roots = Path(scratch) / "layer-roots" / "foundation"
+        roots.mkdir(parents=True)
+        (roots / "foundation").symlink_to(include)
+        through = moved(note, str(roots / "foundation" / "Platform.h"))
+        expect(
+            "plugin_path() gives the path of realpath() for a result through a link of an include directory",
+            sarif.plugin_path(through) == os.path.realpath(include / "Platform.h"),
+        )
+    expect("plugin_path() gives an empty text for a result with no file", sarif.plugin_path(moved(note, "")) == "")
+
+
+def moved(record: sarif.Diagnostic, path: str) -> sarif.Diagnostic:
+    """Return a copy of a record with a different path."""
+    return sarif.Diagnostic(
+        record.kind,
+        record.context,
+        path,
+        record.line,
+        record.column,
+        record.nesting,
+        record.message,
+        record.option,
+        record.owner,
+        record.after,
+        record.snippet,
+        record.children,
+    )
 
 
 def _planted_log_result(level: str) -> dict[str, object]:
