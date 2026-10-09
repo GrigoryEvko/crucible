@@ -19,7 +19,14 @@ THE MEASUREMENT
        caches warm.  The steps after the clone get CRUCIBLE_CACHE_DIR in
        WORK_DIR/cache, so the stores of the fixtures and of the guards start
        empty and the stores of the user do not change.  ccache stays the
-       ccache of the user.
+       ccache of the user.  Only the warm build runs with CCACHE_DISABLE
+       (runs_without_ccache()).  Each compile of the copy then runs the
+       compiler, and its record holds its instruction count (assay.core.meter,
+       A COMPILE THROUGH CCACHE).  A ccache hit in a new build directory has no
+       earlier record and keeps no count.  The rule instruction-total does not
+       apply to a build with such a hit.  The test steps keep ccache, because
+       ccache_relocation_self_test gives a failure when its run gets
+       CCACHE_DISABLE.
     3. Each run makes a code change to a base header: it puts the statement
        `static_cast<void>(N);` with a new random N at the start of the body of
        foundation::detail::breakpoint() in include/foundation/Platform.h.  A
@@ -160,6 +167,9 @@ NOT_RUNNABLE = 3
 # The rule that configures the build again and refuses a compile after it, and the master of the copy that runs it.
 RECONFIGURE_RULE = "reconfigure-noop"
 GUARD_MASTER = Path("utils/bin/guard")
+# The step that runs its compiles with no ccache, and the variable of ccache that turns ccache off (THE MEASUREMENT).
+UNCACHED_STEP = "warm-build"
+CCACHE_OFF = {"CCACHE_DISABLE": "1"}
 
 
 class GaugeError(Exception):
@@ -359,6 +369,11 @@ def clone_tree(source: Path, destination: Path) -> str:
 
 
 # ── The steps ──────────────────────────────────────────────────────────────
+
+
+def runs_without_ccache(name: str) -> bool:
+    """Tell if a step runs its compiles with no ccache.  Only the warm build does (THE MEASUREMENT)."""
+    return name == UNCACHED_STEP
 
 
 def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], logs: Path,
@@ -749,7 +764,8 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     def step(name: str, command: list[str], report: Path | None = None) -> StepResult:
         if report is not None:
             report.unlink(missing_ok=True)
-        result = run_step(name, command, tree, environment, logs, build if command is build_command else None)
+        step_environment = {**environment, **CCACHE_OFF} if runs_without_ccache(name) else environment
+        result = run_step(name, command, tree, step_environment, logs, build if command is build_command else None)
         results.append(result)
         path = ""
         if result.critical_path:
@@ -785,7 +801,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
                     "--no-tests=error"]
     configure_command = [cmake, "--preset", options.preset, "-B", str(build)]
     if options.reuse is None and not failed:
-        failed = step("warm-build", build_command).status != 0
+        failed = step(UNCACHED_STEP, build_command).status != 0
         if not failed:
             test_step("warm-tests")
     header = tree / EDIT_HEADER
@@ -1008,6 +1024,15 @@ def self_test() -> int:
         expect("an edit of the copy does not change the source",
                (source / "tracked.txt").read_text(encoding="utf-8") == "changed in the work tree\n")
     failure_cases(expect)
+    expect(
+        "the warm build alone runs its compiles with no ccache, so each compile record of the copy holds its "
+        "instruction count, and the test steps and the edit builds keep ccache",
+        runs_without_ccache("warm-build")
+        and CCACHE_OFF == {"CCACHE_DISABLE": "1"}
+        and not any(
+            runs_without_ccache(name) for name in ("configure", "warm-tests", "edit-build-1", "edit-tests-1", "noop-build")
+        ),
+    )
     chosen_work = default_work_dir().resolve()
     caches = cache.base_root()
     expect(
