@@ -51,7 +51,6 @@ configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
 @build/tests | needed | 1 | libtest_producer_claim_winner.so | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | runpath | 1 | {build}/test/foundation | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tests | runpath | 1 | {toolchain}/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .annobin.notes | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .bss | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -170,7 +169,6 @@ configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
 @build/tools | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | runpath | 1 | {toolchain}/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .annobin.notes | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .bss | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -431,7 +429,6 @@ configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
 @build/vessel | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | runpath | 1 | {toolchain}/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | section | 1 | .bss | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | section | 1 | .comment | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

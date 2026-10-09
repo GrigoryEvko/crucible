@@ -16,7 +16,7 @@
 #                               layout, or carry non-default names.
 #   2. CRUCIBLE_GCC16_PREFIX  — install prefix; binaries are expected at
 #                               <prefix>/usr/bin/{gcc-16p,g++-16p,...} and libs
-#                               at <prefix>/usr/lib64 (+ <prefix>/lib64).
+#                               at <prefix>/usr/lib64.
 #   3. $HOME/.local/gcc16-patched — the canonical dev-box default. Keeps
 #                               `cmake --preset default` working verbatim with
 #                               no environment setup on the reference machine.
@@ -106,12 +106,14 @@ set(CMAKE_RANLIB       "${_crucible_ranlib}" CACHE FILEPATH "Crucible patched gc
 # Binaries compiled with the patched tree link against its newer libstdc++.so.6,
 # which is not on the system path. The rpath is derived from the resolved
 # prefix so it always matches the compiler that produced the binary.
-# CRUCIBLE_CXX-derived prefix and prefix-based resolution both expose
-# <prefix>/usr/lib64 and (optionally) <prefix>/lib64.
-set(_crucible_rpath "-Wl,-rpath,${_crucible_prefix}/usr/lib64:${_crucible_prefix}/lib64")
+# `setup gcc` configures GCC with --prefix=<prefix>/usr, so the libraries of
+# the compiler are in <prefix>/usr/lib64 only.
+set(_crucible_rpath "-Wl,-rpath,${_crucible_prefix}/usr/lib64")
 
 # Use the *_INIT variants: these seed the cache without clobbering preset- or
 # command-line-supplied CMAKE_*_LINKER_FLAGS, and compose with per-preset flags.
+# CMake seeds the cache only at the first configure of a build directory.  A
+# change of the rpath reaches an existing build directory after `cmake --fresh`.
 set(CMAKE_EXE_LINKER_FLAGS_INIT    "${_crucible_rpath}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_crucible_rpath}")
 set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_crucible_rpath}")

@@ -2749,7 +2749,7 @@ template for (constexpr auto m : members) { ... }
 
 **Clangd parses with stale config after a toolchain swap.**  After dropping Clang from the presets, IDE diagnostics may still show `Unknown argument: '-freflection'` and `'__config_site' file not found` errors.  Delete `build/compile_commands.json` and reconfigure: `rm -rf build && cmake --preset default` so clangd re-reads the new compile flags.  The actual build is unaffected.
 
-**Runtime libstdc++ resolution.**  Binaries compiled with the local GCC 16 tree link against that tree's `libstdc++.so.6` which is newer than the system's.  Without an rpath, they fail at runtime.  `cmake/Toolchain-gcc16.cmake` sets `CMAKE_EXE_LINKER_FLAGS_INIT`, `CMAKE_SHARED_LINKER_FLAGS_INIT` and `CMAKE_MODULE_LINKER_FLAGS_INIT` to an rpath that it calculates from the GCC prefix: `<prefix>/usr/lib64` and `<prefix>/lib64`. To make sure of the rpath, use `readelf -d build/test/test_X | grep RUNPATH`.
+**Runtime libstdc++ resolution.**  Binaries compiled with the local GCC 16 tree link against that tree's `libstdc++.so.6` which is newer than the system's.  Without an rpath, they fail at runtime.  `cmake/Toolchain-gcc16.cmake` sets `CMAKE_EXE_LINKER_FLAGS_INIT`, `CMAKE_SHARED_LINKER_FLAGS_INIT` and `CMAKE_MODULE_LINKER_FLAGS_INIT` to an rpath that it calculates from the GCC prefix: `<prefix>/usr/lib64`. To make sure of the rpath, use `readelf -d build/test/test_X | grep RUNPATH`.
 
 ### What the wrappers do not cover
 
