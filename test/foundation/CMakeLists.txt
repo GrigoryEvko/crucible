@@ -1864,6 +1864,12 @@ foundation_neg_compile_test(neg_core_text_view_no_terminating_zero
 foundation_neg_compile_test(neg_core_text_view_from_pointer
   "no matching function for call to .foundation::core::TextView::TextView\\(<brace-enclosed initializer list>\\)."
   "mismatched types .const char \\[Length\\]. and .const char\\*.")
+foundation_neg_compile_test(neg_core_c_text_no_terminating_zero
+  "in .constexpr. expansion of .*foundation::core::CText::CText<3>\\(letters\\)."
+  "call to non-.constexpr. function .void foundation::core::detail::text_literal_has_no_terminating_zero\\(\\).")
+foundation_neg_compile_test(neg_core_c_text_zero_before_its_end
+  "in .constexpr. expansion of .*foundation::core::CText::CText<19>\\(.*\\)."
+  "call to non-.constexpr. function .void foundation::core::detail::text_literal_holds_a_zero_byte_before_its_end\\(\\).")
 foundation_neg_compile_test(neg_core_format_temporary_text
   "use of deleted function .void foundation::core::format\\(FixedText<Capacity>&&, const Fmt<typename std::type_identity<[A-Za-z]+>::type ...>&, Args ...\\) \\[with long unsigned int Capacity = 16. Args = \\{int\\}\\]"
   "format\\(\\) gives a view of its FixedText, and a temporary FixedText ends with the full expression")
@@ -2035,6 +2041,13 @@ foundation_neg_compile_test(neg_core_copy_result_discarded
 foundation_neg_compile_test(neg_core_fill_const
   "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
   "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
+
+# ── The door directory of the base floor: foundation/os ───────────────
+#
+# The file door reads a file of /proc into a FixedText, gives the error of
+# the open and of the read, and closes each descriptor.  The kernel floor
+# judges each kind of release text.
+foundation_test(test_os_floor)
 
 # ── The attack ledger of the primitive families ───────────────────────
 #

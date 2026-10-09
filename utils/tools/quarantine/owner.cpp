@@ -20,13 +20,25 @@
 //     function that holds it.
 //
 // THE CLAIMS (the rule syscall-capability)
-//     The rule table names the system calls:
+//     The rule table names the system calls and the primitive of the base:
 //         syscall NAME... | REASON
-//     A call of a function NAME of the C library, and a call of syscall(), is
-//     the kind raw-syscall in a file under include/, src/ or vessel/, outside
-//     each directory named test, bench, examples, third_party, external or
-//     vendor, and each directory whose name starts with build.  These are the
-//     claim trees.  The ledger of the rule admits each claim with its reason.
+//         primitive FUNCTION | REASON
+//     A call of a function NAME of the C library, a call of syscall(), and a
+//     call of a primitive FUNCTION is the kind raw-syscall in a file under
+//     include/, src/ or vessel/, outside each directory named test, bench,
+//     examples, third_party, external or vendor, and each directory whose
+//     name starts with build.  These are the claim trees.  The ledger of the
+//     rule admits each claim with its reason.  The first argument of a call
+//     of a primitive is an enumerator, and its name is the name of the system
+//     call.
+//
+// THE DENIED CALLS (the rule syscall-capability)
+//     The rule table names the system calls that the base does not issue raw:
+//         deny NAME... | REASON
+//     A call of syscall() with the number of the macro SYS_NAME, and a call of
+//     a primitive with the enumerator NAME, is the kind denied-syscall in each
+//     base and each quarantined file that a build compiles.  No ledger row
+//     admits it.
 //
 // THE PLACE AND THE ENTITY
 //     The place of a use is the place of its expression (place_of), in a base
@@ -44,8 +56,9 @@
 //     declaration, outside the range of the call (is_copied_call), so a copy
 //     keeps the place and the holder of its declaration.  The shape is
 //     the entity of the owner row,
-//     the name of the system call, or syscall(SYS_NAME) for a call of
-//     syscall().
+//     the name of the system call, syscall(SYS_NAME) for a call of
+//     syscall(), or FUNCTION(NAME) for a call of a primitive whose last name
+//     is FUNCTION with the enumerator NAME.
 //
 // THE WALKS
 //     The walk of a body of expression.cpp gives each node of a quarantined
@@ -589,6 +602,8 @@ struct OwnerIndex {
     std::unordered_set<tree> last_names;  // the last name of each entity of an owner row
     std::unordered_set<tree> syscall_names;  // each name of a syscall row
     tree raw_syscall = NULL_TREE;  // the identifier syscall
+    std::unordered_set<tree> primitive_last_names;  // the last name of the function of each primitive row
+    std::unordered_set<std::string> denied_names;  // each name of a deny row
     // The name NAME of each macro SYS_NAME, by its number.  The unit reads the
     // macros one time, at the first call of syscall().
     bool are_numbers_read = false;
@@ -600,7 +615,10 @@ struct OwnerIndex {
 
 OwnerIndex owner_index;
 
-bool has_owner_rows() { return !state.table.owners.empty() || !state.table.syscalls.empty(); }
+bool has_owner_rows() {
+    return !state.table.owners.empty() || !state.table.syscalls.empty() || !state.table.primitives.empty()
+        || !state.table.denied_syscalls.empty();
+}
 
 void build_owner_index() {
     if (owner_index.is_ready) {
@@ -619,6 +637,28 @@ void build_owner_index() {
         owner_index.syscall_names.insert(get_identifier(name.c_str()));
     }
     owner_index.raw_syscall = get_identifier("syscall");
+    for (const std::string& primitive : state.table.primitives) {
+        std::size_t last = primitive.rfind("::");
+        std::string name = last == std::string::npos ? primitive : primitive.substr(last + 2);
+        owner_index.primitive_last_names.insert(get_identifier(name.c_str()));
+    }
+    owner_index.denied_names.insert(state.table.denied_syscalls.begin(), state.table.denied_syscalls.end());
+}
+
+// True when the function FUNCTION is the function of a primitive row.  A
+// function whose last name is no last name of a primitive costs one test of
+// a set.
+bool is_primitive_function(tree function) {
+    if (DECL_NAME(function) == NULL_TREE || owner_index.primitive_last_names.count(DECL_NAME(function)) == 0) {
+        return false;
+    }
+    std::string name = qualified_name(function);
+    for (const std::string& primitive : state.table.primitives) {
+        if (primitive == name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // True when the claim trees hold the file RELATIVE (THE CLAIMS).
@@ -917,6 +957,56 @@ std::string raw_syscall_shape(tree call, std::string& name) {
                         : "syscall(" + std::string(kSyscallMacroPrefix) + name + ")";
 }
 
+// The name of the enumerator that the first argument of the call CALL names,
+// through its location wrappers and conversions, or "" when the argument is
+// no enumerator: a value that no enumerator has, or an argument that is not a
+// constant.  Complexity: O(enumerators of the enumeration).
+std::string first_enumerator_name(tree call) {
+    if (argument_count(call) == 0) {
+        return {};
+    }
+    tree argument = argument_at(call, 0);
+    for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
+        argument = tree_strip_any_location_wrapper(argument);
+        if (TREE_CODE(argument) != NOP_EXPR && TREE_CODE(argument) != CONVERT_EXPR
+            && TREE_CODE(argument) != NON_LVALUE_EXPR) {
+            break;
+        }
+        argument = TREE_OPERAND(argument, 0);
+    }
+    if (argument == NULL_TREE) {
+        return {};
+    }
+    if (TREE_CODE(argument) == CONST_DECL && DECL_NAME(argument) != NULL_TREE) {
+        return IDENTIFIER_POINTER(DECL_NAME(argument));
+    }
+    tree type = TREE_TYPE(argument);
+    if (TREE_CODE(argument) != INTEGER_CST || type == NULL_TREE || TREE_CODE(type) != ENUMERAL_TYPE) {
+        return {};
+    }
+    for (tree value = TYPE_VALUES(TYPE_MAIN_VARIANT(type)); value != NULL_TREE; value = TREE_CHAIN(value)) {
+        tree enumerator = TREE_VALUE(value);
+        tree initial = TREE_CODE(enumerator) == CONST_DECL ? DECL_INITIAL(enumerator) : enumerator;
+        if (initial != NULL_TREE && TREE_CODE(initial) == INTEGER_CST && tree_int_cst_equal(initial, argument)) {
+            return IDENTIFIER_POINTER(TREE_PURPOSE(value));
+        }
+    }
+    return {};
+}
+
+// A finding of the kind denied-syscall for a raw call of the system call NAME
+// at LOCATION in the body of FUNCTION, when a deny row names NAME (THE DENIED
+// CALLS).
+void check_denied_call(const std::string& name, const std::string& shape, location_t location, tree function) {
+    if (name.empty() || owner_index.denied_names.count(name) == 0) {
+        return;
+    }
+    Place place = owned_place(location);
+    if (place.file != nullptr) {
+        add_finding(Kind::denied_syscall, nullptr, place, holder_text(function, location) + ": " + shape);
+    }
+}
+
 // One call: each system call of a syscall row that it makes (THE CLAIMS), the
 // owner rows of the system call of syscall(), and the owner rows of each name
 // of a call that a pattern does not resolve.
@@ -939,10 +1029,18 @@ void check_owned_call(tree call, location_t location, tree function) {
         }
     }
     bool is_raw = false;
+    std::string primitive;
     std::string called;
     for_each_function(callee, [&](tree candidate) {
         tree candidate_name = DECL_NAME(candidate);
-        if (candidate_name == NULL_TREE || library_of(candidate) != Library::c_library) {
+        if (candidate_name == NULL_TREE) {
+            return;
+        }
+        if (primitive.empty() && is_primitive_function(candidate)) {
+            primitive = IDENTIFIER_POINTER(candidate_name);
+            return;
+        }
+        if (library_of(candidate) != Library::c_library) {
             return;
         }
         if (candidate_name == owner_index.raw_syscall) {
@@ -951,7 +1049,7 @@ void check_owned_call(tree call, location_t location, tree function) {
             called = IDENTIFIER_POINTER(candidate_name);
         }
     });
-    if (!is_raw && called.empty()) {
+    if (!is_raw && primitive.empty() && called.empty()) {
         return;
     }
     std::string shape = called;
@@ -961,6 +1059,11 @@ void check_owned_call(tree call, location_t location, tree function) {
         if (!name.empty()) {
             check_owner_rows(name, shape, location, function);
         }
+        check_denied_call(name, shape, location, function);
+    } else if (!primitive.empty()) {
+        std::string name = first_enumerator_name(call);
+        shape = primitive + "(" + (name.empty() ? std::string("?") : name) + ")";
+        check_denied_call(name, shape, location, function);
     }
     Place place = owned_place(location);
     if (place.file != nullptr && is_claim_file(place.file->relative)) {

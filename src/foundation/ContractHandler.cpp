@@ -11,15 +11,12 @@
 //
 // A violation can occur in a signal handler, or while its thread holds the
 // lock of the heap or of a stdio stream.  So the report calls only functions
-// that POSIX makes async-signal-safe.  It writes to standard error with
-// write(2), through a small buffer on the stack.  The debugger probe of
+// that POSIX makes async-signal-safe.  It writes to standard error through
+// the sink write of the Report family (src/foundation/os/ReportSink.cpp),
+// with a small buffer on the stack.  The debugger probe of
 // foundation/Platform.h uses open, read, close and strstr.  Nothing here
 // calls stdio, allocates or takes a lock.  A core dump or a debugger gives
 // the stack.
-//
-// This file also holds the sink write of the Report family: the one write
-// to standard output or standard error of the base, for report(), fatal(),
-// unreachable() and the contract handler.
 //
 // A second violation on one thread while that thread reports a violation
 // aborts at once.  It can come from a signal handler that interrupts the
@@ -32,14 +29,11 @@
 #include <foundation/core/Report.h>
 
 #include <array>
-#include <cerrno>
 #include <csignal>
 #include <contracts>
 #include <cstddef>
 #include <cstdlib>
 #include <string_view>
-
-#include <unistd.h>
 
 namespace foundation::detail {
 
@@ -61,41 +55,6 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model(
     "initial-exec")]] inline constinit thread_local volatile std::sig_atomic_t contract_report_in_progress = 0;
 
 }  // namespace foundation::detail
-
-// The sink write of the Report family, which foundation/core/Report.h
-// declares.  It lives in this file because this file holds the one output
-// door of the base: the one include of <unistd.h> for a write, and the one
-// write(2) call.  The call goes through the write of the C library, and not
-// through a raw system call, because the sanitizers intercept that write.
-// ThreadSanitizer runs a signal handler only inside an intercepted call, so
-// a report that blocks in a raw write never runs the handler of a signal.
-// test_contract_handler shows this under the tsan preset.  The door of the
-// Os family takes this function in Stage 4 of the quarantine plan.
-namespace foundation::core::detail {
-
-void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept {
-    // A value outside the two enumerators writes to standard error.  The
-    // write must not end the process, because the fatal exit writes through
-    // it.
-    int const descriptor = sink == Sink::Out ? STDOUT_FILENO : STDERR_FILENO;
-    std::size_t written = 0;
-    // write(2) can take fewer bytes than it was given, and a signal can end
-    // it early.  A descriptor that refuses the bytes ends the write, because
-    // a report has no road for the error.  The fatal exit aborts next in any
-    // case.
-    while (written < count) {
-        ::ssize_t const taken = ::write(descriptor, bytes + written, count - written);
-        if (taken > 0) {
-            written += static_cast<std::size_t>(taken);
-        } else if (taken < 0 && errno == EINTR) {
-            continue;
-        } else {
-            return;
-        }
-    }
-}
-
-}  // namespace foundation::core::detail
 
 namespace {
 

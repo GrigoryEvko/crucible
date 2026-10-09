@@ -29,11 +29,16 @@
 # The observe semantic keeps the checks of CRUCIBLE_PRE, as in a Release
 # library, and a check references the violation handler.  Because of this,
 # each binary compiles the handler source of foundation with its own flags,
-# and the formatter that the handler writes with.  These sources call only
-# functions of the C library, so they need no archive of the toolchain.
+# the formatter that the handler writes with, the sink write of the Report
+# family and the raw system call primitive under it.  These sources call only
+# functions of the C library and the primitive, so they need no archive of
+# the toolchain.
 set(CRUCIBLE_CT_HANDLER_SOURCES
   ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp)
+  ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/ReportSink.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Syscall.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Intercepted.cpp)
 
 find_program(CRUCIBLE_VALGRIND valgrind)
 find_path(CRUCIBLE_VALGRIND_INCLUDE valgrind/memcheck.h HINTS $ENV{HOME}/.local/include)

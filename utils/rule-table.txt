@@ -183,6 +183,20 @@
 #       third_party, external or vendor, and each directory whose name starts
 #       with build.  The ledger of the rule gives the capability claim of each
 #       such call.  A NAME has one syscall row at most
+#   primitive FUNCTION | REASON
+#       FUNCTION is a raw system call primitive of the base: a qualified
+#       name, whose first argument is an enumerator that names the system
+#       call.  A call of FUNCTION is a raw system call of the rule
+#       syscall-capability, with the shape FUNCTION(NAME) for the enumerator
+#       NAME, as a call of syscall() is.  A FUNCTION has one primitive row
+#       at most, and the reason is necessary
+#   deny NAME... | REASON
+#       Each NAME is a system call that the base does not issue raw.  The C
+#       library owns its state.  A call of syscall() with the number of
+#       the macro SYS_NAME, and a call of a primitive with the enumerator
+#       NAME, is the kind denied-syscall of the rule syscall-capability in
+#       each file that a build compiles.  No ledger row admits it.  A NAME
+#       has one deny row at most, and the reason is necessary
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -193,13 +207,15 @@
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
-layer F0_primitives 2 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
-layer F1_algebra 3 include/foundation/ src/foundation/
-layer X1_wrappers 4 include/fixy/
-layer X2_binding 5 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
-layer X3_os 6 include/fixy/os/ src/fixy/os/
-layer X4_concurrent 7 include/fixy/concurrent/ include/fixy/handle/ src/fixy/concurrent/
-layer X5_session 8 include/fixy/session/
+layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
+layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
+layer F0_doors 4 include/foundation/os/ src/foundation/os/
+layer F1_algebra 5 include/foundation/ src/foundation/
+layer X1_wrappers 6 include/fixy/
+layer X2_binding 7 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
+layer X3_os 8 include/fixy/os/ src/fixy/os/
+layer X4_concurrent 9 include/fixy/concurrent/ include/fixy/handle/ src/fixy/concurrent/
+layer X5_session 10 include/fixy/session/
 
 allow F0_floor <cstddef>
 allow F0_floor <cstdint>
@@ -211,6 +227,11 @@ allow F0_floor <initializer_list>
 allow F0_floor <new>
 allow F0_floor <meta>
 
+door <asm/unistd.h> src/foundation/os/Syscall.cpp
+door <asm-generic/errno-base.h> src/foundation/os/Syscall.cpp
+door <linux/utsname.h> src/foundation/os/Syscall.cpp
+door <asm/errno.h> src/foundation/os/Errno.cpp
+door <linux/fcntl.h> src/foundation/os/Syscall.cpp
 door <linux/io_uring.h> include/fixy/os/Io.h
 door <sys/sendfile.h> include/fixy/os/Io.h
 door <linux/mempolicy.h> include/fixy/os/NumaPlacement.h
@@ -363,6 +384,7 @@ owner start-lifetime lifetime-start std::start_lifetime_as include/foundation/Li
 owner start-lifetime lifetime-start std::start_lifetime_as_array include/foundation/Lifetime.h | the library puts no mandate on the element type, so a start of an array of proofs gives a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses it at compile time
 owner syscall-capability outside-door sched_setaffinity include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the door records a pin event, and a pin proof stays in force across a pin that goes around the door
 owner syscall-capability outside-door pthread_setaffinity_np include/fixy/os/CpuPinned.h by=fixy::detail::set_calling_thread_affinity | the call changes the same mask as sched_setaffinity, and its door is the same function, which does not call it
+owner syscall-capability outside-door foundation::os::raw_syscall include/foundation/os/ src/foundation/os/ include/fixy/os/ src/fixy/os/ | a word of the primitive can be an address that the kernel writes, so only a door issues it and gives a safe operation
 
 # The owner rows of the rules that read the names of the source.  The ledger
 # of each rule admits the reviewed uses with their reasons.
@@ -383,6 +405,16 @@ syscall open openat close read write pread pwrite readv writev fsync fdatasync s
 syscall unlink unlinkat rename renameat renameat2 mkdir mkdirat rmdir linkat chmod fchmod chown fchown access faccessat | a call that changes or reads the file system tree or the mode of a file
 syscall fork vfork clone execve waitpid kill sigaction signal sigprocmask getpid gettid bpf | a call that makes, replaces, waits for or signals a process, reads its identity, or loads a program of the kernel
 syscall clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday getrandom | a call that reads or sets a clock of the kernel, sleeps, or reads random bytes of the kernel
+
+# The raw system call primitive of the base, and the system calls that the
+# base does not issue raw.
+primitive foundation::os::raw_syscall | the raw system call primitive of foundation/os/Syscall.h, whose first argument is an enumerator of foundation::os::Syscall that names the call
+deny rt_sigaction rt_sigprocmask rt_sigreturn rt_sigsuspend rt_sigpending rt_sigtimedwait rt_sigqueueinfo rt_tgsigqueueinfo sigaltstack signalfd signalfd4 kill tkill tgkill pidfd_send_signal | a signal call: the C library keeps the dispositions, the masks and the signals of its own threads, and the base takes signals only through it
+deny clone clone3 fork vfork | a start of a thread or of a process: the C library sets up the thread block, the TLS and the robust list of each thread, and the base starts threads only through it
+deny set_robust_list set_tid_address arch_prctl set_thread_area rseq | a call that changes the thread state that the C library keeps for each thread: the robust list, the clear of the thread id, the TLS register and the restartable sequence
+deny setuid setgid setreuid setregid setresuid setresgid setgroups setfsuid setfsgid | a change of the credentials: the C library gives the change to each thread of the process, and a raw call changes one thread
+deny brk | a change of the program break, which the allocator of the C library owns
+deny exit exit_group | an exit with no run of the exit handlers of the C library and no flush of its streams
 
 # The witness rows.  Each class of the base that attests to a fact that it
 # cannot see, and the door that it keeps.  Edit a row, and then write the

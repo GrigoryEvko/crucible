@@ -432,6 +432,8 @@ inline constexpr std::string_view kMachinery =
     "machinery that computes over grades at compile time; nothing here is a value in a signature";
 
 inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
+    {^^::foundation::os, "the raw system call primitive, its argument words and the kernel floor: words of the "
+                         "kernel interface that carry no grade"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},
@@ -876,6 +878,9 @@ inline constexpr StatedZero kZeros[] = {
      "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::TextView,
      "a borrow of a run of characters: it owns nothing and makes no claim about what the characters hold"},
+    {^^::foundation::core::CText,
+     "a borrow of a run of characters with a terminating zero: it owns nothing and makes no claim about what the "
+     "characters hold"},
     {^^::foundation::core::FixedText,
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
     {^^::foundation::core::Truncated,

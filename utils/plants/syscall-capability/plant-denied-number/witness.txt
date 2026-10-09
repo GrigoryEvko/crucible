@@ -1,0 +1,10 @@
+# A call of syscall() with the number of the macro SYS_rt_sigaction, which a
+# deny row names.  The call is a raw system call and the kind denied-syscall,
+# and no ledger row admits the second kind.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+finding raw quarantine c-library-call src/raw.cpp:7:37 | syscall
+finding raw syscall-capability raw-syscall src/raw.cpp:7:37 | planted::set_action(): syscall(SYS_rt_sigaction)
+finding raw syscall-capability denied-syscall src/raw.cpp:7:37 | planted::set_action(): syscall(SYS_rt_sigaction)

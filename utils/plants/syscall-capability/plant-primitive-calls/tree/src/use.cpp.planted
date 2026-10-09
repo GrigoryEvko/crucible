@@ -1,0 +1,9 @@
+// A quarantined unit of src/ that issues the primitive outside the door
+// directory.
+#include <fixy/os/Raw.h>
+
+namespace planted {
+
+long outside(long word) { return raw_syscall(Call::write, word); }
+
+}  // namespace planted

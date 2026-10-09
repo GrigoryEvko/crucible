@@ -1,0 +1,13 @@
+# The rule table of this plant.  Each file of src/ is quarantined.  The
+# syscall row gives the function syscall() a claim, and the deny row gives a
+# system call that the base does not issue raw.
+
+layer floor 0 include/fixy/
+
+allow floor <unistd.h>
+allow floor <sys/syscall.h>
+
+quarantine src/
+
+syscall close | the system calls of the plant
+deny rt_sigaction | the denied system call of the plant

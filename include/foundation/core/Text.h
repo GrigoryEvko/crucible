@@ -1,11 +1,18 @@
 #pragma once
 
-// The text types of the Region family: a borrowed run of characters, and a
-// buffer of characters with a fixed capacity.
+// The text types of the Region family: a borrowed run of characters, a
+// borrowed run with a terminating zero, and a buffer of characters with a
+// fixed capacity.
 //
 //   TextView        a borrowed run of characters: a pointer and a count
+//   CText           a borrowed run of characters with a zero after the last
+//                   one, for a call of the kernel that reads up to the zero
 //   FixedText<N>    an owned buffer of N characters and the count of the
 //                   characters that it holds
+//
+// A CText comes from a string literal.  The consteval constructor proves the
+// zero at the end and refuses a zero before it, so a reader that stops at the
+// first zero reads each character of the text and no other byte.
 //
 // A TextView comes from a string literal or from an owner of the base, such
 // as FixedText::view().  The constructor from a literal is consteval, so
@@ -27,6 +34,7 @@
 namespace foundation::core {
 
 class TextView;
+class CText;
 
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -34,15 +42,17 @@ class FixedText;
 
 namespace detail {
 
-// The consteval constructor of a TextView calls one of these functions when
-// a literal breaks a rule.  No function has a definition, so the call is no
-// constant expression, and the error of the compiler names the rule.
+// The consteval constructor of a TextView and of a CText calls one of these
+// functions when a literal breaks a rule.  No function has a definition, so
+// the call is no constant expression, and the error of the compiler names the
+// rule.
 void text_literal_has_no_terminating_zero() noexcept;
 void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 
 // The doors of the base to the parts of a text.  The detail-namespace
 // guard keeps each caller outside the base out.
 [[nodiscard]] constexpr char const* text_first_(TextView text) noexcept;
+[[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
 
 template <std::size_t Capacity>
 [[nodiscard]] constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept;
@@ -62,6 +72,7 @@ class TextView {
     template <std::size_t Capacity>
         requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
     friend class FixedText;
+    friend class CText;
     friend constexpr char const* detail::text_first_(TextView text) noexcept;
 
     constexpr TextView(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
@@ -93,6 +104,38 @@ public:
         }
         return true;
     }
+};
+
+// A borrowed run of characters with a zero after its last character.  A
+// call of the kernel that takes a path reads it up to the zero, so a door
+// takes a CText where it gives a text to the kernel.
+class CText {
+    char const* first_ = "";
+    std::size_t size_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend constexpr char const* detail::c_text_first_(CText text) noexcept;
+
+public:
+    // The empty text.
+    constexpr CText() noexcept = default;
+
+    // The characters of a string literal.  The literal must end with its
+    // zero and hold no zero before it, or the call is no constant expression
+    // and the build stops at it.
+    template <std::size_t Length>
+    consteval CText(char const (&literal)[Length]) noexcept : first_{literal}, size_{Length - 1} {
+        if (literal[Length - 1] != '\0') detail::text_literal_has_no_terminating_zero();
+        for (std::size_t index = 0; index + 1 < Length; ++index) {
+            if (literal[index] == '\0') detail::text_literal_holds_a_zero_byte_before_its_end();
+        }
+    }
+
+    // The count of the characters, without the zero.
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+
+    // The characters, without the zero.
+    [[nodiscard]] constexpr TextView view() const noexcept { return TextView{first_, size_}; }
 };
 
 // An owned buffer of Capacity characters.  The count of the characters that
@@ -133,6 +176,9 @@ public:
 namespace detail {
 
 constexpr char const* text_first_(TextView text) noexcept { return text.first_; }
+
+// The first character of a CText.  A zero follows its last character.
+constexpr char const* c_text_first_(CText text) noexcept { return text.first_; }
 
 template <std::size_t Capacity>
 constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept {

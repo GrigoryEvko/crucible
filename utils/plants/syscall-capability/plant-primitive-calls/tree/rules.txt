@@ -1,0 +1,14 @@
+# The rule table of this plant.  The headers of include/fixy/ are base files,
+# and each other file is quarantined.  The primitive row names the primitive
+# of the plant, its owner row gives the door directory as its sites, and the
+# deny row gives a system call that the base does not issue raw.
+
+layer floor 0 include/fixy/
+
+allow floor <cstdint>
+
+quarantine src/
+
+owner syscall-capability outside-door planted::raw_syscall include/fixy/os/ | the door directory of the plant
+primitive planted::raw_syscall | the primitive of the plant
+deny clone3 rt_sigaction | the denied system calls of the plant

@@ -1,0 +1,2 @@
+deny clone clone3 | the first row
+deny exit clone | the second row

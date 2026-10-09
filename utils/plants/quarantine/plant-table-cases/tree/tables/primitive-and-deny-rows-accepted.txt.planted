@@ -1,0 +1,4 @@
+quarantine plant_std.cpp
+primitive foundation::os::raw_syscall | the primitive
+deny clone clone3 exit | three system calls
+deny rt_sigaction | one system call

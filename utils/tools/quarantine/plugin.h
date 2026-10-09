@@ -609,6 +609,8 @@ struct RuleTable {
     std::vector<WitnessRow> witnesses;
     std::vector<OwnerRow> owners;
     std::vector<std::string> syscalls;  // each name of a syscall row (owner.cpp, THE CLAIMS)
+    std::vector<std::string> primitives;  // the function of each primitive row (owner.cpp, THE CLAIMS)
+    std::vector<std::string> denied_syscalls;  // each name of a deny row (owner.cpp, THE DENIED CALLS)
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
@@ -696,6 +698,7 @@ enum class Kind : std::uint8_t {
     lifetime_start,
     raw_syscall,
     outside_door,
+    denied_syscall,
     door_use,
     testing_use,
     detail_use,
@@ -944,6 +947,8 @@ inline const char* kind_name(Kind kind) {
             return "raw-syscall";
         case Kind::outside_door:
             return "outside-door";
+        case Kind::denied_syscall:
+            return "denied-syscall";
         case Kind::door_use:
             return "door-use";
         case Kind::testing_use:
@@ -1059,6 +1064,7 @@ inline Rule rule_of(Kind kind) {
             return Rule::start_lifetime;
         case Kind::raw_syscall:
         case Kind::outside_door:
+        case Kind::denied_syscall:
             return Rule::syscall_capability;
         case Kind::door_use:
             return Rule::ctx_init_door;
@@ -1238,6 +1244,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"start-lifetime", "lifetime-start"},
     {"syscall-capability", "raw-syscall"},
     {"syscall-capability", "outside-door"},
+    {"syscall-capability", "denied-syscall"},
     {"ctx-init-door", "door-use"},
     {"ctx-testing-boundary", "testing-use"},
     {"detail-namespace", "detail-use"},

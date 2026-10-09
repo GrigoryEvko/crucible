@@ -24,7 +24,18 @@ THE DOORS
     syscall() with the number of SYS_sched_setaffinity is a use of
     sched_setaffinity.  Each use in a different function is the kind
     `outside-door`, in each file that a build compiles, also a test and a
-    bench.
+    bench.  In the same way, an owner row gives the four door directories as
+    the sites of the raw system call primitive of the base,
+    foundation::os::raw_syscall.
+
+THE PRIMITIVE AND THE DENIED CALLS
+    The primitive row of the rule table names the primitive.  A call of it is
+    a raw system call too, with the shape raw_syscall(NAME) for the enumerator
+    NAME of its first argument.  The deny rows name the system calls that the
+    base does not issue raw.  The C library owns the state of these calls.
+    A call of syscall() or of the primitive with such a call is the kind
+    `denied-syscall` (owner.cpp, THE DENIED CALLS).  The kind applies in each
+    file that a build compiles, also a test and a bench.
 
 THE LEDGER
     utils/ledgers/syscall-capability.txt counts the raw system calls of each
@@ -33,9 +44,9 @@ THE LEDGER
     Two calls of one system call in one function have one row with the count
     2, and a third call fails the rule.  The reason of each row is the
     effects::* capability claim of its calls, and a row with no reason is an
-    error.  No row admits a finding of the kind `outside-door`, and a row of
-    that kind is an error too.  Each problem of the census of the runner is
-    an error.
+    error.  No row admits a finding of the kind `outside-door` or of the
+    kind `denied-syscall`, and a row of such a kind is an error too.  Each
+    problem of the census of the runner is an error.
 
 Usage
     guard check --rule syscall-capability --build-dir DIR [--warnings-dir DIR]
@@ -51,17 +62,28 @@ from assay.guard.engines.plugin import declarations, runner
 from assay.readers import sections as plugin_sections
 
 RULE = "syscall-capability"
-# The kind of a use of an affinity system call in a function other than its door.
+# The kind of a use of an entity of an owner row of the rule, when the use is not in its door.
 DOOR_KIND = "outside-door"
+# The kind of a raw call of a system call that a deny row names.
+DENIED_KIND = "denied-syscall"
+# The kinds that no ledger row admits.
+UNADMITTED_KINDS = (DOOR_KIND, DENIED_KIND)
 
 
 def message(item: plugin_sections.Finding) -> str:
     """Return the text of one finding line of the rule."""
     if item.kind == DOOR_KIND:
         return (
-            f"a call of an affinity system call in a function other than its door ({item.entity}).  The owner row "
-            f"of utils/rule-table.txt gives the door, and no ledger row admits such a call.  Call the door, or a "
-            f"gated function that calls it, such as fixy::sched::apply_affinity_to_mask"
+            f"a use of an entity of an owner row of the rule, and the use is not in its door ({item.entity}).  The "
+            f"owner row of utils/rule-table.txt gives the door, and no ledger row admits such a use.  Call the door, "
+            f"or a gated function that calls it, such as fixy::sched::apply_affinity_to_mask or "
+            f"foundation::os::read_file"
+        )
+    if item.kind == DENIED_KIND:
+        return (
+            f"a raw call of a system call that a deny row of utils/rule-table.txt names ({item.entity}).  The C "
+            f"library owns the state of that call, and no ledger row admits such a call.  Call the function of the C "
+            f"library through its door"
         )
     return (
         f"a raw system call with no reviewed capability claim ({item.entity}).  Call a door of fixy/os in its "
@@ -70,22 +92,22 @@ def message(item: plugin_sections.Finding) -> str:
 
 
 def row_errors(rows: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Give one error for each row of the door kind, and for each row with no claim (THE LEDGER).
+    """Give one error for each row of a kind that no row admits, and for each row with no claim (THE LEDGER).
 
     Complexity: linear in the rows.
     """
     shown = rule_ledger.shown_path(RULE)
     errors: list[check_report.Finding] = []
     for key, entry in sorted(rows.base.items()):
-        if key.kind == DOOR_KIND:
+        if key.kind in UNADMITTED_KINDS:
             errors.append(
                 check_report.Finding(
                     "error",
                     shown,
                     entry.line,
                     RULE,
-                    f"the row of {key.path} admits a call of an affinity system call in a function other than its "
-                    f"door ({key.entity}), and no row can admit one.  Call the door, and remove the row",
+                    f"the row of {key.path} admits a finding of the kind {key.kind} ({key.entity}), and no row can "
+                    f"admit one.  Call the door, and remove the row",
                 )
             )
         elif not entry.reason:

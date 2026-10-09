@@ -36,9 +36,9 @@
 //   The formatter uses no locale, no allocation and no global state, so one
 //   text with the same arguments gives the same bytes in each build.
 //   report(), fatal() and unreachable() write through the sink write of
-//   src/foundation/ContractHandler.cpp, which calls write(2) with no stdio
-//   buffer, so the text of a report is written before the call returns.  A
-//   call from a signal handler is safe.  A text that fits the buffer of 512
+//   src/foundation/os/ReportSink.cpp, which issues the raw write of
+//   foundation/os/Syscall.h with no stdio buffer, so the text of a report is
+//   written before the call returns.  A call from a signal handler is safe.  A text that fits the buffer of 512
 //   bytes is written with one system call.
 //
 // fatal() and unreachable() end the process in each build, with each

@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner and syscall
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny
 table tables/a-rank-that-is-not-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second layer
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
@@ -88,6 +88,13 @@ table tables/a-syscall-row-with-no-reason.txt refused 1 | a syscall row is 'sysc
 table tables/a-syscall-name-that-is-no-identifier.txt refused 1 | a syscall row is 'syscall NAME... \| REASON', with the name of each function of the C library that issues one system call, and the reason is necessary
 table tables/a-system-call-in-two-syscall-rows.txt refused 2 | the system call read has a second syscall row, and its first syscall row is on line 1
 table tables/owner-and-syscall-rows-accepted.txt accepted
+table tables/a-primitive-row-with-no-reason.txt refused 1 | a primitive row is 'primitive FUNCTION \| REASON', with the qualified name of a raw system call primitive of the base, and the reason is necessary
+table tables/a-primitive-that-is-no-qualified-name.txt refused 1 | a primitive row is 'primitive FUNCTION \| REASON', with the qualified name of a raw system call primitive of the base, and the reason is necessary
+table tables/a-primitive-with-two-rows.txt refused 2 | the function foundation::os::raw_syscall has a second primitive row, and its first primitive row is on line 1
+table tables/a-deny-row-with-no-reason.txt refused 1 | a deny row is 'deny NAME... \| REASON', with the name of each system call that the base does not issue raw, and the reason is necessary
+table tables/a-deny-name-that-is-no-identifier.txt refused 1 | a deny row is 'deny NAME... \| REASON', with the name of each system call that the base does not issue raw, and the reason is necessary
+table tables/a-system-call-in-two-deny-rows.txt refused 2 | the system call clone has a second deny row, and its first deny row is on line 1
+table tables/primitive-and-deny-rows-accepted.txt accepted
 
 # The table of each white-space character between two words, in a reason, and
 # the carriage return in a comment and in the line ends \r\n.

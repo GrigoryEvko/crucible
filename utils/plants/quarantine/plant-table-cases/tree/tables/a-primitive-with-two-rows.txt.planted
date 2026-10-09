@@ -1,0 +1,2 @@
+primitive foundation::os::raw_syscall | the first row
+primitive foundation::os::raw_syscall | the second row

@@ -1,0 +1,14 @@
+# A base header of the door directory issues the primitive of the plant with
+# an admitted call and with a denied call, and a quarantined unit issues it
+# outside the door directory.  Each call is a raw system call with the shape
+# raw_syscall(NAME).  The denied call is the kind denied-syscall, and the call
+# outside the door directory is the kind outside-door.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:16:63 | planted::write_one(long int): raw_syscall(write)
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:18:66 | planted::start_thread(long int): raw_syscall(clone3)
+finding sentinel syscall-capability denied-syscall include/fixy/os/Raw.h:18:66 | planted::start_thread(long int): raw_syscall(clone3)
+finding sentinel syscall-capability outside-door src/use.cpp:7:45 | planted::outside(long int): planted::raw_syscall
+finding sentinel syscall-capability raw-syscall src/use.cpp:7:45 | planted::outside(long int): raw_syscall(write)

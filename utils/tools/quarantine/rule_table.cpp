@@ -342,6 +342,14 @@ constexpr const char* kOwnerFormat =
 constexpr const char* kSyscallFormat =
     "a syscall row is 'syscall NAME... | REASON', with the name of each function of the C library that issues one "
     "system call, and the reason is necessary";
+// The errors of a primitive row and of a deny row.  ruletable.PRIMITIVE_FORMAT
+// and ruletable.DENY_FORMAT give the same texts.
+constexpr const char* kPrimitiveFormat =
+    "a primitive row is 'primitive FUNCTION | REASON', with the qualified name of a raw system call primitive of the "
+    "base, and the reason is necessary";
+constexpr const char* kDenyFormat =
+    "a deny row is 'deny NAME... | REASON', with the name of each system call that the base does not issue raw, and "
+    "the reason is necessary";
 
 // The kind of a use outside the sites of an owner row of RULE, as the row
 // spells it, or false when RULE has no such kind.
@@ -498,6 +506,8 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines witness_lines;  // the class name of each witness row, and its line
     crucible_rows::KeyLines owner_lines;  // the rule and the entity of each owner row, and its line
     crucible_rows::KeyLines syscall_lines;  // each name of a syscall row, and its line
+    crucible_rows::KeyLines primitive_lines;  // the function of each primitive row, and its line
+    crucible_rows::KeyLines deny_lines;  // each name of a deny row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -779,9 +789,40 @@ bool load_rule_table(const std::string& path) {
             if (is_valid_row) {
                 table.syscalls.insert(table.syscalls.end(), args.begin(), args.end());
             }
+        } else if (kind == "primitive") {
+            if (args.size() != 1 || reason.empty() || !is_qualified_name(args[0])) {
+                refuse(kPrimitiveFormat);
+                continue;
+            }
+            if (int first_line = primitive_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the function " + args[0] + " has a second primitive row, and its first primitive row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.primitives.push_back(args[0]);
+        } else if (kind == "deny") {
+            bool is_valid_row = !args.empty() && !reason.empty();
+            for (const std::string& name : args) {
+                is_valid_row = is_valid_row && is_identifier(name);
+            }
+            if (!is_valid_row) {
+                refuse(kDenyFormat);
+                continue;
+            }
+            for (const std::string& name : args) {
+                if (int first_line = deny_lines.add(name, line_number); first_line > 0) {
+                    refuse("the system call " + name + " has a second deny row, and its first deny row is on line "
+                           + std::to_string(first_line));
+                    is_valid_row = false;
+                    break;
+                }
+            }
+            if (is_valid_row) {
+                table.denied_syscalls.insert(table.denied_syscalls.end(), args.begin(), args.end());
+            }
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce, language, "
-                   "seal, heavy, light, cite, grant, home, home-args, witness, owner and syscall");
+                   "seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

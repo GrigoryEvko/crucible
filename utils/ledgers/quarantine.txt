@@ -2465,11 +2465,9 @@ src/fixy/concurrent/Topology.cpp | layer-header | 1 | <vector> | -
 src/fixy/os/ThreadTasks.cpp | layer-header | 1 | <span> | -
 src/forge/recipes/Network.cpp | std-object | 3 | std::basic_string_view | -
 src/foundation/ContractHandler.cpp | layer-header | 1 | <array> | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <cerrno> | -
 src/foundation/ContractHandler.cpp | layer-header | 1 | <csignal> | -
 src/foundation/ContractHandler.cpp | layer-header | 1 | <cstdlib> | -
 src/foundation/ContractHandler.cpp | layer-header | 1 | <string_view> | -
-src/foundation/ContractHandler.cpp | layer-header | 1 | <unistd.h> | -
 src/foundation/DiagRuntime.cpp | layer-header | 1 | <atomic> | -
 src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdio> | -
 src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdlib> | -

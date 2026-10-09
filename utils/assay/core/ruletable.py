@@ -23,7 +23,9 @@ the negative fixtures that `loop derive witness-fixtures` writes
 (assay.loop.derive.witness_fixtures).  The owner rows give the rules
 start-lifetime, syscall-capability, ctx-init-door, ctx-testing-boundary,
 detail-namespace and no-unchecked-access, and the syscall rows give the system
-calls of the rule syscall-capability.
+calls of the rule syscall-capability.  For the same rule, the primitive rows
+give the raw system call primitive of the base.  The deny rows give the system
+calls that the base does not issue raw.
 """
 
 from __future__ import annotations
@@ -54,6 +56,8 @@ ROW_KINDS = (
     "witness",
     "owner",
     "syscall",
+    "primitive",
+    "deny",
 )
 # The refusal that the negative fixture of a witness row must see, as the row names it.
 REFUSALS = ("private", "deleted", "no-match")
@@ -104,6 +108,15 @@ OWNER_FORMAT = (
 SYSCALL_FORMAT = (
     "a syscall row is 'syscall NAME... | REASON', with the name of each function of the C library that issues one "
     "system call, and the reason is necessary"
+)
+# The errors of a primitive row and of a deny row.  rule_table.cpp gives the same texts.
+PRIMITIVE_FORMAT = (
+    "a primitive row is 'primitive FUNCTION | REASON', with the qualified name of a raw system call primitive of the "
+    "base, and the reason is necessary"
+)
+DENY_FORMAT = (
+    "a deny row is 'deny NAME... | REASON', with the name of each system call that the base does not issue raw, and "
+    "the reason is necessary"
 )
 # The prefix of the field of an owner row that names the function of its sites.
 BY_PREFIX = "by="
@@ -280,6 +293,9 @@ class RuleTable:
     owners: tuple[Owner, ...] = ()
     # The name of each function of the C library that a syscall row names, in the sequence of the file.
     syscalls: tuple[str, ...] = ()
+    # The function of each primitive row, and each system call of a deny row, in the sequence of the file.
+    primitives: tuple[str, ...] = ()
+    denied_syscalls: tuple[str, ...] = ()
 
     def homes_of(self, rule: str) -> tuple[Home, ...]:
         """Return the home rows of one rule, in the sequence of the file."""
@@ -617,6 +633,10 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     owner_lines: dict[str, int] = {}  # the rule and the entity of each owner row, and its line
     syscalls: list[str] = []
     syscall_lines: dict[str, int] = {}  # each name of a syscall row, and its line
+    primitives: list[str] = []
+    primitive_lines: dict[str, int] = {}  # the function of each primitive row, and its line
+    denied: list[str] = []
+    deny_lines: dict[str, int] = {}  # each name of a deny row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -790,6 +810,23 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                                      f"syscall row is on line {syscall_lines[syscall_name]}")
                 syscall_lines[syscall_name] = number
             syscalls.extend(args)
+        elif kind == "primitive":
+            if len(args) != 1 or not reason or not is_qualified_name(args[0]):
+                raise TableError(f"{where}: {PRIMITIVE_FORMAT}")
+            if args[0] in primitive_lines:
+                raise TableError(f"{where}: the function {args[0]} has a second primitive row, and its first primitive "
+                                 f"row is on line {primitive_lines[args[0]]}")
+            primitive_lines[args[0]] = number
+            primitives.append(args[0])
+        elif kind == "deny":
+            if not args or not reason or not all(map(is_identifier, args)):
+                raise TableError(f"{where}: {DENY_FORMAT}")
+            for denied_name in args:
+                if denied_name in deny_lines:
+                    raise TableError(f"{where}: the system call {denied_name} has a second deny row, and its first deny "
+                                     f"row is on line {deny_lines[denied_name]}")
+                deny_lines[denied_name] = number
+            denied.extend(args)
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -814,7 +851,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                              f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
-                     tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls))
+                     tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls), tuple(primitives),
+                     tuple(denied))
 
 
 def load(path: Path = TABLE) -> RuleTable:

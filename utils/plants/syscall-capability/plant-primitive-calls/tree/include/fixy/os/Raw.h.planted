@@ -1,0 +1,20 @@
+// A base header of the door directory.  It declares the primitive of the
+// plant, issues it with an admitted call, and issues it with a denied call.
+#pragma once
+
+#include <cstdint>
+
+namespace planted {
+
+enum class Call : std::uint8_t {
+    write,
+    clone3,
+};
+
+long raw_syscall(Call call, long word) noexcept;
+
+inline long write_one(long word) noexcept { return raw_syscall(Call::write, word); }
+
+inline long start_thread(long word) noexcept { return raw_syscall(Call::clone3, word); }
+
+}  // namespace planted

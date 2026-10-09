@@ -136,7 +136,6 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libfoundation.a | libc-allow | 1 | __stack_chk_fail | -
 @build/libfoundation.a | libc-allow | 1 | __tls_get_addr | -
 @build/libfoundation.a | libc-allow | 1 | memset | -
-@build/libfoundation.a | libc-ratchet | 1 | __errno_location | -
 @build/libfoundation.a | libc-ratchet | 1 | __fprintf_chk | -
 @build/libfoundation.a | libc-ratchet | 1 | __libc_single_threaded | -
 @build/libfoundation.a | libc-ratchet | 1 | __snprintf_chk | -
@@ -154,7 +153,6 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libfoundation.a | libc-ratchet | 1 | strcmp | -
 @build/libfoundation.a | libc-ratchet | 1 | strlen | -
 @build/libfoundation.a | libc-ratchet | 1 | strstr | -
-@build/libfoundation.a | libc-ratchet | 1 | write | -
 @build/libfoundation.a | ratchet | 1 | _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE | -
 @build/libfoundation.a | ratchet | 1 | _ZNSt6thread4joinEv | -
 @build/libfoundation.a | ratchet | 1 | _ZNSt6thread6_StateD2Ev | -

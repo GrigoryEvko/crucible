@@ -35,6 +35,7 @@ using ::foundation::core::Site;
 using ::foundation::core::Truncated;
 using ::foundation::core::unreachable;
 
+using ::foundation::core::CText;
 using ::foundation::core::FixedText;
 using ::foundation::core::TextView;
 
