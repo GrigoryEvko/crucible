@@ -382,7 +382,11 @@ error threshold that no ledger row keeps.  A run that takes its result from
 the store does not measure a compile.  Its judge then refuses no row of the
 fixture.  The driver writes the record
 BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
-launcher.  In a run of the test launcher, the environment holds
+launcher.  The version of a compiled run is a digest of the compile command
+and of each file that the compile read (assay.loop.teststep, THE VERSION).
+A run with a different version then drops the wall times of the earlier
+runs.  A run that does not know the files of its compile has no version, and
+the judge reads its wall time alone.  In a run of the test launcher, the environment holds
 CRUCIBLE_TEST_LAUNCHED.  The driver then gives the judge and the record to
 the launcher.
 
@@ -3139,8 +3143,8 @@ def main(argv: list[str]) -> int:
         print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_', '.' and '-' that starts with "
               f"a letter, a digit or '_'", file=sys.stderr)
         return 2
-    status, budget, is_stored = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
-    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir, is_stored)
+    status, budget, is_stored, version = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
+    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir, is_stored, version)
 
 
 def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
@@ -3160,18 +3164,19 @@ def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
 
 
 def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regexes: list[str],
-                warnings_dir: Path | None) -> tuple[int, CostBudget | None, bool]:
-    """Compile the fixture or take its stored result, and return the status of its test, the budget and the source.
+                warnings_dir: Path | None) -> tuple[int, CostBudget | None, bool, str]:
+    """Compile the fixture or take its stored result.  Return the status of its test, the budget, the source and the version.
 
     The source is True when the result comes from the store.  The budget is None, and the source is False, when the
-    driver stops before it reads the budget.
+    driver stops before it reads the budget.  The version is the version of a compile with known inputs (The test
+    record), else the empty text.
     """
     scratch = build_dir / cost_record.FIXTURE_DIRECTORY / fixture_name
     scratch.mkdir(parents=True, exist_ok=True)
     found = find_compile_command(build_dir, source, scratch / f"{fixture_name}{_COMMAND_SUFFIX}")
     if found is None:
         _report_module().write_line(f"no compile command for {source}", is_error=True)
-        return 2, None, False
+        return 2, None, False, ""
     command, directory, roots = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
@@ -3189,11 +3194,16 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     if unmatched is not None:
         own_reason = report_own_reason(fixture_name, source, unmatched, is_stored, warnings_dir)
     over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)
-    return verdict or own_reason or over_budget, budget, is_stored
+    version = ""
+    if not is_stored and result.inputs is not None:
+        from assay.loop import teststep as test_launcher
+
+        version = test_launcher.version_of(command, result.inputs)
+    return verdict or own_reason or over_budget, budget, is_stored, version
 
 
 def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: tuple[float, float],
-               budget: CostBudget | None, warnings_dir: Path | None, is_stored: bool = False) -> int:
+               budget: CostBudget | None, warnings_dir: Path | None, is_stored: bool = False, version: str = "") -> int:
     """Judge the run of the fixture as a test, and write its record, as the test launcher does (The test record).
 
     In a run of the test launcher, the launcher judges and records the test, and the function gives the status.
@@ -3208,6 +3218,7 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
         warnings_dir: The warnings directory, or None
         is_stored: True when the result of the fixture comes from the store.  The run then measures no compile, and
             the judge refuses no row (The test record)
+        version: The version of the compile (The test record), or the empty text
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -3220,4 +3231,5 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
     sys.stdout.flush()
     return test_launcher.judge_and_record(fixture_name, sys.executable, _shown(source), str(build_dir), run,
                                           None if warnings_dir is None else str(warnings_dir),
-                                          None if budget is None else budget.test_rows, is_measured=not is_stored)
+                                          None if budget is None else budget.test_rows, is_measured=not is_stored,
+                                          version=version)

@@ -205,6 +205,45 @@ class Planted:
             and frozenset(string.ascii_letters + string.digits + "_.-") == test_launcher.NAME_CHARACTERS,
         )
 
+    def _walls_of(self, name: str) -> list[object]:
+        """Return the window of the record of one test, or no wall time when the record has no window."""
+        walls = self._record_of(name).get(cost_record.WALLS_FIELD)
+        return walls if isinstance(walls, list) else []
+
+    def version_cases(self, expect: testing.Expect) -> None:
+        """Check that a change of a test drops its window.
+
+        A test that becomes slower then gives a warning on its first run after the change.
+        """
+        self.ledger("test-time", "")
+        self.ledger("test-memory", "")
+        self.budget((0.5, 2000), (1000, 2000))
+        warned = ": warning: [test-time] "
+        changed = self.plant_test("test_changed", "#!/bin/sh\nexit 0\n")
+        said = [self.launch(changed)[1] for _ in range(test_launcher.RECENT_RUNS - 1)]
+        expect(
+            "the runs of one version of a test go into one window",
+            not any(warned in text for text in said)
+            and len(self._walls_of("test_changed")) == test_launcher.RECENT_RUNS - 1,
+        )
+        self.plant_test("test_changed", "#!/bin/sh\nsleep 0.6\n")
+        status, text = self.launch(changed)
+        expect(
+            "a change of the program of a test drops its window, so the test that becomes slower warns on its first "
+            "run after the change",
+            status == 0 and warned in text and len(self._walls_of("test_changed")) == 1,
+        )
+        script = self.root / "planted_changed.sh"
+        script.write_text("exit 0\n")
+        for _ in range(2):
+            self.launch_script("planted_changed_script", "sh", str(script))
+        script.write_text("sleep 0.6\n")
+        status, text = self.launch_script("planted_changed_script", "sh", str(script))
+        expect(
+            "a change of a file that a word of a script test names drops its window",
+            status == 0 and warned in text and len(self._walls_of("planted_changed_script")) == 1,
+        )
+
     def threshold_cases(self, expect: testing.Expect) -> None:
         """Check the warning and the error thresholds of the two rules, on a CI runner and in a tsan build too."""
         program, warnings = self.program, self.warnings
@@ -416,11 +455,13 @@ def window_cases(expect: testing.Expect) -> None:
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
         warnings = build / "check-warnings"
 
-        def run(name: str, wall: float, exit_code: int = 0, is_measured: bool = True) -> tuple[int, bool]:
+        def run(
+            name: str, wall: float, exit_code: int = 0, is_measured: bool = True, version: str = "0123456789abcdef"
+        ) -> tuple[int, bool]:
             """Judge and record one planted run of a test.  Return its status, and True when it gives a warning."""
             measured = cost_meter.Measurement(exit_code, 0.1, 0.0, wall, 1024, 1.0, 0.0, None)
             status = test_launcher.judge_and_record(
-                name, "/b/test", "/b/test", str(build), measured, str(warnings), budget, is_measured
+                name, "/b/test", "/b/test", str(build), measured, str(warnings), budget, is_measured, version
             )
             return status, (warnings / f"test-time.{name}.txt").is_file()
 
@@ -460,10 +501,71 @@ def window_cases(expect: testing.Expect) -> None:
         status, warns = run("test_failing", 6.0)
         expect("the next passed run reads the window with no failed run", status == 0 and warns)
         run("neg_stored", 6.0)
-        status, warns = run("neg_stored", 0.1, is_measured=False)
+        status, warns = run("neg_stored", 0.1, is_measured=False, version="fedcba9876543210")
         expect(
-            "a run that does not do the measured work, such as a stored fixture, stays out of the window",
-            status == 0 and not warns and window("neg_stored") == (6.0,),
+            "a run that does not do the measured work, such as a stored fixture, stays out of the window, and the "
+            "record keeps the version of the window",
+            status == 0
+            and not warns
+            and window("neg_stored") == (6.0,)
+            and cost_record.read_test(Path(cost_record.test_record_file(build, "neg_stored"))).version
+            == "0123456789abcdef",
+        )
+        run("test_versions", 4.0, version="")
+        status, warns = run("test_versions", 6.0, version="")
+        expect(
+            "a run with no version is judged alone, and its window holds only that run",
+            status == 0 and warns and window("test_versions") == (6.0,),
+        )
+        run("test_versions", 4.0, version="aaaaaaaaaaaaaaaa")
+        status, warns = run("test_versions", 6.0, version="bbbbbbbbbbbbbbbb")
+        expect(
+            "a run of a different version drops the window, and it warns on its first run",
+            status == 0 and warns and window("test_versions") == (6.0,),
+        )
+
+
+def version_unit_cases(expect: testing.Expect) -> None:
+    """Check the files of the version of a command, and the change of the version with a change of one file."""
+    with tempfile.TemporaryDirectory(prefix="test-step-version-") as directory:
+        utils = Path(directory) / "utils"
+        (utils / "bin").mkdir(parents=True)
+        (utils / test_launcher.PACKAGE / "core").mkdir(parents=True)
+        (utils / test_launcher.PACKAGE / "__pycache__").mkdir()
+        master = utils / "bin" / "guard"
+        master.write_text("# a planted master\n")
+        module = utils / test_launcher.PACKAGE / "core" / "planted.py"
+        module.write_text("SIZE = 1\n")
+        cached = utils / test_launcher.PACKAGE / "__pycache__" / "planted.cpython-314.pyc"
+        cached.write_bytes(b"planted")
+        script = Path(directory) / "planted.cmake"
+        script.write_text("# a planted script\n")
+        command = [sys.executable, "-S", str(master), "selftest", f"-DSCRIPT={script}"]
+
+        def version() -> str:
+            """Return the version of the planted command."""
+            return test_launcher.version_of(command, test_launcher.command_files(command))
+
+        first = version()
+        expect(
+            "the version is 16 lowercase hexadecimal digits, and the same files give the same version",
+            len(first) == 16 and set(first) <= set("0123456789abcdef") and version() == first,
+        )
+        expect(
+            "the files of a master command are each module of the package, and not its byte code",
+            str(module) in test_launcher.command_files(command)
+            and str(cached) not in test_launcher.command_files(command),
+        )
+        cached.write_bytes(b"planted again")
+        expect("a change of the byte code keeps the version", version() == first)
+        module.write_text("SIZE = 22\n")
+        second = version()
+        expect("a change of a module of the package changes the version of a master command", second != first)
+        script.write_text("# a planted script, changed\n")
+        expect("a change of the VALUE of a word NAME=VALUE changes the version", version() != second)
+        expect(
+            "the words of the command go into the version",
+            test_launcher.version_of(["a", "b"], []) != test_launcher.version_of(["a", "c"], []),
         )
 
 
@@ -502,8 +604,10 @@ def main(argv: list[str]) -> int:
                 planted.threshold_cases,
                 planted.ledger_cases,
                 planted.core_cases,
+                planted.version_cases,
                 unmeasured_cases,
                 window_cases,
+                version_unit_cases,
                 launched_cases,
             ),
         )

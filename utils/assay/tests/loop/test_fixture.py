@@ -894,13 +894,17 @@ class StoreTest:
         self.expect(launched.exit == status and launched.err.count("error: [test-time] the test neg_size took") == 1,
                     f"the launcher refuses the same fixture, and the driver under it does not judge again: "
                     f"{launched.exit} {launched.err[-400:]}")
-        # The cost block and the window hold the times of each run, which are not equal.
-        timed = ("cost", "walls")
+        # The cost block and the window hold the times of each run, which are not equal.  The version of the driver
+        # names the compile, and the version of the launcher names the command of the test (assay.loop.teststep, THE
+        # VERSION).
+        timed = ("cost", "walls", "version")
         same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key not in timed} == {
             key: launcher[key] for key in launcher if key not in timed}
         same_windows = [
             len(walls) if isinstance(walls := found.get("walls"), list) else 0 for found in (driver, launcher)
         ] == [1, 1]
+        same_windows = same_windows and all(
+            isinstance(version := found.get("version"), str) and len(version) == 16 for found in (driver, launcher))
         driver_cost, launcher_cost = driver.get("cost"), launcher.get("cost")
         same_costs = isinstance(driver_cost, dict) and isinstance(launcher_cost, dict) and set(driver_cost) == set(
             launcher_cost)

@@ -57,13 +57,13 @@ THE MEASURED RULES
       * The load of the host only makes a run slower.  The warnings of
         test-time then read the smallest wall time of the window of the test.
         The window is the last RECENT_RUNS runs with the status 0 that did the
-        measured work, this run with them.  The record of the test keeps the
-        window (key walls, assay.core.record).  A test that waits for the same
-        time on each run has that time in each run of its window, and it gives
-        a warning.  After a change that makes a test longer, the test gives a
-        warning when each run of its window is that long.  A run with a
-        different status, or a run that did not do the measured work, is
-        judged alone.  Such a run does not go into the window.
+        measured work, this run with them.  Each run of a window has one
+        version of the test (THE VERSION).  The record keeps the window and
+        its version (keys walls and version, assay.core.record).  A test that
+        waits for the same time on each run has that time in each run of its
+        window, and it gives a warning.  A run with a different status, or a
+        run that did not do the measured work, is judged alone.  Such a run
+        does not go into the window.
       * The errors of test-time read the run alone.  An error then comes from
         the first run over the error threshold.  test-memory reads the run
         alone, because the memory is almost the same on each run.
@@ -101,6 +101,22 @@ THE MEASURED RULES
     over its budget therefore does not fail.  No test of the tree has
     WILL_FAIL at this time.
 
+THE VERSION
+    The window holds the runs of one version of a test.  A run of a different
+    version drops the runs of the window.  After a change that makes a test
+    longer, the test then gives its warning on its first run.  The version is
+    a digest of the words of the command and of the files of the test
+    (version_of()).  For each file, the digest holds its length in bytes, its
+    change time and its inode.  The files of a command are these files:
+      * each word of the command that names a file, and the VALUE of each word
+        NAME=VALUE that names a file
+      * for a word that names a master of utils/bin/, each module of the
+        package assay, because the master runs them.
+    The fixture driver gives the version of its compile: the command of the
+    compile and each file that the compile read.  A run with no version is
+    judged alone, and the record keeps it alone.  The launcher reads no other
+    input of a test, such as a data file that the test opens.
+
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
 registry and another directory of ledgers, which holds RULE.txt for each
 planted ledger, for its test.
@@ -120,7 +136,7 @@ from assay.core import record as cost_record
 # The name Callable is only for the types, and a test does not pay the import of collections.abc.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Sequence
 
 ROWS = ("test-time", "test-memory")
 # The number of runs in the window of a test.  The warnings of test-time read the smallest wall time of the window
@@ -138,6 +154,9 @@ OPTIONS = ("--warnings-dir", "--build-dir", "--name")
 # an export of the tree.  A reader then finds the master by the end of its path.
 MASTER = "utils/bin/loop"
 SUBCOMMAND = "test-step"
+# The ends of the paths of the three masters, which run the modules of the package (THE VERSION).
+MASTERS = ("utils/bin/guard", MASTER, "utils/bin/setup")
+PACKAGE = "assay"
 USAGE = (
     "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]... | "
     "guard selftest tests.loop.test_teststep"
@@ -282,6 +301,70 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
     return findings
 
 
+def package_modules(utils: str) -> list[str]:
+    """Return the path of each module of the package assay in the directory `utils`, as a sorted list.
+
+    A directory __pycache__ holds no module.  Complexity: one read of each directory of the package.
+    """
+    found: list[str] = []
+    pending = [os.path.join(utils, PACKAGE)]
+    while pending:
+        try:
+            entries = sorted(os.scandir(pending.pop()), key=lambda entry: entry.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_dir(follow_symlinks=False) and entry.name != "__pycache__":
+                pending.append(entry.path)
+            elif entry.name.endswith(".py"):
+                found.append(entry.path)
+    return sorted(found)
+
+
+def command_files(command: Sequence[str]) -> list[str]:
+    """Return each path that the words of a command name, for the version of the test (THE VERSION).
+
+    Complexity: linear in the words, and one walk of the package for a word that names a master.
+    """
+    paths: list[str] = []
+    for word in command:
+        paths.append(word)
+        _, equals, value = word.partition("=")
+        if equals and value:
+            paths.append(value)
+        if word.endswith(MASTERS):
+            paths.extend(package_modules(os.path.dirname(os.path.dirname(word))))
+    return paths
+
+
+def version_of(words: Sequence[str], files: Iterable[str]) -> str:
+    """Return the version of a test: a digest of the words of its command and of its files (THE VERSION).
+
+    A path that names no regular file adds nothing.  The digest is the CRC-32 of the text and the CRC-32 of the text
+    in reverse.  The two detect a change, and the launcher then pays no import of hashlib.
+
+    Args:
+        words: The words of the command of the test
+        files: The paths of the files of the test
+
+    Returns:
+        16 lowercase hexadecimal digits.  Complexity: one stat of each path, and linear in the length of the words
+    """
+    import binascii
+    import stat
+
+    parts = list(words)
+    for path in files:
+        try:
+            found = os.stat(path)
+        except OSError, ValueError:
+            continue
+        if stat.S_ISREG(found.st_mode):
+            parts.append(f"{path}\0{found.st_size}\0{found.st_mtime_ns}\0{found.st_ino}")
+    text = "\n".join(parts).encode(errors="surrogateescape")
+    return f"{binascii.crc32(text):08x}{binascii.crc32(text[::-1]):08x}"
+
+
 def report(name: str, place: str, findings: list[tuple[str, str, str]], warnings_dir: str | None) -> None:
     """Print each finding, and write or remove the warnings file of this test for each row.
 
@@ -385,14 +468,16 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
 
 def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
                      run: cost_meter.Measurement, warnings_dir: str | None,
-                     budget: dict[str, tuple[float, float]] | None = None, is_measured: bool = True) -> int:
+                     budget: dict[str, tuple[float, float]] | None = None, is_measured: bool = True,
+                     version: str = "") -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
     `loop test-step` and `loop fixture` call this function.  The two then
     give the same record and the same verdict.  A failure to read the
     registry, to report or to write the record does not change the status.
-    The function reads the window of the test from its earlier record, and
-    the new record keeps the window with this run (THE MEASURED RULES).
+    The function reads the window of the test from its earlier record.  The
+    new record keeps the window with this run when the two runs have one
+    version, else this run alone (THE MEASURED RULES, THE VERSION).
 
     Args:
         name: The name of the test
@@ -403,6 +488,7 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         warnings_dir: The warnings directory, or None
         budget: The thresholds of the rules, or None to read them from the registry (read_budget())
         is_measured: False when the run does not do the work that a row keeps (judge())
+        version: The version of the test (version_of()), or the empty text when it is not known
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -413,9 +499,11 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     kind = cost_meter.read_kind(build_dir) if build_dir else None
     configuration = cost_meter.read_configuration(build_dir) if build_dir else None
     record_path = cost_record.test_record_file(build_dir, name) if build_dir is not None else None
-    earlier = cost_record.recent_walls(record_path) if record_path is not None else ()
+    earlier_version, earlier_walls = cost_record.recent_window(record_path) if record_path is not None else ("", ())
+    # The runs of a different version, or of no version, are not runs of this test (THE VERSION).
+    earlier = earlier_walls if version and version == earlier_version else ()
     # A run with a status other than 0, or a run that did not do the measured work, is judged alone.  It stays out of
-    # the window.
+    # the window, and the record keeps the window of the earlier record.
     is_counted = is_measured and status == 0
     walls = (run.wall_s, *earlier)[:RECENT_RUNS] if is_counted else ()
     no_findings: list[tuple[str, str, str]] = []
@@ -426,7 +514,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
     if record_path is not None:
         record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run),
-                                        walls if is_counted else earlier)
+                                        walls if is_counted else earlier_walls,
+                                        version if is_counted else earlier_version)
         safely(lambda: cost_record.write(record_path, record), None)
     return status
 
@@ -459,6 +548,8 @@ def main(argv: list[str]) -> int:
     # The launcher reads the registry before the test runs.  The parse then frees its memory before the start of the
     # test, and the start uses that memory again, with fewer page faults.
     budget = read_budget()
+    # The version names the files as they are when the test starts.
+    version = safely(lambda: version_of(command, command_files(command)), "")
     if not keeps_cores():
         stop_core_dumps()
     # The launcher puts the variable in its own environment, which the test gets.  A copy of the environment for the
@@ -469,7 +560,7 @@ def main(argv: list[str]) -> int:
     except OSError as error:
         print(f"loop test-step: the test {command[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)
-    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget)
+    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget, version=version)
     stop_core_dumps()
     cost_meter.end_like(status)
     return status
