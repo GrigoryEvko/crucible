@@ -49,10 +49,19 @@ THE PLANTS
     measured rule with a holder runs the judge of the holder on that build
     (assay.guard.engines.buildsys.held).
 
+THE MODULES THAT JUDGE THEIR LEDGER
+    A module of a rule of its own can judge its ledger itself, as the module
+    of the rule quarantine of the engine plugin does.  It then gives
+    run(rule, context, warnings_dir), judge(rule, context) and write(rule,
+    request), with the WriteRequest of assay.guard.engines.plugin.runner.  The
+    run calls run(), the witness calls judge() on each plant, and `guard
+    write` calls write().  The rule fixture-quarantine counts its findings in
+    the rows of each configuration in this way.
+
 Complexity: one read of each input that a rule of the call reads.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from assay.core import cache
@@ -299,11 +308,32 @@ def run(
     """
     context = BuildContext(root, build_dir, paths=paths)
     kept = context.names if context.paths else None
-    return [meta_runner.run(rule, context, warnings_dir, kept) for rule in rules]
+    return [run_rule(rule, context, warnings_dir, kept) for rule in rules]
+
+
+def run_rule(
+    rule: rule_registry.Rule,
+    context: BuildContext,
+    warnings_dir: Path | None,
+    kept: Callable[[rule_ledger.Key], bool] | None,
+) -> int:
+    """Run one rule: run() of a module that judges its ledger itself, else the run of the meta runner.
+
+    Returns:
+        0 with no error, 1 with an error, SKIPPED when the rule does not apply
+    """
+    own_run = getattr(meta_runner.rule_module(rule), "run", None)
+    if own_run is not None:
+        context.rule = rule
+        return int(own_run(rule, context, warnings_dir))
+    return meta_runner.run(rule, context, warnings_dir, kept)
 
 
 def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:
-    """Run a rule on each of its plants and controls (assay.guard.engines.meta.runner.witness())."""
+    """Run a rule on each of its plants and controls (assay.guard.engines.meta.runner.witness()).
+
+    A module that judges its ledger itself judges each plant with judge() (THE MODULES THAT JUDGE THEIR LEDGER).
+    """
     from assay.guard.engines.buildsys import planted
 
-    return meta_runner.witness(rule, root, planted.plant_context)
+    return meta_runner.witness(rule, root, planted.plant_context, meta_runner.module_judged)

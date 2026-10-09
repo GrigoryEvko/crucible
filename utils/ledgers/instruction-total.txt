@@ -41,5 +41,5 @@ configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
-- | x86_64-debug-asan | 8687991516523 | fixtures | the measure of the Debug build of all and of each negative fixture with no ccache on 2026-10-09, after the deletion of the trace visualizer. The sum falls 0.88 % against main at 2e268171c, from 18576.1 G to 18412.6 G instructions
-- | x86_64-debug-asan | 9724612723270 | objects | the measure of the Debug build of all and of each negative fixture with no ccache on 2026-10-09, after the deletion of the trace visualizer. The sum falls 0.88 % against main at 2e268171c, from 18576.1 G to 18412.6 G instructions
+- | x86_64-debug-asan | 9072540991702 | fixtures | The compile of each negative fixture keeps the quarantine plugin for the census of the fixture: on 2026-10-09 the fixtures ran 9072.5 G user instructions with the plugin, against 8688.6 G with no plugin
+- | x86_64-debug-asan | 9712100762942 | objects | The compile of each negative fixture keeps the quarantine plugin for the census of the fixture: on 2026-10-09 the fixtures ran 9072.5 G user instructions with the plugin, against 8688.6 G with no plugin

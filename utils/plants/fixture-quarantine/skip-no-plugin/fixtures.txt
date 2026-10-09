@@ -1,0 +1,3 @@
+# No compile command of a fixture loads the plugin, so the rule does not apply.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | - | -
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | - | -

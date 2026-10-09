@@ -62,7 +62,6 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -206,14 +205,8 @@ def evaluate(
     return found
 
 
-def summary(counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, objects: int, verb: str) -> str:
-    """Return the line that tells the includes, the rows and the files of one run or one write."""
-    files = {key.path for key in counts}
-    return (
-        f"{RULE}: {verb} {sum(counts.values())} includes of a heavy or an unmeasured header in {len(counts)} rows of "
-        f"{len(files)} files, configuration {configuration.name} on {configuration.tier}, from {objects} objects"
-    )
-
+# The line that tells the includes, the rows and the files of one run or one write.
+summary = counted.summary_of(RULE, "includes of a heavy or an unmeasured header", "files", "objects")
 
 SPEC = counted.CountedRule(RULE, findings, no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL)
 

@@ -682,6 +682,8 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
 
 # The contract rule of utils/tools/quarantine/contract.cpp rejects each
 # P2900 contract specifier, and each build loads a plugin that applies it.
+# The fixture driver keeps the plugin in each compile of a fixture, and the
+# error of this rule is no finding, so the regexes read it.
 # One fixture for each form: a precondition on a function, a postcondition on
 # a function, and a precondition on a member of a class template.  The first
 # regex gives the place and the specifier, the second the macro that replaces
@@ -698,10 +700,6 @@ foundation_neg_compile_test(neg_contract_specifier_template_member
   "neg_contract_specifier_template_member\\.cpp:12:[0-9]+: error: the .pre. contract specifier is not permitted"
   "write .CRUCIBLE_PRE\\(condition\\). of .foundation/contracts/Pre\\.h."
   "does not keep the contract specifier of a template in a header unit or in a precompiled header")
-# The fixture driver compiles each other fixture with no plugin.  These three
-# test the contract rule of the plugin, so they keep it.
-set_property(TEST neg_contract_specifier_pre neg_contract_specifier_post neg_contract_specifier_template_member
-  APPEND PROPERTY ENVIRONMENT CRUCIBLE_NEG_KEEP_PLUGIN=1)
 
 # test/CMakeLists.txt registers test_reflect for test/test_reflect.cpp,
 # and a CMake target name is global.  This target carries the name of

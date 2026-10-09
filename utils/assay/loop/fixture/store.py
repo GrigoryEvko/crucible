@@ -62,18 +62,33 @@ the tests of the driver.
 
 The quarantine plugin
 ---------------------
-Each compile of the tree loads the quarantine plugin, and the plugin reports
-the findings of each fixture, because test/ is a quarantined directory.  A
-fixture tests a compile-time rejection of the language or of the base, so the
-driver removes the plugin from the command (`_strip_plugin_flags`).  It
-removes each spelling that the GCC driver takes for a plugin option and for
-the definition of CRUCIBLE_QUARANTINE_ACTIVE, with which the region macros
-of foundation/Quarantine.h give the pragmas of the plugin.  A command that
-names one of them in a different spelling stops the driver, with exit code 2.
-A test that sets CRUCIBLE_NEG_KEEP_PLUGIN=1 keeps the plugin: the fixtures of
-the contract rule test the plugin itself.  The same rule of the reason
-applies with the plugin kept, so an error of the plugin that no regex matches
-fails the fixture.
+Each compile of the tree loads the quarantine plugin, and the compile of a
+fixture keeps it.  The driver sets the plugin argument mode= to report
+(`_report_mode`).  A finding is then a note, and a finding in a file of the
+enforce mode error is an error.  A fixture stops on its own error, and the
+compile writes no object.  The plugin then gives each finding as a result
+"quarantine: KIND ENTITY" of the SARIF log (assay.readers.sarif, THE
+DIAGNOSTICS OF THE PLUGIN).
+
+The regexes and the rule of the reason read the log with no result of the
+plugin: the driver renders the log with sarif.is_plugin_result as `hidden`.
+The plugin then changes no line that a regex reads, and no finding of the
+plugin fails a fixture for its reason.  An error of the plugin that is no
+finding stays, such as the error of the contract rule.  The regexes of the
+fixtures neg_contract_specifier_* read that error.  The results of the plugin in the
+source of the fixture are its census (`fixture_census`).  The record of the
+run holds the census and the stamp argument of the plugin (The record of a
+run), and the rule fixture-quarantine counts them.
+
+A compile that succeeds writes an object, and the plugin then writes its
+findings into the section of the object and not into the log.  A command
+that loads no quarantine plugin has no stamp argument.  In these two
+conditions, and with no log, the record holds no census.
+
+The plugin is a file that the command names, and the key of a stored result
+holds the bytes of the plugin (item 1 below).  A new build of the plugin then
+compiles each fixture again.  A second compile for the census costs as much
+as the compile of the fixture, after each edit of a header.
 
 The result store
 ----------------
@@ -336,7 +351,9 @@ fixture record `NAME.inputs` in the scratch directory of the fixture
 count, and each file that the compile read.  The list is the dependency file
 of GCC, the list of the `-M -MG` pass after a fatal error, or the list of the
 stored result.  The rule parse-total (`guard check --rule
-parse-total`) adds the bytes of these files for each fixture.
+parse-total`) adds the bytes of these files for each fixture.  The record
+also holds the census of the fixture and the stamp argument of the plugin
+(The quarantine plugin).
 
 The test record
 ---------------
@@ -358,7 +375,8 @@ CRUCIBLE_TEST_LAUNCHED.  The driver then gives the judge and the record to
 the launcher.
 
 utils/assay/tests/loop/test_fixture.py holds the tests of the store, the cost
-budget, the two records, the rule of the reason and the quarantine plugin.
+budget, the two records, the rule of the reason, the quarantine plugin and
+the census.
 """
 
 from __future__ import annotations
@@ -613,99 +631,72 @@ def _strip_dependency_flags(argv: list[str]) -> list[str]:
     return result
 
 
-# The macro that makes the region macros of foundation/Quarantine.h expand to
-# the pragmas of the quarantine plugin.  The build defines it with the plugin.
-QUARANTINE_MACRO = "CRUCIBLE_QUARANTINE_ACTIVE"
-# The options that load a plugin or give a plugin an argument, and their
-# aliases of the GCC driver.  Each option joins its value.
-_PLUGIN_OPTIONS = ("-fplugin=", "-fplugin-arg-", "--plugin=", "--plugin-arg-")
-# The options of _PLUGIN_OPTIONS that load a plugin.
+# The options of the GCC driver that load a plugin.
 _PLUGIN_LOAD = ("-fplugin=", "--plugin=")
-# A macro definition with its value joined, and with its value in the next
-# argument, as the GCC driver takes them.
-_DEFINE_JOINED = ("--define-macro=", "-D")
-_DEFINE_SEPARATE = ("-D", "--define-macro")
-# A text in an argument that names a plugin option or QUARANTINE_MACRO.
-_PLUGIN_TRACES = ("-fplugin", "--plugin", QUARANTINE_MACRO)
+# The head of each argument of the quarantine plugin, PLUGIN_ARGUMENT of
+# assay.guard.engines.plugin.runner, and the arguments of the mode and of the
+# stamp.  The test of the driver holds the head equal to PLUGIN_ARGUMENT.
+QUARANTINE_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
+_MODE_ARGUMENT = f"{QUARANTINE_ARGUMENT}mode="
+_STAMP_ARGUMENT = f"{QUARANTINE_ARGUMENT}stamp="
+# The mode of the plugin in the compile of a fixture (The quarantine plugin).
+_CENSUS_MODE = "report"
 
 
-class PluginFlagError(ValueError):
-    """A command names a plugin option or QUARANTINE_MACRO in a spelling that `_strip_plugin_flags` does not remove."""
+def _report_mode(argv: list[str]) -> list[str]:
+    """Return `argv` with the mode argument of the quarantine plugin set to report (The quarantine plugin).
 
-
-def _defines_quarantine_macro(definition: str) -> bool:
-    """Return True when the macro definition `definition`, NAME or NAME=VALUE, defines QUARANTINE_MACRO."""
-    return definition.partition("=")[0] == QUARANTINE_MACRO
-
-
-def _is_plugin_option(option: str) -> bool:
-    """Return True when the one option `option` loads a plugin, gives a plugin argument or defines QUARANTINE_MACRO."""
-    if option.startswith(_PLUGIN_OPTIONS):
-        return True
-    return any(option.startswith(prefix) and len(option) > len(prefix)
-               and _defines_quarantine_macro(option[len(prefix):]) for prefix in _DEFINE_JOINED)
-
-
-def _strip_plugin_flags(argv: list[str], keep: bool) -> list[str]:
-    """Return `argv` without the options that load a GCC plugin, give it an argument or define QUARANTINE_MACRO.
-
-    A fixture tests a compile-time rejection of the language or of the base,
-    and the quarantine plugin of the build reports a finding in each fixture.
-    So a fixture compiles with no plugin, unless `keep` is True: its test sets
-    CRUCIBLE_NEG_KEEP_PLUGIN=1, because the fixture tests the plugin itself.
-    QUARANTINE_MACRO goes too, because the region macros of
-    foundation/Quarantine.h expand to a pragma that only the plugin knows.
-    The key of a stored result then holds no plugin, so a change of the plugin
-    compiles no other fixture again.
-
-    The function removes each spelling that the GCC driver takes: an option of
-    _PLUGIN_OPTIONS, a definition in each spelling of _DEFINE_JOINED and
-    _DEFINE_SEPARATE, such an option after -Xpreprocessor, and such an option
-    of a -Wp, list.  The cost is O(n) in the length of the command.
-
-    Raises:
-        PluginFlagError: If an argument that stays names a plugin option or
-            QUARANTINE_MACRO, such as an abbreviation of a long option of the
-            GCC driver.  The driver then stops, and it compiles nothing.
+    A command with no such argument stays as it is.  The cost is O(n) in the length of the command.
     """
-    if keep:
-        return list(argv)
-    result: list[str] = []
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        following = argv[index + 1] if index + 1 < len(argv) else None
-        index += 1
-        if _is_plugin_option(arg):
+    return [f"{_MODE_ARGUMENT}{_CENSUS_MODE}" if arg.startswith(_MODE_ARGUMENT) else arg for arg in argv]
+
+
+def census_stamp(argv: list[str]) -> str | None:
+    """Return the value of the stamp argument of the quarantine plugin in `argv`, or None when it has none."""
+    return next((arg[len(_STAMP_ARGUMENT):] for arg in argv if arg.startswith(_STAMP_ARGUMENT)), None)
+
+
+def fixture_census(result: CompileResult, argv: list[str],
+                   source: Path) -> tuple[str, tuple[cost_record.CensusFinding, ...]] | None:
+    """Return the stamp argument of the plugin and the findings of the plugin in the source of the fixture.
+
+    The findings are the results of the plugin in the log with the file
+    `source`, each one time, in sorted sequence.  The result is None when the
+    command loads no quarantine plugin, when the compile succeeded, and when
+    the compile wrote no log (The quarantine plugin).  The cost is O(n log n)
+    in the results of the log, with one resolution of each different path.
+    """
+    stamp = census_stamp(argv)
+    if stamp is None or result.log is None or result.returncode == 0:
+        return None
+    resolved: dict[str, bool] = {}
+    found: set[cost_record.CensusFinding] = set()
+    for record in result.log.diagnostics:
+        if not sarif.is_plugin_result(record) or not record.path:
             continue
-        if following is not None and ((arg in _DEFINE_SEPARATE and _defines_quarantine_macro(following))
-                                      or (arg == "-Xpreprocessor" and _is_plugin_option(following))):
-            index += 1
-            continue
-        if arg.startswith("-Wp,"):
-            parts = [part for part in arg[len("-Wp,"):].split(",") if not _is_plugin_option(part)]
-            if parts:
-                result.append("-Wp," + ",".join(parts))
-            continue
-        result.append(arg)
-    stray = next((arg for arg in result if any(trace in arg for trace in _PLUGIN_TRACES)), None)
-    if stray is not None:
-        raise PluginFlagError(
-            f"the compile command names a plugin option or {QUARANTINE_MACRO} in a spelling that the driver does not "
-            f"remove: {stray}.  Spell a plugin option as -fplugin=PATH or -fplugin-arg-NAME-KEY=VALUE and the "
-            f"definition as -D{QUARANTINE_MACRO}, or set CRUCIBLE_NEG_KEEP_PLUGIN=1 in a test of the plugin")
-    return result
+        is_source = resolved.get(record.path)
+        if is_source is None:
+            try:
+                is_source = Path(record.path).resolve() == source
+            except OSError:
+                is_source = record.path == str(source)
+            resolved[record.path] = is_source
+        if is_source:
+            kind, entity = sarif.plugin_finding(record)
+            found.add((kind, record.line, record.column, entity))
+    return stamp, tuple(sorted(found))
 
 
 def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Path) -> list[str]:
     """Return the command that compiles the fixture.
 
-    The object file goes to `output`, GCC writes the SARIF log of its
-    diagnostics to `sarif_log`, and it writes the list of the files that it
-    read to `depfile`.  The last two arguments are `-MF` and `depfile`.
+    The command keeps the quarantine plugin of the build in the mode report
+    (The quarantine plugin).  The object file goes to `output`, GCC writes the
+    SARIF log of its diagnostics to `sarif_log`, and it writes the list of the
+    files that it read to `depfile`.  The last two arguments are `-MF` and
+    `depfile`.
     """
-    keep = os.environ.get("CRUCIBLE_NEG_KEEP_PLUGIN", "") == "1"
-    argv = _replace_output(_strip_plugin_flags(_strip_dependency_flags(command), keep), output)
+    argv = _replace_output(_report_mode(_strip_dependency_flags(command)), output)
 
     # A negative-compile fixture asserts a COMPILE-TIME rejection — a
     # property that only manifests under the `enforce` contract
@@ -2712,15 +2703,18 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
 _COMMAND_SUFFIX = ".command"
 
 
-def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, is_stored: bool) -> None:
-    """Write the record of a run of the fixture: the cost of its compile and each file that the compile read.
+def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, is_stored: bool,
+                     census: tuple[str, tuple[cost_record.CensusFinding, ...]] | None = None) -> None:
+    """Write the record of a run of the fixture: the cost of its compile, each file that it read, and its census.
 
     The record is BUILD_DIR/neg-compile/NAME/NAME.inputs (assay.core.record,
     THE RECORDS).  The rules parse-total, header-fanout and instruction-total
-    read it.  A failure to write changes no verdict.
+    read it, and the rule fixture-quarantine reads the census of
+    fixture_census().  A failure to write changes no verdict.
     """
+    stamp, findings = census if census is not None else (None, None)
     record = cost_record.FixtureRecord(fixture_name, "stored" if is_stored else "compiled", result.user_s,
-                                       result.system_s, result.instructions, result.inputs)
+                                       result.system_s, result.instructions, result.inputs, stamp, findings)
     try:
         cost_record.write(cost_record.fixture_record_file(build_dir, fixture_name), record)
     except OSError:
@@ -2922,8 +2916,9 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
         _report_module().write_line(f"negative fixture {fixture_name}: {result.log_problem}", is_error=True)
         return 1, None
     # The regexes read only the text of the compiler, and not the text of the
-    # fixture (the module text, How the regexes apply).
-    rendering = sarif.render(result.log)
+    # fixture (the module text, How the regexes apply).  No result of the
+    # quarantine plugin gives a line (the module text, The quarantine plugin).
+    rendering = sarif.render(result.log, sarif.is_plugin_result)
     matchable = "\n".join(rendering.lines)
 
     # Independence report.  A fixture documents ONE rejection; if its
@@ -2963,7 +2958,9 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
         if not re.search(pattern, matchable, flags=re.MULTILINE)
     ]
     if missing:
-        quoted = "\n".join(record.snippet for record in sarif.records(result.log) if record.snippet)
+        compiler_log = sarif.Log(result.log.tool, tuple(
+            record for record in result.log.diagnostics if not sarif.is_plugin_result(record)))
+        quoted = "\n".join(record.snippet for record in sarif.records(compiler_log) if record.snippet)
         for pattern in missing:
             print(
                 f"expected diagnostic not found for {fixture_name}: "
@@ -3060,16 +3057,12 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
     sarif_log = scratch / f"{fixture_name}.{os.getpid()}.sarif"
-    try:
-        argv = compile_argv(command, output, depfile, sarif_log)
-    except PluginFlagError as error:
-        _report_module().write_line(f"neg-compile {fixture_name}: {error}", is_error=True)
-        return 2, None
+    argv = compile_argv(command, output, depfile, sarif_log)
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
                                       roots, sarif_log)
-    write_run_record(build_dir, fixture_name, result, is_stored)
+    write_run_record(build_dir, fixture_name, result, is_stored, fixture_census(result, argv, source))
     verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
     own_reason = 0

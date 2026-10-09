@@ -9,7 +9,8 @@ THE RECORDS
                      after a run of a fixture that no launcher runs
       fixture        BUILD_DIR/neg-compile/NAME/NAME.inputs.  `loop fixture`
                      writes it after each run of a fixture: the cost of its
-                     compile and each file that the compile read
+                     compile and each file that the compile read.  It also
+                     holds the findings of the quarantine plugin in the source
     write() writes each record.  read(), read_test() and read_fixture() read
     it.  No other module reads or writes a record (the job cost-record of
     utils/registry.txt).
@@ -39,8 +40,13 @@ THE FORMAT
     object holds format (1), fixture (the name of the fixture) and result
     ("compiled", or "stored" for a result of the store of the driver).  It
     also holds user_s and system_s (the CPU times of the compile), and
-    instructions (the user instructions of the compile, or null).  The last
-    key, has_inputs, tells if the driver knows the files of the compile.
+    instructions (the user instructions of the compile, or null).  The key
+    has_inputs tells if the driver knows the files of the compile.  The key
+    census_stamp holds the stamp argument of the quarantine plugin of the
+    compile, or null when the driver knows no census.  The last key, census,
+    holds one list [KIND, LINE, COLUMN, ENTITY] for each finding of the plugin
+    in the source of the fixture, or null with no census.  A record with no
+    census key has no census.
 
 THE COST BLOCK
     A cost block holds cpu_s, user_s, system_s, wall_s, peak_rss_kb, load
@@ -103,6 +109,8 @@ COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY)
 CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 
 type Step = Literal["compile", "link", "test", "fixture"]
+# One finding of the quarantine plugin in the source of a fixture: its kind, its line, its column and its entity.
+type CensusFinding = tuple[str, int, int, str]
 COMPILE: Final = "compile"
 LINK: Final = "link"
 TEST: Final = "test"
@@ -214,19 +222,25 @@ class TestRecord(Value):
 
 
 class FixtureRecord(Value):
-    """One record of the last run of a negative fixture: the cost of its compile and its inputs (THE FORMAT).
+    """One record of the last run of a negative fixture: the cost of its compile, its inputs and its census (THE FORMAT).
 
     `inputs` holds each file that the compile read, by absolute path, or it
-    is None when the driver does not know the files.
+    is None when the driver does not know the files.  `census_stamp` is the
+    stamp argument of the quarantine plugin of the compile, and `census`
+    holds the kind, the line, the column and the entity of each finding of
+    the plugin in the source of the fixture.  The two are None when the
+    driver knows no census.
     """
 
-    __match_args__ = ("name", "result", "user_s", "system_s", "instructions", "inputs")
+    __match_args__ = ("name", "result", "user_s", "system_s", "instructions", "inputs", "census_stamp", "census")
     name: str
     result: str
     user_s: float
     system_s: float
     instructions: int | None
     inputs: tuple[str, ...] | None
+    census_stamp: str | None
+    census: tuple[CensusFinding, ...] | None
 
     def __init__(
         self,
@@ -236,9 +250,15 @@ class FixtureRecord(Value):
         system_s: float,
         instructions: int | None,
         inputs: tuple[str, ...] | None,
+        census_stamp: str | None = None,
+        census: Sequence[CensusFinding] | None = None,
     ) -> None:
-        """Hold the name, the result, the CPU times, the instruction count and the inputs of one run of a fixture."""
-        super().__init__(name, result, user_s, system_s, instructions, inputs)
+        """Hold the name, the result, the CPU times, the instruction count, the inputs and the census of one run.
+
+        The record keeps the census as a tuple, and a value does not change after its constructor.
+        """
+        held = tuple(census) if census is not None else None
+        super().__init__(name, result, user_s, system_s, instructions, inputs, census_stamp, held)
 
     @property
     def cpu_s(self) -> float:
@@ -375,10 +395,20 @@ def fixture_text(record: FixtureRecord) -> str:
     if inputs is not None and any("\n" in path for path in inputs):
         inputs = None
     instructions = "null" if record.instructions is None else str(record.instructions)
+    stamp = "null" if record.census_stamp is None else quote(record.census_stamp)
+    census = "null"
+    if record.census is not None:
+        census = (
+            "["
+            + ", ".join(
+                f"[{quote(kind)}, {line}, {column}, {quote(entity)}]" for kind, line, column, entity in record.census
+            )
+            + "]"
+        )
     header = (
         f'{{"format": {FORMAT}, "fixture": {quote(record.name)}, "result": {quote(record.result)}, '
         f'"user_s": {record.user_s:.3f}, "system_s": {record.system_s:.3f}, "instructions": {instructions}, '
-        f'"has_inputs": {"true" if inputs is not None else "false"}}}'
+        f'"has_inputs": {"true" if inputs is not None else "false"}, "census_stamp": {stamp}, "census": {census}}}'
     )
     return header + "\n" + "".join(f"{path}\n" for path in inputs or ())
 
@@ -584,6 +614,7 @@ def read_fixture(path: Path) -> FixtureRecord:
     if instructions is not None and _count(instructions) is None:
         raise RecordError(f"the record {path} gives an instruction count that is not an integer of 0 or more")
     inputs = tuple(body.splitlines()) if header["has_inputs"] else None
+    stamp, census = _census(header, path)
     return FixtureRecord(
         name,
         result,
@@ -591,4 +622,28 @@ def read_fixture(path: Path) -> FixtureRecord:
         _number(header, "system_s", None, path),
         _count(instructions),
         inputs,
+        stamp,
+        census,
     )
+
+
+def _census(header: Mapping[str, object], path: Path) -> tuple[str | None, tuple[CensusFinding, ...] | None]:
+    """Return the census stamp and the census of the object of a fixture record, each None when it gives none.
+
+    Raises:
+        RecordError: If the stamp is not a text, or a finding is not a list of a kind, a line, a column and an entity
+    """
+    stamp, census = header.get("census_stamp"), header.get("census")
+    if stamp is None or census is None:
+        return None, None
+    if not isinstance(stamp, str) or not isinstance(census, list):
+        raise RecordError(f"the record {path} gives a census stamp that is not a text or a census that is not a list")
+    findings: list[CensusFinding] = []
+    for item in census:
+        is_finding = isinstance(item, list) and len(item) == 4
+        kind, line, column, entity = item if is_finding else (None, None, None, None)
+        line_number, column_number = _count(line), _count(column)
+        if not isinstance(kind, str) or not isinstance(entity, str) or line_number is None or column_number is None:
+            raise RecordError(f"the record {path} gives a census finding that is not [KIND, LINE, COLUMN, ENTITY]")
+        findings.append((kind, line_number, column_number, entity))
+    return stamp, tuple(findings)

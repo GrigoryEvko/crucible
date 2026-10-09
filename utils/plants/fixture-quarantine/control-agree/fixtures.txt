@@ -1,0 +1,9 @@
+# Two fixtures whose censuses agree with the ledger, and a fixture whose command loads no plugin.  A finding of a
+# kind of a different rule does not count.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | c-library-call | 7 | abort
+finding neg_alpha | testing-use | 9 | main(): foundation::effects::testing
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values
+fixture neg_gamma | test/fixy/neg/neg_gamma.cpp | - | -

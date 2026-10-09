@@ -1,0 +1,8 @@
+# A new fixture with a finding, and the ledger holds no row of it.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | c-library-call | 7 | abort
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values
+fixture neg_delta | test/fixy/neg/neg_delta.cpp | 0123abcd | 0123abcd
+finding neg_delta | std-entity | 3 | std::span::operator[]

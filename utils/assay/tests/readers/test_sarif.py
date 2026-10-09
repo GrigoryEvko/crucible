@@ -204,6 +204,63 @@ def render_cases(expect: testing.Expect) -> None:
     expect("the lines of a log with no error head have the group -1", sarif.render(warning_only).groups == (-1,))
 
 
+def _plugin_log() -> dict[str, object]:
+    """Return a log with a note of the plugin in a function, an error of the plugin, and an error of GCC after them."""
+    note = {
+        "ruleId": "note",
+        "level": "note",
+        "message": {"text": "quarantine: std-object std::vector"},
+        "locations": [_location("/w/probe.cpp", 6, 22)],
+        "relatedLocations": [
+            _context("In function 'int count()':", "function", 0, 6, 0, "before"),
+            _context("in definition of macro 'MAKE'", "macro", 0, 1, 0, "after"),
+        ],
+    }
+    error = {
+        "ruleId": "error",
+        "level": "error",
+        "message": {"text": "quarantine: c-library-call abort; use a type or an entity of fixy or foundation"},
+        "locations": [_location("/w/probe.cpp", 7, 5)],
+    }
+    compiler = {
+        "ruleId": "error",
+        "level": "error",
+        "message": {"text": "too many arguments to function 'int count()'"},
+        "locations": [_location("/w/probe.cpp", 8, 9)],
+    }
+    run = {"originalUriBaseIds": {"PWD": {"uri": "file:///w/"}}, "results": [note, error, compiler]}
+    return {"version": "2.1.0", "runs": [run]}
+
+
+def plugin_cases(expect: testing.Expect) -> None:
+    """Check is_plugin_result(), plugin_finding() and the hidden results of render()."""
+    log = parsed(_plugin_log())
+    note, error, compiler = log.diagnostics
+    expect(
+        "is_plugin_result() accepts a note and an error of the plugin, and refuses an error of GCC",
+        sarif.is_plugin_result(note) and sarif.is_plugin_result(error) and not sarif.is_plugin_result(compiler),
+    )
+    expect(
+        "plugin_finding() gives the kind and the entity, and the entity of an error stops before its advice",
+        sarif.plugin_finding(note) == ("std-object", "std::vector")
+        and sarif.plugin_finding(error) == ("c-library-call", "abort"),
+    )
+    hidden = sarif.render(log, sarif.is_plugin_result)
+    expect(
+        "a hidden result gives only its context lines before it, and the next diagnostic keeps them",
+        hidden.lines
+        == (
+            "/w/probe.cpp: In function 'int count()':",
+            "/w/probe.cpp:8:9: error: too many arguments to function 'int count()'",
+        ),
+    )
+    expect(
+        "a hidden error is no error head, so the error of GCC is the one head",
+        hidden.errors == (compiler,) and hidden.heads == (1,) and hidden.groups == (0, 0),
+    )
+    expect("render() with no function gives each line of the plugin too", len(sarif.render(log).lines) == 5)
+
+
 def _planted_log_result(level: str) -> dict[str, object]:
     """Return a result of an option with one level and no related location."""
     return {
@@ -336,5 +393,5 @@ def compile_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    groups = (parse_cases, render_cases, refusal_cases, column_cases, stored_cases, compile_cases)
+    groups = (parse_cases, render_cases, plugin_cases, refusal_cases, column_cases, stored_cases, compile_cases)
     return testing.run(__name__.removeprefix("assay."), argv, groups)

@@ -36,7 +36,6 @@ import io
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -87,7 +86,7 @@ CONVERTING_B = "#pragma once\nstruct B { B(int) {} };\n"
 # The fixtures of a planted tree that the quarantine plugin of the build checks
 # (StoreTest.plant_plugin_tree).  Each one fails for its own reason, the static
 # assertion that OWN matches.  The planted rule table quarantines neg/, and its
-# enforce row makes each finding there an error, as an ERROR build does.
+# enforce row makes each finding there an error, as the mode error does.
 OWN = ("static assertion failed", "the fixture fails for its own reason")
 OWN_REASON = 'static_assert(sizeof(char) == 2, "the fixture fails for its own reason");\n'
 REGION_BODY = ("int read_value() {\n"
@@ -118,21 +117,11 @@ PLUGIN_FIXTURES = {
                               "}\n" + OWN_REASON),
     # The region fixture again, with a planted copy of the header first in the
     # search list (PLANTED_HEADERS).
-    "neg/neg_region_pragma_header.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
     "neg/neg_region_empty_header.cpp": "#include <foundation/Quarantine.h>\n" + REGION_BODY + OWN_REASON,
 }
-# A copy of foundation/Quarantine.h whose expansion is broken.  In
-# planted_pragma/, the macros give the pragmas also with no plugin.  In
-# planted_empty/, they give nothing also with the plugin.  The region fixture
-# must fail with each one.
+# A copy of foundation/Quarantine.h whose macros give nothing, also with the
+# plugin.  The array in the region of a fixture is then no opted-out finding.
 PLANTED_HEADERS = {
-    "planted_pragma/foundation/Quarantine.h": (
-        "#pragma once\n"
-        "#define CRUCIBLE_QUARANTINE_PRAGMA_(text) _Pragma(#text)\n"
-        "#define CRUCIBLE_I_KNOW_WHAT_IM_DOING(reason) "
-        "CRUCIBLE_QUARANTINE_PRAGMA_(quarantine I_KNOW_WHAT_IM_DOING(reason))\n"
-        "#define CRUCIBLE_END_I_KNOW_WHAT_IM_DOING CRUCIBLE_QUARANTINE_PRAGMA_(quarantine END_I_KNOW_WHAT_IM_DOING)\n"
-    ),
     "planted_empty/foundation/Quarantine.h": (
         "#pragma once\n"
         "#define CRUCIBLE_I_KNOW_WHAT_IM_DOING(reason)\n"
@@ -141,15 +130,16 @@ PLANTED_HEADERS = {
 }
 # The directory of the planted header of each fixture that has one.
 PLANTED_SEARCH = {
-    "neg/neg_region_pragma_header.cpp": "planted_pragma",
     "neg/neg_region_empty_header.cpp": "planted_empty",
 }
 PLANTED_RULES = ("# The rule table of a planted tree of the fixture driver test.\n"
-                 "layer planted 0 planted_pragma/ planted_empty/\n"
+                 "layer planted 0 planted_empty/\n"
                  "quarantine neg/\n"
                  "enforce neg/ error\n")
-# The prefix of an argument of the quarantine plugin.
+# The prefix of an argument of the quarantine plugin, and the definition that makes the region macros of
+# foundation/Quarantine.h give the pragmas of the plugin.
 PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
+QUARANTINE_MACRO = "CRUCIBLE_QUARANTINE_ACTIVE"
 # The planted text of each file that a plugin argument names in the source root, by the key of the argument.  The
 # planted list of the headers that cannot compile alone has no row.
 PLANTED_ARGUMENT_FILES = {
@@ -1234,20 +1224,35 @@ class StoreTest:
         """Return the plugin flags of the build of the source tree, and the source root of that build.
 
         The flags are the arguments of the first C++ compile of the compile
-        database of that build that the driver removes from a command: the
-        option that loads the quarantine plugin, the plugin arguments and the
-        definition that makes the region macros give the pragmas.  The test
-        takes them from the build, so it follows each change of
+        database of that build that load the quarantine plugin or give it an
+        argument, and the definition of QUARANTINE_MACRO.  With that macro, the
+        region macros give the pragmas.  The test takes the flags from the
+        build, and it then follows each change of
         utils/tools/quarantine/Quarantine.cmake.  The source root is
         CMAKE_HOME_DIRECTORY of the cache of the build, or an empty text.
         """
         command = self.tree_command()
-        kept = set(store._strip_plugin_flags(command, False))
         try:
             source_root = cmake.cache_value(self.tree_build, "CMAKE_HOME_DIRECTORY") or ""
         except cmake.CmakeError:
             source_root = ""
-        return [arg for arg in command if arg not in kept], source_root
+        return [arg for arg in command if arg.startswith(("-fplugin=", PLUGIN_ARGUMENT))
+                or arg == f"-D{QUARANTINE_MACRO}"], source_root
+
+    def census_of(self, fixture: str) -> tuple[str | None, tuple[cost_record.CensusFinding, ...] | None]:
+        """Return the census stamp and the census of the record of one fixture, or None and None with no record."""
+        try:
+            record = cost_record.read_fixture(Path(cost_record.fixture_record_file(self.build, fixture)))
+        except cost_record.RecordError:
+            return None, None
+        return record.census_stamp, record.census
+
+    def has_census(self, fixture: str, kind: str, line: int, entity: str) -> bool:
+        """Return True when the census of the record of one fixture holds a finding of the kind at the line."""
+        _, census = self.census_of(fixture)
+        return census is not None and any(
+            (found_kind, found_line, found_entity) == (kind, line, entity) for found_kind, found_line, _, found_entity
+            in census)
 
     def tree_command(self) -> list[str]:
         """Return the first C++ compile command of the compile database of the build of the source tree."""
@@ -1255,100 +1260,35 @@ class StoreTest:
                       if entry.file.endswith((".cpp", ".cc", ".cxx"))), None)
         return list(entry.argv()) if entry is not None else []
 
-    def cc1plus_view(self, command: list[str]) -> tuple[list[str], bool] | None:
-        """Return the plugin options that GCC gives cc1plus for `command`, and True when it defines the macro.
+    def check_plugin_census(self) -> None:
+        """The record of a fixture holds the findings of the plugin in its source, from a compile and from the store.
 
-        `-###` prints the command of each program that the GCC driver runs,
-        and it runs none.  The command of cc1plus names each plugin option and
-        each macro definition in the spelling of cc1plus, for each spelling
-        that `command` can use.  The macro is QUARANTINE_MACRO of the driver.
-        The result is None when the GCC driver refuses `command` and prints no
-        command of cc1plus, so a refused command never looks like a clean one.
+        neg_std_object fails for its own reason.  The planted rule table gives
+        neg/ the enforce mode error, and the object of std::byte is then an
+        error of the plugin.  That error fails no fixture, and the census of
+        the record holds it with the stamp argument of the command.  A result
+        from the store gives the same census.  The command of neg_size loads no
+        plugin, and its record has no census.
         """
-        shown = proc.run(proc.Command([self.cxx, "-###", *command[1:]], timeout_s=proc.QUICK_S))
-        words: list[str] = []
-        for line in shown.err.splitlines():
-            parts = shlex.split(line) if line.startswith(" ") else []
-            if parts and parts[0].endswith("/cc1plus"):
-                words = parts
-                break
-        if shown.exit != 0 or not words:
-            return None
-        options = [word for word in words if word.startswith(("-fplugin=", "-fplugin-arg-"))]
-        names = [following for word, following in zip(words, words[1:]) if word == "-D"]
-        names += [word[2:] for word in words if word.startswith("-D") and len(word) > 2]
-        return options, any(name.partition("=")[0] == store.QUARANTINE_MACRO for name in names)
-
-    def check_plugin_flag_spellings(self) -> None:
-        """The driver removes the plugin flags in each spelling that GCC takes, and it refuses each other spelling.
-
-        The flags come from the compile database of the build (plugin_flags),
-        so the check copies no flag of utils/tools/quarantine/Quarantine.cmake.
-        GCC is the judge (cc1plus_view): the command of the build loads the
-        plugin and defines the macro, and the command that the driver keeps
-        loads no plugin and defines no macro.  With
-        CRUCIBLE_NEG_KEEP_PLUGIN=1 the command stays the same.  Each flag that
-        the driver removes, alone, loads the plugin, gives it an argument or
-        defines the macro.  GCC also takes the aliases
-        --plugin= and --plugin-arg-, the definition in the spellings -D NAME,
-        --define-macro=NAME and --define-macro NAME, after -Xpreprocessor and in
-        a -Wp, list, and the check makes each of them from the flags of the
-        build.  An abbreviation of a long option stops the driver.
-        """
-        command = self.tree_command()
-        flags, _ = self.plugin_flags()
-        view = self.cc1plus_view(command)
-        options, defines = view if view is not None else ([], False)
-        self.expect(bool(options) and defines,
-                    f"the command of the build loads the plugin and defines {store.QUARANTINE_MACRO}: {view}")
-        kept = store._strip_plugin_flags(command, False)
-        kept_view = self.cc1plus_view(kept)
-        self.expect(kept_view == ([], False),
-                    f"the command that the driver keeps loads no plugin and defines no macro: {kept_view}")
-        self.expect(store._strip_plugin_flags(command, True) == command,
-                    "with CRUCIBLE_NEG_KEEP_PLUGIN=1 the driver keeps each flag")
-        for flag in flags:
-            alone = self.cc1plus_view([self.cxx, flag, "-x", "c++", "-c", os.devnull])
-            self.expect(alone is not None and alone != ([], False),
-                        f"the driver removes only plugin flags, and {flag} alone is one: {alone}")
-        define = next((flag for flag in flags if flag.startswith("-D")), "")
-        if not define:
-            self.expect(False, f"the driver removes the definition of {store.QUARANTINE_MACRO} from the command of the "
-                               f"build: {flags}")
+        if not self.plant_plugin_tree():
             return
-        definition = define[len("-D"):]
-        aliases = [f"--plugin={flag[len('-fplugin='):]}" if flag.startswith("-fplugin=")
-                   else f"--plugin-arg-{flag[len('-fplugin-arg-'):]}" if flag.startswith("-fplugin-arg-") else flag
-                   for flag in flags if flag != define]
-        spellings = (["-D", definition], [f"--define-macro={definition}"], ["--define-macro", definition],
-                     ["-Xpreprocessor", define], [f"-Wp,-Wall,{define}"])
-        for spelling in spellings:
-            variant = [arg for arg in command if arg not in flags] + aliases + spelling
-            variant_view = self.cc1plus_view(variant)
-            self.expect(variant_view is not None and sorted(variant_view[0]) == sorted(options) and variant_view[1],
-                        f"GCC takes the aliases of the plugin options and the definition {spelling}: {variant_view}")
-            stripped = store._strip_plugin_flags(variant, False)
-            self.expect(self.cc1plus_view(stripped) == ([], False),
-                        f"the driver removes the aliases and the definition {spelling}: {self.cc1plus_view(stripped)}")
-        abbreviated = [*kept, "--def", definition]
-        refused = ""
-        try:
-            store._strip_plugin_flags(abbreviated, False)
-        except store.PluginFlagError as error:
-            refused = str(error)
-        abbreviated_view = self.cc1plus_view(abbreviated)
-        self.expect(abbreviated_view is not None and abbreviated_view[1] and definition in refused,
-                    f"GCC takes the abbreviation --def {definition}, and the driver refuses it: {abbreviated_view} "
-                    f"{refused}")
-        rows = self.database_rows()
-        for row in rows:
-            if str(row["file"]).endswith("neg_size.cpp"):
-                row["arguments"] = [*row["arguments"], "--def", definition]
-        compdb.plant(self.build, rows)
-        stopped = self.run("neg_size", *SIZE)
-        self.expect(stopped[0] == 2 and not self.has(stopped[3], "compiled") and "does not remove" in stopped[2],
-                    f"a spelling that the driver does not remove stops the driver before a compile: {stopped[0]} "
-                    f"{stopped[2]}")
+        self.settle()
+        row = next((row for row in self.database_rows() if str(row["file"]).endswith("neg_std_object.cpp")), None)
+        stamp = store.census_stamp(list(row["arguments"])) if row is not None else None
+        compiled = self.run("neg_std_object", *OWN)
+        compiled_census = self.census_of("neg_std_object")
+        self.expect(compiled[0] == 0 and self.has(compiled[3], "compiled")
+                    and self.has_census("neg_std_object", "std-object", 3, "std::byte")
+                    and stamp is not None and compiled_census[0] == stamp,
+                    f"a compile writes the finding of the plugin and its stamp {stamp} into the record: {compiled[0]} "
+                    f"{compiled_census} {compiled[1]}")
+        stored = self.run("neg_std_object", *OWN)
+        self.expect(stored[0] == 0 and self.has(stored[3], "the result comes from the store")
+                    and self.census_of("neg_std_object") == compiled_census,
+                    f"a result from the store gives the same census: {stored[3]} {self.census_of('neg_std_object')}")
+        plain = self.run("neg_size", *SIZE)
+        self.expect(plain[0] == 0 and self.census_of("neg_size") == (None, None),
+                    f"a fixture whose command loads no plugin has no census: {self.census_of('neg_size')}")
 
     def plant_plugin_tree(self) -> bool:
         """Add the plugin fixtures, the planted headers, a rule table and a compile row for each fixture to the tree.
@@ -1409,54 +1349,47 @@ class StoreTest:
         return True
 
     def check_plugin_extra_error(self) -> None:
-        """An error of the quarantine plugin that no regex matches fails a fixture that keeps the plugin.
+        """An error of the plugin that is no finding fails a fixture, and an error of a finding does not.
 
-        With no plugin, each fixture fails only for its own reason.  With
-        CRUCIBLE_NEG_KEEP_PLUGIN=1, the plugin refuses the region whose reason
-        has no class, at the line of foundation/Quarantine.h that spells
-        _Pragma.  It also refuses the object of a std type, because the planted
-        rule table gives neg/ the enforce mode error.  Each such error fails the
-        fixture, although the error of the fixture matches its regexes.
+        The plugin refuses a region with a reason that has no class, at the
+        line of foundation/Quarantine.h that spells _Pragma.  That error is no
+        finding, and the rule of the reason sees it.  It fails the fixture,
+        although the error of the fixture matches its regexes.  The error of
+        the object of a std type is a finding of the mode error, and the
+        driver hides it (sarif.is_plugin_result).
         """
         if not self.plant_plugin_tree():
             return
-        stripped_env = {"CRUCIBLE_NEG_CACHE": "0"}
-        kept_env = {**stripped_env, "CRUCIBLE_NEG_KEEP_PLUGIN": "1"}
-        for fixture, place in (("neg_region_unclassed", "foundation/Quarantine.h:"),
-                               ("neg_std_object", "neg_std_object.cpp:")):
-            stripped = self.run(fixture, *OWN, **stripped_env)
-            self.expect(stripped[0] == 0, f"with no plugin, {fixture} fails only for its own reason: {stripped[0]} "
-                                          f"{stripped[1]}")
-            kept = self.run(fixture, *OWN, **kept_env)
-            line = next((text for text in kept[1].splitlines()
-                         if ": error: [fixture-own-reason] " in text and place in text), None)
-            self.expect(kept[0] == 1 and line is not None,
-                        f"with the plugin kept, an error of the plugin at {place} fails {fixture}: {kept[0]} {kept[1]}")
+        refused = self.run("neg_region_unclassed", *OWN, CRUCIBLE_NEG_CACHE="0")
+        line = next((text for text in refused[1].splitlines()
+                     if ": error: [fixture-own-reason] " in text and "foundation/Quarantine.h:" in text), None)
+        self.expect(refused[0] == 1 and line is not None,
+                    f"an error of the plugin at foundation/Quarantine.h fails the fixture: {refused[0]} {refused[1]}")
+        hidden = self.run("neg_std_object", *OWN, CRUCIBLE_NEG_CACHE="0")
+        self.expect(hidden[0] == 0 and ": error: [fixture-own-reason] " not in hidden[1],
+                    f"an error of a finding of the plugin fails no fixture: {hidden[0]} {hidden[1]}")
 
     def check_region_macros(self) -> None:
-        """The region macros of foundation/Quarantine.h work through the driver, with and with no plugin.
+        """The region macros of foundation/Quarantine.h work through the driver, and the census shows it.
 
-        neg_region holds a raw array inside a region.  With no plugin, the
-        macros give nothing, and -Werror makes no unknown pragma an error.
-        With the plugin kept, the region opts out the finding of the array.
-        neg_no_region holds the same array with no region, and it fails with
-        the plugin kept, so the region is what removes that error.  A planted
-        copy of the header whose macros give the pragmas with no plugin, or
-        nothing with the plugin, makes the region fixture fail.
+        neg_no_region holds a raw array with no region, and its census holds
+        the finding of the array.  neg_region holds the same array inside a
+        region, and its census holds no such finding.  The planted rule table
+        gives neg/ the enforce mode error, and the plugin gives no diagnostic
+        of an opted-out finding there.  A planted copy of the header with
+        macros that give nothing makes the census of the region fixture hold
+        the finding.  No finding fails a fixture.
         """
         if not self.plant_plugin_tree():
             return
-        stripped_env = {"CRUCIBLE_NEG_CACHE": "0"}
-        kept_env = {**stripped_env, "CRUCIBLE_NEG_KEEP_PLUGIN": "1"}
-        cases = (("neg_region", stripped_env, 0), ("neg_region", kept_env, 0), ("neg_no_region", stripped_env, 0),
-                 ("neg_no_region", kept_env, 1), ("neg_region_pragma_header", stripped_env, 1),
-                 ("neg_region_empty_header", kept_env, 1))
-        for fixture, env, expected in cases:
-            result = self.run(fixture, *OWN, **env)
-            has_finding = ": error: [fixture-own-reason] " in result[1]
-            plugin = "the plugin kept" if env is kept_env else "no plugin"
-            self.expect(result[0] == expected and has_finding == (expected == 1),
-                        f"{fixture} with {plugin} gives the exit code {expected}: {result[0]} {result[1]}")
+        cases = (("neg_region", 4, False), ("neg_no_region", 2, True), ("neg_region_empty_header", 4, True))
+        for fixture, line, is_found in cases:
+            result = self.run(fixture, *OWN, CRUCIBLE_NEG_CACHE="0")
+            stamp, census = self.census_of(fixture)
+            self.expect(result[0] == 0 and census is not None
+                        and self.has_census(fixture, "c-array-object", line, "raw_values") == is_found,
+                        f"the census of {fixture} {'holds' if is_found else 'does not hold'} the array at line {line}: "
+                        f"{result[0]} {stamp} {census} {result[1]}")
 
 
 CHECKS: tuple[Callable[[StoreTest], None], ...] = (
@@ -1492,7 +1425,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_unmatched_error,
     StoreTest.check_plugin_extra_error,
     StoreTest.check_region_macros,
-    StoreTest.check_plugin_flag_spellings,
+    StoreTest.check_plugin_census,
 )
 
 SEARCH_LIST = """\
@@ -1643,6 +1576,41 @@ def check_parsers(failures: list[str]) -> None:
     check_entry_format(failures)
     check_kernel_time(failures)
     check_unmatched_errors(failures)
+    check_census_words(failures)
+
+
+def check_census_words(failures: list[str]) -> None:
+    """Check the mode argument, the stamp argument and the census of a planted log (The quarantine plugin)."""
+    from assay.guard.engines.plugin import runner as plugin_runner
+
+    if store.QUARANTINE_ARGUMENT != plugin_runner.PLUGIN_ARGUMENT:
+        failures.append(f"the plugin argument {store.QUARANTINE_ARGUMENT} of the driver is not PLUGIN_ARGUMENT "
+                        f"{plugin_runner.PLUGIN_ARGUMENT} of the runner of the engine plugin")
+    argv = ["g++", f"{PLUGIN_ARGUMENT}mode=error", f"{PLUGIN_ARGUMENT}stamp=0123abcd", "-c", "a.cpp"]
+    if store._report_mode(argv) != ["g++", f"{PLUGIN_ARGUMENT}mode=report", *argv[2:]]:
+        failures.append(f"the driver sets the mode of the plugin to report: {store._report_mode(argv)}")
+    if store.census_stamp(argv) != "0123abcd" or store.census_stamp(["g++", "-c", "a.cpp"]) is not None:
+        failures.append("the census stamp is the value of the stamp argument, and a command with none has none")
+    source = Path("/w/neg/neg_census.cpp")
+    log = sarif.Log("cc1plus", (
+        planted_record(sarif.Kind.NOTE, None, str(source), 3, 9, "quarantine: std-object std::byte"),
+        planted_record(sarif.Kind.NOTE, None, str(source), 3, 9, "quarantine: std-object std::byte"),
+        planted_record(sarif.Kind.ERROR, None, str(source), 4, 5, "quarantine: c-library-call abort; use a type"),
+        planted_record(sarif.Kind.NOTE, None, "/w/include/a.h", 2, 1, "quarantine: std-object std::span"),
+        planted_record(sarif.Kind.ERROR, None, str(source), 7, 1, "the expected error of the fixture"),
+    ))
+    failed = store.CompileResult(1, "", 0.1, 0.0, None, log=log)
+    expected = ("0123abcd", (("c-library-call", 4, 5, "abort"), ("std-object", 3, 9, "std::byte")))
+    if store.fixture_census(failed, argv, source) != expected:
+        failures.append(f"the census holds each finding of the plugin in the source one time, with no advice and no "
+                        f"other file: {store.fixture_census(failed, argv, source)}")
+    succeeded = store.CompileResult(0, "", 0.1, 0.0, None, log=log)
+    if store.fixture_census(succeeded, argv, source) is not None:
+        failures.append("a compile that succeeds gives no census, because the plugin writes into the object")
+    if store.fixture_census(failed, ["g++", "-c", "a.cpp"], source) is not None:
+        failures.append("a command that loads no plugin gives no census")
+    if store.fixture_census(store.CompileResult(1, "", 0.1, 0.0, None), argv, source) is not None:
+        failures.append("a compile with no log gives no census")
 
 
 def check_kernel_time(failures: list[str]) -> None:

@@ -1,0 +1,5 @@
+# neg_beta did not run in the build, and neg_alpha did.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | c-library-call | 7 | abort
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | missing

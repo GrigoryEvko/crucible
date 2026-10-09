@@ -712,7 +712,6 @@ utils/assay/loop/fixture/store.py | long-sentence | 1 | _answer_candidates | A t
 utils/assay/loop/fixture/store.py | long-sentence | 1 | _asked_answers | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | long-sentence | 1 | _key_refusal | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | long-sentence | 1 | _now_ns | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | long-sentence | 2 | _strip_plugin_flags | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | long-sentence | 1 | _walk | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | long-sentence | 1 | driver_answers | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | long-sentence | 2 | evaluate | A text of today.  The change that writes the text again in STE lowers the count
@@ -726,7 +725,6 @@ utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: absent | A text
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: ask | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: combine | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: define | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: exact | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: exactly | A text of today.  The change that writes the text again in STE lowers the count
@@ -746,11 +744,10 @@ utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: preload | A tex
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: quote | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 3 | <module>: reach | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: real | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: rejection | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: rest | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: rise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 6 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 21 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/fixture/store.py | refused-word | 19 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: sweep | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 10 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: undo | A text of today.  The change that writes the text again in STE lowers the count
@@ -801,7 +798,6 @@ utils/assay/loop/fixture/store.py | refused-word | 1 | _entry_ctime: so | A text
 utils/assay/loop/fixture/store.py | refused-word | 1 | _file_stamps: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _host_cpu: ask | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _host_cpu: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | _is_plugin_option: define | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _key_refusal: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _links_agree: real | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _model_answers: now | A text of today.  The change that writes the text again in STE lowers the count
@@ -812,9 +808,6 @@ utils/assay/loop/fixture/store.py | refused-word | 2 | _record_compile: pass | A
 utils/assay/loop/fixture/store.py | refused-word | 2 | _removable: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _result_inputs: comparison | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _store_limit_bytes: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | _strip_plugin_flags: define | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 1 | _strip_plugin_flags: rejection | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 2 | _strip_plugin_flags: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 3 | _walk: real | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _walk: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | _write_atomic: never | A text of today.  The change that writes the text again in STE lowers the count
@@ -2479,7 +2472,6 @@ utils/assay/tests/loop/test_fixture.py | long-sentence | 4 | <module> | A text o
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_eviction | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_identity_change | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_memo_sweep | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_plugin_flag_spellings | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 2 | StoreTest.plant_plugin_tree | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.plugin_flags | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | <module>: expect | A text of today.  The change that writes the text again in STE lowers the count
@@ -2494,9 +2486,6 @@ utils/assay/tests/loop/test_fixture.py | refused-word | 4 | <module>: whose | A 
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.__init__: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 2 | StoreTest.__init__: real | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.__init__: whose | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.cc1plus_view: define | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.cc1plus_view: never | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.cc1plus_view: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_budget_memo.budget: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_budget_memo: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_cpu_budget: exist | A text of today.  The change that writes the text again in STE lowers the count
@@ -2519,13 +2508,9 @@ utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_inst
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_memo_sweep: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 3 | StoreTest.check_memo_sweep: sweep | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_parent_name: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 3 | StoreTest.check_plugin_flag_spellings: define | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_plugin_flag_spellings: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_precompiled_header: beside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_quote_directory: quote | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_region_macros: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_region_macros: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_region_macros: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_several_results: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_several_results: undo | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_stored_output_is_evaluated: fresh | A text of today.  The change that writes the text again in STE lowers the count
@@ -2536,7 +2521,6 @@ utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.check_unre
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.plant_plugin_tree: outside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.plant_plugin_tree: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.plant_plugin_tree: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.plugin_flags: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.run: need | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.run: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | refused-word | 1 | StoreTest.started_at: however | A text of today.  The change that writes the text again in STE lowers the count

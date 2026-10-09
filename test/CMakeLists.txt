@@ -777,11 +777,11 @@ endfunction()
 # the driver with the record of the test launcher for the same fixture.  It
 # takes the quarantine plugin and
 # its flags from the compile database of this build, and it plants fixtures
-# that the plugin checks: an error of the plugin that no regex matches must
-# fail a fixture that keeps the plugin, and the region macros must work with
-# no plugin and with the plugin kept.  It also makes each spelling that GCC
-# takes for the plugin flags of this build, and GCC must show that the driver
-# removes each one.  A compile that writes no SARIF log must fail its fixture.
+# that the plugin checks.  An error of the plugin that is no finding must fail
+# a fixture, and an error of a finding must not.  The record of a fixture must
+# hold the census of the plugin, from a compile and from the store, and the
+# census must show the region macros.  A compile that writes no SARIF log must
+# fail its fixture.
 # Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
@@ -5023,10 +5023,11 @@ endforeach()
 # contract-header-unit compiles headers of include/foundation and fixy, so its
 # test also has the label foundation.  The test of session-oracle has the
 # label session_oracle of the emitted tests.  The census rules
-# parse-total, header-fanout and instruction-total read the record of each
-# negative fixture.  Each fixture registration appends its name to the global
-# property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
-# directory makes the three tests DEPEND on each fixture.
+# parse-total, header-fanout and instruction-total, and the rule
+# fixture-quarantine, read the record of each negative fixture.  Each fixture
+# registration appends its name to the global property
+# CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top directory makes
+# the four tests DEPEND on each fixture.
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
 set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees PROCESSORS 96)
 set_property(TEST guard_contract_header_unit APPEND PROPERTY LABELS foundation)
@@ -5040,7 +5041,7 @@ elseif(NOT _vessel_gate_blocker)
 endif()
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total
+  set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total guard_fixture_quarantine
       DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)

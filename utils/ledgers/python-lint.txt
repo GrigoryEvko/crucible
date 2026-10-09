@@ -154,7 +154,6 @@ utils/assay/tests/guard/test_history.py | ISC004 | 1 | move_cases | An issue of 
 utils/assay/tests/guard/test_history.py | ISC004 | 1 | quarantine_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/guard/test_history.py | ISC004 | 2 | threshold_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/guard/test_history.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/loop/test_fixture.py | RUF007 | 1 | StoreTest.cc1plus_view | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/loop/test_fixture.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/loop/test_step.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/readers/test_compdb.py | format | 1 | read_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

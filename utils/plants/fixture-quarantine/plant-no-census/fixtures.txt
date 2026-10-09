@@ -1,0 +1,4 @@
+# The command of neg_alpha loads the plugin, and its record holds no census.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | -
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values

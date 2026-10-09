@@ -1,0 +1,5 @@
+# The call of abort left neg_alpha, and its row keeps the count 1.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values

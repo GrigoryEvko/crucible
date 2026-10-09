@@ -121,6 +121,22 @@ def test_and_fixture_cases(expect: testing.Expect) -> None:
             "a path with a line break gives a fixture record with no inputs",
             cost_record.read_fixture(fixture_path).inputs is None,
         )
+        census = (("std-object", 25, 9, "std::jthread"), ("c-library-call", 30, 5, 'abort "é"'))
+        counted = cost_record.FixtureRecord("neg_a", "compiled", 0.5, 0.0, None, inputs, "0123abcd", census)
+        cost_record.write(fixture_path, counted)
+        expect(
+            "a fixture record with a census stamp and a census of two findings reads back equal",
+            cost_record.read_fixture(fixture_path) == counted,
+        )
+        empty = cost_record.FixtureRecord("neg_a", "stored", 0.5, 0.0, None, inputs, "0123abcd", ())
+        cost_record.write(fixture_path, empty)
+        expect(
+            "a census with no finding reads back as an empty census", cost_record.read_fixture(fixture_path) == empty
+        )
+        expect(
+            "a fixture record that the call gives no census has no census stamp and no census",
+            blind.census_stamp is None and blind.census is None,
+        )
         expect(
             "a record is a value: equal fields give an equal record, and a field does not change",
             written == cost_record.TestRecord("run.sh", "rejected", "/b/test/run.sh", 0, cost)
@@ -190,6 +206,25 @@ def refused_cases(expect: testing.Expect) -> None:
         expect(
             "a fixture record of a different fixture raises RecordError",
             read_error(cost_record.read_fixture, fixture_path) == "RecordError",
+        )
+        head = '{"format": 1, "fixture": "neg_b", "result": "compiled", "user_s": 1, "system_s": 0, "has_inputs": false'
+        bad_censuses = {
+            "a stamp that is no text": ', "census_stamp": 7, "census": []}',
+            "a census that is no list": ', "census_stamp": "s", "census": {}}',
+            "a finding of three values": ', "census_stamp": "s", "census": [["std-object", 1, 2]]}',
+            "a negative line": ', "census_stamp": "s", "census": [["std-object", -1, 2, "std::span"]]}',
+        }
+        for name, tail in bad_censuses.items():
+            fixture_path.write_text(f"{head}{tail}\n", encoding="utf-8")
+            expect(
+                f"a fixture record with {name} raises RecordError",
+                read_error(cost_record.read_fixture, fixture_path) == "RecordError",
+            )
+        fixture_path.write_text(f"{head}}}\n", encoding="utf-8")
+        expect(
+            "a fixture record of an earlier driver, with no census keys, has no census",
+            cost_record.read_fixture(fixture_path).census_stamp is None
+            and cost_record.read_fixture(fixture_path).census is None,
         )
 
 

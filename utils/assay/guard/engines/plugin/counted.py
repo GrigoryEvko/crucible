@@ -23,7 +23,15 @@ THE COUNTED RULES
     that lowers a count in each configuration then writes only the base rows.
     A CountedRule gives the findings, the inputs, the verdict and the summary
     of one rule.  This module gives the run, the write and the import that
-    the two rules share.
+    the rules share.
+
+THE CONTEXT
+    A rule reads its build through a runner.PluginContext: root, build_dir,
+    build_shown(), census() and configuration().  census() gives the number of
+    units of the build in its field objects, and the summary line names them.
+    The rule fixture-quarantine of the engine build counts the census of each
+    negative fixture.  Its CountedRule gives a subclass of the context in
+    `context_of`, and each other rule takes runner.PluginContext.
 
 THE RUN
     A run reads the ledger and the inputs of the rule first.  A ledger or an
@@ -55,6 +63,7 @@ import dataclasses
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from assay.core import configuration as build_config
 from assay.core import git, ruletable
@@ -83,21 +92,48 @@ class CountedRule[Inputs]:
     a verb.  `admitted_kinds` are the kinds of a count that --admit can write above its row.  `refusal` is the advice
     of a write that refuses a count above its row.  The name that `evaluate` takes is the configuration of the rows
     that judge the build, assay.core.ledger.MAXIMUM, or None for the base rows (THE POLICY of
-    assay.core.configuration).  With MAXIMUM, a count below its row is no error.
+    assay.core.configuration).  With MAXIMUM, a count below its row is no error.  `context_of` makes the context of
+    a write from the root and the build directory (THE CONTEXT).
     """
 
     rule_id: str
-    findings: Callable[[runner.PluginContext], list[check_report.Finding]]
+    findings: Callable[[Any], list[check_report.Finding]]
     inputs: Callable[[Path], Inputs]
     evaluate: Callable[[Mapping[Key, int], rule_ledger.Ledger, str | None, Inputs, str], list[check_report.Finding]]
     summary: Callable[[Mapping[Key, int], build_config.BuildConfiguration, int, str], str]
     admitted_kinds: frozenset[str]
     refusal: str
+    context_of: Callable[[Path, Path | None], runner.PluginContext] = runner.PluginContext
 
 
 def described(kind: str, entity: str) -> str:
     """Return the kind and the entity of a row as words for a message."""
     return f"the kind {kind} and the entity {entity}" if entity else f"the kind {kind}"
+
+
+def summary_of(
+    rule_id: str, item_words: str, file_words: str, unit_words: str
+) -> Callable[[Mapping[Key, int], build_config.BuildConfiguration, int, str], str]:
+    """Return the summary of a CountedRule that tells its counts with the words of the rule.
+
+    Args:
+        rule_id: The rule
+        item_words: The words of the counted items, for example "findings"
+        file_words: The words of the files of the rows, for example "files"
+        unit_words: The words of the units of the build, for example "objects"
+    """
+
+    def summary(
+        counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, units: int, verb: str
+    ) -> str:
+        """Return the line that tells the counts, the rows, the files and the units of one run or one write."""
+        files = {key.path for key in counts}
+        return (
+            f"{rule_id}: {verb} {sum(counts.values())} {item_words} in {len(counts)} rows of {len(files)} "
+            f"{file_words}, configuration {configuration.name} on {configuration.tier}, from {units} {unit_words}"
+        )
+
+    return summary
 
 
 def counts_of(found: Iterable[check_report.Finding]) -> Counter[Key]:
@@ -157,6 +193,9 @@ def run[Inputs](
         return census
     try:
         configuration = context.configuration()
+    except runner.NotApplicable as reason:
+        check_report.write_line(f"{rule.id}: {reason}.  The rule does not apply")
+        return runner.SKIPPED
     except runner.BuildError as problem:
         return check_report.emit(
             [check_report.Finding("error", context.build_shown(), 0, spec.rule_id, str(problem))],
@@ -212,7 +251,7 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     """
     if request.import_log is not None:
         return build_config.import_rows(rule, request.root, request.import_log)
-    context = runner.PluginContext(request.root, request.build_dir)
+    context = spec.context_of(request.root, request.build_dir)
     try:
         ledger = rule_ledger.read(rule, request.root)
         census = context.census()

@@ -1,0 +1,6 @@
+# The ledger holds the configuration other and not the configuration planted.  The largest count of each key then
+# judges the build, and a count below its row is no error.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | std-object | 5 | std::vector
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values

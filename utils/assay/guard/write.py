@@ -4,7 +4,8 @@ usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [-
        guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
                                            a rule of the engine plugin or elf, or a rule
                                            of the engine build with configurations
-       guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations
+       guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations, or a
+                                           rule of the engine build with a module that writes its ledger
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
@@ -50,7 +51,12 @@ LOG apply to it as to a rule of the engine plugin.
 
 A rule of a family module of the engine build with `configured`, such as
 the census totals, holds the rows of each configuration.
---add-configuration applies to it, and to no other rule of the engine build.
+--add-configuration applies to it.  A module of the engine build that judges
+its ledger itself gives write(rule, request), with the WriteRequest of
+assay.guard.engines.plugin.runner (assay.guard.engines.buildsys.runner, THE
+MODULES THAT JUDGE THEIR LEDGER).  --add-configuration and --import LOG apply
+to it as to a rule of the engine plugin.  The rule fixture-quarantine writes
+its ledger in this way.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
@@ -136,6 +142,19 @@ def main(argv: list[str]) -> int:
         return elf_runner.write(rule, elf_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason,
             options.import_log.resolve() if options.import_log is not None else None, options.add_configuration))
+    own_write = None
+    if rule.engine == rule_registry.Engine.BUILD and not is_held_write:
+        own_write = getattr(runner.rule_module(rule), "write", None)
+    if own_write is not None:
+        from assay.guard.engines.plugin import runner as plugin_runner
+
+        if build_dir is None and options.import_log is None:
+            check_report.write_line(f"guard write: the rule {rule.id} reads a build: give --build-dir DIR",
+                                    is_error=True)
+            return 2
+        return int(own_write(rule, plugin_runner.WriteRequest(
+            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
+            options.import_log.resolve() if options.import_log is not None else None)))
     is_configured = options.add_configuration and rule.engine == rule_registry.Engine.BUILD and not is_held_write
     is_configured = is_configured and runner.is_configured(rule)
     if (options.add_configuration and not is_configured) or options.import_log is not None:

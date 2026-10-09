@@ -1,0 +1,6 @@
+# The census of neg_alpha has the stamp of an earlier plugin or rule table.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 99999999
+finding neg_alpha | std-object | 5 | std::vector
+finding neg_alpha | c-library-call | 7 | abort
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+finding neg_beta | opted-out | 4 | c-array-object raw_values

@@ -1,0 +1,8 @@
+# A planted ledger of the rule fixture-quarantine.
+format 1
+rule fixture-quarantine
+configuration planted kind planted
+configuration planted tier planted
+test/fixy/neg/neg_alpha.cpp | c-library-call | 1 | abort | -
+test/fixy/neg/neg_alpha.cpp | std-object | 1 | std::vector | -
+test/fixy/neg/neg_beta.cpp | opted-out | 1 | c-array-object | -

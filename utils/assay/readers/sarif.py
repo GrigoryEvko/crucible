@@ -35,6 +35,22 @@ THE TEXT LINES
     regular expressions to these lines.  The expressions then read only the
     text of the compiler, and not the text of the fixture.
 
+THE DIAGNOSTICS OF THE PLUGIN
+    The quarantine plugin of utils/tools/quarantine/ gives each finding as a
+    result with the message "quarantine: KIND ENTITY", when the compile
+    writes no object and no report.  A note of the mode report has no more
+    text.  An error adds "; " and its advice.  is_plugin_result() finds such a
+    result, and plugin_finding() gives its kind and its entity.
+
+    render() with a function `hidden` gives no line of a result that the
+    function accepts, and no such result is an error head.  It keeps each
+    context line that the text output prints before such a result, such as
+    "In function 'f':".  The text output of GCC prints a context line one
+    time for the diagnostics after it, and the next diagnostic does not
+    print it again.
+    A fixture renders its log with is_plugin_result, and the plugin then
+    changes no line that its regular expressions read.
+
 `guard selftest tests.readers.test_sarif` does the test of the module.
 """
 
@@ -55,6 +71,10 @@ _BULLET = "•"
 _INDENT = "  "
 # The line that GCC prints after a diagnostic of the kind `fatal error`, before it stops.
 TERMINATED = "compilation terminated."
+# The head of the message of each diagnostic of the quarantine plugin, and the separator of the advice of an error
+# (THE DIAGNOSTICS OF THE PLUGIN).
+PLUGIN_PREFIX = "quarantine: "
+ADVICE_SEPARATOR = "; "
 
 
 class SarifError(ValueError):
@@ -628,6 +648,27 @@ def texts(log: Log) -> list[str]:
     return [text for record in records(log) for text in (record.path, record.message, record.snippet)]
 
 
+# ── The diagnostics of the plugin ──────────────────────────────────
+
+
+def is_plugin_result(record: Diagnostic) -> bool:
+    """Return True for a result of the quarantine plugin: a note or an error at the nest level 0 with PLUGIN_PREFIX."""
+    return record.kind in (Kind.NOTE, Kind.ERROR) and record.nesting == 0 and record.message.startswith(PLUGIN_PREFIX)
+
+
+def plugin_finding(record: Diagnostic) -> tuple[str, str]:
+    """Return the kind and the entity of a result of the plugin (is_plugin_result()).
+
+    The entity of an error stops before the advice, at the first ADVICE_SEPARATOR.  An entity of the plugin holds no
+    such separator: it is a name, a header or the text of a region.
+    """
+    text = record.message.removeprefix(PLUGIN_PREFIX)
+    if record.kind is Kind.ERROR:
+        text = text.partition(ADVICE_SEPARATOR)[0]
+    kind, _, entity = text.partition(" ")
+    return kind, entity
+
+
 # ── The text lines ─────────────────────────────────────────────────
 
 
@@ -715,14 +756,16 @@ def _units(result: Diagnostic) -> list[_Unit]:
     return units
 
 
-def render(log: Log) -> Rendering:
+def render(log: Log, hidden: Callable[[Diagnostic], bool] | None = None) -> Rendering:
     """Return the lines that the text output of GCC prints for the records of a log, with the error group of each line.
 
     A diagnostic with its context lines is one unit.  A unit starts a new
     group when its diagnostic is the head of an error
     (Diagnostic.is_error_head).  Each other unit is a part of the group before
     it, and the units before the first head are a part of the first error.
-    Complexity: linear in the number of records.
+    A result that `hidden` accepts gives only the context lines before it
+    (THE DIAGNOSTICS OF THE PLUGIN).  Complexity: linear in the number of
+    records.
 
     Raises:
         SarifError: If a context line names a diagnostic that its result does not hold
@@ -733,6 +776,11 @@ def render(log: Log) -> Rendering:
     heads: list[int] = []
     last = ""
     for result in log.diagnostics:
+        if hidden is not None and hidden(result):
+            text = [line for record in _units(result)[0].before for line in _context_lines(record, log.tool)]
+            lines.extend(text)
+            groups.extend([len(errors) - 1] * len(text))
+            continue
         for unit in _units(result):
             diagnostic = unit.diagnostic
             text = [line for record in unit.before for line in _context_lines(record, log.tool)]

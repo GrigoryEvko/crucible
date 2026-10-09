@@ -201,8 +201,8 @@ STAGES = ("S", "c", "syntax", "E")
 EXITS = ("pass", "fail")
 OUTPUTS = ("report", "object")
 VERDICTS = ("accepted", "refused")
-# The start of the message of each note of the plugin.
-QUARANTINE_PREFIX = "quarantine: "
+# The start of the message of each note of the plugin (assay.readers.sarif, THE DIAGNOSTICS OF THE PLUGIN).
+QUARANTINE_PREFIX = sarif.PLUGIN_PREFIX
 OPTED_OUT = plugin_sections.OPTED_OUT
 REGION = plugin_sections.REGION
 QUARANTINE_RULE = "quarantine"
