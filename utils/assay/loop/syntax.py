@@ -16,7 +16,10 @@ THE RUN
     1. Ninja builds each input target of the build, with the name
        cmake_object_order_depends_target_*.  These targets write the inputs
        of the compiles, and they do no compile and no link.  The rule
-       build-order holds that no such target waits for a link.
+       build-order holds that no such target waits for a link.  A change of
+       the plugin or of the rule table makes CMake configure the build
+       again in this step.  The compile database then holds a new stamp,
+       and the run reads the compile commands after this step.
     2. The run removes the directory SYNTAX_DIRECTORY of the build.  No
        report of an earlier run then stays.
     3. Each compile of an object of all that loads the plugin runs with
@@ -215,11 +218,11 @@ def parse_words(words: tuple[str, ...], report_dir: Path, drops_native: bool = F
     return [*parsed, "-fsyntax-only", "-fdiagnostics-color=never", f"{plugin_runner.PLUGIN_ARGUMENT}out={report_dir}"]
 
 
-def units_of(build_dir: Path, root: Path) -> list[Unit]:
-    """Return each unit of the run: each object of all with a compile that loads the plugin.
+def require_parse_build(build_dir: Path) -> None:
+    """Refuse a build directory that is no parse build (THE PARSE BUILD).
 
     Raises:
-        ParseError: If the build is no parse build, or its objects or its compile database cannot be read
+        ParseError: If the CMake cache of the build does not set SYNTAX_OPTION
     """
     if not build_config.is_parse_build(build_dir):
         raise ParseError(
@@ -227,6 +230,15 @@ def units_of(build_dir: Path, root: Path) -> list[Unit]:
             f"{build_config.SYNTAX_OPTION}=ON.  Configure it with the preset syntax-x86-64-v3 or "
             f"syntax-aarch64"
         )
+
+
+def units_of(build_dir: Path, root: Path) -> list[Unit]:
+    """Return each unit of the run: each object of all with a compile that loads the plugin.
+
+    Raises:
+        ParseError: If the build is no parse build, or its objects or its compile database cannot be read
+    """
+    require_parse_build(build_dir)
     try:
         objects = {str(path): stamp for path, stamp, _ in plugin_runner.plugin_objects(build_dir, root, False)}
         rows = compdb.entries(build_dir)
@@ -309,8 +321,9 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
     from concurrent.futures import ThreadPoolExecutor
 
     try:
-        units = units_of(build_dir, root)
+        require_parse_build(build_dir)
         input_s = build_input_targets(build_dir, jobs)
+        units = units_of(build_dir, root)
     except ParseError as problem:
         check_report.write_line(f"loop syntax: {problem}", is_error=True)
         return 1

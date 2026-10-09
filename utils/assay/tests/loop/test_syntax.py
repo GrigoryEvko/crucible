@@ -18,7 +18,7 @@ from assay.core import configuration as build_config
 from assay.core import testing
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.loop import syntax
-from assay.readers import cmake, sections
+from assay.readers import cmake, compdb, ninja, sections
 
 # A compiler that writes one report file into the directory of its plugin argument out=, and exits 3 for a unit
 # named bad.cpp.
@@ -116,6 +116,54 @@ def unit_cases(expect: testing.Expect) -> None:
         )
 
 
+# A cmake that builds the input target as a configure after a change of the plugin does.  After --build, it writes the
+# new stamp into the compile database of the build directory.
+RECONFIGURE_CMAKE = """
+import pathlib, sys
+database = pathlib.Path(sys.argv[sys.argv.index("--build") + 1]) / "compile_commands.json"
+database.write_text(database.read_text().replace("stamp=0ld0ld", "stamp=fe5hfe5h"))
+"""
+# A ninja that gives the object of the planted build as the one input of the target all.
+INPUTS_NINJA = """
+import pathlib, sys
+build = pathlib.Path(sys.argv[sys.argv.index("-C") + 1])
+print(build / "t.dir" / "a.cpp.o")
+"""
+
+
+def stamp_cases(expect: testing.Expect) -> None:
+    """Hold the stamp of a run after a change of the plugin: the run reads the compile commands after step 1."""
+    with tempfile.TemporaryDirectory(prefix="syntax-stamp-") as scratch_text:
+        scratch = Path(scratch_text)
+        build = scratch / "build"
+        build.mkdir()
+        compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
+        cmake.cache_file(build).write_text("")
+        cmake.plant(
+            build,
+            cache={
+                build_config.SYNTAX_OPTION: ("BOOL", "ON"),
+                "CMAKE_GENERATOR": "Ninja",
+                "CMAKE_MAKE_PROGRAM": planted_compiler(scratch, "ninja", INPUTS_NINJA),
+                "CMAKE_COMMAND": planted_compiler(scratch, "cmake", RECONFIGURE_CMAKE),
+            },
+        )
+        output = str(build / "t.dir" / "a.cpp.o")
+        arguments = [compiler, f"{plugin_runner.PLUGIN_ARGUMENT}stamp=0ld0ld", "-c", "a.cpp", "-o", output]
+        compdb.plant(
+            build,
+            [{"directory": str(scratch), "file": str(scratch / "a.cpp"), "arguments": arguments, "output": output}],
+        )
+        ninja.plant_graph(build, f"rule phony_rule\n  command = true\nbuild {syntax.INPUT_PREFIX}t: phony_rule\n")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+            status = syntax.run(build, scratch, 2)
+        section = sections.read_report(sections.report_directory(build, output))
+        expect(
+            "a run after a change of the plugin writes the stamp that the input targets gave the compile database",
+            status == 0 and section is not None and section.stamp == "fe5hfe5h" and not errors.getvalue(),
+        )
+
+
 def macro_cases(expect: testing.Expect) -> None:
     """Hold the names that is_arm_macro() accepts, and the names that it refuses."""
     accepted = (
@@ -201,5 +249,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (word_cases, native_cases, build_cases, unit_cases, macro_cases, change_cases),
+        (word_cases, native_cases, build_cases, unit_cases, stamp_cases, macro_cases, change_cases),
     )
