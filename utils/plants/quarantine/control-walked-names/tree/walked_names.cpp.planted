@@ -52,4 +52,16 @@ std::string Holder::describe(const std::vector<int>& items) const {
     return name + std::to_string(items.size());
 }
 
+#define WALKED_REQUIRE(condition) \
+    do {                          \
+        if (!(condition)) {       \
+            return 0;             \
+        }                         \
+    } while (0)
+
+inline int macro_argument(const std::vector<int>& items) {
+    WALKED_REQUIRE(!items.empty());
+    return 1;
+}
+
 }  // namespace walked

@@ -1,0 +1,35 @@
+// Member calls that depend on a template parameter.  The walk of the pattern
+// cannot resolve them, and the instantiation gives each one its member
+// (owner.cpp, THE FOLDED NAMES).  A member of a class of the tree gives no
+// finding.
+
+#include <array>
+#include <vector>
+
+namespace dependent {
+
+std::vector<int>& vector_ref();
+std::array<int, 3>& array_ref();
+
+struct Counter {
+    unsigned long size() const { return 0; }
+};
+
+template <class Items>
+void append_one(Items& items) {
+    items.push_back(1);
+}
+
+template <class Items>
+unsigned long count_of(const Items& items) {
+    return items.size();
+}
+
+void run() {
+    append_one(vector_ref());
+    auto generic = [](auto& items) { return items.size(); };
+    static_cast<void>(generic(array_ref()));
+    static_cast<void>(count_of(Counter{}));
+}
+
+}  // namespace dependent

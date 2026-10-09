@@ -1,8 +1,9 @@
 // Names that the front end folds while it parses.  The walk of a body sees no
 // name in them, and the event of the parser gives each one (owner.cpp, THE
-// FOLDED NAMES).  Each line that names a library entity has one finding.
+// FOLDED NAMES).  Each name of a library entity has one finding.
 
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -52,6 +53,17 @@ struct InTemplate {
     static constexpr bool value = std::cmp_less(sizeof(Value), 64);
 };
 inline bool template_value = InTemplate<int>::value;
+
+constexpr unsigned long member_initializer = std::array<int, 3>{}.size();
+static_assert(std::array<int, 4>{}.size() == 4);
+
+inline int enumeration_in_body() {
+    using enum std::memory_order;
+    return static_cast<int>(relaxed);
+}
+struct EnumerationInClass {
+    using enum std::memory_order;
+};
 
 }  // namespace folded
 

@@ -9,11 +9,11 @@
 //
 // PLUGIN_PRE_GENERICIZE gives the body of each function that is not a
 // template.  The body of a template instantiation is not read, because its
-// pattern is read instead: a dependent name that only the instantiation
-// resolves is not a named reference in the source.  An instantiation of a
-// template of a quarantined file gives only the types that it deduces for the
-// placeholders of its template (check_instantiation).  The function of the
-// dynamic initializers of the unit is read too.
+// pattern is read instead.  The event of a member access gives a dependent
+// member that only the instantiation resolves (THE FOLDED NAMES of owner.cpp).
+// An instantiation of a template of a quarantined file gives only the types
+// that it deduces for the placeholders of its template (check_instantiation).
+// The function of the dynamic initializers of the unit is read too.
 //
 // An unevaluated operand makes no object, and each library name in it is a
 // use: the operand of a sizeof, an alignof, a noexcept, a decltype, a type
@@ -22,13 +22,15 @@
 // the operand of a reflection, because a query that the front end folds gives
 // a reflection of an entity that the source does not spell.
 //
-// The plugin cannot see what the front end keeps as no tree, or as a tree with
+// The walk cannot see what the front end keeps as no tree, or as a tree with
 // no source location: a dependent member of a template, and a
 // using-declaration and a using-directive of namespace scope.  Outside a
 // template, the front end folds a constant expression while it parses: an
 // alignof, a noexcept, a type trait, a requires-expression, a static_assert,
 // and the initializer of a variable when a call in it gives a constant, also a
-// call of a builtin such as strlen.  Such a use is no finding.  The libstdc++
+// call of a builtin such as strlen.  The events of the parser give each name
+// that the source spells there, also in the operand of a reflection (THE
+// FOLDED NAMES of owner.cpp).  An operator gives no such event.  The libstdc++
 // assertions of the Debug, TSan and UBSan-strict presets stop some of these
 // folds, so a call such as std::optional::operator-> in an initializer can be
 // a finding in those presets and not in Release.  A constructor, a destructor

@@ -1,0 +1,15 @@
+# A member call that depends on a template parameter is a finding at the
+# member, from the event of the instantiation (owner.cpp, THE FOLDED NAMES):
+# the function template on line 20 and the generic lambda on line 30.  The
+# instantiation of count_of with the class Counter of the tree on line 32 gives
+# no finding on line 25.
+
+compile report dependent_members.cpp
+exit report pass
+finding report quarantine std-object dependent_members.cpp:11:19 | std::vector
+finding report quarantine std-object dependent_members.cpp:12:21 | std::array
+finding report quarantine std-entity dependent_members.cpp:20:11 | std::vector::push_back
+finding report quarantine std-entity dependent_members.cpp:30:51 | std::array::size
+
+compile error dependent_members.cpp mode=error out=no errors=report
+exit error fail

@@ -1,9 +1,12 @@
 # The condition of a static_assert outside a template walks the private
 # members of a class under the unchecked access context.  The parser resolves
-# the name before the front end folds the condition.
+# the name before the front end folds the condition.  The size of the vector
+# that the query returns is a finding of the rule quarantine, from the event of
+# the member access.
 
 compile walk src/walk.cpp stage=c
 flag walk -freflection
 exit walk pass
 judge walk
 finding walk no-unchecked-access unchecked-use src/walk.cpp:11:88 | namespace-scope: std::meta::access_context::unchecked
+finding walk quarantine std-entity src/walk.cpp:11:101 | std::vector::size

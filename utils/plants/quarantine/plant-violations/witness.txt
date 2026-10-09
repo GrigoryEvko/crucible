@@ -1,7 +1,8 @@
 # The classes of finding of violations.cpp, and the uses that the plugin must
-# not report: a fundamental type through a typedef, an admitted name, a
-# dependent member, base code and a default argument that the base spells.
-# Each stage of the unit gives the same findings.  The entity of an object
+# not report: a fundamental type through a typedef, an admitted name, base code
+# and a default argument that the base spells.  The dependent member on line
+# 80 is a finding at the member, from its instantiation on line 83.  Each stage
+# of the unit gives the same findings.  The entity of an object
 # holds no printed type: a library class, the name of a raw declaration, or
 # the operator of a new-expression.
 
@@ -34,6 +35,7 @@ finding report quarantine c-array-object violations.cpp:64:10 | bytes
 finding report quarantine c-library-object violations.cpp:69:22 | max_align_t
 finding report quarantine raw-pointer-object violations.cpp:74:4 | make_in_pattern
 finding report quarantine raw-new-delete violations.cpp:75:12 | new
+finding report quarantine std-entity violations.cpp:80:22 | std::vector::size
 finding report quarantine std-entity violations.cpp:83:13 | std::size_t
 finding report quarantine std-object violations.cpp:89:18 | std::basic_string_view
 finding report quarantine std-object violations.cpp:89:45 | std::basic_string

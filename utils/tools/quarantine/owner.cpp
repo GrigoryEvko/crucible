@@ -141,6 +141,34 @@ SpelledName spelled_name_at(location_t location) {
     return spelled;
 }
 
+// False when the source spells a different text than IDENTIFIER at the start
+// of the range of LOCATION, or at its caret when IS_CARET.  The parser gives
+// the first name of a qualified name, and the :: of a global name, an event of
+// the declaration too.  The instantiation of a template gives a member access
+// the range of the whole access, with its caret at the member.  The spelling
+// location decides, so a macro of the tree gives the text of its definition.
+// A line that the file cache cannot read keeps the event.  Complexity:
+// O(length of the identifier).
+bool spells_identifier_at(location_t location, tree identifier, bool is_caret = false) {
+    location_t point = is_caret ? get_pure_location(line_table, location) : get_start(location);
+    location_t start = linemap_resolve_location(line_table, point, LRK_SPELLING_LOCATION, nullptr);
+    expanded_location from = expand_location(start);
+    if (from.file == nullptr || from.line <= 0 || from.column <= 0) {
+        return true;
+    }
+    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(from.file, from.line);
+    if (!line) {
+        return true;
+    }
+    auto at = static_cast<std::size_t>(from.column - 1);
+    auto length = static_cast<std::size_t>(IDENTIFIER_LENGTH(identifier));
+    if (at + length > line.length()
+        || std::memcmp(line.get_buffer() + at, IDENTIFIER_POINTER(identifier), length) != 0) {
+        return false;
+    }
+    return at + length == line.length() || !is_identifier_byte(line[at + length]);
+}
+
 // The first character before the start of the range of LOCATION that is not a
 // space or a tab, on the same line, or '\0' when none.  ':' tells a qualified
 // name.  Complexity: O(length of the line).
@@ -485,11 +513,18 @@ void check_type_use(tree type, location_t location) { record_named_entities(type
 // location, and the event of the parser gives it (judge_namespace_using).  The
 // front end also adds an artificial using-declaration of operator= to the
 // pattern of a class template, such as a partial specialization of std::hash,
-// and the source does not spell it.
+// and the source does not spell it.  A using-enum-declaration gives one
+// using-declaration of each enumerator, at the location after its semicolon.
+// The source spells no enumerator there, and the parsed name of the
+// enumeration is its use (THE FOLDED NAMES).
 void check_using(tree decl) {
     location_t location = DECL_SOURCE_LOCATION(decl);
     tree scope = USING_DECL_SCOPE(decl);
     if (scope == NULL_TREE || DECL_ARTIFICIAL(decl)) {
+        return;
+    }
+    if (TREE_CODE(scope) == ENUMERAL_TYPE && DECL_NAME(decl) != NULL_TREE
+        && TREE_CODE(DECL_NAME(decl)) == IDENTIFIER_NODE && !spells_identifier_at(location, DECL_NAME(decl))) {
         return;
     }
     note_project_reference(scope, location);
@@ -1993,13 +2028,19 @@ inline void judge_decl_event(tree decl, location_t location) {
 //     alignof, a noexcept, a type trait, a static_assert and a template
 //     argument then leave no name in the tree that the walk of a body reads.
 //     PLUGIN_NAME_USE gives each name that the parser resolves, before the
-//     fold.  The plugin keeps each such name of a library declaration in a
-//     counted file (a parsed name).  The parser gives a qualified name an
-//     event at its first name too, and only the event where the source spells
-//     the identifier of the declaration is a parsed name.  The plugin also
-//     keeps each library name that a walk reads (a walked name).  At the end
-//     of the unit, a walked name claims parsed names of its identifier in its
-//     file (Claim).  A parsed typedef also has the identifier of its class:
+//     fold, and PLUGIN_MEMBER_ACCESS gives the member of each class member
+//     access, such as size in std::array<int, 3>{}.size().  The instantiation
+//     of a template gives the member of an access that depends on a template
+//     parameter, such as items.push_back(1) for a std::vector.  The plugin
+//     keeps each such name of a library declaration in a counted file (a
+//     parsed name).  A data member of a member access is no parsed name, because the
+//     walk gives no finding of a data member.  The parser gives a qualified
+//     name an event at its first name too, and only the event where the
+//     source spells the identifier of the declaration is a parsed name.  The
+//     plugin also keeps each library name that a walk reads (a walked name).
+//     At the end of the unit, a walked name claims parsed names of its
+//     identifier in its file (Claim).  A parsed typedef also has the
+//     identifier of its class:
 //       * A declared type claims each parsed name of each of its library
 //         names on the line of the declaration and on the kSpanLines lines
 //         before it, except a name of an unevaluated operand.
@@ -2016,17 +2057,21 @@ inline void judge_decl_event(tree decl, location_t location) {
 //     The parameters count only for a function that the unit defines, because
 //     the walk reads no parameter of a function with no definition.
 //     A folded member claims the parsed names of its classes before it on
-//     its line, so std::numeric_limits<int>::max is one use.  Each other
-//     parsed name that no walked name claims is a folded name.  The walk's own
-//     judgment of its declaration gives its finding: the admit rows, the
-//     constants of an enumeration and the C library.  An overload set has no
-//     argument count.  In an evaluated operand, a candidate that a row admits
-//     admits the set, because the front end folds std::move(value) to a cast
-//     before the walk.  In an unevaluated operand, the first candidate that no
-//     row admits gives the finding, such as std::move of three arguments.  A
-//     dependent name gives no event, and the walk of the pattern reads it.  A
-//     name that only argument-dependent lookup finds gives no event either
-//     (the control control-known-gaps of the plugin witness).
+//     its line, so std::numeric_limits<int>::max is one use.  The member of
+//     a member access claims no class, because its object is a use of its
+//     own.  Each other parsed name that no walked name claims is a folded
+//     name.  The walk's own judgment of its declaration gives its finding: the
+//     admit rows, the constants of an enumeration and the C library.  An
+//     overload set has no argument count.  In an evaluated operand, a
+//     candidate that a row admits admits the set, because the front end folds
+//     std::move(value) to a cast before the walk.  In an unevaluated operand,
+//     the first candidate that no row admits gives the finding, such as
+//     std::move of three arguments.  A dependent name gives no event at parse
+//     time.  The walk of the pattern reads a dependent qualified name, and the
+//     instantiation gives a dependent member.  A name that only
+//     argument-dependent lookup finds gives no event either (the control
+//     control-known-gaps of the plugin witness).  A using-enum-declaration in a function body or in
+//     a class names its enumeration, and not each enumerator (check_using).
 constexpr int kSpanLines = 2;
 // The verdicts of library_name_verdicts: no library declaration, and a
 // library declaration.
@@ -2048,6 +2093,9 @@ struct ParsedName {
     std::vector<tree> candidates;
     bool is_unevaluated = false;
     bool is_claimed = false;
+    // The member of a class member access (PLUGIN_MEMBER_ACCESS), whose object
+    // is a use of its own, and not the class of a qualified name.
+    bool is_member = false;
 };
 
 // The parsed names that one walked name claims (THE FOLDED NAMES): the
@@ -2059,13 +2107,20 @@ enum class Claim : std::uint8_t {
     before,
 };
 
-// One library name that a walk read.
+// One library name that a walk read.  A name in a macro expansion also keeps
+// the outermost expansion point, when that point is in a counted file at a
+// different place.  The walk can give an operand of a macro argument the
+// location of a token of the macro body, such as the ! of if (!(cond)), and
+// the parsed name of the argument stands at the expansion point.
 struct WalkedName {
     const FileEntry* file = nullptr;
     int line = 0;
     int column = 0;
     tree identifier = NULL_TREE;
     Claim claim = Claim::nearest;
+    const FileEntry* expansion_file = nullptr;
+    int expansion_line = 0;
+    int expansion_column = 0;
 };
 
 // The parameters of a function declaration that the parser finished: the type
@@ -2143,15 +2198,35 @@ std::string name_key(const Place& place, tree identifier) {
          + IDENTIFIER_POINTER(identifier);
 }
 
-// One walked name of IDENTIFIER at PLACE.  A second read of one use at one
-// place keeps one entry, so one use claims one parsed name.
-void add_walked(const Place& place, tree identifier, Claim claim) {
+// One walked name of IDENTIFIER at PLACE, the place of LOCATION.  A second
+// read of one use at one place keeps one entry, so one use claims one parsed
+// name.
+void add_walked(const Place& place, location_t location, tree identifier, Claim claim) {
     if (identifier == NULL_TREE || !counts_folded_name(place)
         || !folded_names.walked_keys.insert(name_key(place, identifier) + ' ' + std::to_string(static_cast<int>(claim)))
                 .second) {
         return;
     }
-    folded_names.walked.push_back(WalkedName{place.file, place.line, place.column, identifier, claim});
+    WalkedName walked{place.file, place.line, place.column, identifier, claim};
+    if (linemap_location_from_macro_expansion_p(line_table, location)) {
+        Place point = place_of(linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr),
+                               Scope::quarantine);
+        if (counts_folded_name(point) && (point.file != place.file || point.line != place.line)) {
+            walked.expansion_file = point.file;
+            walked.expansion_line = point.line;
+            walked.expansion_column = point.column;
+        }
+    }
+    folded_names.walked.push_back(walked);
+}
+
+// Each place of WALKED: its own place, and its expansion point (WalkedName).
+template <typename Visit>
+void for_each_walked_place(const WalkedName& walked, Visit&& visit) {
+    visit(walked.file, walked.line, walked.column);
+    if (walked.expansion_file != nullptr) {
+        visit(walked.expansion_file, walked.expansion_line, walked.expansion_column);
+    }
 }
 
 // The identifier of DECL and of each class that holds it: a walk that reads
@@ -2269,31 +2344,6 @@ const std::vector<tree>& library_names_of_type(tree type, int depth) {
     return folded_names.type_names.emplace(TYPE_UID(type), std::move(names)).first->second;
 }
 
-// False when the source spells a different text than IDENTIFIER at the start
-// of the range of LOCATION.  The parser gives the first name of a qualified
-// name, and the :: of a global name, an event of the declaration too.  The
-// spelling location decides, so a macro of the tree gives the text of its
-// definition.  A line that the file cache cannot read keeps the event.
-// Complexity: O(length of the identifier).
-bool spells_identifier_at(location_t location, tree identifier) {
-    location_t start = linemap_resolve_location(line_table, get_start(location), LRK_SPELLING_LOCATION, nullptr);
-    expanded_location from = expand_location(start);
-    if (from.file == nullptr || from.line <= 0 || from.column <= 0) {
-        return true;
-    }
-    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(from.file, from.line);
-    if (!line) {
-        return true;
-    }
-    auto at = static_cast<std::size_t>(from.column - 1);
-    auto length = static_cast<std::size_t>(IDENTIFIER_LENGTH(identifier));
-    if (at + length > line.length()
-        || std::memcmp(line.get_buffer() + at, IDENTIFIER_POINTER(identifier), length) != 0) {
-        return false;
-    }
-    return at + length == line.length() || !is_identifier_byte(line[at + length]);
-}
-
 // The identifier of the class that a typedef or an alias names, or null: the
 // event of std::string names the typedef, and the walk reads the class
 // std::basic_string.
@@ -2329,13 +2379,14 @@ tree identifier_of(tree decl) {
 
 // The parsed name of NODE at LOCATION, when NODE names a library declaration
 // in a counted file (THE FOLDED NAMES).  A namespace and an enumerator name
-// no finding.  A first test of the library verdict by DECL_UID leaves for a
-// declaration of the tree.
-[[gnu::noinline]] void note_parsed_name(tree node, location_t location) {
+// no finding, and neither does a data member that IS_MEMBER marks, the member
+// of a class member access.  A first test of the library verdict by DECL_UID
+// leaves for a declaration of the tree.
+[[gnu::noinline]] void note_parsed_name(tree node, location_t location, bool is_member = false) {
     tree functions = BASELINK_P(node) ? BASELINK_FUNCTIONS(node) : node;
     tree first = functions != NULL_TREE && TREE_CODE(functions) == OVERLOAD ? OVL_FIRST(functions) : functions;
     if (first == NULL_TREE || !DECL_P(first) || TREE_CODE(first) == NAMESPACE_DECL || TREE_CODE(first) == CONST_DECL
-        || !is_library_decl(first)) {
+        || (is_member && TREE_CODE(first) == FIELD_DECL) || !is_library_decl(first)) {
         return;
     }
     tree identifier = identifier_of(first);
@@ -2351,7 +2402,7 @@ tree identifier_of(tree decl) {
     // declaration only at the last name, so the event there is the use.  A
     // tentative parse gives one event more than one time, and the place keys
     // one use.
-    if (!spells_identifier_at(location, identifier)
+    if (!spells_identifier_at(location, identifier, is_member)
         || !folded_names.parsed_keys.insert(name_key(place, identifier)).second) {
         return;
     }
@@ -2364,6 +2415,7 @@ tree identifier_of(tree decl) {
     parsed.location = location;
     parsed.decl = first;
     parsed.is_unevaluated = cp_unevaluated_operand > 0;
+    parsed.is_member = is_member;
     if (functions != first) {
         for (ovl_iterator candidate(functions, true); candidate; ++candidate) {
             parsed.candidates.push_back(*candidate);
@@ -2447,37 +2499,42 @@ void judge_folded() {
             uses.push_back(&walked);
             continue;
         }
-        auto found = parsed_of.find(walked.file->relative + ' ' + IDENTIFIER_POINTER(walked.identifier));
-        if (found == parsed_of.end()) {
-            continue;
-        }
         bool is_declaration = walked.claim == Claim::before;
-        int last = is_declaration ? walked.line : walked.line + kSpanLines;
-        for (std::size_t index : found->second) {
-            ParsedName& parsed = folded_names.parsed[index];
-            if ((!is_declaration || !parsed.is_unevaluated) && parsed.line <= last
-                && parsed.line >= walked.line - kSpanLines) {
-                parsed.is_claimed = true;
+        for_each_walked_place(walked, [&](const FileEntry* file, int line, int) {
+            auto found = parsed_of.find(file->relative + ' ' + IDENTIFIER_POINTER(walked.identifier));
+            if (found == parsed_of.end()) {
+                return;
             }
-        }
+            int last = is_declaration ? line : line + kSpanLines;
+            for (std::size_t index : found->second) {
+                ParsedName& parsed = folded_names.parsed[index];
+                if ((!is_declaration || !parsed.is_unevaluated) && parsed.line <= last
+                    && parsed.line >= line - kSpanLines) {
+                    parsed.is_claimed = true;
+                }
+            }
+        });
     }
     for (const WalkedName* walked : uses) {
-        auto found = parsed_of.find(walked->file->relative + ' ' + IDENTIFIER_POINTER(walked->identifier));
-        if (found == parsed_of.end()) {
-            continue;
-        }
         ParsedName* nearest = nullptr;
-        for (std::size_t index : found->second) {
-            ParsedName& parsed = folded_names.parsed[index];
-            if (parsed.is_claimed || std::abs(parsed.line - walked->line) > kSpanLines) {
-                continue;
+        long nearest_distance = 0;
+        for_each_walked_place(*walked, [&](const FileEntry* file, int line, int column) {
+            auto found = parsed_of.find(file->relative + ' ' + IDENTIFIER_POINTER(walked->identifier));
+            if (found == parsed_of.end()) {
+                return;
             }
-            if (nearest == nullptr
-                || name_distance(walked->line, walked->column, parsed)
-                       < name_distance(walked->line, walked->column, *nearest)) {
-                nearest = &parsed;
+            for (std::size_t index : found->second) {
+                ParsedName& parsed = folded_names.parsed[index];
+                if (parsed.is_claimed || std::abs(parsed.line - line) > kSpanLines) {
+                    continue;
+                }
+                long distance = name_distance(line, column, parsed);
+                if (nearest == nullptr || distance < nearest_distance) {
+                    nearest = &parsed;
+                    nearest_distance = distance;
+                }
             }
-        }
+        });
         if (nearest != nullptr) {
             nearest->is_claimed = true;
         }
@@ -2485,9 +2542,10 @@ void judge_folded() {
     // A qualified name, such as std::numeric_limits<int>::max, gives a parsed
     // name of each class in it, and the walk reads it as one use of its last
     // name.  So a folded member claims the nearest name of each class that
-    // holds it, before it on its line.
+    // holds it, before it on its line.  The object of a class member access is
+    // a use of its own, so the member of such an access claims no class.
     for (ParsedName& member : folded_names.parsed) {
-        if (member.is_claimed) {
+        if (member.is_claimed || member.is_member) {
             continue;
         }
         bool is_last = true;
@@ -2715,10 +2773,24 @@ void on_using_form(void* gcc_data, void*) {
 }
 
 // The callback of each event of PLUGIN_MEMBER_ACCESS.  The front end calls it
-// directly (plugin_member_access_func).  An access to a data member that no
-// rule can judge, with no splice, leaves after one read of the list of member
-// verdicts.
+// directly (plugin_member_access_func), at parse time and at the instantiation
+// of a template.  An access in a counted file keeps its member as a parsed name
+// (THE FOLDED NAMES): the front end can fold a call of a member function, such
+// as std::array<int, 3>{}.size() in a constant initializer, and the walk of a
+// pattern cannot resolve a dependent member.  An access at a location of the last file outside the root
+// leaves after one test of the location.  For the rules of THE NAMES OF THE
+// SOURCE, an access to a data member that no rule can judge, with no splice,
+// leaves after one read of the list of member verdicts.
 void on_member_access(tree node, tree, location_t location, bool is_splice, void*) {
+    bool is_outside = location - first_test.outside_first < first_test.outside_length
+                   || (location - first_test.inside_first >= first_test.inside_length && judge_location(location));
+    if (!is_outside
+        && (location - first_test.inside_first >= first_test.inside_length || first_test.is_inside_counted)) {
+        note_parsed_name(node, location, true);
+    }
+    if (!name_rules.has_rows) {
+        return;
+    }
     if (!is_splice && first_test.is_decl_code[TREE_CODE(node)] != 0 && DECL_UID(node) < kVerdictSlots
         && first_test.member_verdicts[DECL_UID(node)] == kVerdictFree) {
         return;
@@ -3368,7 +3440,8 @@ void note_walked_decl(tree named, location_t location) {
     if (!counts_folded_name(place)) {
         return;
     }
-    for_each_held_name(first, [&place](tree identifier) { add_walked(place, identifier, Claim::nearest); });
+    for_each_held_name(
+        first, [&place, location](tree identifier) { add_walked(place, location, identifier, Claim::nearest); });
 }
 
 // The library names that TYPE spells, at LOCATION: a declared type when
@@ -3386,7 +3459,7 @@ void note_walked_type(tree type, location_t location, bool is_declaration) {
     }
     Place place = place_of(location, Scope::quarantine);
     for (tree identifier : names) {
-        add_walked(place, identifier, is_declaration ? Claim::before : Claim::around);
+        add_walked(place, location, identifier, is_declaration ? Claim::before : Claim::around);
     }
 }
 
@@ -3396,7 +3469,7 @@ void note_walked_identifier(tree identifier, location_t location) {
     if (identifier == NULL_TREE || TREE_CODE(identifier) != IDENTIFIER_NODE || !may_count_at(location)) {
         return;
     }
-    add_walked(place_of(location, Scope::quarantine), identifier, Claim::nearest);
+    add_walked(place_of(location, Scope::quarantine), location, identifier, Claim::nearest);
 }
 
 void judge_folded_names() { judge_folded(); }
@@ -3419,6 +3492,8 @@ void register_owner(const char* plugin_name) {
             TREE_CODE_CLASS(static_cast<tree_code>(code)) == tcc_declaration ? 1 : 0;
     }
     register_callback(plugin_name, PLUGIN_NAME_USE, direct_callback<plugin_name_use_func>(on_name_use), nullptr);
+    register_callback(plugin_name, PLUGIN_MEMBER_ACCESS, direct_callback<plugin_member_access_func>(on_member_access),
+                      nullptr);
     register_callback(plugin_name, PLUGIN_USING_FORM, on_using_form, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_decl_names, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type_names, nullptr);
@@ -3429,8 +3504,6 @@ void register_owner(const char* plugin_name) {
     if (!name_rules.has_rows) {
         return;
     }
-    register_callback(plugin_name, PLUGIN_MEMBER_ACCESS, direct_callback<plugin_member_access_func>(on_member_access),
-                      nullptr);
     register_callback(plugin_name, PLUGIN_REFLECTION, on_reflection, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function_names, nullptr);
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_names, nullptr);

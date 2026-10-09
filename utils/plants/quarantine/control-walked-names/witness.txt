@@ -4,7 +4,9 @@
 # have no finding there.  The alias template on line 22 names one class two
 # times, and the walk gives one finding.  The qualified name on line 29 is one
 # use, std::move on line 33 has a row that admits it, and the operand on line
-# 44 follows its call on line 43.
+# 44 follows its call on line 43.  The walk gives the call in the macro argument
+# on line 63 the place of the ! of the macro body on line 57, and that walked
+# name claims the parsed name at the expansion point on line 63.
 
 compile report walked_names.cpp
 exit report pass
@@ -29,3 +31,5 @@ finding report quarantine std-object walked_names.cpp:51:54 | std::vector
 finding report quarantine std-entity walked_names.cpp:52:33 | std::to_string
 finding report quarantine std-entity walked_names.cpp:52:44 | std::vector::size
 finding report quarantine std-entity walked_names.cpp:52:46 | std::operator+
+finding report quarantine std-entity walked_names.cpp:57:13 | std::vector::empty
+finding report quarantine std-object walked_names.cpp:62:51 | std::vector
