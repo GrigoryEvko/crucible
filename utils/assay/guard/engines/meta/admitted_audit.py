@@ -20,9 +20,19 @@ THE AUDIT TABLE
         NAME | ORIGIN | FLAGS | PREDICTABLE | SAFE | USES | COST | VERDICT | REASON
     No cell is empty, and no name has two rows.  ORIGIN is admitted,
     candidate or dropped.  FLAGS is invariant, or it starts with "varies:".
-    PREDICTABLE and SAFE start with the word yes or the word no.  VERDICT is
-    KEEP, DROP, "KEEP-RESTRICTED: RESTRICTION" or "REPLACE: FAMILY".  FAMILY
-    is one of the eight families of FAMILIES.
+    PREDICTABLE and SAFE start with the word yes or the word no.  VERDICT has
+    one of these shapes:
+        KEEP
+        DROP
+        KEEP-RESTRICTED[WORDS]: RESTRICTION
+        REPLACE: FAMILY
+        REPLACE[WORDS]: FAMILY
+    FAMILY is one of the eight families of FAMILIES.  WORDS are restriction
+    words of an admit row, in the grammar of the rule table
+    (assay.core.ruletable.parse_admit), with no until.  Examples are "arity
+    1", "parameters" and "consteval-only in include/foundation/core/".  A
+    KEEP-RESTRICTED verdict has a minimum of one word.  RESTRICTION tells the
+    limit in words, and WORDS give the restrictions that the plugin enforces.
 
 THE FLAG MATRIX
     Each row has one section in the matrix.  A run of comments "// name: NAME"
@@ -40,7 +50,11 @@ THE KINDS
                and a KEEP-RESTRICTED verdict have an entry.  A DROP verdict
                has none.  "REPLACE: FAMILY" has the entry "admit NAME until
                FAMILY", and each entry with until has the verdict REPLACE of
-               that family.
+               that family.  The restrictions of the entry other than until
+               are the WORDS of the verdict, and no other restrictions
+               (assay.core.ruletable.restriction_words).  A KEEP verdict and
+               a REPLACE verdict with no WORDS then have an entry with no
+               restriction other than until.
     candidate  a candidate of CANDIDATES with no row, or a row with the ORIGIN
                candidate that names no candidate
     matrix     a row with no section, a section with no row, a second section
@@ -133,8 +147,8 @@ INVARIANT = "invariant"
 VARIES = "varies:"
 KEEP = "KEEP"
 DROP = "DROP"
-RESTRICTED = "KEEP-RESTRICTED:"
-REPLACE = "REPLACE:"
+RESTRICTED = "KEEP-RESTRICTED"
+REPLACE = "REPLACE"
 COMMENT_START = "//"
 NAME_MARKER = "name:"
 VARIES_MARKER = "varies:"
@@ -176,15 +190,49 @@ def starts_with_word(text: str, word: str) -> bool:
     return text.startswith(word) and not (rest[:1].isalnum() or rest[:1] == "_")
 
 
+@dataclass(frozen=True, slots=True)
+class Verdict:
+    """The parts of one verdict (THE AUDIT TABLE).
+
+    `head` is KEEP, DROP, KEEP-RESTRICTED or REPLACE.  `words` is the text in the brackets, or None for a verdict
+    with no brackets.  `text` is the text after the colon, or an empty text for KEEP and DROP.
+    """
+
+    head: str
+    words: str | None
+    text: str
+
+
+def parse_verdict(verdict: str) -> Verdict | None:
+    """Return the parts of a verdict, or None for a text with none of the shapes of THE AUDIT TABLE."""
+    if verdict in (KEEP, DROP):
+        return Verdict(verdict, None, "")
+    for head in (RESTRICTED, REPLACE):
+        if not verdict.startswith(head):
+            continue
+        rest = verdict[len(head) :]
+        words: str | None = None
+        if rest.startswith("["):
+            close = rest.find("]")
+            if close < 0:
+                return None
+            words, rest = rest[1:close].strip(), rest[close + 1 :]
+        text = rest[1:].strip() if rest.startswith(":") else ""
+        is_without_words = words == "" or (head == RESTRICTED and words is None)
+        return None if not text or is_without_words else Verdict(head, words, text)
+    return None
+
+
 def family_of(verdict: str) -> str | None:
-    """Return the family of a verdict "REPLACE: FAMILY ...", or None for each other verdict.
+    """Return the family of a verdict "REPLACE: FAMILY ..." or "REPLACE[WORDS]: FAMILY ...", or None for each other.
 
     The family is the run of letters after the colon, and the next character is not a letter, a digit or an
     underscore.
     """
-    if not verdict.startswith(REPLACE):
+    parsed = parse_verdict(verdict)
+    if parsed is None or parsed.head != REPLACE:
         return None
-    rest = verdict[len(REPLACE) :].lstrip()
+    rest = parsed.text
     end = 0
     while end < len(rest) and rest[end].isascii() and rest[end].isalpha():
         end += 1
@@ -194,17 +242,39 @@ def family_of(verdict: str) -> str | None:
 
 
 def is_verdict(verdict: str) -> bool:
-    """Return True for a verdict of one of the four shapes of THE AUDIT TABLE."""
-    if verdict in (KEEP, DROP):
-        return True
-    if verdict.startswith(RESTRICTED):
-        return bool(verdict[len(RESTRICTED) :].strip())
-    return family_of(verdict) is not None
+    """Return True for a verdict of one of the shapes of THE AUDIT TABLE."""
+    parsed = parse_verdict(verdict)
+    if parsed is None:
+        return False
+    return parsed.head != REPLACE or family_of(verdict) is not None
 
 
 def is_kept(verdict: str) -> bool:
     """Return True for the verdict KEEP or KEEP-RESTRICTED."""
-    return verdict == KEEP or verdict.startswith(RESTRICTED)
+    parsed = parse_verdict(verdict)
+    return parsed is not None and parsed.head in (KEEP, RESTRICTED)
+
+
+def verdict_words(name: str, verdict: str) -> tuple[str, ...]:
+    """Return the restriction words of a verdict as assay.core.ruletable.restriction_words gives them.
+
+    A verdict with no brackets gives no word.
+
+    Raises:
+        ruletable.TableError: If the words do not obey the grammar of an admit row of the name, or give until
+    """
+    parsed = parse_verdict(verdict)
+    if parsed is None or parsed.words is None:
+        return ()
+    admit = ruletable.parse_admit([name, *parsed.words.split()], "", 0, "the verdict")
+    if admit.until:
+        raise ruletable.TableError("the verdict gives until in its words, and the family of REPLACE gives it")
+    return ruletable.restriction_words(admit)
+
+
+def shown_words(words: tuple[str, ...]) -> str:
+    """Return restriction words as a text of a message."""
+    return ", ".join(f"`{word}`" for word in words) if words else "no restriction"
 
 
 def read_table(root: Path, table: str) -> tuple[dict[str, AuditRow] | None, list[check_report.Finding]]:
@@ -266,13 +336,22 @@ def shape_findings(table: str, row: AuditRow) -> list[check_report.Finding]:
     family = family_of(row.verdict)
     if not is_verdict(row.verdict):
         message = (
-            f"the VERDICT of {row.name} is KEEP, DROP, `KEEP-RESTRICTED: RESTRICTION` or `REPLACE: FAMILY`.  Correct "
-            f"the verdict"
+            f"the VERDICT of {row.name} is KEEP, DROP, `KEEP-RESTRICTED[WORDS]: RESTRICTION` or `REPLACE: FAMILY`, "
+            f"and REPLACE can give [WORDS] too.  WORDS are the restriction words of the admit row.  Correct the verdict"
         )
         found.append(error(table, row.line, "table", row.name, message))
-    elif family is not None and family not in FAMILIES:
+        return found
+    if family is not None and family not in FAMILIES:
         message = (
             f"the VERDICT of {row.name} names the family {family}.  The families are {', '.join(sorted(FAMILIES))}"
+        )
+        found.append(error(table, row.line, "table", row.name, message))
+    try:
+        verdict_words(row.name, row.verdict)
+    except ruletable.TableError as problem:
+        message = (
+            f"the restriction words of the VERDICT of {row.name} do not obey the grammar of an admit row: {problem}.  "
+            f"Correct the words"
         )
         found.append(error(table, row.line, "table", row.name, message))
     return found
@@ -355,10 +434,13 @@ def list_findings(
         if not is_verdict(row.verdict):
             continue
         family = family_of(row.verdict)
+        parsed = parse_verdict(row.verdict)
+        head = parsed.head if parsed is not None else row.verdict
         if is_kept(row.verdict) and entry is None:
+            words = f" {parsed.words}" if parsed is not None and parsed.words else ""
             message = (
-                f"the verdict of {name} is {row.verdict.split(':')[0]}, and {admitted} has no admit row for it.  Add "
-                f"`admit {name} | REASON`, with the words of the restriction"
+                f"the verdict of {name} is {head}, and {admitted} has no admit row for it.  Add "
+                f"`admit {name}{words} | REASON`"
             )
             found.append(error(table, row.line, "list", name, message))
         elif row.verdict == DROP and entry is not None:
@@ -370,6 +452,8 @@ def list_findings(
                 f"{family}`.  Write that row"
             )
             found.append(error(table, row.line, "list", name, message))
+        if entry is not None and head in (KEEP, RESTRICTED, REPLACE):
+            found += word_findings(admitted, name, row, entry)
     for listed, admit in entries.items():
         row_of_entry = rows.get(listed)
         family = family_of(row_of_entry.verdict) if row_of_entry is not None else None
@@ -380,6 +464,26 @@ def list_findings(
             )
             found.append(error(admitted, admit.line, "list", listed, message))
     return found
+
+
+def word_findings(admitted: str, name: str, row: AuditRow, entry: ruletable.Admit) -> list[check_report.Finding]:
+    """Return the finding of an admit row with restrictions that are not the words of its verdict (THE KINDS).
+
+    Words that do not obey the grammar give a finding of the kind table, and they give no finding here.
+    """
+    try:
+        expected = verdict_words(name, row.verdict)
+    except ruletable.TableError:
+        return []
+    given = ruletable.restriction_words(entry)
+    if given == expected:
+        return []
+    message = (
+        f"the verdict of {name} gives {shown_words(expected)}, and the admit row gives {shown_words(given)}.  The "
+        f"plugin enforces only the restrictions of the row.  Give the row the words of the verdict, or correct the "
+        f"verdict"
+    )
+    return [error(admitted, entry.line, "list", name, message)]
 
 
 def matrix_findings(

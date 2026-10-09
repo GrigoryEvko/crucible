@@ -1,1 +1,1 @@
-std::declval | candidate | invariant | yes | yes | 1 total | 0 | KEEP-RESTRICTED: | a reason
+std::declval | candidate | invariant | yes | yes | 1 total | 0 | KEEP-RESTRICTED: an unevaluated operand only | a reason

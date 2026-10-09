@@ -1,5 +1,5 @@
 # The audit table of the plants of the rule admitted-audit: the two admitted entries and each candidate.
-std::move | admitted | invariant | yes | yes | 1 total | 0 | KEEP-RESTRICTED: one argument | a reason
+std::move | admitted | invariant | yes | yes | 1 total | 0 | KEEP-RESTRICTED[arity 1]: one argument | a reason
 <meta> | admitted | varies: -D_GLIBCXX_DEBUG breaks it | yes | yes | 1 total | 0 | KEEP | a reason
 std::initializer_list | candidate | invariant | yes | yes | 1 total | 0 | DROP | a reason
 std::strong_ordering | candidate | invariant | yes | yes | 1 total | 0 | DROP | a reason

@@ -3102,7 +3102,7 @@ The ledger also holds the C runtime symbols of the three libraries. A C runtime 
 
 The `admit` rows of the rule table (the admitted list) give the std names that a quarantined file can use. `utils/admitted-audit.txt` (the audit table) gives one row for each `admit` row and for each candidate of plan appendix A. Each row has one of four verdicts:
 - KEEP: the name passes the five checks of plan §8.2 (flags, predictability, safe use, use and cost)
-- KEEP-RESTRICTED: the name passes with a limit that the plugin must apply. The row gives the limit
+- KEEP-RESTRICTED: the name passes with a limit that the plugin must apply. The row gives the limit, and the restriction words of its verdict are the restrictions of the admit row. The rule refuses an admit row with other restrictions
 - REPLACE: a family replaces the name. The row gives the family. The admitted list keeps the name until that change is on main. Each use of the name in a quarantined file is a finding of the kind `replace-pending:NAME`, so the ratchet refuses a new use
 - DROP: the name has no use, or no safe use.
 

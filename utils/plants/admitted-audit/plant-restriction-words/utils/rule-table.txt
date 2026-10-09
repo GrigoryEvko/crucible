@@ -1,0 +1,5 @@
+# A rule table whose admit row of std::move lacks the restriction words of its verdict.  The audit keeps
+# std::move with the words arity 1, and the row admits each overload.
+admit std::move | a cast
+admit <meta> | reflection
+quarantine test/

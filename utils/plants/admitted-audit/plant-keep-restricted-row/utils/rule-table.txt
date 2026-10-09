@@ -1,0 +1,4 @@
+# A rule table that restricts <meta>, and the verdict of <meta> is KEEP with no restriction word.
+admit std::move arity 1 | a cast
+admit <meta> unless _GLIBCXX_DEBUG | reflection
+quarantine test/

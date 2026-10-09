@@ -587,6 +587,24 @@ def parse_admit(args: list[str], reason: str, number: int, where: str) -> Admit:
                  consteval_only=bool(fields.get("consteval-only", False)))
 
 
+def restriction_words(admit: Admit) -> tuple[str, ...]:
+    """Return the restrictions of an admit row other than `until`, each as the words of the row, in one sequence.
+
+    Two rows with the same restrictions give the same words, also when they spell them in a different sequence.
+    """
+    words: list[str] = []
+    if admit.arity >= 0:
+        words.append(f"arity {admit.arity}")
+    words += [word for word, is_set in (("concepts", admit.concepts), ("parameters", admit.parameters),
+                                        ("plain-result", admit.plain_result),
+                                        ("consteval-only", admit.consteval_only)) if is_set]
+    if admit.unless:
+        words.append(f"unless {admit.unless}")
+    if admit.in_paths:
+        words.append(" ".join(("in", *sorted(admit.in_paths))))
+    return tuple(words)
+
+
 def parse(text: str, name: str = TABLE.name) -> RuleTable:
     """Parse the text of a rule table.
 
