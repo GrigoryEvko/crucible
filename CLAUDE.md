@@ -3106,7 +3106,7 @@ To get the findings of a change, build the targets that compile the changed file
 
 The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error.
 
-The `language` row of the rule table holds `include/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for each of these items:
+The `language` row of the rule table holds `include/foundation/core/`, `src/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for each of these items:
 - An include outside the allowance of the layer F0 primitives, and a system header
 - A declaration whose type holds a library type that no `admit` row admits there
 - An expression, also an unevaluated operand, that names a library entity that no `admit` row admits there.

@@ -1,0 +1,45 @@
+# The class of a source file of the base against the rule table of the
+# repository, in a tree with the paths of the repository.  A file of src/fixy/
+# is a base file of the layer X1_wrappers, and a file of src/fixy/session/ is a
+# base file of the layer X5_session.  No row of src/fixy/concurrent/ holds a
+# file, so a file there is a file of X1_wrappers too.  So an include of <cmath>
+# names the layer of the file, and a std name in such a file is no finding,
+# also in the mode error.  A file of src/foundation/core/ is a file of the
+# language of the layer F0_primitives, so a std name that no admit row admits
+# there, and an include outside the allowance, are errors in each mode.
+
+compile fixy-header src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag fixy-header -DPLANT_LAYER_HEADER
+exit fixy-header pass
+finding fixy-header quarantine layer-header src/fixy/Plant.cpp:2:0 | <cmath> in the layer X1_wrappers
+
+compile fixy-std-name src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag fixy-std-name -DPLANT_STD_NAME
+exit fixy-std-name pass
+
+compile session-header src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag session-header -DPLANT_LAYER_HEADER
+exit session-header pass
+finding session-header quarantine layer-header src/fixy/session/Plant.cpp:2:0 | <cmath> in the layer X5_session
+
+compile session-std-name src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag session-std-name -DPLANT_STD_NAME
+exit session-std-name pass
+
+compile concurrent-header src/fixy/concurrent/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag concurrent-header -DPLANT_LAYER_HEADER
+exit concurrent-header pass
+finding concurrent-header quarantine layer-header src/fixy/concurrent/Plant.cpp:2:0 | <cmath> in the layer X1_wrappers
+
+compile core-clean src/foundation/core/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit core-clean pass
+
+compile core-std-name src/foundation/core/Plant.cpp rules={repo}/utils/rule-table.txt out=no
+flag core-std-name -DPLANT_STD_NAME
+exit core-std-name fail
+error core-std-name src/foundation/core/Plant.cpp:7 | quarantine: std-entity std::swap;
+
+compile core-header src/foundation/core/Plant.cpp rules={repo}/utils/rule-table.txt out=no
+flag core-header -DPLANT_LAYER_HEADER
+exit core-header fail
+error core-header src/foundation/core/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F0_primitives;

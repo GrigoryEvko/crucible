@@ -1,0 +1,10 @@
+#if defined(PLANT_LAYER_HEADER)
+#include <cmath>
+#endif
+#include <utility>
+void plant_session_source(int& left, int& right) {
+#if defined(PLANT_STD_NAME)
+    std::swap(left, right);
+#endif
+    left = right;
+}

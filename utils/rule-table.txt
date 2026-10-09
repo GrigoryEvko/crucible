@@ -208,14 +208,14 @@
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
 layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
-layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h
+layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
 layer F1_algebra 5 include/foundation/ src/foundation/
-layer X1_wrappers 6 include/fixy/
+layer X1_wrappers 6 include/fixy/ src/fixy/
 layer X2_binding 7 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
 layer X3_os 8 include/fixy/os/ src/fixy/os/
-layer X4_concurrent 9 include/fixy/concurrent/ include/fixy/handle/ src/fixy/concurrent/
-layer X5_session 10 include/fixy/session/
+layer X4_concurrent 9 include/fixy/concurrent/ include/fixy/handle/
+layer X5_session 10 include/fixy/session/ src/fixy/session/
 
 allow F0_floor <cstddef>
 allow F0_floor <cstdint>
@@ -313,7 +313,7 @@ enforce test/ report
 enforce utils/tools/ report
 enforce vessel/ report
 
-language F0_primitives include/foundation/core/ include/fixy/Core.h
+language F0_primitives include/foundation/core/ src/foundation/core/ include/fixy/Core.h
 
 home host-owners host | a class directly in a namespace named host is the owner of a context key, and only its own home row admits its definition
 home host-owners foundation::effects::host::BackgroundOwner include/foundation/effects/Effect.h | the owner of the background key, whose one member is the door to the background context
