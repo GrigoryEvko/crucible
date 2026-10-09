@@ -63,10 +63,10 @@ THE CONFIGURATIONS
     the base does not count gives the claim of the call.
 
     The name of a configuration is the name of the configuration of a build
-    (THE CONFIGURATION of assay.guard.engines.plugin.runner): the build kind,
-    with -bench and -fuzz.  The rows of THE POLICY of
-    assay.guard.engines.plugin.counted judge a build, as for the rules
-    quarantine and heavy-include.  These rows are the rows of the
+    (THE CONFIGURATION of assay.core.configuration): the build kind, with
+    -bench and -fuzz.  The rows of THE POLICY of the same module judge a
+    build, as for the rules quarantine and heavy-include.  These rows are the
+    rows of the
     configuration with its name, else the base rows.  A row of an arm of one
     build kind is then judged in that build kind only, and no build skips the
     rule.
@@ -82,8 +82,8 @@ THE WRITE
     difference rows for each other configuration.  When the ledger holds no
     configuration, the write writes the base rows.  --add-configuration adds
     the configuration of the build with its facts: the first one that a
-    ledger gets is the base.  counted.write_target() gives the rows of each
-    write.  A write from a build of a configuration that the ledger does not
+    ledger gets is the base.  write_target() of assay.core.configuration
+    gives the rows of each write.  A write from a build of a configuration that the ledger does not
     hold writes no row and fails with no --add-configuration.  The modes
     --raise and --admit and the reason of --reason are those of
     assay.core.ledger (THE WRITE).
@@ -97,13 +97,14 @@ Complexity: linear in the finding lines of the build, and in the rows of the led
 
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.plugin import counted, declarations, runner
+from assay.guard.engines.plugin import declarations, runner
 from assay.readers import sections as plugin_sections
 
 RULE = "syscall-capability"
@@ -192,8 +193,9 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 def verdict(
     rule: rule_registry.Rule, context: runner.PluginContext
-) -> tuple[list[check_report.Finding], counted.Judging]:
-    """Return the findings of the build judged against the rows of THE POLICY of counted, and those rows.
+) -> tuple[list[check_report.Finding], build_config.Judging]:
+    """Return the findings of the build judged against the rows of THE POLICY of assay.core.configuration, and those
+    rows.
 
     A context with no build, as a witness with no configuration row gives, is judged against the base rows.
 
@@ -202,13 +204,13 @@ def verdict(
         BuildError: If the build cannot be read
     """
     found = findings(context)
-    base = counted.Judging(None, "the base rows", "")
+    base = build_config.Judging(None, build_config.BASE_WORDS, "")
     try:
         rows = rule_ledger.read(rule, context.root)
     except rows_grammar.RowsError, OSError:
         return meta_runner.judged(rule, context.root, found), base
     try:
-        judged = counted.judging(RULE, rows, context.configuration())
+        judged = build_config.judging(RULE, rows, context.configuration())
     except runner.NotApplicable:
         judged = base
     return meta_runner.judged(rule, context.root, found, configuration=judged.name), judged
@@ -279,7 +281,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written, because an object has a problem")
         return check_report.emit(census.errors(RULE), RULE, None)
     found = [item for item in census.line_errors(RULE, message) if item.kind]
-    target = counted.write_target(RULE, rows, configuration, request.add_configuration)
+    target = build_config.write_target(RULE, rows, configuration, request.add_configuration)
     if isinstance(target, str):
         check_report.write_line(target, is_error=True)
         return 1

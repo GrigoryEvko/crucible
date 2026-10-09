@@ -1,0 +1,7 @@
+# The ledger of a plant of the rule parse-total.
+format 1
+rule parse-total
+configuration x86_64-release kind x86_64-release
+- | x86_64-release | 1000 | fixtures | the measure of the planted build
+- | x86_64-release | 1000 | objects | the measure of the planted build
+include/Base.h | x86_64-release | 400/4 | - | -

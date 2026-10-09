@@ -110,7 +110,8 @@ class WriteRequest:
     """What one write of the ledger of a rule of the engine does.
 
     `mode` is the mode of assay.core.ledger, and `import_log` puts the rows of a configuration from a log into the
-    ledger, with no build.
+    ledger, with no build.  `add_configuration` writes the configuration of the build with its name (THE POLICY of
+    assay.core.configuration).
     """
 
     root: Path
@@ -118,6 +119,7 @@ class WriteRequest:
     mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER
     reason: str | None = None
     import_log: Path | None = None
+    add_configuration: bool = False
 
 
 class ElfContext:

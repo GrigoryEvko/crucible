@@ -1,5 +1,5 @@
 # The rule table of this plant.  The headers of include/fixy/ are base files,
-# and each other file is quarantined.  The syscall row gives the system call
+# and each other file is quarantined.  The syscall rows give the system calls
 # of the plant.
 
 layer floor 0 include/fixy/
@@ -9,4 +9,5 @@ allow floor <cstddef>
 
 quarantine src/
 
-syscall close | the system call of the plant
+syscall close | a system call of the plant
+syscall dup | a system call of the plant

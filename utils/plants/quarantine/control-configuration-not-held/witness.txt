@@ -1,7 +1,8 @@
 # A build of the configuration x86_64-release, which the ledger does not
-# hold, compiles the arm.  The rule judges that build against the base rows,
-# and the base row counts the call of close, so the build has no error (THE
-# POLICY of assay.guard.engines.plugin.counted).
+# hold, compiles the arm.  The rule judges that build against the largest
+# count of each key over the configurations of the ledger.  The base row
+# counts the call of close, so the build has no error (THE POLICY of
+# assay.core.configuration).
 
 compile raw src/raw.cpp rules=utils/rule-table.txt stage=c
 flag raw -DPLANTED_ARM

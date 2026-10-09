@@ -66,9 +66,10 @@
 #                                      python3 utils/bin/guard write --rule quarantine --import LOG
 #                                  puts them here.
 #   The rows of the configuration with the name of a build judge it, and a line names each fact
-#   of the configuration that the build does not share.  The base rows judge a build of a name
-#   that the ledger does not hold, and no build skips the rule (THE POLICY of
-#   utils/assay/guard/engines/plugin/counted.py).
+#   of the configuration that the build does not share.  The largest count of each key over the
+#   configurations judges a build of a name that the ledger does not hold, and no build skips the
+#   rule (THE POLICY of utils/assay/core/configuration.py).  An arm that a configuration here
+#   counts then passes, and a new finding fails.
 #   A change that lowers a count in each configuration writes only the base rows.  A change of a
 #   file or an arm that only a later configuration compiles writes that configuration too, with
 #   `guard write` in its build directory.  A change of the keys of the base makes this file again:
@@ -80,7 +81,8 @@
 #   No configuration turns on CRUCIBLE_SENSE_HUB_V2.  Each build compiles the SenseHub v2 sources
 #   in two object libraries that no target links, with and without CRUCIBLE_SENSE_HUB_EXTENDED
 #   (CMakeLists.txt), so these rows count each arm of those sources.  The UBSan-strict, verify,
-#   bench and PGO presets are no configuration.  An arm that only they compile is not counted.
+#   bench and PGO presets are no configuration.  The largest counts judge their builds, so a
+#   finding of an arm that only they compile fails them.
 format 1
 rule quarantine
 configuration x86_64-debug-asan kind x86_64-debug-asan

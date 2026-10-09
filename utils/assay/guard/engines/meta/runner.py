@@ -293,12 +293,16 @@ class Member:
     for each other rule.  `refresh` writes the data file of a rule of the
     policy none again from the context, and it returns the line that tells
     the result.  The list cmake/compile-first.txt of the rule compile-first is
-    such a file.  `refresh` is None for each other rule.
+    such a file.  `refresh` is None for each other rule.  `configured` is
+    True for a rule with the rows of each configuration of a build
+    (assay.core.configuration, THE POLICY).  `guard write
+    --add-configuration` applies only to such a member.
     """
 
     findings: Callable[[Any], list[check_report.Finding]]
     written: Callable[[Any, rule_ledger.Ledger, str | None], rule_ledger.Ledger] | None = None
     refresh: Callable[[Any], str] | None = None
+    configured: bool = False
 
 
 class FamilyRule:
@@ -366,6 +370,12 @@ def rule_module(rule: rule_registry.Rule) -> ModuleType | FamilyRule:
     ):
         return FamilyRule(module, table[rule.id])
     return module
+
+
+def is_configured(rule: rule_registry.Rule) -> bool:
+    """Return True when a rule of a family module holds the rows of each configuration of a build (Member)."""
+    module = rule_module(rule)
+    return isinstance(module, FamilyRule) and module.member.configured
 
 
 def judged(

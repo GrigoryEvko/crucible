@@ -60,6 +60,15 @@ THE CONFIGURATIONS
     import_rows() puts the rows of a configuration that only a CI leg builds
     into the ledger, from the lines that rows_of_configuration() gives.
 
+THE MAXIMUM
+    MAXIMUM names the rows that judge a build of a configuration that the
+    ledger does not hold (assay.core.configuration, THE POLICY).  The count of
+    a key in those rows is its largest count over the configurations of the
+    ledger.  A count of the build above it is an error.  A count below it is
+    no error, because the build can compile fewer arms.  An arm that a
+    different configuration counts then gives no error, and a new finding
+    gives an error.
+
 THE PART OF NO CONFIGURATION
     A base row of a count ledger can have the value admit.  Such a row
     belongs to no configuration, and no difference row names its key.  It
@@ -114,6 +123,9 @@ NEW_COMMENT = (
 )
 # The mark of each row that rows_of_configuration() prints, so that import_rows() finds it in a log.
 ROW_MARK = "ledger-row: "
+# The name of the rows with the largest count of each key over the configurations (THE MAXIMUM).  It is not a
+# lowercase word, and no configuration can have it.
+MAXIMUM = "*"
 
 
 class LedgerError(ValueError):
@@ -183,15 +195,27 @@ class Ledger:
     def expected(self, name: str | None = None) -> dict[Key, int]:
         """Return the count of each key of one configuration, with no zero count, for the policy count.
 
-        A row with the value admit has no count (THE PART OF NO CONFIGURATION).  Complexity: linear in the rows of
-        the base and of the configuration.
+        A row with the value admit has no count (THE PART OF NO CONFIGURATION).  MAXIMUM gives the largest count of
+        each key over the configurations (THE MAXIMUM).  Complexity: linear in the rows of the base and of the
+        configuration, and for MAXIMUM linear in the rows times the configurations.
         """
         counts = base_counts(self.base)
+        if name == MAXIMUM:
+            for item in self.configurations[1:]:
+                for key, count in self.expected(item.name).items():
+                    counts[key] = max(counts.get(key, 0), count)
+            return {key: count for key, count in counts.items() if count > 0}
         if name is None or name == self.base_name:
             return counts
         for key, entry in self.deltas.get(name, {}).items():
             counts[key] = counts.get(key, 0) + int(entry.value)
         return {key: count for key, count in counts.items() if count != 0}
+
+    def delta_tables(self, name: str | None) -> list[Mapping[Key, Entry]]:
+        """Return the difference rows that the rows of a name read: none for the base, each table for MAXIMUM."""
+        if name == MAXIMUM:
+            return [self.deltas.get(item.name, {}) for item in self.configurations[1:]]
+        return [self.deltas.get(name, {})] if name is not None else []
 
     def admits(self) -> dict[Key, Entry]:
         """Return each base row with the value admit of a count ledger (THE PART OF NO CONFIGURATION)."""
@@ -203,25 +227,27 @@ class Ledger:
         """Return the reason of the row of a key: of its difference row in a configuration, else of its base row.
 
         A difference row with no reason takes the reason of its base row, because the base row says why the key stays.
-        The result is "" for a key with no row and for a row with no reason.
+        For MAXIMUM, the first difference row of the key with a reason gives it.  The result is "" for a key with no
+        row and for a row with no reason.
         """
-        delta = self.deltas.get(name, {}).get(key) if name is not None else None
+        deltas = [table[key] for table in self.delta_tables(name) if key in table]
         base = self.base.get(key)
-        return (delta.reason if delta is not None else "") or (base.reason if base is not None else "")
+        delta_reason = next((entry.reason for entry in deltas if entry.reason), "")
+        return delta_reason or (base.reason if base is not None else "")
 
     def line_of(self, key: Key, name: str | None = None) -> int:
         """Return the line of the row of a key: the difference row, else the base row, else the first row of its path.
 
         The first row of its path is a base row or a difference row of the configuration, so a new entity of a file
-        points at the file.  Complexity: O(1) for a key with a row, else linear in the rows.
+        points at the file.  For MAXIMUM, each configuration gives its difference rows.  Complexity: O(1) for a key
+        with a row in one configuration, else linear in the rows.
         """
-        delta_table = self.deltas.get(name, {}) if name is not None else {}
-        entry = delta_table.get(key) or self.base.get(key)
+        tables = self.delta_tables(name)
+        entry = next((table[key] for table in tables if key in table), None) or self.base.get(key)
         if entry is not None:
             return entry.line
-        return min(
-            (item.line for item in [*self.base.values(), *delta_table.values()] if item.key.path == key.path), default=0
-        )
+        rows = [*self.base.values(), *(item for table in tables for item in table.values())]
+        return min((item.line for item in rows if item.key.path == key.path), default=0)
 
 
 def ledger_path(rule_id: str, root: Path = REPO_ROOT) -> Path:
@@ -624,7 +650,9 @@ def compare(
     """Judge the findings of a rule against its ledger (THE POLICIES).
 
     The errors of the rule are its violations.  A warning of the rule passes
-    with no change.  Complexity: O(f log f + r) for f findings and r rows.
+    with no change.  `configuration` names the rows that judge the findings.
+    With MAXIMUM, a count below its row is no error (THE MAXIMUM).
+    Complexity: O(f log f + r) for f findings and r rows.
 
     Raises:
         LedgerError: If the policy of the rule is max or baseline, which the rule judges itself
@@ -667,7 +695,7 @@ def compare(
                     )
                     for finding in by_key[key]
                 ]
-            elif measured < allowed:
+            elif measured < allowed and configuration != MAXIMUM:
                 result.append(
                     check_report.Finding(
                         "error",
@@ -680,7 +708,7 @@ def compare(
                         key.entity,
                     )
                 )
-            else:
+            elif measured > 0:
                 admitted.setdefault(key.path, Counter())[key.kind] += measured
                 lines.setdefault(key.path, line)
                 if ledger.reason_of(key, configuration):

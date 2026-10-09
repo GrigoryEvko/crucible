@@ -146,7 +146,7 @@ THE KINDS OF A PLANT
     the plant, which is empty when the plant holds none.  The judged
     compiles of a plant give a minimum of one error, and the judged compiles
     of a control give none.  A configuration row gives the context the
-    configuration NAME of a build (THE CONFIGURATION of the runner), with
+    configuration NAME of a build (THE CONFIGURATION of assay.core.configuration), with
     NAME as its build kind.  The function judge of the module of the rule
     then judges the lines.  A manifest has at most one configuration row,
     and only with a judge row.
@@ -1546,6 +1546,7 @@ def module_errors(
     The module judges the lines against the ledger of the tree of the plant.  A configuration gives the lines the
     configuration of a build, and the judge of the module judges them.  Complexity: linear in the lines.
     """
+    from assay.core import configuration as build_config
     from assay.core import registry as rule_registry
     from assay.guard.engines.plugin import runner as plugin_runner
 
@@ -1553,7 +1554,7 @@ def module_errors(
     section = plugin_sections.Section("", tuple(lines))
     census = plugin_runner.census_of([plugin_runner.ObjectSection("plant", "", section)])
     if configuration:
-        build = plugin_runner.BuildConfiguration(configuration, ((plugin_runner.KIND_KEY, configuration),))
+        build = build_config.BuildConfiguration(configuration, ((build_config.KIND_KEY, configuration),))
         context = plugin_runner.PluginContext(tree, census=census, configuration=build)
         findings = meta_runner.module_judged(rule, context)
     else:

@@ -34,7 +34,7 @@ THE LEDGER
     door of a system header.  Such a row gives no warning.  `guard write
     --rule heavy-include --admit --reason TEXT` writes such a row.  The base
     rows judge a build of a configuration that the ledger does not hold (THE
-    POLICY of assay.guard.engines.plugin.counted).
+    POLICY of assay.core.configuration).
 
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
@@ -62,6 +62,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -131,9 +132,10 @@ def no_inputs(_root: Path) -> None:
 def reason_of(ledger: rule_ledger.Ledger, key: Key, name: str | None) -> str:
     """Return the reason of the row of a key in one configuration: of its difference row, else of its base row.
 
-    The name None names the base rows.
+    The name None names the base rows.  For assay.core.ledger.MAXIMUM, the first configuration with a difference row
+    of the key gives it.
     """
-    delta = ledger.deltas.get(name, {}).get(key) if name is not None else None
+    delta = next((table[key] for table in ledger.delta_tables(name) if key in table), None)
     entry = delta or ledger.base.get(key)
     return entry.reason if entry is not None else ""
 
@@ -178,7 +180,7 @@ def evaluate(
                     f"`{command} --admit --reason TEXT`",
                 )
             )
-        elif measured < admitted:
+        elif measured < admitted and name != rule_ledger.MAXIMUM:
             found.append(
                 check_report.Finding(
                     "error",
@@ -189,7 +191,7 @@ def evaluate(
                     f"the ledger again in the same commit: `{command}`",
                 )
             )
-        elif not reason_of(ledger, key, name):
+        elif measured > 0 and not reason_of(ledger, key, name):
             found.append(
                 check_report.Finding(
                     "warning",
@@ -204,7 +206,7 @@ def evaluate(
     return found
 
 
-def summary(counts: Mapping[Key, int], configuration: runner.BuildConfiguration, objects: int, verb: str) -> str:
+def summary(counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, objects: int, verb: str) -> str:
     """Return the line that tells the includes, the rows and the files of one run or one write."""
     files = {key.path for key in counts}
     return (

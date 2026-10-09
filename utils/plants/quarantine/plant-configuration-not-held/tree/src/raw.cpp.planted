@@ -1,12 +1,12 @@
-// A quarantined unit of src/ with one call of close in an arm that only a
-// build with PLANTED_ARM compiles.
+// A quarantined unit of src/ with a call of close and a call of dup in an arm
+// that only a build with PLANTED_ARM compiles.
 #include <unistd.h>
 
 namespace planted {
 
 int release(int descriptor) {
 #if defined(PLANTED_ARM)
-    return ::close(descriptor);
+    return ::close(::dup(descriptor));
 #else
     return descriptor;
 #endif

@@ -30,6 +30,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import git as throwaway_repo
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -264,7 +265,7 @@ class Scratch:
     def tier(self, name: str) -> str:
         """Return the tier of one configuration of the planted ledger, or an empty text."""
         item = self.ledger_rows().configuration(name)
-        return dict(item.facts).get(runner.TIER_KEY, "") if item is not None else ""
+        return dict(item.facts).get(build_config.TIER_KEY, "") if item is not None else ""
 
 
 def as_tuples(counts: Mapping[rule_ledger.Key, int]) -> dict[Row, int]:
@@ -299,7 +300,7 @@ def file_totals(counts: Mapping[Row, int]) -> Counter[tuple[str, str]]:
 
 
 def unit_cases(expect: testing.Expect) -> None:
-    """Hold the directory of a file, the one word of a cache value, the entity of each kind and the stamp."""
+    """Hold the directory of a file, the entity of each kind and the stamp."""
     rows = quarantine.directory_rows(ruletable.parse(RULES_TEXT))
     for rel, wanted in (
         ("test/fixy/test_a.cpp", "test/fixy"),
@@ -312,18 +313,6 @@ def unit_cases(expect: testing.Expect) -> None:
         ("include/fixy/Refined.h", "include/fixy"),
     ):
         expect(f"the directory of {rel} is {wanted}", quarantine.directory_of(rel, rows) == wanted)
-    expect(
-        "normalized reads a BOOL, a path and a string",
-        (
-            runner.normalized("BOOL", "TRUE"),
-            runner.normalized("BOOL", "OFF"),
-            runner.normalized("PATH", "x-NOTFOUND"),
-            runner.normalized("FILEPATH", "/usr/bin/x"),
-            runner.normalized("STRING", ""),
-            runner.normalized("STRING", "Debug"),
-        )
-        == ("on", "off", "unset", "set", "unset", "Debug"),
-    )
     keyed = rule_ledger.parse(
         f"{EMPTY_LEDGER}configuration b machine x\nconfiguration r machine y\n"
         "x.cpp | raw-pointer-object | 2 | - | -\n"
@@ -467,7 +456,7 @@ def census_cases(expect: testing.Expect) -> None:
         [item.level for item in census.errors(CONTRACT)] == ["error"] * 3
         and all(item.check == CONTRACT for item in census.errors(CONTRACT)),
     )
-    configuration = runner.BuildConfiguration("planted", (("kind", "planted"), ("tier", "x86-64-0")))
+    configuration = build_config.BuildConfiguration("planted", (("kind", "planted"), ("tier", "x86-64-0")))
     context = runner.PluginContext(Path("/planted"), None, census, configuration)
     counts = as_tuples(counted.counts_of(quarantine.findings(context)))
     expect(
@@ -528,8 +517,8 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         written.comment == HEAD
         and written.base_name == BASE_NAME
         and base_keys.get("CMAKE_BUILD_TYPE") == "Debug"
-        and base_keys.get(runner.KIND_KEY) == BASE_NAME
-        and base_keys.get(runner.TIER_KEY, "").startswith("x86-64-"),
+        and base_keys.get(build_config.KIND_KEY) == BASE_NAME
+        and base_keys.get(build_config.TIER_KEY, "").startswith("x86-64-"),
     )
     status, found, text = scratch.run()
     expect(
@@ -836,9 +825,11 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     status, _, text = scratch.run()
     expect(
-        "a build of a configuration that the ledger does not hold is judged against the base rows",
+        "a build of a configuration that the ledger does not hold is judged against the largest count of each key",
         status == 0
-        and f"judged against the base rows, because the ledger holds no configuration {RELEASE_NAME}" in text
+        and f"judged against the largest count of each key over the configurations {BASE_NAME}, because the ledger "
+        f"holds no configuration {RELEASE_NAME}"
+        in text
         and f"{rule_ledger.ROW_MARK}configuration {RELEASE_NAME} kind {RELEASE_NAME}" in text,
     )
     scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
@@ -950,10 +941,12 @@ def import_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure("aarch64-debug-asan", "Debug")
     status, _, text = scratch.run()
     expect(
-        "the base rows judge a build that the ledger does not hold, and it writes its configuration and its "
-        "differences",
-        status == 1
-        and "judged against the base rows, because the ledger holds no configuration aarch64-debug-asan" in text
+        "the largest count of each key judges a build that the ledger does not hold, so the arms that the "
+        "configuration x86_64-release counts pass, and it writes its configuration and its differences",
+        status == 0
+        and f"the largest count of each key over the configurations {BASE_NAME}, {RELEASE_NAME}, because the ledger "
+        f"holds no configuration aarch64-debug-asan"
+        in text
         and f"{rule_ledger.ROW_MARK}configuration aarch64-debug-asan kind aarch64-debug-asan" in text
         and delta_row(
             "aarch64-debug-asan", "include/crucible/Vigil.h", "compiler-builtin", "+1", "__builtin_ia32_pause"

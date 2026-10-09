@@ -30,12 +30,15 @@ THE KIND
     build of its kind.
 
 THE CONFIGURATION
-    configuration() gives the configuration of the build, as the engine
-    plugin gives it (THE CONFIGURATION of assay.guard.engines.plugin.runner).
-    The native flags of the compile commands of the objects of the target all
-    are part of its tier.  A rule with rows that change with the
-    configuration, such as the census totals, holds the rows of each
-    configuration with its facts.
+    configuration() gives the configuration of the build
+    (assay.core.configuration, THE CONFIGURATION).  The native flags of the
+    compile commands of the objects of the target all are part of its tier.
+    A rule with rows that change with the configuration, such as the census
+    totals, holds the rows of each configuration with its facts.  THE POLICY
+    of that module judges a build and writes its rows.  The member of such a
+    rule has `configured` (assay.guard.engines.meta.runner, THE FAMILIES).
+    `guard write --add-configuration` then sets add_configuration of the
+    context.
 
 THE PLANTS
     A plant of a build rule holds the file build.txt, which tells what its
@@ -53,13 +56,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import cache
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
 from assay.readers import compdb
@@ -84,6 +87,7 @@ class BuildContext:
         "_graph",
         "_kind",
         "_model",
+        "add_configuration",
         "build_dir",
         "cache_limits",
         "cache_root",
@@ -102,7 +106,7 @@ class BuildContext:
         cache_limits: Mapping[str, int] | None = None,
         registry: rule_registry.Registry | None = None,
         paths: Sequence[str] = (),
-        configuration: plugin_runner.BuildConfiguration | None = None,
+        configuration: build_config.BuildConfiguration | None = None,
     ) -> None:
         """Keep the root, the build directory, the caches, the registry, the paths and a planted configuration.
 
@@ -130,6 +134,7 @@ class BuildContext:
         self._graph: ninja_reader.Graph | None = None
         self._kind: str | None = None
         self._configuration = configuration
+        self.add_configuration = False
 
     def require_build(self) -> Path:
         """Return the build directory of the call (THE BUILD DIRECTORY).
@@ -195,7 +200,7 @@ class BuildContext:
             self._kind = found
         return self._kind
 
-    def configuration(self) -> plugin_runner.BuildConfiguration:
+    def configuration(self) -> build_config.BuildConfiguration:
         """Return the configuration of the build (THE CONFIGURATION).
 
         Complexity: linear in the rows of the compile database and the inputs of all, and one compiler run for
@@ -206,8 +211,8 @@ class BuildContext:
                 generator is not Ninja
             build_census.CensusError: If the inputs of all or the compile database cannot be read
             compdb.CompdbError: If the build has no compile database
-            plugin_runner.BuildError: If the build has no build kind, its CMake cache cannot be read, or the compiler
-                does not print its target
+            build_config.ConfigurationError: If the build has no build kind, its CMake cache cannot be read, or the
+                compiler does not print its target
         """
         if self._configuration is None:
             build = self.require_build()
@@ -216,7 +221,7 @@ class BuildContext:
             except build_census.NotApplicable as reason:
                 raise meta_runner.NotApplicable(str(reason)) from None
             commands = [entry.command for entry in self.entries() if entry.output in objects]
-            self._configuration = plugin_runner.build_configuration(build, commands)
+            self._configuration = build_config.read_configuration(build, commands)
         return self._configuration
 
     def census(self, read_files: bool = True) -> build_census.Census:

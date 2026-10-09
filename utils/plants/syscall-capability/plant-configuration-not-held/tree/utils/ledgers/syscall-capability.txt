@@ -1,5 +1,6 @@
 # The ledger of the plant.  The base configuration counts no call of close,
-# and the configuration x86_64-debug-tsan counts the one call of the arm.
+# and the configuration x86_64-debug-tsan counts the one call of close of the
+# arm.  No configuration counts the call of dup.
 format 1
 rule syscall-capability
 configuration x86_64-debug-asan kind x86_64-debug-asan

@@ -1,5 +1,16 @@
-# A planted ledger: a row for the throw and a row for the class.
+# A planted ledger: a row for the throw, a row for the class, and each runtime symbol of the planted
+# configuration.  The rule judges the symbols of each build, so a control of the throws and the classes holds its
+# symbols too.
 format 1
 rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | ratchet | 1 | _ZTIi | -
+@build/libcrucible.a | ratchet | 1 | __cxa_allocate_exception | -
+@build/libcrucible.a | ratchet | 1 | __cxa_throw | -
 @build/libcrucible.a | throw | admit | admitted_throwing_entry | a planted throw
+@build/libfoundation.a | allow | 1 | __cxa_guard_acquire | -
+@build/libfoundation.a | allow | 1 | __cxa_guard_release | -
+@build/libfoundation.a | ratchet | 1 | _ZTVN10__cxxabiv117__class_type_infoE | -
+@build/libfoundation.a | ratchet | 1 | _ZdlPvm | -
 @build/libfoundation.a | vtable | admit | Admitted | a planted class

@@ -26,6 +26,7 @@ from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import proc, testing
 from assay.core import registry as rule_registry
@@ -33,7 +34,6 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.guard.engines.elf import artifact_symbols, runner
-from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import cmake, elf
 from assay.tests.guard.engines.elf.test_runner import quiet
 
@@ -44,6 +44,7 @@ REGISTRY_ROWS = (
 HEAD = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
 KIND = "planted-kind"
 OTHER = "planted-other"
+THIRD = "planted-third"
 ROWS_K = "configuration k kind k\nconfiguration k tier t\n"
 ROWS_KM = f"{ROWS_K}configuration m kind m\nconfiguration m tier t\n"
 # The units of the archives of the cases of the artifact.  Each unit gives one archive libUNIT.a.
@@ -509,10 +510,15 @@ class Scratch:
         return quiet(lambda: runner.run_rule(self.rule, runner.ElfContext(self.root, self.build), None))
 
     def write(
-        self, mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER, import_log: Path | None = None
+        self,
+        mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER,
+        import_log: Path | None = None,
+        add_configuration: bool = False,
     ) -> tuple[int, str]:
         """Write the ledger from the build directory or from a log, and return the status and the written text."""
-        request = runner.WriteRequest(self.root, None if import_log else self.build, mode, None, import_log)
+        request = runner.WriteRequest(
+            self.root, None if import_log else self.build, mode, None, import_log, add_configuration
+        )
         return quiet(lambda: artifact_symbols.write(self.rule, request))
 
     def ledger_text(self) -> str:
@@ -526,7 +532,7 @@ class Scratch:
     def tier(self, kind: str) -> str:
         """Return the tier of the configuration of a kind in the ledger, or an empty text."""
         configuration = self.rows().configuration(kind)
-        return dict(configuration.facts).get(plugin_runner.TIER_KEY, "") if configuration is not None else ""
+        return dict(configuration.facts).get(build_config.TIER_KEY, "") if configuration is not None else ""
 
 
 def keys_of(ledger: rule_ledger.Ledger, kind: str) -> dict[str, dict[str, int]]:
@@ -634,7 +640,7 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     status, _, text = scratch.run()
     expect(
-        "a build of a different tier judges only the throws and the classes, and one line gives the two tiers",
+        "the rows of its name judge a build of a different tier, and one line gives the two tiers",
         status == 0
         and f"on the tier {tier}" in text
         and f"{KIND} on other" in text
@@ -654,12 +660,25 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
         scratch.set_kind(kind)
         scratch.archive("foundation", units)
 
+    build_of(OTHER, ["base", "guard", "text"])
+    status, found, _ = scratch.run()
+    expect(
+        "a kind that the ledger does not hold fails on a symbol that no configuration counts",
+        status == 1 and errors_of(found) != [] and all("text.o" in message for message in errors_of(found)),
+    )
+    status, text = scratch.write()
+    expect(
+        "a write of a kind that the ledger does not hold writes nothing, and names --add-configuration",
+        status == 1 and "--add-configuration" in text and scratch.ledger_text() == good,
+    )
     build_of(OTHER, ["base"])
     status, _, text = scratch.run()
     mark = rule_ledger.ROW_MARK
     expect(
-        "a kind that the ledger does not hold prints its configuration rows and its difference rows",
+        "a kind that the ledger does not hold is judged against the largest count of each symbol, passes with fewer "
+        "symbols, and prints its configuration rows and its difference rows",
         status == 0
+        and f"the largest count of each key over the configurations {KIND}" in text
         and f"{mark}configuration {OTHER} tier {tier}" in text
         and f"{mark}@{OTHER} | @build/libfoundation.a | allow | -1 | __cxa_guard_acquire" in text,
     )
@@ -696,6 +715,21 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "a write of the other kind writes its differences and keeps the symbols of the base",
         status == 0 and status_base == 0 and errors_of(found) == [],
     )
+    build_of(KIND, ["base", "guard"])
+    scratch.write()
+    build_of(OTHER, ["base", "guard", "threads"])
+    scratch.write(rule_ledger.WriteMode.RAISE)
+    build_of(THIRD, ["base", "guard", "threads"])
+    status, found, _ = scratch.run()
+    expect(
+        "a kind that the ledger does not hold passes with the symbols of an arm that only a different kind counts",
+        status == 0 and errors_of(found) == [],
+    )
+    status, _ = scratch.write(add_configuration=True)
+    expect(
+        "--add-configuration writes the configuration of a kind that the ledger does not hold",
+        status == 0 and [item.name for item in scratch.rows().configurations] == [KIND, OTHER, THIRD],
+    )
     scratch.ledger.write_text(good, encoding="utf-8")
     build_of(KIND, ["base", "guard"])
 
@@ -711,7 +745,13 @@ def tier_cases(expect: testing.Expect, scratch: Scratch) -> None:
     wrapper.chmod(0o755)
     scratch.compiler = str(wrapper)
     scratch.plant()
-    status, _ = scratch.write()
+    status, text = scratch.write()
+    expect(
+        "a write of the base name with other facts writes nothing, and names --add-configuration",
+        status == 1 and "--add-configuration" in text and scratch.ledger_text() == good,
+    )
+    scratch.ledger.write_text(HEAD, encoding="utf-8")
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     expect(
         "a compiler with no -march value has a tier, and the build of an aarch64 compiler is read",
         status == 0 and scratch.run()[0] == 0 and scratch.tier(KIND).startswith(build_target.DEFAULT_NAME + "-"),
@@ -725,8 +765,8 @@ def tier_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.missing = []
     scratch.extra = {"CRUCIBLE_UBSAN_STRICT": ("BOOL", "ON")}
     scratch.plant()
-    status, _, text = scratch.run()
-    expect("a build of the UBSan-strict preset does not apply", status == runner.SKIPPED and "UBSan-strict" in text)
+    status, _, _ = scratch.run()
+    expect("a build of the UBSan-strict preset is judged as each other build", status == 0)
     scratch.extra = {}
     saved = dict(scratch.units)
     scratch.units = {name: units for name, units in saved.items() if name != "crucible"}

@@ -2,7 +2,8 @@
 
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR] [--path PATH]...
        guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
-                                           a rule of the engine plugin
+                                           a rule of the engine plugin or elf, or a rule
+                                           of the engine build with configurations
        guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations
        guard write --rule ID [ARG]...      a rule with a legacy module
 
@@ -36,16 +37,20 @@ A rule of the engine plugin writes through assay.guard.engines.plugin.runner,
 which reads the build of --build-dir.  A module that writes its ledger itself
 gives the function write(rule, request), and its head comment tells its modes.
 The module of the rule quarantine does that.  --add-configuration writes the
-configuration of the build with its name.  --import LOG puts the rows of a
-configuration that a CI leg wrote into the ledger.  The two options apply only
-to such a rule.  The command exits 77 when the rule does not apply to the
-build.
+configuration of the build with its name (THE POLICY of
+assay.core.configuration).  --import LOG puts the rows of a configuration
+that a CI leg wrote into the ledger.  The command exits 77 when the rule does
+not apply to the build.
 
 A rule of the engine elf writes through the function write(rule, request) of
 its module (assay.guard.engines.elf.runner), which reads the build of
 --build-dir.  The module of the rule artifact-symbols writes the
-configuration of the build with its rows.  --import LOG puts the rows of a
-configuration that a CI leg printed into the ledger.
+configuration of the build with its rows.  --add-configuration and --import
+LOG apply to it as to a rule of the engine plugin.
+
+A rule of a family module of the engine build with `configured`, such as
+the census totals, holds the rows of each configuration.
+--add-configuration applies to it, and to no other rule of the engine build.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
@@ -121,7 +126,7 @@ def main(argv: list[str]) -> int:
         return plugin_runner.write(rule, plugin_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
             options.import_log.resolve() if options.import_log is not None else None))
-    if rule.engine == rule_registry.Engine.ELF and not options.add_configuration:
+    if rule.engine == rule_registry.Engine.ELF:
         from assay.guard.engines.elf import runner as elf_runner
 
         if build_dir is None and options.import_log is None:
@@ -130,12 +135,20 @@ def main(argv: list[str]) -> int:
             return 2
         return elf_runner.write(rule, elf_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason,
-            options.import_log.resolve() if options.import_log is not None else None))
-    if options.add_configuration or options.import_log is not None:
-        check_report.write_line("guard write: --add-configuration applies only to a rule of the engine plugin, and "
-                                "--import to a rule of the engine plugin or elf", is_error=True)
+            options.import_log.resolve() if options.import_log is not None else None, options.add_configuration))
+    is_configured = options.add_configuration and rule.engine == rule_registry.Engine.BUILD and not is_held_write
+    is_configured = is_configured and runner.is_configured(rule)
+    if (options.add_configuration and not is_configured) or options.import_log is not None:
+        check_report.write_line("guard write: --add-configuration applies only to a rule with the rows of each "
+                                "configuration of a build, and --import to a rule of the engine plugin or elf",
+                                is_error=True)
         return 2
     context = check.rule_context(rule, root, build_dir, options.paths)
+    if is_configured:
+        from assay.guard.engines.buildsys import runner as build_runner
+
+        if isinstance(context, build_runner.BuildContext):
+            context.add_configuration = options.add_configuration
     try:
         if rule.policy == rule_registry.Policy.NONE:
             refresh = getattr(runner.rule_module(rule), "refresh", None)

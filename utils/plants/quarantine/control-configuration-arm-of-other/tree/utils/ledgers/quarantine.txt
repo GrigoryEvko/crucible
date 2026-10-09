@@ -1,0 +1,8 @@
+# The ledger of the control.  The base configuration counts no finding of
+# src/raw.cpp, and the configuration x86_64-debug-tsan counts the one call of
+# close of its arm.
+format 1
+rule quarantine
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+@x86_64-debug-tsan | src/raw.cpp | c-library-call | +1 | close | -

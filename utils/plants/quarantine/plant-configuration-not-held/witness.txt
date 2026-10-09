@@ -1,8 +1,9 @@
 # A build of the configuration x86_64-release, which the ledger does not
-# hold, compiles the arm.  The rule judges that build against the base rows,
-# and no base row counts the call of close, so the call is an error.  A build
-# of a configuration that the ledger does not hold does not skip the rule
-# (THE POLICY of assay.guard.engines.plugin.counted).
+# hold, compiles the arm.  The rule judges that build against the largest
+# count of each key over the configurations of the ledger.  The
+# configuration x86_64-debug-tsan counts the call of close, and no
+# configuration counts the call of dup, so the call of dup is an error (THE
+# POLICY of assay.core.configuration).
 
 compile raw src/raw.cpp rules=utils/rule-table.txt stage=c
 flag raw -DPLANTED_ARM
@@ -10,3 +11,4 @@ exit raw pass
 judge raw
 configuration x86_64-release
 finding raw quarantine c-library-call src/raw.cpp:9:19 | close
+finding raw quarantine c-library-call src/raw.cpp:9:25 | dup

@@ -5049,7 +5049,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # rose with no measurement in its commit is an error, and a threshold or a
 # ledger above its lowest committed value gives a warning.  The test modules
 # of the rows grammar, the registry, the ledgers, the rule history, the
-# process module, the git module, the paths, the run of the cases, the reader
+# process module, the git module, the paths, the configuration of a build and
+# its policy, the run of the cases, the reader
 # and writer of the cost records, the record class of the step meters, the
 # judge of the max rules, the runner and the planted
 # build of the engine build, the configurations of the census totals, the reader
@@ -5079,7 +5080,7 @@ foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifac
     ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
 endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
-        core.test_paths core.test_testing core.test_record core.test_value core.test_budget
+        core.test_paths core.test_testing core.test_record core.test_value core.test_budget core.test_configuration
         guard.engines.buildsys.test_runner
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
         readers.test_compdb readers.test_python

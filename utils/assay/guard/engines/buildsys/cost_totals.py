@@ -26,23 +26,32 @@ THE CENSUS TOTALS
 
 THE CONFIGURATION
     The totals change with the configuration of the build
-    (BuildContext.configuration(), THE CONFIGURATION of
-    assay.guard.engines.plugin.runner).  A bench target and a fuzz target add
-    their objects.  A compile with -march=native compiles the arms of the
-    processor of the host.  The configuration x86_64-debug-asan holds 4 such
-    compiles of all, and the configuration x86_64-release holds each compile.
-    The KIND cell of a row holds the name of a configuration, and each ledger
-    holds the facts of each of its configurations:
+    (BuildContext.configuration(), assay.core.configuration, THE
+    CONFIGURATION).  A bench target and a fuzz target add their objects.  A
+    compile with -march=native compiles the arms of the processor of the
+    host.  The configuration x86_64-debug-asan holds 4 such compiles of all,
+    and the configuration x86_64-release holds each compile.  The KIND cell of
+    a row holds the name of a configuration, and each ledger holds the facts
+    of each of its configurations:
         configuration NAME KEY VALUE
     A row that names a configuration with no such rows is a ledger-row error.
 
-    A rule does not apply to a call with no build directory.  It also does not
-    apply to a build with a configuration that the ledger does not hold with
-    each of its facts.  The rule then prints the configuration of the build,
-    its tier and the configurations of the ledger
-    (assay.core.target.not_held).  Such a build
-    has no measurement, for example a build for a different processor.  A rule
-    also does not apply to a build that the census does not read:
+    THE POLICY of assay.core.configuration judges each build, and no rule
+    skips a build because of its configuration:
+      * the rows of the configuration with the name of the build judge it.
+        A fact of the configuration that the build does not share gives one
+        line
+      * a build of a name that the ledger does not hold has no baseline of
+        its own.  The configuration with the largest total judges a growth
+        of its totals.  A fall is no finding, because the build can compile
+        fewer units.  The rule header-fanout judges such a build against the
+        largest row of each header.  It then gives no warning of a fall or
+        of a header with no sentinel.
+    A write of a build with a configuration that the ledger does not hold
+    writes nothing and fails, unless it gives --add-configuration.
+
+    A rule does not apply to a call with no build directory.  It also does
+    not apply to a build that the census does not read:
       * a build of a generator that is not Ninja
       * a build of only some targets
       * a build directory where no fixture ran.
@@ -149,6 +158,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
@@ -156,7 +166,6 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import census as build_census
 from assay.readers import compdb
 
@@ -228,13 +237,17 @@ class CensusBaseline:
 
 @dataclass(frozen=True, slots=True)
 class CensusFrame:
-    """The facts that a census rule reads before the census: the rule, the configuration, the thresholds, the ledger."""
+    """The facts that a census rule reads before the census: the rule, the configuration, the thresholds, the ledger.
+
+    `judged` gives the rows that judge the build (THE POLICY of assay.core.configuration).
+    """
 
     rule: rule_registry.Rule
-    configuration: plugin_runner.BuildConfiguration
+    configuration: build_config.BuildConfiguration
     budget: check_report.Budget
     ledger: rule_ledger.Ledger
     build_shown: str
+    judged: build_config.Judging
 
     @property
     def name(self) -> str:
@@ -247,42 +260,23 @@ class CensusFrame:
         return rule_ledger.shown_path(self.rule.id)
 
     @property
-    def is_held(self) -> bool:
-        """True when the ledger holds the configuration of the build with each of its facts."""
-        return plugin_runner.is_held(self.ledger, self.configuration)
+    def is_bound(self) -> bool:
+        """True when the ledger does not hold the configuration of the build, and the largest rows judge it."""
+        return self.judged.name == rule_ledger.MAXIMUM
 
     def write_command(self) -> str:
         """Return the command that writes the baseline of the configuration of the build again."""
-        return f"python3 utils/bin/guard write --rule {self.rule.id} --build-dir {self.build_shown}"
+        words = " --add-configuration" if self.is_bound else ""
+        return f"python3 utils/bin/guard write --rule {self.rule.id} --build-dir {self.build_shown}{words}"
 
     def refusal(self, message: str, line: int) -> CensusRefusal:
         """Return the refusal of a row of the ledger at a line."""
         return CensusRefusal(message, self.shown, line, "ledger-row", self.name)
 
-    def require_held(self) -> None:
-        """Make sure that the ledger holds the configuration of the build (THE CONFIGURATION).
-
-        Raises:
-            NotApplicable: If the ledger does not hold the configuration with each of its facts
-        """
-        if not self.is_held:
-            raise meta_runner.NotApplicable(
-                plugin_runner.held_line(
-                    self.shown,
-                    self.ledger,
-                    self.configuration,
-                    "The baseline rows of a configuration judge only a build of that configuration",
-                )
-            )
-
-    def configurations(self) -> tuple[rule_ledger.Configuration, ...]:
-        """Return the configurations of the ledger, with the facts of the build as the facts of its configuration.
-
-        A configuration that the ledger does not hold comes after the others.
-        """
-        built = rule_ledger.Configuration(self.name, self.configuration.facts)
-        kept = [built if item.name == self.name else item for item in self.ledger.configurations]
-        return tuple(kept if self.ledger.configuration(self.name) is not None else [*kept, built])
+    def announce(self) -> None:
+        """Write the line of the facts that the build does not share with the configuration of its rows, when it has one."""
+        if self.judged.note:
+            check_report.write_line(self.judged.note)
 
 
 def census_bytes_text(count: int) -> str:
@@ -335,7 +329,7 @@ def census_frame(context: BuildContext, given: rule_ledger.Ledger | None = None)
     ledger = given if given is not None else census_ledger(context.root, rule, kind)
     try:
         configuration = context.configuration()
-    except (build_census.CensusError, compdb.CompdbError, plugin_runner.BuildError) as problem:
+    except (build_census.CensusError, compdb.CompdbError, build_config.ConfigurationError) as problem:
         raise CensusRefusal(
             f"the configuration of the build cannot be read, and the rows of the ledger belong to a configuration: "
             f"{problem}",
@@ -344,7 +338,24 @@ def census_frame(context: BuildContext, given: rule_ledger.Ledger | None = None)
             "configuration",
             kind,
         ) from None
-    return CensusFrame(rule, configuration, budget, ledger, context.shown(build))
+    judged = build_config.judging(rule.id, ledger, configuration)
+    return CensusFrame(rule, configuration, budget, ledger, context.shown(build), judged)
+
+
+def census_written_configurations(context: BuildContext, frame: CensusFrame) -> tuple[rule_ledger.Configuration, ...]:
+    """Return the configurations that a write keeps, with the configuration of the build (THE POLICY).
+
+    A ledger with no configuration gets the configuration of the build as its base.
+
+    Raises:
+        LedgerError: If the ledger does not hold the configuration of the build, and the write does not add it
+    """
+    target = build_config.write_target(frame.rule.id, frame.ledger, frame.configuration, context.add_configuration)
+    if isinstance(target, str):
+        raise rule_ledger.LedgerError(target)
+    if target.name is None:
+        return (rule_ledger.Configuration(frame.name, frame.configuration.facts),)
+    return target.ledger.configurations
 
 
 def census_ledger(root: Path, rule: rule_registry.Rule, kind: str) -> rule_ledger.Ledger:
@@ -498,22 +509,46 @@ def census_total(frame: CensusFrame, name: str, rows: Mapping[str, rule_ledger.E
     return CensusTotal(first.line, int(rows["objects"].value), int(rows["fixtures"].value), first.reason)
 
 
-def census_total_of(frame: CensusFrame, totals: Mapping[str, CensusTotal]) -> CensusTotal:
-    """Return the total of the configuration of the build, which the ledger holds (THE CONFIGURATION).
+def census_rows_name(frame: CensusFrame, costs: Mapping[str, int]) -> str:
+    """Return the configuration of the rows that judge the build (THE CONFIGURATION).
+
+    `costs` gives a cost of the rows of each configuration.  A build of a configuration that the ledger does not hold
+    gets the configuration with the largest cost.
 
     Raises:
-        NotApplicable: If the ledger does not hold the configuration of the build
-        CensusRefusal: If the ledger holds the configuration and has no total row of it
+        CensusRefusal: If the ledger has no rows that can judge the build
     """
-    frame.require_held()
-    total = totals.get(frame.name)
-    if total is None:
+    if frame.is_bound:
+        name = max(costs, key=lambda item: (costs[item], item)) if costs else None
+    else:
+        name = frame.judged.name or frame.ledger.base_name
+    if name is None or name not in costs:
+        held = f"the configuration {name}" if name is not None else "a configuration"
         raise frame.refusal(
-            f"{frame.shown}: the ledger holds the configuration {frame.name} and no total row of it.  Write the rows "
-            f"of the configuration again: {frame.write_command()}",
+            f"{frame.shown}: the ledger holds no rows of {held} that can judge the build of the configuration "
+            f"{frame.name}.  Write the rows of the configuration of the build: {frame.write_command()}",
             0,
         )
-    return total
+    return name
+
+
+def census_words(frame: CensusFrame, name: str) -> str:
+    """Return the words that name the rows that judge the build, for the summary line of a rule."""
+    if frame.is_bound:
+        return (
+            f"the largest baseline, of the configuration {name}, because the ledger holds no configuration {frame.name}"
+        )
+    return f"the baseline of the configuration {name}"
+
+
+def census_total_of(frame: CensusFrame, totals: Mapping[str, CensusTotal]) -> tuple[str, CensusTotal]:
+    """Return the configuration and the total of the rows that judge the build (THE CONFIGURATION).
+
+    Raises:
+        CensusRefusal: If the ledger has no total row that can judge the build
+    """
+    name = census_rows_name(frame, {key: total.value for key, total in totals.items()})
+    return name, totals[name]
 
 
 def census_judged(
@@ -524,11 +559,13 @@ def census_judged(
     shown_value: Callable[[int], str],
     named: Callable[[bool], str],
 ) -> list[check_report.Finding]:
-    """Compare a total of the build with the total row of its configuration (the kinds growth, fall and zero-baseline).
+    """Compare a total of the build with the total row that judges it (the kinds growth, fall and zero-baseline).
+
+    A build of a configuration that the ledger does not hold gives no fall (THE CONFIGURATION).
 
     Args:
         frame: The rule, the configuration and the thresholds
-        total: The total row of the configuration
+        total: The total row that judges the build
         value: The total of the build
         said: The words that tell the total of the build
         shown_value: The text of a total in its unit
@@ -543,8 +580,8 @@ def census_judged(
                 frame.shown,
                 total.line,
                 rule_id,
-                f"{said}, and the baseline of the configuration {frame.name} is 0.  No change has a measure against a "
-                f"baseline of 0.  Write the baseline from this build in the same commit: {write}",
+                f"{said}, and the baseline that judges the build is 0.  No change has a measure against a baseline of "
+                f"0.  Write the baseline from this build in the same commit: {write}",
                 "zero-baseline",
                 frame.name,
             )
@@ -553,13 +590,17 @@ def census_judged(
     level = check_report.classify(change, frame.budget)
     if level is not None:
         limit = frame.budget.error if level == "error" else frame.budget.warn
+        advice = (
+            f"Remove the cost, or write the rows of the configuration of the build: {write}"
+            if frame.is_bound
+            else f"Remove the cost, or raise the baseline in the same commit with a reason: {write} --reason TEXT"
+        )
         message = (
             f"{said}, {change:.2f}% more than the baseline of {shown_value(total.value)}, over the {level} threshold "
-            f"{limit:g}%.  Remove the cost, or raise the baseline in the same commit with a reason: {write} --reason "
-            f"TEXT"
+            f"{limit:g}%.  {advice}"
         )
         kind, is_growth = "growth", True
-    elif -change > frame.budget.warn:
+    elif -change > frame.budget.warn and not frame.is_bound:
         level = "error"
         kind, is_growth = "fall", False
         message = (
@@ -706,11 +747,12 @@ def parse_findings(context: BuildContext) -> list[check_report.Finding]:
     try:
         frame = census_frame(context)
         baseline = census_baseline(frame)
-        total = census_total_of(frame, baseline.totals)
+        name, total = census_total_of(frame, baseline.totals)
         measure = parse_measure(census_read(context, frame, True), context.root)
     except CensusRefusal as refusal:
         return [refusal.finding(PARSE_RULE)]
-    before = baseline.files.get(frame.name, {})
+    frame.announce()
+    before = baseline.files.get(name, {})
     floor = int(total.value * PARSE_FILE_FLOOR)
     found = census_judged(
         frame,
@@ -722,8 +764,8 @@ def parse_findings(context: BuildContext) -> list[check_report.Finding]:
     )
     check_report.write_line(
         f"{PARSE_RULE}: {measure.value} bytes ({census_bytes_text(measure.value)}) in {measure.object_units} objects "
-        f"and {measure.fixture_units} fixtures, {census_change_text(measure.value, total.value)} of the configuration "
-        f"{frame.name}"
+        f"and {measure.fixture_units} fixtures of the configuration {frame.name}, "
+        f"{census_change_text(measure.value, total.value)}: {census_words(frame, name)}"
     )
     return found
 
@@ -738,6 +780,7 @@ def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
         LedgerError: If an input cannot be used, or the write has no reason for a growth over the warning threshold
     """
     frame = census_frame(context, ledger)
+    configurations = census_written_configurations(context, frame)
     baseline = census_baseline(frame)
     measure = parse_measure(census_read(context, frame, True), context.root)
     old = baseline.totals.get(frame.name)
@@ -752,7 +795,7 @@ def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
         for configuration in totals
         for name, (size, readers) in files.get(configuration, {}).items()
     ]
-    return replace(ledger, configurations=frame.configurations(), base={entry.key: entry for entry in entries})
+    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
 
 
 # ── header-fanout ─────────────────────────────────────────────────
@@ -858,12 +901,17 @@ def fanout_top_entries(headers: list[FanoutHeader], rows: Mapping[str, FanoutRow
 def fanout_row_changes(
     frame: CensusFrame, headers: list[FanoutHeader], rows: Mapping[str, FanoutRow]
 ) -> list[check_report.Finding]:
-    """Give a warning for each row with no sentinel, and for each header with a cost change over the threshold."""
+    """Give a warning for each row with no sentinel, and for each header with a cost change over the threshold.
+
+    A build of a configuration that the ledger does not hold gives only the warnings of a growth (THE CONFIGURATION).
+    """
     now = {item.header: item for item in headers}
     found: list[check_report.Finding] = []
     for name, row in sorted(rows.items(), key=lambda item: item[1].line):
         item = now.get(name)
         was = f"was {census_bytes_text(row.alone)} alone x {row.readers} readers"
+        if item is None and frame.is_bound:
+            continue
         if item is None:
             found.append(
                 check_report.Finding(
@@ -891,7 +939,7 @@ def fanout_row_changes(
                     name,
                 )
             )
-        elif (row.cost - item.cost) / row.cost * 100.0 > frame.budget.warn:
+        elif (row.cost - item.cost) / row.cost * 100.0 > frame.budget.warn and not frame.is_bound:
             found.append(
                 check_report.Finding(
                     "warning",
@@ -919,23 +967,44 @@ def fanout_table(headers: list[FanoutHeader]) -> str:
     return "\n".join(lines)
 
 
+def fanout_judging_rows(frame: CensusFrame, rows: Mapping[str, Mapping[str, FanoutRow]]) -> dict[str, FanoutRow]:
+    """Return the rows that judge the build: of the configuration of its rows, or the largest row of each header.
+
+    The largest row of each header judges a build of a configuration that the ledger does not hold (THE
+    CONFIGURATION).  Complexity: linear in the rows.
+
+    Raises:
+        CensusRefusal: If the ledger has no rows that can judge the build
+    """
+    name = census_rows_name(frame, {key: sum(row.cost for row in named.values()) for key, named in rows.items()})
+    if not frame.is_bound:
+        return dict(rows[name])
+    largest: dict[str, FanoutRow] = {}
+    for named in rows.values():
+        for header, row in named.items():
+            if header not in largest or row.cost > largest[header].cost:
+                largest[header] = row
+    return largest
+
+
 def fanout_findings(context: BuildContext) -> list[check_report.Finding]:
     """Compare the fan-out of the build with the baseline rows of its configuration (THE RULE header-fanout)."""
     try:
         frame = census_frame(context)
-        rows = fanout_baseline(frame)
-        frame.require_held()
-        if frame.name not in rows:
-            raise frame.refusal(
-                f"{frame.shown}: the ledger holds the configuration {frame.name} and no row of it.  Write the rows of "
-                f"the configuration again: {frame.write_command()}",
-                0,
-            )
+        judging_rows = fanout_judging_rows(frame, fanout_baseline(frame))
         headers = fanout_headers(census_read(context, frame, True), context.root)
     except CensusRefusal as refusal:
         return [refusal.finding(FANOUT_RULE)]
-    found = fanout_top_entries(headers, rows[frame.name]) + fanout_row_changes(frame, headers, rows[frame.name])
+    frame.announce()
+    found = fanout_top_entries(headers, judging_rows) + fanout_row_changes(frame, headers, judging_rows)
     check_report.write_line(fanout_table(headers))
+    words = (
+        f"the largest row of each header over the configurations of the ledger, because the ledger holds no "
+        f"configuration {frame.name}"
+        if frame.is_bound
+        else f"the rows of the configuration {frame.judged.name or frame.ledger.base_name}"
+    )
+    check_report.write_line(f"{FANOUT_RULE}: the build of the configuration {frame.name} is judged against {words}")
     return found
 
 
@@ -950,6 +1019,7 @@ def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: st
         LedgerError: If an input cannot be used
     """
     frame = census_frame(context, ledger)
+    configurations = census_written_configurations(context, frame)
     rows: dict[str, dict[str, FanoutRow]] = fanout_baseline(frame)
     headers = fanout_headers(census_read(context, frame, True), context.root)
     rows[frame.name] = {item.header: FanoutRow(0, item.alone, item.readers) for item in headers[:FANOUT_KEPT]}
@@ -958,7 +1028,7 @@ def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: st
         for configuration, named in rows.items()
         for name, row in named.items()
     ]
-    return replace(ledger, configurations=frame.configurations(), base={entry.key: entry for entry in entries})
+    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
 
 
 # ── instruction-total ─────────────────────────────────────────────
@@ -996,10 +1066,11 @@ def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
     """Compare the instruction total of the build with the baseline of its configuration (THE RULE instruction-total)."""
     try:
         frame = census_frame(context)
-        total = census_total_of(frame, census_baseline(frame).totals)
+        name, total = census_total_of(frame, census_baseline(frame).totals)
         census = census_read(context, frame, False)
     except CensusRefusal as refusal:
         return [refusal.finding(INSTRUCTION_RULE)]
+    frame.announce()
     objects, fixtures = instruction_counts(census)
     said = (
         f"the compiles of the build ran {instruction_text(objects + fixtures)} user instructions (objects "
@@ -1016,7 +1087,8 @@ def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
     check_report.write_line(
         f"{INSTRUCTION_RULE}: {instruction_text(objects + fixtures)} user instructions in "
         f"{census_unit_counts(census.units, 'object')} objects and {census_unit_counts(census.units, 'fixture')} "
-        f"fixtures, {census_change_text(objects + fixtures, total.value)} of the configuration {frame.name}"
+        f"fixtures of the configuration {frame.name}, {census_change_text(objects + fixtures, total.value)}: "
+        f"{census_words(frame, name)}"
     )
     return found
 
@@ -1031,17 +1103,18 @@ def instruction_written(context: BuildContext, ledger: rule_ledger.Ledger, reaso
         LedgerError: If an input cannot be used, or the write has no reason for a growth over the warning threshold
     """
     frame = census_frame(context, ledger)
+    configurations = census_written_configurations(context, frame)
     totals = census_baseline(frame).totals
     objects, fixtures = instruction_counts(census_read(context, frame, False))
     old = totals.get(frame.name)
     census_refused(frame, old, objects + fixtures, reason, instruction_text)
     entries = census_total_entries({**totals, frame.name: census_new_total(old, objects, fixtures, reason)})
-    return replace(ledger, configurations=frame.configurations(), base={entry.key: entry for entry in entries})
+    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
 
 
 # The keys are text, because assay.guard.engines.meta.runner reads the keys of the table with no import.
 RULES = {
-    "parse-total": meta_runner.Member(parse_findings, parse_written),
-    "header-fanout": meta_runner.Member(fanout_findings, fanout_written),
-    "instruction-total": meta_runner.Member(instruction_findings, instruction_written),
+    "parse-total": meta_runner.Member(parse_findings, parse_written, configured=True),
+    "header-fanout": meta_runner.Member(fanout_findings, fanout_written, configured=True),
+    "instruction-total": meta_runner.Member(instruction_findings, instruction_written, configured=True),
 }

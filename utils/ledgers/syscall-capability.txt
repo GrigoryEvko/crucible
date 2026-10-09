@@ -10,8 +10,9 @@
 #   @NAME | PATH | raw-syscall | DELTA | HOLDER: SHAPE | CLAIM
 #       The count of the configuration NAME is the base count plus DELTA.  The rule judges a build
 #       against the rows of the configuration with its name, and a build of each other name against
-#       the base rows.  So a row of an arm that only one build kind compiles is judged in that build
-#       kind only
+#       the largest count of each key over the configurations.  So a row of an arm that only one
+#       build kind compiles is judged in that build kind, and in a build that the ledger does not
+#       hold
 # No row admits a finding of the kind outside-door.  Each count only falls.
 # `python3 utils/bin/guard explain syscall-capability` tells the rule, and
 # `python3 utils/bin/guard write --rule syscall-capability --build-dir DIR` writes this file in the

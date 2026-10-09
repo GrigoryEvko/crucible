@@ -81,6 +81,7 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
@@ -88,7 +89,6 @@ from assay.core import rows as rows_grammar
 from assay.core import testing
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import cmake as cmake_reader
 from assay.readers import compdb
 from assay.readers import elf as elf_reader
@@ -681,7 +681,7 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
         raise meta_runner.NotApplicable(f"the planted registry does not read: {problem}") from None
     configuration = None
     if planted.kind is not None:
-        configuration = plugin_runner.BuildConfiguration(planted.kind, ((plugin_runner.KIND_KEY, planted.kind),))
+        configuration = build_config.BuildConfiguration(planted.kind, ((build_config.KIND_KEY, planted.kind),))
     return BuildContext(
         scratch,
         build,

@@ -83,8 +83,8 @@ THE LEDGER
                                                NAME, as a difference from the
                                                base count: +N or -N
 
-    The first configuration of the ledger is the base (THE CONFIGURATION of
-    the runner).  The count of a different configuration is the base count
+    The first configuration of the ledger is the base (assay.core.configuration,
+    THE POLICY).  The count of a different configuration is the base count
     plus its difference.  A change that lowers a count in each configuration
     then writes only the base rows.  The run, the write and the import are
     those of assay.guard.engines.plugin.counted, which the rule heavy-include
@@ -141,8 +141,8 @@ WRITE THE LEDGER
       as it compares each other row.
     * --add-configuration writes the configuration of the build with its
       name.  Without it, a write from a build of a configuration that the
-      ledger does not hold writes nothing and fails (THE WRITE of
-      assay.guard.engines.plugin.counted).  It replaces the keys and the
+      ledger does not hold writes nothing and fails (THE POLICY of
+      assay.core.configuration).  It replaces the keys and the
       rows of a configuration with the same name that is not the base.  The
       first configuration of an empty ledger is the base.  A change of the
       keys of the base makes the ledger again.  Keep its head and remove its
@@ -168,7 +168,7 @@ A CONFIGURATION THAT ONLY CI BUILDS
 NOT APPLICABLE
     The rule exits 77 when the runner does not apply to the build (THE STATUS
     of the runner).  The base rows judge a build of a configuration that the
-    ledger does not hold (THE POLICY of assay.guard.engines.plugin.counted).
+    ledger does not hold (THE POLICY of assay.core.configuration).
     The rule then writes the rows of the build.
 
 Usage
@@ -186,6 +186,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -383,10 +384,11 @@ def evaluate(
     failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
     command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
+    is_bound = name == rule_ledger.MAXIMUM
     for key in sorted(set(counts) | set(expected)):
         file, kind, entity = key.path, key.kind, key.entity
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
-        if measured == admitted:
+        if measured == admitted or (is_bound and measured < admitted):
             continue
         failed.add(directory_of(file, rows))
         line = ledger.line_of(key, name)
@@ -430,9 +432,10 @@ def evaluate(
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
         directory = directory_of(key.path, rows)
-        if directory in failed:
+        kept_count = min(admitted, counts.get(key, 0)) if is_bound else admitted
+        if directory in failed or kept_count == 0:
             continue
-        kept.setdefault(directory, Counter())[key.kind] += admitted
+        kept.setdefault(directory, Counter())[key.kind] += kept_count
         first_line.setdefault(directory, ledger.line_of(key, name))
     for directory, kinds in sorted(kept.items()):
         listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
@@ -448,7 +451,7 @@ def evaluate(
     return findings_found
 
 
-def summary(counts: Mapping[Key, int], configuration: runner.BuildConfiguration, objects: int, verb: str) -> str:
+def summary(counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, objects: int, verb: str) -> str:
     """Return the line that tells the findings, the regions, the rows and the files of one run or one write."""
     regions = sum(count for key, count in counts.items() if key.kind == REGION)
     files = {key.path for key in counts}

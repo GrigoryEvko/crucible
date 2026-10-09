@@ -21,18 +21,10 @@ THE PROBLEMS
     findings of the rule are then not complete.
 
 THE CONFIGURATION
-    A configuration is the build kind and the target tier of
-    utils/assay/core/target.py, and each cache variable of CONFIGURATION.  A
-    target can add a native flag to its own compile, as each bench target
-    adds -march=native.  The tier then also holds the native tier of the
-    host.  A different configuration compiles other objects or other
-    preprocessor arms, and its findings are then different.
-
-    The name of a configuration is its build kind, with -bench when
-    CRUCIBLE_BENCH is on and -fuzz when CRUCIBLE_FUZZ is on, for example
-    x86_64-debug-asan.  CRUCIBLE_SENSE_HUB_V2 is no key.  Each build compiles
-    the SenseHub v2 sources in two object libraries, with and without
-    CRUCIBLE_SENSE_HUB_EXTENDED, and that option then changes no finding line.
+    The context gives the configuration of the build (assay.core.configuration,
+    THE CONFIGURATION), with the compile commands of the objects of all.  A
+    rule with rows of each configuration judges each build with the rows of
+    THE POLICY of that module.
 
 THE RULES
     Each finding line has a rule of the engine plugin of utils/registry.txt.
@@ -57,10 +49,11 @@ THE STATUS
 `guard selftest tests.guard.engines.plugin.test_runner` does a test of the module.
 """
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -69,34 +62,11 @@ from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
-from assay.readers import cmake, compdb
+from assay.readers import compdb
 from assay.readers import sections as quarantine_sections
 
 PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 STAMP_ARGUMENT = f"{PLUGIN_ARGUMENT}stamp="
-KIND_KEY = "kind"
-TIER_KEY = "tier"
-# The cache variables that change the objects of all or their preprocessor arms.
-CONFIGURATION = (
-    "CMAKE_BUILD_TYPE",
-    "CMAKE_CXX_FLAGS",
-    "CRUCIBLE_SANITIZE",
-    "CRUCIBLE_TSAN",
-    "CRUCIBLE_UBSAN_STRICT",
-    "CRUCIBLE_ANALYZER",
-    "CRUCIBLE_VERIFY",
-    "CRUCIBLE_PGO",
-    "CRUCIBLE_BENCH",
-    "CRUCIBLE_FUZZ",
-    "CRUCIBLE_EXAMPLES",
-    "CRUCIBLE_HAVE_BPF",
-    "CRUCIBLE_SENSE_HUB_EXTENDED",
-    "CRUCIBLE_VALGRIND_INCLUDE",
-    "TORCH_DIR",
-)
-# The two options that add a word to the name of a configuration.
-NAME_OPTIONS = (("bench", "CRUCIBLE_BENCH"), ("fuzz", "CRUCIBLE_FUZZ"))
-CMAKE_FALSE = frozenset({"", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND"})
 # The threads that read the sections of the objects.
 READERS = 16
 # The rule of the region lines of a section (the head comment of utils/tools/quarantine/plugin.h).
@@ -170,19 +140,6 @@ class Census:
                 for item in self.of_rule(rule_id)
             ),
         ]
-
-
-@dataclass(frozen=True, slots=True)
-class BuildConfiguration:
-    """The name of the configuration of a build and its facts, as KEY VALUE pairs (THE CONFIGURATION)."""
-
-    name: str
-    facts: tuple[tuple[str, str], ...]
-
-    @property
-    def tier(self) -> str:
-        """The target tier of the build."""
-        return dict(self.facts).get(TIER_KEY, "?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,95 +279,6 @@ def read_census(build_dir: Path, root: Path) -> Census:
     return census_of(items, [command for _, _, command in objects])
 
 
-# ── The configuration ──────────────────────────────────────────────
-
-
-def normalized(kind: str, value: str) -> str:
-    """Return a cache value as one word: on or off for a BOOL, set or unset for a path, else the value or unset."""
-    is_false = value.upper() in CMAKE_FALSE or value.upper().endswith("-NOTFOUND")
-    if kind == "BOOL":
-        return "off" if is_false else "on"
-    if kind in ("PATH", "FILEPATH"):
-        return "unset" if is_false else "set"
-    return value if value.strip() else "unset"
-
-
-def build_configuration(build_dir: Path, commands: Iterable[str]) -> BuildConfiguration:
-    """Return the configuration of a build: the build kind, the tier and each name of CONFIGURATION.
-
-    The tier holds the native tier of each native flag of the compile commands of the objects.  A bench target with
-    its own -march=native then gives the configuration the tier of the host.
-
-    Raises:
-        BuildError: If the build has no build-kind.txt, its CMake cache cannot be read, or the compiler does not
-            print its target
-    """
-    kind = build_target.kind_of(build_dir)
-    if kind is None:
-        raise BuildError(f"{build_dir} has no build-kind.txt, which cmake/BuildLauncher.cmake writes")
-    try:
-        entries = cmake.cache(build_dir)
-    except cmake.CmakeError as problem:
-        raise BuildError(f"the CMake cache of {build_dir} cannot be read: {problem}") from None
-    compiler = entries.get("CMAKE_CXX_COMPILER")
-    try:
-        tier = build_target.build_tier(build_dir, compiler.value if compiler is not None else "", commands)
-    except build_target.TierError as problem:
-        raise BuildError(str(problem)) from None
-    facts = [(KIND_KEY, kind), (TIER_KEY, tier)]
-    for name in CONFIGURATION:
-        entry = entries.get(name)
-        value = normalized(entry.type_name, entry.value) if entry is not None else normalized("STRING", "")
-        facts.append((name, value.replace(" ", "_")))
-    words = [word for word, key in NAME_OPTIONS if dict(facts)[key] == "on"]
-    return BuildConfiguration("-".join([kind, *words]), tuple(facts))
-
-
-def facts_of(ledger: rule_ledger.Ledger, name: str) -> tuple[tuple[str, str], ...] | None:
-    """Return the facts of a configuration of the ledger, or None when the ledger does not hold it."""
-    item = ledger.configuration(name)
-    return item.facts if item is not None else None
-
-
-def is_held(ledger: rule_ledger.Ledger, configuration: BuildConfiguration) -> bool:
-    """Return True when the ledger holds the configuration of the build: its name, and each fact that its row gives.
-
-    A row can give only some facts, as the rows of the rule syscall-capability give only the build kind.  A fact
-    that the build has and the row does not give changes nothing.
-    """
-    facts = facts_of(ledger, configuration.name)
-    if facts is None:
-        return False
-    built = dict(configuration.facts)
-    return all(built.get(name) == value for name, value in facts)
-
-
-def configuration_difference(build: Sequence[tuple[str, str]], ledger: Sequence[tuple[str, str]]) -> list[str]:
-    """Return a text for each fact of the row in the ledger with a value in the build that is not its value there."""
-    built, held = dict(build), dict(ledger)
-    return [
-        f"{name} is {built.get(name, 'absent')} in the build and {held[name]} in the ledger"
-        for name in sorted(held)
-        if built.get(name) != held[name]
-    ]
-
-
-def held_line(rule_id: str, ledger: rule_ledger.Ledger, configuration: BuildConfiguration, consequence: str) -> str:
-    """Return the one line of a build with a configuration that the ledger does not hold (target.not_held).
-
-    `consequence` tells what the rule does with the build.
-    """
-    held = [(item.name, dict(item.facts).get(TIER_KEY, "?")) for item in ledger.configurations]
-    facts = facts_of(ledger, configuration.name)
-    detail = ""
-    if facts is not None:
-        detail = (
-            f"Its configuration {configuration.name} differs: "
-            f"{'; '.join(configuration_difference(configuration.facts, facts))}"
-        )
-    return build_target.not_held(rule_id, configuration.name, configuration.tier, held, consequence, detail)
-
-
 # ── The context ────────────────────────────────────────────────────
 
 
@@ -428,7 +296,7 @@ class PluginContext:
         root: Path,
         build_dir: Path | None = None,
         census: Census | None = None,
-        configuration: BuildConfiguration | None = None,
+        configuration: build_config.BuildConfiguration | None = None,
     ) -> None:
         """Keep the root, the build directory, and a planted census and configuration."""
         self.root = root
@@ -455,7 +323,7 @@ class PluginContext:
             self._census = read_census(self.build_dir, self.root)
         return self._census
 
-    def configuration(self) -> BuildConfiguration:
+    def configuration(self) -> build_config.BuildConfiguration:
         """Return the configuration of the build (THE CONFIGURATION).
 
         Raises:
@@ -467,7 +335,10 @@ class PluginContext:
                 raise NotApplicable(
                     "the engine plugin reads the configuration of a build, and the call gives no --build-dir DIR"
                 )
-            self._configuration = build_configuration(self.build_dir, self.census().commands)
+            try:
+                self._configuration = build_config.read_configuration(self.build_dir, self.census().commands)
+            except build_config.ConfigurationError as problem:
+                raise BuildError(str(problem)) from None
         return self._configuration
 
     def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:

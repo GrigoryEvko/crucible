@@ -1,5 +1,6 @@
 # The ledger holds the configuration x86_64-release only.  The build of the configuration x86_64-debug-asan has no
-# baseline, and the rule does not apply.
+# rows of its own, and the largest row of each header judges it.  A header of the rows with no sentinel gives no
+# warning, and the build has no error.
 format 1
 kind x86_64-debug-asan
 file include/H00.h size=100

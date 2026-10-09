@@ -1,6 +1,6 @@
 # The ledger of the plant.  The base configuration counts no finding of
 # src/raw.cpp, and the configuration x86_64-debug-tsan counts the one call of
-# close of its arm.
+# close of its arm.  No configuration counts the call of dup.
 format 1
 rule quarantine
 configuration x86_64-debug-asan kind x86_64-debug-asan
