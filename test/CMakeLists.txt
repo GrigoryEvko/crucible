@@ -5054,7 +5054,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # judge of the max rules, the runner and the planted
 # build of the engine build, the configurations of the census totals, the reader
 # of the compile database, the Python reader, the reader of the reports of
-# mypy and ruff, the package scope, the STE table, the counted rules of the
+# mypy and ruff, the package scope, the STE table, the import closure of the
+# rule test-registration, the counted rules of the
 # engine plugin, the writer of the walk list and the writer of the header
 # costs plant their input in throwaway trees.  The tests of the reader of
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
@@ -5085,6 +5086,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
+        guard.engines.meta.test_test_registration
         guard.engines.meta.test_decide_cite_ratio
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.test_inputs)

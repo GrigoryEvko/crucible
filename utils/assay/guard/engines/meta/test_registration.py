@@ -120,10 +120,15 @@ def imports_of(path: Path) -> set[str]:
     return {name for name in names if name == "assay" or name.startswith("assay.")}
 
 
-def reads_trees(root: Path, module: str, cache: dict[str, bool]) -> bool:
+def reads_trees(root: Path, module: str, cache: dict[str, bool], imports: dict[str, frozenset[str]]) -> bool:
     """Whether the import closure of a module of the package holds the reader of the parse trees.
 
-    Complexity: linear in the size of the modules of the closure, each read one time through the cache.
+    `cache` holds the answer of each module, and `imports` holds the imports of each module that the call parsed.
+    The rules of one call share the two tables.  The call then parses each module of the package one time, and not
+    one time for each rule.
+
+    Complexity: linear in the size of the modules of the closure, with one parse of each module.  For each rule, linear
+    in the edges of its closure.
     """
     if module in cache:
         return cache[module]
@@ -135,10 +140,10 @@ def reads_trees(root: Path, module: str, cache: dict[str, bool]) -> bool:
         if current == TREE_READER:
             cache[module] = True
             return True
-        path = module_file(root, current)
-        if path is None:
-            continue
-        for name in imports_of(path):
+        if current not in imports:
+            path = module_file(root, current)
+            imports[current] = frozenset(imports_of(path)) if path is not None else frozenset()
+        for name in imports[current]:
             if name not in seen:
                 seen.add(name)
                 pending.append(name)
@@ -177,6 +182,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     found: list[check_report.Finding] = []
     covered: set[str] = set()
     tree_cache: dict[str, bool] = {}
+    module_imports: dict[str, frozenset[str]] = {}
     masters = 0
     for test in tests:
         run = master_of(test, root)
@@ -215,7 +221,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
             if LABEL in labels:
                 covered.add(rule_id)
             module = implementing_module(rule, root)
-            reads = module is not None and reads_trees(root, module, tree_cache)
+            reads = module is not None and reads_trees(root, module, tree_cache, module_imports)
             reads_any = reads_any or reads
             if reads and not requires_trees and TREE_FIXTURE not in test.words_of("FIXTURES_SETUP"):
                 found.append(check_report.Finding(
