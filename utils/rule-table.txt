@@ -234,6 +234,8 @@ door <asm/errno.h> src/foundation/os/Errno.cpp
 door <linux/fcntl.h> src/foundation/os/Syscall.cpp
 door <linux/futex.h> src/foundation/os/Syscall.cpp
 door <linux/time_types.h> src/foundation/os/Syscall.cpp
+door <errno.h> src/foundation/os/Intercepted.cpp
+door <unistd.h> src/foundation/os/Intercepted.cpp
 door <linux/auxvec.h> src/fixy/os/Topology.cpp
 door <linux/io_uring.h> include/fixy/os/Io.h
 door <sys/sendfile.h> include/fixy/os/Io.h

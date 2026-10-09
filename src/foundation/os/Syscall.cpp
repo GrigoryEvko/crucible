@@ -101,6 +101,24 @@ static_assert(each_call_has_a_number(),
               "an enumerator of foundation::os::Syscall has no case in number_of: give it the __NR_ number of "
               "<asm/unistd.h>");
 
+// Each call that can block has a route of a build with ThreadSanitizer: read
+// and write go through the C library, and futex goes between the hooks.  The
+// walk reads each enumerator, so a new blocking call with no route stops the
+// build of each preset, and not only of the TSan preset.
+[[nodiscard]] consteval bool each_blocking_call_has_a_route() noexcept {
+    for (std::meta::info const enumerator : std::meta::enumerators_of(^^Syscall)) {
+        Syscall const call = std::meta::extract<Syscall>(enumerator);
+        if (can_block(call) && call != Syscall::read && call != Syscall::write && call != Syscall::futex) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static_assert(each_blocking_call_has_a_route(),
+              "a call of foundation::os::Syscall can block and has no route of a build with ThreadSanitizer: give it "
+              "a route in raw_syscall and in src/foundation/os/Intercepted.cpp");
+
 // The one system call instruction.  The kernel reads the number and the six
 // words from fixed registers, and it gives the result in one register.  Each
 // register variable names the register of its operand, and no call stands
@@ -323,8 +341,11 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
         return issue_watched_futex(detail::FutexCall{futex_role(second.bits()), first.bits(), second.bits(),
                                                      third.bits(), fourth.bits(), fifth.bits(), sixth.bits()});
     }
-    if (can_block(call)) {
-        return detail::issue_intercepted(call, first.bits(), second.bits(), third.bits());
+    if (call == Syscall::read) {
+        return detail::read_intercepted(first.bits(), second.bits(), third.bits());
+    }
+    if (call == Syscall::write) {
+        return detail::write_intercepted(first.bits(), second.bits(), third.bits());
     }
 #endif
     return issue(number_of(call), first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(), sixth.bits());

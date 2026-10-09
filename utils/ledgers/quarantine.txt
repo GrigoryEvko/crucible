@@ -55,6 +55,9 @@
 #                                      cmake --preset default -B build-extended -DCRUCIBLE_BENCH=ON
 #                                      -DCRUCIBLE_FUZZ=ON
 #                                  The CI job fuzz builds it.
+#   x86_64-debug-tsan              The tsan preset (build-tsan).  Its preprocessor arms of
+#                                  __SANITIZE_THREAD__, such as the routes of
+#                                  src/foundation/os/Intercepted.cpp, count here.
 #   aarch64-...                    The default and the release preset on aarch64.  Only CI builds
 #                                  them.  The leg writes the rows of its configuration after a
 #                                  failure of the rule and when the ledger does not hold it, each
@@ -71,9 +74,8 @@
 #   units.
 #   No configuration turns on CRUCIBLE_SENSE_HUB_V2.  Each build compiles the SenseHub v2 sources
 #   in two object libraries that no target links, with and without CRUCIBLE_SENSE_HUB_EXTENDED
-#   (CMakeLists.txt), so these rows count each arm of those sources.  The TSan, UBSan-strict,
-#   verify, bench and PGO presets are no configuration.  An arm that only they compile is not
-#   counted.
+#   (CMakeLists.txt), so these rows count each arm of those sources.  The UBSan-strict, verify,
+#   bench and PGO presets are no configuration.  An arm that only they compile is not counted.
 format 1
 rule quarantine
 configuration x86_64-debug-asan kind x86_64-debug-asan
@@ -127,6 +129,23 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
+configuration x86_64-debug-tsan CRUCIBLE_TSAN on
+configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
+configuration x86_64-debug-tsan CRUCIBLE_PGO off
+configuration x86_64-debug-tsan CRUCIBLE_BENCH off
+configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
+configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-tsan TORCH_DIR unset
 @build/canopy_gossip_fanout_sample_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/canopy_gossip_xdp_tx_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/canopy_peer_liveness_probe_bpf_bytecode.c | c-array-object | 1 | - | -
@@ -192,6 +211,7 @@ bench/bench_harness.h | compiler-builtin | 2 | __builtin_ia32_lfence | -
 bench/bench_harness.h | compiler-builtin | 1 | __builtin_ia32_rdtsc | -
 bench/bench_harness.h | compiler-builtin | 1 | __builtin_ia32_rdtscp | -
 bench/bench_harness.h | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
+bench/bench_harness.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 bench/bench_harness.h | inline-asm | 1 | asm | -
 bench/bench_harness.h | raw-pointer-object | 41 | - | -
 bench/bench_harness.h | std-entity | 3 | __gnu_cxx::__normal_iterator | -
@@ -1106,6 +1126,7 @@ include/crucible/ledger/Ledger.h | std-object | 3 | std::span | -
 include/crucible/ledger/LedgerStore.h | c-library-call | 2 | getenv | -
 include/crucible/ledger/LedgerStore.h | c-library-call | 1 | getpid | -
 include/crucible/ledger/LedgerStore.h | c-library-call | 2 | snprintf | -
+include/crucible/ledger/LedgerStore.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/ledger/LedgerStore.h | raw-pointer-object | 3 | - | -
 include/crucible/ledger/LedgerStore.h | std-entity | 3 | __gnu_cxx::__normal_iterator | -
 include/crucible/ledger/LedgerStore.h | std-entity | 3 | __gnu_cxx::__normal_iterator::operator* | -
@@ -1418,6 +1439,7 @@ include/crucible/perf/detail/BpfHub.h | c-library-object | 5 | bpf_map | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 2 | bpf_object | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 1 | bpf_object_open_opts | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 2 | bpf_program | -
+include/crucible/perf/detail/BpfHub.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/perf/detail/BpfHub.h | raw-pointer-object | 32 | - | -
 include/crucible/perf/detail/BpfHub.h | replace-pending:std::bit_cast | 4 | std::bit_cast | -
 include/crucible/perf/detail/BpfHub.h | std-entity | 2 | std::basic_string::data | -
@@ -1453,6 +1475,7 @@ include/crucible/perf/detail/BpfLoader.h | c-library-object | 3 | bpf_map | -
 include/crucible/perf/detail/BpfLoader.h | c-library-object | 2 | bpf_object | -
 include/crucible/perf/detail/BpfLoader.h | c-library-object | 1 | bpf_program | -
 include/crucible/perf/detail/BpfLoader.h | c-library-object | 1 | libbpf_print_level | -
+include/crucible/perf/detail/BpfLoader.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/perf/detail/BpfLoader.h | raw-pointer-object | 14 | - | -
 include/crucible/perf/detail/BpfLoader.h | std-entity | 4 | std::basic_string::append | -
 include/crucible/perf/detail/BpfLoader.h | std-entity | 1 | std::basic_string::assign | -
@@ -1574,6 +1597,7 @@ include/crucible/warden/CpuTopology.h | c-library-call | 1 | sched_getaffinity |
 include/crucible/warden/CpuTopology.h | c-library-call | 5 | snprintf | -
 include/crucible/warden/CpuTopology.h | c-library-call | 1 | sysconf | -
 include/crucible/warden/CpuTopology.h | c-library-object | 1 | cpu_set_t | -
+include/crucible/warden/CpuTopology.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/warden/CpuTopology.h | raw-pointer-object | 3 | - | -
 include/crucible/warden/CpuTopology.h | replace-pending:<limits> | 1 | std::numeric_limits::min | -
 include/crucible/warden/CpuTopology.h | std-entity | 1 | __gnu_cxx::operator== | -
@@ -1630,6 +1654,7 @@ include/crucible/warden/Hardening.h | c-library-call | 1 | strerror | -
 include/crucible/warden/Hardening.h | c-library-call | 3 | syscall | -
 include/crucible/warden/Hardening.h | c-library-call | 1 | sysconf | -
 include/crucible/warden/Hardening.h | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
+include/crucible/warden/Hardening.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/warden/Hardening.h | raw-pointer-object | 14 | - | -
 include/crucible/warden/Hardening.h | replace-pending:std::bit_cast | 4 | std::bit_cast | -
 include/crucible/warden/Hardening.h | std-entity | 1 | __gnu_cxx::__normal_iterator | -
@@ -1882,7 +1907,8 @@ include/fixy/os/CpuPinned.h | layer-header | 1 | <atomic> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <expected> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <sched.h> | -
-include/fixy/os/Fd.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Fd.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
+include/fixy/os/Fs.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/os/Fs.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Fs.h | layer-header | 1 | <cstdio> | -
 include/fixy/os/Fs.h | layer-header | 1 | <expected> | -
@@ -1890,24 +1916,23 @@ include/fixy/os/Fs.h | layer-header | 1 | <fcntl.h> | -
 include/fixy/os/Fs.h | layer-header | 1 | <span> | -
 include/fixy/os/Fs.h | layer-header | 1 | <sys/stat.h> | -
 include/fixy/os/Fs.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Fs.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Io.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/os/Io.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Io.h | layer-header | 1 | <expected> | -
 include/fixy/os/Io.h | layer-header | 1 | <sys/mman.h> | -
 include/fixy/os/Io.h | layer-header | 1 | <sys/syscall.h> | -
 include/fixy/os/Io.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Io.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/Mmap.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/os/Mmap.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <expected> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <sys/mman.h> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Mmap.h | layer-header | 1 | <unistd.h> | -
+include/fixy/os/NumaPlacement.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <climits> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <expected> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <sys/syscall.h> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <system_error> | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <unistd.h> | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <cstdio> | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <expected> | -
@@ -1920,11 +1945,11 @@ include/fixy/os/Path.h | layer-header | 1 | <cstdlib> | -
 include/fixy/os/Path.h | layer-header | 1 | <expected> | -
 include/fixy/os/Path.h | layer-header | 1 | <filesystem> | -
 include/fixy/os/Path.h | layer-header | 1 | <string> | -
+include/fixy/os/Sched.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/os/Sched.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Sched.h | layer-header | 1 | <expected> | -
 include/fixy/os/Sched.h | layer-header | 1 | <sched.h> | -
 include/fixy/os/Sched.h | layer-header | 1 | <sys/syscall.h> | -
-include/fixy/os/Sched.h | layer-header | 1 | <unistd.h> | -
 include/fixy/os/Socket.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Socket.h | layer-header | 1 | <expected> | -
 include/fixy/os/Socket.h | layer-header | 1 | <system_error> | -
@@ -2020,6 +2045,7 @@ include/fixy/session/Subtype.h | layer-header | 1 | <string_view> | -
 include/fixy/session/Subtype.h | layer-header | 1 | <vector> | -
 include/fixy/session/VigilModeCell.h | layer-header | 1 | <atomic> | -
 include/fixy/session/Watch.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+include/fixy/session/Watch.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/fixy/session/Watch.h | layer-header | 1 | <array> | -
 include/fixy/session/Watch.h | layer-header | 1 | <atomic> | -
 include/fixy/session/Watch.h | layer-header | 1 | <csignal> | -
@@ -2029,7 +2055,6 @@ include/fixy/session/Watch.h | layer-header | 1 | <signal.h> | -
 include/fixy/session/Watch.h | layer-header | 1 | <source_location> | -
 include/fixy/session/Watch.h | layer-header | 1 | <string_view> | -
 include/fixy/session/Watch.h | layer-header | 1 | <time.h> | -
-include/fixy/session/Watch.h | layer-header | 1 | <unistd.h> | -
 include/foundation/AlignedBuffer.h | layer-header | 1 | <bit> | -
 include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdio> | -
 include/foundation/AlignedBuffer.h | layer-header | 1 | <cstdlib> | -
@@ -2247,6 +2272,7 @@ src/Cipher.cpp | c-library-call | 1 | openat | -
 src/Cipher.cpp | c-library-call | 1 | renameat | -
 src/Cipher.cpp | c-library-call | 3 | unlinkat | -
 src/Cipher.cpp | c-library-call | 2 | write | -
+src/Cipher.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 src/Cipher.cpp | raw-pointer-object | 11 | - | -
 src/Cipher.cpp | replace-pending:<limits> | 3 | std::numeric_limits::max | -
 src/Cipher.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator | -
@@ -2400,6 +2426,7 @@ src/cntp/Pacing.cpp | c-library-object | 1 | sockaddr_nl | -
 src/cntp/Pacing.cpp | c-library-object | 3 | tcmsg | -
 src/cntp/Pacing.cpp | c-library-object | 1 | timeval | -
 src/cntp/Pacing.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+src/cntp/Pacing.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 src/cntp/Pacing.cpp | raw-pointer-object | 7 | - | -
 src/cntp/Pacing.cpp | std-entity | 4 | std::array::data | -
 src/cntp/Pacing.cpp | std-entity | 1 | std::basic_string_view | -
@@ -2482,6 +2509,7 @@ src/perf/PmuSample.cpp | c-library-call | 1 | syscall | -
 src/perf/PmuSample.cpp | c-library-object | 1 | bpf_link | -
 src/perf/PmuSample.cpp | c-library-object | 1 | bpf_program | -
 src/perf/PmuSample.cpp | c-library-object | 2 | perf_event_attr | -
+src/perf/PmuSample.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 src/perf/PmuSample.cpp | foreign-symbol | 1 | pmu_sample_bpf_bytecode (C linkage) | -
 src/perf/PmuSample.cpp | foreign-symbol | 1 | pmu_sample_bpf_bytecode_len (C linkage) | -
 src/perf/PmuSample.cpp | raw-pointer-object | 11 | - | -
@@ -2521,6 +2549,7 @@ src/perf/ProcGauges.cpp | c-library-call | 1 | snprintf | -
 src/perf/ProcGauges.cpp | c-library-call | 2 | strlen | -
 src/perf/ProcGauges.cpp | c-library-object | 1 | __dirstream | -
 src/perf/ProcGauges.cpp | c-library-object | 1 | dirent | -
+src/perf/ProcGauges.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 src/perf/ProcGauges.cpp | raw-new-delete | 1 | new | -
 src/perf/ProcGauges.cpp | raw-pointer-object | 73 | - | -
 src/perf/ProcGauges.cpp | std-entity | 2 | std::array::data | -
@@ -3139,6 +3168,7 @@ test/fixy/test_channel_identity.cpp | c-library-call | 6 | fprintf | -
 test/fixy/test_channel_identity.cpp | c-library-call | 1 | printf | -
 test/fixy/test_channel_identity.cpp | c-library-call | 7 | stderr | -
 test/fixy/test_channel_identity.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_channel_identity.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_channel_identity.cpp | raw-function-pointer | 2 | - | -
 test/fixy/test_channel_identity.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_channel_identity.cpp | std-entity | 32 | std::get | -
@@ -3156,6 +3186,7 @@ test/fixy/test_channel_moved_from.cpp | c-library-call | 7 | fprintf | -
 test/fixy/test_channel_moved_from.cpp | c-library-call | 1 | printf | -
 test/fixy/test_channel_moved_from.cpp | c-library-call | 8 | stderr | -
 test/fixy/test_channel_moved_from.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_channel_moved_from.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_channel_moved_from.cpp | raw-function-pointer | 2 | - | -
 test/fixy/test_channel_moved_from.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_channel_moved_from.cpp | std-entity | 16 | std::get | -
@@ -3246,6 +3277,7 @@ test/fixy/test_concurrent_snapshot.cpp | c-library-call | 1 | fork | -
 test/fixy/test_concurrent_snapshot.cpp | c-library-call | 5 | fprintf | -
 test/fixy/test_concurrent_snapshot.cpp | c-library-call | 5 | stderr | -
 test/fixy/test_concurrent_snapshot.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_concurrent_snapshot.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_concurrent_snapshot.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
 test/fixy/test_concurrent_snapshot.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
@@ -3441,6 +3473,7 @@ test/fixy/test_fp_polynomial.cpp | c-library-call | 2 | read | -
 test/fixy/test_fp_polynomial.cpp | c-library-call | 1 | sin | -
 test/fixy/test_fp_polynomial.cpp | c-library-call | 7 | stderr | -
 test/fixy/test_fp_polynomial.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_fp_polynomial.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_fp_polynomial.cpp | raw-function-pointer | 2 | - | -
 test/fixy/test_fp_polynomial.cpp | raw-pointer-object | 3 | - | -
 test/fixy/test_fp_polynomial.cpp | replace-pending:std::bit_cast | 5 | std::bit_cast | -
@@ -3461,6 +3494,7 @@ test/fixy/test_fs.cpp | c-library-call | 1 | fread | -
 test/fixy/test_fs.cpp | c-library-call | 2 | memcmp | -
 test/fixy/test_fs.cpp | c-library-call | 36 | stderr | -
 test/fixy/test_fs.cpp | c-library-call | 1 | write | -
+test/fixy/test_fs.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_fs.cpp | raw-pointer-object | 3 | - | -
 test/fixy/test_fs.cpp | std-entity | 2 | std::as_bytes | -
 test/fixy/test_fs.cpp | std-entity | 19 | std::basic_string::c_str | -
@@ -3506,6 +3540,7 @@ test/fixy/test_handle_publish.cpp | c-library-call | 1 | fork | -
 test/fixy/test_handle_publish.cpp | c-library-call | 35 | fprintf | -
 test/fixy/test_handle_publish.cpp | c-library-call | 35 | stderr | -
 test/fixy/test_handle_publish.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_handle_publish.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_handle_publish.cpp | std-entity | 4 | std::__atomic_base::fetch_add | -
 test/fixy/test_handle_publish.cpp | std-entity | 6 | std::__atomic_base::load | -
 test/fixy/test_handle_publish.cpp | std-entity | 4 | std::atomic | -
@@ -3569,6 +3604,7 @@ test/fixy/test_os_io.cpp | c-library-call | 1 | memcmp | -
 test/fixy/test_os_io.cpp | c-library-call | 1 | pread | -
 test/fixy/test_os_io.cpp | c-library-call | 23 | stderr | -
 test/fixy/test_os_io.cpp | door-header | 1 | <linux/io_uring.h> has the door include/fixy/os/Io.h | -
+test/fixy/test_os_io.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_os_io.cpp | std-entity | 1 | std::as_bytes | -
 test/fixy/test_os_io.cpp | std-entity | 4 | std::basic_string::c_str | -
 test/fixy/test_os_io.cpp | std-entity | 3 | std::error_code::message | -
@@ -3594,6 +3630,7 @@ test/fixy/test_os_mmap.cpp | c-library-call | 2 | memset | -
 test/fixy/test_os_mmap.cpp | c-library-call | 1 | munmap | -
 test/fixy/test_os_mmap.cpp | c-library-call | 1 | pwrite | -
 test/fixy/test_os_mmap.cpp | c-library-call | 26 | stderr | -
+test/fixy/test_os_mmap.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_os_mmap.cpp | raw-pointer-object | 5 | - | -
 test/fixy/test_os_mmap.cpp | std-entity | 8 | std::basic_string::c_str | -
 test/fixy/test_os_mmap.cpp | std-entity | 8 | std::error_code::message | -
@@ -3614,6 +3651,7 @@ test/fixy/test_os_numa_placement.cpp | c-library-call | 16 | stderr | -
 test/fixy/test_os_numa_placement.cpp | c-library-call | 2 | syscall | -
 test/fixy/test_os_numa_placement.cpp | c-library-call | 1 | sysconf | -
 test/fixy/test_os_numa_placement.cpp | door-header | 1 | <linux/mempolicy.h> has the door include/fixy/os/NumaPlacement.h | -
+test/fixy/test_os_numa_placement.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_os_numa_placement.cpp | raw-pointer-object | 4 | - | -
 test/fixy/test_os_numa_placement.cpp | std-entity | 3 | std::basic_string::c_str | -
 test/fixy/test_os_numa_placement.cpp | std-entity | 3 | std::error_code::message | -
@@ -3724,6 +3762,7 @@ test/fixy/test_owned_mmap.cpp | c-library-call | 1 | munmap | -
 test/fixy/test_owned_mmap.cpp | c-library-call | 1 | sscanf | -
 test/fixy/test_owned_mmap.cpp | c-library-call | 2 | stderr | -
 test/fixy/test_owned_mmap.cpp | c-library-call | 1 | sysconf | -
+test/fixy/test_owned_mmap.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_owned_mmap.cpp | raw-pointer-object | 4 | - | -
 test/fixy/test_owned_mmap.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 test/fixy/test_owned_mmap.cpp | std-entity | 1 | std::basic_string | -
@@ -3844,6 +3883,7 @@ test/fixy/test_precondition_checks_in_release.cpp | c-library-call | 1 | pipe | 
 test/fixy/test_precondition_checks_in_release.cpp | c-library-call | 2 | read | -
 test/fixy/test_precondition_checks_in_release.cpp | c-library-call | 1 | stderr | -
 test/fixy/test_precondition_checks_in_release.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_precondition_checks_in_release.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_precondition_checks_in_release.cpp | raw-function-pointer | 2 | - | -
 test/fixy/test_precondition_checks_in_release.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_precondition_checks_in_release.cpp | std-entity | 1 | std::basic_string::append | -
@@ -3960,6 +4000,7 @@ test/fixy/test_session_crash_attack.cpp | c-library-call | 8 | fprintf | -
 test/fixy/test_session_crash_attack.cpp | c-library-call | 1 | signal | -
 test/fixy/test_session_crash_attack.cpp | c-library-call | 10 | stderr | -
 test/fixy/test_session_crash_attack.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_session_crash_attack.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_crash_attack.cpp | raw-function-pointer | 1 | - | -
 test/fixy/test_session_crash_attack.cpp | raw-pointer-object | 2 | - | -
 test/fixy/test_session_crash_attack.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
@@ -4093,6 +4134,7 @@ test/fixy/test_session_delegation_aborts.cpp | c-library-call | 1 | printf | -
 test/fixy/test_session_delegation_aborts.cpp | c-library-call | 2 | read | -
 test/fixy/test_session_delegation_aborts.cpp | c-library-call | 1 | stderr | -
 test/fixy/test_session_delegation_aborts.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_session_delegation_aborts.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_delegation_aborts.cpp | raw-function-pointer | 1 | - | -
 test/fixy/test_session_delegation_aborts.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_session_delegation_aborts.cpp | std-entity | 1 | std::basic_string::append | -
@@ -4108,6 +4150,7 @@ test/fixy/test_session_endpoint_transfer.cpp | c-library-call | 1 | fork | -
 test/fixy/test_session_endpoint_transfer.cpp | c-library-call | 2 | fprintf | -
 test/fixy/test_session_endpoint_transfer.cpp | c-library-call | 3 | stderr | -
 test/fixy/test_session_endpoint_transfer.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_session_endpoint_transfer.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_endpoint_transfer.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_session_entry.cpp | c-library-call | 3 | fprintf | -
 test/fixy/test_session_entry.cpp | c-library-call | 3 | stderr | -
@@ -4119,6 +4162,7 @@ test/fixy/test_session_global_attack.cpp | c-library-call | 6 | printf | -
 test/fixy/test_session_global_attack.cpp | c-library-call | 1 | signal | -
 test/fixy/test_session_global_attack.cpp | c-library-call | 3 | stderr | -
 test/fixy/test_session_global_attack.cpp | c-library-call | 1 | write | -
+test/fixy/test_session_global_attack.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_global_attack.cpp | std-entity | 11 | __gnu_cxx::__normal_iterator | -
 test/fixy/test_session_global_attack.cpp | std-entity | 13 | __gnu_cxx::__normal_iterator::operator* | -
 test/fixy/test_session_global_attack.cpp | std-entity | 13 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -4209,6 +4253,7 @@ test/fixy/test_session_handle.cpp | c-library-call | 2 | fork | -
 test/fixy/test_session_handle.cpp | c-library-call | 37 | fprintf | -
 test/fixy/test_session_handle.cpp | c-library-call | 37 | stderr | -
 test/fixy/test_session_handle.cpp | c-library-call | 2 | waitpid | -
+test/fixy/test_session_handle.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_handle.cpp | raw-function-pointer | 1 | - | -
 test/fixy/test_session_handle.cpp | raw-new-delete | 1 | new | -
 test/fixy/test_session_handle.cpp | raw-pointer-object | 5 | - | -
@@ -4268,6 +4313,7 @@ test/fixy/test_session_handle_attacks.cpp | c-library-call | 21 | stderr | -
 test/fixy/test_session_handle_attacks.cpp | c-library-call | 2 | waitpid | -
 test/fixy/test_session_handle_attacks.cpp | c-library-object | 1 | rlimit | -
 test/fixy/test_session_handle_attacks.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
+test/fixy/test_session_handle_attacks.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_handle_attacks.cpp | raw-function-pointer | 5 | - | -
 test/fixy/test_session_handle_attacks.cpp | raw-new-delete | 7 | new | -
 test/fixy/test_session_handle_attacks.cpp | raw-pointer-object | 15 | - | -
@@ -4337,6 +4383,7 @@ test/fixy/test_session_hold_consumed_aborts.cpp | c-library-call | 1 | printf | 
 test/fixy/test_session_hold_consumed_aborts.cpp | c-library-call | 2 | read | -
 test/fixy/test_session_hold_consumed_aborts.cpp | c-library-call | 1 | stderr | -
 test/fixy/test_session_hold_consumed_aborts.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_session_hold_consumed_aborts.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_hold_consumed_aborts.cpp | raw-function-pointer | 1 | - | -
 test/fixy/test_session_hold_consumed_aborts.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_session_hold_consumed_aborts.cpp | std-entity | 1 | std::basic_string::append | -
@@ -4355,6 +4402,7 @@ test/fixy/test_session_hold_open_loan_aborts.cpp | c-library-call | 1 | printf |
 test/fixy/test_session_hold_open_loan_aborts.cpp | c-library-call | 2 | read | -
 test/fixy/test_session_hold_open_loan_aborts.cpp | c-library-call | 1 | stderr | -
 test/fixy/test_session_hold_open_loan_aborts.cpp | c-library-call | 1 | waitpid | -
+test/fixy/test_session_hold_open_loan_aborts.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_hold_open_loan_aborts.cpp | raw-function-pointer | 1 | - | -
 test/fixy/test_session_hold_open_loan_aborts.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_session_hold_open_loan_aborts.cpp | std-entity | 1 | std::basic_string::append | -
@@ -4749,6 +4797,7 @@ test/foundation/abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
 test/foundation/abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/foundation/abort_probe.h | c-library-object | 2 | sigaction | -
 test/foundation/abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+test/foundation/abort_probe.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/abort_probe.h | foreign-symbol | 1 | foundation::test::abort_probe_longjmp (asm label longjmp) | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::min | -
@@ -4808,6 +4857,7 @@ test/foundation/test_contract_handler.cpp | c-library-call | 1 | write | -
 test/foundation/test_contract_handler.cpp | c-library-object | 1 | itimerval | -
 test/foundation/test_contract_handler.cpp | c-library-object | 1 | sigaction | -
 test/foundation/test_contract_handler.cpp | c-library-object | 1 | timespec | -
+test/foundation/test_contract_handler.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/test_contract_handler.cpp | raw-pointer-object | 2 | - | -
 test/foundation/test_contract_handler.cpp | std-entity | 1 | std::basic_string::append | -
 test/foundation/test_contract_handler.cpp | std-entity | 1 | std::basic_string::c_str | -
@@ -5125,6 +5175,7 @@ test/foundation/test_read_view_lend_needs_a_share.cpp | c-library-call | 1 | pri
 test/foundation/test_read_view_lend_needs_a_share.cpp | c-library-call | 2 | read | -
 test/foundation/test_read_view_lend_needs_a_share.cpp | c-library-call | 1 | stderr | -
 test/foundation/test_read_view_lend_needs_a_share.cpp | c-library-call | 1 | waitpid | -
+test/foundation/test_read_view_lend_needs_a_share.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/test_read_view_lend_needs_a_share.cpp | raw-function-pointer | 1 | - | -
 test/foundation/test_read_view_lend_needs_a_share.cpp | raw-pointer-object | 1 | - | -
 test/foundation/test_read_view_lend_needs_a_share.cpp | std-entity | 1 | std::basic_string::append | -
@@ -5185,6 +5236,7 @@ test/foundation/test_share_pool_double_deposit_aborts.cpp | c-library-call | 1 |
 test/foundation/test_share_pool_double_deposit_aborts.cpp | c-library-call | 2 | read | -
 test/foundation/test_share_pool_double_deposit_aborts.cpp | c-library-call | 1 | stderr | -
 test/foundation/test_share_pool_double_deposit_aborts.cpp | c-library-call | 1 | waitpid | -
+test/foundation/test_share_pool_double_deposit_aborts.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/test_share_pool_double_deposit_aborts.cpp | raw-function-pointer | 1 | - | -
 test/foundation/test_share_pool_double_deposit_aborts.cpp | raw-pointer-object | 1 | - | -
 test/foundation/test_share_pool_double_deposit_aborts.cpp | std-entity | 1 | std::basic_string::append | -
@@ -5202,6 +5254,7 @@ test/foundation/test_share_pool_outlived_aborts.cpp | c-library-call | 1 | print
 test/foundation/test_share_pool_outlived_aborts.cpp | c-library-call | 2 | read | -
 test/foundation/test_share_pool_outlived_aborts.cpp | c-library-call | 1 | stderr | -
 test/foundation/test_share_pool_outlived_aborts.cpp | c-library-call | 1 | waitpid | -
+test/foundation/test_share_pool_outlived_aborts.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/test_share_pool_outlived_aborts.cpp | raw-function-pointer | 1 | - | -
 test/foundation/test_share_pool_outlived_aborts.cpp | raw-pointer-object | 1 | - | -
 test/foundation/test_share_pool_outlived_aborts.cpp | std-entity | 1 | std::basic_string::append | -
@@ -5530,6 +5583,7 @@ test/scratch_dir.h | c-library-call | 1 | kill | -
 test/scratch_dir.h | c-library-call | 1 | mkdtemp | -
 test/scratch_dir.h | c-library-call | 2 | setenv | -
 test/scratch_dir.h | c-library-call | 1 | unsetenv | -
+test/scratch_dir.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/scratch_dir.h | raw-pointer-object | 2 | - | -
 test/scratch_dir.h | std-entity | 4 | std::basic_string | -
 test/scratch_dir.h | std-entity | 2 | std::basic_string::c_str | -
@@ -5648,6 +5702,7 @@ test/session_oracle/wire_driver.h | c-library-call | 1 | printf | -
 test/session_oracle/wire_driver.h | c-library-call | 1 | stderr | -
 test/session_oracle/wire_driver.h | c-library-call | 1 | strcmp | -
 test/session_oracle/wire_driver.h | c-library-call | 1 | waitpid | -
+test/session_oracle/wire_driver.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/session_oracle/wire_driver.h | raw-function-pointer | 3 | - | -
 test/session_oracle/wire_driver.h | raw-pointer-object | 8 | - | -
 test/session_oracle/wire_driver.h | std-entity | 1 | __gnu_cxx::__normal_iterator | -
@@ -5712,6 +5767,7 @@ test/test_abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
 test/test_abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/test_abort_probe.h | c-library-object | 2 | sigaction | -
 test/test_abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+test/test_abort_probe.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_abort_probe.h | foreign-symbol | 1 | crucible::test::abort_probe_longjmp (asm label longjmp) | -
 test/test_arena.cpp | c-library-call | 1 | strcmp | -
 test/test_arena.cpp | raw-pointer-object | 12 | - | -
@@ -5801,6 +5857,7 @@ test/test_bench_check.cpp | c-library-call | 1 | read | -
 test/test_bench_check.cpp | c-library-call | 2 | stderr | -
 test/test_bench_check.cpp | c-library-call | 2 | strstr | -
 test/test_bench_check.cpp | c-library-call | 1 | waitpid | -
+test/test_bench_check.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_bench_check.cpp | raw-function-pointer | 1 | - | -
 test/test_bench_check.cpp | raw-pointer-object | 1 | - | -
 test/test_bench_harness.cpp | c-array-object | 5 | - | -
@@ -6012,6 +6069,7 @@ test/test_clock_failed_read.cpp | c-library-call | 11 | fprintf | -
 test/test_clock_failed_read.cpp | c-library-call | 11 | stderr | -
 test/test_clock_failed_read.cpp | c-library-call | 1 | syscall | -
 test/test_clock_failed_read.cpp | c-library-object | 2 | timespec | -
+test/test_clock_failed_read.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_clock_failed_read.cpp | raw-pointer-object | 14 | - | -
 test/test_clock_failed_read.cpp | std-entity | 1 | std::basic_string::c_str | -
 test/test_clock_failed_read.cpp | std-entity | 1 | std::error_code | -
@@ -6048,6 +6106,7 @@ test/test_cntp_backpressure.cpp | std-object | 4 | std::jthread | -
 test/test_cntp_congestion_control.cpp | c-library-call | 1 | close | -
 test/test_cntp_congestion_control.cpp | c-library-call | 1 | socket | -
 test/test_cntp_congestion_control.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+test/test_cntp_congestion_control.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_cntp_congestion_control.cpp | std-entity | 2 | std::basic_string_view | -
 test/test_cntp_congestion_control.cpp | std-entity | 6 | std::expected::error | -
 test/test_cntp_congestion_control.cpp | std-entity | 18 | std::expected::has_value | -
@@ -6140,6 +6199,7 @@ test/test_cntp_gpu_direct.cpp | std-object | 26 | std::expected | -
 test/test_cntp_incast_control.cpp | c-library-call | 1 | close | -
 test/test_cntp_incast_control.cpp | c-library-call | 1 | socket | -
 test/test_cntp_incast_control.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+test/test_cntp_incast_control.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_cntp_incast_control.cpp | std-entity | 1 | std::basic_string_view | -
 test/test_cntp_incast_control.cpp | std-entity | 1 | std::expected | -
 test/test_cntp_incast_control.cpp | std-entity | 7 | std::expected::error | -
@@ -6185,6 +6245,7 @@ test/test_cntp_pacing.cpp | c-library-call | 1 | close | -
 test/test_cntp_pacing.cpp | c-library-call | 1 | if_nametoindex | -
 test/test_cntp_pacing.cpp | c-library-call | 1 | socket | -
 test/test_cntp_pacing.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+test/test_cntp_pacing.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_cntp_pacing.cpp | std-entity | 1 | std::basic_string_view | -
 test/test_cntp_pacing.cpp | std-entity | 10 | std::expected::error | -
 test/test_cntp_pacing.cpp | std-entity | 17 | std::expected::has_value | -
@@ -6323,6 +6384,7 @@ test/test_compute_vit_reference.cpp | std-object | 1 | std::uniform_real_distrib
 test/test_congestion_telemetry.cpp | c-library-call | 1 | close | -
 test/test_congestion_telemetry.cpp | c-library-call | 1 | socket | -
 test/test_congestion_telemetry.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+test/test_congestion_telemetry.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_congestion_telemetry.cpp | std-entity | 3 | std::array::operator[] | -
 test/test_congestion_telemetry.cpp | std-entity | 3 | std::array::size | -
 test/test_congestion_telemetry.cpp | std-entity | 1 | std::basic_string_view | -
@@ -6354,6 +6416,7 @@ test/test_crucible_context_migration.cpp | c-library-call | 1 | pipe | -
 test/test_crucible_context_migration.cpp | c-library-call | 1 | read | -
 test/test_crucible_context_migration.cpp | c-library-call | 2 | stderr | -
 test/test_crucible_context_migration.cpp | c-library-call | 1 | waitpid | -
+test/test_crucible_context_migration.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_crucible_context_migration.cpp | raw-function-pointer | 2 | - | -
 test/test_crucible_context_migration.cpp | raw-new-delete | 1 | placement new | -
 test/test_crucible_context_migration.cpp | raw-pointer-object | 6 | - | -
@@ -6390,6 +6453,7 @@ test/test_expr_pool_capacity.cpp | c-library-call | 1 | read | -
 test/test_expr_pool_capacity.cpp | c-library-call | 2 | stderr | -
 test/test_expr_pool_capacity.cpp | c-library-call | 1 | waitpid | -
 test/test_expr_pool_capacity.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
+test/test_expr_pool_capacity.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_expr_pool_capacity.cpp | raw-function-pointer | 2 | - | -
 test/test_expr_pool_capacity.cpp | std-entity | 2 | std::basic_string_view::find | -
 test/test_expr_pool_capacity.cpp | std-object | 3 | std::basic_string_view | -
@@ -6548,6 +6612,7 @@ test/test_kernel_cache_levels.cpp | std-object | 6 | std::expected | -
 test/test_ledger.cpp | c-array-object | 6 | - | -
 test/test_ledger.cpp | c-library-call | 1 | getpid | -
 test/test_ledger.cpp | c-library-call | 1 | strlen | -
+test/test_ledger.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_ledger.cpp | raw-pointer-object | 3 | - | -
 test/test_ledger.cpp | std-entity | 2 | std::array::data | -
 test/test_ledger.cpp | std-entity | 1 | std::as_bytes | -
@@ -6640,6 +6705,7 @@ test/test_ledger_probes_huge_page.cpp | std-object | 2 | std::expected | -
 test/test_ledger_probes_refresh.cpp | c-array-object | 5 | - | -
 test/test_ledger_probes_refresh.cpp | c-library-call | 1 | getpid | -
 test/test_ledger_probes_refresh.cpp | c-library-call | 7 | printf | -
+test/test_ledger_probes_refresh.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_ledger_probes_refresh.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
 test/test_ledger_probes_refresh.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
 test/test_ledger_probes_refresh.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -6708,6 +6774,7 @@ test/test_memory_plan.cpp | c-library-call | 1 | pipe | -
 test/test_memory_plan.cpp | c-library-call | 1 | read | -
 test/test_memory_plan.cpp | c-library-call | 2 | stderr | -
 test/test_memory_plan.cpp | c-library-call | 1 | waitpid | -
+test/test_memory_plan.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_memory_plan.cpp | raw-function-pointer | 2 | - | -
 test/test_memory_plan.cpp | raw-pointer-object | 3 | - | -
 test/test_memory_plan.cpp | std-entity | 1 | std::basic_string_view | -
@@ -6722,6 +6789,7 @@ test/test_merkle_dag.cpp | c-library-call | 1 | fprintf | -
 test/test_merkle_dag.cpp | c-library-call | 1 | freopen | -
 test/test_merkle_dag.cpp | c-library-call | 2 | stderr | -
 test/test_merkle_dag.cpp | c-library-call | 1 | waitpid | -
+test/test_merkle_dag.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_merkle_dag.cpp | inline-asm | 1 | asm | -
 test/test_merkle_dag.cpp | raw-pointer-object | 34 | - | -
 test/test_merkle_dag.cpp | replace-pending:<limits> | 1 | std::numeric_limits::infinity | -
@@ -6782,6 +6850,7 @@ test/test_metalog_session.cpp | c-library-call | 1 | fork | -
 test/test_metalog_session.cpp | c-library-call | 9 | fprintf | -
 test/test_metalog_session.cpp | c-library-call | 10 | stderr | -
 test/test_metalog_session.cpp | c-library-call | 1 | waitpid | -
+test/test_metalog_session.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_metalog_session.cpp | raw-function-pointer | 2 | - | -
 test/test_metalog_session.cpp | raw-pointer-object | 2 | - | -
 test/test_metalog_session.cpp | std-entity | 2 | std::array | -
@@ -7355,6 +7424,7 @@ test/test_topology_pingmesh.cpp | std-object | 5 | std::array | -
 test/test_topology_ptp.cpp | c-library-call | 1 | close | -
 test/test_topology_ptp.cpp | c-library-call | 1 | socket | -
 test/test_topology_ptp.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
+test/test_topology_ptp.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_topology_ptp.cpp | std-entity | 2 | std::__atomic_base::load | -
 test/test_topology_ptp.cpp | std-entity | 2 | std::__atomic_base::store | -
 test/test_topology_ptp.cpp | std-entity | 1 | std::array::size | -
@@ -7402,6 +7472,7 @@ test/test_trace_loader.cpp | c-library-call | 1 | strlen | -
 test/test_trace_loader.cpp | c-library-object | 1 | _IO_FILE | -
 test/test_trace_loader.cpp | c-library-object | 1 | rusage | -
 test/test_trace_loader.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
+test/test_trace_loader.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_trace_loader.cpp | raw-pointer-object | 7 | - | -
 test/test_trace_loader.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/test_trace_loader.cpp | std-entity | 1 | std::array | -
@@ -7492,6 +7563,7 @@ test/test_transaction_owner.cpp | c-library-call | 1 | fork | -
 test/test_transaction_owner.cpp | c-library-call | 1 | fprintf | -
 test/test_transaction_owner.cpp | c-library-call | 2 | stderr | -
 test/test_transaction_owner.cpp | c-library-call | 1 | waitpid | -
+test/test_transaction_owner.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_transaction_owner.cpp | raw-function-pointer | 1 | - | -
 test/test_transaction_owner.cpp | raw-pointer-object | 2 | - | -
 test/test_transaction_owner.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
@@ -7630,6 +7702,7 @@ test/test_warden_policy.cpp | c-library-call | 3 | setenv | -
 test/test_warden_policy.cpp | c-library-call | 2 | stderr | -
 test/test_warden_policy.cpp | c-library-call | 3 | unsetenv | -
 test/test_warden_policy.cpp | c-library-object | 4 | cpu_set_t | -
+test/test_warden_policy.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_warden_policy.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator | -
 test/test_warden_policy.cpp | std-entity | 4 | __gnu_cxx::__normal_iterator::operator* | -
 test/test_warden_policy.cpp | std-entity | 4 | __gnu_cxx::__normal_iterator::operator++ | -

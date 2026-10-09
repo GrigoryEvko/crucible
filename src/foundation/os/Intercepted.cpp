@@ -14,9 +14,7 @@
 
 #if defined(__SANITIZE_THREAD__)
 
-#include <cerrno>
-#include <cstddef>
-
+#include <errno.h>
 #include <unistd.h>
 
 // The system call hooks of ThreadSanitizer for futex(2), which libtsan
@@ -43,22 +41,22 @@ void __tsan_release(void* address);
 
 namespace foundation::os::detail {
 
-long issue_intercepted(Syscall call, std::uint64_t first, std::uint64_t second, std::uint64_t third) noexcept {
-    int const descriptor = static_cast<int>(first);
-    void* const address = __builtin_bit_cast(void*, second);
-    std::size_t const count = third;
-    ::ssize_t done = -1;
-    switch (call) {
-        case Syscall::read:
-            done = ::read(descriptor, address, count);
-            break;
-        case Syscall::write:
-            done = ::write(descriptor, address, count);
-            break;
-        default:
-            return -static_cast<long>(ENOSYS);
-    }
+namespace {
+
+// The word of the kernel for the result DONE of a function of the C library:
+// the value, or -E for the error number E that the function set in errno.
+[[nodiscard]] long kernel_word(::ssize_t done) noexcept {
     return done < 0 ? -static_cast<long>(errno) : static_cast<long>(done);
+}
+
+}  // namespace
+
+long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept {
+    return kernel_word(::read(static_cast<int>(descriptor), __builtin_bit_cast(void*, address), count));
+}
+
+long write_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept {
+    return kernel_word(::write(static_cast<int>(descriptor), __builtin_bit_cast(void const*, address), count));
 }
 
 void enter_futex(FutexCall const& call) noexcept {

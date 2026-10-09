@@ -70,6 +70,23 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
+configuration x86_64-debug-tsan CRUCIBLE_TSAN on
+configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
+configuration x86_64-debug-tsan CRUCIBLE_PGO off
+configuration x86_64-debug-tsan CRUCIBLE_BENCH off
+configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
+configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-tsan TORCH_DIR unset
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
 include/crucible/CKernel.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
 include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
@@ -105,5 +122,5 @@ include/crucible/topology/Pingmesh.h | heavy-include | 1 | <chrono> | detect_ano
 include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | the constructors from a range accept only a std::ranges::contiguous_range that is a std::ranges::borrowed_range, and they read std::ranges::data and std::ranges::size
 include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
-include/fixy/os/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
 include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | the predicates of a self-contained type read std::ranges::range, view, borrowed_range and range_value_t, and the walk of a range reads std::ranges::begin and end
+include/fixy/os/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
