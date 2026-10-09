@@ -6,5 +6,5 @@ compile walk src/walk.cpp stage=c
 flag walk -freflection
 exit walk pass
 judge walk
-finding walk no-unchecked-access unchecked-use src/walk.cpp:14:74 | planted::private_member(Context): std::meta::access_context::unchecked
-finding walk no-unchecked-access walked-return src/walk.cpp:13:27 | planted::private_member(Context): walked return
+finding walk no-unchecked-access unchecked-use src/walk.cpp:14:74 | planted::private_member(T0_0): std::meta::access_context::unchecked
+finding walk no-unchecked-access walked-return src/walk.cpp:13:27 | planted::private_member(T0_0): walked return

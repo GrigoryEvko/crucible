@@ -1,0 +1,25 @@
+// This unit makes the specializations of the header first, from templates with
+// other parameter names.  The header then names Box<Element> with the
+// parameter of first_mixed, and Pair<Outer, Inner> with the parameters of
+// Rack and first_pair.
+
+namespace plant {
+
+template <typename Value>
+struct Box;
+
+template <typename Left, typename Right>
+struct Pair;
+
+template <typename Item>
+void first_mixed(Box<Item>& box);
+
+template <typename Shell>
+struct Rack {
+    template <typename Thing>
+    void first_pair(Pair<Shell, Thing>& pair);
+};
+
+}  // namespace plant
+
+#include "Shelf.h"

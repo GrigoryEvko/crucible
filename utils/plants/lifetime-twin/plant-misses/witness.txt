@@ -16,7 +16,7 @@ finding report lifetime-twin missing-twin include/fixy/Twins.h:27:32 | plant::lv
 finding report lifetime-twin missing-twin include/fixy/Twins.h:30:31 | plant::alive_twin(const plant::Carrier&) parameter 1
 finding report lifetime-twin missing-twin include/fixy/Twins.h:36:32 | plant::other_scope(const plant::Carrier&) parameter 1
 finding report lifetime-twin missing-twin include/fixy/Twins.h:38:28 | plant::packish(const plant::Carrier&, int) parameter 1
-finding report lifetime-twin missing-twin include/fixy/Twins.h:43:30 | plant::declared_then_defined(T&) parameter 1
+finding report lifetime-twin missing-twin include/fixy/Twins.h:43:30 | plant::declared_then_defined(T0_0&) parameter 1
 finding report lifetime-twin missing-twin include/fixy/Twins.h:50:34 | plant::defined_later(const plant::Carrier&) parameter 1
 finding report lifetime-twin missing-twin include/fixy/Twins.h:53:39 | plant::twin_in_other_file(const plant::Carrier&) parameter 1
 finding report lifetime-twin missing-twin twins.cpp:9:18 | quarantined::plant(quarantined::Arena&) parameter 1
@@ -31,7 +31,7 @@ error error include/fixy/Twins.h:27 | quarantine: missing-twin plant::lvalue_twi
 error error include/fixy/Twins.h:30 | quarantine: missing-twin plant::alive_twin(const plant::Carrier&) parameter 1;
 error error include/fixy/Twins.h:36 | quarantine: missing-twin plant::other_scope(const plant::Carrier&) parameter 1;
 error error include/fixy/Twins.h:38 | quarantine: missing-twin plant::packish(const plant::Carrier&, int) parameter 1;
-error error include/fixy/Twins.h:43 | quarantine: missing-twin plant::declared_then_defined(T&) parameter 1;
+error error include/fixy/Twins.h:43 | quarantine: missing-twin plant::declared_then_defined(T0_0&) parameter 1;
 error error include/fixy/Twins.h:50 | quarantine: missing-twin plant::defined_later(const plant::Carrier&) parameter 1;
 error error include/fixy/Twins.h:53 | quarantine: missing-twin plant::twin_in_other_file(const plant::Carrier&) parameter 1;
 error error twins.cpp:9 | quarantine: missing-twin quarantined::plant(quarantined::Arena&) parameter 1;

@@ -13,15 +13,15 @@ finding report mint-pattern mint include/fixy/Mints.h:65:25 | plant::Holder::min
 finding report mint-pattern mint-not-constexpr include/fixy/Mints.h:65:25 | plant::Holder::mint_in_template() const
 finding report mint-pattern mint include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const \| name=mint_member_view static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Carrier owner=plant::Carrier
 finding report mint-pattern mint-not-constexpr include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const
-finding report mint-pattern mint include/fixy/Mints.h:54:33 | plant::mint_view(const T&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report mint-pattern mint include/fixy/Mints.h:54:33 | plant::mint_view(const T0_0&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&) \| name=mint_plain_ctx static=0 shape=ctx template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unfit-context include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&)
-finding report mint-pattern mint include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const Ctx&) \| name=mint_scoped_ctx_name static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
-finding report mint-pattern mint-unfit-context include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const Ctx&)
-finding report mint-pattern mint include/fixy/Mints.h:34:31 | plant::mint_surface_only(const C&) \| name=mint_surface_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
-finding report mint-pattern mint-unfit-context include/fixy/Mints.h:34:31 | plant::mint_surface_only(const C&)
-finding report mint-pattern mint include/fixy/Mints.h:29:31 | plant::mint_shape_only(const C&) \| name=mint_shape_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
-finding report mint-pattern mint-unfit-context include/fixy/Mints.h:29:31 | plant::mint_shape_only(const C&)
+finding report mint-pattern mint include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const T0_1&) \| name=mint_scoped_ctx_name static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report mint-pattern mint-unfit-context include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const T0_1&)
+finding report mint-pattern mint include/fixy/Mints.h:34:31 | plant::mint_surface_only(const T0_1&) \| name=mint_surface_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report mint-pattern mint-unfit-context include/fixy/Mints.h:34:31 | plant::mint_surface_only(const T0_1&)
+finding report mint-pattern mint include/fixy/Mints.h:29:31 | plant::mint_shape_only(const T0_0&) \| name=mint_shape_only static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report mint-pattern mint-unfit-context include/fixy/Mints.h:29:31 | plant::mint_shape_only(const T0_0&)
 finding report mint-pattern mint include/fixy/Mints.h:25:31 | plant::mint_sized(plant::Thing) \| name=mint_sized static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint-pattern mint-unconstrained include/fixy/Mints.h:25:31 | plant::mint_sized(plant::Thing)
 finding report mint-pattern mint include/fixy/Mints.h:21:62 | plant::mint_deprecated_only(plant::Thing) \| name=mint_deprecated_only static=0 shape=token template=0 nodiscard=0 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
@@ -39,9 +39,9 @@ error error mints.cpp:6 | quarantine: mint-not-constexpr quarantined::mint_quara
 error error include/fixy/Mints.h:65 | quarantine: mint-not-constexpr plant::Holder::mint_in_template() const;
 error error include/fixy/Mints.h:59 | quarantine: mint-not-constexpr plant::Carrier::mint_member_view() const;
 error error include/fixy/Mints.h:45 | quarantine: mint-unfit-context plant::mint_plain_ctx(const plant::Ctx&);
-error error include/fixy/Mints.h:42 | quarantine: mint-unfit-context plant::mint_scoped_ctx_name(const Ctx&);
-error error include/fixy/Mints.h:34 | quarantine: mint-unfit-context plant::mint_surface_only(const C&);
-error error include/fixy/Mints.h:29 | quarantine: mint-unfit-context plant::mint_shape_only(const C&);
+error error include/fixy/Mints.h:42 | quarantine: mint-unfit-context plant::mint_scoped_ctx_name(const T0_1&);
+error error include/fixy/Mints.h:34 | quarantine: mint-unfit-context plant::mint_surface_only(const T0_1&);
+error error include/fixy/Mints.h:29 | quarantine: mint-unfit-context plant::mint_shape_only(const T0_0&);
 error error include/fixy/Mints.h:25 | quarantine: mint-unconstrained plant::mint_sized(plant::Thing);
 error error include/fixy/Mints.h:21 | quarantine: mint-not-nodiscard plant::mint_deprecated_only(plant::Thing);
 error error include/fixy/Mints.h:18 | quarantine: mint-not-noexcept plant::mint_false(plant::Thing);

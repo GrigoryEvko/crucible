@@ -12,7 +12,7 @@ finding report escape-doors hatch include/fixy/Doors.h:23:10 | plant::Holder::re
 finding report escape-doors bare-door include/fixy/Doors.h:24:10 | plant::Holder::peek_raw()
 finding report escape-doors bare-door include/fixy/Doors.h:25:5 | plant::Holder::operator int*()
 finding report escape-doors bare-door include/fixy/Doors.h:18:23 | plant::deduced_door(plant::Value&)
-finding report escape-doors bare-door include/fixy/Doors.h:15:4 | plant::template_door(T&)
+finding report escape-doors bare-door include/fixy/Doors.h:15:4 | plant::template_door(T0_0&)
 finding report escape-doors bare-door include/fixy/Doors.h:11:13 | plant::bare_pointer(plant::Value&)
 finding report escape-doors bare-door include/fixy/Doors.h:10:6 | plant::bare_reference(plant::Value&)
 compile error doors.cpp mode=error findings=report
@@ -23,6 +23,6 @@ error error include/fixy/Doors.h:23 | quarantine: hatch plant::Holder::release()
 error error include/fixy/Doors.h:24 | quarantine: bare-door plant::Holder::peek_raw();
 error error include/fixy/Doors.h:25 | quarantine: bare-door plant::Holder::operator int*();
 error error include/fixy/Doors.h:18 | quarantine: bare-door plant::deduced_door(plant::Value&);
-error error include/fixy/Doors.h:15 | quarantine: bare-door plant::template_door(T&);
+error error include/fixy/Doors.h:15 | quarantine: bare-door plant::template_door(T0_0&);
 error error include/fixy/Doors.h:11 | quarantine: bare-door plant::bare_pointer(plant::Value&);
 error error include/fixy/Doors.h:10 | quarantine: bare-door plant::bare_reference(plant::Value&);

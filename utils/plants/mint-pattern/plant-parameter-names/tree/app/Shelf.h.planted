@@ -1,0 +1,58 @@
+// Each mint takes a dependent specialization of a class template of this
+// header.  A unit can make the same specialization first, from a template with
+// other parameter names.
+
+#pragma once
+
+namespace plant {
+
+template <typename Value>
+struct Box {
+    Value value;
+};
+
+template <typename Left, typename Right>
+struct Pair {
+    Left left;
+    Right right;
+};
+
+template <typename Element>
+[[nodiscard]] constexpr Element mint_element(Box<Element>& box) noexcept
+    requires(sizeof(Element) > 0)
+{
+    return box.value;
+}
+
+// The second parameter has the name of the first parameter of first_mixed in
+// other_first.cpp.  The mint is not constexpr, so the mode error gives an error
+// with its entity.
+template <typename Key, typename Item>
+[[nodiscard]] Item mint_mixed(Pair<Box<Key>, Item>& pair) noexcept
+    requires(sizeof(Key) > 0)
+{
+    return pair.right;
+}
+
+// The printer names a member typedef with the parameter list of its class
+// template, also the non-type parameter Count.
+template <typename Slot, unsigned long Count>
+struct Ring {
+    using size_type = unsigned long;
+
+    [[nodiscard]] constexpr Slot mint_slot(size_type) const noexcept { return slot; }
+
+    Slot slot;
+};
+
+template <typename Outer>
+struct Shelf {
+    template <typename Inner>
+    [[nodiscard]] constexpr Inner mint_inner(Pair<Outer, Inner>& pair) const noexcept
+        requires(sizeof(Inner) > 0)
+    {
+        return pair.right;
+    }
+};
+
+}  // namespace plant

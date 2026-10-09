@@ -2035,7 +2035,7 @@ void on_route_collection(void*, void*) {
 
 // The key of an explicit instantiation: the instantiated class, or the
 // instantiated function or variable with its scope and each of its template
-// arguments (library.cpp, kPrintFlags).
+// arguments (library.cpp, THE TEXT OF A KEY).
 std::string instantiation_key(tree entity) {
     return TYPE_P(entity) ? type_text(TYPE_MAIN_VARIANT(entity)) : declaration_text(entity);
 }

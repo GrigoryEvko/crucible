@@ -7,5 +7,5 @@
 compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
 exit sentinel pass
 judge sentinel
-finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:26:113 | std::hash::operator()(const planted::Box<Value>&) const: getpid
+finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:26:113 | std::hash::operator()(const planted::Box<T0_0>&) const: getpid
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:31:24 | namespace-scope: getpid

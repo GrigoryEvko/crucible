@@ -6,7 +6,7 @@ compile sentinel src/use.cpp sentinel=include/foundation/Start.h stage=c
 exit sentinel pass
 judge sentinel
 finding sentinel ctx-init-door door-use include/foundation/Start.h:9:58 | foundation::planted::start(): foundation::effects::host::BackgroundOwner
-finding sentinel ctx-init-door door-use include/foundation/Start.h:13:49 | foundation::planted::start_with(Value): foundation::effects::host::BackgroundOwner
+finding sentinel ctx-init-door door-use include/foundation/Start.h:13:49 | foundation::planted::start_with(T0_0): foundation::effects::host::BackgroundOwner
 
 compile plain src/use.cpp stage=c
 exit plain pass

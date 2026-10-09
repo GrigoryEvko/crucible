@@ -5,5 +5,5 @@
 compile sentinel src/use.cpp sentinel=include/fixy/Start.h stage=c
 exit sentinel pass
 judge sentinel
-finding sentinel escape-doors bare-door include/fixy/Start.h:11:8 | planted::view(Buffer*)
-finding sentinel start-lifetime lifetime-start include/fixy/Start.h:12:36 | planted::view(Buffer*): std::start_lifetime_as
+finding sentinel escape-doors bare-door include/fixy/Start.h:11:8 | planted::view(T0_1*)
+finding sentinel start-lifetime lifetime-start include/fixy/Start.h:12:36 | planted::view(T0_1*): std::start_lifetime_as

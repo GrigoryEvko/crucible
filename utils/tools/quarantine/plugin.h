@@ -1926,9 +1926,11 @@ enum class Library : std::uint8_t {
 std::string identifier_text(tree identifier);
 std::string simple_name(tree decl);
 std::string qualified_name(tree decl);
-// The text of a type or of a declaration, with each template argument
-// (library.cpp, kPrintFlags).  The plugin prints each type and each
-// declaration of an entity with these two functions only.
+// The text of a type or of a declaration, with each template argument and
+// with the name T<DEPTH>_<POSITION> for each template parameter (library.cpp,
+// THE TEXT OF A KEY).  Each unit prints one text for one type.  The plugin
+// prints each type and each declaration of an entity with these two
+// functions only.
 std::string type_text(tree type);
 std::string declaration_text(tree decl);
 tree top_namespace(tree decl);

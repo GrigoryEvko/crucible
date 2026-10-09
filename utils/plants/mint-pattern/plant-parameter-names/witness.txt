@@ -1,0 +1,29 @@
+# The entity of a mint prints each template parameter by its depth and its
+# position, such as T0_1.  The unit other_first makes the specializations of
+# the mints first, from templates with other parameter names, and GCC then
+# prints those names.  It printed plant::Pair<plant::Box<Item>, Item> there,
+# with one name for two parameters, and plant::Pair<plant::Box<Element>, Item>
+# in the unit header_first.  With the names of the depth and the position, the
+# two units give the same finding lines.  The scope of a member typedef names
+# each parameter of its class template, also a non-type parameter.  In the
+# mode error, the entity of the error is the same text.
+
+compile header-first app/header_first.cpp
+exit header-first pass
+finding header-first mint-pattern mint app/Shelf.h:51:35 | plant::Shelf::mint_inner(plant::Pair<T0_0, T1_0>&) const \| name=mint_inner static=0 shape=member template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=Shelf owner=plant::Shelf
+finding header-first mint-pattern mint app/Shelf.h:43:34 | plant::Ring::mint_slot(plant::Ring<T0_0, T0_1>::size_type) const \| name=mint_slot static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Ring owner=plant::Ring
+finding header-first mint-pattern mint app/Shelf.h:31:20 | plant::mint_mixed(plant::Pair<plant::Box<T0_0>, T0_1>&) \| name=mint_mixed static=0 shape=token template=1 nodiscard=1 constexpr=0 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding header-first mint-pattern mint-not-constexpr app/Shelf.h:31:20 | plant::mint_mixed(plant::Pair<plant::Box<T0_0>, T0_1>&)
+finding header-first mint-pattern mint app/Shelf.h:21:33 | plant::mint_element(plant::Box<T0_0>&) \| name=mint_element static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+
+compile other-first app/other_first.cpp
+exit other-first pass
+finding other-first mint-pattern mint app/Shelf.h:51:35 | plant::Shelf::mint_inner(plant::Pair<T0_0, T1_0>&) const \| name=mint_inner static=0 shape=member template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=Shelf owner=plant::Shelf
+finding other-first mint-pattern mint app/Shelf.h:43:34 | plant::Ring::mint_slot(plant::Ring<T0_0, T0_1>::size_type) const \| name=mint_slot static=0 shape=member template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Ring owner=plant::Ring
+finding other-first mint-pattern mint app/Shelf.h:31:20 | plant::mint_mixed(plant::Pair<plant::Box<T0_0>, T0_1>&) \| name=mint_mixed static=0 shape=token template=1 nodiscard=1 constexpr=0 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding other-first mint-pattern mint-not-constexpr app/Shelf.h:31:20 | plant::mint_mixed(plant::Pair<plant::Box<T0_0>, T0_1>&)
+finding other-first mint-pattern mint app/Shelf.h:21:33 | plant::mint_element(plant::Box<T0_0>&) \| name=mint_element static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+
+compile error-other app/other_first.cpp mode=error findings=other-first
+exit error-other fail
+error error-other app/Shelf.h:31 | quarantine: mint-not-constexpr plant::mint_mixed(plant::Pair<plant::Box<T0_0>, T0_1>&);

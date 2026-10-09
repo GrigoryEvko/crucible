@@ -839,11 +839,10 @@ void check_instantiation(tree function) {
 
 // The qualified name of FUNCTION with the types of its parameters and its
 // qualifiers, such as fixy::Holder::mint_view(const Carrier&) const.  type_text
-// prints each template argument, also a default one.  A default argument then
-// gives one text in each unit.  But a parameter of a dependent type prints the
-// parameter names of the first template of the unit that made the same
-// specialization, and two units can give two such names.  Complexity:
-// O(parameters).
+// prints each template argument, also a default one, and it names each
+// template parameter by its depth and its position, such as T0_1 (library.cpp,
+// THE TEXT OF A KEY).  So each unit gives one text for one function.
+// Complexity: O(parameters).
 std::string function_signature(tree function) {
     std::string text = qualified_name(function) + '(';
     bool is_first = true;

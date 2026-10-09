@@ -5,5 +5,5 @@
 compile use src/use.cpp stage=c
 exit use pass
 judge use
-finding use detail-namespace detail-use include/crucible/Boxed.h:12:28 | planted::unbox(Value): foundation::effects::detail
+finding use detail-namespace detail-use include/crucible/Boxed.h:12:28 | planted::unbox(T0_0): foundation::effects::detail
 finding use detail-namespace detail-use include/crucible/Boxed.h:16:41 | namespace-scope: foundation::effects::detail

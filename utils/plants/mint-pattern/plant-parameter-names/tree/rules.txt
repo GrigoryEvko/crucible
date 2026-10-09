@@ -1,0 +1,4 @@
+# The rule table of this plant: each file of app/ is quarantined, and each
+# unit reads the mints of app/Shelf.h.
+
+quarantine app/

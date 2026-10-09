@@ -305,24 +305,187 @@ std::string qualified_name(tree decl) {
     return joined;
 }
 
-// The flags of each text that the plugin prints from a type or a declaration.
-// GCC prints a default template argument only when the first specialization
-// of the unit with those arguments named it.  One header then gives
-// std::span<unsigned char> in one unit and
-// std::span<unsigned char, 18446744073709551615> in a different unit.  With
-// this flag, GCC prints each template argument, and a type gives one text in
-// each unit.  But a dependent type prints the parameter names of the first
-// template of the unit that made the same specialization.  The entity of an
-// object finding holds no printed type because of this (declaration.cpp, THE
-// ENTITY OF AN OBJECT).
+// ── The printed text of a type or a declaration ─────────────────────────
+//
+// THE TEXT OF A KEY
+//     A key of a ledger holds the text that the plugin prints from a type or
+//     a declaration, such as the parameter types of a function.  Each unit
+//     must print the same text for one type, so the printer has two rules:
+//       - GCC prints a default template argument only when the first
+//         specialization of the unit with those arguments named it.  One
+//         header gave std::span<unsigned char> in one unit and
+//         std::span<unsigned char, 18446744073709551615> in a different unit.
+//         The flag of kPrintFlags makes GCC print each template argument.
+//       - GCC prints a template parameter with the name that its declaration
+//         spells.  A dependent specialization, such as Box<T>, holds the
+//         parameters of the first template of the unit that made it.  So one
+//         declaration printed Box<Other> in one unit and Box<T> in a different
+//         unit, and one text could name two different parameters with one
+//         name.  While it prints a text, the printer gives each template
+//         parameter of the text the name T<DEPTH>_<POSITION> (ParameterNames).
+//     DEPTH is the level of the template of the parameter, from 0 for the
+//     outermost template.  POSITION is the index of the parameter in the
+//     list of that template, from 0.  GCC compares two template parameters by
+//     these two numbers, so the name of a parameter does not change with the
+//     sequence of the specializations of a unit.  The entity of an object
+//     finding holds no printed type at all (declaration.cpp, THE ENTITY OF AN
+//     OBJECT).
+
+namespace {
+
 constexpr int kPrintFlags = TFF_NO_OMIT_DEFAULT_TEMPLATE_ARGUMENTS;
 
+// The template parameters that the print of ROOT can name, with the name
+// T<DEPTH>_<POSITION> while the object lives (THE TEXT OF A KEY).  The walk
+// reads the nodes that the printer of GCC reads: the template arguments of
+// each class and alias, the parameter list of a class template whose pattern
+// the text names, the enclosing class of each type, the types of a function
+// and of a declaration, and each expression, such as the operand of a
+// decltype.  The destructor gives each declaration its own name again.  A
+// print makes no garbage collection, so each tree stays at its address.
+// Complexity: O(nodes of the type tree of ROOT), each node one time.
+class ParameterNames {
+public:
+    explicit ParameterNames(tree root) { walk(root); }
+
+    // The destructor gives each name back one time, so no copy holds the
+    // names.  The plugin compiles as C++17, with no reason text on a delete.
+    ParameterNames(const ParameterNames&) = delete;
+    ParameterNames& operator=(const ParameterNames&) = delete;
+
+    ~ParameterNames() {
+        for (auto renamed = names_.rbegin(); renamed != names_.rend(); ++renamed) {
+            DECL_NAME(renamed->first) = renamed->second;
+        }
+    }
+
+private:
+    void walk(tree node) {
+        if (node != NULL_TREE) {
+            cp_walk_tree(&node, visit, this, &visited_);
+        }
+    }
+
+    // Gives DECL, a declaration of a template parameter, the name of the
+    // depth and the position of PARAMETER: a TEMPLATE_TYPE_PARM, a
+    // TEMPLATE_TEMPLATE_PARM, a BOUND_TEMPLATE_TEMPLATE_PARM or a
+    // TEMPLATE_PARM_INDEX.  A placeholder such as auto is no parameter that
+    // the code spells.
+    void rename(tree decl, tree parameter) {
+        if (decl == NULL_TREE || !DECL_P(decl) || DECL_NAME(decl) == NULL_TREE || parameter == NULL_TREE) {
+            return;
+        }
+        bool is_index = TREE_CODE(parameter) == TEMPLATE_PARM_INDEX;
+        bool is_type = TREE_CODE(parameter) == TEMPLATE_TYPE_PARM || TREE_CODE(parameter) == TEMPLATE_TEMPLATE_PARM
+                    || TREE_CODE(parameter) == BOUND_TEMPLATE_TEMPLATE_PARM;
+        if ((!is_index && !is_type) || (is_type && is_auto(parameter)) || !renamed_.insert(decl).second) {
+            return;
+        }
+        int level = is_index ? TEMPLATE_PARM_LEVEL(parameter) : TEMPLATE_TYPE_LEVEL(parameter);
+        int position = is_index ? TEMPLATE_PARM_IDX(parameter) : TEMPLATE_TYPE_IDX(parameter);
+        std::string name = "T" + std::to_string(level - 1) + "_" + std::to_string(position);
+        names_.emplace_back(decl, DECL_NAME(decl));
+        DECL_NAME(decl) = get_identifier(name.c_str());
+    }
+
+    // A non-type parameter has two declarations: the CONST_DECL of its
+    // index, which an expression prints, and the PARM_DECL of the parameter
+    // list, which the print of a class template pattern names.
+    void rename_parameter(tree parameter) {
+        tree decl = TREE_CODE(parameter) == TEMPLATE_PARM_INDEX ? TEMPLATE_PARM_DECL(parameter) : TYPE_NAME(parameter);
+        rename(decl, parameter);
+    }
+
+    // The printer names a class template pattern, such as the scope of a
+    // member typedef, with the declarations of the innermost parameter list
+    // of the template, and not with its template arguments.
+    void rename_pattern_parameters(tree type) {
+        tree info = CLASSTYPE_TEMPLATE_INFO(type);
+        if (info == NULL_TREE || CLASSTYPE_USE_TEMPLATE(type) != 0 || TREE_CODE(TI_TEMPLATE(info)) != TEMPLATE_DECL) {
+            return;
+        }
+        tree levels = DECL_TEMPLATE_PARMS(TI_TEMPLATE(info));
+        tree parameters = levels != NULL_TREE && TREE_CODE(levels) == TREE_LIST ? TREE_VALUE(levels) : NULL_TREE;
+        for (int index = 0; parameters != NULL_TREE && index < TREE_VEC_LENGTH(parameters); ++index) {
+            tree entry = TREE_VEC_ELT(parameters, index);
+            tree decl = entry != NULL_TREE && entry != error_mark_node ? TREE_VALUE(entry) : NULL_TREE;
+            if (decl == NULL_TREE || !DECL_P(decl)) {
+                continue;
+            }
+            bool is_value = TREE_CODE(decl) == PARM_DECL || TREE_CODE(decl) == CONST_DECL;
+            rename(decl, is_value ? DECL_INITIAL(decl) : TREE_TYPE(decl));
+        }
+    }
+
+    // cp_walk_tree reads the template arguments of a type, the types of a
+    // function type and the operands of an expression.  The visit adds the
+    // other nodes that the printer reads.
+    static tree visit(tree* node, int*, void* data) {
+        auto& names = *static_cast<ParameterNames*>(data);
+        tree current = *node;
+        if (TYPE_P(current)) {
+            names.walk(TYPE_CONTEXT(current));
+            // The printer names a typedef with the scope of its declaration,
+            // such as the class template of a member typedef.  The type of
+            // the typedef keeps the scope of the type that it names.
+            if (tree name = TYPE_NAME(current); name != NULL_TREE && TREE_CODE(name) == TYPE_DECL) {
+                names.walk(DECL_CONTEXT(name));
+            }
+        }
+        switch (TREE_CODE(current)) {
+            case TEMPLATE_TYPE_PARM:
+            case TEMPLATE_TEMPLATE_PARM:
+            case BOUND_TEMPLATE_TEMPLATE_PARM:
+            case TEMPLATE_PARM_INDEX:
+                names.rename_parameter(current);
+                break;
+            case RECORD_TYPE:
+            case UNION_TYPE:
+                if (CLASS_TYPE_P(current)) {
+                    names.rename_pattern_parameters(current);
+                }
+                break;
+            case FUNCTION_TYPE:
+            case METHOD_TYPE:
+                if (tree specification = TYPE_RAISES_EXCEPTIONS(current)) {
+                    names.walk(TREE_PURPOSE(specification));
+                }
+                break;
+            // The argument of a template template parameter.
+            case TEMPLATE_DECL:
+                if (DECL_TEMPLATE_TEMPLATE_PARM_P(current)) {
+                    names.walk(TREE_TYPE(current));
+                }
+                break;
+            case FUNCTION_DECL:
+            case VAR_DECL:
+                names.walk(TREE_TYPE(current));
+                names.walk(DECL_CONTEXT(current));
+                if (DECL_LANG_SPECIFIC(current) != nullptr && DECL_TEMPLATE_INFO(current) != NULL_TREE) {
+                    names.walk(DECL_TI_ARGS(current));
+                }
+                break;
+            default:
+                break;
+        }
+        return NULL_TREE;
+    }
+
+    hash_set<tree> visited_;
+    std::unordered_set<tree> renamed_;
+    std::vector<std::pair<tree, tree>> names_;  // each renamed declaration and its own name
+};
+
+}  // namespace
+
 std::string type_text(tree type) {
+    ParameterNames names(type);
     const char* printed = type_as_string(type, kPrintFlags);
     return printed != nullptr ? std::string(printed) : std::string("(type)");
 }
 
 std::string declaration_text(tree decl) {
+    ParameterNames names(decl);
     const char* printed = decl_as_string(decl, kPrintFlags | TFF_NO_TEMPLATE_BINDINGS);
     return printed != nullptr ? std::string(printed) : qualified_name(decl);
 }

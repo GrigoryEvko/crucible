@@ -25,13 +25,13 @@
 #     production, and the reproducer which proves that the splice still writes.
 format 1
 rule no-unchecked-access
-include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::hash_member(const T&): member splice | walks every member of a type for reflect_hash and reflect_print
-include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::pack_member(const T&): member splice | walks every member of a type for reflect_hash and reflect_print
-include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::print_member(const T&, FILE*): member splice | walks every member of a type for reflect_hash and reflect_print
-include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::hash_member(const T&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::hash_member(const T0_0&): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::pack_member(const T0_0&): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::print_member(const T0_0&, FILE*): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::hash_member(const T0_0&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
 include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::member_count(): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
-include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::pack_member(const T&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
-include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::print_member(const T&, FILE*): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::pack_member(const T0_0&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::print_member(const T0_0&, FILE*): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
 include/fixy/Atom.h | unchecked-use | admit | fixy::atom::detail::atom_refusal_of_(std::meta::info): std::meta::access_context::unchecked | walks the atom namespaces and an owner's members to derive the atom roster
 include/fixy/Atom.h | unchecked-use | admit | fixy::atom::detail::every_atom_in_is_rostered_(): std::meta::access_context::unchecked | walks the atom namespaces and an owner's members to derive the atom roster
 include/fixy/Bands.h | unchecked-use | admit | fixy::detail::every_tier_has_an_alias(): std::meta::access_context::unchecked | walks the band namespace to derive the band roster
@@ -44,11 +44,11 @@ include/fixy/Refined.h | unchecked-use | admit | fixy::refined::has_base_class(s
 include/fixy/Refined.h | unchecked-use | admit | fixy::refined::steps_from(std::meta::info, std::meta::info): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
 include/fixy/ScopedView.h | unchecked-use | admit | fixy::detail::sv_reaches_view_(std::meta::info): std::meta::access_context::unchecked | finds a view stored in a private member, so a class cannot hide an escape
 include/fixy/SelfContained.h | access-reflection | admit | fixy::detail::self_contained::declared_by_the_standard(std::meta::info): std | walks every base and member to prove that a type holds no pointer out of itself
-include/fixy/SelfContained.h | member-splice | admit | fixy::equal_by_members(const T&, const T&): member splice | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | member-splice | admit | fixy::equal_by_members(const T0_0&, const T0_0&): member splice | walks every base and member to prove that a type holds no pointer out of itself
 include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::declares_only_defaulted_equality(std::meta::info): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
 include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::first_outside_reach(std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
 include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::first_uncomparable(std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
-include/fixy/SelfContained.h | unchecked-use | admit | fixy::equal_by_members(const T&, const T&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | unchecked-use | admit | fixy::equal_by_members(const T0_0&, const T0_0&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
 include/fixy/atoms/Os.h | unchecked-use | admit | fixy::atom::detail::every_class_in_is_tag_(): std::meta::access_context::unchecked | walks the OS atom namespaces to derive their rosters
 include/fixy/atoms/Os.h | unchecked-use | admit | fixy::atom::detail::tag_count_in_(std::meta::info): std::meta::access_context::unchecked | walks the OS atom namespaces to derive their rosters
 include/fixy/session/Payload.h | unchecked-use | admit | fixy::session::detail::has_protocol_member(std::meta::info): std::meta::access_context::unchecked | walks every member of a session payload to find a delegated handle or a permission

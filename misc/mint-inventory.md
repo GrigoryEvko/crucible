@@ -125,8 +125,8 @@ does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_ledger_view(const Ctx&)` | `include/crucible/ledger/Ledger.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
-| `mint_ledger_view(const Ctx&, crucible::ledger::HostFingerprint)` | `include/crucible/ledger/Ledger.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_ledger_view(const T0_0&)` | `include/crucible/ledger/Ledger.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_ledger_view(const T0_0&, crucible::ledger::HostFingerprint)` | `include/crucible/ledger/Ledger.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 
 ## include/crucible/mimic/
@@ -205,8 +205,8 @@ does not apply to the row.
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_owned_region(T*, std::size_t, foundation::permissions::Permission<Tag, Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 16 |
-| `mint_owned_region(foundation::effects::Alloc, Allocator&, std::size_t, foundation::permissions::Permission<Tag, Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - (alloc) | Y | Y | token | · | HS14: 16 |
+| `mint_owned_region(T0_0*, std::size_t, foundation::permissions::Permission<T0_1, T0_2>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 16 |
+| `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - (alloc) | Y | Y | token | · | HS14: 16 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 16 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
@@ -286,8 +286,8 @@ does not apply to the row.
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - (alloc) | Y | · | token | · | HS14: 3 |
 | `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 24 |
 | `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - (alloc) | Y | · | token | · | HS14: 27 |
-| `mint_delegated_session(H)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_delegated_session(H, Hold)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_delegated_session(T0_0)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_delegated_session(T0_0, T0_1)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | HS14: 7 |
