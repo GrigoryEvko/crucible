@@ -134,10 +134,10 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 [[gnu::used]] std::uint32_t box_get(fixy::Box<Payload>& box) noexcept { return box.get().value; }
 
 // An Option of a plain payload, as a function gives it back: in a register.
-// expect adds one test and one branch to a cold call.  The payload fills the
-// low word of the register, so the flag is at bit 32, and the code also uses a
-// move and a shift to read the flag.  With the flag at byte 0, the shift reads
-// the payload, and the hot part has one instruction less.
+// expect adds one test and one branch to a cold call.  For a payload of four
+// bytes, the flag is the low byte of the register, and one test reads it.  The
+// payload is the high word, so the code also uses a move and a shift to read
+// the payload.  std::optional puts its flag at bit 32, after the payload.
 [[gnu::used]] std::uint32_t option_expect(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).expect("the probe gets a full Option");
 }
