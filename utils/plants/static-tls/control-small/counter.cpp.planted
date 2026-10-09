@@ -1,0 +1,2 @@
+thread_local int counter = 0;
+int counter_entry() { return ++counter; }

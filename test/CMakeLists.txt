@@ -5060,12 +5060,12 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio derived-files prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
-# the runner of the engine and of its two rules build planted libraries and
+# the runner of the engine and of its three rules build planted libraries and
 # probe units with the compiler of this build.  The test of codegen-shapes
 # also compiles the probe unit of this build with a planted header.
 crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR})
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
-        guard.engines.elf.test_codegen_shapes)
+        guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

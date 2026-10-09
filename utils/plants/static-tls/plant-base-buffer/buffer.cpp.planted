@@ -1,0 +1,4 @@
+namespace {
+thread_local char scratch[1024];
+}
+char* scratch_entry() { return scratch; }

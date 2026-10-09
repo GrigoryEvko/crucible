@@ -49,7 +49,9 @@ THE SYMBOLS
     SHN_UNDEF, other than the null entry.  These are the symbols of the
     types U, w and v of nm.  `is_defined` is True for a symbol with a name
     and a different section, other than the symbol of a section or of a
-    file.  These are the symbols that `nm --defined-only` gives.
+    file.  These are the symbols that `nm --defined-only` gives.  `is_tls`
+    is True for a thread-local variable, the type STT_TLS, and the property
+    `is_tls` of a section reads the flag SHF_TLS.
 
 THE RELOCATIONS
     relocations() gives each entry of each section of the type SHT_RELA or
@@ -71,7 +73,9 @@ THE MANGLED SCOPE
       * A vtable, a typeinfo, the name of a typeinfo, or a VTT
       * A wrapper of thread-local storage
       * A guard variable or a reference temporary.
-    Then `N` and its qualifiers can come.  The scope is std for
+    Then `Z` can come.  It marks a local name, such as a static local
+    variable, and the name has the scope of its function.  Then `N` and its
+    qualifiers can come.  The scope is std for
     `St` and for the abbreviations of STD_ABBREVIATIONS.  Else it is the
     identifier of the first source name, after its length.  A name with no
     such scope gives an empty text, for example an operator or a thunk.
@@ -127,11 +131,13 @@ SHT_GNU_VERNEED = 0x6FFFFFFE
 SHT_GNU_VERSYM = 0x6FFFFFFF
 SHF_ALLOC = 0x2
 SHF_EXECINSTR = 0x4
+SHF_TLS = 0x400
 STT_NOTYPE = 0
 STT_OBJECT = 1
 STT_FUNC = 2
 STT_SECTION = 3
 STT_FILE = 4
+STT_TLS = 6
 STB_LOCAL = 0
 STB_GLOBAL = 1
 STB_WEAK = 2
@@ -151,6 +157,8 @@ DEMANGLER = ("c++filt", "--no-verbose")
 # The parts of a mangled name that THE MANGLED SCOPE reads.  GTt comes before the prefixes of two letters.
 MANGLED_MARK = "_Z"
 NESTED_MARK = "N"
+# The mark of a local name: an entity in the body of a function, which has the scope of that function.
+LOCAL_MARK = "Z"
 SPECIAL_PREFIXES = ("GTt", "TV", "TI", "TS", "TT", "TH", "TW", "GV", "GR")
 NESTED_QUALIFIERS = "rVK"
 REFERENCE_QUALIFIERS = frozenset({"R", "O"})
@@ -245,6 +253,11 @@ class Section(Record):
         """True for an allocated section with bytes in the file and no machine code."""
         return bool(self.flags & SHF_ALLOC) and not self.flags & SHF_EXECINSTR and self.kind != SHT_NOBITS
 
+    @property
+    def is_tls(self) -> bool:
+        """True for a section of thread-local storage, such as .tbss or .tdata: the flag SHF_TLS."""
+        return bool(self.flags & SHF_TLS)
+
 
 class Symbol(Record):
     """One entry of a symbol table, with its name, its section index and its version (THE SYMBOLS).
@@ -317,6 +330,11 @@ class Symbol(Record):
     def is_local(self) -> bool:
         """True when `binding` is STB_LOCAL."""
         return self.binding == STB_LOCAL
+
+    @property
+    def is_tls(self) -> bool:
+        """True for a symbol of a thread-local variable: the type STT_TLS."""
+        return self.kind == STT_TLS
 
 
 class Relocation(Record):
@@ -812,6 +830,7 @@ def outer_scope(symbol: str) -> str:
     rest = symbol[len(MANGLED_MARK) :]
     prefix = next((item for item in SPECIAL_PREFIXES if rest.startswith(item)), "")
     rest = rest[len(prefix) :]
+    rest = rest.removeprefix(LOCAL_MARK)
     if rest.startswith(NESTED_MARK):
         rest = rest[len(NESTED_MARK) :].lstrip(NESTED_QUALIFIERS)
         if rest[:1] in REFERENCE_QUALIFIERS:

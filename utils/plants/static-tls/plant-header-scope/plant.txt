@@ -1,0 +1,4 @@
+# A thread-local buffer of 512 bytes in the namespace foundation, as a base header gives it, in a member of the
+# library crucible counts for the base and is more than the error threshold.
+library foundation base.cpp
+library crucible base.cpp header.cpp

@@ -95,8 +95,8 @@ THE REBASE
 
 THE MEASUREMENT
     A measurement of a rule is a number with the unit of the rule: "s" for
-    seconds, "G" for G instructions, "GB", "MB", "KB", "%", "operations",
-    "elements", "links", or "x" for a multiple.  The number is none of the
+    seconds, "G" for G instructions, "GB", "MB", "KB", "bytes", "%",
+    "operations", "elements", "links", or "x" for a multiple.  The number is none of the
     values that the rule had in a field at a commit or in the working tree.
     It counts in a sentence that holds the name of the rule as a word.  It
     also counts in each other sentence when it is above the old threshold

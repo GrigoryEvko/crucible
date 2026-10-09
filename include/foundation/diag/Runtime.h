@@ -20,8 +20,11 @@ namespace foundation::diag {
 
 // report_violation is async-signal-safe only when its sink is.  The
 // default sink is not, because it writes through stdio in each format.
-// report_violation_at is not async-signal-safe with any sink, because it
-// formats the position with snprintf.
+// report_violation_at builds the position on its stack with no stdio, so
+// it is async-signal-safe when its sink is.
+//
+// The views that a sink gets are valid while the sink runs.  A sink that
+// keeps a field after it returns copies the characters.
 
 using violation_sink_t = void (*)(Category, std::string_view, std::string_view) noexcept;
 

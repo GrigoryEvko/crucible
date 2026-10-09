@@ -1,0 +1,4 @@
+# A planted ledger: a row of a member that is under the error threshold.
+format 1
+rule static-tls
+@build/libfoundation.a(counter.cpp.o) | planted | 1024 | - | a planted row that admits nothing

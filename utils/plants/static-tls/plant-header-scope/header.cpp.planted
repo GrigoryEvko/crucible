@@ -1,0 +1,4 @@
+namespace foundation {
+inline thread_local char buffer[512];
+}
+char* buffer_entry() { return foundation::buffer; }

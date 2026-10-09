@@ -148,6 +148,33 @@ def symbol_cases(expect: testing.Expect) -> None:
     expect("a file with no symbol table has no symbol", no_table.symbols() == ())
 
 
+def tls_cases(expect: testing.Expect) -> None:
+    """Check a section of thread-local storage and the symbol of a thread-local variable."""
+    table, strings = elf.symbol_table(
+        [
+            elf.PlantedSymbol("thread_counter", size=8, kind=elf.STT_TLS, section=1),
+            elf.PlantedSymbol("plain_counter", size=8, kind=elf.STT_OBJECT, section=2),
+        ]
+    )
+    data = elf.make_file(
+        [
+            elf.Planted(".tbss", kind=elf.SHT_NOBITS, flags=elf.SHF_ALLOC | elf.SHF_TLS, size=8),
+            elf.Planted(".bss", kind=elf.SHT_NOBITS, flags=elf.SHF_ALLOC, size=8),
+            elf.Planted(".symtab", table, elf.SHT_SYMTAB, link=4, entry_size=elf.SYMBOL_SIZE),
+            elf.Planted(".strtab", strings, elf.SHT_STRTAB),
+        ]
+    )
+    member = elf.Member(data, "tls")
+    expect(
+        "a section with the flag SHF_TLS is a TLS section, and a plain section is not",
+        [section.name for section in member.sections() if section.is_tls] == [".tbss"],
+    )
+    expect(
+        "a symbol of the type STT_TLS is a thread-local variable, and an object symbol is not",
+        [symbol.name for symbol in member.symbols() if symbol.is_tls] == ["thread_counter"],
+    )
+
+
 def relocation_cases(expect: testing.Expect) -> None:
     """Check the relocations of planted tables: the sequence of the targets, a section symbol, and an ignored table."""
     table, strings = elf.symbol_table(
@@ -359,7 +386,9 @@ SCOPES = (
     ("_ZNSt3_V215system_categoryEv", "std", ""),
     ("_ZTSSt9bad_alloc", "std", ""),
     ("_ZNVKRSt3fooEv", "std", ""),
-    ("_ZGVZN3app4mainEvE4seed", "", ""),
+    ("_ZGVZN3app4mainEvE4seed", "app", ""),
+    ("_ZZN10foundation14ThreadLocalRefImE8storage_EvE7storage", "foundation", ""),
+    ("_ZZ4mainE5count", "main", ""),
     ("_ZThn8_N3app5ShapeD1Ev", "", ""),
     ("_ZN9__gnu_cxx27__verbose_terminate_handlerEv", "__gnu_cxx", ""),
     ("__once_proxy", "", ""),
@@ -419,6 +448,7 @@ def main(argv: list[str]) -> int:
     groups = (
         section_cases,
         symbol_cases,
+        tls_cases,
         relocation_cases,
         version_cases,
         archive_cases,

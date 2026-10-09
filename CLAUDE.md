@@ -2467,6 +2467,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `history` | A threshold of a measured rule above its lowest committed value, a ledger above its lowest committed row count, and a raised count of `utils/ledgers/quarantine.txt`, from the git history. A rebase row of `utils/ledgers/history.txt` starts the lowest count of a ledger again at a commit that changed its key or its format | Each one, with the commits that raised it | A rise whose commits give no measurement of the rule, and a raise of a quarantine count whose commit changes neither the plugin nor the rule table, unless `utils/ledgers/history.txt` admits it. A rebase row at a commit that did not change the key or the format of its ledger | The test `guard_history` | Test run |
 | `quarantine` | The distinct findings of the quarantine plugin in each file, kind and entity, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory with a row of `utils/ledgers/quarantine.txt` | A count above or below its ledger row, and a finding in a file that the ledger does not hold | The test `guard_plugin` | Test run, CI build job |
 | `artifact-symbols` | The libstdc++ symbols and the C runtime symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)") | Each library of the ledger | A symbol with no row, or a row whose symbol goes | The test `guard_artifact_symbols` | Test run |
+| `static-tls` | The bytes of the base thread-local variables of one member of a static library of the root (§XXII "Static TLS (R19)") | 64 bytes | 256 bytes | The test `guard_static_tls` | Test run |
 | `fixture-cpu` | The user and system CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |
 | `parse-total` | The bytes that the compiles of the objects of `all` and of the fixtures read, against the baseline | A growth over 2 % | A growth over 5 %, or a fall over 2 % | The test `guard_parse_total` | Test run, after the fixtures |
@@ -3128,6 +3129,12 @@ A change of a file or an arm that only a later configuration compiles runs `guar
 ### Hot path and compile time (R12 to R17)
 
 A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each probe of `test/shape/core_shapes.cpp`. It also refuses a branch, a call, a division and an indexed load in the compiled primitives of `fixy::ct`. The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
+
+### Static TLS (R19)
+
+The base holds only small thread-local data. A shared library with a variable of the initial-exec model needs its full TLS block in the static TLS of the process. `dlopen` finds that block only in the surplus that glibc keeps, and the default tunables keep a few hundred bytes. The flag of `src/foundation/ContractHandler.cpp` has the initial-exec model, so each library that links foundation must have a small TLS block.
+
+The rule `static-tls` (`utils/assay/guard/engines/elf/static_tls.py`, the test `guard_static_tls`) holds R19. It reads each member of each static library of the root, and it adds the bytes of the base thread-local variables of the member. A base variable is each variable of a member of `libfoundation.a` or `libfixy.a`, and each variable with a name in the scope `foundation` or `fixy` in a different member. A member over the error threshold fails the test, unless a row of the ledger of the rule admits it for the kind of the build. At this time no member is over the threshold, and the rule has no ledger file. A hot path takes its context as a parameter and reads no TLS.
 
 ---
 

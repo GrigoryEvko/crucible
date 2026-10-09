@@ -1,0 +1,4 @@
+namespace crucible {
+thread_local char cache[4096];
+}
+char* cache_entry() { return crucible::cache; }

@@ -2,6 +2,8 @@
 #include <foundation/diag/JsonEmitter.h>
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -66,25 +68,72 @@ void report_violation_and_abort(Category cat, std::string_view fn, std::string_v
 
 namespace {
 
-constexpr std::size_t loc_buf_capacity = 2048;
-thread_local char tls_loc_buf[loc_buf_capacity];
+// The most characters of the field fn of report_violation_at.  A longer text
+// loses its end.
+constexpr std::size_t location_capacity = 2048;
 
-std::string_view format_loc(std::source_location loc) noexcept {
-    const int n = std::snprintf(tls_loc_buf, loc_buf_capacity, "%s:%u:%u@%s", loc.file_name(), loc.line(), loc.column(),
-                                loc.function_name());
-    if (n < 0) {
-        tls_loc_buf[0] = '\0';
-        return {};
+// The text "<file>:<line>:<column>@<function>" of one violation.  The object
+// is on the stack of report_violation_at, so it uses no thread-local storage
+// and no heap.  The sink runs inside that call, so the view of the text is
+// valid while the sink reads it.  The text is built with no stdio and no
+// locale.
+class LocationText {
+public:
+    explicit LocationText(std::source_location const& loc) noexcept {
+        append(loc.file_name());
+        append(':');
+        append_decimal(loc.line());
+        append(':');
+        append_decimal(loc.column());
+        append('@');
+        append(loc.function_name());
     }
-    const std::size_t len =
-        static_cast<std::size_t>(n) >= loc_buf_capacity ? loc_buf_capacity - 1 : static_cast<std::size_t>(n);
-    return {tls_loc_buf, len};
-}
+
+    LocationText(LocationText const&) = delete("the view of the text points into this object");
+    LocationText& operator=(LocationText const&) = delete("the view of the text points into this object");
+
+    [[nodiscard]] std::string_view view() const noexcept { return {bytes_, length_}; }
+
+private:
+    void append(char byte) noexcept {
+        if (length_ < location_capacity) {
+            bytes_[length_] = byte;
+            ++length_;
+        }
+    }
+
+    // A null name writes nothing.
+    void append(char const* text) noexcept {
+        if (text == nullptr) return;
+        for (; *text != '\0' && length_ < location_capacity; ++text)
+            append(*text);
+    }
+
+    // A std::uint_least32_t has at most 10 decimal digits on each target of
+    // the tree.
+    void append_decimal(std::uint_least32_t value) noexcept {
+        char digits[10] = {};
+        std::size_t count = 0;
+        do {
+            digits[count] = static_cast<char>('0' + value % 10U);
+            ++count;
+            value /= 10U;
+        } while (value != 0U);
+        while (count > 0) {
+            --count;
+            append(digits[count]);
+        }
+    }
+
+    char bytes_[location_capacity] = {};
+    std::size_t length_ = 0;
+};
 
 }  // namespace
 
 void report_violation_at(Category cat, std::string_view detail, std::source_location loc) noexcept {
-    report_violation(cat, format_loc(loc), detail);
+    LocationText const location{loc};
+    report_violation(cat, location.view(), detail);
 }
 
 void report_violation_at_and_abort(Category cat, std::string_view detail, std::source_location loc) noexcept {

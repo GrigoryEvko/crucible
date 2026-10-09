@@ -134,11 +134,9 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libfixy.a | throw | admit | std::_Rb_tree<std::vector<int, std::allocator<int> > | src/fixy/os/Topology.cpp keeps the L3 groups that it found in a std::set<std::vector<int>>.  An insert copies a vector into a new node, and libstdc++ catches a failed allocation inside the node and throws it again.  The probe of the topology catches each throw of its sysfs reads, so no throw leaves it.  A deduplication over the vector of groups, with no set, removes this row
 @build/libfoundation.a | allow | 1 | __gxx_personality_v0 | -
 @build/libfoundation.a | libc-allow | 1 | __stack_chk_fail | -
-@build/libfoundation.a | libc-allow | 1 | __tls_get_addr | -
 @build/libfoundation.a | libc-allow | 1 | memset | -
 @build/libfoundation.a | libc-ratchet | 1 | __fprintf_chk | -
 @build/libfoundation.a | libc-ratchet | 1 | __libc_single_threaded | -
-@build/libfoundation.a | libc-ratchet | 1 | __snprintf_chk | -
 @build/libfoundation.a | libc-ratchet | 1 | abort | -
 @build/libfoundation.a | libc-ratchet | 1 | close | -
 @build/libfoundation.a | libc-ratchet | 1 | flockfile | -

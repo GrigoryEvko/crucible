@@ -1,0 +1,4 @@
+# A ledger row admits a member of the library foundation whose thread-local counter is under the error threshold.
+# The row admits nothing, and the rule refuses it.
+library foundation base.cpp counter.cpp
+library crucible base.cpp

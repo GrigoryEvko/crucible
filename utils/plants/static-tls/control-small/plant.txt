@@ -1,0 +1,4 @@
+# A thread-local counter of 4 bytes in a member of the library foundation, and a buffer of 4096 bytes in the
+# namespace crucible in a member of the library crucible, which is no base storage.
+library foundation base.cpp counter.cpp
+library crucible base.cpp cache.cpp

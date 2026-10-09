@@ -1,0 +1,4 @@
+# A ledger row admits the thread-local buffer of 1024 bytes of a member of the library foundation for the kind of
+# the planted build, with its reason.
+library foundation base.cpp buffer.cpp
+library crucible base.cpp
