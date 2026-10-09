@@ -19,7 +19,7 @@
 #     libc-allow, libc-ratchet  a file of the runtime of the compiler.  libc-allow marks a call that GCC
 #                               makes itself, a function of the support library of GCC, and a call of glibc
 #                               that a door of fixy keeps (rule R5)
-#     static-ratchet            an archive of a link line of the build, such as libstdc++exp.a
+#     static-ratchet            an archive of a link line of the build
 #     crt-allow, crt-ratchet    a start file or an end file.  crt-allow marks __dso_handle beside an
 #                               allowed __cxa_atexit
 #     host-ratchet              a shared library of a link line of the build, such as libbpf.so

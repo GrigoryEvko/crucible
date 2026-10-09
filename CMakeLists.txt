@@ -319,7 +319,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #
 # Every flag that makes a TU "a Crucible TU" — the C++26 feature flags, the
 # warning set, -Werror, hardening, FORTIFY, the release contract policy, the
-# linker hardening, the FP floor and libstdc++exp — lives on this target and
+# linker hardening and the FP floor — lives on this target and
 # nowhere else.  `crucible` links it PUBLIC, so every consumer of `crucible`
 # inherits it exactly as before.  `foundation` links it too, which is how the
 # sibling substrate compiles under the same rules without depending on
@@ -836,18 +836,13 @@ set_target_properties(crucible_cipher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible_vigil PUBLIC crucible_cipher)
 target_link_libraries(crucible PUBLIC crucible_cipher)
 
-# `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
-# not have: the contract runtime, and parts of <print>, <debugging>,
-# <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,
-# so a test binary, a vessel adapter or a bench TU that names one of them
-# links without a target_link_libraries call of its own.
-#
-# The contract runtime includes a weak default handle_contract_violation.
-# The weak handler of src/foundation/ContractHandler.cpp wins over it,
-# because an object file with a contract check names handle_contract_violation
-# under each semantic that does a check.  So the linker takes the foundation
-# handler from libfoundation.a before it reads this archive.
-target_link_libraries(crucible_dialect INTERFACE stdc++exp)
+# No target links libstdc++exp.a, the archive of the parts of libstdc++ 16
+# that libstdc++.so does not have: the contract runtime, and parts of
+# <print>, <debugging>, <stacktrace> and <text_encoding>.  On 2026-10-09 no
+# link of the Debug, Release, TSan, UBSan-strict or bench build took a member
+# of it.  Each binary gets its contract handler from
+# src/foundation/ContractHandler.cpp in libfoundation.a.  A use of a name
+# that only the archive defines then fails its link.
 
 # No target sets -fno-ipa-modref.  A benchmark got wrong code from the
 # inline asm `"+m,r"` of its do_not_optimize helper.  The flag removed

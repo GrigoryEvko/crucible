@@ -78,8 +78,8 @@ THE PROVIDERS
       runtime    the files of RUNTIME_FILES in the sequence of a link, and the
                  dynamic loader after libc_nonshared.a.  The loader is the
                  interpreter of libc.so.6
-      static     each archive of a link line of the build, such as
-                 libstdc++exp.a (assay.guard.engines.elf.runner, THE BUILD)
+      static     each archive of a link line of the build
+                 (assay.guard.engines.elf.runner, THE BUILD)
       crt        the start files and the end files of CRT_FILES
       host       each shared library of a link line of the build, such as
                  libbpf.so

@@ -3,11 +3,11 @@
 // The contract-violation handler for every binary that links foundation,
 // and the cold report of fatal() and unreachable() of foundation/core.
 //
-// libstdc++exp.a also holds a weak handle_contract_violation.  An object file
-// with a contract check names the handler, so the linker takes this file from
-// libfoundation.a first, and this definition wins.  The definition is weak
-// too: a binary that wants a different failure policy overrides it with a
-// strong one.  Every path ends in std::abort.
+// An object file with a contract check names the handler, so the linker takes
+// this file from libfoundation.a.  No link line names libstdc++exp.a, which
+// holds a weak default handler too.  The definition is weak: a binary that
+// wants a different failure policy overrides it with a strong one.  Every
+// path ends in std::abort.
 //
 // A violation can occur in a signal handler, or while its thread holds the
 // lock of the heap or of a stdio stream.  So the report calls only functions
