@@ -1,0 +1,13 @@
+#pragma once
+
+#include <bit>
+#include <vector>
+
+// A base header that the unit reaches through a link of roots/.  The table
+// does not allow <bit> in its layer, and its sentinel unit gives the base
+// kind of its library object.
+namespace fixy {
+
+inline std::vector<int> floor_rows() { return {}; }
+
+}  // namespace fixy

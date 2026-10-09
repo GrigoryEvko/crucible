@@ -37,6 +37,8 @@ THE MANIFEST
                                              configuration NAME (THE KINDS OF A PLANT)
       parent DIRECTORY                       the directory DIRECTORY of the plant is the tree at the
                                              parent commit of the change (THE PARENT)
+      link PATH TARGET                       the path PATH of the tree is a symbolic link to the path
+                                             TARGET of the tree (THE LINKS)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
     diagnostic with no file.  The cell "-" of a finding row is an empty
     entity.  Each compile has one exit row.
@@ -95,6 +97,20 @@ THE PARENT
     copy of tree/ a git repository before the compiles.  Its one commit holds
     the files of DIRECTORY, and the files of tree/ are its change, staged with
     `git add` as after `git mv`.  git then reports a moved file as a move.
+
+THE LINKS
+    A row `link PATH TARGET` makes the path PATH of the work copy of tree/ a
+    symbolic link to the path TARGET of the same tree.  The copy of a plant
+    copies the target of each link, and the witness makes each link after the
+    copy.  A compile can then open a file through a link, as a compile
+    through the include directories of links of layer-roots/ of a build does.
+    The plugin names each file by the path of `realpath()` (THE FILES of
+    utils/tools/quarantine/plugin.h), and the witness reads the file of a
+    result of the plugin in the log with sarif.plugin_path().  A finding row
+    then names the file of the tree, and not the path through the link.  The
+    location of each note and each error of the plugin also names the file of
+    the tree.  A diagnostic of GCC itself keeps the path that the compile
+    opened.
 
 THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
@@ -326,6 +342,7 @@ class Manifest:
     judged: tuple[str, ...] = ()
     configuration: str = ""
     parent: str = ""
+    links: tuple[tuple[str, str], ...] = ()
 
     @property
     def is_refused(self) -> bool:
@@ -375,6 +392,18 @@ def diagnostic_place(text: str, row: rows_grammar.Row) -> str:
         return text
     file, line, _ = parse_place(text, row, with_column=False)
     return f"{file}:{line}"
+
+
+def tree_path(text: str, row: rows_grammar.Row) -> str:
+    """Return the path of a link row with each `.` part and each `..` part removed, a relative path in the tree.
+
+    Raises:
+        rows_grammar.RowsError: If the path is absolute, is not in the tree or names the tree itself (THE LINKS)
+    """
+    normal = os.path.normpath(text)
+    if os.path.isabs(normal) or normal == "." or normal == ".." or normal.startswith("../"):
+        raise row.error(f"the path {text!r} of a link row is not a path in the tree")
+    return normal
 
 
 def shape(row: rows_grammar.Row, words: int, cells: int, at_least: bool = False) -> None:
@@ -470,6 +499,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
     configuration = ""
     configuration_row: rows_grammar.Row | None = None
     parent = ""
+    links: dict[str, str] = {}
     named: list[rows_grammar.Row] = []
     for row in rows_grammar.parse(text, path):
         kind = row.words[0]
@@ -556,10 +586,16 @@ def parse_manifest(text: str, path: str) -> Manifest:
             if parent or row.words[1] in ("", TREE):
                 raise row.error(f"a manifest has at most one parent row, and its directory is not {TREE}")
             parent = row.words[1]
+        elif kind == "link":
+            shape(row, 3, 0)
+            link_path, link_target = tree_path(row.words[1], row), tree_path(row.words[2], row)
+            if link_path in links or link_path == link_target:
+                raise row.error("a link row is 'link PATH TARGET', one for each PATH, with a TARGET that is not PATH")
+            links[link_path] = link_target
         else:
             raise row.error(
                 f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, note, text, "
-                f"missing, table-unit, table, white-space, reads, procedure, judge, configuration and parent"
+                f"missing, table-unit, table, white-space, reads, procedure, judge, configuration, parent and link"
             )
     if configuration_row is not None and not judged:
         raise configuration_row.error("a configuration row names the build of the judged compiles, and no judge row")
@@ -636,6 +672,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
         tuple(judged),
         configuration,
         parent,
+        tuple(sorted(links.items())),
     )
 
 
@@ -971,8 +1008,15 @@ class Compiler:
             return Log(problem=f"the SARIF log cannot be read: {problem}")
 
         def place(record: sarif.Diagnostic) -> str:
-            """Return the location of a record relative to the tree, or NO_VALUE for a record with no file."""
-            return f"{normalized(record.path, work, self.plugin, self.repo)}:{record.line}" if record.path else NO_VALUE
+            """Return the location of a record relative to the tree, or NO_VALUE for a record with no file.
+
+            A result of the plugin names its file by the path of `realpath()`, and each compile runs in the tree
+            (THE LINKS).
+            """
+            if not record.path:
+                return NO_VALUE
+            path = sarif.plugin_path(record, work / TREE) if sarif.is_plugin_result(record) else record.path
+            return f"{normalized(path, work, self.plugin, self.repo)}:{record.line}"
 
         errors: list[tuple[str, str]] = []
         notes: list[tuple[str, str]] = []
@@ -1560,6 +1604,23 @@ def make_parent(work: Path, directory: str) -> None:
     git.run(tree, "add", "-A", "--", ".")
 
 
+def make_links(work: Path, links: Sequence[tuple[str, str]]) -> None:
+    """Make each link of a manifest in the tree of WORK, with a relative target (THE LINKS).
+
+    Complexity: linear in the links.
+
+    Raises:
+        OSError: If a target is not in the tree, or the path of a link is there or cannot be made
+    """
+    tree = work / TREE
+    for path, target in links:
+        link, aim = tree / path, tree / target
+        if not aim.exists():
+            raise FileNotFoundError(f"the target {target} of the link {path} is not in the tree")
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(os.path.relpath(aim, link.parent), target_is_directory=aim.is_dir())
+
+
 def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
     """Return the finding lines of one compile: its report, else the section of its object, else none."""
     if outcome.report is not None:
@@ -1621,6 +1682,10 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
                 make_parent(work, manifest.parent)
             except (OSError, git.GitError, git.NotIsolated) as problem:
                 return [f"the parent {manifest.parent} cannot be committed: {problem}"], 0, False
+        try:
+            make_links(work, manifest.links)
+        except OSError as problem:
+            return [f"a link cannot be made: {problem}"], 0, False
         compiles = list(manifest.compiles.values())
         tables = [*manifest.tables, *(case for verdict in manifest.white_space for case in white_space_cases(verdict))]
         with ThreadPoolExecutor(max_workers=max(1, len(compiles) + len(tables))) as pool:

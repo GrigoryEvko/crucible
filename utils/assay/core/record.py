@@ -36,7 +36,9 @@ THE FORMAT
                     output, when it had one.  A hit then keeps the last
                     measured cost
     The first line of a record of a fixture holds a JSON object.  Each line
-    after it holds the absolute path of one file that the compile read.  The
+    after it holds the path of `realpath()` of one file that the compile read.
+    The record names each file one time.  A header that the compile opened
+    through a link of layer-roots/ has the path of the file of the tree.  The
     object holds format (1), fixture (the name of the fixture) and result
     ("compiled", or "stored" for a result of the store of the driver).  It
     also holds user_s and system_s (the CPU times of the compile), and
@@ -224,8 +226,8 @@ class TestRecord(Value):
 class FixtureRecord(Value):
     """One record of the last run of a negative fixture: the cost of its compile, its inputs and its census (THE FORMAT).
 
-    `inputs` holds each file that the compile read, by absolute path, or it
-    is None when the driver does not know the files.  `census_stamp` is the
+    `inputs` holds each file that the compile read, by the path of
+    `realpath()`, or it is None when the driver does not know the files.  `census_stamp` is the
     stamp argument of the quarantine plugin of the compile, and `census`
     holds the kind, the line, the column and the entity of each finding of
     the plugin in the source of the fixture.  The two are None when the

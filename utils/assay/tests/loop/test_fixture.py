@@ -76,11 +76,22 @@ FILES = {
         '#include <a/A.h>\nstatic_assert(sizeof(A) == 1, "the size of A is one");\nint value = undeclared_name;\n'
     ),
     "neg/neg_error_directive.cpp": "#error the planted rule\n#include <a/A.h>\n",
+    "real/c/C.h": "#pragma once\nstruct C { int field; };\n",
+    "real/d/D.h": "#pragma once\nstruct D {};\n",
+    "neg/neg_linked.cpp": (
+        '#include <c/C.h>\n#include <d/D.h>\nstatic_assert(sizeof(C) == 1, "the size of C is one");\n'
+    ),
 }
 DIRECTIVE = ("error: #error", "the planted rule")
+LINKED = ("static assertion failed", "the size of C is one")
 # The search list of each fixture is `-I shadow -I include`.  neg_parent also
 # searches include/sub, where its name `../b/B.h` reaches include/b/B.h.
-EXTRA_SEARCH = {"neg/neg_parent.cpp": "include/sub"}
+# neg_linked also searches roots, a directory of links as layer-roots/ of a
+# build is.  Its c/C.h opens real/c/C.h through a link of a directory, and
+# its d/D.h opens real/d/D.h through a link of a file.
+EXTRA_SEARCH = {"neg/neg_parent.cpp": "include/sub", "neg/neg_linked.cpp": "roots"}
+# Each symbolic link of the tree, and its target relative to the root.
+LINKS = {"roots/c": "real/c", "include/d/D.h": "real/d/D.h"}
 CONVERTING_B = "#pragma once\nstruct B { B(int) {} };\n"
 
 # The fixtures of a planted tree that the quarantine plugin of the build checks
@@ -186,6 +197,9 @@ class StoreTest:
         for name, text in FILES.items():
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             (self.root / name).write_text(text)
+        for name, target in LINKS.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).symlink_to(self.root / target, target_is_directory=(self.root / target).is_dir())
         (self.root / "shadow").mkdir()
         self.build.mkdir()
         cmake.cache_file(self.build).write_text("")
@@ -818,6 +832,15 @@ class StoreTest:
                     and stopped_source in stopped_paths and header_file in stopped_paths,
                     f"a compile that -Wfatal-errors stops writes the inputs of the -M -MG pass: {stopped_head} "
                     f"{stopped_paths}")
+        linked = self.run("neg_linked", *LINKED)
+        linked_head, linked_paths = record("neg_linked")
+        links = str(self.root / "roots") + "/"
+        self.expect(linked[0] == 0 and linked_head.get("has_inputs") is True
+                    and str(self.root / "real/c/C.h") in linked_paths and str(self.root / "real/d/D.h") in linked_paths
+                    and not any(path.startswith(links) for path in linked_paths)
+                    and str(self.root / "include/d/D.h") not in linked_paths,
+                    f"a record names a header that the compile opened through a link by the path of realpath(), and "
+                    f"not by the path through the link: {linked_head} {linked_paths}")
 
     def check_test_record(self) -> None:
         """The driver judges a fixture as the test launcher judges a test, and writes the same record.

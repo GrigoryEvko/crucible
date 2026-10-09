@@ -50,8 +50,11 @@ THE DIAGNOSTICS OF THE PLUGIN
     FILES of utils/tools/quarantine/plugin.h).  GCC names the file of the
     result by the path that the compile opened.  A compile with an include
     directory of links, such as layer-roots/ of a build, then gives the path
-    through the link.  plugin_path() gives the path of `realpath()` for the
-    file of a result.  Then the two names of one file give one file.
+    through the link.  A compile can open a file by a relative path.  The text
+    output and the path of a record then name the file relative to the
+    directory of the compile.  plugin_path() gives the path of `realpath()`
+    for the file of a result, with the directory of the compile for a
+    relative path.  Then the two names of one file give one file.
 
     render() with a function `hidden` gives no line of a result that the
     function accepts, and no such result is an error head.  It keeps each
@@ -671,13 +674,14 @@ def is_plugin_result(record: Diagnostic) -> bool:
     return record.kind in (Kind.NOTE, Kind.ERROR) and record.nesting == 0 and record.message.startswith(PLUGIN_PREFIX)
 
 
-def plugin_path(record: Diagnostic) -> str:
+def plugin_path(record: Diagnostic, directory: Path | str) -> str:
     """Return the path of `realpath()` for the file of a result of the plugin, or an empty text with no file.
 
-    GCC names the file of a result by the path that the compile opened, also a path through a link (THE DIAGNOSTICS OF
-    THE PLUGIN).  Complexity: one call of `realpath()` for each different path, with a bounded cache.
+    GCC names the file of a result by the path that the compile opened, also a path through a link.  A relative path
+    is relative to `directory`, the working directory of the compile (THE DIAGNOSTICS OF THE PLUGIN).
+    Complexity: one call of `realpath()` for each different path, with a bounded cache.
     """
-    return _resolved(record.path) if record.path else ""
+    return _resolved(os.path.join(directory, record.path)) if record.path else ""
 
 
 @functools.lru_cache(maxsize=_REAL_PATHS)

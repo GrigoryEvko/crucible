@@ -1,0 +1,3 @@
+// Each include goes through a link of roots/, which -iquote names.
+#include "fixy/Floor.h"
+#include "crucible/Bed.h"

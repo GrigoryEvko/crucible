@@ -1,0 +1,28 @@
+# The unit opens each header through a directory of links, as the sentinels
+# of test/layer open the base headers through layer-roots/ of a build.  Each
+# finding, each error and each note of the plugin names the file of the tree,
+# and no line names a path of roots/.  The sentinel argument names the base
+# header by its path in the tree, and the sentinel unit gives its base kind.
+
+link roots/fixy include/fixy
+link roots/crucible include/crucible
+
+compile plain src/uses.cpp stage=c
+flag plain -iquote roots
+exit plain pass
+judge plain
+finding plain quarantine layer-header include/fixy/Floor.h:3:0 | <bit> in the layer low
+finding plain quarantine raw-pointer-object include/crucible/Bed.h:6:13 | bed_pointer
+
+compile sentinel src/uses.cpp sentinel=include/fixy/Floor.h stage=c findings=plain
+flag sentinel -iquote roots
+exit sentinel pass
+finding sentinel quarantine base-std-object include/fixy/Floor.h:11:25 | std::vector
+
+compile notes src/uses.cpp stage=syntax out=no notes=plain
+flag notes -iquote roots
+exit notes pass
+
+compile error src/uses.cpp mode=error out=no errors=plain
+flag error -iquote roots
+exit error fail

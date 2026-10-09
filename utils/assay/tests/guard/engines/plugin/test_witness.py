@@ -4,8 +4,8 @@ The cases plant manifests, outcomes of a compile and plant directories in
 throwaway trees.  They do a test of the reader of the manifest and of the
 functions that compare the rows with the findings and the diagnostics.  They
 also do a test of the judgement of one compile and of the tables of the white
-space.  The last cases do a test of the copy of a plant and of the status with
-no compiler.  A case does a test of the environment of the run of the plants.
+space.  The last cases do a test of the copy of a plant, of its links and of
+the status with no compiler.  A case does a test of the environment of the run of the plants.
 
 `guard selftest tests.guard.engines.plugin.test_witness` runs the test.  Each
 case writes one line.  Exit 0 when each case holds, else 1.
@@ -13,6 +13,7 @@ case writes one line.  Exit 0 when each case holds, else 1.
 
 import contextlib
 import io
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -176,6 +177,23 @@ def manifest_cases(expect: testing.Expect) -> None:
     expect(
         "a place FILE:* and the place - are diagnostic places",
         refuses("compile a u.cpp\nexit a fail\nerror a u.cpp:* | x\nerror a - | y\n") is None,
+    )
+    linked = witness.parse_manifest("link roots/b include/b\nlink roots/a/ ./include/a\n", "witness.txt")
+    expect(
+        "a link row gives a path and a target of the tree in their normal form, in sorted sequence",
+        linked.links == (("roots/a", "include/a"), ("roots/b", "include/b")),
+    )
+    expect(
+        "each malformed link row is refused at its line",
+        [
+            refuses("link roots\n"),
+            refuses("link /roots include\n"),
+            refuses("link roots ../outside\n"),
+            refuses("link . include\n"),
+            refuses("link roots include\nlink roots/ other\n"),
+            refuses("link roots roots/\n"),
+        ]
+        == [1, 1, 1, 1, 2, 1],
     )
 
 
@@ -373,6 +391,7 @@ def plant_cases(expect: testing.Expect) -> None:
             "copy_plant() copies each entry but the manifest, and removes the suffix .planted",
             copied == ["outside/Outside.h", "tree/include/Head.h", "tree/unit.cpp"],
         )
+        link_cases(expect, work.resolve())
         with contextlib.redirect_stdout(io.StringIO()):
             no_compiler = witness.witness("quarantine", root, None, None)
             no_plugin = witness.witness("quarantine", root, "sh", root / "missing.so")
@@ -380,6 +399,67 @@ def plant_cases(expect: testing.Expect) -> None:
             "the witness cannot run with no compiler or no plugin file, and gives the status 77",
             no_compiler == no_plugin == ExitCode.SKIPPED,
         )
+
+
+def _planted_log(tree: Path, path: str) -> dict[str, object]:
+    """Return a SARIF log of a compile in TREE: a note of the plugin and an error of GCC, each at the relative PATH."""
+
+    def result(kind: str, text: str) -> dict[str, object]:
+        """Return one result at PATH, line 6, with the text location of the text output."""
+        artifact = {"uri": path, "uriBaseId": "PWD"}
+        return {
+            "ruleId": kind,
+            "level": kind,
+            "message": {"text": text},
+            "locations": [{"physicalLocation": {"artifactLocation": artifact, "region": {"startLine": 6}}}],
+            "properties": {"gcc/textLocation": {"file": path, "line": 6, "column": 13}},
+        }
+
+    return {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "originalUriBaseIds": {"PWD": {"uri": f"file://{tree}/"}},
+                "invocations": [{"arguments": ["cc1plus"]}],
+                "results": [
+                    result("note", "quarantine: raw-pointer-object bed_pointer"),
+                    result("error", "a planted error of the compiler"),
+                ],
+            }
+        ],
+    }
+
+
+def link_cases(expect: testing.Expect, work: Path) -> None:
+    """Do a test of THE LINKS: make_links(), and the location of a result of the plugin through a link."""
+    tree = work / witness.TREE
+    (tree / "include" / "garden").mkdir(parents=True)
+    (tree / "include" / "garden" / "Bed.h").write_text("#pragma once\n", encoding="utf-8")
+    witness.make_links(work, (("roots/garden", "include/garden"),))
+    link = tree / "roots" / "garden"
+    expect(
+        "make_links() makes each link with a relative target in the tree",
+        link.is_symlink()
+        and os.readlink(link) == "../include/garden"
+        and (link / "Bed.h").resolve() == tree / "include" / "garden" / "Bed.h",
+    )
+    try:
+        witness.make_links(work, (("roots/missing", "include/missing"),))
+        refused = False
+    except FileNotFoundError:
+        refused = True
+    expect("make_links() refuses a target that is not in the tree", refused and not (tree / "roots/missing").exists())
+    logs = work / "logs"
+    logs.mkdir(exist_ok=True)
+    (logs / "linked.sarif").write_text(json.dumps(_planted_log(tree, "roots/garden/Bed.h")), encoding="utf-8")
+    compiler = witness.Compiler("g++", work / "plugin.so", work / "repo", None, 1)
+    log = compiler.read_log(logs / "linked.sarif", work)
+    expect(
+        "a result of the plugin through a link has the place of the file of the tree, and an error of GCC keeps the "
+        "path that the compile opened",
+        log.notes == (("include/garden/Bed.h:6", "quarantine: raw-pointer-object bed_pointer"),)
+        and log.errors == (("roots/garden/Bed.h:6", "a planted error of the compiler"),),
+    )
 
 
 def environment_cases(expect: testing.Expect) -> None:

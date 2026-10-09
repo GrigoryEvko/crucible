@@ -270,9 +270,19 @@ def plugin_cases(expect: testing.Expect) -> None:
         through = moved(note, str(roots / "foundation" / "Platform.h"))
         expect(
             "plugin_path() gives the path of realpath() for a result through a link of an include directory",
-            sarif.plugin_path(through) == os.path.realpath(include / "Platform.h"),
+            sarif.plugin_path(through, "/elsewhere") == os.path.realpath(include / "Platform.h"),
         )
-    expect("plugin_path() gives an empty text for a result with no file", sarif.plugin_path(moved(note, "")) == "")
+        relative = moved(note, "foundation/Platform.h")
+        other = Path(scratch) / "foundation" / "Platform.h"
+        expect(
+            "plugin_path() reads a relative path of a result in the directory of the compile, and not in the "
+            "directory of the process",
+            sarif.plugin_path(relative, roots) == os.path.realpath(include / "Platform.h")
+            and sarif.plugin_path(relative, Path(scratch)) == os.path.realpath(other),
+        )
+    expect(
+        "plugin_path() gives an empty text for a result with no file", sarif.plugin_path(moved(note, ""), "/w") == ""
+    )
 
 
 def moved(record: sarif.Diagnostic, path: str) -> sarif.Diagnostic:
