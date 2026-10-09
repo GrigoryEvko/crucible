@@ -118,6 +118,13 @@ def object_cases(expect: testing.Expect) -> None:
         halves = [(sections.SECTION_NAME, head + b"\n" + first + b"\n"), (sections.SECTION_NAME, second + b"\n")]
         joined.write_bytes(planted_object(halves))
         expect("read joins two sections with the name", sections.read(joined) == sections.Section("00ab", FINDINGS))
+        archive = scratch / "liball.a"
+        archive.write_bytes(elf.make_archive([("plain.o", plain.read_bytes()), ("absent.o", absent.read_bytes())]))
+        expect(
+            "of_member reads the section of each member of an archive",
+            [sections.of_member(member) for member in elf.members(archive)]
+            == [sections.Section("00ab", FINDINGS), None],
+        )
         foreign = scratch / "foreign.o"
         foreign.write_bytes(elf.ARCHIVE_MAGIC + b"\0" * 64)
         expect("read refuses a file that is not ELF", refuses(lambda: sections.read(foreign)))

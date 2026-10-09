@@ -991,6 +991,43 @@ def import_message(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Import:
+    """One import of a static library: the archive, the name, the members that reference it, its owner and its mark.
+
+    `provider` is None for a name that no provider gives.  `mark` is empty for such a name and for a name of a
+    sanitizer runtime, which has no row (THE MARKS).  `entity` is SYMBOL@VERSION, or the name alone (THE VERSIONS).
+    """
+
+    archive: str
+    symbol: str
+    members: frozenset[str]
+    provider: Provider | None
+    mark: str
+    entity: str
+
+
+def imports_of(artifacts: Mapping[str, Artifact], targets: Mapping[str, str], providers: Providers) -> list[Import]:
+    """Return each import of each archive of `targets`, with its owner and its mark (THE PROVIDERS, THE MARKS).
+
+    `targets` gives the target name of each archive.  A name that an archive of `artifacts` exports is no import.
+    Complexity: linear in the undefined names of the archives.
+    """
+    tree = frozenset().union(*(artifact.exported for artifact in artifacts.values()))
+    found: list[Import] = []
+    for archive in sorted(targets):
+        for symbol, members in sorted(artifacts[archive].undefined.items()):
+            if symbol in tree or is_linker_name(symbol):
+                continue
+            provider = providers.owners.get(symbol)
+            if provider is None or provider.family == SANITIZER:
+                found.append(Import(archive, symbol, members, provider, "", symbol))
+                continue
+            mark = mark_for(targets[archive], symbol, provider.family, providers.support)
+            found.append(Import(archive, symbol, members, provider, mark, entity_of(symbol, provider.versions[symbol])))
+    return found
+
+
 def import_findings(
     artifacts: Mapping[str, Artifact],
     targets: Mapping[str, str],
@@ -1004,32 +1041,27 @@ def import_findings(
     Complexity: linear in the undefined names of the archives.
     """
     write = f"Write the ledger again: `python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
-    tree = frozenset().union(*(artifact.exported for artifact in artifacts.values()))
     found: list[check_report.Finding] = []
     unknown: list[check_report.Finding] = []
-    for archive in sorted(targets):
-        path = f"{LIBRARY_PREFIX}{archive}"
-        for symbol, members in sorted(artifacts[archive].undefined.items()):
-            if symbol in tree or is_linker_name(symbol):
-                continue
-            used = build_census.names_text(members)
-            provider = providers.owners.get(symbol)
-            if provider is None:
-                said = (
-                    f"{archive} references {symbol} in {used}, and no provider of the build gives it: no library of "
-                    f"the root, no file of the runtime of the compiler and no library of a link line.  Put the "
-                    f"library that holds it on the link line, or remove the reference"
-                )
-                unknown.append(finding(path, UNKNOWN_PROVIDER, symbol, said))
-                continue
-            if provider.family == SANITIZER:
-                continue
-            mark = mark_for(targets[archive], symbol, provider.family, providers.support)
-            entity = entity_of(symbol, provider.versions[symbol])
-            said = import_message(archive, targets[archive], entity, provider, mark, names[symbol], used)
-            if mark not in RATCHET_MARKS:
-                said = f"{said}.  {write}"
-            found.append(finding(path, mark, entity, said))
+    for item in imports_of(artifacts, targets, providers):
+        path = f"{LIBRARY_PREFIX}{item.archive}"
+        used = build_census.names_text(item.members)
+        if item.provider is None:
+            said = (
+                f"{item.archive} references {item.symbol} in {used}, and no provider of the build gives it: no "
+                f"library of the root, no file of the runtime of the compiler and no library of a link line.  Put the "
+                f"library that holds it on the link line, or remove the reference"
+            )
+            unknown.append(finding(path, UNKNOWN_PROVIDER, item.symbol, said))
+            continue
+        if not item.mark:
+            continue
+        said = import_message(
+            item.archive, targets[item.archive], item.entity, item.provider, item.mark, names[item.symbol], used
+        )
+        if item.mark not in RATCHET_MARKS:
+            said = f"{said}.  {write}"
+        found.append(finding(path, item.mark, item.entity, said))
     return found, unknown
 
 

@@ -141,10 +141,25 @@ def read(path: str | os.PathLike[str]) -> Section | None:
     """
     try:
         with elf.mapped(path) as member:
-            parts = [member.data(section) for section in member.named(SECTION_NAME)]
+            return of_member(member)
     except elf.ElfError as problem:
         raise SectionError(str(problem)) from None
-    return parse_section(b"".join(parts), os.fspath(path)) if parts else None
+
+
+def of_member(member: elf.Member) -> Section | None:
+    """Return the findings and the stamp of the section of one ELF file or member, or None when it has no section.
+
+    A member of an archive holds the section of its object (THE OBJECT).  Complexity: linear in the number of
+    sections and in the length of the section.
+
+    Raises:
+        SectionError: If the ELF reader cannot read the member, or the section does not have the format
+    """
+    try:
+        parts = [member.data(section) for section in member.named(SECTION_NAME)]
+    except elf.ElfError as problem:
+        raise SectionError(str(problem)) from None
+    return parse_section(b"".join(parts), member.where) if parts else None
 
 
 def report_directory(build_dir: Path, object_path: str | os.PathLike[str]) -> Path:

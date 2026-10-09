@@ -3129,6 +3129,15 @@ The measured rule `library-bytes` (`utils/assay/guard/engines/elf/library_bytes.
 
 `utils/ledgers/library-bytes.txt` holds the library bytes of each archive at the last write, for each configuration of the rule `artifact-symbols`. A growth over the warning threshold of the rule gives a warning, and a growth over the error threshold gives an error. A fall over the warning threshold is an error too, so a row does not stay above its measure. `guard write --rule library-bytes --build-dir DIR` writes the rows of the configuration of the build, and a growth over the warning threshold needs `--reason TEXT`. Two builds of one tree give the same bytes. On 2026-10-09, the Debug build held 391,936 bytes of library code and the Release build 145,884 bytes, and the rule took 2.6 s and 114 MB.
 
+`python3 utils/bin/guard bom --build-dir DIR ARTIFACT` (`utils/assay/guard/bom.py`) prints the bill of materials of one static library, program, shared library or module of a build, and writes nothing. ARTIFACT is the name of a target or the path of its file. The command prints five layers:
+1. The imports, each with the file that gives it and its version
+2. The library code of the rule `library-bytes`, with the largest library bodies
+3. The calls that GCC adds to the code itself, such as `memcpy`, `__stack_chk_fail` and `__cxa_guard_acquire`
+4. The link facts of the rule `artifact-links`
+5. The findings of the quarantine plugin in the objects of the artifact.
+
+For a static library, layer 1 also gives the family and the mark of each import (rule `artifact-symbols`). A layer that cannot be read gives one line, and the other layers stay. On 2026-10-09, the command took 0.6 s to 1.5 s for an artifact of the Debug build.
+
 ### The admitted list and its audit
 
 The `admit` rows of the rule table (the admitted list) give the std names that a quarantined file can use. `utils/admitted-audit.txt` (the audit table) gives one row for each `admit` row and for each candidate of plan appendix A. Each row has one of four verdicts:
