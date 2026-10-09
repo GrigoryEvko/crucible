@@ -2468,7 +2468,7 @@ utils/assay/tests/guard/test_history.py | refused-word | 1 | ledger_cases: grow 
 utils/assay/tests/guard/test_history.py | refused-word | 1 | move_cases: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/guard/test_history.py | refused-word | 1 | registry_text: size | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/guard/test_history.py | refused-word | 1 | threshold_cases: rise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/tests/loop/test_fixture.py | long-sentence | 4 | <module> | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/tests/loop/test_fixture.py | long-sentence | 3 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_eviction | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_identity_change | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/tests/loop/test_fixture.py | long-sentence | 1 | StoreTest.check_memo_sweep | A text of today.  The change that writes the text again in STE lowers the count

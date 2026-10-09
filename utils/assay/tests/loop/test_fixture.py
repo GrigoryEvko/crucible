@@ -101,9 +101,8 @@ PLUGIN_FIXTURES = {
     "neg/neg_region_unclassed.cpp": ("#include <foundation/Quarantine.h>\n"
                                      'CRUCIBLE_I_KNOW_WHAT_IM_DOING("a reason with no class")\n'
                                      "CRUCIBLE_END_I_KNOW_WHAT_IM_DOING\n" + OWN_REASON),
-    # An object of a std type.  The object is in a function body, because the
-    # plugin reads a body when the parse of the function ends, and the error of
-    # the fixture stops the unit before its walk of the namespaces.
+    # An object of a std type in a function body.  The plugin walks the unit
+    # after the error of the fixture too.
     "neg/neg_std_object.cpp": ("#include <cstddef>\n"
                                "int read_value() {\n"
                                "    std::byte value{};\n"
