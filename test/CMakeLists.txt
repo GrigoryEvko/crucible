@@ -4796,8 +4796,8 @@ endif()
 crucible_script_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
 # `guard warnings` also prints the time totals of the build: the CPU time
-# of the objects of all, of the fixtures and of the executable tests, against
-# the rules total-compile-cpu, total-fixture-cpu and total-test-cpu
+# of the fixtures and of the executable tests, against the baselines of the
+# rules total-fixture-cpu and total-test-cpu
 # (utils/assay/guard/engines/buildsys/cost_budgets.py).  A total gives a
 # warning only.  The CI step "Check warnings" runs it after the tests.
 crucible_script_test(NAME guard_warnings_self_test

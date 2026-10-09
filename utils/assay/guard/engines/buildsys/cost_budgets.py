@@ -126,9 +126,11 @@ THE RULE compile-first
 
 THE TOTALS
     `guard warnings` (assay.guard.warnings) prints the totals of a build after
-    the warnings.  time_totals() gives the time totals total-compile-cpu,
-    total-fixture-cpu and total-test-cpu, from the census of
-    assay.readers.census and the test records.  build_totals() gives
+    the warnings.  time_totals() gives the time totals total-fixture-cpu and
+    total-test-cpu, from the census of assay.readers.census and the test
+    records.  The rule instruction-total judges the cost of the compiles of
+    the objects, with a count that the load of the host does not change
+    (assay.guard.engines.buildsys.cost_totals).  build_totals() gives
     link-count, total-link-cpu, build-peak-memory and configure-time, from the
     records of the build launcher.  total_report_totals() and
     total_report_build() print one line for each total.  A total gives a
@@ -155,10 +157,11 @@ THE TOTALS
       no-baseline    a ledger with no row that can judge the build
       ledger-row     a ledger or a row that does not obey the shape
       configuration  a build with a configuration that cannot be read
+      no-time        a time total with a unit that has no time, such as a
+                     fixture with no record.  The sum is then not the total of
+                     the build, and the warning tells to run each unit
     No baseline judges a total with no value, such as a build directory with
-    no link record.  A time total with a unit that has no time is not the
-    total of the build, and no baseline judges it.  A ccache hit with
-    no earlier compile in the build directory has no time.
+    no link record.  The line of such a total tells that it has no value.
     build-peak-memory and configure-time keep the absolute thresholds of their
     rows, because the loop history and loop gauge judge them with the same
     rows (assay.loop.history).
@@ -227,7 +230,6 @@ COMPILE_FIRST_CHAIN = 3
 COMPILE_FIRST_COMMAND = "python3 utils/bin/guard write --rule compile-first --build-dir BUILD_DIR"
 # Each time total, the kind of unit that it adds, and the words that tell what it adds.
 TOTAL_TIMES = (
-    ("total-compile-cpu", "object", "the last real compile of each object of all"),
     ("total-fixture-cpu", "fixture", "the last real compile of each negative fixture"),
     ("total-test-cpu", "test", "each executable test in its last run"),
 )
@@ -235,7 +237,7 @@ TOTAL_NO_RULE = ", no measured rule"
 # The prefix of each line that `guard warnings` (assay.guard.warnings) writes about the warnings and the totals.
 TOTAL_PREFIX = "guard warnings:"
 # The totals with a baseline row of each configuration (THE TOTALS).
-BASELINE_TOTALS = ("total-compile-cpu", "total-fixture-cpu", "total-test-cpu", "link-count", "total-link-cpu")
+BASELINE_TOTALS = ("total-fixture-cpu", "total-test-cpu", "link-count", "total-link-cpu")
 # The entity of the baseline row of a total, and the reason of a new row when the write gives none.
 TOTAL_ENTITY = "total"
 TOTAL_DEFAULT_REASON = "the measure of the build at the last write of the ledger"
@@ -1322,12 +1324,11 @@ type BaselineOf = Callable[[str], TotalBaseline]
 
 
 def total_time_measures(census: build_census.Census, test_times: Sequence[float | None]) -> list[TotalMeasure]:
-    """Add the three time totals of a census and of the CPU times of the tests (THE TOTALS).
+    """Add the two time totals of a census and of the CPU times of the tests (THE TOTALS).
 
     Complexity: linear in the units and the tests.
     """
     times: dict[str, Sequence[float | None]] = {
-        "object": [unit.cost.cpu_s for unit in census.units if unit.kind == "object"],
         "fixture": [unit.cost.cpu_s for unit in census.units if unit.kind == "fixture"],
         "test": test_times,
     }
@@ -1377,11 +1378,12 @@ def total_judged(
     if measure.value is None:
         return [], "no baseline judges a total with no value", ""
     if measure.missing:
-        return (
-            [],
-            f"no baseline judges it: {measure.missing} units have no time, so it is not the total of the build",
-            "",
+        message = (
+            f"{measure.said}.  The sum is not the total of the build, because {measure.missing} units have no time.  "
+            f"Run each unit, then read the totals again"
         )
+        warning = check_report.Finding("warning", position, 0, rule_id, message, "no-time", "")
+        return [warning], f"{measure.missing} units with no time", ""
     try:
         baseline = baseline_of(rule_id)
     except TotalRefusal as refusal:
@@ -1740,8 +1742,7 @@ def total_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
     measure = total_measure_of(context, rule_id)
     if measure.value is None or measure.missing:
         raise rule_ledger.LedgerError(
-            f"the build gives no total of {rule_id}: {measure.shown}.  A ccache hit with no earlier compile in the "
-            f"build directory has no time.  Build each such unit again with no cache, then write"
+            f"the build gives no total of {rule_id}: {measure.shown}.  Run each unit of the total, then write"
         )
     try:
         rows = total_rows(ledger)

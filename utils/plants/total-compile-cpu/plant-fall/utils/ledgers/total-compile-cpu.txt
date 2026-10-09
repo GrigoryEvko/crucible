@@ -1,5 +1,0 @@
-# A planted ledger: a baseline of the configuration of the planted build that is too high.
-format 1
-rule total-compile-cpu
-configuration x86_64-debug-asan kind x86_64-debug-asan
-- | x86_64-debug-asan | 500 | total | the planted baseline

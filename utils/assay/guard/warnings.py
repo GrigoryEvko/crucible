@@ -261,56 +261,60 @@ def planted_baselines(rows: dict[str, float], is_bound: bool = False) -> cost_bu
 
 
 def time_total_cases(expect: testing.Expect) -> None:
-    """Add the three time totals of a planted census, and compare each one with planted baselines."""
+    """Add the two time totals of a planted census, and compare each one with planted baselines."""
     budgets = {
         rule_id: check_report.Budget(rule_id, 100.0, 100.0, "%", "m") for rule_id, _, _ in cost_budgets.TOTAL_TIMES
     }
     units = [
         planted_unit("object", 60.0),
-        planted_unit("object", 30.0),
         planted_unit("fixture", 20.0),
         planted_unit("fixture", 10.0),
     ]
     census = build_census.Census(Path("/b"), units, {})
     measures = cost_budgets.total_time_measures(census, [4.0, 5.0])
     expect(
-        "the three time totals add the CPU time of their units",
+        "the two time totals add the CPU time of their units, and an object of all is in neither",
         [(item.rule_id, item.value, item.missing) for item in measures]
-        == [("total-compile-cpu", 90.0, 0), ("total-fixture-cpu", 30.0, 0), ("total-test-cpu", 9.0, 0)],
+        == [("total-fixture-cpu", 30.0, 0), ("total-test-cpu", 9.0, 0)],
     )
-    baselines = planted_baselines({"total-compile-cpu": 90.0, "total-fixture-cpu": 10.0, "total-test-cpu": 30.0})
+    baselines = planted_baselines({"total-fixture-cpu": 30.0, "total-test-cpu": 30.0})
     found, lines = cost_budgets.judged_totals(measures, budgets, "build", baselines)
     expect(
-        "a total more than twice its baseline gives a growth warning, a baseline more than twice the total gives a "
-        "fall warning, and a total equal to its baseline gives nothing",
-        [(item.check, item.kind, item.level) for item in found]
-        == [("total-fixture-cpu", "growth", "warning"), ("total-test-cpu", "fall", "warning")]
-        and len(lines) == 3
-        and "total-compile-cpu 90 s CPU in 2 units, +0.0% against the baseline of the configuration planted"
+        "a baseline more than two times the total gives a fall warning, and a total equal to its baseline gives nothing",
+        [(item.check, item.kind, item.level) for item in found] == [("total-test-cpu", "fall", "warning")]
+        and len(lines) == 2
+        and "total-fixture-cpu 30 s CPU in 2 units, +0.0% against the baseline of the configuration planted"
         in lines[0],
     )
-    bound = planted_baselines({"total-compile-cpu": 30.0, "total-fixture-cpu": 100.0, "total-test-cpu": 30.0}, True)
+    lower = planted_baselines({"total-fixture-cpu": 10.0, "total-test-cpu": 9.0})
+    found, _ = cost_budgets.judged_totals(measures, budgets, "build", lower)
+    expect(
+        "a total more than two times its baseline gives a growth warning",
+        [(item.check, item.kind, item.level) for item in found] == [("total-fixture-cpu", "growth", "warning")],
+    )
+    bound = planted_baselines({"total-fixture-cpu": 10.0, "total-test-cpu": 30.0}, True)
     found, _ = cost_budgets.judged_totals(measures, budgets, "build", bound)
     expect(
         "the largest baseline judges a growth and no fall of a build of a configuration that the ledger does not hold",
-        [(item.check, item.kind) for item in found] == [("total-compile-cpu", "growth")]
+        [(item.check, item.kind) for item in found] == [("total-fixture-cpu", "growth")]
         and "--add-configuration" in found[0].message,
     )
-    zero = planted_baselines({"total-compile-cpu": 0.0, "total-fixture-cpu": 30.0, "total-test-cpu": 9.0})
+    zero = planted_baselines({"total-fixture-cpu": 0.0, "total-test-cpu": 9.0})
     found, _ = cost_budgets.judged_totals(measures, budgets, "build", zero)
     expect(
         "a total above 0 with a baseline of 0 gives a warning",
-        [(item.check, item.kind) for item in found] == [("total-compile-cpu", "zero-baseline")],
+        [(item.check, item.kind) for item in found] == [("total-fixture-cpu", "zero-baseline")],
     )
-    census.units.append(planted_unit("object", None))
+    census.units.append(planted_unit("fixture", None))
     found, lines = cost_budgets.judged_totals(
-        cost_budgets.total_time_measures(census, [4.0, 5.0]), budgets, "build", planted_baselines({})
+        cost_budgets.total_time_measures(census, [4.0, 5.0]), budgets, "build", baselines
     )
     expect(
-        "no baseline judges a time total with a unit that has no time, and its line tells why",
-        "1 with no time, no baseline judges it: 1 units have no time" in lines[0]
+        "a time total with a unit that has no time gives a warning that tells to run each unit",
+        "1 with no time, 1 units with no time" in lines[0]
         and [(item.check, item.kind) for item in found]
-        == [("total-fixture-cpu", "no-baseline"), ("total-test-cpu", "no-baseline")],
+        == [("total-fixture-cpu", "no-time"), ("total-test-cpu", "fall")]
+        and "Run each unit" in found[0].message,
     )
     found, lines = cost_budgets.judged_totals(measures, {}, "build", baselines)
     expect("a total with no measured rule gives no warning and tells so", not found and "no measured rule" in lines[0])

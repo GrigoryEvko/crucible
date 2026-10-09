@@ -1,2 +1,0 @@
-# The plant has no build.txt, and its context has no build directory.  The rule reads a build, and it does not
-# apply: `guard check` exits with 77.  The plant sets no variable.
