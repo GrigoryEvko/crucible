@@ -1,0 +1,15 @@
+# A cast to a pointer to the proof type in the body of a template of a base
+# header is a route.  The sentinel unit of the header reads the pattern of
+# each template, also when no unit instantiates it.  The quarantined unit with
+# no argument reads the same header and gives no finding.
+
+compile sentinel src/uses.cpp sentinel=include/forge/Pool.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:11:65 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:14:57 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:18:67 | pointer-cast: forge::Door
+
+compile plain src/uses.cpp stage=c
+exit plain pass
+judge plain

@@ -1,0 +1,21 @@
+#pragma once
+
+#include <forge/Door.h>
+
+// A cast to a pointer to the proof type in each body of a template of a base
+// header: a function template, a member function of a class template and a
+// member function template of a class.  No unit instantiates a template, so
+// the sentinel unit reads each body in the pattern of its template.
+namespace forge {
+
+template <class T> void in_function_template(void* raw) { (void)static_cast<Door*>(raw); }
+
+template <class T> struct Box {
+    void in_member_of_class_template(void* raw) { (void)static_cast<Door*>(raw); }
+};
+
+struct Holder {
+    template <class T> void in_member_template(void* raw) { (void)static_cast<Door*>(raw); }
+};
+
+}  // namespace forge

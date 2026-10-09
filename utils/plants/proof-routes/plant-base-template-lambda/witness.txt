@@ -1,0 +1,16 @@
+# A cast to a pointer to the proof type in the body of a lambda in a template
+# of a base header is a route, and so is a cast in the body of a generic
+# lambda.  The sentinel unit of the header reads each body in a pattern.  The
+# quarantined unit with no argument reads the same header and gives no
+# finding.
+
+compile sentinel src/uses.cpp sentinel=include/forge/Pool.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:13:31 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:19:35 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:25:38 | pointer-cast: forge::Door
+
+compile plain src/uses.cpp stage=c
+exit plain pass
+judge plain

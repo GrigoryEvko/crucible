@@ -1,0 +1,29 @@
+#pragma once
+
+#include <forge/Door.h>
+
+// A cast to a pointer to the proof type in the body of a lambda of a base
+// header: a lambda in a function template, a lambda in a member function of a
+// class template, and a generic lambda in a function that is not a template.
+// The call operator of a generic lambda is a template.  No unit calls a
+// lambda, so the sentinel unit reads each body in a pattern.
+namespace forge {
+
+template <class T> void in_function_template(void* raw) {
+    auto cast = [raw] { (void)static_cast<Door*>(raw); };
+    (void)cast;
+}
+
+template <class T> struct Box {
+    void in_member_of_class_template(void* raw) {
+        auto cast = [raw] { (void)static_cast<Door*>(raw); };
+        (void)cast;
+    }
+};
+
+inline void in_generic_lambda() {
+    auto cast = [](auto raw) { (void)static_cast<Door*>(raw); };
+    (void)cast;
+}
+
+}  // namespace forge
