@@ -179,12 +179,19 @@ def header_sets(build: Path, src_root: Path, jobs: int) -> dict[str, list[str]]:
     Complexity: one run of the preprocessor for each compile entry, with `jobs` runs at a time.
 
     Raises:
-        RunError: If the compile database cannot be read, or a run of the preprocessor fails
+        RunError: If the compile database cannot be read, an entry names a source that is not there, or a run of the
+            preprocessor fails
     """
     try:
         entries = compdb.entries(build)
     except compdb.CompdbError as error:
         raise RunError(str(error)) from None
+    missing = [entry.file for entry in entries if not Path(entry.file).is_file()]
+    if missing:
+        raise RunError(
+            f"{len(missing)} compile entries name a source that is not there, such as {missing[0]}.  The build makes "
+            f"such a source, so build the export before the run: cmake --build {build}"
+        )
     result: dict[str, list[str]] = {}
     try:
         with ThreadPoolExecutor(max_workers=jobs) as pool:

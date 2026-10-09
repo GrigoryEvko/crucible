@@ -3,14 +3,22 @@
 THE RULE
     The call names headers with --path, as paths in the source tree of the
     build (assay.guard.engines.buildsys.runner, THE PATHS).  --build-dir is
-    a configured build of an export of the tree.  The run writes each mutant
+    a build of an export of the tree, configured and built.  The run reads
+    the headers of each compile entry, and the build makes some of their
+    sources.  The run writes each mutant
     into the header of the source tree of that build, and it puts the header
     back after each mutant (assay.mutation.run).  The source tree of the
     build is CMAKE_HOME_DIRECTORY of its CMake cache.  The rule refuses a
     build of the tree of --root, and it does not write into the tree.  With
-    no --path, the rule does not apply, and it exits 77.  No ctest test runs
-    the rule on the tree, because a run on each header takes hours.  The
-    group mutation of `guard selftest` does a test of the run.
+    no --path, the rule does not apply, and it exits 77.  The group mutation
+    of `guard selftest` does a test of the run.
+
+THE COST
+    No ctest test runs the rule on the tree.  On 2026-10-09, the run of
+    include/fixy/Stale.h (12 gates) took 150 s and 1323 CPU seconds.  The
+    run of include/fixy/Tagged.h (20 gates) took 185 s and 1740 CPU seconds.
+    The 4390 gates of the 403 headers of include/ then take approximately 13
+    hours and 110 CPU hours.  A test has a limit of 30 s.
 
 THE FINDINGS
     The kind of a finding of a mutant is the kind of its gate.  Its entity is

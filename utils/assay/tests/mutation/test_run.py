@@ -393,6 +393,30 @@ def launched_cases(expect: testing.Expect) -> None:
         )
 
 
+def unbuilt_cases(expect: testing.Expect) -> None:
+    """A compile entry with a source that the build makes, and that is not there, stops the run with a command."""
+    with tempfile.TemporaryDirectory(prefix="mutation-unbuilt-") as directory:
+        build = Path(directory) / "build"
+        build.mkdir()
+        generated = build / "generated.cpp"
+        row = {
+            "directory": str(build),
+            "file": str(generated),
+            "output": "generated.o",
+            "command": f"c++ -c {generated}",
+        }
+        compdb.plant(build, [row])
+        try:
+            run.header_sets(build, Path(directory).resolve(), 1)
+            message = ""
+        except run.RunError as error:
+            message = str(error)
+        expect(
+            "the run names the source that is not there and the command that builds the export",
+            str(generated) in message and f"cmake --build {build}" in message,
+        )
+
+
 def write_cases(expect: testing.Expect) -> None:
     """Write the ledger of the invalid plant of the rule with --path, and check the rows and a check after it."""
     from assay.guard import check, write
@@ -446,5 +470,7 @@ def main(argv: list[str]) -> int:
         check_report.write_line(f"tests.mutation.test_run: SKIP, {missing}")
         return ExitCode.SKIPPED
     return testing.run(
-        __name__.removeprefix("assay."), argv, (verdict_cases, probe_cases, model_cases, launched_cases, write_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (verdict_cases, probe_cases, model_cases, launched_cases, unbuilt_cases, write_cases),
     )
