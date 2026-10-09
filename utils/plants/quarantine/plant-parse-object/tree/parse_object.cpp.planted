@@ -1,0 +1,30 @@
+// Declarations whose parameters the middle end releases.  An object compile
+// emits caller, so the middle end has a node for each function that it calls,
+// and it releases the parameters of such a declaration.  The plugin walks the
+// declarations after the parse and before the middle end (plugin.cpp, THE
+// HOOKS OF THE UNIT), so a parse and an object compile give the same findings.
+
+#include <span>
+
+namespace parsed {
+
+void consume_called(int* sink, std::span<const int> cells) noexcept;
+void consume_inline(int* sink, std::span<const int> cells) noexcept;
+void consume_unused(int* sink, std::span<const int> cells) noexcept;
+extern "C" void consume_c(int* sink) noexcept;
+
+void caller(std::span<const int> cells) {
+    consume_called(nullptr, cells);
+    consume_c(nullptr);
+}
+
+inline void inline_caller(std::span<const int> cells) {
+    consume_inline(nullptr, cells);
+}
+
+struct Store {
+    void persist(std::span<const int> events);
+    void run(std::span<const int> events) { persist(events); }
+};
+
+}  // namespace parsed

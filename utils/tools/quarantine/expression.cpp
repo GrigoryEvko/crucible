@@ -100,8 +100,8 @@
 //                       that holds a proof type.  The operand of the sizeof
 //                       is a type, or an expression with that type.  A cast of
 //                       that storage makes a proof with no call to its door
-//     GCC keeps no tree of the last two routes that a plugin can read.  At
-//     PLUGIN_FINISH_UNIT, an explicit instantiation of a class has the place of
+//     GCC keeps no tree of the last two routes that a plugin can read.  At the
+//     end of the parse, an explicit instantiation of a class has the place of
 //     its template, and an explicit instantiation of a function is on no list.
 //     Outside a template, GCC folds each sizeof in the arguments of a call to
 //     a constant before PLUGIN_PRE_GENERICIZE.  The patched GCC gives two
@@ -147,7 +147,7 @@
 //         file that it calls.  The plugin keeps the facts of the body of each
 //         function of a door file that is not a template at
 //         PLUGIN_PRE_GENERICIZE, and it reads the pattern of a template
-//     At PLUGIN_FINISH_UNIT the unit compares that set with the enumerators
+//     At the end of the parse the unit compares that set with the enumerators
 //     that the type of the alias names.  A system call that one set does not
 //     hold is the finding not-granted or not-issued, and the line compared
 //     names the grant file in each unit that compared the sets.  A grant file

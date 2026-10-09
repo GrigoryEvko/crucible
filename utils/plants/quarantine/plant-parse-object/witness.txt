@@ -1,0 +1,29 @@
+# An object compile and a parse of one unit give the same findings.  The
+# middle end of an object compile releases the parameters of consume_called
+# on line 11 and of consume_c on line 14, because caller calls them.  The
+# plugin walks the declarations at the end of the parse, before the middle
+# end, so each parameter is a finding in the two compiles.
+
+compile report parse_object.cpp
+exit report pass
+judge report
+finding report quarantine raw-pointer-object parse_object.cpp:11:26 | sink
+finding report quarantine std-object parse_object.cpp:11:53 | std::span
+finding report quarantine raw-pointer-object parse_object.cpp:12:26 | sink
+finding report quarantine std-object parse_object.cpp:12:53 | std::span
+finding report quarantine raw-pointer-object parse_object.cpp:13:26 | sink
+finding report quarantine std-object parse_object.cpp:13:53 | std::span
+finding report quarantine foreign-symbol parse_object.cpp:14:17 | parsed::consume_c (C linkage)
+finding report quarantine raw-pointer-object parse_object.cpp:14:32 | sink
+finding report quarantine std-object parse_object.cpp:16:34 | std::span
+finding report quarantine c-library-call parse_object.cpp:18:14 | parsed::consume_c (C linkage)
+finding report quarantine std-object parse_object.cpp:21:48 | std::span
+finding report quarantine std-object parse_object.cpp:26:39 | std::span
+finding report quarantine std-object parse_object.cpp:27:35 | std::span
+
+compile syntax parse_object.cpp stage=syntax findings=report
+exit syntax pass
+missing syntax object
+
+compile error parse_object.cpp mode=error out=no errors=report
+exit error fail

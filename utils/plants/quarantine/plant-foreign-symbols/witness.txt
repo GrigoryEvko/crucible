@@ -1,13 +1,17 @@
 # The foreign symbols of a quarantined file.  A function of C language linkage
 # that the unit defines later is no foreign symbol, also at a call before the
-# definition (lines 11, 17 and 19).
+# definition (lines 11, 17 and 19).  The raw pointer parameters of the
+# declarations on lines 8 and 9 are findings in an object compile too.
 
 compile report foreign_symbols.cpp
 exit report pass
 finding report quarantine foreign-symbol foreign_symbols.cpp:7:30 | abort (C linkage)
 finding report quarantine foreign-symbol foreign_symbols.cpp:8:17 | write (C linkage)
+finding report quarantine raw-pointer-object foreign_symbols.cpp:8:51 | bytes
 finding report quarantine foreign-symbol foreign_symbols.cpp:9:7 | foreign_copy (asm label memcpy)
 finding report quarantine raw-pointer-object foreign_symbols.cpp:9:7 | foreign_copy
+finding report quarantine raw-pointer-object foreign_symbols.cpp:9:26 | target
+finding report quarantine raw-pointer-object foreign_symbols.cpp:9:46 | source
 finding report quarantine foreign-symbol foreign_symbols.cpp:10:13 | foreign_exit (attribute weakref)
 finding report quarantine c-library-call foreign_symbols.cpp:13:41 | abort (C linkage)
 finding report quarantine c-library-call foreign_symbols.cpp:14:36 | write (C linkage)

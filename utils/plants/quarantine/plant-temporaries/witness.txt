@@ -1,12 +1,12 @@
 # An explicit temporary names its class, and an implicit conversion to a
 # parameter of a library type names nothing at the call (lines 25 to 28).  The
-# parameter types of the declarations on lines 14 and 15 name a library class
-# where the source spells it.
+# parameters of the declarations on lines 14 and 15 are objects of a library
+# class, in an object compile as in a parse.
 
 compile report temporaries.cpp
 exit report pass
-finding report quarantine std-entity temporaries.cpp:14:26 | std::vector
-finding report quarantine std-entity temporaries.cpp:15:31 | std::basic_string
+finding report quarantine std-object temporaries.cpp:14:45 | std::vector
+finding report quarantine std-object temporaries.cpp:15:45 | std::basic_string
 finding report quarantine raw-pointer-object temporaries.cpp:21:32 | raw
 finding report quarantine std-entity temporaries.cpp:22:25 | std::vector
 finding report quarantine std-entity temporaries.cpp:23:25 | std::basic_string

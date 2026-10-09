@@ -38,8 +38,8 @@
 //     An explicit specialization and a partial specialization are on the lists
 //     of their template (DECL_TEMPLATE_INSTANTIATIONS and
 //     DECL_TEMPLATE_SPECIALIZATIONS), also when the unit only declares them.
-//     The walk of the namespaces at PLUGIN_FINISH_UNIT reads the lists of each
-//     template.  An explicit specialization of a member of an implicit
+//     The walk of the namespaces at the end of the parse reads the lists of
+//     each template.  An explicit specialization of a member of an implicit
 //     instantiation, such as `template <> constexpr bool X<Fake>::value =
 //     true;`, is on no list, so the hooks PLUGIN_FINISH_DECL,
 //     PLUGIN_FINISH_PARSE_FUNCTION and PLUGIN_FINISH_TYPE read it where the
@@ -959,7 +959,7 @@ bool is_gate_file(location_t location) {
 // sentinel is a header of the three layers or its check file, or the unit
 // reads a header of the three layers that cannot compile alone (THE SCOPE).
 // Most units compile a file outside them, and then read no gate.  The first
-// call comes from the walk at PLUGIN_FINISH_UNIT, so state.entries holds each
+// call comes from the walk at the end of the parse, so state.entries holds each
 // file that the unit read.  Complexity: linear in the files of the unit, one
 // time.
 bool has_gate_scope() {
@@ -1320,7 +1320,7 @@ void on_collection(void*, void*) {
 
 }  // namespace
 
-// The walk of the family at PLUGIN_FINISH_UNIT (THE SITES).
+// The walk of the family at the end of the parse (THE SITES).
 void walk_home() {
     build_index();
     walked.clear();

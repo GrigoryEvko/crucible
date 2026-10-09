@@ -33,9 +33,15 @@
 // (utils/tools/quarantine/Quarantine.cmake).
 //
 // THE HOOKS OF THE UNIT
-//     PLUGIN_FINISH_UNIT     one walk of every namespace that a system header
-//                            does not own (declaration.cpp), and the report.
-//     PLUGIN_FINISH          the report, if the unit did not reach its end.
+//     parse_file             the plugin wraps lang_hooks.parse_file.  After the
+//                            parse, and before the middle end, it walks every
+//                            namespace that a system header does not own
+//                            (declaration.cpp) and runs the other walks of the
+//                            end of the unit.  An object compile and a parse
+//                            then read the same trees.
+//     PLUGIN_FINISH_UNIT     the report.
+//     PLUGIN_FINISH          the report, if the unit did not reach
+//                            PLUGIN_FINISH_UNIT.
 //     PLUGIN_GGC_START       each garbage collection clears the caches that a
 //                            tree keys.
 //     The other sources register the hooks of their rules.
@@ -104,6 +110,8 @@
 //     object (-fsyntax-only, -E) has no section.
 
 #include "plugin.h"
+
+#include "langhooks.h"
 
 #include "rows.h"
 
@@ -350,27 +358,45 @@ void report_unit_fact(const Finding& finding) {
              kind_action(finding.kind));
 }
 
-void on_finish_unit(void*, void*) {
+// The parse_file hook of the front end, before parse_and_walk wraps it.
+void (*front_end_parse_file)() = nullptr;
+
+bool was_unit_walked = false;
+
+// The walks of the end of the unit, one time.
+void walk_unit() {
+    if (was_unit_walked) {
+        return;
+    }
+    was_unit_walked = true;
     walk_declarations();
     finish_expression_rules();
     walk_home();
     walk_owner();
+}
+
+// The parse of the unit, and then the walks of its end.  When the parse
+// returns, the front end has made each instantiation, each implicit member and
+// the function of the dynamic initializers, and the middle end has not run.
+// The middle end releases the parameters of a declaration that an emitted
+// function calls, so a walk at PLUGIN_FINISH_UNIT did not see them, and an
+// object compile and a parse gave different findings.
+void parse_and_walk() {
+    front_end_parse_file();
+    if (!seen_error()) {
+        walk_unit();
+    }
+}
+
+void on_finish_unit(void*, void*) {
+    walk_unit();
     report(true);
 }
 
 // A unit that stopped on an error, or that -fsyntax-only compiled, does not
-// reach PLUGIN_FINISH_UNIT.  Under -fsyntax-only the trees are complete, so
-// the walks of declarations run here.  GCC wrote the dependency file before
+// reach PLUGIN_FINISH_UNIT.  GCC wrote the dependency file before
 // PLUGIN_FINISH, so the report adds no dependency.
-void on_finish(void*, void*) {
-    if (!state.was_reported && flag_syntax_only && !seen_error()) {
-        walk_declarations();
-        finish_expression_rules();
-        walk_home();
-        walk_owner();
-    }
-    report(false);
-}
+void on_finish(void*, void*) { report(false); }
 
 void on_collection(void*, void*) {
     for (int use = 0; use < 2; ++use) {
@@ -600,6 +626,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_declarations(plugin_info->base_name);
     register_home(plugin_info->base_name);
     register_owner(plugin_info->base_name);
+    front_end_parse_file = lang_hooks.parse_file;
+    lang_hooks.parse_file = parse_and_walk;
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);

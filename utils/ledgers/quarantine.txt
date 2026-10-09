@@ -411,7 +411,7 @@ include/crucible/Cipher.h | std-entity | 1 | std::filesystem::path::string | -
 include/crucible/Cipher.h | std-entity | 1 | std::make_error_code | -
 include/crucible/Cipher.h | std-entity | 1 | std::operator+ | -
 include/crucible/Cipher.h | std-entity | 1 | std::optional::operator* | -
-include/crucible/Cipher.h | std-entity | 4 | std::span | -
+include/crucible/Cipher.h | std-entity | 2 | std::span | -
 include/crucible/Cipher.h | std-entity | 2 | std::unexpected | -
 include/crucible/Cipher.h | std-object | 1 | std::array | -
 include/crucible/Cipher.h | std-object | 7 | std::basic_string | -
@@ -873,7 +873,7 @@ include/crucible/cntp/BackpressureRuntime.h | std-object | 1 | std::span | -
 include/crucible/cntp/CongestionControl.h | std-entity | 2 | std::array::data | -
 include/crucible/cntp/CongestionControl.h | std-entity | 1 | std::array::operator[] | -
 include/crucible/cntp/CongestionControl.h | std-entity | 1 | std::as_writable_bytes | -
-include/crucible/cntp/CongestionControl.h | std-entity | 3 | std::basic_string_view | -
+include/crucible/cntp/CongestionControl.h | std-entity | 2 | std::basic_string_view | -
 include/crucible/cntp/CongestionControl.h | std-entity | 1 | std::basic_string_view::empty | -
 include/crucible/cntp/CongestionControl.h | std-entity | 1 | std::basic_string_view::operator[] | -
 include/crucible/cntp/CongestionControl.h | std-entity | 3 | std::basic_string_view::size | -
@@ -1004,7 +1004,6 @@ include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::basic_string_view:
 include/crucible/cntp/MtlsTransport.h | std-entity | 3 | std::basic_string_view::size | -
 include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::expected | -
 include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::operator== | -
-include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::span | -
 include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::span::empty | -
 include/crucible/cntp/MtlsTransport.h | std-entity | 1 | std::span::operator[] | -
 include/crucible/cntp/MtlsTransport.h | std-entity | 3 | std::span::size | -
@@ -1023,7 +1022,6 @@ include/crucible/cntp/OverlayMulticast.h | std-object | 9 | std::expected | -
 include/crucible/cntp/OverlayMulticast.h | std-object | 4 | std::span | -
 include/crucible/cntp/Pacing.h | std-entity | 1 | std::array::data | -
 include/crucible/cntp/Pacing.h | std-entity | 1 | std::array::operator[] | -
-include/crucible/cntp/Pacing.h | std-entity | 2 | std::basic_string_view | -
 include/crucible/cntp/Pacing.h | std-entity | 1 | std::basic_string_view::empty | -
 include/crucible/cntp/Pacing.h | std-entity | 1 | std::basic_string_view::operator[] | -
 include/crucible/cntp/Pacing.h | std-entity | 3 | std::basic_string_view::size | -
@@ -1081,7 +1079,6 @@ include/crucible/cntp/_wip/GpuDirect.h | std-object | 25 | std::expected | -
 include/crucible/cntp/_wip/Sharp.h | std-entity | 1 | std::expected | -
 include/crucible/cntp/_wip/Sharp.h | std-entity | 3 | std::expected::error | -
 include/crucible/cntp/_wip/Sharp.h | std-entity | 4 | std::expected::has_value | -
-include/crucible/cntp/_wip/Sharp.h | std-entity | 2 | std::span | -
 include/crucible/cntp/_wip/Sharp.h | std-entity | 2 | std::span::size | -
 include/crucible/cntp/_wip/Sharp.h | std-entity | 15 | std::unexpected | -
 include/crucible/cntp/_wip/Sharp.h | std-object | 2 | std::basic_string_view | -
@@ -1653,7 +1650,6 @@ include/crucible/topology/AsymmetricFailure.h | std-entity | 1 | std::span | -
 include/crucible/topology/AsymmetricFailure.h | std-object | 8 | std::array | -
 include/crucible/topology/AsymmetricFailure.h | std-object | 3 | std::basic_string_view | -
 include/crucible/topology/AsymmetricFailure.h | std-object | 1 | std::span | -
-include/crucible/topology/CongestionTelemetry.h | std-entity | 2 | std::span | -
 include/crucible/topology/CongestionTelemetry.h | std-object | 5 | std::expected | -
 include/crucible/topology/CongestionTelemetry.h | std-object | 3 | std::span | -
 include/crucible/topology/CongestionTelemetryWorker.h | raw-pointer-object | 3 | - | -
@@ -1706,7 +1702,6 @@ include/crucible/topology/Ptp.h | std-entity | 8 | std::__atomic_base::store | -
 include/crucible/topology/Ptp.h | std-entity | 1 | std::atomic::load | -
 include/crucible/topology/Ptp.h | std-entity | 1 | std::atomic::store | -
 include/crucible/topology/Ptp.h | std-entity | 1 | std::atomic_thread_fence | -
-include/crucible/topology/Ptp.h | std-entity | 2 | std::span | -
 include/crucible/topology/Ptp.h | std-entity | 2 | std::unexpected | -
 include/crucible/topology/Ptp.h | std-object | 10 | std::atomic | -
 include/crucible/topology/Ptp.h | std-object | 11 | std::expected | -
@@ -4389,7 +4384,7 @@ test/ct/test_ct_taint_fixy.cpp | std-object | 4 | std::array | -
 test/ct/test_ct_taint_fixy.cpp | std-object | 1 | std::expected | -
 test/ct/test_ct_taint_fixy.cpp | std-object | 2 | std::span | -
 test/end_to_end.h | c-array-object | 2 | - | -
-test/end_to_end.h | raw-pointer-object | 2 | - | -
+test/end_to_end.h | raw-pointer-object | 6 | - | -
 test/fixy/hw_axis_pins.h | std-entity | 1 | std::array | -
 test/fixy/hw_axis_pins.h | std-entity | 3 | std::array::operator[] | -
 test/fixy/hw_axis_pins.h | std-entity | 1 | std::array::size | -
@@ -4470,8 +4465,7 @@ test/fixy/session_crash_attack.h | std-object | 1 | std::basic_string_view | -
 test/fixy/session_crash_attack.h | std-object | 1 | std::deque | -
 test/fixy/session_crash_attack.h | std-object | 3 | std::optional | -
 test/fixy/session_global_attack.h | std-entity | 2 | std::array::operator[] | -
-test/fixy/session_global_attack.h | std-entity | 16 | std::basic_string_view | -
-test/fixy/session_global_attack.h | std-entity | 1 | std::initializer_list | -
+test/fixy/session_global_attack.h | std-entity | 1 | std::basic_string_view | -
 test/fixy/session_global_attack.h | std-entity | 7 | std::operator== | -
 test/fixy/session_global_attack.h | std-entity | 1 | std::ranges::__any_of_fn::operator() | -
 test/fixy/session_global_attack.h | std-entity | 1 | std::ranges::any_of | -
@@ -4513,7 +4507,6 @@ test/fixy/session_subtype.h | std-entity | 6 | std::vector::push_back | -
 test/fixy/session_subtype.h | std-entity | 7 | std::vector::size | -
 test/fixy/session_subtype.h | std-object | 10 | std::vector | -
 test/fixy/session_subtype_attack.h | std-entity | 1 | std::array::operator[] | -
-test/fixy/session_subtype_attack.h | std-entity | 2 | std::span | -
 test/fixy/session_subtype_attack.h | std-entity | 4 | std::vector::operator[] | -
 test/fixy/session_subtype_attack.h | std-entity | 1 | std::vector::push_back | -
 test/fixy/session_subtype_attack.h | std-entity | 2 | std::vector::size | -
@@ -6349,12 +6342,13 @@ test/foundation/abort_probe.h | c-library-call | 1 | foundation::test::abort_pro
 test/foundation/abort_probe.h | c-library-call | 2 | pthread_sigmask | -
 test/foundation/abort_probe.h | c-library-call | 2 | sigaction | -
 test/foundation/abort_probe.h | c-library-call | 1 | sigemptyset | -
-test/foundation/abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
+test/foundation/abort_probe.h | c-library-object | 2 | __jmp_buf_tag | -
 test/foundation/abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/foundation/abort_probe.h | c-library-object | 2 | sigaction | -
 test/foundation/abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/foundation/abort_probe.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/abort_probe.h | foreign-symbol | 1 | foundation::test::abort_probe_longjmp (asm label longjmp) | -
+test/foundation/abort_probe.h | raw-pointer-object | 1 | - | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::min | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::popcount | -
@@ -7328,9 +7322,8 @@ test/process_wide_writer.cpp | std-entity | 1 | std::optional::operator* | -
 test/process_wide_writer.cpp | std-object | 1 | std::array | -
 test/process_wide_writer.cpp | std-object | 1 | std::optional | -
 test/region_cache.h | c-array-object | 4 | - | -
-test/region_cache.h | raw-pointer-object | 2 | - | -
+test/region_cache.h | raw-pointer-object | 6 | - | -
 test/resnet.h | c-array-object | 3 | - | -
-test/resnet.h | std-entity | 5 | std::vector | -
 test/resnet.h | std-object | 6 | std::vector | -
 test/scratch_dir.h | c-library-call | 1 | __errno_location | -
 test/scratch_dir.h | c-library-call | 1 | abort | -
@@ -7520,12 +7513,13 @@ test/test_abort_probe.h | c-library-call | 1 | crucible::test::abort_probe_longj
 test/test_abort_probe.h | c-library-call | 2 | pthread_sigmask | -
 test/test_abort_probe.h | c-library-call | 2 | sigaction | -
 test/test_abort_probe.h | c-library-call | 1 | sigemptyset | -
-test/test_abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
+test/test_abort_probe.h | c-library-object | 2 | __jmp_buf_tag | -
 test/test_abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/test_abort_probe.h | c-library-object | 2 | sigaction | -
 test/test_abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/test_abort_probe.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_abort_probe.h | foreign-symbol | 1 | crucible::test::abort_probe_longjmp (asm label longjmp) | -
+test/test_abort_probe.h | raw-pointer-object | 1 | - | -
 test/test_arena.cpp | c-library-call | 1 | strcmp | -
 test/test_arena.cpp | raw-pointer-object | 12 | - | -
 test/test_arena.cpp | replace-pending:std::bit_cast | 2 | std::bit_cast | -
@@ -9718,7 +9712,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | bench/bench_harness.h | std-entity | +2 | std::chrono::steady_clock::now | -
 @aarch64-debug-asan-syntax | bench/bench_harness.h | std-entity | +2 | std::chrono::time_point::time_since_epoch | -
 @aarch64-debug-asan-syntax | bench/bench_harness.h | std-entity | -1 | std::min | -
-@aarch64-debug-asan-syntax | include/crucible/Cipher.h | std-entity | -2 | std::span | -
 @aarch64-debug-asan-syntax | include/crucible/SwissTable.h | c-array-object | +1 | - | -
 @aarch64-debug-asan-syntax | include/crucible/SwissTable.h | c-library-call | +1 | vandq_u8 | -
 @aarch64-debug-asan-syntax | include/crucible/SwissTable.h | c-library-call | +1 | vceqq_s8 | -
@@ -9740,7 +9733,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | include/crucible/canopy/Hlc.h | std-entity | +1 | std::atomic_flag::test_and_set | -
 @aarch64-debug-asan-syntax | include/crucible/canopy/Hlc.h | std-object | +1 | std::atomic | -
 @aarch64-debug-asan-syntax | include/crucible/canopy/Hlc.h | std-object | +1 | std::atomic_flag | -
-@aarch64-debug-asan-syntax | include/crucible/cntp/CongestionControl.h | std-entity | -1 | std::basic_string_view | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | c-library-call | +2 | vandq_u8 | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | c-library-call | +1 | vdupq_n_u8 | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | c-library-call | +3 | veorq_u8 | -
@@ -9754,9 +9746,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-entity | +1 | std::operator^= | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-entity | +6 | std::span::data | -
 @aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-object | +2 | std::array | -
-@aarch64-debug-asan-syntax | include/crucible/cntp/MtlsTransport.h | std-entity | -1 | std::span | -
-@aarch64-debug-asan-syntax | include/crucible/cntp/Pacing.h | std-entity | -2 | std::basic_string_view | -
-@aarch64-debug-asan-syntax | include/crucible/cntp/_wip/Sharp.h | std-entity | -2 | std::span | -
 @aarch64-debug-asan-syntax | include/crucible/ledger/HostFingerprint.h | c-library-call | +2 | getauxval | -
 @aarch64-debug-asan-syntax | include/crucible/ledger/HostFingerprint.h | compiler-builtin | -10 | __builtin_cpu_supports | -
 @aarch64-debug-asan-syntax | include/crucible/ledger/HostFingerprint.h | std-object | +1 | std::array | -
@@ -9784,8 +9773,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfHub.h | std-object | -1 | std::expected | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfHub.h | std-object | -1 | std::unique_ptr | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfLoader.h | raw-pointer-object | -1 | - | -
-@aarch64-debug-asan-syntax | include/crucible/topology/CongestionTelemetry.h | std-entity | -2 | std::span | -
-@aarch64-debug-asan-syntax | include/crucible/topology/Ptp.h | std-entity | -2 | std::span | -
 @aarch64-debug-asan-syntax | src/perf/LockContention.cpp | c-array-object | -1 | - | -
 @aarch64-debug-asan-syntax | src/perf/LockContention.cpp | c-library-call | -1 | lock_contention_bpf_bytecode (C linkage) | -
 @aarch64-debug-asan-syntax | src/perf/LockContention.cpp | c-library-call | -1 | lock_contention_bpf_bytecode_len (C linkage) | -
@@ -9983,14 +9970,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | test/ct/test_ct_taint_fixy.cpp | std-object | -4 | std::array | -
 @aarch64-debug-asan-syntax | test/ct/test_ct_taint_fixy.cpp | std-object | -1 | std::expected | -
 @aarch64-debug-asan-syntax | test/ct/test_ct_taint_fixy.cpp | std-object | -2 | std::span | -
-@aarch64-debug-asan-syntax | test/end_to_end.h | raw-pointer-object | +4 | - | -
-@aarch64-debug-asan-syntax | test/fixy/session_global_attack.h | std-entity | -15 | std::basic_string_view | -
-@aarch64-debug-asan-syntax | test/fixy/session_global_attack.h | std-entity | -1 | std::initializer_list | -
-@aarch64-debug-asan-syntax | test/fixy/session_subtype_attack.h | std-entity | -2 | std::span | -
-@aarch64-debug-asan-syntax | test/foundation/abort_probe.h | c-library-object | +1 | __jmp_buf_tag | -
-@aarch64-debug-asan-syntax | test/foundation/abort_probe.h | raw-pointer-object | +1 | - | -
-@aarch64-debug-asan-syntax | test/region_cache.h | raw-pointer-object | +4 | - | -
-@aarch64-debug-asan-syntax | test/resnet.h | std-entity | -5 | std::vector | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | opted-out | -1 | ORACLE: the raw form that the shape of each family probe is compared with \| c-library-call memcpy | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | opted-out | -1 | ORACLE: the raw form that the shape of each family probe is compared with \| c-library-call memset | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | opted-out | -7 | ORACLE: the raw form that the shape of each family probe is compared with \| raw-pointer-object | -
@@ -10012,8 +9991,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | opted-out | -1 | ORACLE: the raw form that the shape of each family probe is compared with \| std-object std::optional | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | opted-out | -1 | ORACLE: the raw form that the shape of each family probe is compared with \| std-object std::unique_ptr | -
 @aarch64-debug-asan-syntax | test/shape/core_shapes.cpp | region | -1 | ORACLE: the raw form that the shape of each family probe is compared with | -
-@aarch64-debug-asan-syntax | test/test_abort_probe.h | c-library-object | +1 | __jmp_buf_tag | -
-@aarch64-debug-asan-syntax | test/test_abort_probe.h | raw-pointer-object | +1 | - | -
 @aarch64-debug-asan-syntax | test/test_perf_lock_contention_smoke.cpp | c-library-call | -9 | fprintf | -
 @aarch64-debug-asan-syntax | test/test_perf_lock_contention_smoke.cpp | c-library-call | -1 | setenv | -
 @aarch64-debug-asan-syntax | test/test_perf_lock_contention_smoke.cpp | c-library-call | -9 | stderr | -
@@ -10068,7 +10045,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | test/test_perf_syscall_tp_btf_smoke.cpp | std-entity | -1 | std::optional::operator* | -
 @aarch64-debug-asan-syntax | test/test_perf_syscall_tp_btf_smoke.cpp | std-entity | -10 | std::optional::operator-> | -
 @aarch64-debug-asan-syntax | test/test_perf_syscall_tp_btf_smoke.cpp | std-object | -1 | std::optional | -
-@x86_64-debug-asan-bench-fuzz | @build/test/fuzz/generated/boundary_harness_list.h | std-entity | +1 | std::span | -
 @x86_64-debug-asan-bench-fuzz | @build/test/fuzz/generated/boundary_harness_list.h | std-object | +15 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_arena.cpp | c-array-object | +1 | - | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_arena.cpp | c-library-call | +1 | printf | -
@@ -10677,14 +10653,13 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-entity | +5 | std::unique_ptr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-entity | +7 | std::unique_ptr::operator-> | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-object | +5 | std::unique_ptr | -
-@x86_64-debug-asan-bench-fuzz | include/crucible/Cipher.h | std-entity | +1 | std::span | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_cvtb2mask512 | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_pcmpeqb512_mask | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | replace-pending:std::bit_cast | +2 | std::bit_cast | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/entry.h | std-entity | +1 | std::span | -
+@x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/entry.h | std-object | +1 | std::span | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/entry.h | std-object | +1 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/fuzz_main.cpp | raw-pointer-object | +1 | - | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/fuzz_main.cpp | std-entity | +3 | std::span | -
+@x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/fuzz_main.cpp | std-entity | +2 | std::span | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/fuzz_main.cpp | std-object | +2 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/harness.h | c-library-call | +1 | abort | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/boundary/harness.h | c-library-call | +1 | fprintf | -
@@ -11314,10 +11289,8 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/property_runner.h | std-object | +2 | std::array | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/property_runner.h | std-object | +2 | std::basic_string_view | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/random_input.h | c-array-object | +2 | - | -
-@x86_64-debug-asan-syntax | include/crucible/Cipher.h | std-entity | -2 | std::span | -
 @x86_64-debug-asan-syntax | include/crucible/SwissTable.h | compiler-builtin | -2 | __builtin_ia32_pmovmskb128 | -
 @x86_64-debug-asan-syntax | include/crucible/SwissTable.h | replace-pending:std::bit_cast | -3 | std::bit_cast | -
-@x86_64-debug-asan-syntax | include/crucible/cntp/CongestionControl.h | std-entity | -1 | std::basic_string_view | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | compiler-builtin | +1 | __builtin_ia32_pshufb256 | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | compiler-builtin | +1 | __builtin_ia32_psrlwi256 | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | raw-pointer-object | +7 | - | -
@@ -11327,21 +11300,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-entity | +1 | std::operator^= | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-entity | +8 | std::span::data | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-object | +2 | std::array | -
-@x86_64-debug-asan-syntax | include/crucible/cntp/MtlsTransport.h | std-entity | -1 | std::span | -
-@x86_64-debug-asan-syntax | include/crucible/cntp/Pacing.h | std-entity | -2 | std::basic_string_view | -
-@x86_64-debug-asan-syntax | include/crucible/cntp/_wip/Sharp.h | std-entity | -2 | std::span | -
-@x86_64-debug-asan-syntax | include/crucible/topology/CongestionTelemetry.h | std-entity | -2 | std::span | -
-@x86_64-debug-asan-syntax | include/crucible/topology/Ptp.h | std-entity | -2 | std::span | -
-@x86_64-debug-asan-syntax | test/end_to_end.h | raw-pointer-object | +4 | - | -
-@x86_64-debug-asan-syntax | test/fixy/session_global_attack.h | std-entity | -15 | std::basic_string_view | -
-@x86_64-debug-asan-syntax | test/fixy/session_global_attack.h | std-entity | -1 | std::initializer_list | -
-@x86_64-debug-asan-syntax | test/fixy/session_subtype_attack.h | std-entity | -2 | std::span | -
-@x86_64-debug-asan-syntax | test/foundation/abort_probe.h | c-library-object | +1 | __jmp_buf_tag | -
-@x86_64-debug-asan-syntax | test/foundation/abort_probe.h | raw-pointer-object | +1 | - | -
-@x86_64-debug-asan-syntax | test/region_cache.h | raw-pointer-object | +4 | - | -
-@x86_64-debug-asan-syntax | test/resnet.h | std-entity | -5 | std::vector | -
-@x86_64-debug-asan-syntax | test/test_abort_probe.h | c-library-object | +1 | __jmp_buf_tag | -
-@x86_64-debug-asan-syntax | test/test_abort_probe.h | raw-pointer-object | +1 | - | -
 @x86_64-debug-tsan | include/crucible/topology/Health.h | replace-pending:<limits> | -2 | std::numeric_limits::max | -
 @x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | base-c-library-call | +1 | __errno_location | -
 @x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | base-c-library-call | +1 | read | -

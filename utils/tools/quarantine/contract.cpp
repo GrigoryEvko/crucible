@@ -14,8 +14,9 @@
 //     PLUGIN_FINISH_PARSE_FUNCTION
 //                            each function definition, also a template, a
 //                            lambda and a member of a local class.
-//     PLUGIN_FINISH_UNIT     one walk of every namespace, also of a library
-//                            namespace that a file under the root opens again.
+//     the end of the parse   one walk of every namespace, also of a library
+//                            namespace that a file under the root opens again
+//                            (THE HOOKS OF THE UNIT of plugin.cpp).
 //                            It finds a template and a member of a class
 //                            template that has no definition.
 //

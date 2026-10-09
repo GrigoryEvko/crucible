@@ -2,8 +2,9 @@
 // each variable, data member, parameter and return type, each base, alias and
 // default template argument, each foreign symbol and each allocation function
 // gets its finding where the code declares it.  One walk of every namespace
-// reads the declarations at PLUGIN_FINISH_UNIT, and the types that an
-// instantiation deduces get their finding at PLUGIN_PRE_GENERICIZE.
+// reads the declarations at the end of the parse (THE HOOKS OF THE UNIT of
+// plugin.cpp), and the types that an instantiation deduces get their finding
+// at PLUGIN_PRE_GENERICIZE.
 //
 // THE FAMILY
 //     The rules of the family read one property of a declaration, and each
@@ -25,11 +26,12 @@
 //     of its row of utils/registry.txt.
 //
 // THE WALK
-//     PropertyWalk reads each namespace that no library file opens, at
-//     PLUGIN_FINISH_UNIT: each class, the pattern of each template and each
+//     PropertyWalk reads each namespace that no library file opens, at the end
+//     of the parse: each class, the pattern of each template and each
 //     explicit specialization.  At that point the body of a function that is
-//     not a template is gone, so PLUGIN_PRE_GENERICIZE keeps the facts of each
-//     body that a rule reads, by DECL_UID.  A template pattern keeps its body.
+//     not a template is GENERIC, so PLUGIN_PRE_GENERICIZE keeps the facts of
+//     each body that a rule reads, by DECL_UID.  A template pattern keeps its
+//     body.
 //
 // THE ENTITY OF AN OBJECT
 //     The rule quarantine counts each finding line of a build one time, and
@@ -1179,8 +1181,7 @@ bool is_named(tree type, const char* name) {
 
 // The context type of a mint whose first parameter is a reference to a const
 // context, or NULL (THE RULE mint-pattern).  The type of the function gives the
-// parameter, because a unit that compiles to code can free the parameters of
-// a body before PLUGIN_FINISH_UNIT.
+// parameter, and each declaration of the function shares that type.
 tree context_type(tree function, tree parameters) {
     tree first = FUNCTION_FIRST_USER_PARMTYPE(function);
     tree type = first != NULL_TREE && first != void_list_node ? TREE_VALUE(first) : NULL_TREE;
@@ -1665,8 +1666,8 @@ void read_constructor(tree function, tree access_holder, const std::string& name
     if (DECL_ARTIFICIAL(function) || DECL_CLONED_FUNCTION_P(function)) {
         return;
     }
-    // The walk runs at PLUGIN_FINISH_UNIT, after GCC drops the parameters of
-    // a defined function, so the rule reads the types of the function type.
+    // The rule reads the types of the function type, which each declaration
+    // of the function shares.
     tree types = TYPE_ARG_TYPES(TREE_TYPE(function));
     tree parameters = types != NULL_TREE ? FUNCTION_FIRST_USER_PARMTYPE(function) : NULL_TREE;
     tree parameter_type = parameters != NULL_TREE && parameters != void_list_node ? TREE_VALUE(parameters) : NULL_TREE;
@@ -2098,8 +2099,8 @@ void check_static_locals(tree function, bool is_processing) {
 }
 
 // A marked function that holds no static local in this unit (THE RULE
-// process-wide-state).  The walk asks at PLUGIN_FINISH_UNIT, after the parse
-// of each body.
+// process-wide-state).  The walk asks at the end of the parse, after each
+// body.
 void check_marked_function(tree function) {
     if (holders_with_object.count(DECL_UID(function)) != 0) {
         return;
@@ -2404,7 +2405,7 @@ struct PaddedList {
 };
 
 // The answers of the rule padded-list for each type, for one walk.  The walk
-// runs at PLUGIN_FINISH_UNIT and causes no garbage collection, and each type
+// runs at the end of the parse and causes no garbage collection, and each type
 // then keeps its address while the answers live.  A reference to a value of
 // an unordered_map stays valid when the map grows.
 struct PaddingFacts {
