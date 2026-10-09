@@ -1,0 +1,23 @@
+// The return type of a function is a declared type: a raw pointer, a pointer to
+// a function and a pointer to a member are findings there, also on a function
+// that the unit only declares.  A reference to a C array refers to a C array
+// object, as a variable, a parameter and a return type.  A reference to an int
+// gives no finding.
+#include <fixy/Raw.h>
+
+namespace raw_plant {
+
+struct Holder {
+    int value = 0;
+};
+
+int* declared_pointer();
+inline int* defined_pointer() { return nullptr; }
+using Callback = void (*)();
+Callback callback_result();
+int Holder::*member_result();
+int (&array_reference(int (&cells)[3]))[3];
+inline int (&cells_reference)[2] = fixy::raw_plant::base_cells;
+inline int& plain_reference(int& value) { return value; }
+
+}  // namespace raw_plant

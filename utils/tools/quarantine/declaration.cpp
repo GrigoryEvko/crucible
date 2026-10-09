@@ -245,6 +245,29 @@ void walk_namespace(tree ns);
 // OF AN OBJECT).
 void record_raw_object(Kind kind, tree decl) { record(kind, DECL_SOURCE_LOCATION(decl), simple_name(decl)); }
 
+// The raw pointer, the pointer to a member and the C array that TYPE, the
+// declared type of DECL in ROLE, holds at its outer level, in a quarantined
+// file.  A return type counts as each other declared type.  A reference to a
+// C array refers to a C array object, also as a parameter or a return type.
+// A parameter of an array type is a pointer, so the rule of the pointer finds
+// it.  An allocation function returns a pointer by the rules of the language,
+// and its declaration is a finding of the kind raw-new-delete.
+void record_raw_type(tree type, tree decl, Role role) {
+    if (role == Role::return_value && DECL_IS_OPERATOR_NEW_P(decl)) {
+        return;
+    }
+    if (TREE_CODE(type) == POINTER_TYPE) {
+        record_raw_object(
+            FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? Kind::raw_function_pointer : Kind::raw_pointer_object, decl);
+    } else if (TYPE_PTRMEM_P(type)) {
+        record_raw_object(Kind::raw_function_pointer, decl);
+    }
+    tree target = TREE_CODE(type) == REFERENCE_TYPE ? TREE_TYPE(type) : type;
+    if (target != NULL_TREE && TREE_CODE(target) == ARRAY_TYPE && (role != Role::parameter || target != type)) {
+        record_raw_object(Kind::c_array_object, decl);
+    }
+}
+
 // The finding of a declaration at LOCATION whose type holds REFUSED, a
 // library class that no admit row admits.  Its entity is the class with no
 // template argument (THE ENTITY OF AN OBJECT).  LANGUAGE is null in a
@@ -267,12 +290,7 @@ void check_deduced_object(tree decl, Role role) {
         return;
     }
     location_t location = DECL_SOURCE_LOCATION(decl);
-    if (role != Role::return_value && TREE_CODE(type) == POINTER_TYPE) {
-        record_raw_object(
-            FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? Kind::raw_function_pointer : Kind::raw_pointer_object, decl);
-    } else if (role != Role::return_value && TYPE_PTRMEM_P(type)) {
-        record_raw_object(Kind::raw_function_pointer, decl);
-    }
+    record_raw_type(type, decl, role);
     LibraryClasses classes = library_class_in(type, 0, Use::other);
     if (classes.refused != NULL_TREE && !classes.is_refused_name) {
         record_library_object(classes.refused, location, nullptr);
@@ -624,16 +642,8 @@ void check_object(tree decl, Role role) {
     }
     note_walked_type(type, location, true);
     walk_decltype(type, location);
-    if (language == nullptr && role != Role::return_value) {
-        if (TREE_CODE(type) == POINTER_TYPE) {
-            record_raw_object(
-                FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? Kind::raw_function_pointer : Kind::raw_pointer_object, decl);
-        } else if (TYPE_PTRMEM_P(type)) {
-            record_raw_object(Kind::raw_function_pointer, decl);
-        }
-        if (role != Role::parameter && TREE_CODE(type) == ARRAY_TYPE) {
-            record_raw_object(Kind::c_array_object, decl);
-        }
+    if (language == nullptr) {
+        record_raw_type(type, decl, role);
     }
     Use use = role == Role::parameter ? Use::parameter : Use::other;
     LibraryClasses classes = library_class_in(type, 0, use, language);

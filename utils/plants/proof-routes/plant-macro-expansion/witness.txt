@@ -15,3 +15,6 @@ finding macros proof-routes explicit-instantiation src/macros.cpp:21:1 | explici
 finding macros proof-routes raw-allocation src/macros.cpp:23:31 | raw-allocation: forge::Door
 finding macros proof-routes raw-allocation src/macros.cpp:25:46 | raw-allocation: forge::Door
 finding macros quarantine raw-pointer-object src/macros.cpp:13:21 | raw
+finding macros quarantine raw-pointer-object src/macros.cpp:13:7 | through
+finding macros quarantine raw-pointer-object src/macros.cpp:23:7 | raw_in_macro
+finding macros quarantine raw-pointer-object src/macros.cpp:25:7 | size_in_macro

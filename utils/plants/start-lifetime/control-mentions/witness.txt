@@ -1,5 +1,7 @@
 # A comment and a string literal that name std::start_lifetime_as are no use.
+# The function returns a raw pointer, so the rule quarantine gives a finding.
 
 compile note src/note.cpp stage=c
 exit note pass
 judge note
+finding note quarantine raw-pointer-object src/note.cpp:5:13 | advice

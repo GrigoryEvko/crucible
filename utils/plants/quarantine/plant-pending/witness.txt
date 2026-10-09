@@ -15,6 +15,7 @@ finding report quarantine replace-pending:<limits> pending.cpp:30:58 | std::nume
 finding report quarantine replace-pending:<limits> pending.cpp:34:36 | std::numeric_limits::max
 finding report quarantine replace-pending:std::unreachable pending.cpp:37:52 | std::unreachable
 finding report quarantine replace-pending:std::bit_cast pending.cpp:42:17 | std::bit_cast
+finding report quarantine raw-pointer-object pending.cpp:41:4 | pending_pointer
 
 compile error pending.cpp mode=error out=no errors=report
 exit error fail

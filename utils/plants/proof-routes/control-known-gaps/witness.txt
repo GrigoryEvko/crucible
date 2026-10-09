@@ -2,10 +2,15 @@
 # proof type: the sizeof of a template parameter in an instantiation, a
 # function that allocates under a different name, and a size that a variable
 # holds.  This control pins the three gaps.  The quarantine rule gives its
-# findings for the calls of the C library.
+# findings for the calls of the C library and for the raw pointers that the
+# functions return.
 
 compile gaps src/gaps.cpp stage=c
 exit gaps pass
 judge gaps
 finding gaps quarantine c-library-call src/gaps.cpp:13:59 | malloc
 finding gaps quarantine c-library-call src/gaps.cpp:21:23 | malloc
+finding gaps quarantine raw-pointer-object src/gaps.cpp:13:26 | storage_of
+finding gaps quarantine raw-pointer-object src/gaps.cpp:15:7 | through_template
+finding gaps quarantine raw-pointer-object src/gaps.cpp:17:7 | through_wrapper
+finding gaps quarantine raw-pointer-object src/gaps.cpp:19:7 | through_variable

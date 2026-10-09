@@ -6,5 +6,6 @@ exit start pass
 judge start
 finding start quarantine raw-function-pointer src/start.cpp:10:19 | function
 finding start quarantine raw-pointer-object src/start.cpp:9:17 | bytes
+finding start quarantine raw-pointer-object src/start.cpp:9:6 | view
 finding start quarantine std-entity src/start.cpp:10:30 | std::start_lifetime_as
 finding start start-lifetime lifetime-start src/start.cpp:10:30 | planted::view(void*): std::start_lifetime_as

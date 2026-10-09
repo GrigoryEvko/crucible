@@ -32,6 +32,7 @@ finding report quarantine std-object violations.cpp:54:20 | std::vector
 finding report quarantine c-library-call violations.cpp:57:20 | memcpy
 finding report quarantine c-array-object violations.cpp:64:10 | bytes
 finding report quarantine c-library-object violations.cpp:69:22 | max_align_t
+finding report quarantine raw-pointer-object violations.cpp:74:4 | make_in_pattern
 finding report quarantine raw-new-delete violations.cpp:75:12 | new
 finding report quarantine std-entity violations.cpp:83:13 | std::size_t
 finding report quarantine std-object violations.cpp:89:18 | std::basic_string_view

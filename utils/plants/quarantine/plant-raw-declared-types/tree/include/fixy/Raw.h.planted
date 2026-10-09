@@ -1,0 +1,13 @@
+// A base header: the base holds raw pointers and C arrays, so its return
+// types and its references give no finding.
+
+#pragma once
+
+namespace fixy::raw_plant {
+
+inline int base_cells[2]{};
+
+inline int* base_pointer() { return &base_cells[0]; }
+inline int (&base_array())[2] { return base_cells; }
+
+}  // namespace fixy::raw_plant

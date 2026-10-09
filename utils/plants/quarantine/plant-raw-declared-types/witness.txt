@@ -1,0 +1,16 @@
+# A raw pointer, a pointer to a function and a pointer to a member in the
+# return type of a function are findings, also on a function that the unit
+# only declares.  A reference to a C array is a finding as a variable, as a
+# parameter and as a return type.  A reference to an int is none, and so is
+# each raw type of the base header.
+
+compile report declared_types.cpp stage=c
+exit report pass
+judge report
+finding report quarantine raw-pointer-object declared_types.cpp:14:6 | declared_pointer
+finding report quarantine raw-pointer-object declared_types.cpp:15:13 | defined_pointer
+finding report quarantine raw-function-pointer declared_types.cpp:17:10 | callback_result
+finding report quarantine raw-function-pointer declared_types.cpp:18:14 | member_result
+finding report quarantine c-array-object declared_types.cpp:19:7 | array_reference
+finding report quarantine c-array-object declared_types.cpp:19:29 | cells
+finding report quarantine c-array-object declared_types.cpp:20:14 | cells_reference

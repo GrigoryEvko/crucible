@@ -92,9 +92,12 @@
 //                           global namespace of a library header: a header
 //                           outside the source root, such as a C header or the
 //                           header of a third-party library that -I names
-//     raw-pointer-object    a variable, data member or parameter of type T*
+//     raw-pointer-object    a variable, data member, parameter or return type of
+//                           type T*
 //     raw-function-pointer  the same, for a pointer to a function or to a member
-//     c-array-object        a variable or data member of type T[N]
+//     c-array-object        a variable or data member of type T[N], and a
+//                           variable, data member, parameter or return type of
+//                           a reference to T[N]
 //     raw-new-delete        a new-expression or a delete-expression, and a
 //                           declaration of an allocation function that is not
 //                           deleted, such as a replacement of operator new

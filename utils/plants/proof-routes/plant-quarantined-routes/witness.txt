@@ -17,3 +17,4 @@ finding routes proof-routes friend-template-specialization src/routes.cpp:19:19 
 finding routes quarantine raw-pointer-object src/routes.cpp:11:23 | raw
 finding routes quarantine raw-pointer-object src/routes.cpp:13:27 | raw
 finding routes quarantine raw-pointer-object src/routes.cpp:15:29 | (unnamed)
+finding routes quarantine raw-pointer-object src/routes.cpp:11:7 | cast_from
