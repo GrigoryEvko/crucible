@@ -1,0 +1,7 @@
+# A fixture compile reads a helper header that no object of the target all reads.  The census of the fixture counts
+# its source only, and no ledger counts the findings of the header.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+read neg_alpha | test/fixy/neg/neg_alpha.cpp
+read neg_alpha | test/fixy/neg/neg_helper.h
+read neg_alpha | include/fixy/Core.h
+read all | include/fixy/Core.h

@@ -50,6 +50,23 @@ THE PROBLEMS
     The rule does not apply when no compile command of a fixture loads the
     plugin, or when no fixture has a record.
 
+THE FILES OF THE FIXTURES
+    The census of a fixture holds the findings of its source only.  The rule
+    quarantine counts the findings of the files that an object of the target
+    all reads.  A file that only the compiles of fixtures read then has
+    findings that no ledger counts.  The rule reads the files of each unit
+    (assay.readers.census.read_census).  Such a file is in the source root or
+    in the build directory, a fixture compile reads it, and no object of all
+    reads it.  The rule gives an error for each such file, with no kind and
+    no ledger row.  The source of each fixture
+    is no such file, because its census counts it.  A file in the directory
+    of the argument stamps= of the plugin, a mode stamp of assay.loop.stamps,
+    is no such file too.  Give such a file a compile in all, as test/layer
+    gives each header of include/, or include it from a unit of all.  The
+    census cannot read the files of the objects of a build that made only
+    some targets.  The rule then prints the reason, and it judges the counts
+    with no error of this kind.
+
 THE LEDGER
     utils/ledgers/fixture-quarantine.txt holds the count of each fixture
     source, kind and entity in the rows of each configuration.  The ledger of
@@ -87,6 +104,13 @@ THE PLANTS
                 record with no census, and the word missing for no record
         finding NAME | KIND | LINE | ENTITY
                 One finding of the census of the fixture NAME
+        read NAME | FILE
+                The compile of the fixture NAME reads FILE, a path of the
+                tree.  The name `all` gives a file that an object of the
+                target all reads (THE FILES OF THE FIXTURES)
+        read stamps | DIRECTORY
+                DIRECTORY, a path of the tree, is the directory of the mode
+                stamps that an argument stamps= of the plugin names
     The configuration of a planted build is PLANTED_CONFIGURATION.
 
 Usage
@@ -94,14 +118,14 @@ Usage
     guard write --rule fixture-quarantine --build-dir DIR [--raise] [--reason TEXT] [--add-configuration]
     guard write --rule fixture-quarantine --import LOG
 
-Complexity: linear in the fixtures of the build and the findings of their records.  O(k log k) for k rows of the
-ledger and counts of the build.
+Complexity: linear in the fixtures of the build, the findings of their records and the files of the units.  O(k log k)
+for k rows of the ledger and counts of the build.
 """
 
 import dataclasses
 import os
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from assay.core import configuration as build_config
@@ -110,6 +134,7 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
+from assay.core import ruletable
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.plugin import counted, quarantine
@@ -130,6 +155,12 @@ PROBE_KINDS = {
 }
 # The census stamp of a planted fixture with no record (THE PLANTS).
 MISSING = "missing"
+# The name of a read row of a plant for a file that an object of the target all reads (THE PLANTS).
+ALL_UNITS = "all"
+# The name of a read row of a plant for the directory of the mode stamps (THE PLANTS).
+STAMPS_UNIT = "stamps"
+# The plugin argument of the directory of the mode stamps (THE FILES OF THE FIXTURES).
+STAMPS_ARGUMENT = f"{plugin_runner.PLUGIN_ARGUMENT}stamps="
 # The file of the planted fixtures of a plant, and the configuration of a planted build (THE PLANTS).
 PLANT_FILE = "fixtures.txt"
 PLANTED_CONFIGURATION = build_config.BuildConfiguration("planted", (("kind", "planted"), ("tier", "planted")))
@@ -175,7 +206,7 @@ class FixtureContext(plugin_runner.PluginContext):
     PLANTS).
     """
 
-    __slots__ = ("_fixtures", "_found")
+    __slots__ = ("_fixtures", "_found", "_reads")
 
     def __init__(
         self,
@@ -183,11 +214,17 @@ class FixtureContext(plugin_runner.PluginContext):
         build_dir: Path | None = None,
         fixtures: Sequence[FixtureFacts] | None = None,
         configuration: build_config.BuildConfiguration | None = None,
+        reads: Sequence[tuple[str, str]] | None = None,
     ) -> None:
-        """Keep the root, the build directory, and planted fixtures and a planted configuration."""
+        """Keep the root, the build directory, and planted fixtures, a planted configuration and planted reads.
+
+        `reads` holds the read rows of a plant: the name of a fixture, or ALL_UNITS, and a path of the tree (THE
+        PLANTS).
+        """
         super().__init__(root, build_dir, None, configuration)
         self._fixtures = tuple(fixtures) if fixtures is not None else None
         self._found: FixtureCensus | None = None
+        self._reads = tuple(reads) if reads is not None else None
 
     def census(self) -> plugin_runner.Census:
         """Return the census of the build: the number of fixtures with a census in its field objects (THE CENSUS).
@@ -215,8 +252,45 @@ class FixtureContext(plugin_runner.PluginContext):
                 kinds = counted_kinds(rule_registry.load())
             except (OSError, rows_grammar.RowsError, KeyError) as problem:
                 raise plugin_runner.BuildError(f"the kinds of THE SCOPE cannot be read: {problem}") from None
-            self._found = census_of(fixtures, kinds, self.build_shown())
+            counted_census = census_of(fixtures, kinds, self.build_shown())
+            self._found = FixtureCensus(counted_census.objects, (*counted_census.findings, *self.file_findings()))
         return self._found
+
+    def file_findings(self) -> tuple[check_report.Finding, ...]:
+        """Return an error for each file that only the compiles of fixtures read (THE FILES OF THE FIXTURES).
+
+        A plant gives its read rows.  A build gives the files of the census of its units.  The census of a build that
+        made only some targets cannot give the files of its objects.  The function then prints the reason and gives no
+        finding.  A census that cannot be read gives one error.
+        """
+        root = Path(os.path.realpath(self.root))
+        if self._reads is not None:
+            real = {(name, os.path.realpath(root / path)) for name, path in self._reads}
+            fixture_reads = sorted((name, path) for name, path in real if name not in (ALL_UNITS, STAMPS_UNIT))
+            objects = frozenset(path for name, path in real if name == ALL_UNITS)
+            stamps = tuple(sorted(path for name, path in real if name == STAMPS_UNIT))
+            sources = frozenset(os.path.realpath(root / item.source) for item in self._fixtures or ())
+            return unjudged_findings(fixture_reads, objects, sources, stamps, root, None)
+        if self.build_dir is None:
+            return ()
+        try:
+            units = build_census.read_census(self.build_dir, self.root).units
+            stamp_directories = stamps_directories(self.build_dir)
+        except build_census.NotApplicable as reason:
+            check_report.write_line(f"{RULE}: the files of the fixtures are not judged: {reason}")
+            return ()
+        except (build_census.CensusError, compdb.CompdbError) as problem:
+            return (
+                check_report.Finding(
+                    "error", self.build_shown(), 0, RULE, f"the files of the fixtures cannot be read: {problem}"
+                ),
+            )
+        fixture_reads = [(unit.item, path) for unit in units if unit.kind == "fixture" for path in unit.files]
+        objects = frozenset(path for unit in units if unit.kind == "object" for path in unit.files)
+        sources = frozenset(
+            os.path.realpath(os.path.join(root, unit.source)) for unit in units if unit.kind == "fixture"
+        )
+        return unjudged_findings(fixture_reads, objects, sources, stamp_directories, root, self.build_dir)
 
     def configuration(self) -> build_config.BuildConfiguration:
         """Return the configuration of the build (assay.core.configuration, THE CONFIGURATION).
@@ -369,6 +443,70 @@ def census_of(fixtures: Sequence[FixtureFacts], kinds: frozenset[str], build_sho
                 check_report.Finding("error", item.source, line, RULE, text, kind, entity_of(kind, entity, reason))
             )
     return FixtureCensus(len(counted_fixtures) - len(missing), tuple(found))
+
+
+def stamps_directories(build_dir: Path) -> tuple[str, ...]:
+    """Return the path of `realpath()` of each directory that an argument stamps= of the compile database names.
+
+    Complexity: linear in the arguments of the compile database.
+
+    Raises:
+        CompdbError: If the compile database cannot be read
+    """
+    found = {
+        os.path.realpath(argument[len(STAMPS_ARGUMENT) :])
+        for entry in compdb.entries(build_dir)
+        for argument in entry.argv()
+        if argument.startswith(STAMPS_ARGUMENT)
+    }
+    return tuple(sorted(found))
+
+
+def file_shown(real: str, root: Path, build_dir: Path | None) -> str:
+    """Return a path of `realpath()` as a message shows it.
+
+    A file of the build directory is @build/PATH, and a file of the root is relative to the root.
+    """
+    if build_dir is not None and Path(real).is_relative_to(os.path.realpath(build_dir)):
+        return f"{ruletable.BUILD_PREFIX}{Path(real).relative_to(os.path.realpath(build_dir)).as_posix()}"
+    return Path(real).relative_to(root).as_posix() if Path(real).is_relative_to(root) else real
+
+
+def unjudged_findings(
+    fixture_reads: Iterable[tuple[str, str]],
+    objects: frozenset[str],
+    sources: frozenset[str],
+    stamp_directories: Sequence[str],
+    root: Path,
+    build_dir: Path | None,
+) -> tuple[check_report.Finding, ...]:
+    """Return an error for each file of the tree that the compile of a fixture reads and no object of all reads.
+
+    Each path is a path of `realpath()`, and `root` is one too.  Only a file of the root or of the build directory
+    can be such a file.  The source of a fixture and a file of a directory of the mode stamps are no such file (THE
+    FILES OF THE FIXTURES).  Complexity: linear in the pairs, with one prefix test for each directory of the stamps.
+    """
+    directories = [str(root)] if build_dir is None else [str(root), os.path.realpath(build_dir)]
+    places = tuple(f"{directory}{os.sep}" for directory in directories)
+    exempt = tuple(f"{directory}{os.sep}" for directory in stamp_directories)
+    readers: dict[str, set[str]] = {}
+    for name, path in fixture_reads:
+        if path in objects or path in sources or not path.startswith(places) or path.startswith(exempt):
+            continue
+        readers.setdefault(path, set()).add(name)
+    return tuple(
+        check_report.Finding(
+            "error",
+            file_shown(path, root, build_dir),
+            0,
+            RULE,
+            f"only the compiles of the fixtures {build_census.names_text(names)} read the file, and no object of the "
+            f"target all reads it.  The census of a fixture counts its source only, and the rule quarantine counts "
+            f"the files of the objects of all.  No ledger then counts the findings of the file.  Give it a compile "
+            f"in all, as test/layer gives each header of include/, or include it from a unit of all",
+        )
+        for path, names in sorted(readers.items())
+    )
 
 
 def no_region_problem(item: FixtureFacts, text: str) -> str:
@@ -550,16 +688,39 @@ def plant_context(plant: Path, scratch: Path) -> FixtureContext:
     try:
         rows = rows_grammar.read(path, f"{plant.name}/{PLANT_FILE}")
         facts = planted_fixtures(rows)
+        reads = planted_reads(rows)
     except (OSError, rows_grammar.RowsError) as problem:
         raise meta_runner.NotApplicable(f"the planted fixtures cannot be read: {problem}") from None
-    return FixtureContext(scratch, None, facts, PLANTED_CONFIGURATION)
+    unknown = sorted({name for name, _ in reads} - {item.name for item in facts} - {ALL_UNITS, STAMPS_UNIT})
+    if unknown:
+        raise meta_runner.NotApplicable(f"a read row names no fixture of the plant: {', '.join(unknown)}")
+    return FixtureContext(scratch, None, facts, PLANTED_CONFIGURATION, reads)
+
+
+def planted_reads(rows: Sequence[rows_grammar.Row]) -> tuple[tuple[str, str], ...]:
+    """Return the name and the path of each read row of a plant (THE PLANTS).
+
+    Raises:
+        rows_grammar.RowsError: If a read row has a path that is not a relative path of the tree
+    """
+    reads: list[tuple[str, str]] = []
+    for row in rows:
+        if row.words[:1] != ("read",):
+            continue
+        if len(row.words) != 2 or len(row.cells) != 1:
+            raise row.error("a read row is `read NAME | FILE`")
+        file = row.cells[0]
+        if not file or Path(file).is_absolute() or ".." in Path(file).parts:
+            raise row.error(f"the file {file!r} of a read row is not a relative path of the tree")
+        reads.append((row.words[1], file))
+    return tuple(reads)
 
 
 def planted_fixtures(rows: Sequence[rows_grammar.Row]) -> tuple[FixtureFacts, ...]:
     """Return the fixtures of the rows of a plant (THE PLANTS).
 
     Raises:
-        rows_grammar.RowsError: If a row is not a fixture row or a finding row of the plant format
+        rows_grammar.RowsError: If a row is not a fixture row, a finding row or a read row of the plant format
     """
     heads: dict[str, tuple[str, str | None, str]] = {}
     found: dict[str, list[cost_record.CensusFinding]] = {}
@@ -572,9 +733,10 @@ def planted_fixtures(rows: Sequence[rows_grammar.Row]) -> tuple[FixtureFacts, ..
             found.setdefault(row.words[1], []).append(
                 (kind, rows_grammar.number(line, 1 << 31, row, "the line"), 1, entity)
             )
-        else:
+        elif row.words[:1] != ("read",):
             raise row.error(
-                "a row is `fixture NAME | SOURCE | STAMP | CENSUS_STAMP` or `finding NAME | KIND | LINE | ENTITY`"
+                "a row is `fixture NAME | SOURCE | STAMP | CENSUS_STAMP`, `finding NAME | KIND | LINE | ENTITY` or "
+                "`read NAME | FILE`"
             )
     facts: list[FixtureFacts] = []
     for name, (source, stamp, census_stamp) in sorted(heads.items()):

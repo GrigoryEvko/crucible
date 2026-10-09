@@ -1,0 +1,12 @@
+# Each file that a fixture compile reads is a file that an object of the target all reads, the source of a fixture,
+# or a mode stamp of the plugin.  The source of a different fixture is the subject of the census of that fixture.
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | 0123abcd
+read neg_alpha | test/fixy/neg/neg_alpha.cpp
+read neg_alpha | test/fixy/neg/neg_helper.h
+read neg_alpha | build/quarantine/modes/test/fixy/neg/neg_alpha.cpp
+read neg_beta | test/fixy/neg/neg_alpha.cpp
+read neg_beta | include/fixy/Core.h
+read all | test/fixy/neg/neg_helper.h
+read all | include/fixy/Core.h
+read stamps | build/quarantine
