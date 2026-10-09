@@ -358,6 +358,11 @@ void check_template_defaults(tree template_decl) {
         tree default_argument = TREE_PURPOSE(parameter);
         location_t location = DECL_SOURCE_LOCATION(TREE_VALUE(parameter));
         const FileEntry* language = language_file_of(location);
+        if (TYPE_P(default_argument)) {
+            note_walked_type(default_argument, location, false);
+        } else if (TREE_CODE(default_argument) == TEMPLATE_DECL) {
+            note_walked_decl(default_argument, location);
+        }
         LibraryClasses classes = library_class_in_argument(default_argument, 0, language);
         if (classes.refused != NULL_TREE) {
             if (is_standard_class(classes.refused)) {
@@ -593,6 +598,7 @@ void check_object(tree decl, Role role) {
     if (language == nullptr && !is_quarantined(location)) {
         return;
     }
+    note_walked_type(type, location, true);
     walk_decltype(type, location);
     if (language == nullptr && role != Role::return_value) {
         if (TREE_CODE(type) == POINTER_TYPE) {
@@ -738,6 +744,7 @@ void walk_class(tree type, bool is_pattern) {
     if (tree binfo = TYPE_BINFO(main_type)) {
         for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
             tree base = BINFO_TYPE(BINFO_BASE_BINFO(binfo, index));
+            note_walked_type(base, class_location, false);
             LibraryClasses classes = library_class_in(base, 0, Use::other, language);
             if (is_standard_class(classes.refused)) {
                 record_declared(Kind::std_entity, class_location, qualified_name(classes.refused), language);

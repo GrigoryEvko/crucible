@@ -812,6 +812,7 @@ LibraryClasses library_classes_at(tree type, location_t location, Use use, const
 // the language of a declaration, or is null, and then the file that holds
 // LOCATION decides.
 void record_named_entities(tree type, location_t location, const FileEntry* language) {
+    note_walked_type(type, location, false);
     LibraryClasses classes = language != nullptr ? library_class_in(type, 0, Use::other, language)
                                                  : library_classes_at(type, location, Use::other, language);
     if (classes.refused != NULL_TREE) {

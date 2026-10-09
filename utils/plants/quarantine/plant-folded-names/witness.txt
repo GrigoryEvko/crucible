@@ -1,0 +1,38 @@
+# Each name of a library entity that the front end folds while it parses is a
+# finding, from the event of the parser (owner.cpp, THE FOLDED NAMES): a
+# constant initializer, an alignof, a noexcept, a type trait, a
+# requires-expression, a static_assert, a template argument, an enumerator, a
+# case label, a bit-field width, an array bound, a noexcept specifier, a
+# static_assert and a constant of a template, and a using-declaration and a
+# using-directive of namespace scope.  Line 28 names two entities.  The
+# qualified name std::numeric_limits<int>::max on line 46 is one use.  An
+# overload set in an unevaluated operand fails closed: the row of std::move
+# admits one argument, and line 47 gives the finding of the algorithm.
+
+compile report folded_names.cpp
+exit report pass
+finding report quarantine c-library-call folded_names.cpp:20:48 | strlen
+finding report quarantine std-entity folded_names.cpp:21:43 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:22:55 | std::basic_string
+finding report quarantine std-entity folded_names.cpp:23:50 | std::basic_string
+finding report quarantine std-entity folded_names.cpp:24:53 | std::basic_string
+finding report quarantine std-entity folded_names.cpp:25:50 | std::vector
+finding report quarantine std-entity folded_names.cpp:26:20 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:27:18 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:28:19 | std::tuple_size_v
+finding report quarantine std-entity folded_names.cpp:28:37 | std::tuple
+finding report quarantine std-entity folded_names.cpp:29:40 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:31:26 | std::basic_string
+finding report quarantine std-entity folded_names.cpp:35:19 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:42:27 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:44:52 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:45:57 | std::basic_string
+finding report quarantine replace-pending:<limits> folded_names.cpp:46:51 | std::numeric_limits::max
+finding report quarantine std-entity folded_names.cpp:47:49 | std::move
+finding report quarantine std-entity folded_names.cpp:51:24 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:52:48 | std::cmp_less
+finding report quarantine std-entity folded_names.cpp:58:12 | std::swap
+finding report quarantine std-entity folded_names.cpp:59:17 | std
+
+compile error folded_names.cpp mode=error out=no errors=report
+exit error fail

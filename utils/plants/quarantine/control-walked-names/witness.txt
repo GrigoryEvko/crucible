@@ -1,0 +1,31 @@
+# Each use that the walk reads has the finding of the walk and no second
+# finding of the event of the parser.  Lines 14 and 18 declare a function and
+# a member function that the unit defines on lines 47 and 51, and their names
+# have no finding there.  The alias template on line 22 names one class two
+# times, and the walk gives one finding.  The qualified name on line 29 is one
+# use, std::move on line 33 has a row that admits it, and the operand on line
+# 44 follows its call on line 43.
+
+compile report walked_names.cpp
+exit report pass
+finding report quarantine std-object walked_names.cpp:17:17 | std::basic_string
+finding report quarantine std-entity walked_names.cpp:22:7 | std::array
+finding report quarantine raw-pointer-object walked_names.cpp:24:49 | text
+finding report quarantine c-library-call walked_names.cpp:25:23 | strlen
+finding report quarantine replace-pending:<limits> walked_names.cpp:29:41 | std::numeric_limits::max
+finding report quarantine std-object walked_names.cpp:32:20 | std::basic_string
+finding report quarantine std-object walked_names.cpp:32:45 | std::basic_string
+finding report quarantine std-object walked_names.cpp:33:17 | std::basic_string
+finding report quarantine raw-pointer-object walked_names.cpp:42:47 | text
+finding report quarantine c-library-call walked_names.cpp:44:35 | strlen
+finding report quarantine std-object walked_names.cpp:47:13 | std::basic_string
+finding report quarantine std-object walked_names.cpp:47:35 | std::basic_string
+finding report quarantine std-object walked_names.cpp:47:65 | std::vector
+finding report quarantine std-entity walked_names.cpp:48:33 | std::to_string
+finding report quarantine std-entity walked_names.cpp:48:44 | std::vector::size
+finding report quarantine std-entity walked_names.cpp:48:46 | std::operator+
+finding report quarantine std-object walked_names.cpp:51:13 | std::basic_string
+finding report quarantine std-object walked_names.cpp:51:54 | std::vector
+finding report quarantine std-entity walked_names.cpp:52:33 | std::to_string
+finding report quarantine std-entity walked_names.cpp:52:44 | std::vector::size
+finding report quarantine std-entity walked_names.cpp:52:46 | std::operator+

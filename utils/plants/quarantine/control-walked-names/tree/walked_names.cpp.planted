@@ -1,0 +1,55 @@
+// Uses that the walk reads.  Each walked name claims the name that the parser
+// gives for it (owner.cpp, THE FOLDED NAMES), so each use keeps the one
+// finding of the walk and gets no second finding.
+
+#include <array>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace walked {
+
+std::string join_text(std::string left, const std::vector<int>& items);
+
+struct Holder {
+    std::string name;
+    std::string describe(const std::vector<int>& items) const;
+};
+
+template <unsigned long Size>
+using Grid = std::array<std::array<int, Size>, Size>;
+
+inline unsigned long runtime_length(const char* text) {
+    return std::strlen(text);
+}
+
+inline int runtime_largest() {
+    return std::numeric_limits<int>::max();
+}
+
+inline std::string runtime_move(std::string text) {
+    std::string moved = std::move(text);
+    return moved;
+}
+
+inline unsigned long runtime_sum(unsigned long first,
+                                 unsigned long second) {
+    return first + second;
+}
+
+inline unsigned long runtime_call(const char* text) {
+    return runtime_sum(1,
+                       std::strlen(text));
+}
+
+std::string join_text(std::string left, const std::vector<int>& items) {
+    return left + std::to_string(items.size());
+}
+
+std::string Holder::describe(const std::vector<int>& items) const {
+    return name + std::to_string(items.size());
+}
+
+}  // namespace walked

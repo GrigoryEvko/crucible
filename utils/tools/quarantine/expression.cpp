@@ -1194,6 +1194,7 @@ void check_temporary(tree target) {
     if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_CONSTRUCTOR_P(callee)) {
         return;
     }
+    note_walked_type(TREE_TYPE(target), location, false);
     if (allocator_proof_of(TREE_TYPE(target), 0) != NULL_TREE && spells_class_at(location, TREE_TYPE(target))) {
         check_allocator_type(TREE_TYPE(target), location);
     }

@@ -1,0 +1,59 @@
+// Names that the front end folds while it parses.  The walk of a body sees no
+// name in them, and the event of the parser gives each one (owner.cpp, THE
+// FOLDED NAMES).  Each line that names a library entity has one finding.
+
+#include <array>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+namespace folded {
+
+template <bool Value>
+struct Flag {};
+template <unsigned long Size>
+struct Count {};
+
+inline unsigned long length_initializer = std::strlen("abc");
+constexpr bool compare_initializer = std::cmp_less(1, 2);
+inline unsigned long align_initializer = alignof(std::string);
+inline bool noexcept_initializer = noexcept(std::string{});
+inline bool trait_initializer = __is_same(int, std::string);
+inline bool requires_initializer = requires(std::vector<int> items) { items.size(); };
+static_assert(std::cmp_less(1, 2));
+inline Flag<std::cmp_less(1, 2)> flag_argument{};
+inline Count<std::tuple_size_v<std::tuple<int, int>>> count_argument{};
+enum class Folded : int { first = std::cmp_less(1, 2) ? 1 : 0 };
+struct Aligned {
+    alignas(alignof(std::string)) char byte = 0;
+};
+inline int case_value(int value) {
+    switch (value) {
+        case std::cmp_less(1, 2) ? 7 : 8:
+            return 1;
+        default:
+            return 0;
+    }
+}
+struct Bits {
+    unsigned field : std::cmp_less(1, 2) ? 3 : 4;
+};
+inline unsigned long array_bound = sizeof(int[std::cmp_less(1, 2) ? 2 : 3]);
+inline void noexcept_specifier() noexcept(noexcept(std::string{})) {}
+constexpr int largest = std::numeric_limits<int>::max();
+inline bool overload_in_operand = noexcept(std::move(largest));
+
+template <typename Value>
+struct InTemplate {
+    static_assert(std::cmp_less(1, 2));
+    static constexpr bool value = std::cmp_less(sizeof(Value), 64);
+};
+inline bool template_value = InTemplate<int>::value;
+
+}  // namespace folded
+
+using std::swap;
+using namespace std::literals;

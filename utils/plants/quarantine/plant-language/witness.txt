@@ -53,6 +53,12 @@ flag template -freflection -DPLANT_LANGUAGE_TEMPLATE
 exit template fail
 error template include/fixy/high/Language.h:94 | quarantine: std-object std::vector;
 
+# The front end folds the static_assert, and the event of the parser gives its name.
+compile folded language_user.cpp out=no
+flag folded -freflection -DPLANT_LANGUAGE_FOLDED
+exit folded fail
+error folded include/fixy/high/Language.h:99 | quarantine: std-entity std::vector;
+
 compile std-call language_user.cpp out=no
 flag std-call -freflection -DPLANT_LANGUAGE_STD_CALL
 exit std-call fail

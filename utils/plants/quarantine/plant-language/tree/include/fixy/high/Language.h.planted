@@ -95,4 +95,8 @@ struct Box {
 };
 #endif
 
+#if defined(PLANT_LANGUAGE_FOLDED)
+static_assert(alignof(std::vector<int>) > 0);
+#endif
+
 }  // namespace fixy::language_test

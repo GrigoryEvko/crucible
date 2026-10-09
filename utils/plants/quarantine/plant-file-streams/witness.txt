@@ -1,7 +1,8 @@
 # Each shape of a C++ file stream in a quarantined file gives a finding: an
 # object of std::ifstream, of std::ofstream and of std::fstream, a data member
 # of std::basic_filebuf, an object in the body of a generic lambda, and an
-# object of a name that a using directive of std brings into scope.
+# object of a name that a using directive of std brings into scope.  The
+# using-directive of namespace scope on line 40 names std.
 
 compile report file_streams.cpp
 exit report pass
@@ -14,6 +15,7 @@ finding report quarantine std-entity file_streams.cpp:23:24 | std::basic_fstream
 finding report quarantine std-object file_streams.cpp:27:33 | std::basic_filebuf
 finding report quarantine std-object file_streams.cpp:32:23 | std::basic_ifstream
 finding report quarantine std-entity file_streams.cpp:33:30 | std::basic_ifstream::is_open
+finding report quarantine std-entity file_streams.cpp:40:17 | std
 finding report quarantine std-object file_streams.cpp:43:14 | std::basic_ofstream
 finding report quarantine std-entity file_streams.cpp:44:12 | std::basic_ostream::operator<<
 

@@ -1,7 +1,8 @@
 # The names of library types that are not classes.  An object of a library
 # enumeration is a std-object.  The admitted std::remove_cvref_t on line 18, a
 # project alias of std::size_t on line 20 and the admitted
-# std::tuple_size<T>::value on line 23 give no finding.
+# std::tuple_size<T>::value on line 23 give no finding.  The type of line 17
+# is int, and the parser gives the name std::tuple of its template argument.
 
 compile report nonclass.cpp
 exit report pass
@@ -9,6 +10,7 @@ finding report quarantine std-entity nonclass.cpp:13:13 | std::size_t
 finding report quarantine std-object nonclass.cpp:14:11 | std::byte
 finding report quarantine std-entity nonclass.cpp:15:16 | std::nullptr_t
 finding report quarantine std-object nonclass.cpp:16:18 | std::align_val_t
+finding report quarantine std-entity nonclass.cpp:17:30 | std::tuple
 finding report quarantine std-entity nonclass.cpp:17:42 | std::tuple_element_t
 finding report quarantine std-entity nonclass.cpp:19:7 | std::size_t
 finding report quarantine std-entity nonclass.cpp:25:45 | std::tuple_size_v

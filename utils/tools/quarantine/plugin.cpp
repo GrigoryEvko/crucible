@@ -392,6 +392,7 @@ void report(bool can_add_dependencies) {
     }
     state.was_reported = true;
     finish_pending_include(nullptr);
+    judge_folded_names();
     // Each use of a symbol of C language linkage that the unit did not define.
     for (const ForeignUse& use : state.foreign_uses) {
         if (state.defined_c_symbols.count(use.uid) == 0) {

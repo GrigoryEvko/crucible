@@ -11,9 +11,11 @@
 //         regions.cpp      the opt-out regions and their two pragmas
 //         library.cpp      the library entities and the admitted list
 //         owner.cpp        the family owner: each named reference of the code,
-//                          and the rules start-lifetime, syscall-capability,
-//                          ctx-init-door, ctx-testing-boundary, detail-namespace
-//                          and no-unchecked-access
+//                          the names that the front end folds (THE FOLDED
+//                          NAMES), and the rules start-lifetime,
+//                          syscall-capability, ctx-init-door,
+//                          ctx-testing-boundary, detail-namespace and
+//                          no-unchecked-access
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
@@ -2032,6 +2034,14 @@ void check_named_function(tree function);
 void check_named_alias(tree decl);
 void register_owner(const char* plugin_name);
 void walk_owner();
+// THE FOLDED NAMES (owner.cpp): a library name that a walk reads at LOCATION,
+// the library names that TYPE spells, and the judgment of each name of the
+// parser that no walked name claims, before the report.  IS_DECLARATION is
+// true for the declared type of a declaration.
+void note_walked_decl(tree named, location_t location);
+void note_walked_type(tree type, location_t location, bool is_declaration);
+void note_walked_identifier(tree identifier, location_t location);
+void judge_folded_names();
 
 // declaration.cpp: the family declaration property, the walk of the
 // declarations.
