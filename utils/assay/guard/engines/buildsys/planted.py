@@ -11,6 +11,9 @@ THE FILE
         kind KIND                         the build kind of build-kind.txt, and the
                                           configuration KIND with the one fact kind
                                           KIND (BuildContext, THE CONFIGURATION)
+        configuration NAME                the name of build-configuration.txt.  A
+                                          build with a kind row and no such row has
+                                          the name KIND there
         cache NAME [type=TYPE] | VALUE    an entry of the CMake cache
         compile OBJECT SOURCE [FIELD=VALUE]... [| WORD...]
                                           a compile job: a row of the compile
@@ -180,11 +183,17 @@ class Planted:
     limits: MutableMapping[str, int] = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)
     configures: list[float] = field(default_factory=list)
+    names: list[str] = field(default_factory=list)
 
     @property
     def kind(self) -> str | None:
         """The build kind of the last kind row, or None when build.txt has no kind row."""
         return self.kinds[-1] if self.kinds else None
+
+    @property
+    def configuration_name(self) -> str | None:
+        """The name of the last configuration row, else the build kind, or None when build.txt has no such row."""
+        return self.names[-1] if self.names else self.kind
 
     @property
     def configure_s(self) -> float | None:
@@ -568,6 +577,8 @@ def read_rows(plant_file_path: Path, root: Path, build: Path) -> Planted:
             kind = row.words[0]
             if kind == "kind" and len(row.words) == 2:
                 planted.kinds.append(row.words[1])
+            elif kind == "configuration" and len(row.words) == 2:
+                planted.names.append(row.words[1])
             elif kind == "cache" and len(row.words) >= 2 and len(row.cells) == 1:
                 cache_type = rows_grammar.fields(row, CACHE_FIELDS).get("type")
                 value = expanded(row.cells[0], root, build)
@@ -609,6 +620,8 @@ def write_build(planted: Planted, root: Path, build: Path) -> None:
     build.mkdir(parents=True, exist_ok=True)
     if planted.kind is not None:
         (build / cost_meter.KIND_FILE).write_text(f"{planted.kind}\n", encoding="utf-8")
+    if planted.configuration_name is not None:
+        (build / cost_meter.CONFIGURATION_FILE).write_text(f"{planted.configuration_name}\n", encoding="utf-8")
     compdb.plant(build, planted.rows)
     tools = build / TOOLS
     tools.mkdir(exist_ok=True)

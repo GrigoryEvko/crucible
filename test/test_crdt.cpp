@@ -6,27 +6,28 @@
 
 namespace {
 struct ClockTag {};
-}  // namespace
 
-int main() {
-    using crucible::canopy::admit_counter_update;
-    using crucible::canopy::admit_gossiped;
-    using crucible::canopy::admit_local_write;
-    using crucible::canopy::Crdt;
-    using crucible::canopy::GCounter;
-    using crucible::canopy::GSet;
-    using crucible::canopy::HlcTimestamp;
-    using crucible::canopy::LwwRegister;
-    using crucible::canopy::LwwRegisterWrite;
-    using crucible::canopy::MVRegister;
-    using crucible::canopy::MVRegisterVersion;
-    using crucible::canopy::OrSet;
-    using crucible::canopy::OrSetAdd;
-    using crucible::canopy::PNCounter;
-    using crucible::canopy::RgaInsert;
-    using crucible::canopy::RgaList;
-    using crucible::canopy::VectorClockSnapshot;
+using crucible::canopy::admit_counter_update;
+using crucible::canopy::admit_gossiped;
+using crucible::canopy::admit_local_write;
+using crucible::canopy::Crdt;
+using crucible::canopy::GCounter;
+using crucible::canopy::GSet;
+using crucible::canopy::HlcTimestamp;
+using crucible::canopy::LwwRegister;
+using crucible::canopy::LwwRegisterWrite;
+using crucible::canopy::MVRegister;
+using crucible::canopy::MVRegisterVersion;
+using crucible::canopy::OrSet;
+using crucible::canopy::OrSetAdd;
+using crucible::canopy::PNCounter;
+using crucible::canopy::RgaInsert;
+using crucible::canopy::RgaList;
+using crucible::canopy::VectorClockSnapshot;
 
+// Each function holds the cases of one replicated type, so that no function
+// of the test is larger than the warning threshold of the rule function-size.
+void gset_cases() {
     static_assert(Crdt<GSet<int, 8>>);
     static_assert(Crdt<OrSet<int, std::uint64_t, 8>>);
     static_assert(Crdt<LwwRegister<int, HlcTimestamp>>);
@@ -76,7 +77,9 @@ int main() {
     // A malformed target comes back unchanged from the static merge.
     auto malformed_target = GSet<int, 2>::merge(malformed_gset_state, gset_full_a.state());
     assert(malformed_target.count == 3);
+}
 
+void gset_hash_cases() {
     // The slot layout of a gossiped set is part of its wire format: a
     // peer receives the slot array and probes it directly.  So the hash
     // that picks the slot has to agree between every peer, and the
@@ -133,7 +136,9 @@ int main() {
         assert(!gossip_receiver.contains(8));
         assert(gossip_receiver.state() == stable_state);
     }
+}
 
+void orset_cases() {
     using OrAdd = OrSetAdd<int, std::uint64_t>;
     OrSet<int, std::uint64_t, 8> orset_a;
     OrSet<int, std::uint64_t, 8> orset_b;
@@ -166,7 +171,9 @@ int main() {
     assert(orset_static_probe.contains(1));
     assert(!orset_static_probe.contains(2));
     assert(!orset_static_probe.contains(3));
+}
 
+void lww_cases() {
     using LwwWrite = LwwRegisterWrite<int, HlcTimestamp>;
     LwwRegister<int, HlcTimestamp> lww_a;
     LwwRegister<int, HlcTimestamp> lww_b;
@@ -178,7 +185,9 @@ int main() {
     assert(lww_b.assign(admit_local_write(LwwWrite{.value = 30, .clock = {.physical_ns = 7, .counter = 0}})));
     assert(lww_a.merge(lww_b));
     assert(*lww_a.value() == 30);
+}
 
+void counter_cases() {
     // The counter door refuses a replica outside the counter and an
     // amount of zero, and admits the rest.
     assert(!admit_counter_update<4>(4, 1).has_value());
@@ -207,7 +216,9 @@ int main() {
     assert(pn_b.decrement(*admit_counter_update<4>(1, 4)));
     assert(pn_a.merge(pn_b));
     assert(pn_a.value() == 6);
+}
 
+void mv_cases() {
     using Snap = VectorClockSnapshot<4, ClockTag>;
     using MvVersion = MVRegisterVersion<int, 4, ClockTag>;
     MVRegister<int, 4, 4, ClockTag> mv_a;
@@ -268,7 +279,9 @@ int main() {
     // a malformed target is the one on the target itself.
     auto mv_malformed_target = MVRegister<int, 2, 4, ClockTag>::merge(malformed_mv_state, {});
     assert(mv_malformed_target.count == 3);
+}
 
+void rga_cases() {
     using Insert = RgaInsert<std::uint64_t, int>;
     RgaList<int, std::uint64_t, 8> rga_a;
     RgaList<int, std::uint64_t, 8> rga_b;
@@ -315,6 +328,17 @@ int main() {
     auto rga_static_materialized = rga_static_probe.materialize();
     assert(rga_static_materialized.count == 1);
     assert(rga_static_materialized.values[0] == 1);
+}
 
+}  // namespace
+
+int main() {
+    gset_cases();
+    gset_hash_cases();
+    orset_cases();
+    lww_cases();
+    counter_cases();
+    mv_cases();
+    rga_cases();
     return 0;
 }

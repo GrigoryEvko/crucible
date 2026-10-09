@@ -78,6 +78,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+from assay.core import budget as cost_budget
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
@@ -169,6 +170,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
 
     build = context.require_build()
     kind = context.kind()
+    configuration = cost_meter.read_configuration(str(build))
     budget = {row: (context.budget(row).warn, context.budget(row).error) for row in teststep.ROWS}
     ledgers = str(rule_ledger.ledger_path(rule.id, context.root).parent)
     try:
@@ -182,7 +184,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
             record.exit, cost.user_s, cost.system_s, cost.wall_s, cost.peak_rss_kb, cost.load, cost.end, None
         )
         place = context.shown(cost_record.test_record_file(build, name))
-        for level, row, message in teststep.judge(name, run, budget, kind, ledgers):
+        for level, row, message in teststep.judge(name, run, budget, kind, ledgers, configuration):
             shown_level: check_report.Level = "error" if level == "error" else "warning"
             found.append(check_report.Finding(shown_level, place, 0, row, message))
     return found
@@ -312,12 +314,20 @@ def fixture_measure(rule_id: str, cpu_s: float, instructions: int | None) -> flo
     return cpu_s if instructions is None else None
 
 
+def fixture_value(rule_id: str, cpu_s: float, instructions: int | None) -> float | None:
+    """Return the measure of the record of a fixture that the rule judges at a level, or None (THE WRITE)."""
+    if rule_id == FIXTURE_INSTRUCTIONS:
+        return None if instructions is None else instructions / GIGA
+    return cpu_s
+
+
 def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Return the ledger of fixture-cpu or fixture-instructions written again from the records of the build (THE WRITE).
 
-    A fixture with a measure over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`.  The row keeps
-    its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes.  Complexity: linear in the tests
-    of the build and in the records of the fixtures.
+    A fixture with a measure over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`.  A row keeps
+    its fixture over the warning threshold, and its value becomes the measure, rounded up.  The row keeps its earlier
+    reason, else it gets REASON or FIXTURE_REASON.  Each other row goes.  Complexity: linear in the tests of the build
+    and in the records of the fixtures.
 
     Raises:
         NotApplicable: If the call gives no build directory
@@ -343,13 +353,19 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
         except cost_record.RecordError as problem:
             unread.append(f"{name} ({problem})")
             continue
-        measure = fixture_measure(ledger.rule, record.cpu_s, record.instructions)
-        if measure is None or measure <= budget.error:
-            continue
         key = rule_ledger.Key("", "", name)
         earlier = ledger.base.get(key)
+        if earlier is not None:
+            # A row keeps a fixture over the warning threshold, also a CPU time that gives a warning only.
+            measure = fixture_value(ledger.rule, record.cpu_s, record.instructions)
+            limit = budget.warn
+        else:
+            measure = fixture_measure(ledger.rule, record.cpu_s, record.instructions)
+            limit = budget.error
+        if measure is None or measure <= limit:
+            continue
         base[key] = rule_ledger.Entry(
-            key, round(measure, 2), earlier.reason if earlier is not None else reason or FIXTURE_REASON
+            key, cost_budget.kept_value(measure), earlier.reason if earlier is not None else reason or FIXTURE_REASON
         )
     if unread:
         raise rule_ledger.LedgerError(

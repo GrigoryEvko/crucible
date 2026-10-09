@@ -261,7 +261,7 @@ def classify(value: float, budget: Budget) -> Level | None:
         "error" when the value exceeds the error threshold, "warning" when it exceeds only the
         warning threshold, and None when it exceeds neither
     """
-    found = cost_budget.verdict(value, budget.warn, budget.error, False)
+    found = cost_budget.verdict(value, budget.warn, budget.error, None)
     if found == cost_budget.NO_FINDING:
         return None
     return "error" if found == cost_budget.ERROR else "warning"

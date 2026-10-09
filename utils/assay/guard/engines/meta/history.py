@@ -18,7 +18,8 @@ WHAT THE RULE READS
       A ledger that moved to the rows of assay.core.ledger counts the
       versions of its earlier files, because git does not see a move to a new
       format as a rename.  A state before the move counts the rows of each
-      earlier file of the ledger, added.
+      earlier file of the ledger, added.  A commit that changed one file of a
+      ledger reads each file of the ledger at the commit and at its parent.
     * Each path that a commit of the quarantine ledger or of its earlier file
       changed, and each file that git reports as moved in it.
     * The working-tree copy of each file, which can hold an edit that no
@@ -105,7 +106,9 @@ THE GROWTH
     The row admits the growth of that one commit only, as a rebase row counts
     it.  A growth of a different commit gives its warning again.  The row
     holds each row of its commit that a rebase row at a larger scope of the
-    commit cannot hold.  The two rows then hold different rows of the ledger:
+    commit cannot hold.  A commit that made the file of a ledger with no file
+    at its parent added each row of the file.  The two rows then hold
+    different rows of the ledger:
     * Each other ledger: the lowest count before the commit increases by the
       rows that the commit added, less the rows of a larger scope.
     * The quarantine ledger: each count that the commit raised gives no
@@ -579,7 +582,7 @@ def read_history(root: Path) -> History:
         ledgers = sorted(git.tracked_files(root, (f"{LEDGER_DIRECTORY}/*.txt",), with_new=True))
         earlier = [path for ledger in ledgers for path in EARLIER_PATHS.get(ledger, ())]
         watched = list(dict.fromkeys([*TABLES, *ledgers, *earlier]))
-        groups = [EARLIER_PATHS[ledger] for ledger in ledgers if len(EARLIER_PATHS.get(ledger, ())) > 1]
+        groups = [(ledger, *EARLIER_PATHS[ledger]) for ledger in ledgers if ledger in EARLIER_PATHS]
         states = git.path_history(root, watched, groups)
         changes = (git.changes(root, [*QUARANTINE_PATHS, *QUARANTINE_MACHINERY]) if QUARANTINE_LEDGER in ledgers
                    else {})
@@ -792,9 +795,9 @@ def ledger_findings(history: History, registry: rule_registry.Registry,
                 states.append(None)
                 continue
             new = ledger_rows(history, "at", commit.sha, path)
-            old = ledger_rows(history, "before", commit.sha, path)
+            old = ledger_rows(history, "before", commit.sha, path) or 0
             states.append(float(new) if new is not None else None)
-            if new is not None and old is not None and new > old:
+            if new is not None and new > old:
                 rises.append((index, Rise(commit.short, commit.subject, old, new, commit.sha)))
         committed = ledger_rows(history, "head", "", path)
         current = rule_ledger.count_rows(history.text("working", "", (path,)))
@@ -935,9 +938,10 @@ def grow_cause(history: History, commit: git.Commit, path: str, changed: frozens
         return Cause(Change.GROW, f"it raised {len(rises)} counts{where}, such as {rises[0].described()}", 0, changed,
                      is_scope)
     new = ledger_rows(history, "at", commit.sha, path)
-    old = ledger_rows(history, "before", commit.sha, path)
-    if new is None or old is None:
+    if new is None:
         return None
+    # The reads of a commit hold each file of the ledger.  A parent with no text then has no file of the ledger.
+    old = ledger_rows(history, "before", commit.sha, path) or 0
     scope_rows = cause.rows if cause is not None and is_scope else 0
     rows = new - old - scope_rows
     if rows <= 0:

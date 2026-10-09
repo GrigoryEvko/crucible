@@ -1,0 +1,6 @@
+# An object of 600 KB of machine code has a ledger row that keeps it up to 550 KB.  The object is more than its row
+# keeps, and it is over the warning threshold 512 KB only.  The rule gives one warning of the kind risen, and no
+# error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/wide.cpp.o src/wide.cpp functions=_Z1av:307200,_Z1bv:307200

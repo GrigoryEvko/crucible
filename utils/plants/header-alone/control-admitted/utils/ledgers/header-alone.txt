@@ -1,4 +1,5 @@
-# A planted ledger of the rule header-alone.
+# A planted ledger of the rule header-alone.  The kept value is the measure of the header at the last write: 7 MB
+# of the header and 1000 bytes of the system header, 7.001 MB.
 format 1
 rule header-alone
-include/fixy/Huge.h | x86_64-debug-asan | 7 | - | a planted reason
+include/fixy/Huge.h | x86_64-debug-asan | 7.001 | - | a planted reason

@@ -3,7 +3,7 @@
 #
 # The rule fixture-quarantine reads this ledger (`python3 utils/bin/guard explain fixture-quarantine`).  Its module
 # utils/assay/guard/engines/buildsys/fixture_quarantine.py writes each row through utils/assay/core/ledger.py.  Do
-# not edit a row by hand.  The fixture driver keeps the plugin in the compile of each fixture, and the record of each
+# not edit a count row by hand.  The fixture driver keeps the plugin in the compile of each fixture, and the record of each
 # run holds the findings of the plugin in the source of the fixture.  The rule counts each finding of a kind of the
 # rule quarantine one time, and each finding of the kinds detail-use, lifetime-start, unchecked-use and door-use
 # (THE SCOPE of the module).  A count above its row fails the rule, and a fixture that the ledger does not hold and
@@ -15,6 +15,8 @@
 # THE ROWS (the rows grammar of utils/assay/core/rows.py)
 #   configuration NAME KEY VALUE   A build that counts, as in utils/ledgers/quarantine.txt.  The first
 #                                  configuration is the base.
+#   reason PREFIX | REASON         The reason of each count row of a fixture under PREFIX, as in
+#                                  utils/ledgers/quarantine.txt.
 #   FILE | KIND | COUNT | ENTITY | REASON
 #                                  The number of findings of the kind KIND and the entity ENTITY in
 #                                  the source FILE of a fixture, in the base configuration.  THE
@@ -52,6 +54,7 @@ configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
 configuration x86_64-debug-asan CRUCIBLE_SYNTAX_ONLY off
+reason test/ | The unit fixtures of section 14.1 of the plan misc/01_10_2026_quarantine.md moves the negative-compile fixtures onto the types of the base, and a fixture that probes a raw behavior on purpose keeps a region
 test/canopy_neg/neg_hyparview_direct_ctor.cpp | std-entity | 2 | std::span | -
 test/canopy_neg/neg_lifeguard_direct_ctor.cpp | std-entity | 1 | std::span | -
 test/canopy_neg/neg_plumtree_external_ihave.cpp | std-entity | 1 | std::expected::value | -

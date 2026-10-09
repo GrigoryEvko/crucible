@@ -1,0 +1,7 @@
+# A ledger loses its one row, and a commit removes its file.  A later commit makes the file again with two rows, and
+# a grow row admits that growth.  The parent of that commit has no file of the ledger, so the commit added each row,
+# and the rule gives no error.
+commit 1 | Admit one slow test | The test takes 21 s.
+commit 2 | Make the slow test fast | The row goes.
+commit 3 | Remove the empty ledger | The ledger holds no row.
+commit 4 | Admit two probes | Each probe takes 22 s.

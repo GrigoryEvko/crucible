@@ -1,0 +1,4 @@
+# a planted ledger
+format 1
+rule slow-row
+test/a | time | 21 | - | r

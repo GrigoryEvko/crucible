@@ -103,17 +103,22 @@ static void test_scalar_tensor() {
 }
 
 static void test_zero_size_tensor() {
-    // A zero in any dimension takes the whole tensor to zero bytes.
+    // A zero in any dimension takes the whole tensor to zero bytes.  The
+    // lambda keeps one copy of the inlined vector path in this test.
+    const auto expect_zero_bytes = [](const TensorMeta& meta) {
+        assert(compute_storage_nbytes_simd(external_meta(meta)) == 0);
+    };
+
     auto m1 = make_meta({0}, {1});
-    assert(compute_storage_nbytes_simd(external_meta(m1)) == 0);
+    expect_zero_bytes(m1);
     check_equiv(m1, "zero-1d");
 
     auto m2 = make_meta({3, 0, 5}, {1, 1, 1});
-    assert(compute_storage_nbytes_simd(external_meta(m2)) == 0);
+    expect_zero_bytes(m2);
     check_equiv(m2, "zero-mid-3d");
 
     auto m3 = make_meta({3, 4, 0}, {1, 1, 1});
-    assert(compute_storage_nbytes_simd(external_meta(m3)) == 0);
+    expect_zero_bytes(m3);
     check_equiv(m3, "zero-trailing-3d");
 
     crucible::test::pass("  test_zero_size_tensor: PASSED\n");

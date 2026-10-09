@@ -1,5 +1,5 @@
-# A ledger row admits a link of 3 s of CPU time, which is not more than the error threshold 5 s.  The rule gives one
+# A ledger row keeps a link of 1 s of CPU time, which is not more than the warning threshold 2 s.  The rule gives one
 # error of the kind row-not-needed at the row.
 format 1
 kind x86_64-debug-asan
-link test/slow_test cpu=3
+link test/slow_test cpu=1

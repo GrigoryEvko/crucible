@@ -1,0 +1,4 @@
+# A planted ledger of the rule object-text: a keep row of an object over the warning threshold only.
+format 1
+rule object-text
+@build/CMakeFiles/lib.dir/wide.cpp.o | x86_64-debug-asan | 600 | - | a planted reason

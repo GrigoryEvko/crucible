@@ -26,6 +26,10 @@ configuration x86_64-debug-tsan kind x86_64-debug-tsan
 configuration x86_64-debug-tsan tier x86-64-eb53fd1c
 configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
 configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
+configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | elf-type | 1 | executable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -497,6 +501,107 @@ configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.26 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260829 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | elf-type | +1 | executable | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _GLOBAL__sub_I__ZN23pipeline_dispatch_bench10small_dataE | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | __asan_init | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | __cpu_indicator_init | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _sub_I_00099_0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _sub_I_00099_1 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | frame_dummy | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | interpreter | +1 | /lib64/ld-linux-x86-64.so.2 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libasan.so.8 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libbpf.so.1 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libc.so.6 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libgcc_s.so.1 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libm.so.6 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | needed | +1 | libstdc++.so.6 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | runpath | +1 | {toolchain}/usr/lib64 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .annobin.notes | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .bss | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .comment | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .data | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .data.rel.ro | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_abbrev | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_aranges | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_info | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_line | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_line_str | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_loclists | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_rnglists | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .debug_str | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .dynamic | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .dynstr | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .dynsym | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .eh_frame | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .eh_frame_hdr | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .fini | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .fini_array | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .gcc_except_table | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .gnu.build.attributes | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .gnu.hash | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .gnu.version | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .gnu.version_r | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .got | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .init | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .init_array | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .interp | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .note.ABI-tag | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .note.gnu.build-id | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .note.gnu.property | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .plt | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .plt.sec | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .preinit_array | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rela.dyn | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rela.plt | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rodata | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .shstrtab | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .strtab | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .symtab | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .tbss | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .text | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | static-member | +1 | libc_nonshared.a(at_quick_exit.oS) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | static-member | +1 | libc_nonshared.a(atexit.oS) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | static-member | +1 | libc_nonshared.a(pthread_atfork.oS) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | static-member | +1 | libgcc.a(cpuinfo.o) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.0.1 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.0.4 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.0.6 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.0.7 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.0.8 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.1.0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.2.0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.5.0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libbpf.so.1 LIBBPF_0.6.0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.10 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.2.5 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.3.2 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.3.4 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.32 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.34 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.38 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.4 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.6 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.7 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libgcc_s.so.1 GCC_3.0 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libgcc_s.so.1 GCC_3.4 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libm.so.6 GLIBC_2.27 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libm.so.6 GLIBC_2.43 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 CXXABI_1.3 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 CXXABI_1.3.15 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 CXXABI_1.3.7 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.11 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.19 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.20 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.21 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.22 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.26 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.29 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.30 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libstdc++.so.6 GLIBCXX_3.4.35 | a new build kind or target
 @x86_64-debug-tsan | @build/tests | init | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tests | init | +1 | __tsan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tests | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

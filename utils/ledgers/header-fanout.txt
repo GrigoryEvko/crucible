@@ -36,33 +36,81 @@ configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
+configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SYNTAX_ONLY off
 include/fixy/GradedFacade.h | x86_64-debug-asan | 2747524/2131 | - | -
+include/fixy/GradedFacade.h | x86_64-debug-asan-bench-fuzz | 2747615/2229 | - | -
 include/fixy/Qtt.h | x86_64-debug-asan | 4082321/1752 | - | -
+include/fixy/Qtt.h | x86_64-debug-asan-bench-fuzz | 4082433/1849 | - | -
 include/fixy/Refined.h | x86_64-debug-asan | 2968544/1667 | - | -
+include/fixy/Refined.h | x86_64-debug-asan-bench-fuzz | 2968691/1763 | - | -
 include/fixy/Tagged.h | x86_64-debug-asan | 2840388/1478 | - | -
+include/fixy/Tagged.h | x86_64-debug-asan-bench-fuzz | 2840514/1552 | - | -
 include/foundation/Lifetime.h | x86_64-debug-asan | 2550415/2180 | - | -
+include/foundation/Lifetime.h | x86_64-debug-asan-bench-fuzz | 2550443/2278 | - | -
 include/foundation/algebra/ClaimOrientation.h | x86_64-debug-asan | 2563472/2619 | - | -
+include/foundation/algebra/ClaimOrientation.h | x86_64-debug-asan-bench-fuzz | 2563493/2718 | - | -
 include/foundation/algebra/Graded.h | x86_64-debug-asan | 2639520/2617 | - | -
+include/foundation/algebra/Graded.h | x86_64-debug-asan-bench-fuzz | 2639562/2716 | - | -
 include/foundation/algebra/GradedTrait.h | x86_64-debug-asan | 2644213/1745 | - | -
+include/foundation/algebra/GradedTrait.h | x86_64-debug-asan-bench-fuzz | 2644262/1842 | - | -
 include/foundation/algebra/Lattice.h | x86_64-debug-asan | 2556247/2746 | - | -
+include/foundation/algebra/Lattice.h | x86_64-debug-asan-bench-fuzz | 2556268/2845 | - | -
 include/foundation/algebra/Modality.h | x86_64-debug-asan | 2531677/2747 | - | -
+include/foundation/algebra/Modality.h | x86_64-debug-asan-bench-fuzz | 2531705/2846 | - | -
 include/foundation/algebra/lattices/BoolLattice.h | x86_64-debug-asan | 2642305/1894 | - | -
+include/foundation/algebra/lattices/BoolLattice.h | x86_64-debug-asan-bench-fuzz | 2642368/1990 | - | -
 include/foundation/algebra/lattices/ChainLattice.h | x86_64-debug-asan | 2740602/2338 | - | -
+include/foundation/algebra/lattices/ChainLattice.h | x86_64-debug-asan-bench-fuzz | 2740686/2437 | - | -
 include/foundation/algebra/lattices/ConfLattice.h | x86_64-debug-asan | 2742578/1542 | - | -
+include/foundation/algebra/lattices/ConfLattice.h | x86_64-debug-asan-bench-fuzz | 2742662/1636 | - | -
 include/foundation/algebra/lattices/DualLattice.h | x86_64-debug-asan | 2566402/1576 | - | -
+include/foundation/algebra/lattices/DualLattice.h | x86_64-debug-asan-bench-fuzz | 2566430/1655 | - | -
 include/foundation/algebra/lattices/ProductLattice.h | x86_64-debug-asan | 2758701/1241 | - | -
+include/foundation/algebra/lattices/ProductLattice.h | x86_64-debug-asan-bench-fuzz | 2758799/1318 | - | -
 include/foundation/algebra/lattices/QttSemiring.h | x86_64-debug-asan | 2745328/2265 | - | -
+include/foundation/algebra/lattices/QttSemiring.h | x86_64-debug-asan-bench-fuzz | 2745419/2364 | - | -
 include/foundation/algebra/lattices/TrustLattice.h | x86_64-debug-asan | 2641866/1480 | - | -
+include/foundation/algebra/lattices/TrustLattice.h | x86_64-debug-asan-bench-fuzz | 2641929/1554 | - | -
 include/foundation/contracts/Armed.h | x86_64-debug-asan | 2506490/1809 | - | -
+include/foundation/contracts/Armed.h | x86_64-debug-asan-bench-fuzz | 2506490/1906 | - | -
 include/foundation/contracts/Decide.h | x86_64-debug-asan | 2639957/2418 | - | -
+include/foundation/contracts/Decide.h | x86_64-debug-asan-bench-fuzz | 2640006/2517 | - | -
 include/foundation/diag/FailClosed.h | x86_64-debug-asan | 2548143/2209 | - | -
+include/foundation/diag/FailClosed.h | x86_64-debug-asan-bench-fuzz | 2548157/2305 | - | -
 include/foundation/diag/RowHash.h | x86_64-debug-asan | 2716274/1281 | - | -
+include/foundation/diag/RowHash.h | x86_64-debug-asan-bench-fuzz | 2716337/1328 | - | -
 include/foundation/effects/Ctx.h | x86_64-debug-asan | 3009758/2031 | - | -
+include/foundation/effects/Ctx.h | x86_64-debug-asan-bench-fuzz | 3009828/2098 | - | -
 include/foundation/effects/Effect.h | x86_64-debug-asan | 2545536/2756 | - | -
+include/foundation/effects/Effect.h | x86_64-debug-asan-bench-fuzz | 2545557/2856 | - | -
 include/foundation/effects/Row.h | x86_64-debug-asan | 2632067/2718 | - | -
+include/foundation/effects/Row.h | x86_64-debug-asan-bench-fuzz | 2632116/2817 | - | -
 include/foundation/reflect/Anchor.h | x86_64-debug-asan | 2502484/2855 | - | -
+include/foundation/reflect/Anchor.h | x86_64-debug-asan-bench-fuzz | 2502484/2955 | - | -
 include/foundation/reflect/EnumName.h | x86_64-debug-asan | 2526845/2788 | - | -
+include/foundation/reflect/EnumName.h | x86_64-debug-asan-bench-fuzz | 2526859/2888 | - | -
 include/foundation/reflect/Enumerate.h | x86_64-debug-asan | 2688226/2343 | - | -
+include/foundation/reflect/Enumerate.h | x86_64-debug-asan-bench-fuzz | 2688289/2442 | - | -
 include/foundation/reflect/Hash.h | x86_64-debug-asan | 2588616/2346 | - | -
+include/foundation/reflect/Hash.h | x86_64-debug-asan-bench-fuzz | 2588637/2418 | - | -
 include/foundation/reflect/Instance.h | x86_64-debug-asan | 2503654/2665 | - | -
+include/foundation/reflect/Instance.h | x86_64-debug-asan-bench-fuzz | 2503661/2764 | - | -
 include/foundation/reflect/TypeComponents.h | x86_64-debug-asan | 2518565/2688 | - | -
+include/foundation/reflect/TypeComponents.h | x86_64-debug-asan-bench-fuzz | 2518579/2788 | - | -

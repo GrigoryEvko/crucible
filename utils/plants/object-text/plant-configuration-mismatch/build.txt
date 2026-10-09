@@ -1,0 +1,6 @@
+# build-configuration.txt names a bench build, and the CMake cache does not turn on CRUCIBLE_BENCH.  The two names
+# do not agree, and the rule gives one error of the kind input.
+format 1
+kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp functions=_Z1av:1024

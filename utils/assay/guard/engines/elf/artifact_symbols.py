@@ -184,12 +184,13 @@ THE CLASS OF A SYMBOL
 THE LEDGER
     utils/ledgers/artifact-symbols.txt has the policy count, in format 1 of
     assay.core.ledger:
-        configuration KIND kind KIND
-        configuration KIND tier TIER
+        configuration NAME kind KIND
+        configuration NAME tier TIER
+        configuration NAME OPTION on
         @build/LIBRARY | MARK | 1 | IMPORT | -
-        @KIND | @build/LIBRARY | MARK | +1 | IMPORT | -
+        @NAME | @build/LIBRARY | MARK | +1 | IMPORT | -
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
-        @KIND | @build/ARCHIVE | helper-throw | DELTA | HELPER | -
+        @NAME | @build/ARCHIVE | helper-throw | DELTA | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
     MARK is one of MARKS (THE MARKS), and IMPORT is the entity of THE

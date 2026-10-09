@@ -17,6 +17,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/Platform.h>
 
 #include <cstddef>
 #include <meta>
@@ -177,19 +178,25 @@ static_assert(std::is_same_v<fa::with_io, fa::with<fe::Effect::IO>>);
 static_assert(!std::is_same_v<fa::version<1>, fa::version<2>>);
 static_assert(!std::is_same_v<fa::ctrl::abort<"a">, fa::ctrl::abort<"b">>);
 
-// Every atom constructs at runtime, is one byte, and names an axis the
-// runtime name walk resolves.
+// One atom constructs at runtime, is one byte, and names an axis the
+// runtime name walk resolves.  Each atom gets a function of its own, which
+// the build does not inline, so the walk below stays small.
+template <typename A>
+[[nodiscard]] CRUCIBLE_NOINLINE bool atom_constructs_at_runtime() noexcept {
+    [[maybe_unused]] A atom{};
+    [[maybe_unused]] A copied = atom;
+    volatile Axis axis = A::axis;
+    return ::fixy::axis_name(axis) != std::string_view{"<unknown Axis>"} && sizeof(A) == 1;
+}
+
+// The walk calls the function above for each atom of each family.
 [[nodiscard]] bool every_atom_constructs_at_runtime() noexcept {
     bool all_named = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : fad::roster_members_v<every_atom_roster>) {
         using A = [:member:];
-        [[maybe_unused]] A atom{};
-        [[maybe_unused]] A copied = atom;
-        volatile Axis axis = A::axis;
-        if (::fixy::axis_name(axis) == std::string_view{"<unknown Axis>"}) all_named = false;
-        if (sizeof(A) != 1) all_named = false;
+        all_named = atom_constructs_at_runtime<A>() && all_named;
     }
 #pragma GCC diagnostic pop
     return all_named;

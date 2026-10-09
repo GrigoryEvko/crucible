@@ -466,6 +466,7 @@ def evaluate(
             )
         found.append(check_report.Finding("error", shown, ledger.line_of(key, name), RULE, message))
     kept: dict[str, Counter[str]] = {}
+    kept_keys: dict[str, list[rule_ledger.Key]] = {}
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
         directory = directory_of(key.path)
@@ -473,16 +474,18 @@ def evaluate(
         if directory in failed or kept_count == 0:
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count
+        kept_keys.setdefault(directory, []).append(key)
         first_line.setdefault(directory, ledger.line_of(key, name))
     for directory, kinds in sorted(kept.items()):
         listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+        state, tail = quarantine.kept_state(ledger, kept_keys[directory], name)
         found.append(
             check_report.Finding(
                 "warning",
                 shown,
                 first_line[directory],
                 RULE,
-                f"the fixtures of {directory} keep {sum(kinds.values())} quarantine findings: {listed}",
+                f"the fixtures of {directory} keep {sum(kinds.values())} quarantine findings{state}: {listed}{tail}",
             )
         )
     return found

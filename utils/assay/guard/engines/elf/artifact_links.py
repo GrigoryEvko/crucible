@@ -45,8 +45,9 @@ THE MAP
 THE LEDGER
     utils/ledgers/artifact-links.txt has the policy count, in format 1 of
     assay.core.ledger:
-        configuration KIND kind KIND
-        configuration KIND tier TIER
+        configuration NAME kind KIND
+        configuration NAME tier TIER
+        configuration NAME OPTION on
         @build/GROUP | KIND | 1 | ENTITY | -
         @CONFIGURATION | @build/GROUP | KIND | +1 | ENTITY | -
     The first configuration is the base, and a row of a different

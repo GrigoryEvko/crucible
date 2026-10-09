@@ -290,11 +290,38 @@ class Planted:
         self.ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.01 | - | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row that names a file and not a test admits nothing", status == 1)
+        self.ledger("test-memory", "- | x86_64-debug-asan | 0.000001 | test_planted | a planted reason\n")
+        status, said = self.launch(program)
+        expect(
+            "a test over the kept value of its row with the noise of the unit fails again",
+            status == 1 and ": error: [test-memory] " in said and "more than the row" in said,
+        )
+        self.budget((1000, 2000), (0, 1000))
         self.ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
+        status, said = self.launch(program)
+        expect(
+            "a ledger row keeps a test over the warning threshold only, with a warning that names its kept value",
+            status == 0 and ": warning: [test-memory] " in said and "keeps it up to 0.01 GB" in said,
+        )
+        self.budget((1000, 2000), (0, 0))
+        (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
+        self.ledger("test-memory", "- | x86_64-debug-asan-bench | 0.01 | test_planted | a row of the bench build\n")
+        status, said = self.launch(program)
+        expect(
+            "a ledger row of the name of the configuration keeps the test",
+            status == 0 and "a row of the bench build" in said,
+        )
+        self.ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a row of the build kind\n")
+        status, said = self.launch(program)
+        expect(
+            "a ledger row of the build kind keeps the test of a build with options",
+            status == 0 and "a row of the build kind" in said,
+        )
+        (self.build / cost_meter.CONFIGURATION_FILE).unlink()
         self.budget((1000, 2000), (1000, 2000))
         status, said = self.launch(program)
         expect(
-            "a ledger row whose test stays under the error threshold fails the test",
+            "a ledger row whose test stays at or under the warning threshold fails the test",
             status == 1 and "Remove its row" in said,
         )
         status, said = self.launch(self.root / "no-such-test")
@@ -362,6 +389,24 @@ class Planted:
             )
 
 
+def unmeasured_cases(expect: testing.Expect) -> None:
+    """Check that a run below the warning threshold refuses its row only when the run does the work that the row keeps."""
+    budget = {"test-memory": (0.5, 1.5)}
+    run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 50 * 1024, 1.0, 0.0, None)
+    kind = "x86_64-debug-asan"
+    with tempfile.TemporaryDirectory(prefix="test-step-rows-") as directory:
+        Path(cost_meter.ledger_file("test-memory", directory)).write_text(
+            f"format 1\nrule test-memory\n- | {kind} | 0.6 | test_planted | a planted row\n", encoding="utf-8"
+        )
+        measured = test_launcher.judge("test_planted", run, budget, kind, directory)
+        stored = test_launcher.judge("test_planted", run, budget, kind, directory, is_measured=False)
+    expect(
+        "a run under the warning threshold refuses the row that keeps the test",
+        [(level, row) for level, row, _ in measured] == [("error", "test-memory")],
+    )
+    expect("a run that does not do the work of the row, such as a stored fixture, keeps the row", stored == [])
+
+
 def launched_cases(expect: testing.Expect) -> None:
     """Check the command that a test runs behind the launcher, which a reader of the tests of a build takes."""
     master = "/export/utils/bin/loop"
@@ -397,6 +442,7 @@ def main(argv: list[str]) -> int:
                 planted.threshold_cases,
                 planted.ledger_cases,
                 planted.core_cases,
+                unmeasured_cases,
                 launched_cases,
             ),
         )

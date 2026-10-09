@@ -187,22 +187,26 @@ def evaluate(
             )
         )
     kept: dict[str, Counter[str]] = {}
+    kept_keys: dict[str, list[Key]] = {}
     for key, admitted in expected.items():
         directory = quarantine.directory_of(key.path, rows)
         count = min(admitted, counts.get(key, 0)) if is_bound else admitted
         if count and directory not in failed:
             kept.setdefault(directory, Counter())[key.kind] += count
-    warnings = [
-        check_report.Finding(
-            "warning",
-            shown,
-            0,
-            RULE,
-            f"{directory} keeps {sum(kinds.values())} records of library code: "
-            + ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items())),
+            kept_keys.setdefault(directory, []).append(key)
+    warnings: list[check_report.Finding] = []
+    for directory, kinds in sorted(kept.items()):
+        listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+        state, tail = rule_ledger.kept_words(ledger, kept_keys[directory], name)
+        warnings.append(
+            check_report.Finding(
+                "warning",
+                shown,
+                0,
+                RULE,
+                f"{directory} keeps {sum(kinds.values())} records of library code{state}: {listed}{tail}",
+            )
         )
-        for directory, kinds in sorted(kept.items())
-    ]
     return [*errors, *warnings]
 
 

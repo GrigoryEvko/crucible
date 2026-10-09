@@ -15,7 +15,11 @@ using crucible::CallsiteHash;
 using crucible::MetaIndex;
 namespace eff = ::fixy;
 
-int main() {
+namespace {
+
+// Each function holds one group of cases, so that no function of the test
+// is larger than the warning threshold of the rule function-size.
+void single_thread_cases() {
     auto* ring = new crucible::TraceRing();
 
     assert(ring->size().peek() == 0);
@@ -95,10 +99,12 @@ int main() {
     assert(ring->total_produced() == hi0 + 1);
 
     delete ring;
+}
 
-    // Producer and consumer exchange N entries live.  On x86 a wrongly
-    // relaxed publish store would pass by accident, so the ordering claim
-    // made here only bites on a weakly ordered target.
+// Producer and consumer exchange N entries live.  On x86 a wrongly
+// relaxed publish store would pass by accident, so the ordering claim
+// made here only bites on a weakly ordered target.
+void concurrent_raw_case() {
     {
         constexpr uint32_t N = 200000;
         auto* r = new crucible::TraceRing();
@@ -161,7 +167,9 @@ int main() {
                              "(N={}, producer_spins={}) OK\n",
                              N, producer_spins.load());
     }
+}
 
+void pure_facade_cases() {
     {
         auto* r = new crucible::TraceRing();
 
@@ -237,9 +245,11 @@ int main() {
         delete r;
         crucible::test::pass("test_trace_ring: try_append_pure / drain_pure OK\n");
     }
+}
 
-    // The same exchange driven through the row-typed facades, to show the
-    // wrapper does not change the ordering the raw API provides.
+// The same exchange driven through the row-typed facades, to show the
+// wrapper does not change the ordering the raw API provides.
+void concurrent_pure_case() {
     {
         constexpr uint32_t N = 100000;
         auto* r = new crucible::TraceRing();
@@ -303,7 +313,9 @@ int main() {
                              "(N={}, producer_spins={}) OK\n",
                              N, producer_spins.load());
     }
+}
 
+void pure_edge_cases() {
     {
         constexpr uint32_t CAP = crucible::TraceRing::CAPACITY;
         auto* r = new crucible::TraceRing();
@@ -417,7 +429,16 @@ int main() {
                              "(bare default + full ring + wrap-around + "
                              "nullable outputs) OK\n");
     }
+}
 
+}  // namespace
+
+int main() {
+    single_thread_cases();
+    concurrent_raw_case();
+    pure_facade_cases();
+    concurrent_pure_case();
+    pure_edge_cases();
     crucible::test::pass("test_trace_ring: all tests passed\n");
     return 0;
 }

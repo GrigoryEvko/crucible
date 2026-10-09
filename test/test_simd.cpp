@@ -221,29 +221,31 @@ static void test_dim_hash_equivalence_handcoded() {
     assert(crucible::raw_dim_hash(dim_hash_scalar_det(m_empty)) == 0);
     assert(crucible::raw_dim_hash(dim_hash_simd_det(m_empty)) == 0);
 
+    // The two paths agree on one shape, as raw hashes and as typed hashes.
+    // The lambda keeps one copy of the inlined hash code in this test.
+    const auto expect_agree = [](const crucible::TensorMeta& meta) {
+        assert(dim_hash_simd(meta) == dim_hash_scalar(meta));
+        assert(crucible::raw_dim_hash(dim_hash_simd_det(meta)) == crucible::raw_dim_hash(dim_hash_scalar_det(meta)));
+    };
+
     auto m_1d = make_meta({4096}, {1});
-    assert(dim_hash_simd(m_1d) == dim_hash_scalar(m_1d));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_1d)) == crucible::raw_dim_hash(dim_hash_scalar_det(m_1d)));
+    expect_agree(m_1d);
 
     auto m_2d = make_meta({128, 256}, {256, 1});
-    assert(dim_hash_simd(m_2d) == dim_hash_scalar(m_2d));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_2d)) == crucible::raw_dim_hash(dim_hash_scalar_det(m_2d)));
+    expect_agree(m_2d);
 
     auto m_nchw = make_meta({32, 64, 224, 224}, {64 * 224 * 224, 224 * 224, 224, 1});
-    assert(dim_hash_simd(m_nchw) == dim_hash_scalar(m_nchw));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_nchw)) == crucible::raw_dim_hash(dim_hash_scalar_det(m_nchw)));
+    expect_agree(m_nchw);
 
     // Eight dimensions fill the vector exactly, so the masked path
     // degenerates to an unmasked one here.
     auto m_8d = make_meta({2, 3, 5, 7, 11, 13, 17, 19}, {1, 2, 3, 4, 5, 6, 7, 8});
-    assert(dim_hash_simd(m_8d) == dim_hash_scalar(m_8d));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_8d)) == crucible::raw_dim_hash(dim_hash_scalar_det(m_8d)));
+    expect_agree(m_8d);
 
     // A reversed view carries a negative stride, which is where a
     // signed and an unsigned lane type would disagree.
     auto m_neg = make_meta({4, 8}, {-8, 1});
-    assert(dim_hash_simd(m_neg) == dim_hash_scalar(m_neg));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_neg)) == crucible::raw_dim_hash(dim_hash_scalar_det(m_neg)));
+    expect_agree(m_neg);
 
     // Real callers hand over metadata that is only aligned as the type
     // requires, never to a vector boundary.  The search below picks
@@ -263,9 +265,7 @@ static void test_dim_hash_equivalence_handcoded() {
     auto* unaligned =
         std::construct_at(std::bit_cast<crucible::TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
     assert(std::bit_cast<std::uintptr_t>(unaligned->sizes.raw_data()) % 64 != 0);
-    assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
-    assert(crucible::raw_dim_hash(dim_hash_simd_det(*unaligned))
-           == crucible::raw_dim_hash(dim_hash_scalar_det(*unaligned)));
+    expect_agree(*unaligned);
     std::destroy_at(unaligned);
 
     // Agreement alone would be satisfied by a hash that returned a

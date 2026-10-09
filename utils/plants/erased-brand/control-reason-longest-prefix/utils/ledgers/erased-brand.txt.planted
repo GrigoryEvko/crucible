@@ -1,0 +1,7 @@
+# The ledger of the control: two reason rows that hold one count row.  Each
+# reason row holds a count row, so the ledger is correct.
+format 1
+rule erased-brand
+reason include/ | a planted step of the plan for the headers
+reason include/fixy/Planted.h | a planted step of the plan for this file
+include/fixy/Planted.h | erased-brand | 1 | Permission | -

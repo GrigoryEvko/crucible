@@ -1,0 +1,3 @@
+# a planted ledger
+format 1
+rule slow-row

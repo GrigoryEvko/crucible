@@ -439,6 +439,7 @@ def evaluate(
             )
         findings_found.append(check_report.Finding("error", shown, line, RULE, message))
     kept: dict[str, Counter[str]] = {}
+    kept_keys: dict[str, list[Key]] = {}
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
         directory = directory_of(key.path, rows)
@@ -446,19 +447,32 @@ def evaluate(
         if directory in failed or kept_count == 0:
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count
+        kept_keys.setdefault(directory, []).append(key)
         first_line.setdefault(directory, ledger.line_of(key, name))
     for directory, kinds in sorted(kept.items()):
         listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+        state, tail = kept_state(ledger, kept_keys[directory], name)
         findings_found.append(
             check_report.Finding(
                 "warning",
                 shown,
                 first_line[directory],
                 RULE,
-                f"{directory} keeps {sum(kinds.values())} quarantine findings and regions: {listed}",
+                f"{directory} keeps {sum(kinds.values())} quarantine findings and regions{state}: {listed}{tail}",
             )
         )
     return findings_found
+
+
+def kept_state(ledger: rule_ledger.Ledger, keys: Sequence[Key], name: str | None) -> tuple[str, str]:
+    """Return the words of the warning of the kept counts of one directory (assay.core.ledger, kept_words()).
+
+    The entity of a count of the kind region or opted-out holds the reason of
+    its region.  Such a count then has its reason in the source.  Each other
+    count must have a reason of its row or of a prefix.
+    """
+    reasoned = [key for key in keys if key.kind not in (REGION, OPTED_OUT)]
+    return rule_ledger.kept_words(ledger, reasoned, name) if reasoned else (", each with its reason", "")
 
 
 def summary(counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, objects: int, verb: str) -> str:

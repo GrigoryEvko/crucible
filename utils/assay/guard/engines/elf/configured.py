@@ -4,9 +4,13 @@ THE INSPECTION
     A rule examines one build and gives an Inspection.  The inspection
     holds the findings, judged against the ledger.  It also holds the facts
     that the run prints and the write uses.  The configuration of a build
-    is its build kind and its tier, and its name is the build kind
-    (configuration_of()).  THE POLICY of assay.core.configuration gives the
-    rows that judge the build.
+    is its build kind, its tier and each option of NAME_OPTIONS of
+    assay.core.configuration that the build turns on (configuration_of()).
+    Its name is the build kind with the word of each such option, as in
+    x86_64-debug-asan-bench-fuzz.  A build with CRUCIBLE_BENCH links the
+    benches.  Its link facts are then different from the facts of the same
+    build kind with no benches.  THE POLICY of assay.core.configuration gives
+    the rows that judge the build.
 
 THE RUN
     run_inspection() writes the findings and the summary line of the rule.
@@ -52,8 +56,11 @@ from assay.guard.engines.elf import runner
 
 # The mode admit of a write gives this status (THE WRITE).
 ADMIT_STATUS = 2
-# The facts of each configuration of a ledger of the engine (THE INSPECTION).
+# The facts of each configuration of a ledger of the engine, and the facts of the options that a build turns on
+# (THE INSPECTION).
 CONFIGURATION_FACTS = frozenset({build_config.KIND_KEY, build_config.TIER_KEY})
+OPTION_FACTS = tuple(key for _word, key in build_config.NAME_OPTIONS)
+OPTION_ON = "on"
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,17 +98,27 @@ class WritePolicy:
     rows: str
 
 
+def configuration_name(kind: str, facts: Mapping[str, str]) -> str:
+    """Return the name of a configuration: the build kind, and the word of each option that its facts turn on."""
+    words = [word for word, key in build_config.NAME_OPTIONS if facts.get(key) == OPTION_ON]
+    return "-".join([kind, *words])
+
+
 def configuration_of(context: runner.ElfContext) -> build_config.BuildConfiguration:
-    """Return the configuration of the build: its build kind and its tier (THE INSPECTION).
+    """Return the configuration of the build: its build kind, its tier and the options that it turns on (THE INSPECTION).
 
     Raises:
         runner.NotApplicable: If the build has no build kind
-        runner.BuildError: If the tier of the build cannot be read
+        runner.BuildError: If the tier of the build or its CMake cache cannot be read
     """
     kind = context.kind()
-    return build_config.BuildConfiguration(
-        kind, ((build_config.KIND_KEY, kind), (build_config.TIER_KEY, context.tier()))
-    )
+    facts = [(build_config.KIND_KEY, kind), (build_config.TIER_KEY, context.tier())]
+    facts += [
+        (key, OPTION_ON)
+        for key in OPTION_FACTS
+        if build_config.normalized("BOOL", context.cache_value(key)) == OPTION_ON
+    ]
+    return build_config.BuildConfiguration(configuration_name(kind, dict(facts)), tuple(facts))
 
 
 def read_ledger(rule: rule_registry.Rule, root: Path) -> rule_ledger.Ledger | Inspection:
@@ -246,18 +263,26 @@ def ledger_problems(
 ) -> list[check_report.Finding]:
     """Return an error for each configuration and each row of a ledger that the rule refuses.
 
-    A configuration has the facts kind and tier, and its kind is its name.  `is_row` accepts a base row, and
-    `row_shape` tells the shape of a base row.  A row of a ledger with no configuration is an error.  A key that
-    `is_single` accepts has the count 0 or 1 in each configuration.  Complexity: linear in the rows times the
-    configurations.
+    A configuration has the facts kind and tier, and the fact `on` of each option of OPTION_FACTS that its build
+    turns on.  Its name is configuration_name() of these facts.  `is_row` accepts a base row, and `row_shape` tells
+    the shape of a base row.  A row of a ledger with no configuration is an error.  A key that `is_single` accepts has
+    the count 0 or 1 in each configuration.  Complexity: linear in the rows times the configurations.
     """
     problems: list[tuple[int, str]] = []
     for configuration in ledger.configurations:
         facts = dict(configuration.facts)
-        if set(facts) != CONFIGURATION_FACTS or facts[build_config.KIND_KEY] != configuration.name:
+        options = set(facts) - CONFIGURATION_FACTS
+        is_shape = (
+            CONFIGURATION_FACTS <= set(facts)
+            and options <= set(OPTION_FACTS)
+            and all(facts[key] == OPTION_ON for key in options)
+            and configuration_name(facts.get(build_config.KIND_KEY, ""), facts) == configuration.name
+        )
+        if not is_shape:
             shape = (
-                f"the configuration {configuration.name} has the rows 'configuration KIND kind KIND' and "
-                f"'configuration KIND tier TIER', and no other"
+                f"the configuration {configuration.name} has the rows 'configuration NAME kind KIND' and "
+                f"'configuration NAME tier TIER', a row 'configuration NAME OPTION on' for each option of a word "
+                f"of NAME, and no other.  NAME is KIND with the word of each such option"
             )
             problems.append((0, shape))
     problems += [

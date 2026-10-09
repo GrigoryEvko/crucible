@@ -1,0 +1,6 @@
+# The record of one test of the build gives a peak memory of 1 GB, over the warning threshold 0.5 GB of test-memory
+# only.  A ledger row keeps the test up to 1 GB with the noise of the unit GB.  judge() of `loop test-step` gives one
+# warning, and no error.
+format 1
+kind x86_64-debug-asan
+test-record test_kept wall=1 peak=1

@@ -340,6 +340,18 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
            and found_line is not None and found_line.level == "warning" and "the test admits it" in
            found_line.message and "compile-memory.txt:4 " in found_line.message)
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.000001 | - | a kept value under the peak\n")
+    result = bench.launch(bench.tool)
+    found_line = last_finding(result.stderr)
+    expect("a row with a kept value under the peak memory with its noise does not admit the compile",
+           result.exit == 1 and found_line is not None and "keeps it only up to" in found_line.message)
+    (bench.root / "build-configuration.txt").write_text(f"{KIND}-bench\n", encoding="utf-8")
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND}-bench | 0.01 | - | the bench build admits it\n")
+    result = bench.launch(bench.tool)
+    found_line = last_finding(result.stderr)
+    expect("a row of the name of the configuration admits the compile",
+           result.exit == 0 and found_line is not None and "the bench build admits it" in found_line.message)
+    (bench.root / "build-configuration.txt").unlink()
     bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.01 | - | another kind\n")
     result = bench.launch(bench.tool)
     expect("a row of another kind does not admit the compile", result.exit == 1)

@@ -334,6 +334,109 @@ def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
     )
 
 
+def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check the reason rows of a prefix: the reader, the longest prefix, the warning, the write and the row count."""
+    count = table["count-rule"]
+    head = "format 1\nrule count-rule\n"
+    text = (
+        f"{head}reason src/ | the step of a planted plan removes them\n"
+        "reason src/deep/ | a longer prefix gives this reason\nreason c.py | one file\n"
+        "src/a.py | kind | 2 | - | -\nsrc/deep/b.py | kind | 1 | - | -\nsrc/c.py | kind | 1 | - | an own reason\n"
+        "c.py | kind | 1 | - | -\nother.py | kind | 1 | - | -\n"
+    )
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    key = rule_ledger.Key
+    expect(
+        "a reason row gives the reason of a count row under its prefix, and the longer prefix decides",
+        ledger.kept_reason(key("src/a.py", "kind", "")) == "the step of a planted plan removes them"
+        and ledger.kept_reason(key("src/deep/b.py", "kind", "")) == "a longer prefix gives this reason"
+        and ledger.kept_reason(key("c.py", "kind", "")) == "one file"
+        and ledger.kept_reason(key("other.py", "kind", "")) == "",
+    )
+    expect(
+        "the reason of a row of its own comes before the reason of a prefix, and reason_of() reads no prefix",
+        ledger.kept_reason(key("src/c.py", "kind", "")) == "an own reason"
+        and ledger.reason_of(key("src/a.py", "kind", "")) == "",
+    )
+    expect(
+        "a prefix with no final slash holds only the equal path",
+        ledger.prefix_reason("c.py.old") is None and ledger.prefix_reason("srcx/a.py") is None,
+    )
+    again = rule_ledger.parse(rule_ledger.render(ledger), "again", "count-rule", rule_registry.Policy.COUNT)
+    expect(
+        "render() writes the reason rows sorted after the header, and parse() reads the same rows again",
+        [(item.prefix, item.reason) for item in again.reasons]
+        == sorted((item.prefix, item.reason) for item in ledger.reasons)
+        and again.base.keys() == ledger.base.keys(),
+    )
+    expect(
+        "count_rows() does not count a reason row",
+        rule_ledger.count_rows(text) == 5,
+    )
+    judged = rule_ledger.compare(
+        count,
+        ledger,
+        [finding("src/a.py"), finding("src/a.py")]
+        + [finding(path) for path in ("src/deep/b.py", "src/c.py", "c.py", "other.py")],
+    )
+    by_path = {item.entity: item.message for item in judged if item.level == "warning"}
+    expect(
+        "the warning of a path that a reason row holds names that row and its reason, as a keep row",
+        not errors(judged)
+        and "each with its reason" in by_path.get("src/a.py", "")
+        and "`reason src/` at line 3 gives the reason: the step of a planted plan removes them" in by_path["src/a.py"]
+        and "Remove a finding" in by_path.get("other.py", ""),
+    )
+    state, tail = rule_ledger.kept_words(ledger, [key("src/a.py", "kind", ""), key("src/deep/b.py", "kind", "")])
+    expect(
+        "kept_words() tells that each key has a reason, and the lines of two reason rows",
+        state == ", each with its reason" and "lines 3, 4" in tail,
+    )
+    expect(
+        "kept_words() gives no words for a group with a key that has no reason",
+        rule_ledger.kept_words(ledger, [key("other.py", "kind", ""), key("src/a.py", "kind", "")]) == ("", ""),
+    )
+    for name, bad in (
+        ("a reason row that holds no count row", f"{head}reason lib/ | idle\nsrc/a.py | kind | 1 | - | -\n"),
+        ("a reason row after an entry row", f"{head}src/a.py | kind | 1 | - | -\nreason src/ | late\n"),
+        ("a reason row with no reason", f"{head}reason src/ | -\nsrc/a.py | kind | 1 | - | -\n"),
+        (
+            "a second reason row of one prefix",
+            f"{head}reason src/ | one\nreason src/ | two\nsrc/a.py | kind | 1 | - | -\n",
+        ),
+        (
+            "a configuration row after a reason row",
+            f"{head}reason src/ | one\nconfiguration base machine x86_64\nsrc/a.py | kind | 1 | - | -\n",
+        ),
+    ):
+        expect(
+            f"the reader refuses {name}",
+            refuses(
+                partial(rule_ledger.parse, bad, "l.txt", "count-rule", rule_registry.Policy.COUNT),
+                rows_grammar.RowsError,
+            ),
+        )
+    expect(
+        "the reader refuses a reason row in a ledger of the policy admit",
+        refuses(
+            lambda: rule_ledger.parse(
+                "format 1\nrule admit-rule\nreason src/ | one\nsrc/a.py | k | admit | - | r\n",
+                "l.txt",
+                "admit-rule",
+                rule_registry.Policy.ADMIT,
+            ),
+            rows_grammar.RowsError,
+        ),
+    )
+    lowered = rule_ledger.write(
+        count, ledger, [finding("src/a.py")] + [finding(path) for path in ("src/c.py", "c.py", "other.py")]
+    )
+    expect(
+        "a write removes each reason row that no count row of its result holds, and keeps the others",
+        sorted(item.prefix for item in lowered.reasons) == ["c.py", "src/"],
+    )
+
+
 def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check the modes of write(), the moves, the configurations and the import of the rows of a configuration."""
     count = table["count-rule"]
@@ -546,6 +649,7 @@ def main(argv: list[str]) -> int:
     table = rules()
     reader_cases(expect, table)
     policy_cases(expect, table)
+    prefix_cases(expect, table)
     write_cases(expect, table)
     no_configuration_cases(expect, table)
     history_cases(expect, table)

@@ -121,16 +121,19 @@ def step_paths(step: str, command: list[str]) -> tuple[str, str | None] | None:
     return os.path.abspath(output), None if source is None else os.path.abspath(source)
 
 
-def admission(memory_row: str, output: str) -> tuple[bool, str]:
-    """Look for the ledger row that admits an output over the error threshold of its memory row.
+def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
+    """Look for the ledger row that keeps an output over the error threshold of its memory row.
+
+    A row keeps the output up to its kept value with the noise of the unit GB (assay.core.budget, THE NOISE).
 
     Args:
         memory_row: compile-memory or link-memory
         output: The absolute output path
+        peak_gb: The peak memory of the step, in GB
 
     Returns:
-        Whether a row admits the output, and the words that tell which row or why none does.  A problem of the
-        ledger admits nothing, and the words give its line
+        Whether a row keeps the output, and the words that tell which row or why none does.  A problem of the
+        ledger keeps nothing, and the words give its line
     """
     ledger = cost_meter.ledger_file(memory_row, os.environ.get(LEDGERS_ENV))
     shown = cost_meter.shown_ledger(ledger)
@@ -140,13 +143,18 @@ def admission(memory_row: str, output: str) -> tuple[bool, str]:
         return False, (f"the build kind is not known ({cost_meter.KIND_FILE} of the build directory), so no row of "
                        f"{shown} can admit it")
     item = os.path.relpath(output, build_dir)
-    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, kind, item)
+    configuration = cost_meter.read_configuration(build_dir)
+    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, kind, item, configuration)
     if row is None:
-        words = f"no row of {shown} admits {item} for the kind {kind}"
+        words = f"no row of {shown} keeps {item} for {configuration or kind}"
         if problem:
             words += f", and the ledger has a problem at {shown}:{problem}"
         return False, words
-    return True, f"the row {shown}:{row.line} admits it: {row.reason}"
+    noise = cost_budget.noise_of("GB")
+    if peak_gb > row.value * (1.0 + noise):
+        return False, (f"the row {shown}:{row.line} keeps it only up to {row.value:g} GB with the noise {noise:.0%}: "
+                       f"{row.reason}")
+    return True, f"the row {shown}:{row.line} keeps it up to {row.value:g} GB with the noise {noise:.0%}: {row.reason}"
 
 
 def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
@@ -174,8 +182,8 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
                               f"{run.cpu_limit_s} s, three times the error threshold of {budget[time_row][1]:g} s "
                               f"(rounded up to a whole second), so the operating system stopped it")
         return "failed", None
-    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], False) == cost_budget.ERROR:
-        is_admitted, words = admission(memory_row, output)
+    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.ERROR:
+        is_admitted, words = admission(memory_row, output, run.peak_gb)
         message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, over the error threshold of "
                    f"{budget[memory_row][1]:g} GB, and {words}")
         if is_admitted:
@@ -194,7 +202,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
     check = None
     for row, value, text, unit in ((time_row, run.cpu_s, f"{run.cpu_s:.1f} s CPU", "s"),
                                    (memory_row, run.peak_gb, f"{run.peak_gb:.2f} GB of peak memory", "GB")):
-        found = cost_budget.verdict(value, *budget[row], False) if row in budget else cost_budget.NO_FINDING
+        found = cost_budget.verdict(value, *budget[row], None) if row in budget else cost_budget.NO_FINDING
         if found != cost_budget.NO_FINDING:
             check = check or row
             limit = budget[row][1] if found == cost_budget.ERROR else budget[row][0]

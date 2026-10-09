@@ -1,0 +1,6 @@
+# The record of one test of the build gives a peak memory of 2 GB.  A ledger row keeps the test up to 1.6 GB, and
+# 1.76 GB with the noise of the unit GB.  The test is over that value and over the error threshold 1.5 GB, so judge()
+# of `loop test-step` gives one error.
+format 1
+kind x86_64-debug-asan
+test-record test_grown wall=1 peak=2

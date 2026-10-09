@@ -1,0 +1,6 @@
+# The ledger of the plant: a reason row after an entry row.  The reader
+# refuses the ledger.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 1 | Permission | -
+reason include/fixy/ | a planted step of the plan, after the first entry row

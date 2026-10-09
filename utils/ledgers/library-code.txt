@@ -6,6 +6,8 @@
 #   PATH | inlined | COUNT | NAME | -       a body of a library function that the code inlines
 #   PATH | call | COUNT | NAME | -          a call of a library function
 #   PATH | reference | COUNT | NAME | -     a library variable or the address of a library function
+# A row `reason PREFIX | REASON` gives the reason of each count row of a file under PREFIX: the step of the plan that
+# removes its records (THE REASON OF A PREFIX of utils/assay/core/ledger.py).  A person writes these rows.
 # The first configuration is the base, and a row with the prefix @NAME gives the difference of the configuration
 # NAME (assay.guard.engines.plugin.counted).  A count can only fall: `python3 utils/bin/guard write --rule
 # library-code --build-dir DIR` writes the rows of the configuration of a build.
@@ -83,6 +85,30 @@ configuration x86_64-debug-ubsan-strict CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-ubsan-strict CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-ubsan-strict TORCH_DIR unset
 configuration x86_64-debug-ubsan-strict CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SYNTAX_ONLY off
+reason include/fixy/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move fixy onto the families of the base, and the slice 4.9 removes each other std use, one unit for each directory
+reason include/fixy/os/ | The slices 4.1 and 4.6 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the doors of fixy onto the Os family, with no system type in a signature
+reason include/foundation/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move foundation onto the families of the base, and the slice 4.8 removes each other std use
+reason include/foundation/core/ | The Ref family of section 11.5 of the plan misc/01_10_2026_quarantine.md allocates through operator new with std::nothrow, and the link guard of section 13.4 admits operator new and operator delete for that family
+reason src/fixy/ | The slices 4.1, 4.6 and 4.9 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the source files of fixy onto the families of the base
+reason src/foundation/ | The slices 4.5 and 4.8 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the source files of foundation onto the families of the base
 include/fixy/Bands.h | inlined | 1 | std::unique_ptr::unique_ptr | -
 include/fixy/Bits.h | inlined | 1 | std::popcount | -
 include/fixy/Borrowed.h | call | 1 | std::span::back | -
@@ -765,6 +791,14 @@ src/foundation/DiagRuntime.cpp | reference | 3 | stderr | -
 src/foundation/Permission.cpp | call | 1 | abort | -
 src/foundation/Permission.cpp | inlined | 1 | fprintf | -
 src/foundation/Permission.cpp | reference | 1 | stderr | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/Checked.h | inlined | +7 | std::optional::optional | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/Tagged.h | call | +3 | std::filesystem::path::~path | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/concurrent/SpscRing.h | inlined | +2 | std::array::data | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/os/Path.h | call | +1 | std::filesystem::path::~path | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/os/Topology.h | reference | +1 | std::vector::~vector | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
+@x86_64-debug-asan-bench-fuzz | include/fixy/session/Handle.h | inlined | +2 | std::source_location::line | -
+@x86_64-debug-asan-bench-fuzz | include/foundation/algebra/Graded.h | call | +1 | std::filesystem::path::~path | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | call | -1 | std::span::back | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | call | -3 | std::span::span | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -

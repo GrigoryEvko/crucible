@@ -14,6 +14,11 @@
 # of a listed test or a listed static library then have a chain of three
 # edges, so Ninja starts them before the objects of the other tests and after
 # the objects of the libraries that a test links, which have longer chains.
+# An object library has no link of its own, so the stamp alone gives its
+# objects a chain of two edges.  A listed object library is an order-only
+# input of a second stamp command, and the first stamp command has that
+# second command as an order-only input.  Its objects then also have a chain
+# of three edges.
 # The rule compile-first (utils/assay/guard/engines/buildsys/cost_budgets.py) holds the list
 # equal to the records of the build launcher, and holds each object of a
 # listed target to a chain of three edges or more.
@@ -65,16 +70,23 @@ function(crucible_compile_first)
 
   file(STRINGS "${CRUCIBLE_COMPILE_FIRST_LIST}" rows ENCODING UTF-8)
   set(listed "")
+  set(listed_objects "")
   foreach(row IN LISTS rows)
     string(STRIP "${row}" row)
     if(row STREQUAL "" OR row MATCHES "^#" OR row MATCHES "^kind ")
       continue()
     endif()
-    if(row IN_LIST candidates)
+    if(NOT row IN_LIST candidates)
+      continue()
+    endif()
+    get_target_property(type ${row} TYPE)
+    if(type STREQUAL "OBJECT_LIBRARY")
+      list(APPEND listed_objects "${row}")
+    else()
       list(APPEND listed "${row}")
     endif()
   endforeach()
-  if(NOT listed)
+  if(NOT listed AND NOT listed_objects)
     return()
   endif()
   set(stamp "${CMAKE_BINARY_DIR}/compile-first.stamp")
@@ -83,7 +95,19 @@ function(crucible_compile_first)
     COMMENT "Stamp the targets that Ninja compiles first"
     VERBATIM)
   add_custom_target(compile_first ALL DEPENDS "${stamp}")
-  add_dependencies(compile_first ${listed})
+  if(listed)
+    add_dependencies(compile_first ${listed})
+  endif()
+  if(listed_objects)
+    set(object_stamp "${CMAKE_BINARY_DIR}/compile-first-objects.stamp")
+    add_custom_command(OUTPUT "${object_stamp}"
+      COMMAND "${CMAKE_COMMAND}" -E touch "${object_stamp}"
+      COMMENT "Stamp the object libraries that Ninja compiles first"
+      VERBATIM)
+    add_custom_target(compile_first_objects DEPENDS "${object_stamp}")
+    add_dependencies(compile_first_objects ${listed_objects})
+    add_dependencies(compile_first compile_first_objects)
+  endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL crucible_compile_first)

@@ -1,0 +1,15 @@
+# The ledger of the rule object-text of utils/registry.txt: the items that a row keeps over the warning threshold
+# of the rule, one row for each item and build kind or configuration.  A row is '@build/OUTPUT | KIND | VALUE | - | REASON'.
+# KIND is the build kind of BUILD_DIR/build-kind.txt or the name of BUILD_DIR/build-configuration.txt, and
+# VALUE is the value at the last write, in KB.  A row keeps its item up to VALUE with the noise of its
+# unit (THE NOISE of utils/assay/core/budget.py).  `python3 utils/bin/guard explain object-text` tells the rule,
+# and `python3 utils/bin/guard write --rule object-text --build-dir DIR [--reason TEXT]` writes this file.
+format 1
+rule object-text
+@build/bench/CMakeFiles/bench_dispatch.dir/bench_dispatch.cpp.o | x86_64-debug-asan-bench-fuzz | 795.475 | - | A bench compiles at -O3 -march=native into one object.  VALUE is the measure of 2026-10-09, and the work that divides the bench objects is open
+@build/bench/CMakeFiles/bench_expr_pool.dir/bench_expr_pool.cpp.o | x86_64-debug-asan-bench-fuzz | 897.917 | - | A bench compiles at -O3 -march=native into one object.  VALUE is the measure of 2026-10-09, and the work that divides the bench objects is open
+@build/bench/CMakeFiles/bench_merkle_dag.dir/bench_merkle_dag.cpp.o | x86_64-debug-asan-bench-fuzz | 689.002 | - | A bench compiles at -O3 -march=native into one object, and the work that divides the bench objects is open.  The measure of 2026-10-09 in the build x86_64-debug-asan-bench-fuzz is 689 KB
+@build/bench/CMakeFiles/bench_perf_loader.dir/bench_perf_loader.cpp.o | x86_64-debug-asan-bench-fuzz | 828.669 | - | A bench compiles at -O3 -march=native into one object.  VALUE is the measure of 2026-10-09, and the work that divides the bench objects is open
+@build/bench/CMakeFiles/bench_saturate.dir/bench_saturate.cpp.o | x86_64-debug-asan-bench-fuzz | 526.034 | - | A bench compiles at -O3 -march=native into one object, and the work that divides the bench objects is open.  The measure of 2026-10-09 in the build x86_64-debug-asan-bench-fuzz is 526 KB
+@build/bench/CMakeFiles/bench_simd.dir/bench_simd.cpp.o | x86_64-debug-asan-bench-fuzz | 791.773 | - | A bench compiles at -O3 -march=native into one object.  VALUE is the measure of 2026-10-09, and the work that divides the bench objects is open
+@build/bench/CMakeFiles/bench_swiss_table.dir/bench_swiss_table.cpp.o | x86_64-debug-asan-bench-fuzz | 537.225 | - | A bench compiles at -O3 -march=native into one object, and the work that divides the bench objects is open.  The measure of 2026-10-09 in the build x86_64-debug-asan-bench-fuzz is 537.2 KB

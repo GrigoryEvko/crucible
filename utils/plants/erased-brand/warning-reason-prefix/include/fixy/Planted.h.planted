@@ -1,0 +1,7 @@
+#pragma once
+// The file has one site of Permission, and a reason row of the ledger gives
+// the reason of its count.
+namespace foundation::brand { struct DefaultBrand {}; }
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand> class Permission;
+struct Tag {};
+Permission<Tag> first;

@@ -26,12 +26,14 @@ THE COMDAT GROUPS
 THE LEDGER
     utils/ledgers/library-bytes.txt has the policy baseline, in format 1 of
     assay.core.ledger:
-        configuration KIND kind KIND
-        configuration KIND tier TIER
-        @build/ARCHIVE | KIND | BYTES | - | REASON
-    A row gives the library bytes of one archive in the configuration KIND at
+        configuration NAME kind KIND
+        configuration NAME tier TIER
+        configuration NAME OPTION on
+        @build/ARCHIVE | NAME | BYTES | - | REASON
+    A row gives the library bytes of one archive in the configuration NAME at
     the last write, with its reason.  The configuration of a build is its
-    build kind and its tier (assay.guard.engines.elf.configured).
+    build kind, its tier and the options of its name
+    (assay.guard.engines.elf.configured).
 
 THE VERDICT
     The measured rule of the registry gives the two thresholds in percent of

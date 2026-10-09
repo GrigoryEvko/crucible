@@ -1,5 +1,5 @@
-# A ledger row admits an object of 600 KB of machine code, which is not more than the error threshold 768 KB.  The
+# A ledger row keeps an object of 400 KB of machine code, which is not more than the warning threshold 512 KB.  The
 # rule gives one error of the kind row-not-needed at the row.
 format 1
 kind x86_64-debug-asan
-compile CMakeFiles/lib.dir/wide.cpp.o src/wide.cpp functions=_Z1av:307200,_Z1bv:307200
+compile CMakeFiles/lib.dir/wide.cpp.o src/wide.cpp functions=_Z1av:204800,_Z1bv:204800

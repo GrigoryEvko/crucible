@@ -160,8 +160,8 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.ledger(f"@build/libcrucible.a(header.cpp.o) | {KIND} | 512 | - | a planted buffer\n")
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a row of the kind admits a member over the error threshold, with a warning",
-        errors_of(found) == [] and any("admits it" in message for message in warnings_of(found)),
+        "a row of the kind keeps a member over the error threshold up to its kept value, with a warning",
+        errors_of(found) == [] and any("keeps it up to 512 bytes" in message for message in warnings_of(found)),
     )
     scratch.ledger("@build/libcrucible.a(header.cpp.o) | other-kind | 512 | - | a row of a different kind\n")
     expect(

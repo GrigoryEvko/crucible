@@ -115,12 +115,14 @@ THE REGISTRY AND THE LEDGERS
     import it.
 
     read_kind_rows() reads the ledger of a measured rule of the policy max,
-    utils/ledgers/RULE.txt, through assay.core.ledger.  A row admits one item
-    over the error threshold of the rule, for one build kind:
+    utils/ledgers/RULE.txt, through assay.core.ledger.  A row keeps one item
+    over the warning threshold of the rule, for one build kind or one
+    configuration (assay.core.budget, THE VERDICT and THE ROWS):
 
         PATH | KIND | VALUE | ENTITY | REASON
 
-    KIND is the build kind.  The rule gives the form of its item: an output
+    KIND is the build kind or the name of a configuration.  The rule gives the
+    form of its item: an output
     of the build directory (PATH @build/OUTPUT, and no ENTITY), a file of the
     source tree (PATH FILE, and no ENTITY), or a name, such as the name of a
     test (PATH "-", and ENTITY NAME).  VALUE is the measure when the row was
@@ -132,7 +134,11 @@ THE REGISTRY AND THE LEDGERS
 
     The build kind of a build directory is the one line of
     BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake writes at each
-    configure, for example x86_64-debug-asan.
+    configure, for example x86_64-debug-asan.  The same configure writes the
+    name of the configuration of the build in BUILD_DIR/build-configuration.txt
+    (read_configuration()), for example x86_64-debug-asan-bench-fuzz.  That
+    name is the build kind with the words of the options of NAME_OPTIONS of
+    assay.core.configuration.
 """
 
 import os
@@ -140,6 +146,7 @@ import sys
 import time
 
 KIND_FILE = "build-kind.txt"
+CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
 # The measured rules of utils/registry.txt whose value is a time.  The self-test
 # of utils/assay/core/report.py holds this set equal to the rules of unit s.
@@ -782,12 +789,29 @@ def read_kind(build_dir: str) -> str | None:
     Returns:
         The kind, or None when the file does not exist or is empty
     """
+    return read_line(os.path.join(build_dir, KIND_FILE))
+
+
+def read_configuration(build_dir: str) -> str | None:
+    """Return the name of the configuration of a build directory, from its build-configuration.txt.
+
+    Args:
+        build_dir: The build directory
+
+    Returns:
+        The name, or None when the file is missing or empty
+    """
+    return read_line(os.path.join(build_dir, CONFIGURATION_FILE))
+
+
+def read_line(path: str) -> str | None:
+    """Return the text of a file of one line with no space at its ends, or None when the file is missing or empty."""
     try:
-        with open(os.path.join(build_dir, KIND_FILE), encoding="utf-8") as handle:
-            kind = handle.read().strip()
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().strip()
     except OSError:
         return None
-    return kind or None
+    return text or None
 
 
 def finding_text(level: str, path: str, check: str, message: str) -> str:

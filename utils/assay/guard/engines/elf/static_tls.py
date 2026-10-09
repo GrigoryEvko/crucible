@@ -28,8 +28,8 @@ THE JUDGE
     build.  A member with no base thread-local variable gets no finding.
 
 THE LEDGER
-    utils/ledgers/static-tls.txt has the policy max.  A row admits one member
-    over the error threshold in the builds of one kind:
+    utils/ledgers/static-tls.txt has the policy max.  A row keeps one member
+    in the builds of one kind, up to VALUE (assay.core.budget, THE VERDICT):
         @build/ARCHIVE(MEMBER) | KIND | VALUE | - | REASON
     `guard write --rule static-tls --build-dir DIR --reason TEXT` writes the
     rows of the kind of the build.  A row keeps its reason, and the write

@@ -1,5 +1,5 @@
-# A ledger row admits a link of 0.7 GB of peak memory, which is not more than the error threshold 1 GB.  The rule
+# A ledger row keeps a link of 0.3 GB of peak memory, which is not more than the warning threshold 0.5 GB.  The rule
 # gives one error of the kind row-not-needed at the row.
 format 1
 kind x86_64-debug-asan
-link test/slow_test cpu=3 peak=0.7
+link test/slow_test cpu=3 peak=0.3

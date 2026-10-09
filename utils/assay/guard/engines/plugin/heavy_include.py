@@ -32,7 +32,9 @@ THE LEDGER
     holds at this time, and each run gives one warning for it.  A row with a
     reason is a header that owns the heavy header on purpose, such as the one
     door of a system header.  Such a row gives no warning.  `guard write
-    --rule heavy-include --admit --reason TEXT` writes such a row.  The base
+    --rule heavy-include --admit --reason TEXT` writes such a row.  A reason
+    row of a prefix also gives the reason of a row (assay.core.ledger, THE
+    REASON OF A PREFIX).  The base
     rows judge a build of a configuration that the ledger does not hold (THE
     POLICY of assay.core.configuration).
 
@@ -43,7 +45,8 @@ THE VERDICT
       the ledger again.
     * An include of an unmeasured header is an error in each case: measure the
       header.  The plugin then gives `heavy-include` or no finding.
-    * Each row with no reason that the build holds gives a warning.
+    * Each row with no reason of its own or of a prefix that the build holds
+      gives a warning.
     * A heavy or a light row is an error when its kind does not agree with
       its measure and the threshold of this rule (cost_problems).  A rule
       table with no such row is an error too.  The plugin reads the kinds
@@ -128,17 +131,6 @@ def no_inputs(_root: Path) -> None:
     """Read no input: the verdict reads only the counts and the ledger."""
 
 
-def reason_of(ledger: rule_ledger.Ledger, key: Key, name: str | None) -> str:
-    """Return the reason of the row of a key in one configuration: of its difference row, else of its base row.
-
-    The name None names the base rows.  For assay.core.ledger.MAXIMUM, the first configuration with a difference row
-    of the key gives it.
-    """
-    delta = next((table[key] for table in ledger.delta_tables(name) if key in table), None)
-    entry = delta or ledger.base.get(key)
-    return entry.reason if entry is not None else ""
-
-
 def evaluate(
     counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str | None, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
@@ -190,7 +182,7 @@ def evaluate(
                     f"the ledger again in the same commit: `{command}`",
                 )
             )
-        elif measured > 0 and not reason_of(ledger, key, name):
+        elif measured > 0 and not ledger.kept_reason(key, name):
             found.append(
                 check_report.Finding(
                     "warning",

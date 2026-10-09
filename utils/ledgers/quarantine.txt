@@ -3,7 +3,7 @@
 #
 # The rule quarantine reads this ledger (`python3 utils/bin/guard explain quarantine`).  Its module
 # utils/assay/guard/engines/plugin/quarantine.py writes each row through utils/assay/core/ledger.py.  Do not edit a
-# row by hand.  The rule reads the section .crucible.quarantine of each object of the target all, and it counts each
+# count row by hand.  The rule reads the section .crucible.quarantine of each object of the target all, and it counts each
 # finding line one time.  A count above its row fails the rule, because a change can only lower a count (rule R11 of
 # misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map to it fails.  A
 # file that the ledger does not hold and that has a finding fails too: a new file has no finding.  A count below its
@@ -17,6 +17,10 @@
 #                                  the objects of all or their preprocessor arms.  NAME is the build
 #                                  kind, with -bench and -fuzz for those options.  The first
 #                                  configuration is the base.
+#   reason PREFIX | REASON         The reason of each count row of a file under PREFIX: the step of
+#                                  the plan that removes its findings.  A person writes these rows,
+#                                  and a write removes a row that holds no count row (THE REASON OF
+#                                  A PREFIX of utils/assay/core/ledger.py).
 #   FILE | KIND | COUNT | ENTITY | -
 #                                  The number of findings of the kind KIND and the entity ENTITY in
 #                                  the file, in the base configuration.  A file of the build
@@ -189,6 +193,22 @@ configuration aarch64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration aarch64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE unset
 configuration aarch64-debug-asan-syntax TORCH_DIR unset
 configuration aarch64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
+reason @build/ | The unit perf of section 14.1 of the plan misc/01_10_2026_quarantine.md moves the embed of each BPF object onto the types of the base
+reason @build/test/ | The unit tests of section 14.1 of the plan misc/01_10_2026_quarantine.md moves each generated test header onto the types of the base
+reason bench/ | The unit bench of section 14.1 of the plan misc/01_10_2026_quarantine.md moves bench/ onto the types of the base, and bench/bench_harness.h goes first
+reason examples/ | The unit small of section 14.1 of the plan misc/01_10_2026_quarantine.md moves examples/ onto the types of the base
+reason include/crucible/ | The units core-ir, vigil, cipher, cntp, observe, cog-mimic, perf and rest of section 14.1 of the plan misc/01_10_2026_quarantine.md move include/crucible/ onto the types of the base
+reason include/fixy/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move fixy onto the families of the base, and the slice 4.9 removes each other std use, one unit for each directory
+reason include/fixy/os/ | The slices 4.1 and 4.6 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the doors of fixy onto the Os family, with no system type in a signature
+reason include/foundation/ | The slices of section 13.1 of the plan misc/01_10_2026_quarantine.md move foundation onto the families of the base, and the slice 4.8 removes each other std use
+reason include/foundation/core/ | The Ref family of section 11.5 of the plan misc/01_10_2026_quarantine.md replaces std::nothrow in the allocation of the language
+reason src/ | The unit small of section 14.1 of the plan misc/01_10_2026_quarantine.md moves src/ onto the types of the base
+reason src/fixy/ | The slices 4.1, 4.6 and 4.9 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the source files of fixy onto the families of the base
+reason src/foundation/ | The slices 4.5 and 4.8 of section 13.1 of the plan misc/01_10_2026_quarantine.md move the source files of foundation onto the families of the base
+reason test/ | The units harness, tests and fixtures of section 14.1 of the plan misc/01_10_2026_quarantine.md move test/ onto the types of the base
+reason test/fuzz/ | The unit fuzz of section 14.1 of the plan misc/01_10_2026_quarantine.md moves test/fuzz/ onto the types of the base, and the entry of libFuzzer keeps a region
+reason utils/tools/ | The unit tools of section 14.1 of the plan misc/01_10_2026_quarantine.md moves utils/tools/ onto the types of the base
+reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_quarantine.md moves vessel/ onto the types of the base, and the ABI of PyTorch stays behind regions
 @build/canopy_gossip_fanout_sample_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/canopy_gossip_xdp_tx_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/canopy_peer_liveness_probe_bpf_bytecode.c | c-array-object | 1 | - | -

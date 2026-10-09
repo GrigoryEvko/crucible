@@ -1,0 +1,6 @@
+# The ledger of the plant: a reason row that holds no count row.  The reader
+# refuses the ledger.
+format 1
+rule erased-brand
+reason test/ | a planted step of the plan for a directory with no count row
+include/fixy/Planted.h | erased-brand | 1 | Permission | -

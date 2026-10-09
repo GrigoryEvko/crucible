@@ -6,7 +6,8 @@ THE JUDGE
     wall time of the test with the measured rule test-time of
     utils/registry.txt.  They compare the peak memory of its largest process
     with the measured rule test-memory.  A test over an error threshold that
-    no ledger row admits fails.  Each run writes the record of the test,
+    no ledger row keeps fails (assay.core.budget, THE VERDICT).  Each run
+    writes the record of the test,
     BUILD_DIR/test-records/NAME.test.cost (assay.core.record, THE RECORDS).
     Each test writes its warnings to the file RULE.NAME.txt of the warnings
     directory.  The step meter judges with verdict() of assay.core.budget.
@@ -17,20 +18,20 @@ THE RULE
     A test cannot see a test that runs with no judge, or a ledger row that
     names a test of no build.  The rule reads the tests that the build
     registers and the records of their last runs (assay.readers.ctest).  It
-    also reads the rows of the ledgers of test-time and test-memory for the
-    kind of the build (assay.core.budget).  It refuses:
+    also reads the rows of the ledgers of test-time and test-memory that
+    judge the build (assay.core.budget, THE ROWS).  It refuses:
       unjudged  a test with no test launcher and no fixture driver in its
                 command.  Its time and its memory have no judge.  CMake gives
                 the launcher to a test of an executable target, and
                 crucible_script_test() of cmake/TestLauncher.cmake gives it to
                 a script test
-      unknown   a ledger row of one of the two rules for the kind of the build
-                that names a test that the build does not register
-      input     the build has no kind, the test list or a record does not
-                read, or a ledger row does not have its shape
+      unknown   a row of the name of the configuration of the build that names
+                a test that the build does not register
+      input     the build has no kind or no name of its configuration, an
+                input does not read, or a ledger row does not have its shape
     The entity of a finding is the name of the test.  The judge refuses a row
-    of a test that runs at or below the error threshold of its rule.  The rule
-    judges no measure itself.  Its findings go to test-time.txt of the
+    of a test that runs at or below the warning threshold of its rule.  The
+    rule judges no measure itself.  Its findings go to test-time.txt of the
     warnings directory, apart from the files of the tests.
 
     A ledger row is '- | KIND | VALUE | TEST | REASON' (assay.core.meter, THE
@@ -38,15 +39,18 @@ THE RULE
 
 THE WRITE
     `guard write --rule test-time --build-dir BUILD_DIR` writes the rows of
-    the kind of the build again, from the records of the build directory.
-    Each registered test with a last record over the error threshold of
-    test-time gets a row with its wall time.  `guard write --rule test-memory`
-    writes the ledger of test-memory in the same way, with the peak memory of
-    each record in GB.  test-memory has a holder and no module of its own.
-    The write then calls written() through assay.guard.engines.buildsys.held
-    (THE WRITE of that module).  A row keeps its reason, and a new row takes
-    the reason of --reason, or DEFAULT_REASON.  A row of a different kind
-    stays.
+    the name of the configuration of the build again, from the records of the
+    build directory.  A row of a test with a last record over the warning
+    threshold of test-time gets its wall time.  A row of a test at or below
+    that threshold goes.  A registered test with a last record over the error
+    threshold and no row gets a new row.  A test with no record keeps its row.
+    `guard write --rule test-memory` writes the ledger of test-memory in the
+    same way, with the peak memory of each record in GB.  test-memory has a
+    holder and no module of its own.  The write then calls written() through
+    assay.guard.engines.buildsys.held (THE WRITE of that module).  A row keeps
+    its reason, and a new row takes the reason of --reason, or
+    DEFAULT_REASON.  A row of a different name stays, and a row of the build
+    kind keeps a test of a build with options.
 
 Complexity: linear in the words of the registered tests, the records and the ledger rows.
 """
@@ -94,21 +98,31 @@ def input_error(context: BuildContext, problem: object) -> check_report.Finding:
     )
 
 
-def kind_of(context: BuildContext) -> str | check_report.Finding:
-    """Return the build kind of the build directory, or the error of a build with no kind."""
+def names_of(context: BuildContext) -> tuple[str, str] | check_report.Finding:
+    """Return the build kind and the name of the configuration of the build, or the error of a build with no names."""
     try:
-        return context.kind()
+        kind = context.kind()
     except meta_runner.NotApplicable as problem:
         return input_error(context, problem)
+    name = cost_meter.read_configuration(str(context.require_build()))
+    if name is None:
+        return input_error(
+            context,
+            f"the build has no {cost_meter.CONFIGURATION_FILE}, which cmake/BuildLauncher.cmake writes at each "
+            f"configure.  Configure the build again",
+        )
+    return kind, name
 
 
-def ledger_rows(context: BuildContext, kind: str) -> tuple[dict[str, cost_budget.Rows], list[check_report.Finding]]:
-    """Return the ledger rows of the kind of the build for each rule of LEDGER_RULES, and an error for each bad row."""
+def ledger_rows(
+    context: BuildContext, kind: str, name: str
+) -> tuple[dict[str, cost_budget.Rows], list[check_report.Finding]]:
+    """Return the ledger rows that judge the build for each rule of LEDGER_RULES, and an error for each bad row."""
     found: dict[str, cost_budget.Rows] = {}
     problems: list[check_report.Finding] = []
     for rule_id in LEDGER_RULES:
         path = rule_ledger.ledger_path(rule_id, context.root)
-        rows = cost_budget.read_rows(rule_id, cost_meter.ITEM_NAME, path, kind)
+        rows = cost_budget.read_rows(rule_id, cost_meter.ITEM_NAME, path, kind, name)
         found[rule_id] = rows.replaced(shown=context.shown(path))
         problems += [replace(problem, path=context.shown(path), check=RULE, kind="input") for problem in rows.problems]
     return found, problems
@@ -117,15 +131,16 @@ def ledger_rows(context: BuildContext, kind: str) -> tuple[dict[str, cost_budget
 def findings(context: BuildContext) -> list[check_report.Finding]:
     """Give each registered test with no judge, and each ledger row of a test that the build does not register."""
     build = context.require_build()
-    kind = kind_of(context)
-    if isinstance(kind, check_report.Finding):
-        return [kind]
+    names_found = names_of(context)
+    if isinstance(names_found, check_report.Finding):
+        return [names_found]
+    kind, name = names_found
     try:
         tests = ctest_reader.tests(build)
         ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
         return [input_error(context, problem)]
-    rows, found = ledger_rows(context, kind)
+    rows, found = ledger_rows(context, kind, name)
     for test in tests:
         if is_judged(test.command):
             continue
@@ -141,21 +156,21 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
                 test.name,
             )
         )
-    names = {test.name for test in tests}
+    registered = {test.name for test in tests}
     for rule_id in LEDGER_RULES:
         table = rows[rule_id]
-        for name, row in sorted(table.admitted.items(), key=lambda pair: pair[1].line):
-            if name not in names:
+        for test_name, row in sorted(table.admitted.items(), key=lambda pair: pair[1].line):
+            if test_name not in registered and test_name in table.own:
                 found.append(
                     check_report.Finding(
                         "error",
                         table.shown,
                         row.line,
                         RULE,
-                        f"the ledger of {rule_id} names the test {name} for the "
-                        f"kind {kind}, and the build does not register it.  Remove the row",
+                        f"the ledger of {rule_id} names the test {test_name} for {name}, and the build does not "
+                        f"register it.  Remove the row",
                         "unknown",
-                        name,
+                        test_name,
                     )
                 )
     return found
@@ -167,30 +182,39 @@ def measure_of(rule_id: str, record: cost_record.TestRecord) -> float:
 
 
 def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of test-time or test-memory with the rows of the kind of the build written again (THE WRITE).
+    """Return the ledger of test-time or test-memory with the rows of the configuration written again (THE WRITE).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the build has no kind
-        rule_ledger.LedgerError: If the ledger is not the ledger of a rule of LEDGER_RULES, or the test list or a record
-            does not read
+        rule_ledger.LedgerError: If the ledger is not a ledger of LEDGER_RULES, or an input does not read.  An input is
+            the name of the configuration, the test list or a record
     """
     if ledger.rule not in LEDGER_RULES:
         raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(LEDGER_RULES)}")
     build = context.require_build()
-    kind = context.kind()
+    names_found = names_of(context)
+    if isinstance(names_found, check_report.Finding):
+        raise rule_ledger.LedgerError(names_found.message)
+    kind, name = names_found
     budget = context.budget(ledger.rule)
     try:
-        names = {test.name for test in ctest_reader.tests(build)}
+        registered = {test.name for test in ctest_reader.tests(build)}
         records = ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
         raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
-    base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
-    for name, record in sorted(records.items()):
+    base = {
+        key: entry
+        for key, entry in ledger.base.items()
+        if key.kind != name or (key.entity in registered and key.entity not in records)
+    }
+    for test_name, record in sorted(records.items()):
         measure = measure_of(ledger.rule, record)
-        if name not in names or check_report.classify(measure, budget) != "error":
-            continue
-        key = rule_ledger.Key("", kind, name)
+        key = rule_ledger.Key("", name, test_name)
         earlier = ledger.base.get(key)
+        level = check_report.classify(measure, budget)
+        has_kind_row = name != kind and rule_ledger.Key("", kind, test_name) in ledger.base
+        if test_name not in registered or level is None or (earlier is None and (level != "error" or has_kind_row)):
+            continue
         kept = earlier.reason if earlier is not None else reason or DEFAULT_REASON
-        base[key] = rule_ledger.Entry(key, round(measure, 2), kept)
+        base[key] = rule_ledger.Entry(key, cost_budget.kept_value(measure), kept)
     return replace(ledger, base=base)

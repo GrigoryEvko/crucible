@@ -7,6 +7,7 @@ THE FILE
         format 1
         rule RULE
         configuration NAME KEY VALUE
+        reason PREFIX | REASON
         PATH | KIND | VALUE | ENTITY | REASON
         @NAME | PATH | KIND | DELTA | ENTITY | REASON
 
@@ -45,6 +46,22 @@ THE POLICIES
     reason as the cause, and it does not tell the reader to remove a finding.
     The text of a count row with no reason tells the reader to remove a
     finding and to lower its count.
+
+THE REASON OF A PREFIX
+    A row `reason PREFIX | REASON` gives the reason of each count row of a
+    path that PREFIX holds, in a ledger of the policy count.  A PREFIX with
+    "/" as its last character holds each path that starts with it.  Each
+    other PREFIX holds only the path that is equal to it.  When two rows hold
+    a path, the longer PREFIX gives the reason.  The reason of a row of its
+    own comes before the reason of a prefix (kept_reason()).
+
+    A count row that a reason row holds is a keep row, and the policy count
+    applies to its counts.  The REASON names the step of the plan that
+    removes the findings.  The reason rows come after the configuration rows
+    and before the first entry row.  A reason row that holds no count row is
+    an error.  A write removes each reason row that holds no count row of its
+    result.  The reason rows are header rows, and count_rows() does not count
+    them.
 
 A MODULE OUTSIDE THE ENGINES
     A legacy module that reads its own ledger gets its rule with rule_of(),
@@ -123,6 +140,8 @@ NEW_COMMENT = (
 )
 # The mark of each row that rows_of_configuration() prints, so that import_rows() finds it in a log.
 ROW_MARK = "ledger-row: "
+# The first word of a row that gives the reason of each count row that a prefix holds (THE REASON OF A PREFIX).
+REASON_WORD = "reason"
 # The name of the rows with the largest count of each key over the configurations (THE MAXIMUM).  It is not a
 # lowercase word, and no configuration can have it.
 MAXIMUM = "*"
@@ -169,11 +188,25 @@ class Configuration:
 
 
 @dataclass(frozen=True, slots=True)
+class PrefixReason:
+    """One row `reason PREFIX | REASON`: the prefix, the reason and the line (THE REASON OF A PREFIX)."""
+
+    prefix: str
+    reason: str
+    line: int = 0
+
+    def holds(self, path: str) -> bool:
+        """Return True when the prefix holds a path (THE REASON OF A PREFIX)."""
+        return path.startswith(self.prefix) if self.prefix.endswith("/") else path == self.prefix
+
+
+@dataclass(frozen=True, slots=True)
 class Ledger:
     """The rows of the ledger of one rule.
 
     `deltas` holds the difference rows of each configuration other than the
-    base, for the policy count.
+    base, for the policy count.  `reasons` holds the reason rows (THE REASON
+    OF A PREFIX).
     """
 
     rule: str
@@ -182,6 +215,7 @@ class Ledger:
     configurations: tuple[Configuration, ...] = ()
     base: Mapping[Key, Entry] = field(default_factory=dict)
     deltas: Mapping[str, Mapping[Key, Entry]] = field(default_factory=dict)
+    reasons: tuple[PrefixReason, ...] = ()
 
     @property
     def base_name(self) -> str | None:
@@ -234,6 +268,37 @@ class Ledger:
         base = self.base.get(key)
         delta_reason = next((entry.reason for entry in deltas if entry.reason), "")
         return delta_reason or (base.reason if base is not None else "")
+
+    def prefix_reason(self, path: str) -> PrefixReason | None:
+        """Return the reason row with the longest prefix that holds a path, or None (THE REASON OF A PREFIX).
+
+        Complexity: linear in the reason rows.
+        """
+        holding = [item for item in self.reasons if item.holds(path)]
+        return max(holding, key=lambda item: len(item.prefix)) if holding else None
+
+    def kept_reason(self, key: Key, name: str | None = None) -> str:
+        """Return the reason that keeps the findings of a key: of its own row (reason_of()), else of a prefix."""
+        own = self.reason_of(key, name)
+        if own:
+            return own
+        found = self.prefix_reason(key.path)
+        return found.reason if found is not None else ""
+
+    def count_keys(self) -> set[Key]:
+        """Return the key of each count row: each base row with a count, and each difference row."""
+        keys = set(base_counts(self.base)) if self.policy == Policy.COUNT else set()
+        for table in self.deltas.values():
+            keys |= set(table)
+        return keys
+
+    def idle_reasons(self) -> list[PrefixReason]:
+        """Return each reason row that holds no count row (THE REASON OF A PREFIX).
+
+        Complexity: linear in the reason rows times the count rows.
+        """
+        paths = {key.path for key in self.count_keys()}
+        return [item for item in self.reasons if not any(item.holds(path) for path in paths)]
 
     def line_of(self, key: Key, name: str | None = None) -> int:
         """Return the line of the row of a key: the difference row, else the base row, else the first row of its path.
@@ -361,13 +426,17 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
     facts: dict[str, dict[str, str]] = {}
     base: dict[Key, Entry] = {}
     deltas: dict[str, dict[Key, Entry]] = {}
+    reasons: dict[str, PrefixReason] = {}
     is_header = True
     for row in all_rows[2:]:
+        if len(row.words) == 2 and row.words[0] == REASON_WORD:
+            reasons_row(row, policy, is_header, reasons)
+            continue
         if row.words[0] == "configuration" and not row.cells:
-            if not is_header or len(row.words) != 4 or not rows_grammar_name(row.words[1]):
+            if not is_header or reasons or len(row.words) != 4 or not rows_grammar_name(row.words[1]):
                 raise row.error(
                     "a configuration row is 'configuration NAME KEY VALUE', with a lowercase NAME, "
-                    "before the first entry row"
+                    "before the first reason row and the first entry row"
                 )
             name = row.words[1]
             if name not in facts:
@@ -405,7 +474,15 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
             raise row.error(f"a row of the policy {policy}{words} gives a reason")
         base[key] = Entry(key, value, reason, row.line)
     ordered = tuple(Configuration(item.name, tuple(facts[item.name].items())) for item in configurations)
-    ledger = Ledger(rule_id, policy, comment, ordered, base, deltas)
+    ledger = Ledger(rule_id, policy, comment, ordered, base, deltas, tuple(reasons.values()))
+    idle = ledger.idle_reasons()
+    if idle:
+        raise rows_grammar.RowsError(
+            shown,
+            idle[0].line,
+            f"the reason row of {idle[0].prefix} holds no count row.  Remove it, or write the ledger again with "
+            f"`python3 utils/bin/guard write --rule {rule_id}`",
+        )
     admits = ledger.admits()
     for table in deltas.values():
         for key, entry in table.items():
@@ -425,6 +502,25 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
                 shown, 0, f"a difference of the configuration {item.name} makes a count below 0"
             )
     return ledger
+
+
+def reasons_row(row: rows_grammar.Row, policy: Policy, is_header: bool, reasons: dict[str, PrefixReason]) -> None:
+    """Read one row `reason PREFIX | REASON` into `reasons` (THE REASON OF A PREFIX).
+
+    Raises:
+        rows_grammar.RowsError: If the row does not obey THE REASON OF A PREFIX.  The ledger must have the policy
+            count, and the row must come before the first entry row.  It must have one reason, and a new prefix
+    """
+    if policy != Policy.COUNT:
+        raise row.error(f"only a ledger of the policy count has a reason row, and this ledger has the policy {policy}")
+    if not is_header:
+        raise row.error("a reason row comes after the configuration rows and before the first entry row")
+    if len(row.cells) != 1 or not row.cells[0]:
+        raise row.error("a reason row is 'reason PREFIX | REASON', with a reason")
+    prefix = row.words[1]
+    if prefix in reasons:
+        raise row.error(f"the prefix {prefix} has a second reason row.  The first is at line {reasons[prefix].line}")
+    reasons[prefix] = PrefixReason(prefix, row.cells[0], row.line)
 
 
 def is_delta_head(head: str) -> bool:
@@ -506,6 +602,10 @@ def render(ledger: Ledger) -> str:
         for item in ledger.configurations
         for key, value in item.facts
     ]
+    header += [
+        rows_grammar.render([REASON_WORD, item.prefix], [item.reason])
+        for item in sorted(ledger.reasons, key=lambda item: item.prefix)
+    ]
     # The first item of a key puts each base row before each difference row.
     entries = [
         (
@@ -569,11 +669,49 @@ def described(key: Key) -> str:
     return " ".join(parts) if parts else "the finding"
 
 
-def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int = 0, by_reason: int = 0) -> str:
+def prefix_text(prefix: PrefixReason | None) -> str:
+    """Return the words that name the reason row of a prefix for a warning, or an empty text for no row."""
+    if prefix is None:
+        return ""
+    return f".  The row `{REASON_WORD} {prefix.prefix}` at line {prefix.line} gives the reason: {prefix.reason}"
+
+
+def kept_words(ledger: Ledger, keys: Iterable[Key], name: str | None = None) -> tuple[str, str]:
+    """Return the words of a warning of a group of kept counts: their reason state and the reason rows of a prefix.
+
+    A rule that gives one warning for each directory, such as the rule
+    quarantine, uses the two texts.  The first text comes after its count, and
+    the second text comes at the end of its message.  The first text is
+    ", each with its reason" when each key has a reason.  The reason can be
+    that of the row of the key or that of a prefix.  The second text names the
+    reason rows that give the reason of a key with no reason of its own.
+    Complexity: linear in the keys times the reason rows.
+    """
+    listed = list(keys)
+    if not listed or any(not ledger.kept_reason(key, name) for key in listed):
+        return "", ""
+    used = {ledger.prefix_reason(key.path) for key in listed if not ledger.reason_of(key, name)}
+    rows = sorted((item for item in used if item is not None), key=lambda item: item.line)
+    if len(rows) > 1:
+        lines = ", ".join(str(item.line) for item in rows)
+        return ", each with its reason", f".  The reason rows at the lines {lines} give the reasons"
+    return ", each with its reason", prefix_text(rows[0] if rows else None)
+
+
+def admitted_text(
+    rule: Rule,
+    path: str,
+    total: int,
+    shown: str,
+    by_admit: int = 0,
+    by_reason: int = 0,
+    prefix: PrefixReason | None = None,
+) -> str:
     """Return the message of the warning of one path with admitted findings, with the action of the policy.
 
     `by_admit` is the number of the findings that a row with the value admit admits (THE PART OF NO CONFIGURATION).
-    `by_reason` is the number of the findings that keep rows count: count rows with a reason (THE POLICIES).
+    `by_reason` is the number of the findings that keep rows count (THE POLICIES).  A keep row has a reason of its
+    own or of a prefix.  `prefix` is the reason row of the path (THE REASON OF A PREFIX).
     """
     admit = (
         f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
@@ -595,7 +733,7 @@ def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int =
         return (
             f"{path} has {total} findings that rows of the ledger keep, each with its reason: {shown}.  The reason of "
             f"each row tells why its findings stay.  A count decreases only in the change that removes one of its "
-            f"findings, and that change writes the ledger with {command}{admit_part}"
+            f"findings, and that change writes the ledger with {command}{admit_part}{prefix_text(prefix)}"
         )
     counted = (
         f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its count "
@@ -605,7 +743,7 @@ def admitted_text(rule: Rule, path: str, total: int, shown: str, by_admit: int =
         counted += (
             f".  Keep rows count {by_reason} of them, and the reason of each such row tells why its findings stay"
         )
-    return counted + admit_part
+    return counted + admit_part + prefix_text(prefix)
 
 
 def admitted_warnings(
@@ -614,11 +752,12 @@ def admitted_warnings(
     lines: Mapping[str, int],
     by_admit: Mapping[str, int] | None = None,
     by_reason: Mapping[str, int] | None = None,
+    prefixes: Mapping[str, PrefixReason] | None = None,
 ) -> list[check_report.Finding]:
     """Return one warning for each path with admitted findings: the number of findings of each kind.
 
-    `by_admit` gives the number of the findings of each path that a row with the value admit admits, and `by_reason`
-    the number that keep rows count.
+    `by_admit` gives the number of the findings of each path that a row with the value admit admits, `by_reason` the
+    number that keep rows count, and `prefixes` the reason row of a prefix that gives the reason of a path.
     """
     findings: list[check_report.Finding] = []
     for path, kinds in sorted(admitted.items()):
@@ -636,6 +775,7 @@ def admitted_warnings(
                     shown,
                     (by_admit or {}).get(path, 0),
                     (by_reason or {}).get(path, 0),
+                    (prefixes or {}).get(path),
                 ),
                 "admitted",
                 path,
@@ -672,6 +812,7 @@ def compare(
     lines: dict[str, int] = {}
     by_admit: Counter[str] = Counter()
     by_reason: Counter[str] = Counter()
+    prefixes: dict[str, PrefixReason] = {}
     if rule.policy == Policy.COUNT:
         expected = ledger.expected(configuration)
         admits = ledger.admits()
@@ -711,15 +852,18 @@ def compare(
             elif measured > 0:
                 admitted.setdefault(key.path, Counter())[key.kind] += measured
                 lines.setdefault(key.path, line)
-                if ledger.reason_of(key, configuration):
+                if ledger.kept_reason(key, configuration):
                     by_reason[key.path] += measured
+                prefix = None if ledger.reason_of(key, configuration) else ledger.prefix_reason(key.path)
+                if prefix is not None:
+                    prefixes[key.path] = prefix
     else:
         for key, items in sorted(by_key.items()):
             if key not in ledger.base:
                 result += items
         for key, entry in sorted(ledger.base.items()):
             result += admit_verdict(rule, key, entry, len(by_key.get(key, [])), admitted, lines)
-    return result + admitted_warnings(rule, admitted, lines, by_admit, by_reason)
+    return result + admitted_warnings(rule, admitted, lines, by_admit, by_reason, prefixes)
 
 
 def admit_verdict(
@@ -841,7 +985,7 @@ def write_counts(
             )
         kept = {key: entry for key, entry in base.items() if key in counts}
         kept.update({key: Entry(key, ADMIT_VALUE, reason or "") for key in new_keys})
-        return replace(ledger, base=kept)
+        return needed_reasons(replace(ledger, base=kept))
     is_base = configuration is None or configuration == ledger.base_name or not ledger.configurations
     # The rows with the value admit belong to no configuration (THE PART OF NO CONFIGURATION).  A write keeps each one
     # that admits a finding, and their keys have no count.
@@ -861,15 +1005,25 @@ def write_counts(
         new_base = {
             key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in counts.items()
         }
-        return replace(
-            ledger, base={**new_base, **kept_admits}, deltas=other_deltas(ledger, deltas, counts, moved, keep_others)
+        return needed_reasons(
+            replace(
+                ledger,
+                base={**new_base, **kept_admits},
+                deltas=other_deltas(ledger, deltas, counts, moved, keep_others),
+            )
         )
     # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
     # of the base moves them.
     stored = base_counts(ledger.base)
     new_deltas = dict(deltas)
     new_deltas[configuration] = difference_table(counts, stored, deltas.get(configuration, {}), reason or "")
-    return replace(ledger, base={**base_counts_rows(ledger.base), **kept_admits}, deltas=new_deltas)
+    return needed_reasons(replace(ledger, base={**base_counts_rows(ledger.base), **kept_admits}, deltas=new_deltas))
+
+
+def needed_reasons(ledger: Ledger) -> Ledger:
+    """Return the ledger with no reason row that holds no count row (THE REASON OF A PREFIX)."""
+    idle = ledger.idle_reasons()
+    return replace(ledger, reasons=tuple(item for item in ledger.reasons if item not in idle)) if idle else ledger
 
 
 def base_counts_rows(base: Mapping[Key, Entry]) -> dict[Key, Entry]:
@@ -980,7 +1134,7 @@ def import_rows(ledger: Ledger, log_text: str) -> Ledger:
     configurations.append(Configuration(name, tuple(facts.items())))
     deltas = {key: value for key, value in ledger.deltas.items() if key != name}
     deltas[name] = table
-    result = replace(ledger, configurations=tuple(configurations), deltas=deltas)
+    result = needed_reasons(replace(ledger, configurations=tuple(configurations), deltas=deltas))
     parse(render(result), "the import", result.rule, result.policy)
     return result
 
@@ -989,9 +1143,10 @@ def count_rows(text: str | None) -> int | None:
     """Return the number of rows that one version of a ledger admits, or None for no text.
 
     A ledger of format 1 counts its entry rows and its difference rows, and
-    not its header rows.  A ledger of an earlier format counts each line that
-    is not empty and not a comment.  A version of format 1 that does not obey
-    the grammar counts its lines that have a cell.
+    not its header rows: the configuration rows and the reason rows.  A
+    ledger of an earlier format counts each line that is not empty and not a
+    comment.  A version of format 1 that does not obey the grammar counts its
+    lines that have a cell.
     """
     if text is None:
         return None
@@ -999,7 +1154,13 @@ def count_rows(text: str | None) -> int | None:
     rows = [line for line in lines if line and not line.startswith("#")]
     if rows[:1] != [f"format {FORMAT}"]:
         return len(rows)
-    return sum(1 for line in rows if rows_grammar.SEPARATOR in line)
+    return sum(1 for line in rows if rows_grammar.SEPARATOR in line and not is_reason_line(line))
+
+
+def is_reason_line(line: str) -> bool:
+    """Return True when a line of a ledger is a reason row, with the two words `reason PREFIX` in its head."""
+    head = [word for word in line.split(rows_grammar.SEPARATOR, 1)[0].replace("\t", " ").split(" ") if word]
+    return len(head) == 2 and head[0] == REASON_WORD
 
 
 def format_row(text: str | None) -> str | None:

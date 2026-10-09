@@ -1,0 +1,6 @@
+# The ledger of the plant: a count row with no reason of its own, and a reason
+# row of its directory.  The warning gives the reason of the reason row.
+format 1
+rule erased-brand
+reason include/fixy/ | a planted step of the plan writes the brand of each site
+include/fixy/Planted.h | erased-brand | 1 | Permission | -

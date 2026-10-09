@@ -77,7 +77,38 @@ def problem_cases(expect: testing.Expect) -> None:
     expect("a good ledger has no problem", problems(f"{CONFIGURATION}@build/a | fact | 1 | x | -\n") == [])
     expect(
         "a configuration with no tier is a problem",
-        any("configuration KIND tier TIER" in item for item in problems("configuration k kind k\n")),
+        any("configuration NAME tier TIER" in item for item in problems("configuration k kind k\n")),
+    )
+    benches = "configuration k-bench-fuzz kind k\nconfiguration k-bench-fuzz tier t\n"
+    expect(
+        "a configuration whose name has the words of the options that its rows turn on has no problem",
+        problems(
+            f"{CONFIGURATION}{benches}configuration k-bench-fuzz CRUCIBLE_BENCH on\n"
+            f"configuration k-bench-fuzz CRUCIBLE_FUZZ on\n@build/a | fact | 1 | x | -\n"
+        )
+        == [],
+    )
+    expect(
+        "a configuration whose name has the word of an option that its rows do not turn on is a problem",
+        any(
+            "configuration NAME OPTION on" in item
+            for item in problems(f"{CONFIGURATION}{benches}configuration k-bench-fuzz CRUCIBLE_BENCH on\n")
+        ),
+    )
+    expect(
+        "an option row with a value other than on is a problem",
+        any(
+            "configuration NAME OPTION on" in item
+            for item in problems(
+                f"{CONFIGURATION}configuration k-bench kind k\nconfiguration k-bench tier t\n"
+                f"configuration k-bench CRUCIBLE_BENCH off\n"
+            )
+        ),
+    )
+    expect(
+        "the name of a configuration is its build kind with the word of each option that it turns on, in order",
+        configured.configuration_name("k", {"CRUCIBLE_FUZZ": "on", "CRUCIBLE_BENCH": "on"}) == "k-bench-fuzz"
+        and configured.configuration_name("k", {"CRUCIBLE_BENCH": "off"}) == "k",
     )
     expect(
         "a row that the rule refuses gives the shape",

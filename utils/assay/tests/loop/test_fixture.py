@@ -670,11 +670,17 @@ class StoreTest:
         line = finding(listed[1], "warning")
         self.expect(listed[0] == 0 and line is not None and "a planted reason" in line,
                     f"a fixture with a ledger row above the error threshold warns: {listed[0]} {line}")
+        plant_ledger(ledger, "fixture-cpu", "- | - | 0.000001 | neg_convert | a planted reason\n")
+        risen = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        line = finding(risen[1], "error")
+        self.expect(risen[0] == 1 and line is not None and "more than the row of" in line,
+                    f"a CPU time above the kept value of its row with the noise fails again: {risen[0]} {line}")
+        plant_ledger(ledger, "fixture-cpu", "- | - | 1 | neg_convert | a planted reason\n")
         budget(1000, 2000)
         stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(stale[1], "error")
         self.expect(stale[0] == 1 and line is not None and f"Remove its row from {ledger}" in line,
-                    f"a ledger row of a fixture at or below the error threshold fails: {stale[0]} {line}")
+                    f"a ledger row of a fixture at or below the warning threshold fails: {stale[0]} {line}")
         plant_ledger(ledger, "fixture-cpu", "neg_convert | - | 1 | - | a planted reason\n")
         malformed = self.run("neg_convert", *CONVERT, **env)
         line = finding(malformed[1], "error")
@@ -747,16 +753,21 @@ class StoreTest:
         ci_run = self.run("neg_convert", *CONVERT, warnings_dir=warnings, GITHUB_ACTIONS="true", **env)
         self.expect(ci_run[0] == 1 and finding(ci_run[1], "error", "fixture-instructions") is not None,
                     f"on a CI runner, a count above the error threshold still fails: {ci_run[0]}")
-        plant_ledger(ledger, "fixture-instructions", "- | - | 1 | neg_convert | a planted reason\n")
+        plant_ledger(ledger, "fixture-instructions", "- | - | 1000 | neg_convert | a planted reason\n")
         listed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(listed[1], "warning", "fixture-instructions")
         self.expect(listed[0] == 0 and line is not None and "a planted reason" in line,
                     f"a fixture with a ledger row above the error threshold warns: {listed[0]} {line}")
+        plant_ledger(ledger, "fixture-instructions", "- | - | 0.000001 | neg_convert | a planted reason\n")
+        risen = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        line = finding(risen[1], "error", "fixture-instructions")
+        self.expect(risen[0] == 1 and line is not None and "more than the row of" in line,
+                    f"a count above the kept value of its row with the noise fails again: {risen[0]} {line}")
         budget((1000, 2000), (1000, 2000))
         stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(stale[1], "error", "fixture-instructions")
         self.expect(stale[0] == 1 and line is not None and f"Remove its row from {ledger}" in line,
-                    f"a ledger row of a fixture at or below the error threshold fails: {stale[0]} {line}")
+                    f"a ledger row of a fixture at or below the warning threshold fails: {stale[0]} {line}")
         ledger.unlink()
         table.write_text(planted_registry(("fixture-cpu", 1000, 2000, "s")))
         missing = self.run("neg_convert", *CONVERT, **env)

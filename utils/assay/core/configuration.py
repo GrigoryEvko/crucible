@@ -15,8 +15,9 @@ THE CONFIGURATION
     syntax`).  CRUCIBLE_SENSE_HUB_V2 is no key.  Each build compiles
     the SenseHub v2 sources in two object libraries, with and without
     CRUCIBLE_SENSE_HUB_EXTENDED, and that option then changes no finding line.
-    A rule can read fewer facts.  The rule artifact-symbols reads only the
-    build kind and the tier, and the build kind is then the name.
+    A rule can read fewer facts.  The rules of the engine elf read only the
+    build kind, the tier and the options of NAME_OPTIONS that the build turns
+    on (assay.guard.engines.elf.configured).
 
 THE POLICY
     Each rule with rows that change with the configuration judges each build,
