@@ -376,6 +376,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
+from assay.core import budget as cost_budget
 from assay.core import record as cost_record
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.readers import compdb, sarif
@@ -2371,6 +2372,8 @@ _LEDGERS = {
 }
 _GIGA = 1e9
 _ADVICE = "Include only the header that the fixture attacks, or make the tables that it does not read lazy."
+# The verdict of an error of the CPU time when the instruction count holds the error level (_row_verdict()).
+_DEMOTED = "demoted"
 
 
 class BudgetRow:
@@ -2588,40 +2591,35 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
 
 
 def _row_verdict(row: BudgetRow, fixture_name: str, value: float, holds_error: bool) -> str:
-    """Return the kind of the finding of one measure against one measured rule and its ledger, or an empty text.
+    """Return the verdict of one measure against one measured rule and its ledger (assay.core.budget, THE VERDICT).
 
-    The kinds are "listed-within" (a ledger row of a fixture at or below the
-    error threshold, an error), "listed" (a ledger row above it, a warning),
-    "demoted" (above the error threshold of a rule that does not hold the error
-    level, a warning), "error" and "warning".
+    An error of a rule that does not hold the error level is _DEMOTED, a
+    warning: the CPU time of a compile with an instruction count.
     """
-    if fixture_name in row.ledger:
-        return "listed-within" if value <= row.error else "listed"
-    if value > row.error:
-        return "error" if holds_error else "demoted"
-    return "warning" if value > row.warn else ""
+    found = cost_budget.verdict(value, row.warn, row.error, fixture_name in row.ledger)
+    return _DEMOTED if found == cost_budget.ERROR and not holds_error else found
 
 
 def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: str, place: str, text: str,
                unit: str) -> list[object]:
-    """Return the finding of one measure of a fixture compile, for the kind `verdict` of `_row_verdict`."""
-    if verdict == "listed-within":
+    """Return the finding of one measure of a fixture compile, for the verdict of `_row_verdict`."""
+    if verdict == cost_budget.UNNEEDED:
         return [report.judged("error", place, 0, row.check,
                               f"{text}, no more than the error threshold {row.error:g} {unit}.  Remove its row from "
                               f"{row.ledger_shown}.")]
-    if verdict == "listed":
+    if verdict == cost_budget.ADMITTED:
         return [report.judged("warning", place, 0, row.check,
                               f"{text}, more than the error threshold {row.error:g} {unit}.  It has a row in the "
                               f"ledger: {row.ledger[fixture_name]}")]
-    if verdict == "demoted":
+    if verdict == _DEMOTED:
         return [report.Finding("warning", place, 0, row.check,
                                f"{text}, more than the error threshold {row.error:g} {unit}.  The compile has an "
                                f"instruction count, so the rule {_INSTRUCTIONS_CHECK} holds the error level, and the "
                                f"CPU time, which rises with the load of the host, gives a warning only.")]
-    if verdict == "error":
+    if verdict == cost_budget.ERROR:
         return [report.judged("error", place, 0, row.check,
                               f"{text}, more than the error threshold {row.error:g} {unit}.  {_ADVICE}")]
-    if verdict == "warning":
+    if verdict == cost_budget.WARNING:
         return [report.judged("warning", place, 0, row.check,
                               f"{text}, more than the warning threshold {row.warn:g} {unit}.")]
     return []

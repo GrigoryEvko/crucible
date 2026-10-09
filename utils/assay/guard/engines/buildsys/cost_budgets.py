@@ -753,7 +753,7 @@ def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Fi
 def ledger_rows(context: BuildContext, rule_id: str, kind: str) -> cost_budget.Rows:
     """Return the ledger rows of the kind of the build, with each problem of the ledger as an error of the kind input."""
     rows = cost_budget.read_rows(rule_id, ledger_shape(rule_id), rule_ledger.ledger_path(rule_id, context.root), kind)
-    return replace(rows, problems=tuple(replace(problem, kind="input") for problem in rows.problems))
+    return rows.replaced(problems=tuple(replace(problem, kind="input") for problem in rows.problems))
 
 
 def budget_written(

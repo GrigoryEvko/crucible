@@ -9,9 +9,9 @@ THE JUDGE
     no ledger row admits fails.  Each run writes the record of the test,
     BUILD_DIR/test-records/NAME.test.cost (assay.core.record, THE RECORDS).
     Each test writes its warnings to the file RULE.NAME.txt of the warnings
-    directory.  The step meter keeps a judge of its own, because the import
-    closure of a step meter does not hold assay.core.report
-    (assay.core.budget, THE STEP METERS).
+    directory.  The step meter judges with verdict() of assay.core.budget.
+    It gives its own messages, because the import closure of a step meter
+    does not hold assay.core.report (assay.core.budget, THE STEP METERS).
 
 THE RULE
     A test cannot see a test that runs with no judge, or a ledger row that
@@ -109,7 +109,7 @@ def ledger_rows(context: BuildContext, kind: str) -> tuple[dict[str, cost_budget
     for rule_id in LEDGER_RULES:
         path = rule_ledger.ledger_path(rule_id, context.root)
         rows = cost_budget.read_rows(rule_id, cost_meter.ITEM_NAME, path, kind)
-        found[rule_id] = replace(rows, shown=context.shown(path))
+        found[rule_id] = rows.replaced(shown=context.shown(path))
         problems += [replace(problem, path=context.shown(path), check=RULE, kind="input") for problem in rows.problems]
     return found, problems
 

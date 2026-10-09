@@ -100,6 +100,7 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {
                 "assay",
                 "assay.core",
+                "assay.core.budget",
                 "assay.core.meter",
                 "assay.core.record",
                 "assay.core.value",
@@ -118,6 +119,7 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {
                 "assay",
                 "assay.core",
+                "assay.core.budget",
                 "assay.core.meter",
                 "assay.core.record",
                 "assay.core.value",
@@ -132,6 +134,7 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {
                 "assay",
                 "assay.core",
+                "assay.core.budget",
                 "assay.core.paths",
                 "assay.core.record",
                 "assay.core.value",
@@ -164,11 +167,13 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
             {
                 "assay",
                 "assay.core",
+                "assay.core.budget",
                 "assay.core.meter",
                 "assay.core.paths",
                 "assay.core.registry",
                 "assay.core.report",
                 "assay.core.rows",
+                "assay.core.value",
             }
         ),
         PARSER_TOOLS | frozenset({"typing"}),

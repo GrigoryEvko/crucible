@@ -75,6 +75,7 @@ planted ledger.  utils/assay/tests/loop/test_step.py uses them.
 import os
 import sys
 
+from assay.core import budget as cost_budget
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 
@@ -139,18 +140,13 @@ def admission(memory_row: str, output: str) -> tuple[bool, str]:
         return False, (f"the build kind is not known ({cost_meter.KIND_FILE} of the build directory), so no row of "
                        f"{shown} can admit it")
     item = os.path.relpath(output, build_dir)
-    try:
-        rows, problems, _ = cost_meter.read_kind_rows(memory_row, cost_meter.ITEM_OUTPUT, ledger)
-    except OSError as error:
-        rows, problems = {}, [(0, f"the ledger cannot be read ({error})")]
-    row = rows.get((kind, item))
+    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, kind, item)
     if row is None:
         words = f"no row of {shown} admits {item} for the kind {kind}"
-        if problems:
-            line, text = problems[0]
-            words += f", and the ledger has a problem at {shown}:{line}: {text}"
+        if problem:
+            words += f", and the ledger has a problem at {shown}:{problem}"
         return False, words
-    return True, f"the row {shown}:{row[0]} admits it: {row[2]}"
+    return True, f"the row {shown}:{row.line} admits it: {row.reason}"
 
 
 def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
@@ -178,7 +174,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
                               f"{run.cpu_limit_s} s, three times the error threshold of {budget[time_row][1]:g} s "
                               f"(rounded up to a whole second), so the operating system stopped it")
         return "failed", None
-    if memory_row in budget and run.peak_gb > budget[memory_row][1]:
+    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], False) == cost_budget.ERROR:
         is_admitted, words = admission(memory_row, output)
         message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, over the error threshold of "
                    f"{budget[memory_row][1]:g} GB, and {words}")
@@ -198,10 +194,11 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
     check = None
     for row, value, text, unit in ((time_row, run.cpu_s, f"{run.cpu_s:.1f} s CPU", "s"),
                                    (memory_row, run.peak_gb, f"{run.peak_gb:.2f} GB of peak memory", "GB")):
-        if row in budget and value > budget[row][0]:
+        found = cost_budget.verdict(value, *budget[row], False) if row in budget else cost_budget.NO_FINDING
+        if found != cost_budget.NO_FINDING:
             check = check or row
-            level, limit = ("error", budget[row][1]) if value > budget[row][1] else ("warning", budget[row][0])
-            parts.append(f"{text}, over the {level} threshold of {limit:g} {unit}")
+            limit = budget[row][1] if found == cost_budget.ERROR else budget[row][0]
+            parts.append(f"{text}, over the {found} threshold of {limit:g} {unit}")
     if check is None:
         return "built", None
     return "built", ("warning", check, f"the {step} job took " + ", and ".join(parts))

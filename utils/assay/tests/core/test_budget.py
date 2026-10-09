@@ -34,6 +34,58 @@ def level_of(found: check_report.Finding | None) -> str:
     return "none" if found is None else found.level
 
 
+def verdict_cases(expect: testing.Expect) -> None:
+    """Give the verdict of one value against two thresholds and a row (THE VERDICT)."""
+    cases = {
+        (2.0, False): cost_budget.NO_FINDING,
+        (3.0, False): cost_budget.WARNING,
+        (4.0, False): cost_budget.WARNING,
+        (4.5, False): cost_budget.ERROR,
+        (4.5, True): cost_budget.ADMITTED,
+        (4.0, True): cost_budget.UNNEEDED,
+        (1.0, True): cost_budget.UNNEEDED,
+    }
+    for (value, is_admitted), wanted in cases.items():
+        expect(
+            f"the value {value} with{'' if is_admitted else ' no'} row gives the verdict {wanted or 'none'}",
+            cost_budget.verdict(value, 2.0, 4.0, is_admitted) == wanted,
+        )
+    budget = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
+    expect(
+        "check_report.classify() agrees with verdict() for each value with no row",
+        [check_report.classify(value, budget) for value in (2.0, 3.0, 4.5)] == [None, "warning", "error"],
+    )
+
+
+def row_cases(expect: testing.Expect) -> None:
+    """Give the row of one item and kind, the shown ledger and the first problem of the ledger (THE ROWS)."""
+    with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
+        ledger = str(Path(scratch) / "compile-memory.txt")
+        found, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
+        expect("a ledger that is not there gives no row and no problem", found is None and not problem)
+        cost_meter.write_kind_rows(
+            "compile-memory",
+            cost_meter.ITEM_OUTPUT,
+            ledger,
+            {("k", "unit.o"): (5.0, "a planted reason")},
+            "# a planted ledger\n",
+        )
+        found, shown, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
+        expect(
+            "row_of() gives the row of the item and the kind, and the ledger as a message shows it",
+            found is not None
+            and (found.value, found.reason) == (5.0, "a planted reason")
+            and shown.endswith("compile-memory.txt")
+            and not problem,
+        )
+        other, _, _ = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "other", "unit.o")
+        expect("row_of() gives no row of a different kind", other is None)
+        with open(ledger, "a", encoding="utf-8") as handle:
+            handle.write("- | k | 1.0 | - | a row with no item\n")
+        _, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
+        expect("row_of() gives the first problem of the ledger with its line", problem.split(":")[0].isdigit())
+
+
 def judge_cases(expect: testing.Expect) -> None:
     """Judge one value against the thresholds and the rows (THE JUDGE)."""
     empty = rows_of({})
@@ -116,4 +168,4 @@ def rows_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (judge_cases, rows_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (verdict_cases, row_cases, judge_cases, rows_cases))

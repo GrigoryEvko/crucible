@@ -96,6 +96,7 @@ module.  `guard selftest tests.loop.test_teststep` runs its test.
 import os
 import sys
 
+from assay.core import budget as cost_budget
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 
@@ -180,14 +181,9 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
     if kind is None:
         return None
     directory = ledgers if ledgers is not None else os.environ.get(LEDGERS_ENV)
-    try:
-        rows, _, shown = cost_meter.read_kind_rows(row, cost_meter.ITEM_NAME, cost_meter.ledger_file(row, directory))
-    except OSError:
-        return None
-    found = rows.get((kind, name))
-    if found is None:
-        return None
-    return f"{shown}:{found[0]}", found[2]
+    ledger = cost_meter.ledger_file(row, directory)
+    found, shown, _ = cost_budget.row_of(row, cost_meter.ITEM_NAME, ledger, kind, name)
+    return None if found is None else (f"{shown}:{found.line}", found.reason)
 
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
@@ -221,20 +217,21 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         warn, error = budget[row]
         admitted = ledger_row(row, name, kind, ledgers)
         said = f"the test {name} took {text}"
-        if admitted is not None and value <= error:
+        found = cost_budget.verdict(value, warn, error, admitted is not None)
+        if admitted is not None and found == cost_budget.UNNEEDED:
             add("error", row, f"{said}, no more than the error threshold of {error:g} {unit}.  Remove its row "
                               f"{admitted[0]}")
-        elif value > error and admitted is not None:
+        elif admitted is not None:
             add("warning", row, f"{said}, over the error threshold of {error:g} {unit}, and the row {admitted[0]} "
                                 f"admits it: {admitted[1]}")
-        elif value > error and row == "test-time" and kind is not None and "-tsan" in kind:
+        elif found == cost_budget.ERROR and row == "test-time" and kind is not None and "-tsan" in kind:
             add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  The build kind {kind} "
                                 f"budgets no wall time, so the timeout of the test preset is the hard stop")
-        elif value > error:
+        elif found == cost_budget.ERROR:
             add("error", row, f"{said}, over the error threshold of {error:g} {unit}, and no row of "
                               f"utils/ledgers/{row}.txt admits it for the kind {kind}.  Make the test smaller, "
                               f"or split it into tests over disjoint cases")
-        elif value > warn:
+        elif found == cost_budget.WARNING:
             add("warning", row, f"{said}, over the warning threshold of {warn:g} {unit}")
     return findings
 

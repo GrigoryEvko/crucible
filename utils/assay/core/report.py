@@ -53,7 +53,8 @@ THE MEASURED RULES
     A measured rule of utils/registry.txt gives the warning threshold, the
     error threshold and the unit of a quantity (assay.core.registry).
     read_budgets() reads the measured rules, and classify() compares one value
-    with one rule.  A value that is equal to a threshold does not exceed it.
+    with one rule through verdict() of assay.core.budget.  A value that is
+    equal to a threshold does not exceed it.
     A shell script gets the error threshold of one rule with `loop budget
     --error-threshold RULE`.
 
@@ -74,6 +75,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from assay.core import budget as cost_budget
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
@@ -259,11 +261,10 @@ def classify(value: float, budget: Budget) -> Level | None:
         "error" when the value exceeds the error threshold, "warning" when it exceeds only the
         warning threshold, and None when it exceeds neither
     """
-    if value > budget.error:
-        return "error"
-    if value > budget.warn:
-        return "warning"
-    return None
+    found = cost_budget.verdict(value, budget.warn, budget.error, False)
+    if found == cost_budget.NO_FINDING:
+        return None
+    return "error" if found == cost_budget.ERROR else "warning"
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
