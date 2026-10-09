@@ -5,7 +5,9 @@ THE BUILD
     compile database of a build.  ElfContext reads each fact of the build one
     time, on its first use:
       * The build kind of build-kind.txt (assay.core.target.kind_of)
-      * The compiler of the CMake cache, CMAKE_CXX_COMPILER
+      * The compiler of the CMake cache, CMAKE_CXX_COMPILER.  The compiler
+        PREFIX/usr/bin/COMPILER, or PREFIX/bin/COMPILER, has the prefix
+        PREFIX (toolchain_prefix())
       * The target tier of the build (assay.core.target.build_tier)
       * The static libraries of the root CMakeLists.txt.  Each one is a
         target of the type STATIC_LIBRARY in the code model of the CMake file
@@ -112,6 +114,12 @@ NotApplicable = meta_runner.NotApplicable
 
 class BuildError(Exception):
     """The runner cannot read a fact of the build, or a plant does not build."""
+
+
+def toolchain_prefix(compiler: str) -> Path:
+    """Return the prefix of a compiler: PREFIX of PREFIX/usr/bin/COMPILER or of PREFIX/bin/COMPILER (THE BUILD)."""
+    binaries = Path(compiler).parent
+    return binaries.parent.parent if binaries.parent.name == "usr" else binaries.parent
 
 
 @dataclass(frozen=True, slots=True)

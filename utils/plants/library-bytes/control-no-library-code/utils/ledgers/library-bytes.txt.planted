@@ -1,0 +1,6 @@
+# A planted ledger: the archive libfoundation.a has no library code, and its row holds 0.
+format 1
+rule library-bytes
+configuration planted kind planted
+configuration planted tier planted
+@build/libfoundation.a | planted | 0 | - | a planted row of an archive with no library code

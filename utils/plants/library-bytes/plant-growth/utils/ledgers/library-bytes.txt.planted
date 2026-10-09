@@ -1,0 +1,6 @@
+# A planted ledger: the row of the library foundation holds 1 byte of library code.
+format 1
+rule library-bytes
+configuration planted kind planted
+configuration planted tier planted
+@build/libfoundation.a | planted | 1 | - | a planted row below the measure

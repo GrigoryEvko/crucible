@@ -13,6 +13,9 @@ THE READERS
         the dynamic symbols and the versions from each shared library.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
+      * assay.readers.dwarf reads the debug sections, their relocations and
+        the symbols of each relocation.  The rule library-bytes reads the
+        COMDAT groups of each object.
       * assay.readers.sections reads the section .crucible.quarantine of an
         object.
       * assay.readers.objdump gives the names of a disassembly to demangle().

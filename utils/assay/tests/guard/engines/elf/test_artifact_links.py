@@ -34,16 +34,11 @@ MANIFEST = "program examples tool tool.cpp\nprogram vessel vessel_tool vessel.cp
 
 
 def path_cases(expect: testing.Expect) -> None:
-    """Hold the group of a source directory, the prefix of a compiler and the words of a run path (THE PATHS)."""
+    """Hold the group of a source directory and the words of a run path (THE PATHS)."""
     expect(
         "the first directory of a source directory gives the group, and each other directory is tools",
         [artifact_links.group_of(name) for name in ("vessel", "bench", "test", "examples", "")]
         == ["vessel", "benches", "tests", "tools", "tools"],
-    )
-    expect(
-        "the prefix of a compiler is the directory above usr/bin, or above bin",
-        artifact_links.toolchain_prefix("/opt/gcc/usr/bin/g++") == Path("/opt/gcc")
-        and artifact_links.toolchain_prefix("/opt/gcc/bin/g++") == Path("/opt/gcc"),
     )
     words = artifact_links.path_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
     expect(

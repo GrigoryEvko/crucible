@@ -119,8 +119,12 @@ def read_ledger(rule: rule_registry.Rule, root: Path) -> rule_ledger.Ledger | In
         return Inspection((unread,), rule_ledger.empty(rule))
 
 
-def run_inspection(rule_id: str, examine: Callable[[], Inspection], warnings_dir: Path | None) -> int:
+def run_inspection(
+    rule_id: str, examine: Callable[[], Inspection], warnings_dir: Path | None, prints_rows: bool = True
+) -> int:
     """Run the inspection of a build, write its findings and its summary, and print its rows (THE RUN).
+
+    A rule with no rows for an import, such as a rule with a baseline, gives `prints_rows` False.
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -138,7 +142,7 @@ def run_inspection(rule_id: str, examine: Callable[[], Inspection], warnings_dir
         check_report.write_line(judged.note)
     check_report.write_line(inspection.summary)
     ledger = inspection.ledger
-    if not build_config.is_held(ledger, configuration) or status != 0:
+    if prints_rows and (not build_config.is_held(ledger, configuration) or status != 0):
         build_config.print_rows(rule_id, ledger, configuration, inspection.counts, False)
     return status
 

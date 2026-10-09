@@ -1,0 +1,6 @@
+# A planted ledger with no row for the archive libcrucible.a.
+format 1
+rule library-bytes
+configuration planted kind planted
+configuration planted tier planted
+@build/libfoundation.a | planted | 0 | - | a planted row of an archive with no library code

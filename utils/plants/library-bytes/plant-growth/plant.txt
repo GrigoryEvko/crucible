@@ -1,0 +1,3 @@
+# The library foundation inlines code of libstdc++, and its row holds 1 byte.
+flags -std=c++17 -O1 -g -ffunction-sections
+library foundation unit.cpp

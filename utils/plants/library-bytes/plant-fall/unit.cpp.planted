@@ -1,0 +1,4 @@
+// A function that inlines the comparison of std::string_view, which is code of libstdc++.
+#include <string_view>
+
+bool planted_equal(std::string_view left, std::string_view right) { return left == right; }

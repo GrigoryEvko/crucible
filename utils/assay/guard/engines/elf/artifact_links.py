@@ -33,8 +33,8 @@ THE FACTS
 THE PATHS
     A directory of a run path holds the paths of one host.  The rule writes
     {toolchain} for the prefix of the compiler, and {build} for the build
-    directory.  The compiler PREFIX/usr/bin/COMPILER, or
-    PREFIX/bin/COMPILER, has the prefix PREFIX.
+    directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
+    prefix.
 
 THE MAP
     cmake/LinkMap.cmake makes GNU ld write the map of each link adjacent to
@@ -144,15 +144,9 @@ def group_of(directory: str) -> str:
     return GROUPS.get(directory, TOOLS)
 
 
-def toolchain_prefix(compiler: str) -> Path:
-    """Return the prefix of the compiler: PREFIX of PREFIX/usr/bin/COMPILER or of PREFIX/bin/COMPILER (THE PATHS)."""
-    binaries = Path(compiler).parent
-    return binaries.parent.parent if binaries.parent.name == "usr" else binaries.parent
-
-
 def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
     """Return each path that THE PATHS replaces with its word, the longest path first."""
-    prefix = toolchain_prefix(compiler)
+    prefix = runner.toolchain_prefix(compiler)
     pairs = {
         str(prefix): TOOLCHAIN_WORD,
         str(prefix.resolve()): TOOLCHAIN_WORD,

@@ -94,6 +94,11 @@ def planted_cases(expect: testing.Expect) -> None:
     )
     expect("a planted build shows the word planted as its build directory", context.build_shown() == runner.PLANTED)
     expect(
+        "the prefix of a compiler is the directory above usr/bin, or above bin",
+        runner.toolchain_prefix("/opt/gcc/usr/bin/g++") == Path("/opt/gcc")
+        and runner.toolchain_prefix("/opt/gcc/bin/g++") == Path("/opt/gcc"),
+    )
+    expect(
         "a planted build gives no objects of a target that it does not hold",
         raised(partial(context.objects_of, "crucible"), runner.NotApplicable) is not None,
     )

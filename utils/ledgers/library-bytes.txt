@@ -1,0 +1,36 @@
+# The ledger of the rule library-bytes.  `python3 utils/bin/guard explain library-bytes` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule library-bytes` writes this file.
+format 1
+rule library-bytes
+configuration x86_64-debug-asan kind x86_64-debug-asan
+configuration x86_64-debug-asan tier x86-64-eb53fd1c
+configuration x86_64-release kind x86_64-release
+configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c
+configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
+configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
+@build/libcrucible.a | x86_64-debug-asan | 42616 | - | the first measure of the library code in each static library of the root
+@build/libcrucible.a | x86_64-debug-tsan | 10026 | - | the first measure of the library code in each static library of the root
+@build/libcrucible.a | x86_64-debug-ubsan-strict | 39080 | - | the first measure of the library code in each static library of the root
+@build/libcrucible.a | x86_64-release | 22341 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_cipher.a | x86_64-debug-asan | 101203 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_cipher.a | x86_64-debug-tsan | 38088 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_cipher.a | x86_64-debug-ubsan-strict | 52516 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_cipher.a | x86_64-release | 30983 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-debug-asan | 60716 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-debug-tsan | 24044 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-debug-ubsan-strict | 35187 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-release | 28504 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-debug-asan | 92615 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-debug-tsan | 32626 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-debug-ubsan-strict | 46680 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-release | 29146 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-asan | 84727 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-tsan | 23203 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-ubsan-strict | 39697 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-release | 32062 | - | the first measure of the library code in each static library of the root
+@build/libfoundation.a | x86_64-debug-asan | 10059 | - | the first measure of the library code in each static library of the root
+@build/libfoundation.a | x86_64-debug-tsan | 4838 | - | the first measure of the library code in each static library of the root
+@build/libfoundation.a | x86_64-debug-ubsan-strict | 11430 | - | the first measure of the library code in each static library of the root
+@build/libfoundation.a | x86_64-release | 2848 | - | the first measure of the library code in each static library of the root
