@@ -17,6 +17,21 @@ THE TOOLS
     "off" turns each cache off.  No eviction of this module reads that
     subdirectory.
 
+THE WORK ROOT
+    A long measurement, such as `loop gauge`, makes a copy of the tree with a
+    build directory of its own.  work_root() gives the directory of these
+    work directories: $XDG_CACHE_HOME/crucible-work, else
+    ~/.cache/crucible-work.  The directory is not in a checkout.  A copy of
+    the tree then adds no second CLAUDE.md in a repository, and Claude Code
+    loads no such file into an agent.
+
+    The directory is on the disk of the home directory, and not in /tmp,
+    which can be a tmpfs in memory.  A copy with its build directory holds
+    approximately 2 GB.  The directory is not in the root of the caches,
+    because a work directory is no cache.  It has no limit and no eviction,
+    and its owner removes it.  $CRUCIBLE_CACHE_DIR does not move it, because
+    a measurement points that variable at a scratch root of its own.
+
 THE LIMITS
     LIMITS gives the size limit of each subdirectory of the root, in
     allocated bytes.  It is the one place that declares a limit.  The
@@ -153,6 +168,12 @@ class Entry:
         self.used = used
 
 
+def user_cache_home() -> Path:
+    """Return the directory of the caches of the user: $XDG_CACHE_HOME, else ~/.cache.  It makes no directory."""
+    home = os.environ.get("XDG_CACHE_HOME", "")
+    return Path(home) if home else Path.home() / ".cache"
+
+
 def base_root() -> Path | None:
     """Return the root of the caches, or None when $CRUCIBLE_CACHE_DIR is "off".  The function makes no directory."""
     chosen = os.environ.get(ROOT_VARIABLE, "")
@@ -160,8 +181,7 @@ def base_root() -> Path | None:
         return None
     if chosen:
         return Path(chosen)
-    home = os.environ.get("XDG_CACHE_HOME", "")
-    return (Path(home) if home else Path.home() / ".cache") / "crucible"
+    return user_cache_home() / "crucible"
 
 
 def tools_root() -> Path:
@@ -170,8 +190,16 @@ def tools_root() -> Path:
     The directory is $XDG_CACHE_HOME/crucible/tools, else ~/.cache/crucible/tools.
     $CRUCIBLE_CACHE_DIR does not move it, and "off" does not hide it.
     """
-    home = os.environ.get("XDG_CACHE_HOME", "")
-    return (Path(home) if home else Path.home() / ".cache") / "crucible" / "tools"
+    return user_cache_home() / "crucible" / "tools"
+
+
+def work_root() -> Path:
+    """Return the directory of the work directories of a long measurement (THE WORK ROOT).  It makes no directory.
+
+    The directory is $XDG_CACHE_HOME/crucible-work, else ~/.cache/crucible-work.  $CRUCIBLE_CACHE_DIR does not move
+    it, and "off" does not hide it.
+    """
+    return user_cache_home() / "crucible-work"
 
 
 def cache_root(name: str) -> Path | None:
@@ -729,6 +757,18 @@ def self_test() -> int:
     try:
         expect("with the caches off, no root and no cache", base_root() is None and cache_root("x") is None)
         expect("with the caches off, no bound of the compiled modules", not hold_compiled_bound())
+        expect(
+            "with the caches off, the work root stays in the caches of the user",
+            work_root() == user_cache_home() / "crucible-work",
+        )
+        os.environ[ROOT_VARIABLE] = str(user_cache_home() / "crucible" / "elsewhere")
+        root_of_caches = base_root()
+        expect(
+            "the work root is not in the root of the caches, which CRUCIBLE_CACHE_DIR moves",
+            root_of_caches is not None
+            and not work_root().is_relative_to(root_of_caches)
+            and not work_root().is_relative_to(user_cache_home() / "crucible"),
+        )
     finally:
         if saved is None:
             os.environ.pop(ROOT_VARIABLE, None)

@@ -10,7 +10,10 @@ THE MEASUREMENT
     1. The gauge clones the source tree at its HEAD commit into
        WORK_DIR/tree, with `git clone --shared`.  A change in the work tree of
        the source is not in the copy, and the report gives the count of such
-       files.  The gauge writes nothing into the source tree.
+       files.  The gauge writes nothing into the source tree.  With no
+       --work-dir, WORK_DIR is a directory of the process in the work root of
+       assay.core.cache (THE WORK ROOT of that module).  That root is not in
+       a checkout, and the copy adds no second CLAUDE.md in the repository.
     2. It configures WORK_DIR/tree/build with the preset, and it builds the
        tree and runs each test one time, to make the build directory and the
        caches warm.  The steps after the clone get CRUCIBLE_CACHE_DIR in
@@ -121,7 +124,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from assay.core import git
+from assay.core import cache, git
 from assay.core import meter as cost_meter
 from assay.core import proc
 from assay.core import report as check_report
@@ -1005,6 +1008,15 @@ def self_test() -> int:
         expect("an edit of the copy does not change the source",
                (source / "tracked.txt").read_text(encoding="utf-8") == "changed in the work tree\n")
     failure_cases(expect)
+    chosen_work = default_work_dir().resolve()
+    caches = cache.base_root()
+    expect(
+        "the default work directory is not in the repository and not in the root of the caches.  The copy then adds "
+        "no second CLAUDE.md in the repository",
+        not chosen_work.is_relative_to(REPO_ROOT.resolve())
+        and chosen_work.parent == cache.work_root().resolve()
+        and (caches is None or not chosen_work.is_relative_to(caches.resolve())),
+    )
 
     def result(name: str, wall: float, cpu: float, share: float | None, count: float | None) -> StepResult:
         return StepResult(name, 0, wall, cpu, cpu / 10, share, count)
@@ -1114,6 +1126,14 @@ def self_test() -> int:
 # ── Main ───────────────────────────────────────────────────────────────────
 
 
+def default_work_dir() -> Path:
+    """Return the work directory of a run with no --work-dir: one directory of this process in the work root.
+
+    The work root of assay.core.cache is not in a checkout (THE MEASUREMENT).  The copy of the tree then adds no
+    second CLAUDE.md in the repository while the gauge runs.
+    """
+    return cache.work_root() / f"edit-loop-gauge-{os.getpid()}"
+
 
 def main(argv: list[str]) -> int:
     """Parse the arguments and run the gauge or the self-test, or give the words after --sample or --cold to its module.
@@ -1163,7 +1183,7 @@ def main(argv: list[str]) -> int:
                   f"configured build tree/build or no logs directory.", file=sys.stderr)
             return 2
     else:
-        work = (options.work_dir or REPO_ROOT / ".worktrees" / f"edit-loop-gauge-{os.getpid()}").resolve()
+        work = (options.work_dir or default_work_dir()).resolve()
         if work.exists():
             print(f"loop gauge: the work directory {work} exists.  Give another --work-dir.", file=sys.stderr)
             return 2
