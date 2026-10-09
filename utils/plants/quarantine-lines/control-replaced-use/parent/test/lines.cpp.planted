@@ -1,0 +1,8 @@
+// The parent of the change: one object of a library class.
+#include <vector>
+
+namespace lines_control {
+
+inline std::vector<int> kept{};
+
+}  // namespace lines_control

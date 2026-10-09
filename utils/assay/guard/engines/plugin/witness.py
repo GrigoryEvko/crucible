@@ -35,6 +35,8 @@ THE MANIFEST
                                              (THE KINDS OF A PLANT)
       configuration NAME                     the judged lines are the lines of a build of the
                                              configuration NAME (THE KINDS OF A PLANT)
+      parent DIRECTORY                       the directory DIRECTORY of the plant is the tree at the
+                                             parent commit of the change (THE PARENT)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
     diagnostic with no file.  The cell "-" of a finding row is an empty
     entity.  Each compile has one exit row.
@@ -84,6 +86,13 @@ THE JUDGEMENT
     directory relative to the tree, the plugin as {plugin} and the
     repository as {repo}.  It also writes an ASCII quotation mark for each
     typographic quotation mark of GCC.
+
+THE PARENT
+    A rule that reads the change of a tree, such as quarantine-lines, reads a
+    git history.  With a row `parent DIRECTORY`, the witness makes the work
+    copy of tree/ a git repository before the compiles.  Its one commit holds
+    the files of DIRECTORY, and the files of tree/ are its change, staged with
+    `git add` as after `git mv`.  git then reports a moved file as a move.
 
 THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
@@ -162,7 +171,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import proc, ruletable
+from assay.core import git, proc, ruletable
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core.exit import ExitCode
@@ -287,6 +296,7 @@ class Manifest:
     procedures: tuple[str, ...] = ()
     judged: tuple[str, ...] = ()
     configuration: str = ""
+    parent: str = ""
 
     @property
     def is_refused(self) -> bool:
@@ -430,6 +440,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
     judged: list[str] = []
     configuration = ""
     configuration_row: rows_grammar.Row | None = None
+    parent = ""
     named: list[rows_grammar.Row] = []
     for row in rows_grammar.parse(text, path):
         kind = row.words[0]
@@ -511,10 +522,15 @@ def parse_manifest(text: str, path: str) -> Manifest:
             if configuration_row is not None:
                 raise row.error("a manifest has at most one configuration row")
             configuration, configuration_row = row.words[1], row
+        elif kind == "parent":
+            shape(row, 2, 0)
+            if parent or row.words[1] in ("", TREE):
+                raise row.error(f"a manifest has at most one parent row, and its directory is not {TREE}")
+            parent = row.words[1]
         else:
             raise row.error(
-                f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, "
-                f"note, text, missing, table-unit, table, white-space, reads, procedure, judge and configuration"
+                f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, note, text, "
+                f"missing, table-unit, table, white-space, reads, procedure, judge, configuration and parent"
             )
     if configuration_row is not None and not judged:
         raise configuration_row.error("a configuration row names the build of the judged compiles, and no judge row")
@@ -590,6 +606,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
         tuple(procedures),
         tuple(judged),
         configuration,
+        parent,
     )
 
 
@@ -1488,6 +1505,32 @@ def copy_plant(plant: Path, work: Path) -> None:
     (work / TREE).mkdir(exist_ok=True)
 
 
+def make_parent(work: Path, directory: str) -> None:
+    """Make the tree of WORK a git repository with one commit of DIRECTORY, and stage the tree as its change (THE PARENT).
+
+    Raises:
+        OSError: If the plant has no such directory, or a file cannot be copied
+        git.GitError: If git fails
+        git.NotIsolated: If git resolves a repository other than the tree
+    """
+    tree = work / TREE
+    change = work / f"{TREE}.change"
+    tree.rename(change)
+    shutil.copytree(work / directory, tree)
+    git.init(tree)
+    git.commit_all(tree, "The parent of the change")
+    for entry in sorted(tree.iterdir()):
+        if entry.name == ".git":
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    shutil.copytree(change, tree, dirs_exist_ok=True)
+    shutil.rmtree(change)
+    git.run(tree, "add", "-A", "--", ".")
+
+
 def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
     """Return the finding lines of one compile: its report, else the section of its object, else none."""
     if outcome.report is not None:
@@ -1541,6 +1584,11 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
     with tempfile.TemporaryDirectory(prefix=f"witness-{plant.name}-") as scratch:
         work = Path(scratch).resolve()
         copy_plant(plant, work)
+        if manifest.parent:
+            try:
+                make_parent(work, manifest.parent)
+            except (OSError, git.GitError, git.NotIsolated) as problem:
+                return [f"the parent {manifest.parent} cannot be committed: {problem}"], 0, False
         compiles = list(manifest.compiles.values())
         tables = [*manifest.tables, *(case for verdict in manifest.white_space for case in white_space_cases(verdict))]
         with ThreadPoolExecutor(max_workers=max(1, len(compiles) + len(tables))) as pool:

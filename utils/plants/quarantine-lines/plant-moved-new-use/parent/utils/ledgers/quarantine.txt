@@ -1,0 +1,5 @@
+# The ledger of the rule quarantine at the parent of the change.
+format 1
+rule quarantine
+configuration witness kind witness
+test/old_place.cpp | std-object | 1 | std::vector | -

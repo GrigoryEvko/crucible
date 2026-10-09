@@ -1,0 +1,4 @@
+# The rule table of this control.
+layer low 0 include/fixy/
+
+quarantine test/

@@ -1,0 +1,9 @@
+// The parent of the change: two objects of a library class.
+#include <vector>
+
+namespace lines_plant {
+
+inline std::vector<int> first{};
+inline std::vector<int> second{};
+
+}  // namespace lines_plant

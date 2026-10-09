@@ -1,0 +1,11 @@
+# A change moves a file and adds one object of a library class in new code.  git reports the move, so the line that
+# the move keeps is no added line.  The new object is on a line of a hunk that removes no line, and the rule
+# quarantine-lines refuses it.
+
+parent parent
+compile report test/new_place.cpp
+exit report pass
+finding report quarantine std-object test/new_place.cpp:11:25 | std::vector
+finding report quarantine std-object test/new_place.cpp:19:25 | std::vector
+judge report
+configuration witness

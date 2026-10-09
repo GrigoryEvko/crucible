@@ -37,9 +37,27 @@ THE MOVES
     each row of its previous path.  Its new half can then hold new findings of
     the same entities.  A rewrite below the threshold is a removed file and a
     new file.
+
+THE CHANGE
+    change_base() gives the commit that a change starts from, and
+    file_changes() gives the hunks between that commit and the working tree.
+    The base is the first of these commits that applies:
+      * The commit that the environment variable CHANGE_BASE_VARIABLE names.
+      * When HEAD is on a branch other than main, and the repository has a
+        branch main: the merge base of HEAD and main.  A work tree then
+        judges each change that its branch adds to main, also after a merge
+        of main.  A commit of main that comes in with the merge is no change.
+      * When the working tree changed a file of HEAD, or it holds a new file
+        that .gitignore does not match: HEAD.  The change is then the working
+        tree, as in a checkout of main before a commit.
+      * Else the first parent of HEAD.  The change is then the last commit,
+        as in the export of a guard run, where HEAD is the change commit on
+        main.  A merge commit at HEAD is judged against its first parent.
+    A root commit with no change in the working tree has no base.
 """
 
 import contextlib
+import os
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -58,6 +76,16 @@ TIMEOUT_S = 300.0
 # The lowest similarity of a move, in percent (THE MOVES), and the option of git that finds such moves.
 MOVE_SIMILARITY = 90
 FIND_MOVES = f"--find-renames={MOVE_SIMILARITY}%"
+# The environment variable that names the base of a change (THE CHANGE), and the branch that a work tree branches from.
+CHANGE_BASE_VARIABLE = "CRUCIBLE_CHANGE_BASE"
+MAIN_BRANCH = "main"
+# The marks of a unified diff that the reader of file_changes() reads.
+HUNK_MARK = "@@ "
+OLD_FILE_MARK = "--- "
+NEW_FILE_MARK = "+++ "
+NO_FILE = "/dev/null"
+# The options of `git ls-files` that list each file that is not in the index and that .gitignore does not match.
+NEW_FILE_OPTIONS = ("--others", "--exclude-standard")
 
 
 class NotIsolated(Exception):
@@ -93,6 +121,35 @@ class PathHistory:
     before: Mapping[tuple[str, str], bytes | None] = field(default_factory=dict)
     head: Mapping[str, bytes | None] = field(default_factory=dict)
     working: Mapping[str, bytes | None] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class Hunk:
+    """One block of a diff with no unchanged line: the first line and the number of the removed and the added lines.
+
+    A block that adds no line has `new_count` 0, and its `new_start` is the line before it.  The lines start at 1.
+    """
+
+    old_start: int
+    old_count: int
+    new_start: int
+    new_count: int
+
+    def adds(self, line: int) -> bool:
+        """Tell if the block adds the line LINE of the new file."""
+        return self.new_start <= line < self.new_start + self.new_count
+
+
+@dataclass(frozen=True, slots=True)
+class FileChange:
+    """The hunks of one file of the working tree against the base of a change (THE CHANGE).
+
+    `old_path` is the path of the file at the base, or None for a file that the base does not hold.
+    """
+
+    path: str
+    old_path: str | None
+    hunks: tuple[Hunk, ...]
 
 
 def run_any_exit(root: Path, *arguments: str, stdin: bytes = b"", extra: Mapping[str, str] | None = None,
@@ -205,8 +262,16 @@ def tracked_files(root: Path, pathspec: Sequence[str] = (), with_new: bool = Fal
     Raises:
         GitError: If root is not in a git work tree
     """
-    arguments = ["ls-files", "-z", "--cached"] + (["--others", "--exclude-standard"] if with_new else [])
-    listed = run(root, *arguments, "--", *pathspec).decode("utf-8", "surrogateescape").split("\0")
+    return listed_files(root, ["--cached", *(NEW_FILE_OPTIONS if with_new else ())], pathspec)
+
+
+def listed_files(root: Path, options: Sequence[str], pathspec: Sequence[str] = ()) -> tuple[str, ...]:
+    """Return each file that `git ls-files -z` lists with the options and that the tree holds, sorted.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    listed = run(root, "ls-files", "-z", *options, "--", *pathspec).decode("utf-8", "surrogateescape").split("\0")
     return tuple(sorted({path for path in listed if path and (root / path).is_file()}))
 
 
@@ -351,6 +416,93 @@ def moves(root: Path, base: str = "HEAD") -> dict[str, str]:
             index += 3
         else:
             index += 2 if status else 1
+    return found
+
+
+def new_files(root: Path) -> tuple[str, ...]:
+    """Return each file of a tree that is not in the index and that .gitignore does not match, sorted.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    return listed_files(root, NEW_FILE_OPTIONS)
+
+
+def change_base(root: Path) -> str | None:
+    """Return the full hash of the base of the change of a tree (THE CHANGE), or None for a root commit with no change.
+
+    Raises:
+        GitError: If root is not in a git work tree, it has no commit, or the variable names no commit
+    """
+    named = os.environ.get(CHANGE_BASE_VARIABLE, "")
+    if named:
+        commit = resolve(root, named)
+        if commit is None:
+            raise GitError(f"{CHANGE_BASE_VARIABLE}={named} names no commit of {root}")
+        return commit
+    branch = run_any_exit(root, "symbolic-ref", "-q", "--short", "HEAD")
+    if branch.exit == 0 and branch.out.strip() != MAIN_BRANCH and resolve(root, f"refs/heads/{MAIN_BRANCH}"):
+        return run(root, "merge-base", "HEAD", f"refs/heads/{MAIN_BRANCH}").decode().strip()
+    if not is_clean(root) or new_files(root):
+        return head(root)
+    return resolve(root, "HEAD^1")
+
+
+def hunk_of(line: str) -> Hunk | None:
+    """Read the head of one hunk of a unified diff, '@@ -A[,B] +C[,D] @@ ...', or return None for another line."""
+    if not line.startswith(HUNK_MARK):
+        return None
+    words = line.removeprefix(HUNK_MARK).split(" ")
+    if len(words) < 2 or not words[0].startswith("-") or not words[1].startswith("+"):
+        return None
+    numbers: list[int] = []
+    for word in (words[0][1:], words[1][1:]):
+        start, _, count = word.partition(",")
+        if not start.isdigit() or (count and not count.isdigit()):
+            return None
+        numbers += [int(start), int(count) if count else 1]
+    return Hunk(*numbers)
+
+
+def side_path(line: str, mark: str, prefix: str) -> str | None:
+    """Return the path of a '--- a/PATH' or '+++ b/PATH' line of a unified diff, or None for /dev/null."""
+    path = line.removeprefix(mark).rstrip("\t")
+    return None if path == NO_FILE else path.removeprefix(prefix)
+
+
+def file_changes(root: Path, base: str) -> dict[str, FileChange]:
+    """Return the hunks of each file that a commit and the working tree hold with different content, by path (THE CHANGE).
+
+    The diff finds moves with FIND_MOVES.  A file that the working tree does not hold has no entry.  A new file that
+    is not in the index has no entry here: new_files() lists it.
+
+    Raises:
+        GitError: If git fails
+
+    Complexity: linear in the length of the diff.
+    """
+    output = run(root, "diff", "-U0", "--no-color", "--no-ext-diff", FIND_MOVES, base, "--")
+    found: dict[str, FileChange] = {}
+    old_path: str | None = None
+    new_path: str | None = None
+    hunks: list[Hunk] = []
+
+    def keep() -> None:
+        """Keep the file that the lines before gave, when the working tree holds it."""
+        if new_path is not None:
+            found[new_path] = FileChange(new_path, old_path, tuple(hunks))
+
+    for line in output.decode("utf-8", "surrogateescape").split("\n"):
+        if line.startswith("diff --git "):
+            keep()
+            old_path, new_path, hunks = None, None, []
+        elif line.startswith(OLD_FILE_MARK):
+            old_path = side_path(line, OLD_FILE_MARK, "a/")
+        elif line.startswith(NEW_FILE_MARK):
+            new_path = side_path(line, NEW_FILE_MARK, "b/")
+        elif (hunk := hunk_of(line)) is not None:
+            hunks.append(hunk)
+    keep()
     return found
 
 

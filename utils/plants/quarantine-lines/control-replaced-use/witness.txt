@@ -1,0 +1,10 @@
+# A change replaces the line of an object of a library class, as a change of a base API can force it (CLAUDE.md
+# section XXII, "Callers of a changed API").  The hunk removes the line that held the same kind and entity, so the
+# rule quarantine-lines accepts the new line.
+
+parent parent
+compile report test/lines.cpp
+exit report pass
+finding report quarantine std-object test/lines.cpp:6:26 | std::vector
+judge report
+configuration witness

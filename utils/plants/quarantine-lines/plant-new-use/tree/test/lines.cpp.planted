@@ -1,0 +1,12 @@
+// The change: the first object goes, and new code adds an object of the same library class.  The count of the
+// rule quarantine stays the same, and the new line holds the finding.
+#include <vector>
+
+namespace lines_plant {
+
+inline int first = 0;
+inline std::vector<int> second{};
+
+inline std::vector<int> fresh{};
+
+}  // namespace lines_plant

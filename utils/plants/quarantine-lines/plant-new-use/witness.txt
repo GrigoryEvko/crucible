@@ -1,0 +1,11 @@
+# A change takes one object of a library class away and adds one in new code.  The count of the file stays, so the
+# rule quarantine accepts the change.  The new object is on a line of a hunk that removes no line, and the rule
+# quarantine-lines refuses it.
+
+parent parent
+compile report test/lines.cpp
+exit report pass
+finding report quarantine std-object test/lines.cpp:8:25 | std::vector
+finding report quarantine std-object test/lines.cpp:10:25 | std::vector
+judge report
+configuration witness

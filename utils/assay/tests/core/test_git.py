@@ -97,6 +97,83 @@ def move_cases(expect: Callable[[str, bool], None]) -> None:
         )
 
 
+def change_base_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check THE CHANGE: the base of a change in each case that change_base() reads."""
+    with git.scratch_repository({"a.cpp": numbered_lines(4, frozenset())}) as root:
+        first = git.commit_all(root, "The first commit")
+        git.run(root, "branch", "-M", git.MAIN_BRANCH)
+        expect("a root commit with no change has no base", git.change_base(root) is None)
+        (root / "a.cpp").write_bytes(numbered_lines(4, frozenset({1})))
+        expect("a changed tracked file gives HEAD as the base", git.change_base(root) == first)
+        second = git.commit_all(root, "The second commit")
+        expect("a clean main gives the first parent of HEAD as the base", git.change_base(root) == first)
+        (root / "new.cpp").write_bytes(b"int value = 0;\n")
+        expect("a new file that git does not track gives HEAD as the base", git.change_base(root) == second)
+        expect("new_files lists the new file", git.new_files(root) == ("new.cpp",))
+        (root / "new.cpp").unlink()
+        git.run(root, "branch", "feature")
+        git.run(root, "symbolic-ref", "HEAD", "refs/heads/feature")
+        (root / "a.cpp").write_bytes(numbered_lines(4, frozenset({1, 2})))
+        branched = git.commit_all(root, "A commit of the branch")
+        expect("a branch other than main gives the merge base with main", git.change_base(root) == second)
+        previous = os.environ.get(git.CHANGE_BASE_VARIABLE)
+        os.environ[git.CHANGE_BASE_VARIABLE] = first
+        try:
+            named = git.change_base(root)
+            os.environ[git.CHANGE_BASE_VARIABLE] = "no-such-revision"
+            problem = refuses(lambda: git.change_base(root), git.GitError)
+        finally:
+            if previous is None:
+                os.environ.pop(git.CHANGE_BASE_VARIABLE, None)
+            else:
+                os.environ[git.CHANGE_BASE_VARIABLE] = previous
+        expect("the environment variable names the base", named == first)
+        expect("a variable that names no commit raises GitError", problem is not None)
+        expect("the commit of the branch is not the base", branched != git.change_base(root))
+
+
+def file_change_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check file_changes(): the hunks of a changed file, a move with an edit, a new file and the head of a hunk."""
+    with git.scratch_repository(
+        {"kept.cpp": numbered_lines(10, frozenset()), "moved.cpp": numbered_lines(20, frozenset())}
+    ) as root:
+        base = git.commit_all(root, "The first commit")
+        (root / "kept.cpp").write_bytes(numbered_lines(10, frozenset({2})) + b"one more line\n")
+        (root / "moved.cpp").unlink()
+        (root / "renamed.cpp").write_bytes(numbered_lines(20, frozenset({5})))
+        (root / "fresh.cpp").write_bytes(b"int first = 1;\nint second = 2;\n")
+        git.run(root, "add", "-A", "--", ".")
+        changes = git.file_changes(root, base)
+        kept = changes.get("kept.cpp")
+        expect(
+            "a changed file has one hunk for each block, with the removed and the added lines",
+            kept is not None
+            and kept.old_path == "kept.cpp"
+            and kept.hunks == (git.Hunk(3, 1, 3, 1), git.Hunk(10, 0, 11, 1)),
+        )
+        renamed = changes.get("renamed.cpp")
+        expect(
+            "a move with an edit gives its previous path and the hunk of the edit",
+            renamed is not None and renamed.old_path == "moved.cpp" and renamed.hunks == (git.Hunk(6, 1, 6, 1),),
+        )
+        fresh = changes.get("fresh.cpp")
+        expect(
+            "a new file has no previous path and one hunk that adds each line",
+            fresh is not None and fresh.old_path is None and fresh.hunks == (git.Hunk(0, 0, 1, 2),),
+        )
+        expect("a removed file has no entry", "moved.cpp" not in changes)
+        expect(
+            "the head of a hunk reads the counts, and a count that the diff omits is 1",
+            git.hunk_of("@@ -3 +4,0 @@ int x;") == git.Hunk(3, 1, 4, 0)
+            and git.hunk_of("@@@ -1 +1 @@") is None
+            and git.hunk_of("+++ b/a.cpp") is None,
+        )
+        expect(
+            "Hunk.adds holds each added line",
+            git.Hunk(3, 1, 3, 2).adds(4) and not git.Hunk(3, 1, 3, 2).adds(5) and not git.Hunk(10, 0, 10, 0).adds(10),
+        )
+
+
 def isolation_cases(expect: Callable[[str, bool], None]) -> None:
     """Check that a repository variable of this process does not reach a git command."""
     with git.scratch_repository({"own.txt": b"own\n"}) as own, git.scratch_repository({"other.txt": b"x\n"}) as other:
@@ -144,6 +221,8 @@ def main(argv: list[str]) -> int:
     command_cases(expect)
     answer_cases(expect)
     move_cases(expect)
+    change_base_cases(expect)
+    file_change_cases(expect)
     isolation_cases(expect)
     if failures:
         print(f"tests.core.test_git: FAILED, {len(failures)} case(s) did not hold")

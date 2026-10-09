@@ -1,0 +1,21 @@
+// The parent of the change: a file with one object of a library class, at its first path.
+#include <vector>
+
+namespace lines_moved {
+
+inline int first_value = 1;
+inline int second_value = 2;
+inline int third_value = 3;
+inline int fourth_value = 4;
+inline int fifth_value = 5;
+inline std::vector<int> moved_items{};
+inline int sixth_value = 6;
+inline int seventh_value = 7;
+inline int eighth_value = 8;
+inline int ninth_value = 9;
+inline int tenth_value = 10;
+inline int eleventh_value = 11;
+inline int twelfth_value = 12;
+inline std::vector<int> new_items{};
+
+}  // namespace lines_moved

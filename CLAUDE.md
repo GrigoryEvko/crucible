@@ -2998,6 +2998,16 @@ An unevaluated operand is code too, and each item of the list above in it is a f
 
 A placeholder in a template, such as `auto mapped = mint(owner);` with a dependent initializer, declares an object of the type that each instantiation deduces. When that type holds a library class, the finding is at the placeholder, as it is outside a template. A type that a template parameter gives is no finding in the instantiation, because the code spells it where it names the template. An explicit temporary, such as `std::vector<int>{1, 2}` that the code passes to a template, names its class where the source spells it. An implicit conversion of an argument names nothing at the call. A using-declaration in a function body or in a class names the entity that it brings into scope, and a using-directive in a function body names its namespace. The front end keeps no tree with a location for the two forms at namespace scope, so the control `control-known-gaps` pins them.
 
+The rule `quarantine-lines` (`utils/assay/guard/engines/plugin/quarantine_lines.py`, the test `guard_plugin`) holds R6 for each line of a change. A finding on a line that the change adds is an error, unless the hunk of that line also removes lines. The ledger of the rule `quarantine` at the base gives the findings of each file, kind and entity that the change took away. Each such finding lets one added finding of the same key stay in a hunk that removes lines. A hunk that only adds lines gets none. New code then has no finding.
+
+The base of the change is the first item of this list that applies (`change_base()` of `utils/assay/core/git.py`):
+- The commit that the environment variable `CRUCIBLE_CHANGE_BASE` names
+- On a branch other than `main`, the merge base with `main`
+- In a work tree with an edit that is not committed, or with a new file, `HEAD`
+- Else the first parent of `HEAD`, also for a merge commit.
+
+The rule does not apply to a build that made only some targets, such as the build of a guard run.
+
 ### Callers of a changed API
 
 This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.

@@ -1,0 +1,9 @@
+# A change moves a file and replaces the line of its object of a library class.  git reports the move, so the
+# count of the previous path at the parent pays for the replaced line, and the rule quarantine-lines accepts it.
+
+parent parent
+compile report test/new_place.cpp
+exit report pass
+finding report quarantine std-object test/new_place.cpp:11:26 | std::vector
+judge report
+configuration witness
