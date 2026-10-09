@@ -32,7 +32,9 @@ THE LEDGER
     holds at this time, and each run gives one warning for it.  A row with a
     reason is a header that owns the heavy header on purpose, such as the one
     door of a system header.  Such a row gives no warning.  `guard write
-    --rule heavy-include --admit --reason TEXT` writes such a row.
+    --rule heavy-include --admit --reason TEXT` writes such a row.  The base
+    rows judge a build of a configuration that the ledger does not hold (THE
+    POLICY of assay.guard.engines.plugin.counted).
 
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
@@ -126,14 +128,18 @@ def no_inputs(_root: Path) -> None:
     """Read no input: the verdict reads only the counts and the ledger."""
 
 
-def reason_of(ledger: rule_ledger.Ledger, key: Key, name: str) -> str:
-    """Return the reason of the row of a key in one configuration: of its difference row, else of its base row."""
-    entry = ledger.deltas.get(name, {}).get(key) or ledger.base.get(key)
+def reason_of(ledger: rule_ledger.Ledger, key: Key, name: str | None) -> str:
+    """Return the reason of the row of a key in one configuration: of its difference row, else of its base row.
+
+    The name None names the base rows.
+    """
+    delta = ledger.deltas.get(name, {}).get(key) if name is not None else None
+    entry = delta or ledger.base.get(key)
     return entry.reason if entry is not None else ""
 
 
 def evaluate(
-    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str, _inputs: None, build_shown: str
+    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str | None, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
     """Compare each count of the build with its ledger count (THE VERDICT).
 
@@ -214,7 +220,7 @@ def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check
     """Return the findings of the build judged against the ledger of the tree of the context (THE VERDICT).
 
     Raises:
-        NotApplicable: If the rule does not apply to the build, or the ledger does not hold its configuration
+        NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
     return counted.judge(SPEC, rule, context)
@@ -234,6 +240,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be
-        read.  SKIPPED when the rule does not apply or the ledger does not hold the configuration
+        read.  1 also when the ledger does not hold the configuration of the build and the write does not add it.
+        SKIPPED when the rule does not apply
     """
     return counted.write(SPEC, rule, request)

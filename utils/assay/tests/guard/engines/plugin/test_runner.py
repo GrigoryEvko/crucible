@@ -496,11 +496,15 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold the first write of an empty ledger, the equal build and the second write."""
     status, _, text = scratch.run()
     expect(
-        "an empty ledger does not apply, and the line names the build and its tier",
-        status == runner.SKIPPED and f"holds no rows of {BASE_NAME} on the tier x86-64-" in text,
+        "an empty ledger judges the build against the base rows, so each finding fails",
+        status == 1 and "judged against the base rows" in text and "holds no rows" not in text,
     )
+    empty_text = scratch.ledger.read_text(encoding="utf-8")
     status, _ = scratch.write()
-    expect("a write refuses a build that no configuration has", status == runner.SKIPPED)
+    expect(
+        "a write to a ledger with no configuration refuses each count above its base row",
+        status == 1 and scratch.ledger.read_text(encoding="utf-8") == empty_text,
+    )
     status, _ = scratch.write(add_configuration=True)
     written = scratch.ledger_rows()
     expect(
@@ -832,12 +836,28 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     status, _, text = scratch.run()
     expect(
-        "a build of a different configuration does not apply, and one line gives its tier and the tiers of the ledger",
-        status == runner.SKIPPED
-        and f"holds no rows of {RELEASE_NAME} on the tier znver" not in text
-        and f"holds no rows of {RELEASE_NAME} on the tier x86-64-" in text
-        and f"It holds {BASE_NAME} on x86-64-" in text,
+        "a build of a configuration that the ledger does not hold is judged against the base rows",
+        status == 0
+        and f"judged against the base rows, because the ledger holds no configuration {RELEASE_NAME}" in text
+        and f"{rule_ledger.ROW_MARK}configuration {RELEASE_NAME} kind {RELEASE_NAME}" in text,
     )
+    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
+    before_write = scratch.ledger.read_text(encoding="utf-8")
+    status, written_text = scratch.write()
+    swap_error = (
+        "include/crucible/Vigil.h has 1 findings of the kind std-entity and the entity std::swap, and the ledger "
+        "admits 0"
+    )
+    expect(
+        "a finding of an arm that only that build compiles fails it, and a write with no --add-configuration "
+        "writes nothing",
+        scratch.errors() == [swap_error]
+        and status == 1
+        and written_text.startswith(f"{RULE}: the ledger holds no rows of {RELEASE_NAME} on the tier")
+        and "Give --add-configuration" in written_text
+        and scratch.ledger.read_text(encoding="utf-8") == before_write,
+    )
+    scratch.drop("g")
     (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
     door = "<sys/socket.h> has the door include/fixy/os/Socket.h"
     # Only the second configuration writes the file of the build directory.  The tree holds no file test_gone.cpp.
@@ -867,12 +887,21 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
     status, _, text = scratch.run()
     expect(
-        "a host of a different native tier does not apply, and the line names the two tiers",
-        status == runner.SKIPPED
+        "the rows of its name judge a host of a different native tier, and one line names the two tiers",
+        status == 0
+        and f"judged against the rows of the configuration {RELEASE_NAME}" in text
         and f"holds no rows of {RELEASE_NAME} on the tier znver3-" in text
         and f"{RELEASE_NAME} on znver5-" in text
-        and "tier is znver3-" in text,
+        and "tier is znver3-" in text
+        and "can compile other preprocessor arms" in text,
     )
+    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
+    status, written_text = scratch.write()
+    expect(
+        "a finding of an arm of that tier fails the build, and a write from it writes nothing",
+        scratch.run()[0] == 1 and status == 1 and "Give --add-configuration" in written_text,
+    )
+    scratch.drop("g")
     (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
     scratch.configure(BASE_NAME, "Debug")
     scratch.drop("e")
@@ -921,8 +950,10 @@ def import_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure("aarch64-debug-asan", "Debug")
     status, _, text = scratch.run()
     expect(
-        "a build that the ledger does not hold writes its configuration and its differences",
-        status == runner.SKIPPED
+        "the base rows judge a build that the ledger does not hold, and it writes its configuration and its "
+        "differences",
+        status == 1
+        and "judged against the base rows, because the ledger holds no configuration aarch64-debug-asan" in text
         and f"{rule_ledger.ROW_MARK}configuration aarch64-debug-asan kind aarch64-debug-asan" in text
         and delta_row(
             "aarch64-debug-asan", "include/crucible/Vigil.h", "compiler-builtin", "+1", "__builtin_ia32_pause"
@@ -977,8 +1008,10 @@ def bench_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add("h", [])
     status, _, text = scratch.run()
     expect(
-        "a host of a different tier, with other arms in the bench compile, does not apply and writes one line",
-        status == runner.SKIPPED
+        "the rows of its name judge a host of a different tier, with other arms in the bench compile, and one line "
+        "names the tiers",
+        status == 1
+        and f"judged against the rows of the configuration {bench_name}" in text
         and f"holds no rows of {bench_name} on the tier x86-64-" in text
         and "+znver3-" in text
         and f"{bench_name} on {bench_tier}" in text,
@@ -1126,9 +1159,10 @@ def contract_cases(expect: testing.Expect) -> None:
             counts.get(("test/fixy/test_a.cpp", "opted-out", f"{PROBE_REASON} | contract-specifier pre")) == 1
             and not any(key[1] == CONTRACT for key in counts),
         )
+        scratch.write(add_configuration=True)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             statuses = runner.run([RULES[CONTRACT], RULES[RULE]], scratch.root, scratch.build, None)
-        expect("one run of the engine gives the status of each rule", statuses == [1, runner.SKIPPED])
+        expect("one run of the engine gives the status of each rule", statuses == [1, 0])
         status, text = scratch.listed(None, CONTRACT)
         expect("the list gives the findings of each rule", status == 0 and "2 findings" in text)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

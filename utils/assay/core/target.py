@@ -29,12 +29,13 @@ THE TARGET TIER
     arms can be different.
 
 A BUILD THAT THE LEDGER DOES NOT HOLD
-    A rule prints one line with not_held(): the kind or the configuration,
-    the tier of the build, and what the ledger holds.  Then it prints the
-    rows of the build for the ledger, each with a prefix.  Only CI builds an
-    aarch64 kind.  The log of its leg then holds the rows, and --import LOG
-    of `guard write` puts them into the ledger.  rows_in_log() reads the rows
-    back from log lines with any other prefix in front.
+    A rule prints one line with not_held().  The line gives the kind or the
+    configuration, the tier of the build and what the ledger holds.  It also
+    tells what the rule does with the build.  Then the rule prints the rows
+    of the build for the ledger, each with a prefix.  Only CI builds an aarch64 kind.  The log of its leg then holds
+    the rows, and --import LOG of `guard write` puts them into the ledger.
+    rows_in_log() reads the rows back from log lines with any other prefix in
+    front.
 
 `guard selftest core.target` does a test of the module.
 """
@@ -138,12 +139,16 @@ def build_tier(build_dir: Path, compiler: str, commands: Iterable[str] = ()) -> 
     return "+".join([base, *extra])
 
 
-def not_held(check: str, what: str, tier: str, held: Iterable[tuple[str, str]], detail: str = "") -> str:
-    """Return the one line of a build that the ledger does not hold: what it is, its tier and what the ledger holds."""
+def not_held(check: str, what: str, tier: str, held: Iterable[tuple[str, str]], consequence: str,
+             detail: str = "") -> str:
+    """Return the one line of a build that the ledger does not hold.
+
+    The line gives what the build is, its tier and what the ledger holds.  Then `consequence` tells what the check
+    does with the build.
+    """
     holds = ", ".join(f"{name} on {held_tier}" for name, held_tier in held) or "nothing"
     more = f"  {detail}." if detail else ""
-    return f"{check}: the ledger holds no rows of {what} on the tier {tier}.  It holds {holds}.{more}  The check does " \
-           f"not apply"
+    return f"{check}: the ledger holds no rows of {what} on the tier {tier}.  It holds {holds}.{more}  {consequence}"
 
 
 def print_rows(prefix: str, rows: Iterable[str]) -> None:
@@ -243,9 +248,11 @@ def self_test() -> int:
            "noise\ncheck-row: k | lib.a | allow | abi | __cxa_guard_acquire | x\n")
     expect("rows_in_log reads each row after its prefix",
            rows_in_log(log, "check-row: ") == ["kind | a | b", "k | lib.a | allow | abi | __cxa_guard_acquire | x"])
-    line = not_held("check", "aarch64-release", "armv9-a-0000", [("x86_64-release", "znver5-1111")])
-    expect("not_held names the build, its tier and what the ledger holds",
-           "aarch64-release on the tier armv9-a-0000" in line and "x86_64-release on znver5-1111" in line, line)
+    line = not_held("check", "aarch64-release", "armv9-a-0000", [("x86_64-release", "znver5-1111")],
+                    "The base rows judge the build")
+    expect("not_held names the build, its tier, what the ledger holds and the consequence",
+           "aarch64-release on the tier armv9-a-0000" in line and "x86_64-release on znver5-1111" in line
+           and line.endswith("The base rows judge the build"), line)
     if failures:
         print(f"build_target --self-test: FAILED, {len(failures)} case(s) did not hold")
         for failure in failures:

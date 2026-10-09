@@ -373,23 +373,33 @@ def facts_of(ledger: rule_ledger.Ledger, name: str) -> tuple[tuple[str, str], ..
 
 
 def is_held(ledger: rule_ledger.Ledger, configuration: BuildConfiguration) -> bool:
-    """Return True when the ledger holds the configuration of the build with each of its facts."""
+    """Return True when the ledger holds the configuration of the build: its name, and each fact that its row gives.
+
+    A row can give only some facts, as the rows of the rule syscall-capability give only the build kind.  A fact
+    that the build has and the row does not give changes nothing.
+    """
     facts = facts_of(ledger, configuration.name)
-    return facts is not None and dict(facts) == dict(configuration.facts)
+    if facts is None:
+        return False
+    built = dict(configuration.facts)
+    return all(built.get(name) == value for name, value in facts)
 
 
 def configuration_difference(build: Sequence[tuple[str, str]], ledger: Sequence[tuple[str, str]]) -> list[str]:
-    """Return a text for each key with a value in the build that is not its value in the ledger."""
+    """Return a text for each fact of the row in the ledger with a value in the build that is not its value there."""
     built, held = dict(build), dict(ledger)
     return [
-        f"{name} is {built.get(name, 'absent')} in the build and {held.get(name, 'absent')} in the ledger"
-        for name in sorted(set(built) | set(held))
-        if built.get(name) != held.get(name)
+        f"{name} is {built.get(name, 'absent')} in the build and {held[name]} in the ledger"
+        for name in sorted(held)
+        if built.get(name) != held[name]
     ]
 
 
-def held_line(rule_id: str, ledger: rule_ledger.Ledger, configuration: BuildConfiguration) -> str:
-    """Return the one line of a build with a configuration that the ledger does not hold (target.not_held)."""
+def held_line(rule_id: str, ledger: rule_ledger.Ledger, configuration: BuildConfiguration, consequence: str) -> str:
+    """Return the one line of a build with a configuration that the ledger does not hold (target.not_held).
+
+    `consequence` tells what the rule does with the build.
+    """
     held = [(item.name, dict(item.facts).get(TIER_KEY, "?")) for item in ledger.configurations]
     facts = facts_of(ledger, configuration.name)
     detail = ""
@@ -398,7 +408,7 @@ def held_line(rule_id: str, ledger: rule_ledger.Ledger, configuration: BuildConf
             f"Its configuration {configuration.name} differs: "
             f"{'; '.join(configuration_difference(configuration.facts, facts))}"
         )
-    return build_target.not_held(rule_id, configuration.name, configuration.tier, held, detail)
+    return build_target.not_held(rule_id, configuration.name, configuration.tier, held, consequence, detail)
 
 
 # ── The context ────────────────────────────────────────────────────

@@ -25,17 +25,37 @@ THE COUNTED RULES
     of one rule.  This module gives the run, the write and the import that
     the two rules share.
 
+THE POLICY
+    Each rule with a ledger of configurations judges each build, and no such
+    rule skips a build because of its configuration.  These rows judge a
+    build (judging()):
+      * the rows of the configuration with the name of the build, when the
+        ledger holds one.  A configuration row can give only some facts: the
+        rows of the rule syscall-capability give only the build kind.  Each
+        fact of the row that the build does not share gives one line, because
+        the build can then compile other preprocessor arms
+      * the base rows, for a build of a name that the ledger does not hold,
+        and for a ledger with no configuration.
+    A build of a new kind then fails on each finding of an arm that only it
+    compiles.  No finding with no row gets through.  The rules quarantine,
+    heavy-include and syscall-capability use this policy.
+
+    A write from a different build puts the counts of other arms into the
+    rows.  The write of a build is then possible only in two conditions
+    (write_target()):
+      * the ledger holds the configuration of the build, with each fact of
+        its row
+      * the ledger holds no configuration.
+
 THE RUN
     A run reads the ledger and the inputs of the rule first.  A ledger or an
-    input that cannot be read gives one error.  A build of a configuration
-    that the ledger does not hold gives these items:
-      * one line with the tier of the build and the tiers of the ledger
-        (target.not_held)
-      * the rows of the build
-      * the status SKIPPED.
-    A run of a configuration other than the base writes the rows of the
-    build after a failure, each with the prefix "ledger-row: "
-    (assay.core.ledger.rows_of_counts).
+    input that cannot be read gives one error.  The run judges the counts of
+    the build against the rows of THE POLICY, and its summary line names
+    those rows.  A run of a configuration other than the base writes the rows
+    of the build after a failure, each with the prefix "ledger-row: "
+    (assay.core.ledger.rows_of_counts).  A run of a build of a configuration
+    that the ledger does not hold writes them each time.  Then --import or
+    --add-configuration can put the configuration into the ledger.
 
 THE WRITE
     `guard write --rule RULE --build-dir DIR` writes the rows of the
@@ -44,8 +64,10 @@ THE WRITE
     The write keeps the head comment, the other configurations and their rows.
     It refuses a count more than its row, with two exceptions.  --raise
     permits each such count, and --admit permits a count of an admitted kind
-    of the rule.  --add-configuration writes the configuration of the build with its
-    name.  A file that git reports as moved takes the rows of its earlier path.
+    of the rule.  --add-configuration writes the configuration of the build
+    with its name.  A write of a build of a configuration that the ledger
+    does not hold, with no --add-configuration, writes nothing and fails.  A
+    file that git reports as moved takes the rows of its earlier path.
     A write of the base removes the difference rows of each source file that
     the tree does not hold, because no build compiles it.  A file of the build
     directory keeps its rows.  `guard write --rule RULE --import LOG` puts the
@@ -83,13 +105,14 @@ class CountedRule[Inputs]:
 
     `summary` gives the line of a run or a write: it takes the counts, the configuration, the number of objects and
     a verb.  `admitted_kinds` are the kinds of a count that --admit can write above its row.  `refusal` is the advice
-    of a write that refuses a count above its row.
+    of a write that refuses a count above its row.  The name that `evaluate` takes is the configuration of the rows
+    that judge the build, or None for the base rows (THE POLICY).
     """
 
     rule_id: str
     findings: Callable[[runner.PluginContext], list[check_report.Finding]]
     inputs: Callable[[Path], Inputs]
-    evaluate: Callable[[Mapping[Key, int], rule_ledger.Ledger, str, Inputs, str], list[check_report.Finding]]
+    evaluate: Callable[[Mapping[Key, int], rule_ledger.Ledger, str | None, Inputs, str], list[check_report.Finding]]
     summary: Callable[[Mapping[Key, int], runner.BuildConfiguration, int, str], str]
     admitted_kinds: frozenset[str]
     refusal: str
@@ -117,13 +140,93 @@ def input_problem(rule_id: str, problem: Exception) -> check_report.Finding:
     )
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Judging:
+    """The rows that judge a build (THE POLICY).
+
+    `name` is the configuration of the rows, or None for the base rows.  `words` name the rows for a summary line.
+    `note` is the line of the facts that the build does not share with the configuration of the rows, or "".
+    """
+
+    name: str | None
+    words: str
+    note: str
+
+
+def judging(rule_id: str, ledger: rule_ledger.Ledger, configuration: runner.BuildConfiguration) -> Judging:
+    """Return the rows that judge the build of a configuration (THE POLICY).  Complexity: linear in the facts."""
+    facts = runner.facts_of(ledger, configuration.name)
+    if facts is None:
+        if not ledger.configurations:
+            return Judging(None, "the base rows", "")
+        return Judging(None, f"the base rows, because the ledger holds no configuration {configuration.name}", "")
+    note = ""
+    if not runner.is_held(ledger, configuration):
+        note = runner.held_line(
+            rule_id,
+            ledger,
+            configuration,
+            f"The rows of the configuration {configuration.name} judge the build, and the build can compile other "
+            f"preprocessor arms",
+        )
+    return Judging(configuration.name, f"the rows of the configuration {configuration.name}", note)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class WriteTarget:
+    """Where a write puts the rows of a build (THE WRITE).
+
+    `ledger` is the ledger with the configuration of the build when the write adds it.  `name` is the configuration
+    of the rows, or None for the base rows of a ledger with no configuration.  `is_added` is True when the write adds
+    the configuration, and each of its rows is then new.
+    """
+
+    ledger: rule_ledger.Ledger
+    name: str | None
+    is_added: bool
+
+
+def write_target(
+    rule_id: str, ledger: rule_ledger.Ledger, configuration: runner.BuildConfiguration, add_configuration: bool
+) -> WriteTarget | str:
+    """Return where a write puts the rows of a build, or the line that tells why the write writes nothing (THE POLICY).
+
+    A write is possible when the ledger holds the configuration of the build with each fact of its row, or no
+    configuration.  --add-configuration adds the configuration of the build with each of its facts.
+    """
+    name = configuration.name
+    is_held = runner.is_held(ledger, configuration)
+    if add_configuration:
+        refusal = add_refusal(ledger, name if is_held else None, name)
+        if refusal:
+            return f"{rule_id}: the ledger is not written: {refusal}"
+        others = tuple(item for item in ledger.configurations if item.name != name)
+        added = dataclasses.replace(
+            ledger,
+            configurations=(*others, rule_ledger.Configuration(name, configuration.facts)),
+            deltas={key: table for key, table in ledger.deltas.items() if key != name},
+        )
+        return WriteTarget(added, name, True)
+    if is_held:
+        return WriteTarget(ledger, name, False)
+    if not ledger.configurations:
+        return WriteTarget(ledger, None, False)
+    return runner.held_line(
+        rule_id,
+        ledger,
+        configuration,
+        "A write from that build puts the counts of other preprocessor arms into the rows, so the write writes "
+        "nothing.  Give --add-configuration to write the configuration of the build",
+    )
+
+
 def judge[Inputs](
     spec: CountedRule[Inputs], rule: rule_registry.Rule, context: runner.PluginContext
 ) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the ledger of the tree of the context.
+    """Return the findings of the build judged against the rows of THE POLICY in the ledger of the tree of the context.
 
     Raises:
-        NotApplicable: If the rule does not apply to the build, or the ledger does not hold its configuration
+        NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
     try:
@@ -131,13 +234,11 @@ def judge[Inputs](
         inputs = spec.inputs(context.root)
     except INPUT_ERRORS as problem:
         return [input_problem(spec.rule_id, problem)]
-    configuration = context.configuration()
-    if not runner.is_held(ledger, configuration):
-        raise runner.NotApplicable(runner.held_line(spec.rule_id, ledger, configuration))
+    judged = judging(spec.rule_id, ledger, context.configuration())
     found = spec.findings(context)
     return [
         *problems_of(found),
-        *spec.evaluate(counts_of(found), ledger, configuration.name, inputs, context.build_shown()),
+        *spec.evaluate(counts_of(found), ledger, judged.name, inputs, context.build_shown()),
     ]
 
 
@@ -147,7 +248,7 @@ def run[Inputs](
     """Run the rule on the build of the context, judge its counts against the ledger, and write the findings (THE RUN).
 
     Returns:
-        0 with no error, 1 with an error, SKIPPED when the rule does not apply
+        0 with no error, 1 with an error, SKIPPED when the rule does not apply to the build (THE STATUS of the runner)
     """
     try:
         ledger = rule_ledger.read(rule, context.root)
@@ -167,17 +268,18 @@ def run[Inputs](
         )
     found = spec.findings(context)
     counts, problems = counts_of(found), problems_of(found)
-    if not runner.is_held(ledger, configuration):
-        check_report.write_line(runner.held_line(spec.rule_id, ledger, configuration))
-        print_rows(spec.rule_id, ledger, configuration, counts, bool(problems))
-        return runner.SKIPPED
+    judged = judging(spec.rule_id, ledger, configuration)
+    if judged.note:
+        check_report.write_line(judged.note)
     status = check_report.emit(
-        [*problems, *spec.evaluate(counts, ledger, configuration.name, inputs, context.build_shown())],
+        [*problems, *spec.evaluate(counts, ledger, judged.name, inputs, context.build_shown())],
         spec.rule_id,
         warnings_dir,
     )
-    check_report.write_line(spec.summary(counts, configuration, census.objects, "counted"))
-    if status != 0:
+    check_report.write_line(
+        f"{spec.summary(counts, configuration, census.objects, 'counted')}, judged against {judged.words}"
+    )
+    if status != 0 or not runner.is_held(ledger, configuration):
         print_rows(spec.rule_id, ledger, configuration, counts, bool(problems))
     return status
 
@@ -280,8 +382,9 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     """Write the rows of the configuration of the build (THE WRITE), or import the rows of a log.
 
     Returns:
-        0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be
-        read.  SKIPPED when the rule does not apply or the ledger does not hold the configuration
+        0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be read.
+        1 also when the ledger does not hold the configuration of the build and the write does not add it.  SKIPPED
+        when the rule does not apply to the build
     """
     if request.import_log is not None:
         return import_rows(rule, request.root, request.import_log)
@@ -304,38 +407,21 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         )
         return check_report.emit(problems, spec.rule_id, None)
     counts = counts_of(found)
-    name = configuration.name
-    held = name if runner.is_held(ledger, configuration) else None
+    target = write_target(spec.rule_id, ledger, configuration, request.add_configuration)
+    if isinstance(target, str):
+        check_report.write_line(target, is_error=True)
+        return 1
     moves: dict[str, str] = {}
-    mode = rule_ledger.WriteMode.LOWER
-    if request.add_configuration:
-        refusal = add_refusal(ledger, held, name)
-        if refusal:
-            check_report.write_line(f"{spec.rule_id}: the ledger is not written: {refusal}", is_error=True)
-            return 1
-        others = tuple(item for item in ledger.configurations if item.name != name)
-        ledger = dataclasses.replace(
-            ledger,
-            configurations=(*others, rule_ledger.Configuration(name, configuration.facts)),
-            deltas={key: table for key, table in ledger.deltas.items() if key != name},
-        )
+    if target.is_added:
         mode = rule_ledger.WriteMode.RAISE
-    elif held is None:
-        check_report.write_line(runner.held_line(spec.rule_id, ledger, configuration))
-        check_report.write_line(
-            f"{spec.rule_id}: the ledger is not written.  Give --add-configuration to write the configuration of the "
-            f"build",
-            is_error=True,
-        )
-        return runner.SKIPPED
     else:
         moves = git.moves(request.root)
-        increased = increases_permitted(spec, ledger, name, counts, moves, request.mode)
+        increased = increases_permitted(spec, target.ledger, target.name, counts, moves, request.mode)
         if increased is None:
             return 1
         mode = rule_ledger.WriteMode.RAISE if increased else rule_ledger.WriteMode.LOWER
-    written = rule_ledger.write_counts(rule, ledger, counts, name, mode, request.reason, moved=moves)
-    if name == written.base_name:
+    written = rule_ledger.write_counts(rule, target.ledger, counts, target.name, mode, request.reason, moved=moves)
+    if target.name is None or target.name == written.base_name:
         written = drop_gone_files(written, request.root, counts)
     rule_ledger.store(written, request.root)
     check_report.write_line(
@@ -348,7 +434,7 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
 def increases_permitted[Inputs](
     spec: CountedRule[Inputs],
     ledger: rule_ledger.Ledger,
-    name: str,
+    name: str | None,
     counts: Mapping[Key, int],
     moves: Mapping[str, str],
     mode: rule_ledger.WriteMode,

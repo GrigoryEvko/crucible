@@ -2,9 +2,11 @@
 
 `guard selftest tests.guard.engines.plugin.test_counted` runs the test.  The
 rule heavy-include is the counted rule of most cases: a planted census, a
-planted configuration and a planted ledger in a throwaway directory.  The
-seal rows of the rule detsafe-ledger and the cost rows of the rule
-heavy-include are cases too.  Exit 0 when each case holds, else 1.
+planted configuration and a planted ledger in a throwaway directory.  THE
+POLICY of counted is a case too: the rows that judge a build, and the rows
+that a write writes.  The seal rows of the rule detsafe-ledger and the cost
+rows of the rule heavy-include are cases too.  Exit 0 when each case holds,
+else 1.
 """
 
 import functools
@@ -128,15 +130,29 @@ def verdict_cases(expect: testing.Expect) -> None:
         unknown = runner.BuildConfiguration("unknown", (("kind", "unknown"), ("tier", "x86-64-0")))
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found, unknown), None))
         expect(
-            "a configuration that the ledger does not hold does not apply, and writes its rows",
-            status == runner.SKIPPED and rule_ledger.ROW_MARK in text,
+            "the base rows judge a configuration that the ledger does not hold, and the run writes its rows",
+            status == 0
+            and "judged against the base rows, because the ledger holds no configuration unknown" in text
+            and rule_ledger.ROW_MARK in text,
         )
-        try:
-            heavy_include.judge(rule, context_of(root, base_found, unknown))
-            refused = False
-        except runner.NotApplicable:
-            refused = True
-        expect("judge refuses a configuration that the ledger does not hold", refused)
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, more, unknown), None))
+        expect(
+            "a finding of an arm that only a configuration that the ledger does not hold compiles is an error",
+            status == 1 and "c.h includes <chrono> 1 times" in text,
+        )
+        judged = heavy_include.judge(rule, context_of(root, more, unknown))
+        expect(
+            "judge gives the errors of the base rows for a configuration that the ledger does not hold",
+            any(item.level == "error" and "c.h" in item.message for item in judged),
+        )
+        other_tier = runner.BuildConfiguration("other", (("kind", "other"), ("tier", "x86-64-9")))
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, other, other_tier), None))
+        expect(
+            "the rows of its name judge a build with other facts, and a line names each fact that differs",
+            status == 0
+            and "tier is x86-64-9 in the build and x86-64-0 in the ledger" in text
+            and "judged against the rows of the configuration other" in text,
+        )
         judged = heavy_include.judge(rule, context_of(root, more, BASE))
         expect(
             "judge gives the errors of the verdict",
@@ -245,6 +261,44 @@ def write_cases(expect: testing.Expect) -> None:
         "base configuration" in counted.add_refusal(ledger, None, "planted"),
     )
     expect("--add-configuration permits a new name", counted.add_refusal(ledger, None, "third") == "")
+    kind_only = rule_ledger.parse(
+        "# A planted ledger.\nformat 1\nrule heavy-include\nconfiguration planted kind planted\n",
+        "planted",
+        RULE,
+        rule_registry.Policy.COUNT,
+    )
+    expect("a row that gives only the kind holds a build of that kind with more facts", runner.is_held(kind_only, BASE))
+    expect("a row does not hold a build of a different kind", not runner.is_held(kind_only, OTHER))
+    target = counted.write_target(RULE, ledger, BASE, False)
+    expect(
+        "a write of a configuration that the ledger holds writes its rows",
+        isinstance(target, counted.WriteTarget) and target.name == "planted" and not target.is_added,
+    )
+    third = runner.BuildConfiguration("third", (("kind", "third"),))
+    refusal = counted.write_target(RULE, ledger, third, False)
+    expect(
+        "a write of a configuration that the ledger does not hold writes nothing, and names --add-configuration",
+        isinstance(refusal, str) and "--add-configuration" in refusal,
+    )
+    added = counted.write_target(RULE, ledger, third, True)
+    expect(
+        "--add-configuration adds the configuration of the build with its facts",
+        isinstance(added, counted.WriteTarget)
+        and added.is_added
+        and added.ledger.configuration("third") == rule_ledger.Configuration("third", third.facts),
+    )
+    empty = rule_ledger.parse(
+        "# A planted ledger.\nformat 1\nrule heavy-include\n", "planted", RULE, rule_registry.Policy.COUNT
+    )
+    base_target = counted.write_target(RULE, empty, third, False)
+    expect(
+        "a write into a ledger with no configuration writes the base rows",
+        isinstance(base_target, counted.WriteTarget) and base_target.name is None,
+    )
+    expect(
+        "the base rows of a ledger with no configuration judge each build",
+        counted.judging(RULE, empty, third) == counted.Judging(None, "the base rows", ""),
+    )
 
 
 def seal_cases(expect: testing.Expect) -> None:

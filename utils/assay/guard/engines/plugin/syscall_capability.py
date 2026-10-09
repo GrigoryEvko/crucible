@@ -64,14 +64,16 @@ THE CONFIGURATIONS
 
     The name of a configuration is the name of the configuration of a build
     (THE CONFIGURATION of assay.guard.engines.plugin.runner): the build kind,
-    with -bench and -fuzz.  The rule judges a build against the rows of the
-    configuration with its name.  A row of an arm of one build kind is then
-    judged in that build kind only.  The rule judges a build of a name that
-    the ledger does not hold against the base rows, and no build skips the
+    with -bench and -fuzz.  The rows of THE POLICY of
+    assay.guard.engines.plugin.counted judge a build, as for the rules
+    quarantine and heavy-include.  These rows are the rows of the
+    configuration with its name, else the base rows.  A row of an arm of one
+    build kind is then judged in that build kind only, and no build skips the
     rule.
 
-    The other facts of a build, such as the tier of a CI runner, do not name
-    a configuration.  A raw call that only such a fact changes fails the
+    At this time the configuration rows of this ledger give only the build
+    kind.  The other facts of a build, such as the tier of a CI runner, then
+    change no judgement.  A raw call that only such a fact changes fails the
     build.
 
 THE WRITE
@@ -79,10 +81,12 @@ THE WRITE
     the configuration of the build: the base rows for the base, and the
     difference rows for each other configuration.  When the ledger holds no
     configuration, the write writes the base rows.  --add-configuration adds
-    the configuration of the build, with its build kind: the first one that a
-    ledger gets is the base.  A build of a name that the ledger does not hold
-    writes no row with no --add-configuration.  The modes --raise and --admit
-    and the reason of --reason are those of assay.core.ledger (THE WRITE).
+    the configuration of the build with its facts: the first one that a
+    ledger gets is the base.  counted.write_target() gives the rows of each
+    write.  A write from a build of a configuration that the ledger does not
+    hold writes no row and fails with no --add-configuration.  The modes
+    --raise and --admit and the reason of --reason are those of
+    assay.core.ledger (THE WRITE).
 
 Usage
     guard check --rule syscall-capability --build-dir DIR [--warnings-dir DIR]
@@ -91,7 +95,6 @@ Usage
 Complexity: linear in the finding lines of the build, and in the rows of the ledger.
 """
 
-from dataclasses import replace
 from pathlib import Path
 
 from assay.core import git
@@ -100,7 +103,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.plugin import declarations, runner
+from assay.guard.engines.plugin import counted, declarations, runner
 from assay.readers import sections as plugin_sections
 
 RULE = "syscall-capability"
@@ -187,49 +190,28 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     return [*found, *row_errors(rows)]
 
 
-def build_name(context: runner.PluginContext) -> str | None:
-    """Return the name of the configuration of the build of the context, or None when the context has no build.
+def verdict(
+    rule: rule_registry.Rule, context: runner.PluginContext
+) -> tuple[list[check_report.Finding], counted.Judging]:
+    """Return the findings of the build judged against the rows of THE POLICY of counted, and those rows.
 
-    A witness gives a planted configuration, or none.
-
-    Raises:
-        BuildError: If the build cannot be read, or the compiler does not print its target
-    """
-    try:
-        return context.configuration().name
-    except runner.NotApplicable:
-        return None
-
-
-def judged_name(rows: rule_ledger.Ledger, name: str | None) -> str | None:
-    """Return the configuration with the rows that judge a build of the configuration NAME (THE CONFIGURATIONS).
-
-    It is NAME when the ledger holds a configuration of that name, and None for the base rows in each other case.
-    """
-    return name if name is not None and rows.configuration(name) is not None else None
-
-
-def verdict(rule: rule_registry.Rule, context: runner.PluginContext) -> tuple[list[check_report.Finding], str]:
-    """Return the findings of the build judged against the rows of its configuration, and the words of those rows.
+    A context with no build, as a witness with no configuration row gives, is judged against the base rows.
 
     Raises:
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
     found = findings(context)
-    name = build_name(context)
+    base = counted.Judging(None, "the base rows", "")
     try:
         rows = rule_ledger.read(rule, context.root)
     except rows_grammar.RowsError, OSError:
-        return meta_runner.judged(rule, context.root, found), "the base rows"
-    judging = judged_name(rows, name)
-    if judging is not None:
-        words = f"the rows of the configuration {judging}"
-    elif name is not None and rows.configurations:
-        words = f"the base rows, because the ledger holds no configuration {name}"
-    else:
-        words = "the base rows"
-    return meta_runner.judged(rule, context.root, found, configuration=judging), words
+        return meta_runner.judged(rule, context.root, found), base
+    try:
+        judged = counted.judging(RULE, rows, context.configuration())
+    except runner.NotApplicable:
+        judged = base
+    return meta_runner.judged(rule, context.root, found, configuration=judged.name), judged
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:
@@ -253,14 +235,18 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
     if isinstance(census, int):
         return census
     try:
-        found, words = verdict(rule, context)
+        found, judged = verdict(rule, context)
     except runner.BuildError as problem:
         return check_report.emit(
             [check_report.Finding("error", context.build_shown(), 0, RULE, str(problem))], RULE, warnings_dir
         )
+    if judged.note:
+        check_report.write_line(judged.note)
     status = check_report.emit(found, RULE, warnings_dir)
     errors = sum(item.level == "error" for item in found)
-    check_report.write_line(f"{RULE}: {errors} error(s), {len(found) - errors} warning(s), judged against {words}")
+    check_report.write_line(
+        f"{RULE}: {errors} error(s), {len(found) - errors} warning(s), judged against {judged.words}"
+    )
     return status
 
 
@@ -268,9 +254,9 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     """Write the rows of the configuration of the build (THE WRITE).
 
     Returns:
-        0 when the ledger is written.  1 when the build cannot be read, an object has a problem, or the mode refuses
-        a finding.  2 for --import.  SKIPPED when the rule does not apply or the ledger does not hold the
-        configuration of the build
+        0 when the ledger is written.  1 when the build cannot be read, an object has a problem or the mode refuses
+        a finding.  1 also when the ledger does not hold the configuration of the build and the write does not add
+        it.  2 for --import.  SKIPPED when the rule does not apply to the build
     """
     if request.import_log is not None:
         check_report.write_line(
@@ -293,35 +279,22 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written, because an object has a problem")
         return check_report.emit(census.errors(RULE), RULE, None)
     found = [item for item in census.line_errors(RULE, message) if item.kind]
-    name = configuration.name
+    target = counted.write_target(RULE, rows, configuration, request.add_configuration)
+    if isinstance(target, str):
+        check_report.write_line(target, is_error=True)
+        return 1
     mode = request.mode
-    if request.add_configuration:
-        if rows.configuration(name) is not None:
-            check_report.write_line(
-                f"guard write: the ledger holds the configuration {name}.  Write its rows with no --add-configuration",
-                is_error=True,
-            )
-            return 1
-        kind = dict(configuration.facts).get(runner.KIND_KEY, name)
-        added = rule_ledger.Configuration(name, ((runner.KIND_KEY, kind),))
-        rows = replace(rows, configurations=(*rows.configurations, added))
-        target: str | None = name
-        if mode == rule_ledger.WriteMode.LOWER and len(rows.configurations) > 1:
-            mode = rule_ledger.WriteMode.RAISE
-    elif rows.configuration(name) is not None:
-        target = name
-    elif not rows.configurations:
-        target = None
-    else:
-        check_report.write_line(
-            f"guard write: the ledger of {RULE} holds no configuration {name}, and the base rows judge its build.  "
-            f"Write the rows in a build of a configuration of the ledger, or give --add-configuration",
-            is_error=True,
-        )
-        return runner.SKIPPED
+    if target.is_added and mode == rule_ledger.WriteMode.LOWER and len(target.ledger.configurations) > 1:
+        mode = rule_ledger.WriteMode.RAISE
     try:
         written = rule_ledger.write(
-            rule, rows, found, configuration=target, mode=mode, reason=request.reason, moved=git.moves(request.root)
+            rule,
+            target.ledger,
+            found,
+            configuration=target.name,
+            mode=mode,
+            reason=request.reason,
+            moved=git.moves(request.root),
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
@@ -330,6 +303,6 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     total = len(written.base) + sum(len(table) for table in written.deltas.values())
     check_report.write_line(
         f"guard write: {rule_ledger.shown_path(RULE)} holds {total} rows, written for "
-        f"{'the base rows' if target is None else f'the configuration {target}'}"
+        f"{'the base rows' if target.name is None else f'the configuration {target.name}'}"
     )
     return 0

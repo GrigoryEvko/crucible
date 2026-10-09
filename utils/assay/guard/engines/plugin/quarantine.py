@@ -140,11 +140,14 @@ WRITE THE LEDGER
       configuration can write it.  The run of that build compares those rows
       as it compares each other row.
     * --add-configuration writes the configuration of the build with its
-      name.  It replaces the keys and the rows of a configuration with the
-      same name that is not the base.  The first configuration of an empty
-      ledger is the base.  A change of the keys of the base makes the ledger
-      again.  Keep its head and remove its rows.  Then write each
-      configuration with --add-configuration in its build, the base first.
+      name.  Without it, a write from a build of a configuration that the
+      ledger does not hold writes nothing and fails (THE WRITE of
+      assay.guard.engines.plugin.counted).  It replaces the keys and the
+      rows of a configuration with the same name that is not the base.  The
+      first configuration of an empty ledger is the base.  A change of the
+      keys of the base makes the ledger again.  Keep its head and remove its
+      rows.  Then write each configuration with --add-configuration in its
+      build, the base first.
 
 A CONFIGURATION THAT ONLY CI BUILDS
     No aarch64 compiler is on the build host, and only a CI leg can count an
@@ -164,10 +167,9 @@ A CONFIGURATION THAT ONLY CI BUILDS
 
 NOT APPLICABLE
     The rule exits 77 when the runner does not apply to the build (THE STATUS
-    of the runner).  It also exits 77 when the ledger does not hold the
-    configuration of the build.  It then writes one line with the tier of the
-    build and the tiers of the ledger (target.not_held).  Then it writes the
-    rows of the build.
+    of the runner).  The base rows judge a build of a configuration that the
+    ledger does not hold (THE POLICY of assay.guard.engines.plugin.counted).
+    The rule then writes the rows of the build.
 
 Usage
     guard check --rule quarantine --build-dir DIR [--warnings-dir DIR]
@@ -369,7 +371,7 @@ def load_rows(root: Path) -> list[str]:
 
 
 def evaluate(
-    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str, rows: list[str], build_shown: str
+    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str | None, rows: list[str], build_shown: str
 ) -> list[check_report.Finding]:
     """Compare each count of the build with its ledger count, and give one warning for each directory with no error.
 
@@ -467,7 +469,7 @@ def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check
     """Return the findings of the build judged against the ledger of the tree of the context (THE VERDICT).
 
     Raises:
-        NotApplicable: If the rule does not apply to the build, or the ledger does not hold its configuration
+        NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
     return counted.judge(SPEC, rule, context)
@@ -487,6 +489,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be
-        read.  SKIPPED when the rule does not apply or the ledger does not hold the configuration
+        read.  1 also when the ledger does not hold the configuration of the build and the write does not add it.
+        SKIPPED when the rule does not apply
     """
     return counted.write(SPEC, rule, request)

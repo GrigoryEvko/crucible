@@ -877,7 +877,11 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
     check_report.write_line(examination.summary)
     ledger = examination.ledger
     if not examination.is_held:
-        check_report.write_line(plugin_runner.held_line(RULE, ledger, configuration))
+        check_report.write_line(
+            plugin_runner.held_line(
+                RULE, ledger, configuration, "The check judges the throws and the classes of the build, not its symbols"
+            )
+        )
     if not examination.is_held or status != 0:
         counted.print_rows(RULE, ledger, configuration, examination.symbols, False)
     return status
