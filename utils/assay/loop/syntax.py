@@ -20,22 +20,46 @@ THE RUN
        the plugin or of the rule table makes CMake configure the build
        again in this step.  The compile database then holds a new stamp,
        and the run reads the compile commands after this step.
-    2. The run removes the directory SYNTAX_DIRECTORY of the build.  No
-       report of an earlier run then stays.
+    2. The run removes each report directory of SYNTAX_DIRECTORY that no
+       unit of the build has.  No report of an object that is not in the
+       build then stays.
     3. Each compile of an object of all that loads the plugin runs with
-       -fsyntax-only, with no output and no dependency file.  It gets the
-       plugin argument out= of its report directory (assay.readers.sections,
-       THE REPORT OF A PARSE BUILD).  A cross compiler has no native target,
-       and it refuses -march=native.  For such a compiler, the parse drops
-       each native flag of NATIVE_FLAGS that a bench target or the flag matrix
-       gives, and the compiler uses its default target.  After a parse with
-       the exit 0, the run writes the stamp of the compile command into the
-       stamp file of the report directory.  JOBS parses run at one time.
-    4. The run prints the number of units and each unit that does not
-       parse.  It also prints the wall time and the CPU time of the parses,
-       and the time of step 1.
+       -fsyntax-only and with no output.  It writes the dependency file
+       DEPENDENCY_FILE of its report directory, and it gets the plugin
+       argument out= of that directory (assay.readers.sections, THE REPORT OF
+       A PARSE BUILD).  A cross compiler has no native target, and it
+       refuses -march=native.  For such a compiler, the parse drops each
+       native flag of NATIVE_FLAGS that a bench target or the flag matrix
+       gives.  The compiler then uses its default target.  After a parse
+       with the exit 0, the run writes the stamp of the compile command into
+       the stamp file of the report directory.  It also writes the key of the
+       parse into KEY_FILE (THE KEPT REPORTS).  JOBS parses run at one time.
+    4. The run prints the number of units, the number of kept reports and
+       each unit that does not parse.  It also prints the wall time and the
+       CPU time of the parses, and the time of step 1.
     Then `guard check --rule quarantine --build-dir BUILD_DIR` reads the
     reports (assay.guard.engines.plugin.runner, THE SECTIONS).
+
+THE KEPT REPORTS
+    The key of a parse is the hash of the words of the parse and of the
+    enforce rows of the build (quarantine/enforce.txt).  KEY_FILE also holds
+    the time when the parse started.  That time is the change time of
+    STARTED_FILE, which the run writes before the parse.  The file system
+    then gives the two times that the run compares, and the run reads no
+    wall clock.  The run keeps the report of a unit,
+    and does not parse it, when these conditions hold:
+      * KEY_FILE holds the hash of this run, and the stamp file holds the
+        stamp of the compile command
+      * the report directory holds the report file of the plugin
+      * each file of DEPENDENCY_FILE is in the tree, and it changed before
+        the earlier parse started.
+    A change of the plugin, of the rule table or of the configure changes
+    the stamp, and each unit then parses again.  The run removes the key and
+    the stamp of a unit before its parse.  A parse that fails then keeps no
+    report.  An include can find a new file before the file of the earlier
+    parse.  That new file is no file of DEPENDENCY_FILE, and it gives no
+    parse, as in a build of Ninja.  Complexity: one stat of each different
+    dependency.
 
 THE CHANGE OF AN ARM
     An arm is the code of a preprocessor conditional on a macro of an
@@ -68,7 +92,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from assay.core import configuration as build_config
-from assay.core import proc
+from assay.core import paths, proc
 from assay.core import report as check_report
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import compdb, ninja
@@ -85,6 +109,13 @@ DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 DROPPED = frozenset({"-c", "-MD", "-MMD"})
 # The native flags that a parse drops for a compiler that refuses them (THE RUN).
 NATIVE_FLAGS = frozenset({"-march=native", "-mcpu=native", "-mtune=native"})
+# The dependency file, the key and the start mark of the parse of a unit, in its report directory (THE KEPT
+# REPORTS).
+DEPENDENCY_FILE = "parse.d"
+KEY_FILE = "key"
+STARTED_FILE = "started"
+# The enforce rows of a build, below the build directory (utils/tools/quarantine/Quarantine.cmake).
+ENFORCE_FILE = Path("quarantine") / "enforce.txt"
 # The time limit of one parse, in seconds.
 PARSE_TIMEOUT_S = 900.0
 # The time limit of the build of the input targets, in seconds.
@@ -176,6 +207,7 @@ class Parsed:
     exit: int
     cpu_s: float
     errors: str
+    is_kept: bool = False
 
 
 def refuses_native(compiler: str) -> bool:
@@ -215,7 +247,66 @@ def parse_words(words: tuple[str, ...], report_dir: Path, drops_native: bool = F
             continue
         parsed.append(word)
     # GCC takes a plugin argument only after the -fplugin= of its plugin, so the report argument goes last.
-    return [*parsed, "-fsyntax-only", "-fdiagnostics-color=never", f"{plugin_runner.PLUGIN_ARGUMENT}out={report_dir}"]
+    return [
+        *parsed,
+        "-fsyntax-only",
+        "-MD",
+        "-MF",
+        str(report_dir / DEPENDENCY_FILE),
+        "-fdiagnostics-color=never",
+        f"{plugin_runner.PLUGIN_ARGUMENT}out={report_dir}",
+    ]
+
+
+def words_key(words: list[str], enforce_hash: str) -> str:
+    """Return the hash of the words of a parse and of the enforce rows of the build (THE KEPT REPORTS)."""
+    import hashlib
+
+    return hashlib.sha256("\0".join([*words, enforce_hash]).encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def enforce_hash(build_dir: Path) -> str:
+    """Return the hash of the enforce rows of a build, or an empty text when the build has none."""
+    import hashlib
+
+    try:
+        return hashlib.sha256((build_dir / ENFORCE_FILE).read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def is_kept(unit: Unit, report_dir: Path, key: str, changed_ns: dict[str, int | None]) -> bool:
+    """Return True when the report of a unit can stay, with no parse (THE KEPT REPORTS).
+
+    `changed_ns` holds the change time of each dependency that an earlier call read, or None for a path with no file.
+    Complexity: linear in the dependencies of the unit, one stat of each new one.
+    """
+    from assay.loop.fixture import store as compile_store
+
+    try:
+        kept_key, _, started_text = (report_dir / KEY_FILE).read_text(encoding="utf-8").partition("\n")
+        stamp = (report_dir / quarantine_sections.STAMP_FILE).read_text(encoding="utf-8").strip()
+        dependency_text = (report_dir / DEPENDENCY_FILE).read_text(encoding="utf-8", errors="surrogateescape")
+        has_report = bool(paths.listing(report_dir, f"*{quarantine_sections.REPORT_SUFFIX}"))
+    except OSError:
+        return False
+    if kept_key != key or stamp != unit.stamp or not has_report or not started_text.strip().isdigit():
+        return False
+    started_ns = int(started_text.strip())
+    dependencies = compile_store.parse_dependency_file(dependency_text)
+    if not dependencies:
+        return False
+    for name in dependencies:
+        path = os.path.join(unit.directory, name)
+        if path not in changed_ns:
+            try:
+                changed_ns[path] = os.stat(path).st_mtime_ns
+            except OSError:
+                changed_ns[path] = None
+        changed = changed_ns[path]
+        if changed is None or changed >= started_ns:
+            return False
+    return True
 
 
 def require_parse_build(build_dir: Path) -> None:
@@ -287,14 +378,18 @@ def build_input_targets(build_dir: Path, jobs: int) -> float:
     return time.monotonic() - start
 
 
-def parse_unit(unit: Unit, build_dir: Path, native_refusers: frozenset[str]) -> Parsed:
-    """Parse one unit into its report directory, and write its stamp after a parse with the exit 0.
+def parse_unit(unit: Unit, words: list[str], key: str, report_dir: Path) -> Parsed:
+    """Parse one unit into its report directory, and write its stamp and its key after a parse with the exit 0.
 
-    `native_refusers` holds each compiler that refuses -march=native.
+    The run removes the key and the stamp before the parse, and it reads the start time from STARTED_FILE (THE KEPT
+    REPORTS).
     """
-    report_dir = quarantine_sections.report_directory(build_dir, unit.object_path)
     report_dir.mkdir(parents=True, exist_ok=True)
-    words = parse_words(unit.words, report_dir, bool(unit.words) and unit.words[0] in native_refusers)
+    (report_dir / KEY_FILE).unlink(missing_ok=True)
+    (report_dir / quarantine_sections.STAMP_FILE).unlink(missing_ok=True)
+    started_mark = report_dir / STARTED_FILE
+    started_mark.write_bytes(b"")
+    started_ns = started_mark.stat().st_mtime_ns
     try:
         done = proc.run(
             proc.Command(
@@ -309,7 +404,25 @@ def parse_unit(unit: Unit, build_dir: Path, native_refusers: frozenset[str]) -> 
         return Parsed(unit, 127, 0.0, str(problem))
     if done.exit == 0:
         (report_dir / quarantine_sections.STAMP_FILE).write_text(f"{unit.stamp}\n", encoding="utf-8")
+        (report_dir / KEY_FILE).write_text(f"{key}\n{started_ns}\n", encoding="utf-8")
     return Parsed(unit, done.exit, done.cpu_s, done.err)
+
+
+def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
+    """Remove each report directory of SYNTAX_DIRECTORY that no unit of the build has (THE RUN, step 2).
+
+    A report directory holds the stamp file, the key file or the dependency file, and the directory of an object holds
+    no other report directory.  Complexity: linear in the files of SYNTAX_DIRECTORY.
+    """
+    syntax_dir = build_dir / quarantine_sections.SYNTAX_DIRECTORY
+    if not syntax_dir.is_dir():
+        return
+    marks = {quarantine_sections.STAMP_FILE, KEY_FILE, DEPENDENCY_FILE, STARTED_FILE}
+    stale = {
+        path.parent for path in paths.listing(syntax_dir, "**/*") if path.name in marks and path.parent not in kept_dirs
+    }
+    for directory in sorted(stale):
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def run(build_dir: Path, root: Path, jobs: int) -> int:
@@ -327,12 +440,24 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
     except ParseError as problem:
         check_report.write_line(f"loop syntax: {problem}", is_error=True)
         return 1
-    shutil.rmtree(build_dir / quarantine_sections.SYNTAX_DIRECTORY, ignore_errors=True)
+    report_dirs = {unit: quarantine_sections.report_directory(build_dir, unit.object_path) for unit in units}
+    prune_reports(build_dir, set(report_dirs.values()))
     compilers = sorted({unit.words[0] for unit in units if unit.words})
     native_refusers = frozenset(compiler for compiler in compilers if refuses_native(compiler))
+    enforce = enforce_hash(build_dir)
     start = time.monotonic()
+    planned: list[tuple[Unit, list[str], str]] = []
+    results: list[Parsed] = []
+    changed_ns: dict[str, int | None] = {}
+    for unit in units:
+        words = parse_words(unit.words, report_dirs[unit], bool(unit.words) and unit.words[0] in native_refusers)
+        key = words_key(words, enforce)
+        if is_kept(unit, report_dirs[unit], key, changed_ns):
+            results.append(Parsed(unit, 0, 0.0, "", True))
+        else:
+            planned.append((unit, words, key))
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        results = list(pool.map(lambda unit: parse_unit(unit, build_dir, native_refusers), units))
+        results += pool.map(lambda item: parse_unit(item[0], item[1], item[2], report_dirs[item[0]]), planned)
     wall_s = time.monotonic() - start
     failed = [result for result in results if result.exit != 0]
     for result in failed:
@@ -344,10 +469,11 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
         for line in lines:
             check_report.write_line(f"    {line}", is_error=True)
     cpu_s = sum(result.cpu_s for result in results)
+    kept = sum(1 for result in results if result.is_kept)
     check_report.write_line(
-        f"loop syntax: {len(results) - len(failed)} of {len(results)} units parse in {wall_s:.1f} s "
-        f"of wall time and {cpu_s:.1f} s of CPU time with {jobs} jobs.  The input targets took "
-        f"{input_s:.1f} s"
+        f"loop syntax: {len(results) - len(failed)} of {len(results)} units parse, {kept} of them with the kept report "
+        f"of an earlier parse, in {wall_s:.1f} s of wall time and {cpu_s:.1f} s of CPU time with {jobs} jobs.  The "
+        f"input targets took {input_s:.1f} s"
     )
     return 1 if failed else 0
 

@@ -20,13 +20,16 @@ from assay.guard.engines.plugin import runner as plugin_runner
 from assay.loop import syntax
 from assay.readers import cmake, compdb, ninja, sections
 
-# A compiler that writes one report file into the directory of its plugin argument out=, and exits 3 for a unit
-# named bad.cpp.
+# A compiler that writes one report file into the directory of its plugin argument out=, and a dependency file with
+# the source when the words give -MF.  It exits 3 for a unit named bad.cpp.
 FAKE_COMPILER = """
 import pathlib, sys
 out = next(word.split("=", 1)[1] for word in sys.argv if word.startswith("-fplugin-arg-crucible_quarantine-out="))
 pathlib.Path(out).mkdir(parents=True, exist_ok=True)
 (pathlib.Path(out) / "a.cpp.0000000000000000.quarantine").write_text("# unit a.cpp\\n", encoding="utf-8")
+if "-MF" in sys.argv:
+    source = next(word for word in sys.argv if word.endswith(".cpp"))
+    pathlib.Path(sys.argv[sys.argv.index("-MF") + 1]).write_text(f"a.o: {source}\\n", encoding="utf-8")
 sys.exit(3 if "bad.cpp" in sys.argv else 0)
 """
 
@@ -45,7 +48,8 @@ def word_cases(expect: testing.Expect) -> None:
     words = ("g++", "-DX", "-MD", "-MT", "a.o", "-MF", "a.d", "-march=native", "-o", "a.o", "-c", "a.cpp")
     parsed = syntax.parse_words(words, report)
     expect(
-        "a parse drops -c, the output and the dependency file, and adds the report argument last",
+        "a parse drops -c, the output and the dependency file, writes its own dependency file, and adds the report "
+        "argument last",
         parsed
         == [
             "g++",
@@ -53,6 +57,9 @@ def word_cases(expect: testing.Expect) -> None:
             "-march=native",
             "a.cpp",
             "-fsyntax-only",
+            "-MD",
+            "-MF",
+            str(report / syntax.DEPENDENCY_FILE),
             "-fdiagnostics-color=never",
             f"{plugin_runner.PLUGIN_ARGUMENT}out={report}",
         ],
@@ -95,24 +102,57 @@ def build_cases(expect: testing.Expect) -> None:
         )
 
 
+def parsed_unit(unit: syntax.Unit, build: Path, enforce: str) -> tuple[syntax.Parsed, list[str], str, Path]:
+    """Parse one unit with no native refuser, and return the result, the words, the key and the report directory."""
+    report_dir = sections.report_directory(build, unit.object_path)
+    words = syntax.parse_words(unit.words, report_dir)
+    key = syntax.words_key(words, enforce)
+    return syntax.parse_unit(unit, words, key, report_dir), words, key, report_dir
+
+
 def unit_cases(expect: testing.Expect) -> None:
-    """Hold the parse of one unit: its report directory, its stamp, and a unit that does not parse."""
+    """Hold the parse of one unit: its report directory, its stamp, a unit that does not parse, and a kept report."""
+    import os
+
     with tempfile.TemporaryDirectory(prefix="syntax-unit-") as scratch_text:
         scratch = Path(scratch_text)
         compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
+        source = scratch / "a.cpp"
+        source.write_text("int a;\n", encoding="utf-8")
+        os.utime(source, ns=(1, 1))
         build = scratch / "build"
         good = syntax.Unit(build / "t.dir" / "a.cpp.o", "s1", (compiler, "-c", "a.cpp", "-o", "a.o"), str(scratch))
-        parsed = syntax.parse_unit(good, build, frozenset())
+        parsed, _, key, report_dir = parsed_unit(good, build, "e1")
         expect("a unit that parses exits 0", parsed.exit == 0)
         expect(
             "a unit that parses gives its report and its stamp to the reader",
-            sections.read_report(sections.report_directory(build, good.object_path)) == sections.Section("s1", ()),
+            sections.read_report(report_dir) == sections.Section("s1", ()),
         )
-        bad = syntax.Unit(build / "t.dir" / "bad.cpp.o", "s1", (compiler, "-c", "bad.cpp"), str(scratch))
-        failed = syntax.parse_unit(bad, build, frozenset())
         expect(
-            "a unit that does not parse gives its exit, and the run writes no stamp for it",
-            failed.exit == 3 and not (sections.report_directory(build, bad.object_path) / sections.STAMP_FILE).exists(),
+            "the report of a parse stays with the same key and stamp, and with no dependency newer than the parse",
+            syntax.is_kept(good, report_dir, key, {}),
+        )
+        expect("a different key gives a new parse", not syntax.is_kept(good, report_dir, key + "0", {}))
+        stamped = syntax.Unit(good.object_path, "s2", good.words, good.directory)
+        expect("a different stamp gives a new parse", not syntax.is_kept(stamped, report_dir, key, {}))
+        os.utime(source)
+        expect("a dependency newer than the parse gives a new parse", not syntax.is_kept(good, report_dir, key, {}))
+        os.utime(source, ns=(1, 1))
+        source.unlink()
+        expect("a dependency that does not exist gives a new parse", not syntax.is_kept(good, report_dir, key, {}))
+        bad = syntax.Unit(build / "t.dir" / "bad.cpp.o", "s1", (compiler, "-c", "bad.cpp"), str(scratch))
+        failed, _, bad_key, bad_dir = parsed_unit(bad, build, "e1")
+        expect(
+            "a unit that does not parse gives its exit, and the run writes no stamp and no key for it",
+            failed.exit == 3
+            and not (bad_dir / sections.STAMP_FILE).exists()
+            and not (bad_dir / syntax.KEY_FILE).exists()
+            and not syntax.is_kept(bad, bad_dir, bad_key, {}),
+        )
+        syntax.prune_reports(build, {report_dir})
+        expect(
+            "the prune removes the report directory of a unit that the build does not have, and keeps the others",
+            report_dir.is_dir() and not bad_dir.exists(),
         )
 
 
