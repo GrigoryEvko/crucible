@@ -5,7 +5,7 @@ throwaway trees.  They do a test of the reader of the manifest and of the
 functions that compare the rows with the findings and the diagnostics.  They
 also do a test of the judgement of one compile and of the tables of the white
 space.  The last cases do a test of the copy of a plant and of the status with
-no compiler.
+no compiler.  A case does a test of the environment of the run of the plants.
 
 `guard selftest tests.guard.engines.plugin.test_witness` runs the test.  Each
 case writes one line.  Exit 0 when each case holds, else 1.
@@ -13,6 +13,7 @@ case writes one line.  Exit 0 when each case holds, else 1.
 
 import contextlib
 import io
+import os
 import tempfile
 from pathlib import Path
 
@@ -20,9 +21,12 @@ from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core import ruletable, testing
 from assay.core.exit import ExitCode
+from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.plugin import witness
 from assay.readers import sections
 
+# The variable that a CI runner sets, which the witness removes for the run of its plants (THE ENVIRONMENT).
+CI_VARIABLE = meta_runner.PLANTED_VARIABLES[0]
 MANIFEST = """# a planted manifest
 compile report unit.cpp
 exit report pass
@@ -376,10 +380,53 @@ def plant_cases(expect: testing.Expect) -> None:
         )
 
 
+def environment_cases(expect: testing.Expect) -> None:
+    """Do a test of THE ENVIRONMENT: the run of the plants has no planted variable, and a plant sets none."""
+    with tempfile.TemporaryDirectory(prefix="test-witness-") as scratch:
+        root = Path(scratch)
+        plants = root / meta_runner.PLANTS / "quarantine"
+        (plants / "control-plain").mkdir(parents=True)
+        (plants / "control-variable").mkdir()
+        (plants / "control-variable" / meta_runner.ENVIRONMENT_FILE).write_text(
+            "GITHUB_ACTIONS | true\n", encoding="utf-8"
+        )
+        plugin = root / "plugin.so"
+        plugin.write_bytes(b"")
+        seen: list[str | None] = []
+        earlier_run = witness.run_plant
+        earlier_value = os.environ.get(CI_VARIABLE)
+        os.environ[CI_VARIABLE] = "true"
+
+        def recorded(
+            compiler: witness.Compiler, plant: Path, rule_id: str = witness.QUARANTINE_RULE
+        ) -> tuple[list[str], int, bool]:
+            """Record the planted variable of the run, and then run the plant."""
+            seen.append(os.environ.get(CI_VARIABLE))
+            return earlier_run(compiler, plant, rule_id)
+
+        witness.run_plant = recorded
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
+                status = witness.witness("quarantine", root, "sh", plugin)
+            after = os.environ.get(CI_VARIABLE)
+        finally:
+            witness.run_plant = earlier_run
+            if earlier_value is None:
+                os.environ.pop(CI_VARIABLE, None)
+            else:
+                os.environ[CI_VARIABLE] = earlier_value
+    expect("each plant runs with no GITHUB_ACTIONS", seen == [None, None])
+    expect("the run puts GITHUB_ACTIONS back", after == "true")
+    expect(
+        "a plant with environment.txt fails, and the witness gives the status 1",
+        status == ExitCode.FINDINGS and witness.ENVIRONMENT_REFUSAL in said.getvalue(),
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (manifest_cases, comparison_cases, judgement_cases, table_cases, plant_cases),
+        (manifest_cases, comparison_cases, judgement_cases, table_cases, plant_cases, environment_cases),
     )

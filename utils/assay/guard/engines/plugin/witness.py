@@ -151,6 +151,16 @@ THE KINDS OF A PLANT
     then judges the lines.  A manifest has at most one configuration row,
     and only with a judge row.
 
+THE ENVIRONMENT
+    The witness runs the plants of a rule at one time, in the threads of one
+    process.  It removes each variable of PLANTED_VARIABLES of
+    assay.guard.engines.meta.runner from the environment for the run, and it
+    puts the variables back after the run.  A CI runner then gives each
+    plant the verdict of the build host: GITHUB_ACTIONS demotes no error of
+    a module that judges a plant.  The threads share the environment.  A
+    plant of this witness then sets no variable, and a plant with the file
+    environment.txt fails.
+
 THE STATUS
     witness() returns 0 when each plant and each control holds, and 1 when
     one fails.  It returns 77 when the witness cannot run: no compiler, no
@@ -182,6 +192,11 @@ from assay.readers import sections as plugin_sections
 
 MANIFEST = "witness.txt"
 TREE = "tree"
+# The failure of a plant that sets a variable (THE ENVIRONMENT).
+ENVIRONMENT_REFUSAL = (
+    f"the plant holds {meta_runner.ENVIRONMENT_FILE}, and this witness runs its plants at one time in one process.  A "
+    f"plant of this witness sets no variable: remove the file"
+)
 REPO_MARK = "{repo}"
 PLUGIN_MARK = "{plugin}"
 PLUGIN_NAME = "crucible_quarantine"
@@ -1571,6 +1586,8 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
     """
     from concurrent.futures import ThreadPoolExecutor
 
+    if (plant / meta_runner.ENVIRONMENT_FILE).is_file():
+        return [ENVIRONMENT_REFUSAL], 0, False
     try:
         manifest = read_manifest(plant / MANIFEST)
     except (rows_grammar.RowsError, OSError) as problem:
@@ -1668,7 +1685,7 @@ def witness(
         check_report.write_line(f"{rule_id}: no plant in {meta_runner.PLANTS}/{rule_id}/", is_error=True)
         return ExitCode.FINDINGS
     compiler = Compiler(program, plugin.resolve(), root.resolve(), build_dir, max(1, jobs))
-    with ThreadPoolExecutor(max_workers=len(plants)) as pool:
+    with meta_runner.planted_environment(()), ThreadPoolExecutor(max_workers=len(plants)) as pool:
         results = list(pool.map(lambda plant: run_plant(compiler, plant, rule_id), plants))
     failures: list[str] = []
     for plant, (found, cases, skipped) in zip(plants, results, strict=True):
