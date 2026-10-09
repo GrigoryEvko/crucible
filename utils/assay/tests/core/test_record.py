@@ -142,6 +142,52 @@ def test_and_fixture_cases(expect: testing.Expect) -> None:
             written == cost_record.TestRecord("run.sh", "rejected", "/b/test/run.sh", 0, cost)
             and changes_refused(written),
         )
+        window_cases(expect, build, cost)
+
+
+def window_cases(expect: testing.Expect, build: Path, cost: cost_record.Cost) -> None:
+    """Write and read the window of a test, with the JSON reader and with the text reader of the test launcher."""
+    path = Path(cost_record.test_record_file(build, "run.sh"))
+    expect(
+        "a test record with no window holds the wall time of its cost block as its window",
+        cost_record.TestRecord("run.sh", "passed", "sh", 0, cost).walls == (cost.wall_s,),
+    )
+    windowed = cost_record.TestRecord("run.sh", "passed", "sh", 0, cost, (6.5, 4.25, 5.0))
+    cost_record.write(path, windowed)
+    expect(
+        "the window of a test reads back equal with each reader, the newest run first, and its least wall time is "
+        "its smallest value",
+        cost_record.read_test(path) == windowed
+        and cost_record.recent_walls(str(path)) == (6.5, 4.25, 5.0)
+        and windowed.least_wall_s == 4.25,
+    )
+    empty = cost_record.TestRecord("run.sh", "passed", "sh", 0, cost, ())
+    cost_record.write(path, empty)
+    expect(
+        "an empty window reads back empty, and its least wall time is the wall time of the cost block",
+        cost_record.read_test(path).walls == ()
+        and cost_record.recent_walls(str(path)) == ()
+        and empty.least_wall_s == cost.wall_s,
+    )
+    expect(
+        "the text reader gives no window for a record that is not there",
+        cost_record.recent_walls(cost_record.test_record_file(build, "none")) == (),
+    )
+    for label, text in (("a word that is no number", '"walls": [1.0, x]'), ("a negative time", '"walls": [-1.0]')):
+        path.write_text(f'{{\n"format": 1,\n{text}\n}}\n', encoding="utf-8")
+        expect(f"the text reader gives no window for {label}", cost_record.recent_walls(str(path)) == ())
+    head = '{"format": 1, "step": "test", "result": "passed", "test": "run.sh", "command": "sh", "exit": 0, '
+    block = '"cost": {"cpu_s": 1, "wall_s": 2.5, "peak_rss_kb": 3}'
+    path.write_text(f"{head}{block}}}\n", encoding="utf-8")
+    expect(
+        "a test record of an earlier launcher, with no window, holds the wall time of its cost block",
+        cost_record.read_test(path).walls == (2.5,),
+    )
+    path.write_text(f'{head}{block}, "walls": [1, true]}}\n', encoding="utf-8")
+    expect(
+        "a test record with a window of a value that is no time raises RecordError",
+        read_error(cost_record.read_test, path) == "RecordError",
+    )
 
 
 def changes_refused(record: cost_record.TestRecord) -> bool:

@@ -41,8 +41,9 @@ THE WRITE
     `guard write --rule test-time --build-dir BUILD_DIR` writes the rows of
     the name of the configuration of the build again, from the records of the
     build directory.  A row of a test with a last record over the warning
-    threshold of test-time gets its wall time.  A row of a test at or below
-    that threshold goes.  A registered test with a last record over the error
+    threshold of test-time gets a new value.  The value is the smallest wall
+    time of the window of the record, which the judge of the test reads.  A
+    row of a test at or below that threshold goes.  A registered test with a last record over the error
     threshold and no row gets a new row.  A test with no record keeps its row.
     `guard write --rule test-memory` writes the ledger of test-memory in the
     same way, with the peak memory of each record in GB.  test-memory has a
@@ -177,8 +178,12 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def measure_of(rule_id: str, record: cost_record.TestRecord) -> float:
-    """Return the measure of a record in the unit of the rule: the wall time for test-time, the peak GB for test-memory."""
-    return record.cost.wall_s if rule_id == RULE else record.cost.peak_rss_kb / cost_meter.KB_PER_GB
+    """Return the measure of a record in the unit of the rule, as the judge of the test reads it.
+
+    test-time reads the smallest wall time of the window of the test (assay.loop.teststep, THE MEASURED RULES).
+    test-memory reads the peak memory of the last run in GB.
+    """
+    return record.least_wall_s if rule_id == RULE else record.cost.peak_rss_kb / cost_meter.KB_PER_GB
 
 
 def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:

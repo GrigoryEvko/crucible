@@ -407,6 +407,66 @@ def unmeasured_cases(expect: testing.Expect) -> None:
     expect("a run that does not do the work of the row, such as a stored fixture, keeps the row", stored == [])
 
 
+def window_cases(expect: testing.Expect) -> None:
+    """Check that the warning of test-time reads the smallest wall time of the window, and its error each run."""
+    budget = {"test-time": (5.0, 30.0)}
+    with tempfile.TemporaryDirectory(prefix="test-step-window-") as directory:
+        build = Path(directory) / "build"
+        build.mkdir()
+        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
+        warnings = build / "check-warnings"
+
+        def run(name: str, wall: float, exit_code: int = 0, is_measured: bool = True) -> tuple[int, bool]:
+            """Judge and record one planted run of a test.  Return its status, and True when it gives a warning."""
+            measured = cost_meter.Measurement(exit_code, 0.1, 0.0, wall, 1024, 1.0, 0.0, None)
+            status = test_launcher.judge_and_record(
+                name, "/b/test", "/b/test", str(build), measured, str(warnings), budget, is_measured
+            )
+            return status, (warnings / f"test-time.{name}.txt").is_file()
+
+        def window(name: str) -> tuple[float, ...]:
+            """Return the window of the record of a test."""
+            return cost_record.read_test(Path(cost_record.test_record_file(build, name))).walls
+
+        run("test_loaded", 4.2)
+        run("test_loaded", 4.4)
+        status, warns = run("test_loaded", 6.0)
+        expect(
+            "a run over the warning threshold of test-time gives no warning when a faster run of its window is under "
+            "the threshold, because the load of the host only makes a run slower",
+            status == 0 and not warns and window("test_loaded") == (6.0, 4.4, 4.2),
+        )
+        verdicts = [run("test_blocked", 6.0) for _ in range(test_launcher.RECENT_RUNS + 1)]
+        expect(
+            "a test that waits for 6 s on each run warns on each run",
+            verdicts == [(0, True)] * (test_launcher.RECENT_RUNS + 1)
+            and window("test_blocked") == (6.0,) * test_launcher.RECENT_RUNS,
+        )
+        run("test_slower", 4.0)
+        verdicts = [run("test_slower", 6.0) for _ in range(test_launcher.RECENT_RUNS)]
+        expect(
+            "a test that becomes slower warns when each run of its window is slower",
+            verdicts == [(0, False)] * (test_launcher.RECENT_RUNS - 1) + [(0, True)],
+        )
+        run("test_stalled", 4.0)
+        status, _ = run("test_stalled", 31.0)
+        expect("one run over the error threshold of test-time fails at once, also after a faster run", status == 1)
+        run("test_failing", 6.0)
+        status, warns = run("test_failing", 1.0, exit_code=1)
+        expect(
+            "a run that failed is judged alone, and it stays out of the window",
+            status == 1 and not warns and window("test_failing") == (6.0,),
+        )
+        status, warns = run("test_failing", 6.0)
+        expect("the next passed run reads the window with no failed run", status == 0 and warns)
+        run("neg_stored", 6.0)
+        status, warns = run("neg_stored", 0.1, is_measured=False)
+        expect(
+            "a run that does not do the measured work, such as a stored fixture, stays out of the window",
+            status == 0 and not warns and window("neg_stored") == (6.0,),
+        )
+
+
 def launched_cases(expect: testing.Expect) -> None:
     """Check the command that a test runs behind the launcher, which a reader of the tests of a build takes."""
     master = "/export/utils/bin/loop"
@@ -443,6 +503,7 @@ def main(argv: list[str]) -> int:
                 planted.ledger_cases,
                 planted.core_cases,
                 unmeasured_cases,
+                window_cases,
                 launched_cases,
             ),
         )

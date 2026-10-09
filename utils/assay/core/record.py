@@ -35,6 +35,11 @@ THE FORMAT
       last_cost     for "hit": the cost block of the earlier record of the
                     output, when it had one.  A hit then keeps the last
                     measured cost
+      walls         for a test: the wall times in seconds of its last runs
+                    that did the measured work, the newest first.  The judge
+                    of test-time reads their smallest value (assay.loop.
+                    teststep, THE MEASURED RULES).  A record with no such key
+                    has the wall time of its cost block as its one value
     The first line of a record of a fixture holds a JSON object.  Each line
     after it holds the path of `realpath()` of one file that the compile read.
     The record names each file one time.  A header that the compile opened
@@ -74,10 +79,12 @@ THE WRITE
     output, as text.
 
 THE READ
-    A reader imports json, because no step meter reads a record.  read()
-    raises MissingRecord when the output has no record.  Each reader raises
-    RecordError when the record cannot be read, or when it does not have the
-    shape of a record of its step.
+    A reader imports json.  read() raises MissingRecord when the output has
+    no record.  Each reader raises RecordError when the record cannot be read,
+    or when it does not have the shape of a record of its step.  The one read
+    of a step meter is recent_walls(): `loop test-step` reads the wall times
+    of the earlier record of a test from the text of the key walls, with no
+    JSON module.
 
 `guard selftest tests.core.test_record` does a test of the module.
 """
@@ -109,6 +116,9 @@ CCACHE_COUNT_KEY = "ccache_instructions"
 COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY)
 # The keys of a cost block in the text of a record, for the last cost of a hit (THE WRITE).
 CARRIED_KEYS = ('"cost": ', '"last_cost": ')
+# The key of the recent wall times of a test, and its start of a line in the text of a record (THE READ).
+WALLS_FIELD = "walls"
+WALLS_KEY = f'"{WALLS_FIELD}": '
 
 type Step = Literal["compile", "link", "test", "fixture"]
 # One finding of the quarantine plugin in the source of a fixture: its kind, its line, its column and its entity.
@@ -209,18 +219,30 @@ class CostRecord(Value):
 
 
 class TestRecord(Value):
-    """One record of the last run of a test (THE FORMAT)."""
+    """One record of the last run of a test (THE FORMAT).
 
-    __match_args__ = ("name", "result", "program", "exit", "cost")
+    `walls` holds the wall times of the last runs that did the measured work, the newest first.  With no walls, the
+    record holds the wall time of its cost block as its one value.
+    """
+
+    __match_args__ = ("name", "result", "program", "exit", "cost", "walls")
     name: str
     result: str
     program: str
     exit: int
     cost: Cost
+    walls: tuple[float, ...]
 
-    def __init__(self, name: str, result: str, program: str, exit: int, cost: Cost) -> None:
-        """Hold the name, the result, the program, the status and the cost of one run of a test."""
-        super().__init__(name, result, program, exit, cost)
+    def __init__(
+        self, name: str, result: str, program: str, exit: int, cost: Cost, walls: Sequence[float] | None = None
+    ) -> None:
+        """Hold the name, the result, the program, the status, the cost and the recent wall times of a test."""
+        super().__init__(name, result, program, exit, cost, (cost.wall_s,) if walls is None else tuple(walls))
+
+    @property
+    def least_wall_s(self) -> float:
+        """The smallest wall time of `walls`, or the wall time of the cost block when `walls` is empty."""
+        return min(self.walls, default=self.cost.wall_s)
 
 
 class FixtureRecord(Value):
@@ -347,6 +369,29 @@ def carried_text(path: str) -> str | None:
     return None
 
 
+def recent_walls(path: str) -> tuple[float, ...]:
+    """Return the wall times of the key walls of the earlier record of a test at a path, the newest first (THE READ).
+
+    The function reads the text, with no JSON module, because each test pays for its imports.  The list is on one
+    line, after WALLS_KEY.  A record that is not there, cannot be read, or holds a list of a different shape gives no
+    wall time.  Complexity: linear in the length of the record.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            line = next((text for text in handle if text.startswith(WALLS_KEY)), "")
+    except OSError, UnicodeDecodeError:
+        return ()
+    listed = line[len(WALLS_KEY) :].rstrip().rstrip(",")
+    if not (listed.startswith("[") and listed.endswith("]")):
+        return ()
+    words = [word.strip() for word in listed[1:-1].split(",") if word.strip()]
+    try:
+        walls = tuple(float(word) for word in words)
+    except ValueError:
+        return ()
+    return walls if all(wall >= 0.0 for wall in walls) else ()
+
+
 def object_text(fields: Sequence[tuple[str, str]]) -> str:
     """Return a JSON object with one key on each line, from each key and its value as JSON text."""
     return "{\n" + ",\n".join(f"{quote(key)}: {value}" for key, value in fields) + "\n}\n"
@@ -384,6 +429,7 @@ def test_text(record: TestRecord) -> str:
             ("command", quote(record.program)),
             ("exit", str(record.exit)),
             ("cost", cost_text(record.cost)),
+            (WALLS_FIELD, "[" + ", ".join(f"{wall:.3f}" for wall in record.walls) + "]"),
         ]
     )
 
@@ -582,7 +628,26 @@ def read_test(path: Path) -> TestRecord:
         raise RecordError(f"the record {path.name} is not a record of a test with its result, command, exit and cost")
     if path.name != name + TEST_SUFFIX:
         raise RecordError(f"the record {path} is the record of the test {name}, and its file has another name")
-    return TestRecord(name, result, program, exit_code, cost)
+    return TestRecord(name, result, program, exit_code, cost, _walls(found.get(WALLS_FIELD), path))
+
+
+def _walls(value: object, path: Path) -> tuple[float, ...] | None:
+    """Return the wall times of the key walls of a test record, or None when the record has no such key.
+
+    Raises:
+        RecordError: If the value is not a list of numbers of 0 or more
+    """
+    if value is None:
+        return None
+    refusal = RecordError(f"the record {path.name} has a key {WALLS_FIELD} that is not a list of times of 0 or more")
+    if not isinstance(value, list):
+        raise refusal
+    walls: list[float] = []
+    for wall in value:
+        if not isinstance(wall, (int, float)) or isinstance(wall, bool) or wall < 0:
+            raise refusal
+        walls.append(float(wall))
+    return tuple(walls)
 
 
 def read_fixture(path: Path) -> FixtureRecord:

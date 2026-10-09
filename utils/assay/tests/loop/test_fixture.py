@@ -894,12 +894,18 @@ class StoreTest:
         self.expect(launched.exit == status and launched.err.count("error: [test-time] the test neg_size took") == 1,
                     f"the launcher refuses the same fixture, and the driver under it does not judge again: "
                     f"{launched.exit} {launched.err[-400:]}")
-        same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key != "cost"} == {
-            key: launcher[key] for key in launcher if key != "cost"}
+        # The cost block and the window hold the times of each run, which are not equal.
+        timed = ("cost", "walls")
+        same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key not in timed} == {
+            key: launcher[key] for key in launcher if key not in timed}
+        same_windows = [
+            len(walls) if isinstance(walls := found.get("walls"), list) else 0 for found in (driver, launcher)
+        ] == [1, 1]
         driver_cost, launcher_cost = driver.get("cost"), launcher.get("cost")
         same_costs = isinstance(driver_cost, dict) and isinstance(launcher_cost, dict) and set(driver_cost) == set(
             launcher_cost)
-        self.expect(same_fields and same_costs and driver.get("result") == "rejected" and driver.get("step") == "test",
+        self.expect(same_fields and same_costs and same_windows and driver.get("result") == "rejected"
+                    and driver.get("step") == "test",
                     f"the record of the driver and the record of the launcher hold the same fields and the same "
                     f"verdict: {driver} {launcher}")
         table.write_text(planted_registry(("test-time", 1000, 2000, "s"), ("test-memory", 1000, 2000, "GB")))

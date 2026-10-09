@@ -184,7 +184,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
             record.exit, cost.user_s, cost.system_s, cost.wall_s, cost.peak_rss_kb, cost.load, cost.end, None
         )
         place = context.shown(cost_record.test_record_file(build, name))
-        for level, row, message in teststep.judge(name, run, budget, kind, ledgers, configuration):
+        for level, row, message in teststep.judge(name, run, budget, kind, ledgers, configuration, walls=record.walls):
             shown_level: check_report.Level = "error" if level == "error" else "warning"
             found.append(check_report.Finding(shown_level, place, 0, row, message))
     return found

@@ -54,6 +54,19 @@ THE MEASURED RULES
     test-time is the wall time of the test, and test-memory is the peak
     resident memory of its largest process (the measured rules of
     utils/registry.txt).
+      * The load of the host only makes a run slower.  The warnings of
+        test-time then read the smallest wall time of the window of the test.
+        The window is the last RECENT_RUNS runs with the status 0 that did the
+        measured work, this run with them.  The record of the test keeps the
+        window (key walls, assay.core.record).  A test that waits for the same
+        time on each run has that time in each run of its window, and it gives
+        a warning.  After a change that makes a test longer, the test gives a
+        warning when each run of its window is that long.  A run with a
+        different status, or a run that did not do the measured work, is
+        judged alone.  Such a run does not go into the window.
+      * The errors of test-time read the run alone.  An error then comes from
+        the first run over the error threshold.  test-memory reads the run
+        alone, because the memory is almost the same on each run.
       * Over the warning threshold of a rule, the subcommand prints a warning
         line in the format of utils/assay/core/report.py and writes it to
         DIR/RULE.NAME.txt, so the tests that run at the same time do not write
@@ -110,6 +123,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ROWS = ("test-time", "test-memory")
+# The number of runs in the window of a test.  The warnings of test-time read the smallest wall time of the window
+# (THE MEASURED RULES).
+RECENT_RUNS = 5
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 CORES_ENV = "CRUCIBLE_TEST_CORES"
@@ -194,8 +210,9 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
           kind: str | None, ledgers: str | None = None,
-          configuration: str | None = None, is_measured: bool = True) -> list[tuple[str, str, str]]:
-    """Compare the measures of one test with its measured rules.
+          configuration: str | None = None, is_measured: bool = True,
+          walls: tuple[float, ...] = ()) -> list[tuple[str, str, str]]:
+    """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
     The witness of test-memory judges the planted record of a test with this
     function, and with the ledgers of the copy of a plant
@@ -210,6 +227,8 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         configuration: The name of the configuration of the build, or None for the build kind
         is_measured: False when the run does not do the work that a row keeps, such as a fixture with a result from
             the store.  The judge then refuses no row
+        walls: The window of the test, the newest run first, with this run.  The warnings of test-time read its
+            smallest wall time.  An empty window judges the run alone
 
     Returns:
         One (level, rule, message) for each rule with a finding.  On a GitHub runner, a time error is a warning
@@ -220,15 +239,22 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         shown_level, shown_message = cost_meter.ci_verdict(level, row, message)
         findings.append((shown_level, row, shown_message))
 
-    for row, value, unit, text in (("test-time", run.wall_s, "s", f"{run.wall_s:.2f} s of wall time"),
-                                   ("test-memory", run.peak_gb, "GB", f"{run.peak_gb:.3f} GB of peak memory")):
+    for row, measure, unit, text in (("test-time", run.wall_s, "s", f"{run.wall_s:.2f} s of wall time"),
+                                     ("test-memory", run.peak_gb, "GB", f"{run.peak_gb:.3f} GB of peak memory")):
         if row not in budget:
             continue
         warn, error = budget[row]
         admitted = ledger_row(row, name, kind, ledgers, configuration)
+        kept = None if admitted is None else admitted[2]
         said = f"the test {name} took {text}"
         noise = cost_budget.noise_of(unit)
-        found = cost_budget.verdict(value, warn, error, None if admitted is None else admitted[2], noise)
+        found = cost_budget.verdict(measure, warn, error, kept, noise)
+        is_run_error = found == cost_budget.ERROR or (found == cost_budget.RISEN and measure > error)
+        value = measure
+        if row == "test-time" and len(walls) > 1 and not is_run_error:
+            value = min(walls)
+            said += f", and at least {value:.2f} s in each of the last {len(walls)} runs of its window"
+            found = cost_budget.verdict(value, warn, error, kept, noise)
         over = f"over the {'error' if value > error else 'warning'} threshold of {error if value > error else warn:g}"
         if admitted is not None and found == cost_budget.UNNEEDED:
             if not is_measured:
@@ -365,6 +391,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     `loop test-step` and `loop fixture` call this function.  The two then
     give the same record and the same verdict.  A failure to read the
     registry, to report or to write the record does not change the status.
+    The function reads the window of the test from its earlier record, and
+    the new record keeps the window with this run (THE MEASURED RULES).
 
     Args:
         name: The name of the test
@@ -384,15 +412,22 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     thresholds = read_budget() if budget is None else budget
     kind = cost_meter.read_kind(build_dir) if build_dir else None
     configuration = cost_meter.read_configuration(build_dir) if build_dir else None
+    record_path = cost_record.test_record_file(build_dir, name) if build_dir is not None else None
+    earlier = cost_record.recent_walls(record_path) if record_path is not None else ()
+    # A run with a status other than 0, or a run that did not do the measured work, is judged alone.  It stays out of
+    # the window.
+    is_counted = is_measured and status == 0
+    walls = (run.wall_s, *earlier)[:RECENT_RUNS] if is_counted else ()
     no_findings: list[tuple[str, str, str]] = []
     findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration,
-                                    is_measured=is_measured), no_findings)
+                                    is_measured=is_measured, walls=walls), no_findings)
     if status == 0 and any(level == "error" for level, _, _ in findings):
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
-    if build_dir is not None:
-        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run))
-        safely(lambda: cost_record.write(cost_record.test_record_file(build_dir, name), record), None)
+    if record_path is not None:
+        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run),
+                                        walls if is_counted else earlier)
+        safely(lambda: cost_record.write(record_path, record), None)
     return status
 
 
