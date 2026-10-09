@@ -61,18 +61,14 @@
 //     is FUNCTION with the enumerator NAME.
 //
 // THE WALKS
-//     The walk of a body of expression.cpp gives each node of a quarantined
-//     file and of a file of the language to check_owned_node, and each node of
-//     the function of the dynamic initializers of the unit.  A base file gets
-//     a walk of its own only in its sentinel unit (THE SENTINEL of plugin.h):
-//     PLUGIN_PRE_GENERICIZE gives the body of each function that is not a
-//     template, and walk_owner at PLUGIN_FINISH_UNIT reads each pattern, each
-//     default argument, each initializer of a variable and each default member
-//     initializer of the file, also a partial specialization of a template of
-//     a different file.  That walk does not read a namespace that a library
-//     file opens, such as std, so PLUGIN_FINISH_TYPE keeps each class of the
-//     file that such a namespace holds, such as a specialization of
-//     std::hash, and walk_owner reads it too.
+//     The walk of a body of expression.cpp gives each node of a walked file
+//     to check_owned_node, and each node of the function of the dynamic
+//     initializers of the unit.  A walked file is a quarantined file, a file
+//     of the language, and a base file in its sentinel unit (is_walked_file of
+//     plugin.h).  The walks read each body, each pattern, each default
+//     argument, each initializer of a variable and each default member
+//     initializer of such a file, also a specialization of a template of a
+//     different file, such as a specialization of std::hash.
 //
 // WHAT THE FAMILY DOES NOT READ
 //     Code that no unit of a counted build compiles: a macro body that no unit
@@ -623,9 +619,6 @@ struct OwnerIndex {
     // macros one time, at the first call of syscall().
     bool are_numbers_read = false;
     std::unordered_map<long long, std::string> numbers;
-    // 1 when the unit has a sentinel base file, 0 when it has none, -1 before
-    // the first test.
-    int has_sentinel = -1;
 };
 
 OwnerIndex owner_index;
@@ -3266,364 +3259,6 @@ void on_pre_genericize_names(void* gcc_data, void*) {
     }
 }
 
-// ── The walk of a sentinel base file (THE WALKS) ────────────────────────
-
-// The file that expands the macro of LOCATION, or the file of LOCATION, when
-// it is a sentinel base file that is no file of the language: the main walk
-// reads each file of the language.  Null for each other file.
-const FileEntry* owner_base_file_at(location_t location) {
-    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
-    expanded_location where = expand_location(point);
-    if (where.file == nullptr) {
-        return nullptr;
-    }
-    const FileEntry& entry = classify_file(where.file);
-    return entry.file_class == FileClass::base && entry.is_sentinel && entry.language_layer < 0 ? &entry : nullptr;
-}
-
-struct OwnerWalk {
-    tree function = NULL_TREE;
-    bool is_pattern = false;
-    location_t last = UNKNOWN_LOCATION;
-    hash_set<tree>* visited = nullptr;
-};
-
-tree visit_owner_node(tree* node_pointer, int* walk_subtrees, void* data);
-
-void walk_owner_pattern(tree function);
-
-// A local declaration of a pattern.  A template keeps the initializer of a
-// local in DECL_INITIAL, and cp_walk_tree does not reach it outside template
-// processing.  A member function of a local class of a template is a pattern
-// that no PLUGIN_PRE_GENERICIZE gives.
-void walk_owner_local(tree decl, OwnerWalk& walk) {
-    if (decl == NULL_TREE || !walk.is_pattern) {
-        return;
-    }
-    if (VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
-        cp_walk_tree(&DECL_INITIAL(decl), visit_owner_node, &walk, walk.visited);
-        return;
-    }
-    if (TREE_CODE(decl) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(decl) || !CLASS_TYPE_P(TREE_TYPE(decl))) {
-        return;
-    }
-    for (tree member = TYPE_FIELDS(TREE_TYPE(decl)); member != NULL_TREE; member = DECL_CHAIN(member)) {
-        tree member_function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
-        if (member_function != NULL_TREE && TREE_CODE(member_function) == FUNCTION_DECL) {
-            walk_owner_pattern(member_function);
-        }
-    }
-}
-
-tree visit_owner_node(tree* node_pointer, int* walk_subtrees, void* data) {
-    tree node = *node_pointer;
-    OwnerWalk& walk = *static_cast<OwnerWalk*>(data);
-    if (node == NULL_TREE) {
-        return NULL_TREE;
-    }
-    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
-        walk.last = EXPR_LOCATION(node);
-    }
-    switch (TREE_CODE(node)) {
-        // A query that the front end folds gives a reflection of an entity
-        // that the source does not spell, as the main walk reads it.
-        case REFLECT_EXPR:
-        case FUNCTION_DECL:
-        case VAR_DECL:
-        case TEMPLATE_DECL:
-        case OVERLOAD:
-        case BASELINK:
-            *walk_subtrees = 0;
-            return NULL_TREE;
-        case DECL_EXPR:
-            if (has_name_rows()) {
-                check_named_node(node, walk.last, walk.function);
-            }
-            walk_owner_local(DECL_EXPR_DECL(node), walk);
-            return NULL_TREE;
-        case BIND_EXPR:
-            for (tree variable = BIND_EXPR_VARS(node); variable != NULL_TREE; variable = DECL_CHAIN(variable)) {
-                walk_owner_local(variable, walk);
-            }
-            return NULL_TREE;
-        // A lambda of a function that is not a template has a body of its own,
-        // which PLUGIN_PRE_GENERICIZE gives.  A lambda of a pattern does not.
-        case LAMBDA_EXPR:
-            if (walk.is_pattern) {
-                cp_walk_tree(&LAMBDA_EXPR_CAPTURE_LIST(node), visit_owner_node, &walk, walk.visited);
-                tree body_function = lambda_function(node);
-                if (body_function != NULL_TREE && DECL_SAVED_TREE(body_function) != NULL_TREE) {
-                    cp_walk_tree(&DECL_SAVED_TREE(body_function), visit_owner_node, &walk, walk.visited);
-                }
-            }
-            *walk_subtrees = 0;
-            return NULL_TREE;
-        default:
-            break;
-    }
-    check_owned_node(node, walk.last, walk.function);
-    if (TYPE_P(node)) {
-        *walk_subtrees = 0;
-    }
-    return NULL_TREE;
-}
-
-// One walk of ROOT, the body of FUNCTION or an initializer when FUNCTION is
-// null.  Complexity: O(nodes of ROOT).
-void walk_owner_root(tree* root, tree function, location_t location, bool is_pattern) {
-    if (root == nullptr || *root == NULL_TREE || *root == error_mark_node || TREE_CODE(*root) == DEFERRED_PARSE) {
-        return;
-    }
-    hash_set<tree> visited;
-    OwnerWalk walk;
-    walk.function = function;
-    walk.is_pattern = is_pattern;
-    walk.last = location;
-    walk.visited = &visited;
-    cp_walk_tree(root, visit_owner_node, &walk, &visited);
-}
-
-// Each default argument of FUNCTION, which the code of a call copies.  A
-// default argument lies in no body, so its uses have no holder (THE PLACE AND
-// THE ENTITY).
-void walk_owner_defaults(tree function, bool is_pattern) {
-    for (tree type = TYPE_ARG_TYPES(TREE_TYPE(function)); type != NULL_TREE; type = TREE_CHAIN(type)) {
-        if (TREE_PURPOSE(type) != NULL_TREE) {
-            walk_owner_root(&TREE_PURPOSE(type), NULL_TREE, DECL_SOURCE_LOCATION(function), is_pattern);
-        }
-    }
-}
-
-// The pattern of the function template FUNCTION: its body and its defaults.
-void walk_owner_pattern(tree function) {
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
-        return;
-    }
-    walk_owner_defaults(function, true);
-    if (DECL_SAVED_TREE(function) != NULL_TREE) {
-        walk_owner_root(&DECL_SAVED_TREE(function), function, DECL_SOURCE_LOCATION(function), true);
-    }
-}
-
-void on_pre_genericize_owner(void* gcc_data, void*) {
-    tree function = static_cast<tree>(gcc_data);
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || !has_owner_rows()
-        || DECL_SAVED_TREE(function) == NULL_TREE || (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function))
-        || owner_base_file_at(DECL_SOURCE_LOCATION(function)) == nullptr || is_in_instantiation(function)) {
-        return;
-    }
-    build_owner_index();
-    walk_owner_root(&DECL_SAVED_TREE(function), function, DECL_SOURCE_LOCATION(function), false);
-}
-
-// The walk of the declarations of a sentinel base file at the end of a unit:
-// each pattern, each default argument, each initializer and each default member
-// initializer.  The body of a function that is not a template is gone at this
-// point, and PLUGIN_PRE_GENERICIZE read it.
-struct OwnerDeclarations {
-    std::unordered_set<tree> visited;
-
-    void variable(tree decl, bool is_pattern) {
-        if (DECL_INITIAL(decl) != NULL_TREE) {
-            walk_owner_root(&DECL_INITIAL(decl), NULL_TREE, DECL_SOURCE_LOCATION(decl), is_pattern);
-        }
-    }
-
-    void class_type(tree type, bool is_pattern) {
-        tree main_type = TYPE_MAIN_VARIANT(type);
-        if (!CLASS_TYPE_P(main_type) || LAMBDA_TYPE_P(main_type) || !visited.insert(main_type).second) {
-            return;
-        }
-        for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
-            switch (TREE_CODE(member)) {
-                case FIELD_DECL:
-                    if (DECL_NAME(member) == NULL_TREE && ANON_AGGR_TYPE_P(TREE_TYPE(member))) {
-                        class_type(TREE_TYPE(member), is_pattern);
-                    } else if (!DECL_ARTIFICIAL(member)) {
-                        variable(member, is_pattern);
-                    }
-                    break;
-                case VAR_DECL:
-                    variable(member, is_pattern);
-                    break;
-                case FUNCTION_DECL:
-                    if (!DECL_ARTIFICIAL(member) || LAMBDA_FUNCTION_P(member)) {
-                        if (is_pattern) {
-                            walk_owner_pattern(member);
-                        } else {
-                            walk_owner_defaults(member, false);
-                        }
-                    }
-                    break;
-                case TYPE_DECL:
-                    if (!DECL_SELF_REFERENCE_P(member) && DECL_IMPLICIT_TYPEDEF_P(member)
-                        && CLASS_TYPE_P(TREE_TYPE(member))) {
-                        class_type(TREE_TYPE(member), is_pattern);
-                    }
-                    break;
-                case TEMPLATE_DECL:
-                    template_decl(member);
-                    break;
-                default:
-                    break;
-            }
-        }
-        // A friend that a class template defines is no member of a namespace.
-        if (is_pattern) {
-            for (tree entry = CLASSTYPE_DECL_LIST(main_type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
-                tree befriended = TREE_PURPOSE(entry) == NULL_TREE ? TREE_VALUE(entry) : NULL_TREE;
-                if (befriended != NULL_TREE && TREE_CODE(befriended) == TEMPLATE_DECL) {
-                    befriended = DECL_TEMPLATE_RESULT(befriended);
-                }
-                if (befriended != NULL_TREE && TREE_CODE(befriended) == FUNCTION_DECL) {
-                    walk_owner_pattern(befriended);
-                }
-            }
-        }
-    }
-
-    // A template of any file: a sentinel base file can hold a partial
-    // specialization of a template of a different file.
-    void template_decl(tree template_tree) {
-        if (!visited.insert(template_tree).second) {
-            return;
-        }
-        tree result = DECL_TEMPLATE_RESULT(template_tree);
-        if (result == NULL_TREE) {
-            return;
-        }
-        bool is_here = owner_base_file_at(DECL_SOURCE_LOCATION(result)) != nullptr;
-        switch (TREE_CODE(result)) {
-            case FUNCTION_DECL:
-                if (is_here) {
-                    walk_owner_pattern(result);
-                }
-                break;
-            case VAR_DECL:
-                if (is_here) {
-                    variable(result, true);
-                }
-                break;
-            case TYPE_DECL:
-                if (DECL_IMPLICIT_TYPEDEF_P(result) && CLASS_TYPE_P(TREE_TYPE(result))) {
-                    if (is_here) {
-                        class_type(TREE_TYPE(result), true);
-                    }
-                    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(template_tree); entry != NULL_TREE;
-                         entry = TREE_CHAIN(entry)) {
-                        if (TREE_VALUE(entry) != NULL_TREE && TREE_CODE(TREE_VALUE(entry)) == TEMPLATE_DECL) {
-                            template_decl(TREE_VALUE(entry));
-                        }
-                    }
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
-    void member(tree decl) {
-        switch (TREE_CODE(decl)) {
-            case NAMESPACE_DECL:
-                if (DECL_NAMESPACE_ALIAS(decl) == NULL_TREE) {
-                    namespace_decl(decl);
-                }
-                return;
-            case TREE_LIST:
-                if (TREE_VALUE(decl) != NULL_TREE && TREE_CODE(TREE_VALUE(decl)) != TREE_LIST) {
-                    member(TREE_VALUE(decl));
-                }
-                return;
-            case OVERLOAD:
-                for (ovl_iterator candidate(decl, true); candidate; ++candidate) {
-                    if (TREE_CODE(*candidate) != OVERLOAD) {
-                        member(*candidate);
-                    }
-                }
-                return;
-            default:
-                break;
-        }
-        if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
-            return;
-        }
-        if (TREE_CODE(decl) == TEMPLATE_DECL) {
-            template_decl(decl);
-            return;
-        }
-        if (owner_base_file_at(DECL_SOURCE_LOCATION(decl)) == nullptr) {
-            return;
-        }
-        switch (TREE_CODE(decl)) {
-            case TYPE_DECL:
-                if (DECL_IMPLICIT_TYPEDEF_P(decl) && CLASS_TYPE_P(TREE_TYPE(decl))) {
-                    class_type(TREE_TYPE(decl), false);
-                }
-                break;
-            case FUNCTION_DECL:
-                walk_owner_defaults(decl, false);
-                break;
-            case VAR_DECL:
-                variable(decl, false);
-                break;
-            default:
-                break;
-        }
-    }
-
-    // A namespace that a library file opens holds no declaration of a base
-    // file.
-    void namespace_decl(tree ns) {
-        if (!visited.insert(ns).second || (ns != global_namespace && in_library_file_at(DECL_SOURCE_LOCATION(ns)))) {
-            return;
-        }
-        for (tree decl = NAMESPACE_LEVEL(ns)->names; decl != NULL_TREE; decl = TREE_CHAIN(decl)) {
-            member(decl);
-        }
-    }
-};
-
-// Each class of a sentinel base file that a namespace of a library file holds,
-// and whether it is a pattern.  The walk of the declarations does not read such
-// a namespace.  A specialization stays in the list of its template, so a
-// collection does not free it.
-std::vector<std::pair<tree, bool>> library_scope_classes;
-
-// True when a namespace that a library file opens holds DECL.  Complexity:
-// O(depth of the namespaces).
-bool is_in_library_namespace(tree decl) {
-    for (tree ns = decl_namespace_context(decl); ns != NULL_TREE && ns != global_namespace; ns = CP_DECL_CONTEXT(ns)) {
-        if (in_library_file_at(DECL_SOURCE_LOCATION(ns))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void on_finish_type_owner(void* gcc_data, void*) {
-    tree type = static_cast<tree>(gcc_data);
-    if (type == NULL_TREE || type == error_mark_node || !CLASS_TYPE_P(type) || !has_owner_rows()) {
-        return;
-    }
-    tree decl = TYPE_MAIN_DECL(type);
-    if (decl == NULL_TREE || decl_function_context(decl) != NULL_TREE
-        || owner_base_file_at(DECL_SOURCE_LOCATION(decl)) == nullptr || !is_in_library_namespace(decl)) {
-        return;
-    }
-    library_scope_classes.emplace_back(type, processing_template_decl != 0);
-}
-
-// True when the unit has a sentinel base file: the argument sentinel names a
-// header, or the main file of the unit is a base file.
-bool has_owner_sentinel() {
-    if (owner_index.has_sentinel < 0) {
-        bool is_base_main =
-            main_input_filename != nullptr && classify_file(main_input_filename).file_class == FileClass::base;
-        owner_index.has_sentinel = !state.sentinel.empty() || is_base_main ? 1 : 0;
-    }
-    return owner_index.has_sentinel == 1;
-}
-
 }  // namespace
 
 // Each use of an entity of an owner row among the operands of NODE, and each
@@ -3700,21 +3335,11 @@ void check_named_alias(tree decl) {
     }
 }
 
-// The walk of the declarations of a sentinel base file (THE WALKS), and THE
-// WALKED RETURN of each pattern of a counted file, after the walks of the
-// patterns marked their uses.  A unit with no sentinel base file and no
-// pattern pays two tests.
+// THE WALKED RETURN of each pattern of a counted file, after the walks of the
+// patterns marked their uses.  A unit with no pattern pays two tests.
 void walk_owner() {
     if (!has_owner_rows()) {
         return;
-    }
-    if (has_owner_sentinel()) {
-        build_owner_index();
-        OwnerDeclarations declarations;
-        declarations.namespace_decl(global_namespace);
-        for (const auto& [type, is_pattern] : library_scope_classes) {
-            declarations.class_type(type, is_pattern);
-        }
     }
     if (name_rules.has_unchecked_users) {
         // check_walked_return reads a pattern with a mark of its own or, for a
@@ -3781,14 +3406,10 @@ plugin_callback_func direct_callback(Direct callback) {
     return reinterpret_cast<plugin_callback_func>(reinterpret_cast<void (*)()>(callback));
 }
 
-// Registers the walk of each body of a sentinel base file, the hook that keeps
-// each class of such a file in a namespace of a library file, the events of
-// THE FOLDED NAMES, and the other events of THE NAMES OF THE SOURCE when the
-// table has a row of a rule that reads them.  A unit with no such row pays no
-// other event.
+// Registers the events of THE FOLDED NAMES, and the other events of THE NAMES
+// OF THE SOURCE when the table has a row of a rule that reads them.  A unit
+// with no such row pays no other event.
 void register_owner(const char* plugin_name) {
-    register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_owner, nullptr);
-    register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type_owner, nullptr);
     for (int code = 0; code < MAX_TREE_CODES; ++code) {
         first_test.is_decl_code[static_cast<std::size_t>(code)] =
             TREE_CODE_CLASS(static_cast<tree_code>(code)) == tcc_declaration ? 1 : 0;

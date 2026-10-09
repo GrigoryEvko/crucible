@@ -1,0 +1,18 @@
+# A quarantined file that defines a static data member of a base class
+# outside the class declares an object of its type there.  Each unit that
+# compiles the definition reads it, also when no walk reads the class.  The
+# sentinel unit of the header reads the class too, and it gives the same
+# findings.  An instantiation gets no finding, because a template parameter
+# gives its type.
+
+compile plain definitions.cpp
+exit plain pass
+judge plain
+finding plain quarantine c-array-object definitions.cpp:3:5 | counts
+finding plain quarantine std-object definitions.cpp:4:18 | std::vector
+
+compile sentinel definitions.cpp sentinel=include/fixy/Holder.h
+exit sentinel pass
+judge sentinel
+finding sentinel quarantine c-array-object definitions.cpp:3:5 | counts
+finding sentinel quarantine std-object definitions.cpp:4:18 | std::vector

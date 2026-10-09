@@ -1,0 +1,29 @@
+#pragma once
+
+#include <forge/Door.h>
+
+// A cast to a pointer to the proof type in each place of a base header that
+// holds an expression outside a body: a default argument of a function, of a
+// member function and of a function template, a default member initializer of
+// a class and of a class template, and the initializer of a variable.
+namespace forge {
+
+inline void* storage = nullptr;
+
+inline void in_default(Door* door = static_cast<Door*>(storage)) { (void)door; }
+
+struct Holder {
+    Door* in_member_initializer = static_cast<Door*>(storage);
+
+    void in_member_default(Door* door = static_cast<Door*>(storage)) { (void)door; }
+};
+
+template <class T> void in_pattern_default(T*, Door* door = static_cast<Door*>(storage)) { (void)door; }
+
+template <class T> struct Box {
+    Door* in_pattern_member = static_cast<Door*>(storage);
+};
+
+inline Door* in_initializer = static_cast<Door*>(storage);
+
+}  // namespace forge

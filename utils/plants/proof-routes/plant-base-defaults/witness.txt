@@ -1,0 +1,17 @@
+# A cast to a pointer to the proof type in a default argument or in a default
+# member initializer of a base header is a route, as it is in a body.  The
+# walks read a base header in its sentinel unit as they read a quarantined
+# file, so they read these places too.  The two variables of the header can
+# change, so the rule process-wide-state gives each one a finding.
+
+compile sentinel src/uses.cpp sentinel=include/forge/Pool.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:13:37 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:16:35 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:18:41 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:21:61 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:24:31 | pointer-cast: forge::Door
+finding sentinel proof-routes pointer-cast include/forge/Pool.h:27:31 | pointer-cast: forge::Door
+finding sentinel process-wide-state unmarked-static include/forge/Pool.h:11:14 | forge::storage
+finding sentinel process-wide-state unmarked-static include/forge/Pool.h:27:14 | forge::in_initializer

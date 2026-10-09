@@ -4,7 +4,8 @@
 // argument and of an unevaluated operand.  It gives the shapes of an
 // expression their findings, such as a new-expression, an explicit temporary
 // and an asm statement, and it gives each declaration that an expression
-// names to the family owner.
+// names to the family owner.  It reads a quarantined file, a file of the
+// language and a base file in its sentinel unit (is_walked_file of plugin.h).
 //
 // PLUGIN_PRE_GENERICIZE gives the body of each function that is not a
 // template.  The body of a template instantiation is not read, because its
@@ -186,9 +187,6 @@ struct Names {
     tree decide = NULL_TREE;
     tree syscall = NULL_TREE;
     std::unordered_set<tree> cited;  // each procedure of a cite row
-    // 1 when the unit has a sentinel base file (THE SENTINEL of plugin.h), 0
-    // when it has none, and -1 before the first test.
-    int has_sentinel = -1;
     // THE PROOF ROUTES.
     tree bit_cast = NULL_TREE;
     tree allocator = NULL_TREE;
@@ -1604,112 +1602,6 @@ void walk_root_of(tree* root, location_t location, bool is_pattern, tree functio
     }
 }
 
-// ── The walk of a sentinel base file (THE SENTINEL of plugin.h) ─────────
-
-// True when the unit has a sentinel base file: the argument sentinel names a
-// header, or the main file of the unit is a base file.
-bool has_sentinel_file() {
-    if (names.has_sentinel < 0) {
-        bool is_base_main =
-            main_input_filename != nullptr && classify_file(main_input_filename).file_class == FileClass::base;
-        names.has_sentinel = !state.sentinel.empty() || is_base_main ? 1 : 0;
-    }
-    return names.has_sentinel == 1;
-}
-
-tree visit_family_node(tree* node_pointer, int* walk_subtrees, void* data);
-
-// A local declaration of a body that only the family reads: the allocator
-// route of its type (THE PROOF ROUTES).  A template keeps the initializer of a
-// local in DECL_INITIAL, and cp_walk_tree does not reach it outside template
-// processing.  A member function of a local class of a template is a pattern
-// that no PLUGIN_PRE_GENERICIZE gives.
-void walk_family_local(tree decl, BodyWalk& walk) {
-    if (decl == NULL_TREE) {
-        return;
-    }
-    if (VAR_P(decl)) {
-        check_allocator_type(TREE_TYPE(decl), DECL_SOURCE_LOCATION(decl));
-    } else if (TREE_CODE(decl) == TYPE_DECL && !DECL_ARTIFICIAL(decl)) {
-        check_allocator_type(DECL_ORIGINAL_TYPE(decl), DECL_SOURCE_LOCATION(decl));
-    }
-    if (!walk.is_pattern) {
-        return;
-    }
-    if (VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
-        cp_walk_tree(&DECL_INITIAL(decl), visit_family_node, &walk, walk.visited);
-        return;
-    }
-    if (TREE_CODE(decl) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(decl) || !CLASS_TYPE_P(TREE_TYPE(decl))) {
-        return;
-    }
-    for (tree member = TYPE_FIELDS(TREE_TYPE(decl)); member != NULL_TREE; member = DECL_CHAIN(member)) {
-        tree function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
-        if (function != NULL_TREE && TREE_CODE(function) == FUNCTION_DECL) {
-            walk_body(function, true);
-        }
-    }
-}
-
-// One node of a body that only the family reads.  The rules of the
-// quarantine read no base file, so the walk reads only the expression shapes
-// of the family and the local declarations of a pattern.
-tree visit_family_node(tree* node_pointer, int* walk_subtrees, void* data) {
-    tree node = *node_pointer;
-    BodyWalk& walk = *static_cast<BodyWalk*>(data);
-    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
-        walk.last = EXPR_LOCATION(node);
-    }
-    switch (TREE_CODE(node)) {
-        case REFLECT_EXPR:
-        case FUNCTION_DECL:
-        case VAR_DECL:
-        case TEMPLATE_DECL:
-        case OVERLOAD:
-        case BASELINK:
-            *walk_subtrees = 0;
-            return NULL_TREE;
-        case DECL_EXPR:
-            walk_family_local(DECL_EXPR_DECL(node), walk);
-            return NULL_TREE;
-        case BIND_EXPR:
-            for (tree variable = BIND_EXPR_VARS(node); variable != NULL_TREE; variable = DECL_CHAIN(variable)) {
-                walk_family_local(variable, walk);
-            }
-            return NULL_TREE;
-        default:
-            break;
-    }
-    check_expression_rules(node, walk);
-    if (TYPE_P(node)) {
-        check_allocator_type(node, walk.last);
-        *walk_subtrees = 0;
-    }
-    return NULL_TREE;
-}
-
-// The body of a function of a sentinel base file, which no walk of the
-// quarantine reads.  Each body can hold a route (THE PROOF ROUTES), and a body
-// with a refined parameter can hold a test of its predicate.  A lambda has a
-// body of its own.  Complexity: O(nodes of the body).
-void walk_family_body(tree function, location_t location, bool is_pattern) {
-    if ((DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function))
-        || (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function))
-        || DECL_SAVED_TREE(function) == NULL_TREE) {
-        return;
-    }
-    check_allocator_signature(TREE_TYPE(function), location);
-    std::vector<RefinedParameter> refined = refined_parameters_of(function);
-    hash_set<tree> visited;
-    BodyWalk walk;
-    walk.last = location;
-    walk.is_pattern = is_pattern;
-    walk.visited = &visited;
-    walk.function = function;
-    walk.refined = std::move(refined);
-    cp_walk_tree(&DECL_SAVED_TREE(function), visit_family_node, &walk, &visited);
-}
-
 // The function that the front end makes for the dynamic initializers of the
 // variables of a namespace, of the static data members and of each
 // thread_local.  Its body holds each initializer with the location that the
@@ -2114,9 +2006,6 @@ void walk_body(tree function, bool is_pattern) {
         collect_facts(&DECL_SAVED_TREE(function), function, location, door_facts[DECL_UID(function)]);
     }
     if (!is_worth_a_walk_at(place, location)) {
-        if (place.file != nullptr && place.file->is_sentinel) {
-            walk_family_body(function, location, is_pattern);
-        }
         return;
     }
     if (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function)) {
@@ -2137,20 +2026,6 @@ void walk_body(tree function, bool is_pattern) {
             grant_units[grant].is_seen = true;
         }
         walk_root_of(&body, location, is_pattern, function, refined_parameters_of(function), grant);
-    }
-}
-
-// The pattern of a function of a sentinel base file, which no walk of the
-// quarantine reads (THE SENTINEL of plugin.h).  The walk of the family
-// declaration property gives each function of each namespace, and a unit
-// with no sentinel base file pays one test.
-void walk_family_pattern(tree function) {
-    if (!has_sentinel_file()) {
-        return;
-    }
-    const char* file = DECL_SOURCE_FILE(function);
-    if (file != nullptr && classify_file(file).is_sentinel) {
-        walk_body(function, true);
     }
 }
 

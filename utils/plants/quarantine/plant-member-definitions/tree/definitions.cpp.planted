@@ -1,0 +1,10 @@
+#include <fixy/Holder.h>
+
+int fixy::Holder::counts[3] = {};
+std::vector<int> fixy::Holder::items{};
+int fixy::Holder::plain = 0;
+
+template <class T>
+T fixy::Box<T>::value{};
+
+int first_count() { return fixy::Holder::counts[0] + fixy::Box<int>::value; }

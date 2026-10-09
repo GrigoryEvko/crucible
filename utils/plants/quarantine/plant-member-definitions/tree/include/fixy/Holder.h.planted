@@ -1,0 +1,21 @@
+// A class of the base with static data members.  A quarantined file defines
+// them outside the class.
+
+#pragma once
+
+#include <vector>
+
+namespace fixy {
+
+struct Holder {
+    static int counts[3];
+    static std::vector<int> items;
+    static int plain;
+};
+
+template <class T>
+struct Box {
+    static T value;
+};
+
+}  // namespace fixy

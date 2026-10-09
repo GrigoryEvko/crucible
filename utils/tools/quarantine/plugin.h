@@ -310,14 +310,18 @@
 // THE SENTINEL
 //     The argument sentinel=PATH names a header of include/, relative to the
 //     source root.  Only test/layer/CMakeLists.txt gives it, to the one unit
-//     of the target all that is the sentinel of that header.  The family
-//     declaration property reads the declarations of a base file, and the
-//     family expression shape reads its bodies, only in the unit whose
-//     sentinel names it, or in the base unit whose main file it is.  The
-//     family home reads the gates of a header of include/ only in that unit
-//     too (home.cpp, THE GATES).  The rules of the quarantine do not read a
-//     base file.  A finding of a family rule in a base file counts only in
-//     that unit.  So each base file costs one walk in each build.
+//     of the target all that is the sentinel of that header.  The walks of
+//     the declarations and of the bodies read a base file only in the unit
+//     whose sentinel names it, or in the base unit whose main file it is
+//     (is_walked_file).  They read it as they read a quarantined file, and
+//     each family that they drive reads it there: the declaration property,
+//     the expression shape and the owner.  The family home reads the gates of
+//     a header of include/ only in that unit too (home.cpp, THE GATES).  Of
+//     the rules of the quarantine, only the rule of the library names records
+//     a finding of a declaration or an expression of a base file, and only in
+//     a file of the language.  A finding of a family rule in a base file
+//     counts only in that unit.  So each base file costs one walk in each
+//     build.
 //     The argument not-standalone=PATH names the list of the headers that
 //     cannot compile alone, test/layer/crucible-not-standalone.txt.  Each row
 //     is `HEADER | REASON`, with HEADER relative to include/.  No unit is the
@@ -1786,13 +1790,19 @@ inline const FileEntry* language_file_of(location_t location) {
     return language_of(place_of(location, Scope::quarantine));
 }
 
-// A quarantined file and a file of the language get a walk.  A declaration
-// that a macro expansion makes can hold tokens that a quarantined file
-// spells, even when the name token is spelled elsewhere.  PLACE is the place
-// of LOCATION in the scope quarantine.  A sentinel base file gets only the
-// walk of the family expression shape (expression.cpp, walk_family_body).
+// True when the walks of the declarations and of the bodies read the file of
+// PLACE in this unit: a quarantined file, a file of the language, and a base
+// file in its sentinel unit (THE SENTINEL).
+inline bool is_walked_file(const Place& place) {
+    return place.file_class == FileClass::quarantined
+        || (place.file != nullptr && (place.file->language_layer >= 0 || place.file->is_sentinel));
+}
+
+// A walked file gets a walk.  A declaration that a macro expansion makes can
+// hold tokens that a quarantined file spells, even when the name token is
+// spelled elsewhere.  PLACE is the place of LOCATION in the scope quarantine.
 inline bool is_worth_a_walk_at(const Place& place, location_t location) {
-    return place.file_class == FileClass::quarantined || (place.file != nullptr && place.file->language_layer >= 0)
+    return is_walked_file(place)
         || (location > BUILTINS_LOCATION && !in_library_file_at(location)
             && linemap_location_from_macro_expansion_p(line_table, location));
 }
@@ -2071,7 +2081,6 @@ void walk_body(tree function, bool is_pattern);
 void check_route_alias(tree decl);
 void register_expressions(const char* plugin_name);
 void finish_expression_rules();
-void walk_family_pattern(tree function);
 
 // include.cpp: the family include closure, the include rules, the seals, the
 // heavy headers, the names of a higher root and the provenance.

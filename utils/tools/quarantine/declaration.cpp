@@ -313,10 +313,34 @@ void note_c_definition(tree decl, bool is_function_definition) {
     }
 }
 
+// The definition DECL of a static data member outside its class, in a walked
+// file, when the class is in a file that no walk reads in this unit.  The walk
+// of a class reads its members only where it reads the class, so the type of
+// this definition gets its finding here, in each unit that compiles the
+// definition.  The definition moves the location of the member to itself.  An
+// instantiation gets no finding, because a template parameter gives its type.
+void check_member_definition(tree decl) {
+    if (decl == NULL_TREE || !VAR_P(decl) || !DECL_CLASS_SCOPE_P(decl) || DECL_EXTERNAL(decl)
+        || is_in_instantiation(decl)) {
+        return;
+    }
+    tree class_decl = TYPE_MAIN_DECL(DECL_CONTEXT(decl));
+    if (class_decl == NULL_TREE || is_worth_a_walk(DECL_SOURCE_LOCATION(class_decl))
+        || !is_walked_file(place_of(DECL_SOURCE_LOCATION(decl), Scope::quarantine))) {
+        return;
+    }
+    check_object(decl, Role::variable);
+}
+
 // Each definition of a function or a variable of C language linkage, for the
-// foreign symbols.  PLUGIN_FINISH_DECL sees each variable definition, and
+// foreign symbols, and each definition of a static data member outside its
+// class.  PLUGIN_FINISH_DECL sees each variable definition, and
 // PLUGIN_FINISH_PARSE_FUNCTION sees each function definition.
-void on_finish_variable(void* gcc_data, void*) { note_c_definition(static_cast<tree>(gcc_data), false); }
+void on_finish_variable(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    note_c_definition(decl, false);
+    check_member_definition(decl);
+}
 
 void on_finish_function(void* gcc_data, void*) { note_c_definition(static_cast<tree>(gcc_data), true); }
 
@@ -376,7 +400,7 @@ void check_template_defaults(tree template_decl) {
         // The default of a non-type parameter is an expression, such as
         // &std::strlen, and the walk of a body reads it.
         if (!TYPE_P(default_argument) && TREE_CODE(default_argument) != TEMPLATE_DECL
-            && (language != nullptr || is_quarantined(location))) {
+            && is_walked_file(place_of(location, Scope::quarantine))) {
             walk_root(&TREE_PURPOSE(parameter), location, true);
         }
     }
@@ -691,10 +715,10 @@ void check_foreign_declaration(tree decl) {
 }
 
 // The return type, each parameter and each default argument of FUNCTION.  A
-// default argument that a quarantined file or a file of the language spells is
-// a use there, also when no call uses it.  A call copies a default with its
-// own place, so the place of a finding stays the same.  IS_PATTERN is true for
-// a template pattern.
+// default argument that a walked file spells is a use there, also when no
+// call uses it (is_walked_file).  A call copies a default with its own place,
+// so the place of a finding stays the same.  IS_PATTERN is true for a template
+// pattern.
 void check_signature(tree function, bool is_pattern) {
     if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function)) {
         check_object(function, Role::return_value);
@@ -705,8 +729,7 @@ void check_signature(tree function, bool is_pattern) {
         }
     }
     location_t location = DECL_SOURCE_LOCATION(function);
-    Place place = place_of(location, Scope::quarantine);
-    if (place.file_class != FileClass::quarantined && language_of(place) == nullptr) {
+    if (!is_walked_file(place_of(location, Scope::quarantine))) {
         return;
     }
     for (tree type = TYPE_ARG_TYPES(TREE_TYPE(function)); type != NULL_TREE; type = TREE_CHAIN(type)) {
@@ -2804,9 +2827,6 @@ struct PropertyWalk {
     // the test of an instantiation reads the scope of a pattern and not the
     // pattern itself.
     void function(tree function, bool is_pattern) {
-        if (is_pattern) {
-            walk_family_pattern(function);
-        }
         check_named_function(function);
         bool is_mint_name = is_mint(function);
         bool is_door = returns_raw(function);
