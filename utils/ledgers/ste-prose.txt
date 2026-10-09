@@ -235,7 +235,7 @@ utils/assay/core/report.py | refused-word | 1 | <module>: exceed | A text of tod
 utils/assay/core/report.py | refused-word | 1 | <module>: inside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/report.py | refused-word | 2 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/report.py | refused-word | 1 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/report.py | refused-word | 6 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/core/report.py | refused-word | 4 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/report.py | refused-word | 1 | Finding: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/report.py | refused-word | 1 | add_arguments: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/report.py | refused-word | 3 | classify: exceed | A text of today.  The change that writes the text again in STE lowers the count

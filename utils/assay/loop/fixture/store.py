@@ -381,7 +381,7 @@ from assay.readers import compdb, sarif
 # A fixture name is a key of a warnings file, so it obeys WRITER_KEY of
 # utils/assay/core/report.py.  The test of the driver holds the two
 # patterns equal.
-_FIXTURE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
+_FIXTURE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 
 # The marks that stand for the build root and the source root in a key and in
 # a stored result (the module text, item 8).  A path and a command hold no NUL
@@ -3030,7 +3030,8 @@ def main(argv: list[str]) -> int:
     fixture_name = arguments[2]
     expected_regexes = arguments[3:]
     if not _FIXTURE_NAME.fullmatch(fixture_name):
-        print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_' and '-'", file=sys.stderr)
+        print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_', '.' and '-' that starts with "
+              f"a letter, a digit or '_'", file=sys.stderr)
         return 2
     status, budget = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
     return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir)

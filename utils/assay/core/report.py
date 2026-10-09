@@ -23,8 +23,11 @@ THE WARNINGS DIRECTORY
     A check of which many processes run at the same time, for example one
     for each test or each fixture, gives each process a key.  Each process
     then writes DIR/CHECK.KEY.txt, and it removes only that file.  A key is a
-    word of letters, digits, '_' and '-', so the check name is the part of
-    the file name before the first '.'.
+    word of letters, digits, '_', '.' and '-', and it starts with a letter, a
+    digit or '_'.  A check name holds no '.'.  The check name is then the
+    part of the file name before the first '.', and the key is the part
+    between that '.' and the suffix .txt.  ctest permits a '.' in the name of
+    a test, such as the name of a program.
 
 GITHUB ANNOTATIONS
     When the environment sets GITHUB_ACTIONS to "true", the check also prints
@@ -83,9 +86,10 @@ WARNINGS_SUBDIR = "check-warnings"
 LEVELS: tuple[Level, ...] = ("warning", "error")
 # A check name is lowercase words with hyphens, so it is also a safe file name.
 CHECK_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
-# The key of one writer of a check, for example the name of one test.  It has
-# no '.', so the check name of a warnings file is the part before the first '.'.
-WRITER_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
+# The key of one writer of a check, for example the name of one test (THE WARNINGS DIRECTORY).  A key that starts
+# with '.' gives a hidden file, and a key that starts with '-' looks like an option.  The pattern refuses the two.
+WRITER_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
+WRITER_KEY_TEXT = "a word of letters, digits, '_', '.' and '-' that starts with a letter, a digit or '_'"
 FINDING_LINE = re.compile(
     r"(?P<path>.+?):(?P<line>\d+): (?P<level>warning|error): \[(?P<check>[a-z0-9-]+)\] (?P<message>.*)"
 )
@@ -340,7 +344,7 @@ def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key
     if strangers:
         raise ValueError(f"the findings of {check} name the checks {strangers}")
     if key is not None and not WRITER_KEY.fullmatch(key):
-        raise ValueError(f"the writer key {key!r} of {check} is not a word of letters, digits, '_' and '-'")
+        raise ValueError(f"the writer key {key!r} of {check} is not {WRITER_KEY_TEXT}")
     annotate = cost_meter.is_github_actions()
     for found in ordered:
         print(found.text())
@@ -366,8 +370,8 @@ def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding], key:
         ValueError: If the key is not a word of WRITER_KEY
     """
     if key is not None and not WRITER_KEY.fullmatch(key):
-        raise ValueError(f"the writer key {key!r} of {check} is not a word of letters, digits, '_' and '-'")
-    target = warnings_dir / (f"{check}.txt" if key is None else f"{check}.{key}.txt")
+        raise ValueError(f"the writer key {key!r} of {check} is not {WRITER_KEY_TEXT}")
+    target =warnings_dir / (f"{check}.txt" if key is None else f"{check}.{key}.txt")
     if not warnings:
         target.unlink(missing_ok=True)
         return
@@ -498,7 +502,16 @@ def self_test() -> int:
         found, problems = read_warnings_dir(warnings_dir)
         expect("read_warnings_dir reports a line of another check in the file of a writer",
                not found and len(problems) == 1)
-        refuses("emit refuses a key with a dot", lambda: emit([first], "alpha", warnings_dir, "a.b"))
+        (warnings_dir / "alpha.neg-two.txt").unlink()
+        dotted = Finding("warning", "test/run.sh", 0, "alpha", "dotted")
+        expect("a writer key can hold a dot, as the name of a test can", emit([dotted], "alpha", warnings_dir, "run.sh")
+               == 0 and (warnings_dir / "alpha.run.sh.txt").is_file())
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir reads the check name of a file whose key holds a dot",
+               found == [dotted] and not problems)
+        (warnings_dir / "alpha.run.sh.txt").unlink()
+        refuses("emit refuses a key that starts with a dot", lambda: emit([first], "alpha", warnings_dir, ".a"))
+        refuses("emit refuses a key with a slash", lambda: emit([first], "alpha", warnings_dir, "a/b"))
         refuses("emit refuses an empty key", lambda: emit([first], "alpha", warnings_dir, ""))
 
     expect("threshold_text writes a whole number with no exponent", threshold_text(33554432.0) == "33554432")

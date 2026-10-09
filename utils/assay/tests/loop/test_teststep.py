@@ -124,8 +124,11 @@ class Planted:
         return done.exit, done.err
 
     def _record_of(self, name: str) -> dict[str, object]:
-        """Return the record of one test of the build directory."""
-        found: object = json.loads(Path(cost_meter.test_record_file(str(self.build), name)).read_text())
+        """Return the record of one test of the build directory, or no field when the test has no record."""
+        try:
+            found: object = json.loads(Path(cost_meter.test_record_file(str(self.build), name)).read_text())
+        except FileNotFoundError:
+            return {}
         return found if isinstance(found, dict) else {}
 
     def status_cases(self, expect: testing.Expect) -> None:
@@ -179,15 +182,26 @@ class Planted:
             expect(f"a usage error gives status 2: {label}", done.exit == 2 and "usage:" in done.err)
         status, said = self.launch_script("planted/script", "sh", "-c", "exit 0")
         expect("a test name that is not a writer key gives status 2", status == 2 and "is not a word" in said)
-        writer_keys = ("a", "Z_9", "neg_x-y", "_a")
-        refused_keys = ("", "-a", "a.b", "a/b", "a b")
+        self.budget((0, 2000), (1000, 2000))
+        dotted = self.plant_test("test_planted.sh", "#!/bin/sh\nexit 0\n")
+        status, said = self.launch(dotted)
+        record = self._record_of("test_planted.sh")
+        expect(
+            "a program whose file name holds a dot runs as a test of that name, with its record and its warnings file",
+            status == 0
+            and record.get("test") == "test_planted.sh"
+            and record.get("result") == "passed"
+            and (self.warnings / "test-time.test_planted.sh.txt").is_file(),
+        )
+        writer_keys = ("a", "Z_9", "neg_x-y", "_a", "a.b", "run.sh")
+        refused_keys = ("", "-a", ".a", "a/b", "a b")
         expect(
             "is_test_name agrees with WRITER_KEY of utils/assay/core/report.py",
             all(
                 test_launcher.is_test_name(key) == bool(check_report.WRITER_KEY.fullmatch(key))
                 for key in (*writer_keys, *refused_keys)
             )
-            and frozenset(string.ascii_letters + string.digits + "_-") == test_launcher.NAME_CHARACTERS,
+            and frozenset(string.ascii_letters + string.digits + "_.-") == test_launcher.NAME_CHARACTERS,
         )
 
     def threshold_cases(self, expect: testing.Expect) -> None:

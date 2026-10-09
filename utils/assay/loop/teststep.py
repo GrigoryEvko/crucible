@@ -121,8 +121,8 @@ USAGE = (
     "guard selftest tests.loop.test_teststep"
 )
 # The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
-# module holds equal to WRITER_KEY.  A name does not start with '-'.
-NAME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+# module holds equal to WRITER_KEY.  A name does not start with '-' or '.'.
+NAME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
 # The kernel writes no core dump at this soft limit, also when
 # kernel.core_pattern names a handler (fs/coredump.c).
 NO_CORE_LIMIT_BYTES = 1
@@ -270,7 +270,7 @@ def report(name: str, place: str, findings: list[tuple[str, str, str]], warnings
 
 def is_test_name(name: str) -> bool:
     """Return True when a text can name a test: a writer key of utils/assay/core/report.py, which is also a file name."""
-    return bool(name) and not name.startswith("-") and set(name) <= NAME_CHARACTERS
+    return bool(name) and not name.startswith(("-", ".")) and set(name) <= NAME_CHARACTERS
 
 
 class Options:
@@ -386,7 +386,8 @@ def main(argv: list[str]) -> int:
     parsed = read_options(argv)
     name = "" if parsed is None else parsed[0].name or os.path.basename(parsed[1][0])
     if parsed is None or not is_test_name(name):
-        problem = "" if parsed is None else f"the test name {name!r} is not a word of letters, digits, '_' and '-'.  "
+        problem = "" if parsed is None else (f"the test name {name!r} is not a word of letters, digits, '_', '.' "
+                                             f"and '-' that starts with a letter, a digit or '_'.  ")
         print(f"loop test-step: {problem}{USAGE}", file=sys.stderr)
         return 2
     options, command = parsed

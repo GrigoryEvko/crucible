@@ -55,12 +55,13 @@ TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "fixture-cpu", "fixtu
 def test_keyed_files(warnings_dir: Path) -> list[tuple[str, str]]:
     """Return the check and the test of each warnings file that has the name of a test as its writer key.
 
+    The file is CHECK.TEST.txt, and the name of a test can hold a dot (assay.core.report, THE WARNINGS DIRECTORY).
     Complexity: linear in the files of the warnings directory.
     """
     if not warnings_dir.is_dir():
         return []
-    named = (path.name.split(".") for path in sorted(warnings_dir.glob("*.*.txt")))
-    return [(parts[0], parts[1]) for parts in named if len(parts) == 3 and parts[0] in TEST_KEYED_CHECKS]
+    named = (path.name.removesuffix(".txt").partition(".") for path in sorted(warnings_dir.glob("*.*.txt")))
+    return [(check, test) for check, _, test in named if check in TEST_KEYED_CHECKS and test]
 
 
 def remove_gone_tests(build_dir: Path, warnings_dir: Path) -> None:
@@ -174,7 +175,13 @@ def gone_test_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
-        for check, key in (("test-memory", "kept_test"), ("test-memory", "gone_test"), ("history", "gone_test")):
+        for check, key in (
+            ("test-memory", "kept_test"),
+            ("test-memory", "gone_test"),
+            ("history", "gone_test"),
+            ("test-time", "kept.sh"),
+            ("test-time", "gone.sh"),
+        ):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
         status, text = testing.captured(lambda: main([str(build)]))
@@ -183,7 +190,10 @@ def gone_test_cases(expect: testing.Expect) -> None:
             status == 0 and "each warnings file of a test stays" in text and "test-memory gone_test" in text,
         )
         tool = build / "planted-ctest"
-        tool.write_text(f'#!{sys.executable} -S\nprint(\'{{"tests": [{{"name": "kept_test"}}]}}\')\n', encoding="utf-8")
+        tool.write_text(
+            f'#!{sys.executable} -S\nprint(\'{{"tests": [{{"name": "kept_test"}}, {{"name": "kept.sh"}}]}}\')\n',
+            encoding="utf-8",
+        )
         tool.chmod(0o755)
         cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": ("FILEPATH", str(tool))})
         status, text = testing.captured(lambda: main([str(build)]))
@@ -195,7 +205,11 @@ def gone_test_cases(expect: testing.Expect) -> None:
             and "test-memory gone_test" not in text
             and "test-memory kept_test" in text
             and "history gone_test" in text
-            and test_keyed_files(warnings_dir) == [("test-memory", "kept_test")],
+            and test_keyed_files(warnings_dir) == [("test-memory", "kept_test"), ("test-time", "kept.sh")],
+        )
+        expect(
+            "the file of a test whose name holds a dot goes when the build does not register the test",
+            "because the build registers no test gone.sh" in text and "test-time kept.sh" in text,
         )
 
 
