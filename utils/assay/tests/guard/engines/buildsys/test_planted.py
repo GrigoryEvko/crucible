@@ -29,6 +29,8 @@ cache CRUCIBLE_PLANTED | yes
 compile test/unit.cpp.o test/unit.cpp result=built cpu=3 instructions=7 functions=f:300,g:40
 compile test/hit.cpp.o test/hit.cpp result=hit last-cpu=12 last-instructions=60 all=no
 link bin/tool type=EXECUTABLE cpu=1.5 peak=0.25
+target placed line=12 | test/unit.cpp
+target unplaced backtrace=no | test/hit.cpp
 deps test/unit.cpp.o | test/unit.cpp include/one.h
 deps test/hit.cpp.o state=MISSING
 fixture neg_planted test/neg/planted.cpp instructions=2 | test/neg/planted.cpp include/one.h
@@ -89,6 +91,16 @@ def build_cases(expect: testing.Expect) -> None:
         expect(
             "a link row gives a target of the code model with its artifact",
             any(target.name == "tool" and target.type_name == "EXECUTABLE" for target in model.targets),
+        )
+        targets = {target.name: target for target in model.targets}
+        placed, unplaced = targets.get("placed"), targets.get("unplaced")
+        expect(
+            "a target row gives the position of its command, and backtrace=no gives a target with no position",
+            placed is not None
+            and placed.origin is not None
+            and placed.origin.line == 12
+            and unplaced is not None
+            and unplaced.origin is None,
         )
         lists = ninja_reader.deps(build, ["test/unit.cpp.o", "test/hit.cpp.o"])
         expect(

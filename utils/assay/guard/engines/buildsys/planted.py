@@ -42,9 +42,10 @@ THE FILE
       * text: the bytes of one more executable section with no symbol
       * all: yes when `ninja -t inputs all` gives the object.
     The fields of a link: type, result, cpu, peak, record and `exists`.  The
-    fields of a target: type, pch (headers, divided by commas), file, line
-    and pch-line.  The file and the line give the position of the command
-    that makes the target.  The fields of a fixture: user, system,
+    fields of a target: type, pch (headers, divided by commas), file, line,
+    pch-line and backtrace.  The file and the line give the position of the
+    command that makes the target.  backtrace=no gives a target with no
+    backtrace, as the reply of CMake gives for some targets.  The fields of a fixture: user, system,
     instructions and record (yes, no or blind).  A blind record does not know
     the files of the compile.  The fields of a test: line (of its
     registration in test/CMakeLists.txt) and labels.  The fields of a record
@@ -117,7 +118,7 @@ COMPILE_FIELDS = frozenset(
     }
 )
 LINK_FIELDS = frozenset({"type", "result", "cpu", "peak", "record", "exists"})
-TARGET_FIELDS = frozenset({"type", "pch", "file", "line", "pch-line"})
+TARGET_FIELDS = frozenset({"type", "pch", "file", "line", "pch-line", "backtrace"})
 DEPS_FIELDS = frozenset({"state"})
 FIXTURE_FIELDS = frozenset({"user", "system", "instructions", "record"})
 TEST_FIELDS = frozenset({"line", "labels"})
@@ -385,11 +386,12 @@ def plant_target(planted: Planted, row: rows_grammar.Row, root: Path, build: Pat
     headers = [header for header in fields.get("pch", "").split(",") if header]
     if headers:
         group["precompileHeaders"] = [{"header": header, "backtrace": 2} for header in headers]
+    position = {"backtrace": 1} if choice(fields, "backtrace", ("yes", "no"), row) == "yes" else {}
     planted.targets.append(
         {
             "name": row.words[1],
             "type": fields.get("type", "STATIC_LIBRARY"),
-            "backtrace": 1,
+            **position,
             "paths": {"source": ".", "build": "."},
             "backtraceGraph": {
                 "commands": ["add_library", "target_precompile_headers"],

@@ -1,0 +1,4 @@
+# The target unity compiles the unity source unity_0_cxx.cxx, and the reply of CMake gives no backtrace of the target.
+# The rule gives one error at the build directory, with no line.
+format 1
+target unity backtrace=no | {build}/CMakeFiles/unity.dir/Unity/unity_0_cxx.cxx src/a.cpp src/b.cpp
