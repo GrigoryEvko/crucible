@@ -219,6 +219,8 @@ SANITIZER_WORDS = ("-fsanitize", "-fno-sanitize")
 # prefix HARDENING_OFF turns such a flag off.
 HARDENING_FLAGS = ("-fharden-compares", "-fharden-conditional-branches")
 HARDENING_OFF = "-fno-harden-"
+# The sentence of a claim that tells the builds with the flags of HARDENING_FLAGS (cmake/CodeFlags.cmake).
+HARDENED_BUILDS = f"Each build type other than Debug takes {' and '.join(HARDENING_FLAGS)}"
 # The number of second tests after one branch: one on each of its two edges.
 HARDENING_TESTS = 2
 # The kinds of a failure path, the first kind first, each with the prefixes of the names of its callees (THE WALK).
@@ -398,13 +400,17 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "atomic_fetch_max",
         "fetch_max_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
-        "The raw form writes each time, and its loop has a different shape",
+        f"The raw form writes each time, and its loop has a different shape.  {HARDENED_BUILDS}.  On each edge of the "
+        "two branches of the loop, these flags add a second test with a branch to a trap.  They also add copies of "
+        "the operands and keep the success flag of the cmpxchg in a register",
         branches=True,
     ),
     Probe(
         "atomic_fetch_min",
         "fetch_min_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
-        "The raw form writes each time, and its loop has a different shape",
+        f"The raw form writes each time, and its loop has a different shape.  {HARDENED_BUILDS}.  On each edge of the "
+        "two branches of the loop, these flags add a second test with a branch to a trap.  They also add copies of "
+        "the operands and keep the success flag of the cmpxchg in a register",
         branches=True,
     ),
     Probe("tally_add", "Tally::add is the lock add of a relaxed std::atomic counter"),
@@ -425,25 +431,37 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "view_fill",
         "fill of bytes first tests for an empty View and returns, because a View can be empty with no buffer, and "
-        "memset of a null pointer is undefined.  At -O1, GCC does not change the loop of the fill into memset",
+        "memset of a null pointer is undefined.  At -O1, GCC does not change the loop of the fill into memset.  "
+        f"{HARDENED_BUILDS}.  These flags add a copy of the count.  On each of the two edges of the test for an empty "
+        "View, they add a second test of the copy with a branch to a trap",
         branches=True,
     ),
-    Probe("box_get", "Box::get adds one test and one branch to a call of the fatal exit", checks=("fatal",)),
+    Probe(
+        "box_get",
+        f"Box::get adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
+        "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",
+        checks=("fatal",),
+    ),
     Probe(
         "option_expect",
-        "Option::expect adds one test and one branch to a call of the fatal exit.  A payload that fills the low word "
-        "of the register puts the flag at bit 32, and the code then also uses a move and a shift to read the payload",
+        "Option::expect adds one test and one branch to a call of the fatal exit.  The flag is the low byte of the "
+        "register and the payload is its high word, so the code also uses a shift and a move to read the payload.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the register and a second test of the flag "
+        "in the copy, with a branch to a trap",
         checks=("fatal",),
     ),
     Probe(
         "option_expect_niche",
-        "Option::expect of an Option with a niche adds one compare and one branch to a call of the fatal exit",
+        "Option::expect of an Option with a niche adds one compare and one branch to a call of the fatal exit.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the count of the View and a second compare "
+        "of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
     Probe(
         "switch_unreachable",
         "a switch with fixy::unreachable() adds one bounds compare and one branch to a call of the fatal exit.  At "
-        "-O1, std::unreachable stops the process with a trap after the same compare",
+        f"-O1, std::unreachable stops the process with a trap after the same compare.  {HARDENED_BUILDS}.  On the hot "
+        "path, these flags add a copy of the value and a second bounds compare of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
 )

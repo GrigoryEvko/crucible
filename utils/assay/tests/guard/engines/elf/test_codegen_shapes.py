@@ -18,7 +18,10 @@ THE PROBE UNIT OF THE BUILD
     ASSAY_TEST_BUILD_DIR names the build directory, and the registration of
     the test in test/CMakeLists.txt gives it.  The case compiles the probe
     unit with the command of the verdict: the command of the compile database
-    with no sanitizer word.  The pairs of PROBES must hold.  Then the case
+    with no sanitizer word.  The pairs of PROBES must hold.  In a unit with
+    a flag of HARDENING_FLAGS, a probe can get a second test into a trap on
+    its family side.  The claim of such a probe must name the two flags.  The
+    warning of a cost then tells the full cost.  Then the case
     copies include/foundation/core/Region.h to a directory that comes first on
     the include path.  It puts a second test of the limits into View::window
     of the copy.  The probes view_window and view_append must then fail, and
@@ -576,8 +579,14 @@ def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None) -
     return [words[0], *([] if include is None else [f"-I{include}"]), *kept]
 
 
-def failed_probes(entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe]) -> set[str]:
-    """Compile the probe unit of a row with the command of the verdict, and return the name of each probe with an error.
+def judged_probes(
+    entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe]
+) -> tuple[set[str], dict[str, shapes.Verdict], bool]:
+    """Compile the probe unit of a row with the command of the verdict, and judge each pair.
+
+    Returns:
+        The name of each probe with an error, the verdict of each probe, and True when the unit has a flag of
+        HARDENING_FLAGS
 
     Raises:
         proc.ToolFailed: If the compile fails
@@ -588,8 +597,27 @@ def failed_probes(entry: compdb.CompileEntry, include: Path | None, probes: Sequ
         proc.require(proc.run(command))
         functions = shapes.codes_of(shapes.disassembled(obj))
     hardened = shapes.is_hardened(shapes.code_flags(entry.argv(), entry.file))
-    found, _, _ = shapes.pair_findings(functions, probes, hardened)
-    return {item.entity for item in found if item.level == "error"}
+    found, _, verdicts = shapes.pair_findings(functions, probes, hardened)
+    return {item.entity for item in found if item.level == "error"}, verdicts, hardened
+
+
+def hardening_unexplained(verdicts: dict[str, shapes.Verdict], hardened: bool) -> list[str]:
+    """Return each probe with a second test of the `-fharden-` flags on its family side and no such flag in its claim.
+
+    A second test is a family-only check into a trap path that the probe does not declare (THE VERDICT of the rule).
+    """
+    if not hardened:
+        return []
+    return [
+        probe.name
+        for probe in shapes.PROBES
+        if probe.name in verdicts
+        and any(
+            step.kind is shapes.StepClass.CHECK and step.detail == shapes.TRAP and shapes.TRAP not in probe.checks
+            for step in verdicts[probe.name].added
+        )
+        and not all(flag in probe.claim for flag in shapes.HARDENING_FLAGS)
+    ]
 
 
 def build_probe_cases(expect: testing.Expect) -> None:
@@ -607,15 +635,20 @@ def build_probe_cases(expect: testing.Expect) -> None:
     expect("the compile database of the build compiles the probe unit", entry is not None)
     if entry is None:
         return
+    failed, verdicts, hardened = judged_probes(entry, None, shapes.PROBES)
+    expect("each pair of PROBES holds on the probe unit of the build", failed == set())
+    unexplained = hardening_unexplained(verdicts, hardened)
     expect(
-        "each pair of PROBES holds on the probe unit of the build", failed_probes(entry, None, shapes.PROBES) == set()
+        "in a unit with the -fharden- flags, the claim of each probe with a second test into a trap on its family side "
+        f"names the two flags: {', '.join(unexplained) or 'each claim names them'}",
+        not unexplained,
     )
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-plant-") as scratch:
         include = Path(scratch) / "include"
         planted_header = include / PLANT_HEADER.relative_to("include")
         planted_header.parent.mkdir(parents=True)
         planted_header.write_text(plant_window(REPO_ROOT / PLANT_HEADER), encoding="utf-8")
-        failed = failed_probes(entry, include, shapes.PROBES)
+        failed, _, _ = judged_probes(entry, include, shapes.PROBES)
     expect(
         "a second test of the limits in View::window fails the probes view_window and view_append, and no other",
         failed == {"view_window", "view_append"},
