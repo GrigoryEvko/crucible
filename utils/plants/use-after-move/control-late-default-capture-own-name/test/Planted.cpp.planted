@@ -1,0 +1,15 @@
+// A control of use-after-move: the body of the lambda declares its own token, and the default capture & then reads
+// no outer token.  The call after the move of the outer token reads no spent key.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+
+void must_accept_default_capture_with_own_name(Token token) {
+    auto later = [&] {
+        Token token{};
+        read(token);
+    };
+    sink(std::move(token));
+    later();
+}

@@ -1,0 +1,12 @@
+// A plant of use-after-move.  The lambda reads token through the default capture &, and the call later() after the
+// move of token runs it.  The read is then a use after move at the call.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+
+void evade_late_default_reference_capture(Token token) {
+    auto later = [&] { read(token); };
+    sink(std::move(token));
+    later();
+}

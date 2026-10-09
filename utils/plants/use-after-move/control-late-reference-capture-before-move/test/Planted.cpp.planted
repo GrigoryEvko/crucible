@@ -1,0 +1,11 @@
+// A control of use-after-move: the lambda reads token by reference, and the call later() runs it before the move.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+
+void must_accept_reference_capture_before_move(Token token) {
+    auto later = [&token] { read(token); };
+    later();
+    sink(std::move(token));
+}

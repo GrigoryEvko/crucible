@@ -1,0 +1,14 @@
+// A plant of use-after-move.  The lambda reads token through the capture &token.  After the move of token, the code
+// gives the lambda to run, which can call it.  The read is then a use after move at the call of run.
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+template <typename Body>
+void run(Body& body) { body(); }
+
+void evade_reference_capture_as_argument(Token token) {
+    auto later = [&token] { read(token); };
+    sink(std::move(token));
+    run(later);
+}

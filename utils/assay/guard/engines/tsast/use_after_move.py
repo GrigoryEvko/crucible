@@ -93,13 +93,22 @@ THE LAMBDAS
     spends no name of the body around it, because the lambda can run
     subsequently or not at all.  An init-capture runs at the point of the
     lambda, and `[y = std::move(x)]` spends x there.
+    A local that a declaration or an assignment gives a lambda keeps the keys
+    that the lambda reads by reference.  A capture `&x` gives x, because the
+    grammar gives a simple capture its node lambda_capture with the field
+    reference.  The default capture `&` gives each name that the body reads
+    and that the body, the parameters and the init-captures do not declare.
+    A call of the local runs the lambda, and a call that takes the local as an
+    argument can run it.  A spent key that the lambda reads is then a use
+    after move at the call.  A new declaration or an assignment of the local
+    replaces its keys.
 
 WHAT THE RULE DOES NOT SEE
     The directories control-known-miss-* of utils/plants/use-after-move/
     hold the shapes below.  Each one is a use after move, and the rule
     accepts it.  When the rule learns to refuse a shape, its control fails,
     and the control becomes a plant.  The list of known misses only becomes
-    shorter: the rule refuses more than KNOWN_MISS_BOUND (5) directories
+    shorter: the rule refuses more than KNOWN_MISS_BOUND (4) directories
     control-known-miss-*, one for each shape below.
       * A move in a function that takes T&.  The call does not say
         std::move, and the name stays live at the call site.  A call that
@@ -108,9 +117,6 @@ WHAT THE RULE DOES NOT SEE
       * A use through a pointer to a spent object.  A use through a reference
         to an expression that is not a plain path, such as a reference that a
         call gives.
-      * A lambda that captures a name by reference, runs after the move of
-        the name, and reads it.  The lambda body is before the move in the
-        source, and the rule reads it with the name live.
       * A try_ function that moves its argument when it does not succeed.  An
         example is a function that takes a parameter by value of a type that
         is not trivially copyable.  The rule of the try_ calls does not see
@@ -168,6 +174,7 @@ REASON_KIND = "no-reason"
 SECOND_MOVE = "a second move"
 USE = "a use"
 COPY_CAPTURE = "a copy capture"
+LATE_READ = "a read through a capture by reference"
 ADVICE = (
     "Use the value before the move, or give it a new value first.  A test that reads a moved-from object on purpose "
     "gets a ledger row with its reason (CLAUDE.md section XVI)"
@@ -180,7 +187,7 @@ REASON_ADVICE = "Write the probe that the row makes as its reason"
 # (WHAT THE RULE DOES NOT SEE).
 PLANTS = "utils/plants/use-after-move/"
 KNOWN_MISS_PREFIX = "control-known-miss-"
-KNOWN_MISS_BOUND = 5
+KNOWN_MISS_BOUND = 4
 BOUND_KIND = "known-misses"
 # The directories of the negative-compile fixtures, which must fail to compile (THE SCOPE).
 NEGATIVE_DIRECTORY = "neg"
@@ -485,11 +492,18 @@ def named(node: tsast.Node | None) -> list[tsast.Node]:
 def operator(node: tsast.Node) -> str:
     """Return the first token of a node that is in none of its named children.
 
-    It is `.` or `->` of a member access, `*` or `&` of a unary operator, and
-    `&` or `&&` of a reference declarator.
+    It is `.` or `->` of a member access, and `*` or `&` of a unary operator.
+    The fields of these operators hold tokens with no name, and the output of
+    the CLI shows no such token.
     """
     tokens = node.gap_tokens()
     return tokens[0] if tokens else ""
+
+
+def reference_operator(declarator: tsast.Node) -> str:
+    """Return `&` or `&&` of a reference declarator, from the named node in its field operator, or an empty text."""
+    marker = declarator.child_by_field("operator")
+    return "" if marker is None else tsast.lexeme(marker)
 
 
 def leaf_name(node: tsast.Node | None) -> str | None:
@@ -580,10 +594,10 @@ def move_source(function: tsast.Node, owner: str | None) -> str | None:
         leaf_name(items[0].child_by_field("type")) != owner
         or reference is None
         or reference.type != "reference_declarator"
-        or operator(reference) != "&&"
+        or reference_operator(reference) != "&&"
     ):
         return None
-    inner = reference.child_by_field("declarator") or next(iter(named(reference)), None)
+    inner = reference.child_by_field("declarator")
     return name_of(inner) if inner is not None and inner.type == "identifier" else None
 
 
@@ -615,6 +629,7 @@ class Walk:
         "hold_moves",
         "holder",
         "path",
+        "reference_lambdas",
         "seen",
         "tree",
     )
@@ -637,6 +652,8 @@ class Walk:
         # A reference, or a name of `auto& [a, b] = obj;`, in scope: name -> (the key of the object that it names,
         # True for a name of such a declaration).
         self.aliases: dict[str, tuple[Place, bool]] = {}
+        # A local that holds a lambda in scope: name -> the keys that the lambda reads by reference (THE LAMBDAS).
+        self.reference_lambdas: dict[str, tuple[Place, ...]] = {}
         # The parameter p while the walk is in the body of a move assignment operator=(C&& p), and None elsewhere.
         self.assigned_from: str | None = None
 
@@ -960,12 +977,13 @@ class Walk:
         frames: list[Frame] = []
         outer, self.goto_states = self.goto_states, {}
         outer_aliases = dict(self.aliases)
+        outer_lambdas = dict(self.reference_lambdas)
         try:
             if body.type == "compound_statement":
                 return self.block(body, state, frames)
             return self.sub_stmt(body, state, frames)
         finally:
-            self.goto_states, self.aliases = outer, outer_aliases
+            self.goto_states, self.aliases, self.reference_lambdas = outer, outer_aliases, outer_lambdas
 
     def block(self, node: tsast.Node, state: State, frames: list[Frame]) -> State:
         """Walk a block.  A label that a subsequent goto of the block names is the head of a loop.
@@ -1182,6 +1200,7 @@ class Walk:
         """
         declared: list[str] = []
         bindings: list[tuple[list[str], Place, bool]] = []
+        lambdas: list[tuple[str, tuple[Place, ...]]] = []
         for child in node.children:
             if child.field != "declarator":
                 continue
@@ -1202,9 +1221,11 @@ class Walk:
                 and value is not None
                 and (path := self.plain_path(value)) is not None
             ):
-                inner = target.child_by_field("declarator") or next(iter(named(target)), None)
+                inner = target.child_by_field("declarator")
                 is_binding = inner is not None and inner.type == "structured_binding_declarator"
                 bindings.append((names, self.canon(path), is_binding))
+            if value is not None and value.type == "lambda_expression" and len(names) == 1:
+                lambdas.append((names[0], self.reference_reads(value)))
         # A declaration in a condition keeps its value in the field value.
         if node.parent is not None and node.parent.type == "condition_clause":
             value = node.child_by_field("value")
@@ -1213,9 +1234,13 @@ class Walk:
         state = self.declare(state, scope, declared)
         for name in declared:
             self.aliases.pop(name, None)
+            self.reference_lambdas.pop(name, None)
         for names, place, is_binding in bindings:
             for name in names:
                 self.aliases[name] = (place, is_binding)
+        for name, reads in lambdas:
+            if reads:
+                self.reference_lambdas[name] = reads
         return state
 
     def header(self, clause: tsast.Node | None, state: State, scope: Scope) -> State:
@@ -1572,6 +1597,8 @@ class Walk:
             if arguments is not None:
                 self.expr(arguments, state, pending)
             return
+        if function is not None:
+            self.late_reads(node, function, arguments, state)
         if (
             function is not None
             and function.type != "field_expression"
@@ -1592,6 +1619,23 @@ class Walk:
             self.expr(function, state, pending)
         if arguments is not None:
             self.expr(arguments, state, pending)
+
+    def late_reads(
+        self, node: tsast.Node, function: tsast.Node, arguments: tsast.Node | None, state: dict[Place, int]
+    ) -> None:
+        """Refuse each spent key that a lambda in a local reads by reference, at a call that can run it (THE LAMBDAS).
+
+        The call runs the lambda when it calls the local, and it can run the
+        lambda when an argument is the local.
+        """
+        for item in (function, *named(arguments)):
+            if item.type != "identifier":
+                continue
+            for read in self.reference_lambdas.get(name_of(item), ()):
+                key = self.canon(read)
+                spent = spent_prefix(state, key)
+                if spent is not None:
+                    self.report(node, key, LATE_READ, spent, state[spent])
 
     def free_call(self, node: tsast.Node, function: tsast.Node, state: dict[Place, int], pending: list[Place]) -> bool:
         """Walk swap(a, b), get<I>(t), destroy_at(&x) and construct_at(&x, ...), and return True for one of them."""
@@ -1665,6 +1709,13 @@ class Walk:
         """
         left = node.child_by_field("left")
         right = node.child_by_field("right")
+        if left is not None and left.type == "identifier" and tsast.operator_of(node) == "=":
+            # An assignment of a local that holds a lambda replaces the keys that the lambda reads (THE LAMBDAS).
+            name = name_of(left)
+            self.reference_lambdas.pop(name, None)
+            reads = self.reference_reads(right) if right is not None and right.type == "lambda_expression" else ()
+            if reads:
+                self.reference_lambdas[name] = reads
         if left is not None and tsast.operator_of(node) == "=":
             operand = self.deref_operand(left)
             path = self.plain_path(operand) if operand is not None else self.plain_path(left)
@@ -1685,24 +1736,76 @@ class Walk:
     def capture_entries(self, captures: tsast.Node) -> list[tuple[tsast.Node, bool]]:
         """Return each capture of a lambda, with True when it captures by reference.
 
-        The grammar gives no node to the `&` of a capture, and the walk finds
-        the tokens of each capture in the tokens of the capture list.
+        A simple capture (lambda_capture) and an init-capture hold the `&` of
+        a capture by reference in their field reference.
         """
-        words = captures.tokens()
-        out: list[tuple[tsast.Node, bool]] = []
-        at = 1
-        for child in named(captures):
-            own = child.tokens()
-            found = next(
-                (index for index in range(at, len(words) - len(own) + 1) if words[index : index + len(own)] == own),
-                None,
-            )
-            if found is None:
-                out.append((child, False))
+        return [(child, child.child_by_field("reference") is not None) for child in named(captures)]
+
+    def reference_reads(self, node: tsast.Node) -> tuple[Place, ...]:
+        """Return the keys that a lambda reads by reference when it runs (THE LAMBDAS).
+
+        A capture `&x` gives x.  The default capture `&` gives each name that
+        the body reads and that the body, the parameters and the
+        init-captures do not declare.  A name in an operand that the program
+        does not evaluate is no read.
+        Complexity: linear in the nodes of the lambda.
+        """
+        captures = node.child_by_field("captures")
+        reads: list[str] = []
+        declared: set[str] = set()
+        has_default = False
+        for child, is_reference in self.capture_entries(captures) if captures is not None else []:
+            if child.type == "lambda_default_capture":
+                has_default = has_default or tsast.lexeme(child) == "&"
+            elif child.type == "lambda_capture" and is_reference:
+                name = child.child_by_field("name")
+                if name is not None and name.type == "identifier":
+                    reads.append(name_of(name))
+            elif child.type == "lambda_capture":
+                name = child.child_by_field("name")
+                if name is not None and name.type == "identifier":
+                    declared.add(name_of(name))
+            elif child.type == "lambda_capture_initializer":
+                left = child.child_by_field("left")
+                if left is not None:
+                    declared.add(name_of(left))
+        if has_default:
+            reads += self.default_reads(node, declared)
+        return tuple(Place(name) for name in dict.fromkeys(reads))
+
+    def default_reads(self, node: tsast.Node, declared: set[str]) -> list[str]:
+        """Return each name that a lambda with the default capture `&` reads and does not declare (reference_reads).
+
+        A name with the field declarator, or a name in a
+        `structured_binding_declarator`, in the parameters or in the body is
+        a declaration.  Each other
+        identifier in the body is a read, unless an operand that the program
+        does not evaluate holds it.  Complexity: linear in the nodes of the lambda.
+        """
+        body = node.child_by_field("body")
+        if body is None:
+            return []
+        names = list(body.descendants("identifier"))
+        declarator = node.child_by_field("declarator")
+        parameters = None if declarator is None else declarator.child_by_field("parameters")
+        if parameters is not None:
+            names += list(parameters.descendants("identifier"))
+        own = set(declared)
+        for name in names:
+            parent = name.parent
+            if name.field == "declarator" or (parent is not None and parent.type == "structured_binding_declarator"):
+                own.add(name_of(name))
+        reads: list[str] = []
+        for name in body.descendants("identifier"):
+            text = name_of(name)
+            if text in own or name.field == "declarator":
                 continue
-            out.append((child, words[found - 1] == "&"))
-            at = found + len(own)
-        return out
+            holder = name.parent
+            while holder is not None and holder != body and holder.type not in NOT_EVALUATED:
+                holder = holder.parent
+            if holder == body:
+                reads.append(text)
+        return reads
 
     def lambda_expr(self, node: tsast.Node, state: dict[Place, int]) -> dict[Place, int]:
         """Walk the captures at the point of the lambda, and its body as a new body (THE LAMBDAS)."""
@@ -1718,11 +1821,14 @@ class Walk:
                         shadow.append(tsast.lexeme(left))
                     if right is not None:
                         state = self.eval(right, state) or {}
-                elif child.type == "identifier" and not is_reference:
-                    captured = Place(name_of(child))
+                elif child.type == "lambda_capture" and not is_reference:
+                    copied = child.child_by_field("name")
+                    if copied is None or copied.type != "identifier":
+                        continue
+                    captured = Place(name_of(copied))
                     spent = spent_prefix(state, self.canon(captured))
                     if spent is not None:
-                        self.report(child, captured, COPY_CAPTURE, spent, state[spent])
+                        self.report(copied, captured, COPY_CAPTURE, spent, state[spent])
         declarator = node.child_by_field("declarator")
         parameters = None if declarator is None else declarator.child_by_field("parameters")
         for parameter in named(parameters):

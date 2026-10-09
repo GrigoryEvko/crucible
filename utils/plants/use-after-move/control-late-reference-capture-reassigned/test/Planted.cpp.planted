@@ -1,0 +1,14 @@
+// A control of use-after-move: the local later gets a lambda with no capture after the move, and the call runs that
+// lambda.  The call reads no key of the first lambda.
+#include <functional>
+#include <utility>
+struct Token { int value; };
+void sink(Token&&);
+void read(Token const&);
+
+void must_accept_reassigned_reference_capture(Token token) {
+    std::function<void()> later = [&token] { read(token); };
+    sink(std::move(token));
+    later = [] {};
+    later();
+}
