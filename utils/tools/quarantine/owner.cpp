@@ -482,11 +482,14 @@ void check_type_use(tree type, location_t location) { record_named_entities(type
 // A using-declaration in a function body or in a class: the library entity
 // that it brings into scope.  The front end keeps a using-declaration of
 // namespace scope as a binding of the namespace, with no tree that has a
-// location (a control of the plugin witness pins it).
+// location, and the event of the parser gives it (judge_namespace_using).  The
+// front end also adds an artificial using-declaration of operator= to the
+// pattern of a class template, such as a partial specialization of std::hash,
+// and the source does not spell it.
 void check_using(tree decl) {
     location_t location = DECL_SOURCE_LOCATION(decl);
     tree scope = USING_DECL_SCOPE(decl);
-    if (scope == NULL_TREE) {
+    if (scope == NULL_TREE || DECL_ARTIFICIAL(decl)) {
         return;
     }
     note_project_reference(scope, location);
@@ -1230,7 +1233,7 @@ struct FirstTest {
     location_t inside_first = 0;
     location_t inside_length = 0;
     // The file of the inside range is counted (THE FOLDED NAMES): a
-    // quarantined file, or a file of the language.
+    // quarantined file, or a file of language_of.
     bool is_inside_counted = false;
     tree quiet_namespace = NULL_TREE;
     tree detail_namespace = NULL_TREE;
@@ -1978,7 +1981,7 @@ inline void judge_decl_event(tree decl, location_t location) {
     }
     first_test.inside_first = range.first;
     first_test.inside_length = range.end - range.first;
-    first_test.is_inside_counted = entry->file_class == FileClass::quarantined || entry->language_layer >= 0;
+    first_test.is_inside_counted = entry->file_class == FileClass::quarantined || is_read_as_language(*entry);
     return false;
 }
 
@@ -2113,7 +2116,8 @@ bool is_library_decl(tree decl) {
     return is_library;
 }
 
-// A place of a counted file: a quarantined file, or a file of the language.
+// A place of a counted file: a quarantined file, or a file of language_of (THE
+// BASE KINDS of plugin.h).
 bool counts_folded_name(const Place& place) {
     return place.file != nullptr && (place.file_class == FileClass::quarantined || language_of(place) != nullptr);
 }
@@ -2131,7 +2135,7 @@ bool may_count_at(location_t location) {
         return entry != nullptr && entry->file_class != FileClass::outside;
     }
     const FileEntry* entry = ordinary_file_at(location);
-    return entry != nullptr && (entry->file_class == FileClass::quarantined || entry->language_layer >= 0);
+    return entry != nullptr && (entry->file_class == FileClass::quarantined || is_read_as_language(*entry));
 }
 
 std::string name_key(const Place& place, tree identifier) {

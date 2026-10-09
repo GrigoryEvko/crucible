@@ -1,0 +1,32 @@
+# A base header gets the base kinds in its sentinel unit.  The rule of the
+# library names reads it with the admit rows of the language: the row of
+# std::move admits it, the row with `in` admits std::size_t in this header,
+# and the row of std::bit_cast with `until` and no `in` refuses it.  The
+# library object, the C library struct, the C library call and the folded
+# name of the static_assert are findings of a base kind.  The raw pointer,
+# the C array and the builtin are no finding.  The quarantined unit with no
+# sentinel reads no base header, and no unit names Other.h as a sentinel.  In
+# the mode error each finding of a base kind is an error.
+
+compile plain src/kinds.cpp stage=c
+exit plain pass
+judge plain
+
+compile sentinel src/kinds.cpp sentinel=include/fixy/Kinds.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel quarantine base-std-object include/fixy/Kinds.h:17:31 | std::vector
+finding sentinel quarantine base-c-library-object include/fixy/Kinds.h:18:19 | tm
+finding sentinel quarantine base-c-library-call include/fixy/Kinds.h:23:45 | memset
+finding sentinel quarantine base-std-entity include/fixy/Kinds.h:25:59 | std::swap
+finding sentinel quarantine base-std-entity include/fixy/Kinds.h:27:67 | std::bit_cast
+finding sentinel quarantine base-std-entity include/fixy/Kinds.h:29:27 | std::vector
+
+compile error src/kinds.cpp sentinel=include/fixy/Kinds.h mode=error out=no
+exit error fail
+error error include/fixy/Kinds.h:17 | quarantine: base-std-object std::vector;
+error error include/fixy/Kinds.h:18 | quarantine: base-c-library-object tm;
+error error include/fixy/Kinds.h:23 | quarantine: base-c-library-call memset;
+error error include/fixy/Kinds.h:25 | quarantine: base-std-entity std::swap;
+error error include/fixy/Kinds.h:27 | quarantine: base-std-entity std::bit_cast;
+error error include/fixy/Kinds.h:29 | quarantine: base-std-entity std::vector;

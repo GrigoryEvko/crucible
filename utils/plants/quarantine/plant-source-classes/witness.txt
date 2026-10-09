@@ -3,28 +3,32 @@
 # is a base file of the layer X1_wrappers, and a file of src/fixy/session/ is a
 # base file of the layer X5_session.  No row of src/fixy/concurrent/ holds a
 # file, so a file there is a file of X1_wrappers too.  So an include of <cmath>
-# names the layer of the file, and a std name in such a file is no finding,
-# also in the mode error.  A file of src/foundation/core/ is a file of the
-# language of the layer F0_primitives, so a std name that no admit row admits
-# there, and an include outside the allowance, are errors in each mode.
+# names the layer of the file.  Such a file is the sentinel of its own unit,
+# so a std name that no admit row admits is a finding of the kind
+# base-std-entity, and no error in the mode report.  A file of
+# src/foundation/core/ is a file of the language of the layer F0_primitives,
+# so a std name that no admit row admits there, and an include outside the
+# allowance, are errors in each mode.
 
 compile fixy-header src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag fixy-header -DPLANT_LAYER_HEADER
 exit fixy-header pass
 finding fixy-header quarantine layer-header src/fixy/Plant.cpp:2:0 | <cmath> in the layer X1_wrappers
 
-compile fixy-std-name src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+compile fixy-std-name src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag fixy-std-name -DPLANT_STD_NAME
 exit fixy-std-name pass
+finding fixy-std-name quarantine base-std-entity src/fixy/Plant.cpp:7:14 | std::swap
 
 compile session-header src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag session-header -DPLANT_LAYER_HEADER
 exit session-header pass
 finding session-header quarantine layer-header src/fixy/session/Plant.cpp:2:0 | <cmath> in the layer X5_session
 
-compile session-std-name src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+compile session-std-name src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag session-std-name -DPLANT_STD_NAME
 exit session-std-name pass
+finding session-std-name quarantine base-std-entity src/fixy/session/Plant.cpp:7:14 | std::swap
 
 compile concurrent-header src/fixy/concurrent/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag concurrent-header -DPLANT_LAYER_HEADER

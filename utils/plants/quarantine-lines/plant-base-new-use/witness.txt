@@ -1,0 +1,12 @@
+# A change of a base header takes one object of a library class away and adds one in new code.  The sentinel unit of
+# the header gives the base kind of each object.  The count of the file stays, so the rule quarantine accepts the
+# change.  The new object is on a line of a hunk that removes no line, and the rule quarantine-lines refuses it, as it
+# refuses a new finding in a quarantined file.
+
+parent parent
+compile report test/lines.cpp sentinel=include/fixy/Lines.h
+exit report pass
+finding report quarantine base-std-object include/fixy/Lines.h:9:31 | std::vector
+finding report quarantine base-std-object include/fixy/Lines.h:11:31 | std::vector
+judge report
+configuration witness

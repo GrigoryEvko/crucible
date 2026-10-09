@@ -1,7 +1,7 @@
-// A source file of the base.  With the tree as the source root, the uses of
-// the library below are not findings (control-base-files).  This plant
-// compiles the file with src/ as the root.  The file is quarantined there,
-// and each use below is a finding.
+// A source file of the base.  With the tree as the root, its library object
+// and its C library call are findings of a base kind (control-base-files).
+// This plant compiles the file with src/ as the root.  The file is
+// quarantined there, and each use below is a finding.
 
 #include <cstring>
 #include <vector>

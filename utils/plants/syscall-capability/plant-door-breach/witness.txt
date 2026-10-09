@@ -7,3 +7,5 @@ exit sentinel pass
 judge sentinel
 finding sentinel syscall-capability outside-door include/fixy/os/Other.h:9:75 | fixy::other::pin(const cpu_set_t&): sched_setaffinity
 finding sentinel syscall-capability raw-syscall include/fixy/os/Other.h:9:75 | fixy::other::pin(const cpu_set_t&): sched_setaffinity
+finding sentinel quarantine base-c-library-object include/fixy/os/Other.h:9:33 | cpu_set_t
+finding sentinel quarantine base-c-library-call include/fixy/os/Other.h:9:75 | sched_setaffinity

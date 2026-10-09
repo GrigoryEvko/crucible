@@ -1,15 +1,16 @@
-# A source file of the base reports no finding, also in the mode error.  Each
-# compile with a report writes one report file with no line.  The objects are
-# const, and the rule process-wide-state reads no object in them.
+# A source file of the base is the sentinel of its own unit.  The rule of the
+# library names reads it with the admit rows of the language, so its library
+# object and its C library call are findings of a base kind.  Its C array and
+# its raw pointer are no finding, because the base holds them.  The objects
+# are const, and the rule process-wide-state reads no object in them.  The
+# plant plant-base-kinds shows the mode error.
 
 compile floor src/foundation/Floor.cpp
 exit floor pass
+finding floor quarantine base-std-object src/foundation/Floor.cpp:11:24 | std::vector
+finding floor quarantine base-c-library-call src/foundation/Floor.cpp:14:44 | memset
 
 compile door src/fixy/Door.cpp
 exit door pass
-
-compile floor-error src/foundation/Floor.cpp mode=error out=no
-exit floor-error pass
-
-compile door-error src/fixy/Door.cpp mode=error out=no
-exit door-error pass
+finding door quarantine base-std-object src/fixy/Door.cpp:11:24 | std::vector
+finding door quarantine base-c-library-call src/fixy/Door.cpp:14:43 | memset

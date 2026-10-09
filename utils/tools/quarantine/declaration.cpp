@@ -248,7 +248,7 @@ void record_raw_object(Kind kind, tree decl) { record(kind, DECL_SOURCE_LOCATION
 // The finding of a declaration at LOCATION whose type holds REFUSED, a
 // library class that no admit row admits.  Its entity is the class with no
 // template argument (THE ENTITY OF AN OBJECT).  LANGUAGE is null in a
-// quarantined file.  In a file of the language, LANGUAGE names that file.
+// quarantined file.  In a file of language_of, LANGUAGE names that file.
 void record_library_object(tree refused, location_t location, const FileEntry* language) {
     Kind kind = library_of(TYPE_MAIN_DECL(refused)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
     record_declared(kind, location, qualified_name(refused), language);
@@ -610,7 +610,7 @@ void walk_decltype(tree type, location_t location) {
 }
 
 // The type of a declaration.  In a quarantined file, each rule of the type
-// applies.  In a file of the language, only the rule of the library types
+// applies.  In a file of language_of, only the rule of the library types
 // applies: the base holds the raw pointers and the arrays of its families.
 void check_object(tree decl, Role role) {
     tree type = role == Role::return_value ? TREE_TYPE(TREE_TYPE(decl)) : TREE_TYPE(decl);

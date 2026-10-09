@@ -8,6 +8,8 @@ exit sentinel pass
 judge sentinel
 finding sentinel no-unchecked-access unchecked-use include/foundation/Walk.h:15:85 | foundation::planted::private_members(): std::meta::access_context::unchecked
 finding sentinel no-unchecked-access unchecked-use include/foundation/Walk.h:20:85 | foundation::planted::private_members_of(): std::meta::access_context::unchecked
+finding sentinel quarantine base-std-entity include/foundation/Walk.h:15:102 | std::vector::size
+finding sentinel quarantine base-std-entity include/foundation/Walk.h:20:102 | std::vector::size
 
 compile plain src/use.cpp stage=c
 flag plain -freflection

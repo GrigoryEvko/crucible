@@ -6,6 +6,7 @@ compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
 exit sentinel pass
 judge sentinel
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:9:42 | planted::process_id(): getpid
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:9:42 | getpid
 
 compile plain src/use.cpp stage=c
 exit plain pass

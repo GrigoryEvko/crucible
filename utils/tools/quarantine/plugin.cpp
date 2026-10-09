@@ -7,9 +7,8 @@
 // library entity that the table does not admit.  The plugin reads the C++
 // trees of the translation unit and records each place that breaks the rule.
 // The location rule decides what it checks, and the target does not: a use is
-// a finding only when its spelling location is in a quarantined file.  A use
-// inside a base file, and a fixy template that a crucible type instantiates,
-// is not a finding.
+// a finding only when its spelling location is in a quarantined file.  A fixy
+// template that a crucible type instantiates is not a finding.
 //
 // A base file that a language row of the table holds is a file of the
 // language.  The rule of the library names applies to it.  A variable, a data
@@ -23,6 +22,11 @@
 // a finding of its pending kind.  An outside header must be in the allowance
 // of the layer of the language row too.  Each other finding in a file of the
 // language is an error in each build, so the language stays clean.
+//
+// The rule of the library names also reads each other base file in its
+// sentinel unit, with the same admit rows.  Its findings there have the base
+// kinds, and they are no errors in the mode report (THE BASE KINDS in
+// plugin.h).  The ledger of the rule quarantine counts them.
 //
 // The plugin also applies the contract rule of the tree (contract.cpp), in
 // each mode.  Each build of the tree loads this plugin

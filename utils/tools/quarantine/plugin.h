@@ -54,8 +54,9 @@
 //     file that a unit reads.
 //     The contract rule and the opt-out regions apply to each file under the
 //     source root and in the build directory.  The quarantine rule applies to
-//     a quarantined file only, and its rule of the library names also applies
-//     to a base file of the language.
+//     a quarantined file only.  Its rule of the library names also applies to
+//     a base file of the language, and to each other base file in its
+//     sentinel unit (THE BASE KINDS).
 //     The plugin takes the build directory as build=PATH.  A file that the
 //     build writes there, such as a generated header or a unit that xxd
 //     writes, has the path kBuildPrefix and its path inside the build
@@ -125,7 +126,12 @@
 //                           its door
 //     upward-include        an include of a header of a higher layer, or of a
 //                           file outside the base, by a base file
-//     opted-out             a finding of each kind of each rule, inside a region
+//     base-std-entity       a std-entity in a base file that is no file of the
+//                           language, in its sentinel unit (THE BASE KINDS)
+//     base-std-object       the same, for a std-object
+//     base-c-library-object the same, for a c-library-object
+//     base-c-library-call   the same, for a c-library-call
+//     opted-out            a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the
 //                           finding inside the region
@@ -318,15 +324,29 @@
 //     the expression shape and the owner.  The family home reads the gates of
 //     a header of include/ only in that unit too (home.cpp, THE GATES).  Of
 //     the rules of the quarantine, only the rule of the library names records
-//     a finding of a declaration or an expression of a base file, and only in
-//     a file of the language.  A finding of a family rule in a base file
-//     counts only in that unit.  So each base file costs one walk in each
-//     build.
+//     a finding of a declaration or an expression of a base file (THE BASE
+//     KINDS).  A finding of a family rule in a base file counts only in that
+//     unit.  So each base file costs one walk in each build.
 //     The argument not-standalone=PATH names the list of the headers that
 //     cannot compile alone, test/layer/crucible-not-standalone.txt.  Each row
 //     is `HEADER | REASON`, with HEADER relative to include/.  No unit is the
 //     sentinel of such a header, so the family home reads it in each unit
 //     that includes it (home.cpp, THE SCOPE).
+//
+// THE BASE KINDS
+//     The rule of the library names reads each base file in its sentinel unit
+//     as it reads a file of the language: with the admit rows of the
+//     language (language_of).  A row with `in` admits only in a file under
+//     one of its paths, and a row with `until` admits only with `in`.  In a
+//     base file that is no file of the language, a finding of that rule has
+//     the base kind of its kind (language_kind): base-std-entity,
+//     base-std-object, base-c-library-object or base-c-library-call.  Such a
+//     finding is no error in the mode report, and the ledger of the rule
+//     quarantine counts it, so its count can only fall.  The other kinds of
+//     the quarantine rule do not apply to a base file, because the base holds
+//     the raw pointers, the arrays, the allocations and the builtins of its
+//     families.  A base file outside its sentinel unit gets no finding of
+//     this rule, so each finding counts in one unit only.
 //
 // THE SECTION
 //     A unit that writes an object puts its report into the section
@@ -671,6 +691,10 @@ enum class Kind : std::uint8_t {
     door_header,
     upward_include,
     replace_pending,
+    base_std_entity,
+    base_std_object,
+    base_c_library_object,
+    base_c_library_call,
     contract_specifier,
     sealed_include,
     sealed_name,
@@ -865,6 +889,14 @@ inline const char* kind_name(Kind kind) {
             return "upward-include";
         case Kind::replace_pending:
             return "replace-pending";
+        case Kind::base_std_entity:
+            return "base-std-entity";
+        case Kind::base_std_object:
+            return "base-std-object";
+        case Kind::base_c_library_object:
+            return "base-c-library-object";
+        case Kind::base_c_library_call:
+            return "base-c-library-call";
         case Kind::contract_specifier:
             return "contract-specifier";
         case Kind::sealed_include:
@@ -1217,6 +1249,10 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "door-header"},
     {"quarantine", "upward-include"},
     {"quarantine", "replace-pending"},
+    {"quarantine", "base-std-entity"},
+    {"quarantine", "base-std-object"},
+    {"quarantine", "base-c-library-object"},
+    {"quarantine", "base-c-library-call"},
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},
@@ -1302,6 +1338,8 @@ inline bool is_name_kind(Kind kind) {
     switch (kind) {
         case Kind::std_entity:
         case Kind::c_library_call:
+        case Kind::base_std_entity:
+        case Kind::base_c_library_call:
         case Kind::foreign_symbol:
         case Kind::compiler_builtin:
         case Kind::layer_header:
@@ -1780,22 +1818,48 @@ inline bool is_quarantined(location_t location) {
     return place_of(location, Scope::quarantine).file_class == FileClass::quarantined;
 }
 
-// The file of the language that holds PLACE, or null.
+// True when the rule of the library names reads ENTRY with the admit rows of
+// the language: a file of the language, and a base file in its sentinel unit
+// (THE BASE KINDS).  is_sentinel holds only for a base file.
+inline bool is_read_as_language(const FileEntry& entry) { return entry.language_layer >= 0 || entry.is_sentinel; }
+
+// The file that holds PLACE when the rule of the library names reads it with
+// the admit rows of the language (is_read_as_language), or null.
 inline const FileEntry* language_of(const Place& place) {
-    return place.file != nullptr && place.file->language_layer >= 0 ? place.file : nullptr;
+    return place.file != nullptr && is_read_as_language(*place.file) ? place.file : nullptr;
 }
 
-// The file of the language that holds the place of LOCATION, or null.
+// The file of language_of that holds the place of LOCATION, or null.
 inline const FileEntry* language_file_of(location_t location) {
     return language_of(place_of(location, Scope::quarantine));
+}
+
+// The kind of a finding of the rule of the library names at PLACE: KIND in a
+// file of the language and in a quarantined file, and its base kind in each
+// other base file (THE BASE KINDS).
+inline Kind language_kind(Kind kind, const Place& place) {
+    if (place.file == nullptr || place.file->file_class != FileClass::base || place.file->language_layer >= 0) {
+        return kind;
+    }
+    switch (kind) {
+        case Kind::std_entity:
+            return Kind::base_std_entity;
+        case Kind::std_object:
+            return Kind::base_std_object;
+        case Kind::c_library_object:
+            return Kind::base_c_library_object;
+        case Kind::c_library_call:
+            return Kind::base_c_library_call;
+        default:
+            return kind;
+    }
 }
 
 // True when the walks of the declarations and of the bodies read the file of
 // PLACE in this unit: a quarantined file, a file of the language, and a base
 // file in its sentinel unit (THE SENTINEL).
 inline bool is_walked_file(const Place& place) {
-    return place.file_class == FileClass::quarantined
-        || (place.file != nullptr && (place.file->language_layer >= 0 || place.file->is_sentinel));
+    return place.file_class == FileClass::quarantined || language_of(place) != nullptr;
 }
 
 // A walked file gets a walk.  A declaration that a macro expansion makes can
@@ -1889,18 +1953,19 @@ inline void record(Kind kind, location_t location, const std::string& entity) {
 
 // A finding of the rule of the library names: a use of a library entity that
 // no admit row admits, or that a row with `until` admits.  It counts in a
-// quarantined file and in a file of the language.  Each other kind is no
-// finding in a file of the language, because the base holds the raw pointers,
-// the arrays and the builtins of its families.  The caller decides the
-// admission with the admit rows of the file that holds LOCATION.  PENDING is
-// the admit row of a finding of the kind replace-pending, or null.
+// quarantined file and in each file of language_of, with the base kind in a
+// base file that is no file of the language (THE BASE KINDS).  Each other kind
+// is no finding in a base file, because the base holds the raw pointers, the
+// arrays and the builtins of its families.  The caller decides the admission
+// with the admit rows of the file that holds LOCATION.  PENDING is the admit
+// row of a finding of the kind replace-pending, or null.
 inline void record_library_kind(Kind kind, const AdmitRow* pending, location_t location, const std::string& entity) {
     if (is_inside_system_assert(location)) {
         return;
     }
     Place place = place_of(location, Scope::quarantine);
     if (place.file_class == FileClass::quarantined || language_of(place) != nullptr) {
-        add_finding(kind, pending, place, entity);
+        add_finding(language_kind(kind, place), pending, place, entity);
     }
 }
 
@@ -1914,7 +1979,7 @@ inline void record_pending(const AdmitRow& row, location_t location, const std::
 }
 
 // A finding of the rule for the type of a declaration.  LANGUAGE is null in a
-// quarantined file, and names the file of the language that holds the
+// quarantined file, and names the file of language_of that holds the
 // declaration otherwise.
 inline void record_declared(Kind kind, location_t location, const std::string& entity, const FileEntry* language) {
     if (language == nullptr) {
@@ -1926,7 +1991,7 @@ inline void record_declared(Kind kind, location_t location, const std::string& e
     }
     Place place = place_of(location, Scope::quarantine);
     if (place.file == language) {
-        add_finding(kind, nullptr, place, entity);
+        add_finding(language_kind(kind, place), nullptr, place, entity);
     }
 }
 

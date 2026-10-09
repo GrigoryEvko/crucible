@@ -1,0 +1,12 @@
+// A second base header of the plant.  No compile of the plant names it as a
+// sentinel, so its library object is no finding there.
+
+#pragma once
+
+#include <vector>
+
+namespace fixy::kinds_plant {
+
+inline std::vector<int> const other_numbers{};
+
+}  // namespace fixy::kinds_plant

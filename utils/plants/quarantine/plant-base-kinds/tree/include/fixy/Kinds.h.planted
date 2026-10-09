@@ -1,0 +1,31 @@
+// A base header of the plant.  Its sentinel unit reads it with the admit rows
+// of the language.  Each library name, object and call that those rows do not
+// admit is a finding of a base kind.  The raw pointer, the C array and the
+// builtin are no finding, because the base holds them.
+
+#pragma once
+
+#include <bit>
+#include <cstddef>
+#include <cstring>
+#include <ctime>
+#include <utility>
+#include <vector>
+
+namespace fixy::kinds_plant {
+
+inline std::vector<int> const numbers{};
+inline ::tm const stamp{};
+inline int* const raw = nullptr;
+inline int const cells[2]{};
+inline std::size_t const count = 0;
+
+inline void clear(char* bytes) { std::memset(bytes, 0, 1); }
+inline void copy(char* to, char const* from) { __builtin_memcpy(to, from, 1); }
+inline void swap_values(int& left, int& right) { std::swap(left, right); }
+inline int moved(int value) { return std::move(value); }
+inline unsigned bits(float value) { return std::bit_cast<unsigned>(value); }
+
+static_assert(sizeof(std::vector<int>) > 0);
+
+}  // namespace fixy::kinds_plant

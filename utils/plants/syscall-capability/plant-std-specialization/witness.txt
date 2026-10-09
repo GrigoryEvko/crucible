@@ -1,11 +1,19 @@
 # A base header adds two specializations of std::hash to the namespace std.
-# The walk of the declarations does not read a namespace that a library file
-# opens, so the hook of a finished class keeps the two classes, and the
-# sentinel unit reads them at the end of the unit.  The default member
-# initializer has the holder namespace-scope.
+# The walk of the declarations reads the specializations of each template of
+# the namespace std, so the sentinel unit reads the two classes.  The default
+# member initializer has the holder namespace-scope.  The rule quarantine
+# gives the base kinds of the library names and of the C library calls.
 
 compile sentinel src/use.cpp sentinel=include/fixy/os/Raw.h stage=c
 exit sentinel pass
 judge sentinel
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:26:113 | std::hash::operator()(const planted::Box<T0_0>&) const: getpid
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:31:24 | namespace-scope: getpid
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:25:13 | std::hash
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:26:17 | std::size_t
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:26:80 | std::size_t
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:26:113 | getpid
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:30:13 | std::hash
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:31:24 | getpid
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:32:17 | std::size_t
+finding sentinel quarantine base-std-entity include/fixy/os/Raw.h:33:33 | std::size_t

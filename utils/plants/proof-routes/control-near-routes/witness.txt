@@ -2,8 +2,11 @@
 # type: an allocator of a scalar, the allocator of a default argument of a
 # container, an overload of a function template, an explicit specialization
 # with an integer argument and a specialization of a template that no class
-# befriends.  The sentinel unit of the header gives no finding.
+# befriends.  The sentinel unit of the header gives no route.  The rule
+# quarantine gives the base kinds of its two library objects.
 
 compile sentinel src/near.cpp sentinel=include/forge/Near.h stage=c
 exit sentinel pass
 judge sentinel
+finding sentinel quarantine base-std-object include/forge/Near.h:16:25 | std::allocator
+finding sentinel quarantine base-std-object include/forge/Near.h:21:24 | std::vector

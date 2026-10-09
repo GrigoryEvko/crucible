@@ -1,0 +1,11 @@
+// The parent of the change: a base header with two objects of a library class.
+#pragma once
+
+#include <vector>
+
+namespace lines_plant {
+
+inline std::vector<int> const first{};
+inline std::vector<int> const second{};
+
+}  // namespace lines_plant

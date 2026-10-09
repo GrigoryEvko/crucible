@@ -8,3 +8,4 @@ exit sentinel pass
 judge sentinel
 finding sentinel escape-doors bare-door include/foundation/Lifetime.h:10:8 | foundation::lifetime::start_as_array(void*, std::size_t)
 finding sentinel quarantine raw-pointer-object src/use.cpp:6:17 | bytes
+finding sentinel quarantine base-std-entity include/foundation/Lifetime.h:10:48 | std::size_t

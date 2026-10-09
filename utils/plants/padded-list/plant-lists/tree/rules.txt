@@ -6,4 +6,8 @@ allow low <array>
 allow low <cstddef>
 allow low <cstdint>
 allow low <inplace_vector>
+# The admit rows keep the base kinds of the rule quarantine out of the plant.
+admit std::array | the fixed list that the rule padded-list reads
+admit std::inplace_vector | a fixed list of a variable count
+admit std::size_t | the extent of a fixed list
 quarantine test/

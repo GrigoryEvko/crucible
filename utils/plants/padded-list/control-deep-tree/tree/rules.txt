@@ -5,3 +5,6 @@ layer low 0 include/fixy/ src/
 allow low <array>
 allow low <cstddef>
 allow low <cstdint>
+# The admit rows keep the base kinds of the rule quarantine out of the control.
+admit std::array | the fixed list that the rule padded-list reads
+admit std::size_t | the extent of a fixed list

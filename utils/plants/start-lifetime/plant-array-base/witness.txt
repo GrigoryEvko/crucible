@@ -6,3 +6,5 @@ exit sentinel pass
 judge sentinel
 finding sentinel escape-doors bare-door include/fixy/Start.h:10:13 | planted::view_array(void*, std::size_t)
 finding sentinel start-lifetime lifetime-start include/fixy/Start.h:10:98 | planted::view_array(void*, std::size_t): std::start_lifetime_as_array
+finding sentinel quarantine base-std-entity include/fixy/Start.h:10:49 | std::size_t
+finding sentinel quarantine base-std-entity include/fixy/Start.h:10:98 | std::start_lifetime_as_array

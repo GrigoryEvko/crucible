@@ -1,0 +1,13 @@
+// The change: the first object goes, and new code adds an object of the same library class.
+#pragma once
+
+#include <vector>
+
+namespace lines_plant {
+
+inline int const first = 0;
+inline std::vector<int> const second{};
+
+inline std::vector<int> const fresh{};
+
+}  // namespace lines_plant

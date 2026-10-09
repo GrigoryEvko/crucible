@@ -38,8 +38,11 @@
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.
 #   admit ENTRY [RESTRICTION...] | REASON
-#       A quarantined file can name the standard library entity ENTRY.  Each
-#       restriction comes one time at most, in any order, and `in` comes last:
+#       A quarantined file can name the standard library entity ENTRY.  A
+#       file of the language reads the rows as a language row tells, and each
+#       other base file reads them in the same way in its sentinel unit (THE
+#       BASE KINDS of utils/tools/quarantine/plugin.h).  Each restriction
+#       comes one time at most, in any order, and `in` comes last:
 #         until FAMILY  The family of the base that replaces the entry.  The
 #                       row goes when that family lands, and `rg 'until
 #                       FAMILY'` finds the rows of one family.
@@ -65,7 +68,8 @@
 #         in PATH...    The entry admits only in the files under the PATHs.
 #                       Each PATH is a path of the base, so the row admits
 #                       nothing in a quarantined file.  The plugin reads a
-#                       file of the language (a language row), and the row
+#                       file of the language (a language row), and each
+#                       other base file in its sentinel unit, and the row
 #                       admits in one under a PATH
 #       A qualified name admits the entity and each name in it, such as
 #       std::tuple_size<T>::value for std::tuple_size.  It admits no other

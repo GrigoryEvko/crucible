@@ -1071,9 +1071,9 @@ In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the quarantine
 plugin of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and
 the plugin arguments on each C++ compile. The plugin applies the quarantine
 rule of §XXII and the contract rule of §XII. `CRUCIBLE_QUARANTINE_MODE` is
-`REPORT`, the default, or `ERROR` (§XXII). On 2026-10-09, the plugin added 33 to
-222 million user instructions to a compile: 0.39% to 1.69% of six units of 2.3
-to 46 billion instructions, and 0.60% of their sum. ccache ignores the paths in the plugin arguments, so
+`REPORT`, the default, or `ERROR` (§XXII). On 2026-10-09, the plugin added 37 to
+235 million user instructions to a compile: 0.42% to 1.72% of six units of 2.3
+to 46 billion instructions, and 0.64% of their sum. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache. ccache also hashes
 the enforce rows of the rule table.
 
@@ -3012,6 +3012,12 @@ The base of the change is the first item of this list that applies (`change_base
 
 The rule does not apply to a build that made only some targets, such as the build of a guard run.
 
+### The base kinds
+
+A base file gets the base kinds of the rule `quarantine` in its sentinel unit (THE BASE KINDS of `utils/tools/quarantine/plugin.h`). The plugin reads each declaration and each expression of the file with the admit rows of the language, as it reads a file of the language. A std name or a C library call that those rows do not admit is a finding of the kind `base-std-entity` or `base-c-library-call`. An object of a library type is a finding of the kind `base-std-object` or `base-c-library-object`. A raw pointer, a C array, an allocation and a builtin are no finding, because the base holds them.
+
+A finding of a base kind is no error in a file with the mode `report`, and the ledger of the rule `quarantine` counts it. Its count can only decrease. The rule `quarantine-lines` refuses a new one on a line that a change adds, as it does in a quarantined file.
+
 ### Callers of a changed API
 
 This rule applies to a quarantined caller that changes only because a base API changed. In that caller, change only the lines that the API change makes necessary. Such a line can keep a std type or a std name that no base type replaces at this time. The finding count of the file must not increase. The report of the change lists each such line.
@@ -3069,7 +3075,7 @@ Each change moves each producer and each consumer of an API at one time. It keep
 
 The `layer` rows of the rule table give the layers of the base, from F0 floor to X5 session, each with a rank. The plan adds the layer X6 channels (plan §12). A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
 
-The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, no rule counts the std names of a base file. The audit can make the allowance shorter. Only the owner can make it longer.
+The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, the rule `quarantine` counts each such name with a base kind (The base kinds). The audit can make the allowance shorter. Only the owner can make it longer.
 
 When a builtin gives a function, the base uses the builtin and not a header (R3, and rule 4 of §XV "Compile time"). A new header becomes part of an allowance only if the five conditions of plan §12 hold. The plan removes each other std header from the base. After that, no layer includes `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>` or a third-party header.
 

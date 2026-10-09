@@ -7,3 +7,6 @@ judge sentinel
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:13:20 | planted::template_process_id(T0_0): getpid
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:18:46 | planted::Holder::member_process_id(): getpid
 finding sentinel syscall-capability raw-syscall include/fixy/os/Raw.h:24:43 | planted::local_process_id::Local::process_id(): getpid
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:13:20 | getpid
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:18:46 | getpid
+finding sentinel quarantine base-c-library-call include/fixy/os/Raw.h:24:43 | getpid

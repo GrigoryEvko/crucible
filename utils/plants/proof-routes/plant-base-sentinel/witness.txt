@@ -17,6 +17,11 @@ finding sentinel proof-routes raw-allocation include/forge/Pool.h:44:48 | raw-al
 finding sentinel escape-doors bare-door include/forge/Pool.h:34:14 | forge::cast_back(void*)
 finding sentinel escape-doors bare-door include/forge/Pool.h:36:23 | forge::rebind(void*)
 finding sentinel escape-doors bare-door include/forge/Pool.h:44:14 | forge::raw_slot()
+finding sentinel quarantine base-std-object include/forge/Pool.h:20:26 | std::allocator
+finding sentinel quarantine base-std-entity include/forge/Pool.h:24:7 | std::allocator
+finding sentinel quarantine base-std-object include/forge/Pool.h:27:26 | std::allocator
+finding sentinel quarantine base-std-object include/forge/Pool.h:30:18 | std::allocator
+finding sentinel quarantine base-std-entity include/forge/Pool.h:32:8 | std::allocator
 
 compile plain src/uses.cpp stage=c
 exit plain pass

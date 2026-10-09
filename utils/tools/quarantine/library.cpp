@@ -2,6 +2,11 @@
 // library of a declaration, the admit row of each use, and the library classes
 // that a type holds.  The other sources of the plugin ask these questions for
 // each name and each type that they read.
+//
+// In this file, a file of the language is each file of language_of of
+// plugin.h: a file of a language row, and a base file in its sentinel unit,
+// which the rule of the library names reads with the admit rows of the
+// language (THE BASE KINDS of plugin.h).
 
 #include "plugin.h"
 
