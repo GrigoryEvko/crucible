@@ -59,11 +59,12 @@ THE TESTS WITH A FAILURE
     Each test step gives ctest the option --output-junit, with a report in
     the directory of the logs.  When the status of a step is not 0, the gauge
     immediately prints FAILED and the status of the step.  For a test step,
-    it also prints the name of each test with the status fail in the report
-    (assay.readers.ctest).  A skipped test has the status notrun, and it is
-    no failure.  At the end, the gauge prints each such step again, and it
-    exits with 1.  A failure in the warm test run is a failure of the commit
-    before the edit.
+    it also prints the name of each test with the status FAIL in the report.
+    Then it prints the name of each test with the status NOTRUN, which ctest
+    did not start (assay.readers.ctest, THE STATUS OF A TEST).  A test with
+    the status SKIPPED gave its own skip, and it is no failure.  At the end,
+    the gauge prints each such step again, and it exits with 1.  A failure in
+    the warm test run is a failure of the commit before the edit.
 
 THE MEASURED RULES
     edit-build-instructions and edit-test-instructions hold the error level.
@@ -405,20 +406,16 @@ def junit_report(logs: Path, name: str) -> Path:
     return logs / f"{name}.junit.xml"
 
 
-def failed_tests(report: Path) -> list[str]:
-    """Return the sorted names of the tests with the status fail in the JUnit report of one test step.
-
-    A skipped test has the status notrun, and it is no failure (THE TESTS WITH A FAILURE).
-
-    Raises:
-        ctest_reader.CtestError: If the report cannot be read
-    """
-    statuses = ctest_reader.results(report)
-    return sorted(name for name, status in statuses.items() if status is ctest_reader.TestStatus.FAIL)
+def tests_with(statuses: Mapping[str, ctest_reader.TestStatus], status: ctest_reader.TestStatus) -> list[str]:
+    """Return the sorted names of the tests with one status in the statuses of a JUnit report (THE TESTS WITH A FAILURE)."""
+    return sorted(name for name, found in statuses.items() if found is status)
 
 
 def failure_line(result: StepResult, report: Path | None) -> str:
-    """Return the line of one step with a status that is not 0.  For a test step, the line names each test with a failure.
+    """Return the line of one step with a status that is not 0.
+
+    For a test step, the line names each test with a failure, and then each test that ctest did not start (THE TESTS
+    WITH A FAILURE).
 
     Args:
         result: The measures of the step
@@ -428,12 +425,17 @@ def failure_line(result: StepResult, report: Path | None) -> str:
     if report is None:
         return line
     try:
-        names = failed_tests(report)
+        statuses = ctest_reader.results(report)
     except ctest_reader.CtestError as problem:
         return f"{line}, and no test name is known: {problem}"
-    if not names:
+    failed = tests_with(statuses, ctest_reader.TestStatus.FAIL)
+    not_run = tests_with(statuses, ctest_reader.TestStatus.NOTRUN)
+    if not failed and not not_run:
         return f"{line}, and the JUnit report {report} names no test with a failure"
-    return f"{line}, {len(names)} test(s) with a failure: {', '.join(names)}"
+    parts = [f"{len(failed)} test(s) with a failure: {', '.join(failed)}"] if failed else []
+    if not_run:
+        parts.append(f"{len(not_run)} test(s) that ctest did not start: {', '.join(not_run)}")
+    return f"{line}, {', and '.join(parts)}"
 
 
 def failure_report(failures: list[str], logs: Path, what: str) -> str:
@@ -891,12 +893,21 @@ def format_case(record_case: Callable[[str, bool], None]) -> None:
 
 
 PLANTED_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="planted" tests="5" failures="2" disabled="1" skipped="1">
+<testsuite name="planted" tests="6" failures="2" disabled="1" skipped="2">
   <testcase name="test_passes" classname="test_passes" status="run"/>
   <testcase name="test_times_out" classname="test_times_out" status="fail"><failure message="Timeout"/></testcase>
   <testcase name="test_fails" classname="test_fails" status="fail"><failure message="Failed"/></testcase>
   <testcase name="test_skipped" classname="test_skipped" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>
+  <testcase name="test_after_setup" classname="test_after_setup" status="notrun"><skipped message="Fixture dependency failed"/></testcase>
   <testcase name="test_disabled" classname="test_disabled" status="disabled"/>
+</testsuite>
+"""
+# The planted report with no failure of a test.  The step gives a status that is not 0, because ctest did not start
+# one test.
+PLANTED_JUNIT_NOT_RUN = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="planted" tests="2" failures="0" skipped="1">
+  <testcase name="test_passes" classname="test_passes" status="run"/>
+  <testcase name="test_no_program" classname="test_no_program" status="notrun"><skipped message="Unable to find executable"/></testcase>
 </testsuite>
 """
 
@@ -917,8 +928,15 @@ def failure_cases(record_case: Callable[[str, bool], None]) -> None:
         report = junit_report(logs, "edit-tests-1")
         report.write_text(PLANTED_JUNIT, encoding="utf-8")
         line = failure_line(stopped("edit-tests-1"), report)
-        record_case("the line of a test step names each test with a failure in sequence, and no skipped test",
-                    line == "edit-tests-1: status 8, 2 test(s) with a failure: test_fails, test_times_out")
+        record_case("the line of a test step names each test with a failure in sequence, then each test that ctest "
+                    "did not start, and no skipped test",
+                    line == "edit-tests-1: status 8, 2 test(s) with a failure: test_fails, test_times_out, and 1 "
+                            "test(s) that ctest did not start: test_after_setup")
+        alone = junit_report(logs, "edit-tests-3")
+        alone.write_text(PLANTED_JUNIT_NOT_RUN, encoding="utf-8")
+        record_case("the line of a test step with no failure names the test that ctest did not start",
+                    failure_line(stopped("edit-tests-3"), alone)
+                    == "edit-tests-3: status 8, 1 test(s) that ctest did not start: test_no_program")
         missing = failure_line(stopped("edit-tests-2"), junit_report(logs, "edit-tests-2"))
         record_case("the line of a test step with no JUnit report gives the status and tells why no test name is known",
                     missing.startswith("edit-tests-2: status 8, and no test name is known: "))
@@ -1094,6 +1112,7 @@ def self_test() -> int:
 
 
 # ── Main ───────────────────────────────────────────────────────────────────
+
 
 
 def main(argv: list[str]) -> int:

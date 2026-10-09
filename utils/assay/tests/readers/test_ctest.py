@@ -153,12 +153,18 @@ def tool_cases(expect: testing.Expect) -> None:
         expect("tests checks the exit status of ctest", "exits with 8" in refused(lambda: ctest.tests(build)))
 
 
+# A report with each case that the pinned ctest 4.4.2 writes.  A skip and a test that ctest did not start each have the
+# status notrun, and the message of the element skipped tells them apart.
 JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
-<testsuite tests="5">
+<testsuite tests="9">
   <testcase name="passed" status="run"/>
   <testcase name="failed" status="fail"><failure message="Failed"/></testcase>
   <testcase name="failed_with_no_status"><failure message="Failed"/></testcase>
-  <testcase name="skipped" status="notrun"/>
+  <testcase name="skip_code" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>
+  <testcase name="skip_output" status="notrun"><skipped message="SKIP_REGULAR_EXPRESSION_MATCHED"/></testcase>
+  <testcase name="after_failed_fixture" status="notrun"><skipped message="Fixture dependency failed"/></testcase>
+  <testcase name="no_program" status="notrun"><skipped message="Unable to find executable"/></testcase>
+  <testcase name="no_message" status="notrun"/>
   <testcase name="off" status="disabled"/>
 </testsuite>
 """
@@ -169,16 +175,31 @@ def results_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
         report = Path(scratch) / "junit.xml"
         report.write_text(JUNIT, encoding="utf-8")
+        statuses = ctest.results(report)
         expect(
             "results gives the status of each test case, and a failure child with no status is a failure",
-            ctest.results(report)
+            {name: statuses.get(name) for name in ("passed", "failed", "failed_with_no_status", "off")}
             == {
                 "passed": ctest.TestStatus.RUN,
                 "failed": ctest.TestStatus.FAIL,
                 "failed_with_no_status": ctest.TestStatus.FAIL,
-                "skipped": ctest.TestStatus.NOTRUN,
                 "off": ctest.TestStatus.DISABLED,
             },
+        )
+        expect(
+            "results gives SKIPPED to a test that ended with its skip code or gave its skip output",
+            statuses.get("skip_code") is ctest.TestStatus.SKIPPED
+            and statuses.get("skip_output") is ctest.TestStatus.SKIPPED,
+        )
+        expect(
+            "results gives NOTRUN to a test that ctest did not start: a failed fixture, no program, no message",
+            [statuses.get(name) for name in ("after_failed_fixture", "no_program", "no_message")]
+            == [ctest.TestStatus.NOTRUN] * 3,
+        )
+        report.write_text('<testsuite><testcase name="a" status="skipped"/></testsuite>', encoding="utf-8")
+        expect(
+            "results refuses the status skipped, which ctest does not write as a status",
+            "does not write" in refused(lambda: ctest.results(report)),
         )
         report.write_text('<testsuite><testcase name="a" status="lost"/></testsuite>', encoding="utf-8")
         expect(
@@ -255,7 +276,12 @@ def project_cases(expect: testing.Expect) -> None:
             f'set(CRUCIBLE_PYTHON3 "{sys.executable}")\ninclude("{REPO_ROOT / "cmake" / "TestLauncher.cmake"}")\n'
             f'crucible_script_test(NAME planted_pass COMMAND "{sys.executable}" "{source / "exit.py"}" 0)\n'
             f'crucible_script_test(NAME planted_fail COMMAND "{sys.executable}" "{source / "exit.py"}" 1)\n'
-            'set_tests_properties(planted_pass PROPERTIES LABELS "ci_guard")\n',
+            'set_tests_properties(planted_pass PROPERTIES LABELS "ci_guard")\n'
+            f'crucible_script_test(NAME planted_skip COMMAND "{sys.executable}" "{source / "exit.py"}" 77)\n'
+            "set_tests_properties(planted_skip PROPERTIES SKIP_RETURN_CODE 77)\n"
+            "set_tests_properties(planted_fail PROPERTIES FIXTURES_SETUP planted_fixture)\n"
+            f'crucible_script_test(NAME planted_after COMMAND "{sys.executable}" "{source / "exit.py"}" 0)\n'
+            "set_tests_properties(planted_after PROPERTIES FIXTURES_REQUIRED planted_fixture)\n",
             encoding="utf-8",
         )
         cmake.request(build)
@@ -270,7 +296,7 @@ def project_cases(expect: testing.Expect) -> None:
         expect(
             "tests reads the listing of ctest, with the launcher in front of each command and the line of each "
             "call of crucible_script_test()",
-            set(tests) == {"planted_pass", "planted_fail"}
+            set(tests) == {"planted_pass", "planted_fail", "planted_skip", "planted_after"}
             and "test-step" in tests["planted_pass"].command
             and (Path(tests["planted_fail"].file).name, tests["planted_fail"].line) == ("CMakeLists.txt", 7),
         )
@@ -289,14 +315,20 @@ def project_cases(expect: testing.Expect) -> None:
             )
         )
         expect(
-            "results reads the JUnit report of ctest",
-            ctest.results(report) == {"planted_pass": ctest.TestStatus.RUN, "planted_fail": ctest.TestStatus.FAIL},
+            "results reads the JUnit report of ctest: a pass, a failure, a skip code, and a test after a failed fixture",
+            ctest.results(report)
+            == {
+                "planted_pass": ctest.TestStatus.RUN,
+                "planted_fail": ctest.TestStatus.FAIL,
+                "planted_skip": ctest.TestStatus.SKIPPED,
+                "planted_after": ctest.TestStatus.NOTRUN,
+            },
         )
         records = ctest.costs(build)
         expect(
-            "costs reads the record that the launcher writes for each script test",
+            "costs reads the record that the launcher writes for each script test that ran, and no other",
             {name: (record.result, record.exit_code) for name, record in records.items()}
-            == {"planted_pass": ("passed", 0), "planted_fail": ("failed", 1)}
+            == {"planted_pass": ("passed", 0), "planted_fail": ("failed", 1), "planted_skip": ("failed", 77)}
             and records["planted_pass"].program == sys.executable,
         )
 

@@ -850,10 +850,12 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         save_state(state_path, state)
         counts = Counter(statuses.get(name, ctest_reader.TestStatus.NOTRUN) for name in selected)
         passed, failed = counts[ctest_reader.TestStatus.RUN], counts[ctest_reader.TestStatus.FAIL]
+        skip_code = counts[ctest_reader.TestStatus.SKIPPED]
         not_run = counts[ctest_reader.TestStatus.NOTRUN] + counts[ctest_reader.TestStatus.DISABLED]
         recorder.finish_tests(status, {"selected": len(selected), "passed": passed, "failed": failed,
-                                       "not_run": not_run, "skipped": len(skipped)})
-        print(f"loop test: {len(selected)} tests selected: {passed} passed, {failed} failed, {not_run} did not run.")
+                                       "skip_code": skip_code, "not_run": not_run, "skipped": len(skipped)})
+        print(f"loop test: {len(selected)} tests selected: {passed} passed, {failed} failed, {skip_code} gave their "
+              f"skip code, {not_run} did not run.")
         print(f"loop test: {len(skipped)} tests skipped, because {REASON_SAME} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
@@ -946,6 +948,8 @@ class SelfTest:
              f'"{FIXTURE_SUBCOMMAND}")'),
             f'add_test([=[disabled_test]=] "{bin_dir}/ok")',
             f'set_tests_properties([=[disabled_test]=] PROPERTIES DISABLED TRUE)',
+            f'add_test([=[skip_code_test]=] "{sys.executable}" "-S" "-c" "raise SystemExit(77)")',
+            "set_tests_properties([=[skip_code_test]=] PROPERTIES SKIP_RETURN_CODE 77)",
             (f'add_test([=[exe_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
              f'"--warnings-dir" "{self.build_dir}/check-warnings" "--build-dir" "{self.build_dir}" '
              f'"{bin_dir}/ok_launched")'),
@@ -1157,10 +1161,15 @@ def self_test(ctest: str) -> int:
                status == 1 and fake.skipped() == [] and "the ctest of PATH ran" not in output, output)
         expect("the first call says that no state file exists", "no state file" in output, output)
         history = loop_history.read_lines(fake.build_dir)
+        tests_line = history[0].get("tests") if history else None
+        counts = tests_line if isinstance(tests_line, dict) else {}
         expect("a call appends one line to the loop history, with the tests and with no build after --no-build",
-               len(history) == 1 and history[0]["build"] is None and history[0]["tests"]["failed"] == 1
-               and history[0]["tests"]["selected"] == history[0]["tests"]["passed"] + 1 + history[0]["tests"]["not_run"]
+               len(history) == 1 and history[0]["build"] is None and counts["failed"] == 1
+               and counts["selected"] == counts["passed"] + 1 + counts["skip_code"] + counts["not_run"]
                and history[0]["jobs"] == 4, output)
+        expect("a test that gave its skip code counts apart from the disabled test, which did not run",
+               counts.get("skip_code") == 1 and counts.get("not_run") == 1
+               and "1 failed, 1 gave their skip code, 1 did not run." in output, output)
 
         status, output = fake.call()
         expect("an unchanged tree skips exactly the passed executable tests",

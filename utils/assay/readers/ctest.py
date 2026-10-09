@@ -9,11 +9,29 @@ THE INPUTS
       (CMAKE_CTEST_COMMAND, assay.readers.cmake), and no ctest of PATH.
     * The results of a run.  `ctest --output-junit FILE` writes one element
       testcase for each test that the run selected, with the name of the test
-      and its status: run, fail, notrun or disabled.
+      and its status: run, fail, notrun or disabled.  ctest writes notrun for
+      two different cases, and the message of the child element skipped tells
+      them apart (THE STATUS OF A TEST).
     * The record of each test.  `loop test-step` and `loop fixture` write
       BUILD_DIR/test-records/NAME.test.cost after each run of a test
       (assay.core.meter, THE RECORD).  It holds the result, the status, the
       program and the cost of the last run.
+
+THE STATUS OF A TEST
+    results() gives each test of a JUnit report one status of TestStatus:
+      RUN       the test ran, and it ended with the status 0
+      FAIL      the test ran and gave a failure, or it ran longer than its
+                timeout
+      SKIPPED   the test ran and gave a skip: it ended with its
+                SKIP_RETURN_CODE, or its output agreed with its
+                SKIP_REGULAR_EXPRESSION.  ctest writes the status notrun and
+                the message SKIP_RETURN_CODE=N or SKIP_REGULAR_EXPRESSION_MATCHED
+      NOTRUN    ctest did not start the test.  For example, a test of its
+                fixture gave a failure, or its program is not there.  ctest
+                writes the status notrun and a message that gives the cause
+      DISABLED  the test has the property DISABLED
+    A skip is the verdict of the test itself.  A test that did not run has no
+    verdict, and ctest gives a status that is not 0 for its run.
 
 THE CALL OF A TEST
     The backtrace of a test in the JSON gives the stack of CMake calls that
@@ -29,7 +47,8 @@ WHAT THE READER GIVES
     tests() gives each registered test as a TestEntry: its name, its command,
     its properties, and the CMake file and the line of its call.  With a
     label, it gives only the tests with that label.  parse() reads the JSON of
-    a listing.  results() gives the status of each test of a JUnit report.
+    a listing.  results() gives the status of each test of a JUnit report
+    (THE STATUS OF A TEST).
     costs() gives the last record of each test by its name, as a TestRecord.
 
     A file of the build directory that the reader cannot read gives a
@@ -62,12 +81,27 @@ class CtestError(RuntimeError):
 
 
 class TestStatus(enum.StrEnum):
-    """The status of one test in a JUnit report of ctest."""
+    """The status of one test of a JUnit report of ctest (THE STATUS OF A TEST)."""
 
     RUN = "run"
     FAIL = "fail"
+    SKIPPED = "skipped"
     NOTRUN = "notrun"
     DISABLED = "disabled"
+
+
+# The status of each value of the attribute status that ctest writes in a JUnit report.  SKIPPED has no value of its
+# own: ctest writes notrun, and the message of the element skipped gives the skip (THE STATUS OF A TEST).
+JUNIT_STATUSES = {
+    "run": TestStatus.RUN,
+    "fail": TestStatus.FAIL,
+    "notrun": TestStatus.NOTRUN,
+    "disabled": TestStatus.DISABLED,
+}
+# The start of the message of the element skipped when a test ends with its skip code.
+SKIP_CODE_MESSAGE = "SKIP_RETURN_CODE="
+# The message of the element skipped when the output of a test agrees with its skip expression.
+SKIP_OUTPUT_MESSAGE = "SKIP_REGULAR_EXPRESSION_MATCHED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,8 +248,13 @@ def tests(build_dir: Path, label: str | None = None) -> tuple[TestEntry, ...]:
     return found if label is None else tuple(test for test in found if label in test.words_of(LABELS))
 
 
+def is_skip(message: str) -> bool:
+    """Tell if the message of the element skipped of a test case gives a skip of the test (THE STATUS OF A TEST)."""
+    return message.startswith(SKIP_CODE_MESSAGE) or message == SKIP_OUTPUT_MESSAGE
+
+
 def results(report: Path) -> dict[str, TestStatus]:
-    """Return the status of each test of a JUnit report that `ctest --output-junit` wrote.
+    """Return the status of each test of a JUnit report that `ctest --output-junit` wrote (THE STATUS OF A TEST).
 
     A test case with no status and a child failure has the status fail.  A test case with no status and no child
     failure has the status run.
@@ -236,13 +275,19 @@ def results(report: Path) -> dict[str, TestStatus]:
         name = case.get("name")
         if name is None:
             continue
-        status = case.get("status") or (TestStatus.FAIL if case.find("failure") is not None else TestStatus.RUN)
-        try:
-            statuses[name] = TestStatus(status)
-        except ValueError:
+        written = case.get("status")
+        if written is None:
+            statuses[name] = TestStatus.FAIL if case.find("failure") is not None else TestStatus.RUN
+            continue
+        status = JUNIT_STATUSES.get(written)
+        if status is None:
             raise CtestError(
-                f"the JUnit report {report} gives the test {name} the status {status!r}, which ctest does not write"
-            ) from None
+                f"the JUnit report {report} gives the test {name} the status {written!r}, which ctest does not write"
+            )
+        skipped = case.find("skipped")
+        if status is TestStatus.NOTRUN and skipped is not None and is_skip(skipped.get("message", "")):
+            status = TestStatus.SKIPPED
+        statuses[name] = status
     return statuses
 
 

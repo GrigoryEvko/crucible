@@ -221,6 +221,7 @@ def summary_line(report: Path, log: Path) -> str:
     counts = {status: sum(1 for value in statuses.values() if value == status) for status in ctest_reader.TestStatus}
     return (f"           {len(statuses)} tests: {counts[ctest_reader.TestStatus.RUN]} passed, "
             f"{counts[ctest_reader.TestStatus.FAIL]} failed, "
+            f"{counts[ctest_reader.TestStatus.SKIPPED]} gave their skip code, "
             f"{counts[ctest_reader.TestStatus.NOTRUN] + counts[ctest_reader.TestStatus.DISABLED]} did not run")
 
 
@@ -321,10 +322,12 @@ def measure(root: Path, options: argparse.Namespace, step: Callable[..., StepCos
 
 # A planted JUnit report of a run of three tests, with one failure.
 PLANTED_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
-<testsuite tests="3" failures="1">
+<testsuite tests="5" failures="1" skipped="2">
   <testcase name="neg_fixture_a" status="run"/>
   <testcase name="test_arena" status="run"/>
   <testcase name="test_slow" status="fail"><failure message="Failed"/></testcase>
+  <testcase name="guard_skips" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>
+  <testcase name="test_after_setup" status="notrun"><skipped message="Fixture dependency failed"/></testcase>
 </testsuite>
 """
 # The wall time and the status of each planted test record.
@@ -387,8 +390,10 @@ def self_test() -> int:
                lines[0] == "tests: 3, of them 1 negative fixtures; sum of the wall times 13 s, of the fixtures 2 s"
                and lines[2] == "      10.0  test_slow")
         (planted_build / "empty.xml").write_text("<testsuite tests=\"0\"/>\n", encoding="utf-8")
-        expect("the summary line comes from the JUnit report of the run",
-               summary_line(planted_build / JUNIT_NAME, root).strip() == "3 tests: 2 passed, 1 failed, 0 did not run"
+        expect("the summary line comes from the JUnit report of the run, with a skip code apart from a test that "
+               "did not run",
+               summary_line(planted_build / JUNIT_NAME, root).strip()
+               == "5 tests: 2 passed, 1 failed, 1 gave their skip code, 1 did not run"
                and summary_line(planted_build / "empty.xml", root).strip() == "no test matched the regex"
                and "wrote no JUnit report" in summary_line(planted_build / "missing.xml", root))
 
