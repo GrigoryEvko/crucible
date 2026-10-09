@@ -1,0 +1,6 @@
+# The last cold compile of one negative fixture took 16 s of user time and no instruction count, over the error
+# threshold 15 s of fixture-cpu. On the planted CI runner of environment.txt, the time error is a warning, and the
+# rule gives no error.
+format 1
+kind x86_64-debug-asan
+fixture neg_slow test/neg/slow.cpp user=16 system=0

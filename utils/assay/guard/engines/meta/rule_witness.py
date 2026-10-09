@@ -3,20 +3,22 @@
 THE RULE
     The plants of the rule ID are in utils/plants/ID/: a minimum of one plant,
     whose name starts with "plant-", and one control, whose name starts with
-    "control-".  `guard witness --rule ID` shows that each plant is red and
-    each control is green, and this rule shows that they are in the tree.  So
-    a rule with no plant fails.  The rule refuses:
+    "control-".  A plant can also start with "warning-" or "skip-"
+    (assay.guard.engines.meta.runner, THE WITNESS).  `guard witness --rule ID`
+    shows that each plant is red and each control is green, and this rule
+    shows that they are in the tree.  A rule with no plant then fails.  The
+    rule refuses:
       no-plant   a rule with no plant or no control.  During the migration of the utils system, the ledger admits each
                  rule that has no plant yet, and the change that brings its plants removes its row
       orphan     a directory of utils/plants/ that names no rule of the registry
-      name       an entry of a plants directory whose name starts with neither prefix
+      name       an entry of a plants directory whose name starts with no prefix of PREFIXES
 
 Complexity: linear in the entries of utils/plants/.
 """
 
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.meta.runner import CONTROL_PREFIX, PLANT_PREFIX, PLANTS, MetaContext
+from assay.guard.engines.meta.runner import CONTROL_PREFIX, PLANT_PREFIX, PLANTS, PREFIXES, MetaContext
 
 RULE = "rule-witness"
 
@@ -34,10 +36,10 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                 "error", relative, 0, RULE, f"the plants directory names no rule of the registry.  Give it the ID "
                 f"of its rule, or remove it", "orphan", directory.name))
         for entry in sorted(directory.iterdir()):
-            if not entry.name.startswith((PLANT_PREFIX, CONTROL_PREFIX)):
+            if not entry.name.startswith(PREFIXES):
                 found.append(check_report.Finding(
                     "error", entry.relative_to(context.root).as_posix(), 0, RULE, f"the entry of the plants of "
-                    f"{directory.name} has a name that starts with neither {PLANT_PREFIX!r} nor {CONTROL_PREFIX!r}",
+                    f"{directory.name} has a name that starts with no prefix of {', '.join(PREFIXES)}",
                     "name", entry.name))
     for rule in registry.rules.values():
         directory = plants_dir / rule.id

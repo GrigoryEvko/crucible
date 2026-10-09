@@ -1,0 +1,5 @@
+# The one record of the build holds no instruction count, because the host gave no exact counter.  No compile
+# has a count, and the rule does not apply.  compile-cpu keeps the error level.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/uncounted.cpp.o src/uncounted.cpp cpu=25

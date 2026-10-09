@@ -1,0 +1,5 @@
+# A target of all compiles its source in 25 G instructions, more than the error threshold 20 G, and the list does not
+# name it. On the planted CI runner of environment.txt, the time error is a warning, and the rule gives no error.
+format 1
+kind x86_64-debug-asan
+compile test/CMakeFiles/long_unlisted.dir/long_unlisted.cpp.o test/long_unlisted.cpp cpu=1 instructions=25

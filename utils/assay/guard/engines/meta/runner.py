@@ -39,11 +39,21 @@ THE REFUSED KINDS
     finding of such a kind in each mode.
 
 THE WITNESS
-    The plants of a rule are in utils/plants/RULE/.  Each directory whose name
-    starts with "plant-" is a tree that the rule must refuse: the rule gives a
-    minimum of one error there.  Each directory whose name starts with
-    "control-" is a tree that the rule must accept: the rule gives no error
-    there.  The witness copies each one to a throwaway repository, puts each
+    The plants of a rule are in utils/plants/RULE/.  The prefix of the name of
+    each directory tells what the rule must give on its tree:
+      plant-    a minimum of one error: the rule refuses the tree
+      control-  no error: the rule accepts the tree
+      warning-  a minimum of one warning and no error, for example a time
+                error that a CI runner demotes (assay.core.meter, A CI RUNNER)
+      skip-     no finding, because the rule does not apply to the tree: it
+                raises NotApplicable, and `guard check` exits with SKIPPED
+    A plant can hold the file environment.txt, with one row `NAME | VALUE` for
+    each variable that the run of the plant sets.  The witness removes each
+    variable of PLANTED_VARIABLES from the environment for the run of a plant
+    that does not set it.  The verdict of a plant then does not change with
+    the host: GITHUB_ACTIONS of a CI runner demotes a time error.  The witness
+    puts the environment back after each plant.  The witness copies each
+    plant to a throwaway repository, puts each
     file in its index, and runs the rule there.  It judges the findings
     against the ledger of the copy (judged()).  A plant can then hold a ledger
     of the rule.  A copy with no ledger has the empty ledger.  A module can
@@ -63,11 +73,13 @@ THE STATUS
     tree, for example a history that is shallow.
 """
 
+import contextlib
 import importlib
+import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
@@ -83,6 +95,13 @@ from assay.core.paths import REPO_ROOT
 PLANTS = "utils/plants"
 PLANT_PREFIX = "plant-"
 CONTROL_PREFIX = "control-"
+WARNING_PREFIX = "warning-"
+SKIP_PREFIX = "skip-"
+# The prefixes of the directories of the plants of a rule (THE WITNESS).
+PREFIXES = (PLANT_PREFIX, CONTROL_PREFIX, WARNING_PREFIX, SKIP_PREFIX)
+# The file of a plant with the variables of its run, and the variables that a plant sets only through that file.
+ENVIRONMENT_FILE = "environment.txt"
+PLANTED_VARIABLES = ("GITHUB_ACTIONS",)
 # The suffix of a file of a plant that no rule of the tree reads.  The copy of the plant removes it (copy_plant()).
 PLANTED_SUFFIX = ".planted"
 # The suffixes of a file of a plant that adds its bytes to a file of the base control (copy_overlay()).
@@ -509,9 +528,63 @@ def plants_of(rule_id: str, root: Path = REPO_ROOT) -> list[Path]:
     directory = root / PLANTS / rule_id
     if not directory.is_dir():
         return []
-    return sorted(
-        path for path in directory.iterdir() if path.is_dir() and path.name.startswith((PLANT_PREFIX, CONTROL_PREFIX))
-    )
+    return sorted(path for path in directory.iterdir() if path.is_dir() and path.name.startswith(PREFIXES))
+
+
+def plant_variables(plant: Path) -> tuple[tuple[str, str], ...]:
+    """Return the name and the value of each variable that the file environment.txt of a plant sets (THE WITNESS).
+
+    Raises:
+        ValueError: If the file does not read, does not obey the rows grammar, or a row is not `NAME | VALUE`
+    """
+    path = plant / ENVIRONMENT_FILE
+    try:
+        rows = rows_grammar.read(path, path.name) if path.is_file() else ()
+    except (rows_grammar.RowsError, OSError) as problem:
+        raise ValueError(f"the file {ENVIRONMENT_FILE} of the plant does not read: {problem}") from None
+    for row in rows:
+        if len(row.words) != 1 or len(row.cells) != 1:
+            raise ValueError(f"{ENVIRONMENT_FILE}:{row.line}: a row is `NAME | VALUE`")
+    return tuple((row.words[0], row.cells[0]) for row in rows)
+
+
+@contextlib.contextmanager
+def planted_environment(variables: Sequence[tuple[str, str]]) -> Iterator[None]:
+    """Run the body with the variables of a plant, with no other variable of PLANTED_VARIABLES, and put them back."""
+    names = {*PLANTED_VARIABLES, *(name for name, _ in variables)}
+    earlier = {name: os.environ.get(name) for name in names}
+    for name in names:
+        os.environ.pop(name, None)
+    os.environ.update(variables)
+    try:
+        yield
+    finally:
+        for name, value in earlier.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def plant_verdict(name: str, found: Sequence[check_report.Finding], counts_warnings: bool) -> tuple[bool, str, str]:
+    """Return if the findings on one plant hold its prefix, the text of its verdict, and the text of a failure.
+
+    `counts_warnings` makes each warning a finding of a plant and of a control too (THE WITNESS).
+    """
+    errors = [item for item in found if item.level == "error"]
+    warnings = [item for item in found if item.level != "error"]
+    if name.startswith(WARNING_PREFIX):
+        shown = f"{len(errors)} error(s) and {len(warnings)} warning(s)"
+        first = f"; {(errors or warnings)[0].text()}" if found else ""
+        return bool(warnings) and not errors, f"{shown}{first}", shown
+    if name.startswith(SKIP_PREFIX):
+        shown = f"the rule applies to it, with {len(found)} finding(s)"
+        return False, f"{shown}{f'; {found[0].text()}' if found else ''}", shown
+    noun = "finding" if counts_warnings else "error"
+    counted = list(found) if counts_warnings else errors
+    is_plant = name.startswith(PLANT_PREFIX)
+    text = f"{len(counted)} {noun}(s); {counted[0].text() if counted else f'no {noun}'}"
+    return bool(counted) if is_plant else not counted, text, f"no {noun}" if is_plant else f"{len(counted)} {noun}(s)"
 
 
 def witness(
@@ -554,25 +627,26 @@ def witness(
         except NotApplicable as reason:
             check_report.write_line(f"{rule.id}: {reason}.  The witness does not apply on this host")
             return SKIPPED
-    noun = "finding" if counts_warnings else "error"
     failures: list[str] = []
     for plant in plants:
-        with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch:
+        try:
+            variables = plant_variables(plant)
+        except ValueError as problem:
+            failures.append(f"{plant.name}: {problem}")
+            continue
+        with tempfile.TemporaryDirectory(prefix=f"witness-{rule.id}-") as scratch, planted_environment(variables):
             try:
                 context = prepare(plant, Path(scratch) / "tree")
                 found = (
                     judge(rule, context) if judge is not None else judged(rule, context.root, context.findings_of(rule))
                 )
-                counted = [item for item in found if counts_warnings or item.level == "error"]
+                holds, text, failure = plant_verdict(plant.name, found, counts_warnings)
             except NotApplicable as reason:
-                failures.append(f"{plant.name}: the rule does not apply to it: {reason}")
-                continue
-        is_plant = plant.name.startswith(PLANT_PREFIX)
-        holds = bool(counted) if is_plant else not counted
-        shown = counted[0].text() if counted else f"no {noun}"
-        print(f"  {'ok  ' if holds else 'FAIL'} {plant.name}: {len(counted)} {noun}(s); {shown}")
+                holds = plant.name.startswith(SKIP_PREFIX)
+                text = failure = f"the rule does not apply to it: {reason}"
+        print(f"  {'ok  ' if holds else 'FAIL'} {plant.name}: {text}")
         if not holds:
-            failures.append(f"{plant.name}: {f'no {noun}' if is_plant else f'{len(counted)} {noun}(s)'}")
+            failures.append(f"{plant.name}: {failure}")
     if failures:
         print(f"{rule.id}: the witness fails: {'; '.join(failures)}", file=sys.stderr)
         return 1

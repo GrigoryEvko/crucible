@@ -1,0 +1,5 @@
+# The planted record of the gauge gives the edit build a median of 3100 s of CPU time and no instruction count, over
+# the error threshold 3000 s. On the planted CI runner of environment.txt, the time error is a warning, and the rule
+# gives no error.
+format 1
+kind x86_64-debug-asan

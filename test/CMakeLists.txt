@@ -5084,7 +5084,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_compdb readers.test_python
         readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
-        guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary
+        guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
         guard.engines.meta.test_decide_cite_ratio
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.test_inputs)

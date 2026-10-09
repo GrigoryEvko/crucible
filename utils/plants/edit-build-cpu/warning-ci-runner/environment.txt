@@ -1,0 +1,2 @@
+# A planted CI runner: GITHUB_ACTIONS is true for the run of the plant (assay.core.meter, A CI RUNNER).
+GITHUB_ACTIONS | true

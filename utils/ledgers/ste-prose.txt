@@ -355,8 +355,6 @@ utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 1 | moved_to: t
 utils/assay/guard/engines/meta/ledger_owners.py | refused-word | 1 | path_finding: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: bring | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: neither | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 3 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | refused-word | 1 | <module>: yet | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
@@ -365,7 +363,6 @@ utils/assay/guard/engines/meta/runner.py | refused-word | 1 | <module>: need | A
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | <module>: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | <module>: serve | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | <module>: track | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/runner.py | refused-word | 2 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | MetaContext.tracked: track | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | MetaContext: track | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/runner.py | refused-word | 1 | judged: so | A text of today.  The change that writes the text again in STE lowers the count

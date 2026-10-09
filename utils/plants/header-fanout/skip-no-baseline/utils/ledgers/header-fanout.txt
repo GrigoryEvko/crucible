@@ -1,0 +1,16 @@
+# The ledger of a plant of the rule header-fanout.
+format 1
+rule header-fanout
+configuration x86_64-release kind x86_64-release
+include/H00.h | x86_64-release | 100/2 | - | -
+include/H01.h | x86_64-release | 200/2 | - | -
+include/H02.h | x86_64-release | 300/2 | - | -
+include/H03.h | x86_64-release | 400/2 | - | -
+include/H04.h | x86_64-release | 500/2 | - | -
+include/H05.h | x86_64-release | 600/2 | - | -
+include/H06.h | x86_64-release | 700/2 | - | -
+include/H07.h | x86_64-release | 800/2 | - | -
+include/H08.h | x86_64-release | 900/2 | - | -
+include/H09.h | x86_64-release | 1000/2 | - | -
+include/H10.h | x86_64-release | 1100/2 | - | -
+include/H11.h | x86_64-release | 1200/2 | - | -

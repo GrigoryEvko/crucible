@@ -1,0 +1,5 @@
+# A compile of 25 s of CPU time with no instruction count is more than the error threshold 20 s, and no ledger row
+# admits it. On the planted CI runner of environment.txt, the time error is a warning, and the rule gives no error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/slower.cpp.o src/slower.cpp cpu=25
