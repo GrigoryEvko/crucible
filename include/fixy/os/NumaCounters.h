@@ -11,21 +11,16 @@
 // numa_foreign stayed the same.  The counters belong to the whole host, so
 // a change can also come from another process.
 //
-// The read goes through the file door of fixy/os/Fs.h with the context of
-// the caller, so the gate is the gate of the census: IO and Block.  The
-// path and the parse are in src/fixy/os/NumaCounters.cpp.
+// The read goes through the file door of the base, foundation/os/File.h.
+// The read can park the caller, so the gate is the gate of the census: the
+// context of the caller owns IO and Block.  The path, the read and the parse
+// are in src/fixy/os/NumaCounters.cpp.
 
 #include <fixy/Core.h>
-#include <fixy/os/Path.h>
-#include <fixy/Tagged.h>
-#include <fixy/Tags.h>
-#include <fixy/os/Fs.h>
 #include <fixy/os/NumaPlacement.h>
 #include <foundation/effects/Ctx.h>
 
-#include <cstddef>
 #include <cstdint>
-#include <utility>
 
 namespace fixy::numa {
 
@@ -49,44 +44,24 @@ struct NodeAllocationCounters {
 
 namespace detail {
 
-// The bytes that a read of a numastat file takes.  The file of a node has
-// six lines of at most 36 characters.
-inline constexpr std::size_t allocation_counter_file_bytes = 512;
-
-// The path of the numastat file of a concrete node.
-[[nodiscard]] std::filesystem::path allocation_counter_path_(NumaNodeId node) noexcept;
+// The counters in the numastat file of a concrete node.
+[[nodiscard]] Result<NodeAllocationCounters, NumaQueryError> read_allocation_counters_(NumaNodeId node) noexcept;
 
 }  // namespace detail
 
 // The counters of the node.  The node of a host that has no such node, and
-// a kernel with no NUMA support, give the step CounterOpen with the errno
-// of the open.
+// a kernel with no NUMA support, give the step CounterRead with the errno
+// that the file door gives.
 //
 // Not a mint: the read synthesizes no authority.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaQuery<Ctx>
-[[nodiscard]] Result<NodeAllocationCounters, NumaQueryError> read_allocation_counters(Ctx const& ctx,
+[[nodiscard]] Result<NodeAllocationCounters, NumaQueryError> read_allocation_counters(Ctx const&,
                                                                                       NumaNodeId node) noexcept {
     if (!is_concrete_numa_node(node)) {
         return err(NumaQueryError{NumaQueryStep::NodeNotConcrete, 0});
     }
-    auto path = ::fixy::sanitize_path(
-        ::fixy::mint_tagged<::fixy::tags::source::External>(detail::allocation_counter_path_(node)));
-    if (!path) {
-        return err(NumaQueryError{NumaQueryStep::CounterPath, 0});
-    }
-    auto file = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*path));
-    if (!file) {
-        return err(NumaQueryError{NumaQueryStep::CounterOpen, file.error().value()});
-    }
-    FixedText<detail::allocation_counter_file_bytes> text{};
-    std::span<char> const characters{::foundation::core::detail::text_bytes_(text), text.capacity};
-    auto read = ::fixy::fs::read_full(ctx, file->peek(), std::as_writable_bytes(characters));
-    if (!read) {
-        return err(NumaQueryError{NumaQueryStep::CounterRead, read.error().value()});
-    }
-    ::foundation::core::detail::text_resize_(text, *read);
-    return parse_allocation_counters(text.view());
+    return detail::read_allocation_counters_(node);
 }
 
 }  // namespace fixy::numa

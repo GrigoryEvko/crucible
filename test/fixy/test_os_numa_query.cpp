@@ -149,7 +149,7 @@ void test_counters_of_a_node_of_this_host() {
     auto first_read = fixy::numa::read_allocation_counters(ctx, node);
     if (first_read.is_err()) {
         fixy::numa::NumaQueryError const error = first_read.err().expect("the read failed");
-        assert(error.step == fixy::numa::NumaQueryStep::CounterOpen);
+        assert(error.step == fixy::numa::NumaQueryStep::CounterRead);
         crucible::test::pass("  test_counters_of_a_node_of_this_host: SKIPPED (the kernel gives no numastat file)\n");
         return;
     }
@@ -176,7 +176,7 @@ void test_counters_of_nodes_with_no_file() {
         fixy::numa::read_allocation_counters(ctx, fixy::numa::concrete_numa_node(253).expect("node 253 has an id"))
             .err()
             .expect("no shipped host has node 253");
-    assert(missing.step == fixy::numa::NumaQueryStep::CounterOpen && missing.error_number != 0);
+    assert(missing.step == fixy::numa::NumaQueryStep::CounterRead && missing.error_number != 0);
     crucible::test::pass("  test_counters_of_nodes_with_no_file: PASSED\n");
 }
 

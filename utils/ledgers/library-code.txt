@@ -350,14 +350,6 @@ include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator (conversion) | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator* | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::~expected | -
 include/fixy/os/Mmap.h | inlined | 3 | std::unexpected::unexpected | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::as_writable_bytes | -
-include/fixy/os/NumaCounters.h | inlined | 2 | std::error_code::value | -
-include/fixy/os/NumaCounters.h | inlined | 3 | std::expected::operator (conversion) | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::operator* | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::operator-> | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::expected::~expected | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::filesystem::path::~path | -
-include/fixy/os/NumaCounters.h | inlined | 1 | std::span::span | -
 include/fixy/os/NumaPlacement.h | call | 1 | __errno_location | -
 include/fixy/os/NumaPlacement.h | call | 1 | std::system_category | -
 include/fixy/os/NumaPlacement.h | call | 1 | syscall | -
@@ -695,7 +687,6 @@ include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA9_KcLS_109ELS_10
 include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA9_KcLS_98ELS_114ELS_111ELS_97ELS_100ELS_99ELS_111ELS_109EEE | -
 include/foundation/reflect/Enumerate.h | inlined | 1 | std::basic_string_view::begin | -
 include/foundation/reflect/Enumerate.h | inlined | 1 | std::basic_string_view::end | -
-src/fixy/os/NumaCounters.cpp | inlined | 1 | std::filesystem::path::path | -
 src/fixy/os/NumaPlacement.cpp | call | 1 | __errno_location | -
 src/fixy/os/NumaPlacement.cpp | call | 1 | syscall | -
 src/fixy/os/NumaPlacement.cpp | call | 1 | sysconf | -
@@ -913,12 +904,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -1 | std::expected::~expected | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::as_writable_bytes | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -2 | std::expected::operator (conversion) | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
-@x86_64-debug-tsan | include/fixy/os/NumaCounters.h | inlined | -1 | std::span::span | -
 @x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -
@@ -1061,8 +1046,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/foundation/permissions/ReadView.h | inlined | -1 | std::pair::pair | -
 @x86_64-debug-tsan | include/foundation/reflect/EnumName.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-debug-tsan | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
-@x86_64-debug-tsan | src/fixy/os/NumaCounters.cpp | call | +1 | std::filesystem::path::path | -
-@x86_64-debug-tsan | src/fixy/os/NumaCounters.cpp | inlined | -1 | std::filesystem::path::path | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | call | +2 | std::pair::pair | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | call | -3 | std::vector::push_back | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | __gnu_cxx::__normal_iterator::operator* | -
@@ -1131,9 +1114,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -1 | std::unexpected::unexpected | -
-@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
-@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
-@x86_64-debug-ubsan-strict | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedFile.h | inlined | -1 | std::exchange | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
@@ -1365,13 +1345,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::~expected | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
-@x86_64-release | include/fixy/os/NumaCounters.h | call | +1 | std::filesystem::path::~path | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::as_writable_bytes | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -2 | std::error_code::value | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -2 | std::expected::operator (conversion) | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator* | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::expected::operator-> | -
-@x86_64-release | include/fixy/os/NumaCounters.h | inlined | -1 | std::span::span | -
 @x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -

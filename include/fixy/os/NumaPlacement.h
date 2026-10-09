@@ -232,10 +232,9 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
 enum class NumaQueryStep : std::uint8_t {
     PageQuery = 0,  // move_pages(2) refused the query of the pages
     CounterPath = 1,  // the counter file of the node has no valid path
-    CounterOpen = 2,  // the counter file of the node does not open
-    CounterRead = 3,  // the read of the counter file failed
-    CounterFormat = 4,  // the counter file does not hold each counter
-    NodeNotConcrete = 5,  // the node is None or Any, which name no counter file
+    CounterRead = 2,  // the file door does not read the counter file: the open or a read failed
+    CounterFormat = 3,  // the counter file does not hold each counter
+    NodeNotConcrete = 4,  // the node is None or Any, which name no counter file
 };
 
 // The refusal of a NUMA query: the step that failed, and the errno that

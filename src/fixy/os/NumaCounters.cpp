@@ -1,8 +1,32 @@
 #include <fixy/os/NumaCounters.h>
 
+#include <foundation/os/Errno.h>
+#include <foundation/os/File.h>
+#include <foundation/os/PathText.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
 namespace fixy::numa {
 
 namespace {
+
+// The bytes that a read of a numastat file takes.  The file of a node has
+// six lines of at most 36 characters.
+constexpr std::size_t counter_file_bytes = 512;
+
+// The path of the numastat file of a node: the prefix, at most three digits
+// for a node of at most 253, and the suffix.  The longest path has 41
+// characters, so each append of a concrete node fits.
+constexpr std::size_t counter_path_capacity = 64;
+constexpr CText counter_path_prefix{"/sys/devices/system/node/node"};
+constexpr CText counter_path_suffix{"/numastat"};
+
+// The refusal of a step for an error of the kernel.
+[[nodiscard]] constexpr NumaQueryError kernel_error(NumaQueryStep step, ::foundation::os::Errno error) noexcept {
+    return NumaQueryError{step, static_cast<int>(std::to_underlying(error))};
+}
 
 // The names of the six counters, and the field of each one.
 struct CounterName {
@@ -91,28 +115,25 @@ Result<NodeAllocationCounters, NumaQueryError> parse_allocation_counters(TextVie
 
 namespace detail {
 
-// The whole path goes into one buffer, and the path takes it in one
-// constructor, so the build uses no path operator of the library.
-std::filesystem::path allocation_counter_path_(NumaNodeId node) noexcept {
-    constexpr char prefix[] = "/sys/devices/system/node/node";
-    constexpr char suffix[] = "/numastat";
-    // The prefix, at most three digits for a node of at most 253, the
-    // suffix and the terminating zero.
-    char text[sizeof(prefix) + 3 + sizeof(suffix)]{};
-    std::size_t length = 0;
-    for (std::size_t index = 0; index + 1 < sizeof(prefix); ++index) {
-        text[length++] = prefix[index];
+// The path goes into a PathText of the base, and the file door of the base
+// reads the file.  So the read builds no path type of the library, and it
+// throws nothing.
+Result<NodeAllocationCounters, NumaQueryError> read_allocation_counters_(NumaNodeId node) noexcept {
+    ::foundation::os::PathText<counter_path_capacity> path{};
+    for (::foundation::os::Errno const error : path.append(counter_path_prefix).err()) {
+        return err(kernel_error(NumaQueryStep::CounterPath, error));
     }
-    unsigned const number = std::to_underlying(node);
-    unsigned const hundreds = number / 100;
-    unsigned const tens = (number / 10) % 10;
-    if (hundreds != 0) text[length++] = static_cast<char>('0' + hundreds);
-    if (hundreds != 0 || tens != 0) text[length++] = static_cast<char>('0' + tens);
-    text[length++] = static_cast<char>('0' + (number % 10));
-    for (std::size_t index = 0; index + 1 < sizeof(suffix); ++index) {
-        text[length++] = suffix[index];
+    for (::foundation::os::Errno const error : path.append_decimal(std::to_underlying(node)).err()) {
+        return err(kernel_error(NumaQueryStep::CounterPath, error));
     }
-    return std::filesystem::path{text};
+    for (::foundation::os::Errno const error : path.append(counter_path_suffix).err()) {
+        return err(kernel_error(NumaQueryStep::CounterPath, error));
+    }
+    FixedText<counter_file_bytes> text{};
+    for (::foundation::os::Errno const error : ::foundation::os::read_file(path.c_text(), text).err()) {
+        return err(kernel_error(NumaQueryStep::CounterRead, error));
+    }
+    return parse_allocation_counters(text.view());
 }
 
 }  // namespace detail

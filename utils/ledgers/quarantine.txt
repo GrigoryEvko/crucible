@@ -2567,11 +2567,6 @@ include/fixy/os/Mmap.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <expected> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <sys/mman.h> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <system_error> | -
-include/fixy/os/NumaCounters.h | base-std-entity | 1 | std::as_writable_bytes | -
-include/fixy/os/NumaCounters.h | base-std-entity | 1 | std::expected::operator* | -
-include/fixy/os/NumaCounters.h | base-std-object | 1 | std::expected | -
-include/fixy/os/NumaCounters.h | base-std-object | 1 | std::filesystem::path | -
-include/fixy/os/NumaCounters.h | base-std-object | 1 | std::span | -
 include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | __errno_location | -
 include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | syscall | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 3 | std::error_code | -
@@ -3936,8 +3931,6 @@ src/cog/SrIov.cpp | std-entity | 1 | std::expected::has_value | -
 src/cog/SrIov.cpp | std-entity | 11 | std::unexpected | -
 src/cog/SrIov.cpp | std-object | 8 | std::expected | -
 src/cog/SrIov.cpp | std-object | 2 | std::span | -
-src/fixy/os/NumaCounters.cpp | base-std-entity | 1 | std::filesystem::path | -
-src/fixy/os/NumaCounters.cpp | base-std-object | 1 | std::filesystem::path | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 2 | __errno_location | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | syscall | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | sysconf | -
