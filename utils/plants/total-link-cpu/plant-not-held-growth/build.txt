@@ -1,0 +1,8 @@
+# The ledger holds the configurations x86_64-release and x86_64-debug-tsan, and not the configuration
+# x86_64-debug-asan of the build.  The largest baseline, 4 s of x86_64-release, judges the build.  The total of 10 s
+# is more than that baseline by more than the threshold 100 %.  The totals of `guard warnings` give one warning of
+# the kind growth, which asks to add the configuration of the build.
+format 1
+kind x86_64-debug-asan
+link bin/first cpu=5
+link bin/second cpu=5

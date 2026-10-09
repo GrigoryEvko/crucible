@@ -1,0 +1,8 @@
+# Two negative fixtures took 10 s of user time each in their last real compile, 20 s together.  The baseline of the
+# configuration x86_64-debug-asan is 50 s, more than the total by more than 100 % of the total.  The time totals of
+# `guard warnings` give one warning of the kind fall, which asks to write the baseline again.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
+fixture neg_quick_first test/neg/first.cpp user=10 system=0
+fixture neg_quick_second test/neg/second.cpp user=10 system=0

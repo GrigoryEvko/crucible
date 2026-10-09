@@ -155,8 +155,13 @@ def main(argv: list[str]) -> int:
         return int(own_write(rule, plugin_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
             options.import_log.resolve() if options.import_log is not None else None)))
-    is_configured = options.add_configuration and rule.engine == rule_registry.Engine.BUILD and not is_held_write
-    is_configured = is_configured and runner.is_configured(rule)
+    is_configured = options.add_configuration and rule.engine == rule_registry.Engine.BUILD
+    if is_configured and is_held_write:
+        from assay.guard.engines.buildsys import held
+
+        is_configured = held.is_configured(rule)
+    else:
+        is_configured = is_configured and runner.is_configured(rule)
     if (options.add_configuration and not is_configured) or options.import_log is not None:
         check_report.write_line("guard write: --add-configuration applies only to a rule with the rows of each "
                                 "configuration of a build, and --import to a rule of the engine plugin or elf",

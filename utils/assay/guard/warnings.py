@@ -41,7 +41,9 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import testing
 from assay.core.exit import ExitCode
+from assay.core.paths import REPO_ROOT
 from assay.guard.engines.buildsys import cost_budgets
+from assay.guard.engines.buildsys.runner import BuildContext
 from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
@@ -126,8 +128,9 @@ def main(argv: list[str]) -> int:
     remove_gone_tests(build_dir, warnings_dir)
     remove_gone_rules(warnings_dir)
     findings, problems = check_report.read_warnings_dir(warnings_dir)
-    findings += cost_budgets.total_report_totals(build_dir)
-    findings += cost_budgets.total_report_build(build_dir)
+    context = BuildContext(REPO_ROOT, build_dir)
+    findings += cost_budgets.total_report_totals(context)
+    findings += cost_budgets.total_report_build(context)
     annotate = cost_meter.is_github_actions()
     for found in findings:
         check_report.write_line(found.text())
@@ -245,45 +248,76 @@ def planted_unit(kind: str, cpu: float | None) -> build_census.Unit:
     return build_census.Unit(kind, f"{kind}-{cpu}", "src/x.cpp", build_census.Cost(cpu, None))
 
 
+def planted_baselines(rows: dict[str, float], is_bound: bool = False) -> cost_budgets.BaselineOf:
+    """Return a function that gives the planted baseline row of each total of `rows`, and refuses each other total."""
+
+    def baseline_of(rule_id: str) -> cost_budgets.TotalBaseline:
+        """Return the planted row of a total, or refuse a total with no row."""
+        if rule_id not in rows:
+            raise cost_budgets.TotalRefusal(f"the plant holds no row of {rule_id}", "ledger", 0, "no-baseline")
+        return cost_budgets.TotalBaseline("planted", rows[rule_id], "ledger", 3, is_bound, "")
+
+    return baseline_of
+
+
 def time_total_cases(expect: testing.Expect) -> None:
-    """Add the three time totals of a planted census, and compare each one with planted thresholds."""
+    """Add the three time totals of a planted census, and compare each one with planted baselines."""
     budgets = {
-        rule_id: check_report.Budget(rule_id, limit, limit, "s", "m")
-        for rule_id, limit in (("total-compile-cpu", 100.0), ("total-fixture-cpu", 50.0), ("total-test-cpu", 10.0))
+        rule_id: check_report.Budget(rule_id, 100.0, 100.0, "%", "m") for rule_id, _, _ in cost_budgets.TOTAL_TIMES
     }
     units = [
         planted_unit("object", 60.0),
         planted_unit("object", 30.0),
         planted_unit("fixture", 20.0),
-        planted_unit("fixture", None),
+        planted_unit("fixture", 10.0),
     ]
     census = build_census.Census(Path("/b"), units, {})
-    found, lines = cost_budgets.total_time_totals(census, [4.0, 5.0], budgets, "build")
+    measures = cost_budgets.total_time_measures(census, [4.0, 5.0])
     expect(
-        "totals at or below their thresholds give no warning, and one line each",
-        not found
+        "the three time totals add the CPU time of their units",
+        [(item.rule_id, item.value, item.missing) for item in measures]
+        == [("total-compile-cpu", 90.0, 0), ("total-fixture-cpu", 30.0, 0), ("total-test-cpu", 9.0, 0)],
+    )
+    baselines = planted_baselines({"total-compile-cpu": 90.0, "total-fixture-cpu": 10.0, "total-test-cpu": 30.0})
+    found, lines = cost_budgets.judged_totals(measures, budgets, "build", baselines)
+    expect(
+        "a total more than twice its baseline gives a growth warning, a baseline more than twice the total gives a "
+        "fall warning, and a total equal to its baseline gives nothing",
+        [(item.check, item.kind, item.level) for item in found]
+        == [("total-fixture-cpu", "growth", "warning"), ("total-test-cpu", "fall", "warning")]
         and len(lines) == 3
-        and "total-compile-cpu 90 s CPU in 2 units" in lines[0]
-        and "total-fixture-cpu 20 s CPU in 1 units, 1 with no time" in lines[1],
+        and "total-compile-cpu 90 s CPU in 2 units, +0.0% against the baseline of the configuration planted"
+        in lines[0],
     )
-    census.units.append(planted_unit("object", 20.0))
-    found, _ = cost_budgets.total_time_totals(census, [4.0, 5.0, 3.0, None], budgets, "build")
+    bound = planted_baselines({"total-compile-cpu": 30.0, "total-fixture-cpu": 100.0, "total-test-cpu": 30.0}, True)
+    found, _ = cost_budgets.judged_totals(measures, budgets, "build", bound)
     expect(
-        "a total over its threshold gives a warning and no error, and it counts the units with no time",
-        [(item.check, item.level) for item in found]
-        == [("total-compile-cpu", "warning"), ("total-test-cpu", "warning")]
-        and "110 s of CPU time together (3 units)" in found[0].message
-        and "(3 units, 1 with no time)" in found[1].message,
+        "the largest baseline judges a growth and no fall of a build of a configuration that the ledger does not hold",
+        [(item.check, item.kind) for item in found] == [("total-compile-cpu", "growth")]
+        and "--add-configuration" in found[0].message,
     )
-    found, lines = cost_budgets.total_time_totals(census, [], {}, "build")
+    zero = planted_baselines({"total-compile-cpu": 0.0, "total-fixture-cpu": 30.0, "total-test-cpu": 9.0})
+    found, _ = cost_budgets.judged_totals(measures, budgets, "build", zero)
     expect(
-        "a total with no measured rule gives no warning and tells so",
-        not found and cost_budgets.TOTAL_NO_RULE in lines[0],
+        "a total above 0 with a baseline of 0 gives a warning",
+        [(item.check, item.kind) for item in found] == [("total-compile-cpu", "zero-baseline")],
     )
+    census.units.append(planted_unit("object", None))
+    found, lines = cost_budgets.judged_totals(
+        cost_budgets.total_time_measures(census, [4.0, 5.0]), budgets, "build", planted_baselines({})
+    )
+    expect(
+        "no baseline judges a time total with a unit that has no time, and its line tells why",
+        "1 with no time, no baseline judges it: 1 units have no time" in lines[0]
+        and [(item.check, item.kind) for item in found]
+        == [("total-fixture-cpu", "no-baseline"), ("total-test-cpu", "no-baseline")],
+    )
+    found, lines = cost_budgets.judged_totals(measures, {}, "build", baselines)
+    expect("a total with no measured rule gives no warning and tells so", not found and "no measured rule" in lines[0])
     registry = check_report.read_budgets()
     expect(
-        "the registry has a measured rule for each time total",
-        all(rule_id in registry for rule_id, _, _ in cost_budgets.TOTAL_TIMES),
+        "the registry has a measured rule in percent for each time total",
+        all(rule_id in registry and registry[rule_id].unit == "%" for rule_id, _, _ in cost_budgets.TOTAL_TIMES),
     )
 
 
@@ -296,27 +330,31 @@ def planted_record(
 
 
 def build_total_cases(expect: testing.Expect) -> None:
-    """Give the four build totals of planted records and a planted configure, and compare each one with thresholds."""
+    """Give the four build totals of planted records and a planted configure, and judge each one."""
     records = [
         planted_record(cost_record.LINK, 2.0, 10.0, 4.0, 2.0),
         planted_record(cost_record.COMPILE, 5.0, 9.0, 5.0, 3.0),
         cost_record.CostRecord(cost_record.COMPILE, cost_record.HIT, None, None, None, 0, None, None),
     ]
     budgets = {
-        rule_id: check_report.Budget(rule_id, limit, limit, "u", "m")
-        for rule_id, limit in (
-            ("link-count", 1.0),
-            ("total-link-cpu", 1.5),
-            ("build-peak-memory", 4.0),
-            ("configure-time", 10.0),
+        rule_id: check_report.Budget(rule_id, limit, limit, unit, "m")
+        for rule_id, limit, unit in (
+            ("link-count", 2.0, "%"),
+            ("total-link-cpu", 100.0, "%"),
+            ("build-peak-memory", 4.0, "GB"),
+            ("configure-time", 10.0, "s"),
         )
     }
     configure = {"start": "2026-10-02T00:00:00Z", "configure_s": 9.0, "generate_s": 3.0, "total_s": 12.0}
-    found, lines = cost_budgets.total_build_totals(records, configure, budgets, "build")
+    measures = cost_budgets.total_build_measures(records, configure)
+    found, lines = cost_budgets.judged_totals(
+        measures, budgets, "build", planted_baselines({"link-count": 1.0, "total-link-cpu": 0.5})
+    )
     expect(
-        "the build totals warn on the link CPU, on the peak memory of the steps that overlap and on the configure, "
-        "and not on a count at its threshold",
-        sorted(item.check for item in found) == ["build-peak-memory", "configure-time", "total-link-cpu"]
+        "the build totals warn on a growth of the link CPU over its baseline, and on the peak memory of the steps "
+        "that overlap and the configure over their thresholds.  A link count equal to its baseline gives nothing",
+        sorted((item.check, item.kind) for item in found)
+        == [("build-peak-memory", ""), ("configure-time", ""), ("total-link-cpu", "growth")]
         and all(item.level == "warning" for item in found)
         and any("5 GB" in item.message for item in found),
     )
@@ -324,8 +362,14 @@ def build_total_cases(expect: testing.Expect) -> None:
         "the build totals give one line for each total, with the parts of the configure",
         len(lines) == 4 and "link-count 1 links" in lines[0] and "(configure 9.0 s, generate 3.0 s" in lines[3],
     )
-    found, lines = cost_budgets.total_build_totals([], None, budgets, "build")
-    expect("the build totals give no warning with no record and no configure", not found and "no value" in lines[3])
+    found, lines = cost_budgets.judged_totals(
+        cost_budgets.total_build_measures([], None), budgets, "build", planted_baselines({})
+    )
+    expect(
+        "the build totals give no warning with no record and no configure, and no baseline judges a total with no "
+        "value",
+        not found and "no value" in lines[0] and "no value" in lines[3],
+    )
     registry = check_report.read_budgets()
     expect("the registry has a measured rule for each build total", all(rule_id in registry for rule_id in budgets))
 

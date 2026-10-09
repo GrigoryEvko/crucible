@@ -1,0 +1,7 @@
+# Two objects of the target all took 100 s of CPU time each in their last real compile, 200 s together.  The
+# baseline of the configuration x86_64-debug-asan is 500 s, more than the total by more than 100 % of the total.  The
+# time totals of `guard warnings` give one warning of the kind fall, which asks to write the baseline again.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=100
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp cpu=100

@@ -1,0 +1,7 @@
+# Two negative fixtures took 10 s of user time each, and the plant has no ledger of total-fixture-cpu.  No baseline
+# judges the build, and the time totals of `guard warnings` give one warning of the kind no-baseline.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
+fixture neg_quick_first test/neg/first.cpp user=10 system=0
+fixture neg_quick_second test/neg/second.cpp user=10 system=0

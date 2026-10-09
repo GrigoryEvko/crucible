@@ -1,0 +1,6 @@
+# Two objects of the target all took 100 s of CPU time each, and the plant has no ledger of total-compile-cpu.  No
+# baseline judges the build, and the time totals of `guard warnings` give one warning of the kind no-baseline.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=100
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp cpu=100

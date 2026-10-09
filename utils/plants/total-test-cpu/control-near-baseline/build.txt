@@ -1,0 +1,9 @@
+# Two executable tests of the build directory took 10 s of CPU time each in their last run, 20 s together, equal to
+# the baseline of the configuration x86_64-debug-asan.  A script test of a program outside the build directory took
+# 200 s, and the total does not add it.  The time totals of `guard warnings` give no warning.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
+test-record test_quick_first wall=10 cpu=10
+test-record test_quick_second wall=10 cpu=10
+test-record script_slow wall=200 cpu=200 program={python}

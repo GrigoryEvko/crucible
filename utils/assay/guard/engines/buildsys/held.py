@@ -55,8 +55,12 @@ THE WRITE
     gets a row when the rule judges its measure at the error level and the
     measure is over the error threshold.  The rule fixture-cpu judges the CPU
     time only when the record has no instruction count.  The write refuses a
-    build with a fixture that has no record.  A held rule with no row in
-    WRITERS has no write, and `guard write` refuses it.
+    build with a fixture that has no record.  The function of each total of
+    BASELINE_TOTALS is total_written() of
+    assay.guard.engines.buildsys.cost_budgets (THE TOTALS of that module).  Its
+    ledger holds the rows of each configuration, and is_configured() lets
+    `guard write --add-configuration` add the configuration of a build.  A
+    held rule with no row in WRITERS has no write, and `guard write` refuses it.
 
 THE FINDINGS
     A measured rule with two equal thresholds gives a warning only.  The
@@ -120,10 +124,10 @@ def warnings_findings(rule: rule_registry.Rule, context: BuildContext) -> list[c
     Raises:
         NotApplicable: If the plant has no build directory
     """
-    build = context.require_build()
+    context.require_build()
     budgets = context.budgets()
-    time_found, _ = cost_budgets.time_totals(build, context.root, budgets)
-    build_found, _ = cost_budgets.build_totals(build, context.root, budgets)
+    time_found, _ = cost_budgets.time_totals(context, budgets)
+    build_found, _ = cost_budgets.build_totals(context, budgets)
     return [*time_found, *build_found]
 
 
@@ -377,12 +381,18 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
 
 type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]
 
-# The function that writes the ledger of each held rule of the policy max (THE WRITE).
+# The function that writes the ledger of each held rule of the policy max or baseline (THE WRITE).
 WRITERS: dict[str, Writer] = {
     "test-memory": test_time.written,
     FIXTURE_CPU: fixture_written,
     FIXTURE_INSTRUCTIONS: fixture_written,
+    **dict.fromkeys(cost_budgets.BASELINE_TOTALS, cost_budgets.total_written),
 }
+
+
+def is_configured(rule: rule_registry.Rule) -> bool:
+    """Return True when the ledger of a held rule holds the rows of each configuration of a build (THE WRITE)."""
+    return rule.id in cost_budgets.BASELINE_TOTALS
 
 
 def written(

@@ -1,0 +1,9 @@
+# Two executable tests of the build directory took 70 s of CPU time each in their last run, 140 s together.  The
+# baseline of the configuration x86_64-debug-asan is 60 s, and the total is more than the baseline by more than the
+# threshold 100 %.  The census also needs an object of the target all.  The time totals of `guard warnings` give one
+# warning of the kind growth.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
+test-record test_slow_first wall=70 cpu=70
+test-record test_slow_second wall=70 cpu=70

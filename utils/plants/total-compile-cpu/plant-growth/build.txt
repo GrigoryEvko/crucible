@@ -1,0 +1,7 @@
+# Two objects of the target all took 1600 s of CPU time each in their last real compile, 3200 s together.  The
+# baseline of the configuration x86_64-debug-asan is 1000 s, and the total is more than the baseline by more than the
+# threshold 100 %.  The time totals of `guard warnings` give one warning of the kind growth.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=1600
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp cpu=1600

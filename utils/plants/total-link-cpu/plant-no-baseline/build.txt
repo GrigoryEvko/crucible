@@ -1,0 +1,6 @@
+# Two links of 5 s of CPU time each take 10 s together, and the plant has no ledger of total-link-cpu.  No baseline
+# judges the build, and the totals of `guard warnings` give one warning of the kind no-baseline.
+format 1
+kind x86_64-debug-asan
+link bin/first cpu=5
+link bin/second cpu=5

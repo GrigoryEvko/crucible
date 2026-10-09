@@ -1,8 +1,0 @@
-# Two executable tests of the build directory took 70 s of CPU time each in their last run, 140 s together, over the
-# threshold 120 s of total-test-cpu.  The census also needs an object of the target all.  The time totals of `guard
-# warnings` give one warning.
-format 1
-kind x86_64-debug-asan
-compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
-test-record test_slow_first wall=70 cpu=70
-test-record test_slow_second wall=70 cpu=70

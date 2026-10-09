@@ -1,0 +1,6 @@
+# Two links of 5 s of CPU time each take 10 s together.  The row of the ledger names the entity objects in place of
+# total, and the totals of `guard warnings` give one warning of the kind ledger-row.
+format 1
+kind x86_64-debug-asan
+link bin/first cpu=5
+link bin/second cpu=5

@@ -1,0 +1,8 @@
+# The build directory holds three link records.  The baseline of the configuration x86_64-debug-asan is two links,
+# and the count is more than the baseline by more than the threshold 2 %.  The build totals of `guard warnings` give
+# one warning of the kind growth.
+format 1
+kind x86_64-debug-asan
+link bin/first
+link bin/second
+link bin/third

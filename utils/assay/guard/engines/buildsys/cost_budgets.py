@@ -131,11 +131,43 @@ THE TOTALS
     assay.readers.census and the test records.  build_totals() gives
     link-count, total-link-cpu, build-peak-memory and configure-time, from the
     records of the build launcher.  total_report_totals() and
-    total_report_build() print the lines of the two with the thresholds of the
-    registry.  A total gives a warning only, because the CPU time increases
-    with the load of the shared host.  These rules are held by guard warnings,
-    and this module gives no member for them.  The witness of each such rule
-    runs the two functions on its plants (assay.guard.engines.buildsys.held).
+    total_report_build() print one line for each total.  A total gives a
+    warning only, because the CPU time increases with the load of the shared
+    host.  These rules are held by guard warnings, and this module gives no
+    member for them.  The witness of each such rule runs the two functions on
+    its plants (assay.guard.engines.buildsys.held).
+
+    The totals of BASELINE_TOTALS change with the configuration of the build.
+    A bench build links more executables, and ThreadSanitizer makes each test
+    longer.  The ledger of each such total holds the facts of each of its
+    configurations, as the census ledgers do, and one baseline row of each:
+        - | NAME | VALUE | total | REASON
+    THE POLICY of assay.core.configuration judges each build:
+      * the row of the configuration of the build judges it
+      * a build of a configuration that the ledger does not hold gets the
+        largest row.  A fall then gives no warning.
+    The measured rule of a total gives its threshold, in percent of the
+    baseline.  The kinds of the warnings:
+      growth         a total more than its baseline by more than the threshold
+      fall           a baseline more than the total by more than the threshold,
+                     in percent of the total.  Write the baseline again
+      zero-baseline  a total above 0 with a baseline of 0
+      no-baseline    a ledger with no row that can judge the build
+      ledger-row     a ledger or a row that does not obey the shape
+      configuration  a build with a configuration that cannot be read
+    No baseline judges a total with no value, such as a build directory with
+    no link record.  A time total with a unit that has no time is not the
+    total of the build, and no baseline judges it.  A ccache hit with
+    no earlier compile in the build directory has no time.
+    build-peak-memory and configure-time keep the absolute thresholds of their
+    rows, because the loop history and loop gauge judge them with the same
+    rows (assay.loop.history).
+    `guard write --rule RULE --build-dir DIR [--add-configuration] [--reason
+    TEXT]` writes the configuration rows and the row of the configuration of
+    the build through total_written(), the function of WRITERS of
+    assay.guard.engines.buildsys.held.  The write keeps the rows of the other
+    configurations.  It refuses a total with a unit that has no time, and a
+    growth over the threshold with no reason.
 
 Complexity: one read of the compile database, the code model and the records of the outputs that a rule reads.
 """
@@ -152,9 +184,9 @@ from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.core.paths import REPO_ROOT
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -202,6 +234,26 @@ TOTAL_TIMES = (
 TOTAL_NO_RULE = ", no measured rule"
 # The prefix of each line that `guard warnings` (assay.guard.warnings) writes about the warnings and the totals.
 TOTAL_PREFIX = "guard warnings:"
+# The totals with a baseline row of each configuration (THE TOTALS).
+BASELINE_TOTALS = ("total-compile-cpu", "total-fixture-cpu", "total-test-cpu", "link-count", "total-link-cpu")
+# The entity of the baseline row of a total, and the reason of a new row when the write gives none.
+TOTAL_ENTITY = "total"
+TOTAL_DEFAULT_REASON = "the measure of the build at the last write of the ledger"
+# The head comment of a new ledger of a total.
+TOTAL_LEDGER_COMMENT = (
+    "# The ledger of the rule {rule}: the baseline of the total of each configuration of a build.\n"
+    "# `python3 utils/bin/guard explain {rule}` tells the rule, and `python3 utils/bin/guard write --rule {rule}\n"
+    "# --build-dir BUILD [--add-configuration] [--reason TEXT]` writes the row of the configuration of BUILD.\n"
+    "#\n"
+    "# The facts of a configuration:\n"
+    "#   configuration NAME KEY VALUE\n"
+    "#   The build kind, the target tier and each cache variable that changes the objects of all, as the\n"
+    "#   configuration rows of utils/ledgers/quarantine.txt.\n"
+    "#\n"
+    "# The baseline row of a configuration:\n"
+    "#   - | NAME | VALUE | total | REASON\n"
+    "#   VALUE is the total of a build of the configuration NAME at the last write, in the unit of the total.\n"
+)
 
 
 class Quantity(enum.StrEnum):
@@ -1215,45 +1267,202 @@ def total_test_times(build_dir: Path) -> list[float | None]:
     ]
 
 
-def total_time_totals(
-    census: build_census.Census,
-    test_times: Sequence[float | None],
-    budgets: Mapping[str, check_report.Budget],
-    position: str,
-) -> tuple[list[check_report.Finding], list[str]]:
-    """Add the three time totals and compare each one with its measured rule (THE TOTALS).
+@dataclass(frozen=True, slots=True)
+class TotalMeasure:
+    """One total of a build (THE TOTALS).
 
-    Returns:
-        A warning for each total over its threshold, and one summary line for each total
+    `value` is None when the build gives no value.  `missing` counts the units of a time total with no time.  A
+    total with such units is not the total of the build.  `what` names the value for a total with an absolute
+    threshold, and `said` tells the value in a sentence.  `shown` is the value in its unit for the summary line, and
+    `detail` holds more words for that line.
+    """
+
+    rule_id: str
+    value: float | None
+    unit: str
+    what: str
+    said: str
+    shown: str
+    detail: str = ""
+    missing: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class TotalBaseline:
+    """The baseline row that judges one total of a build (THE TOTALS).
+
+    `name` is the configuration of the row.  `is_bound` is True when the ledger does not hold the configuration of
+    the build, and the largest baseline then judges it.  `note` is the line of the facts that the build does not
+    share with the configuration of the row, or "".  `path` and `line` give the row.
+    """
+
+    name: str
+    value: float
+    path: str
+    line: int
+    is_bound: bool
+    note: str
+
+
+class TotalRefusal(ValueError):
+    """An input of a total that the judge cannot use: the ledger, a row or the configuration of the build.
+
+    The judge gives a warning of the kind of the refusal at its path and its line (THE TOTALS).
+    """
+
+    def __init__(self, message: str, path: str, line: int, kind: str) -> None:
+        """Keep the message, the position and the kind of the warning."""
+        super().__init__(message)
+        self.path = path
+        self.line = line
+        self.kind = kind
+
+
+type BaselineOf = Callable[[str], TotalBaseline]
+
+
+def total_time_measures(census: build_census.Census, test_times: Sequence[float | None]) -> list[TotalMeasure]:
+    """Add the three time totals of a census and of the CPU times of the tests (THE TOTALS).
+
+    Complexity: linear in the units and the tests.
     """
     times: dict[str, Sequence[float | None]] = {
         "object": [unit.cost.cpu_s for unit in census.units if unit.kind == "object"],
         "fixture": [unit.cost.cpu_s for unit in census.units if unit.kind == "fixture"],
         "test": test_times,
     }
-    findings: list[check_report.Finding] = []
-    lines: list[str] = []
+    measures: list[TotalMeasure] = []
     for rule_id, unit_kind, meaning in TOTAL_TIMES:
         known = [value for value in times[unit_kind] if value is not None]
         missing = len(times[unit_kind]) - len(known)
         total = sum(known)
-        budget = budgets.get(rule_id)
-        threshold = f", warning threshold {budget.warn:g} s" if budget is not None else TOTAL_NO_RULE
         unknown = f", {missing} with no time" if missing else ""
-        lines.append(f"{TOTAL_PREFIX} {rule_id} {total:.0f} s CPU in {len(known)} units{unknown}{threshold}")
-        if budget is not None and total > budget.warn:
-            findings.append(
-                check_report.Finding(
-                    "warning",
-                    position,
-                    0,
-                    rule_id,
-                    f"{meaning} took {total:.0f} s of CPU time together ({len(known)} units{unknown}), over the "
-                    f"threshold {budget.warn:g} s of the rule {rule_id}.  On 192 cores the wall time is at least the "
-                    f"total divided by 192.  A time total gives a warning only, because the CPU time rises with the "
-                    f"load of the host",
-                )
+        measures.append(
+            TotalMeasure(
+                rule_id,
+                total,
+                "s",
+                meaning,
+                f"{meaning} took {total:.0f} s of CPU time together ({len(known)} units{unknown})",
+                f"{total:.0f} s CPU in {len(known)} units{unknown}",
+                missing=missing,
             )
+        )
+    return measures
+
+
+def total_value_text(value: float, unit: str) -> str:
+    """Return a total in its unit: a count of links with no fraction, else the shortest text of the value."""
+    return f"{value:.0f} {unit}" if unit == "links" else f"{value:g} {unit}"
+
+
+def total_write_command(rule_id: str, position: str, is_bound: bool) -> str:
+    """Return the command that writes the baseline row of the configuration of a build (THE TOTALS)."""
+    words = " --add-configuration" if is_bound else ""
+    return f"python3 utils/bin/guard write --rule {rule_id} --build-dir {position}{words}"
+
+
+def total_judged(
+    measure: TotalMeasure, budget: check_report.Budget | None, position: str, baseline_of: BaselineOf
+) -> tuple[list[check_report.Finding], str, str]:
+    """Compare one total of a build with the baseline row that judges it (THE TOTALS).
+
+    Returns:
+        The warnings, and the words of the baseline for the summary line.  Also the line of the facts that the build
+        does not share with the configuration of the row, or ""
+    """
+    rule_id = measure.rule_id
+    if budget is None:
+        return [], TOTAL_NO_RULE.removeprefix(", "), ""
+    if measure.value is None:
+        return [], "no baseline judges a total with no value", ""
+    if measure.missing:
+        return (
+            [],
+            f"no baseline judges it: {measure.missing} units have no time, so it is not the total of the build",
+            "",
+        )
+    try:
+        baseline = baseline_of(rule_id)
+    except TotalRefusal as refusal:
+        warning = check_report.Finding(
+            "warning", refusal.path, refusal.line, rule_id, f"{measure.said}, and {refusal}", refusal.kind, ""
+        )
+        return [warning], f"no baseline ({refusal.kind})", ""
+    write = total_write_command(rule_id, position, baseline.is_bound)
+    of = (
+        f"the largest baseline, of the configuration {baseline.name}"
+        if baseline.is_bound
+        else f"the baseline of the configuration {baseline.name}"
+    )
+    shown = total_value_text(baseline.value, measure.unit)
+    tolerance = budget.warn
+    if baseline.value <= 0:
+        if measure.value <= 0:
+            return [], f"equal to {of}, 0", baseline.note
+        message = (
+            f"{measure.said}, and {of} is 0.  No growth has a measure against a baseline of 0.  Write the baseline "
+            f"from this build: {write}"
+        )
+        warning = check_report.Finding(
+            "warning", baseline.path, baseline.line, rule_id, message, "zero-baseline", baseline.name
+        )
+        return [warning], f"against {of}, 0", baseline.note
+    change = (measure.value - baseline.value) / baseline.value * 100.0
+    words = f"{change:+.1f}% against {of}, {shown}, threshold {tolerance:g}%"
+    limit = 1.0 + tolerance / 100.0
+    if measure.value > baseline.value * limit:
+        advice = (
+            f"Remove the cost, or write the row of the configuration of the build: {write}"
+            if baseline.is_bound
+            else f"Remove the cost, or write the baseline again with the reason of the growth: {write} --reason TEXT"
+        )
+        message = f"{measure.said}, {change:.1f}% more than {of}, {shown}, over the threshold {tolerance:g}%.  {advice}"
+        kind = "growth"
+    elif not baseline.is_bound and baseline.value > measure.value * limit:
+        message = (
+            f"{measure.said}, and {of}, {shown}, is more than the total by more than {tolerance:g}% of the total.  "
+            f"Write the baseline again, so that it does not stay above the total: {write}"
+        )
+        kind = "fall"
+    else:
+        return [], words, baseline.note
+    warning = check_report.Finding("warning", baseline.path, baseline.line, rule_id, message, kind, baseline.name)
+    return [warning], words, baseline.note
+
+
+def judged_totals(
+    measures: Sequence[TotalMeasure],
+    budgets: Mapping[str, check_report.Budget],
+    position: str,
+    baseline_of: BaselineOf,
+) -> tuple[list[check_report.Finding], list[str]]:
+    """Judge each total of a build, and give its warnings and one summary line for each total (THE TOTALS).
+
+    Args:
+        measures: The totals of the build
+        budgets: The thresholds of the measured rules
+        position: The build directory, as the path that a finding names
+        baseline_of: The function that gives the baseline row of a total of BASELINE_TOTALS that judges the build
+    """
+    from assay.loop import history as loop_history
+
+    findings: list[check_report.Finding] = []
+    lines: list[str] = []
+    for measure in measures:
+        budget = budgets.get(measure.rule_id)
+        if measure.rule_id in BASELINE_TOTALS:
+            found, words, note = total_judged(measure, budget, position, baseline_of)
+            findings += found
+            if note:
+                lines.append(f"{TOTAL_PREFIX} {note}")
+            lines.append(f"{TOTAL_PREFIX} {measure.rule_id} {measure.shown}{measure.detail}, {words}")
+            continue
+        threshold = f", warning threshold {budget.warn:g} {measure.unit}" if budget is not None else TOTAL_NO_RULE
+        lines.append(f"{TOTAL_PREFIX} {measure.rule_id} {measure.shown}{measure.detail}{threshold}")
+        findings += loop_history.warning_over(
+            dict(budgets), measure.rule_id, measure.value, measure.unit, measure.what, position
+        )
     return findings, lines
 
 
@@ -1274,19 +1483,16 @@ def total_build_records(build_dir: Path) -> list[cost_record.CostRecord]:
     return records
 
 
-def total_build_totals(
-    records: Sequence[cost_record.CostRecord],
-    configure: Mapping[str, object] | None,
-    budgets: Mapping[str, check_report.Budget],
-    position: str,
-) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the warnings and the summary lines of the four build totals (THE TOTALS).
+def total_build_measures(
+    records: Sequence[cost_record.CostRecord], configure: Mapping[str, object] | None
+) -> list[TotalMeasure]:
+    """Return the four build totals of the records of a build directory and of its last configure (THE TOTALS).
+
+    A build directory with no link record gives link-count and total-link-cpu no value.
 
     Args:
         records: The records of the compiles and the links of the build directory
         configure: The times of the last configure (assay.loop.history.configure_time()), or None
-        budgets: The thresholds of the measured rules
-        position: The path that a finding names
     """
     from assay.loop import history as loop_history
 
@@ -1302,54 +1508,176 @@ def total_build_totals(
             f"{configure.get('file_api_s', 0)} s, at {configure['start']})"
         )
     )
-    values = (
-        ("link-count", float(len(links)), "links", "the link records of the build directory", ""),
-        ("total-link-cpu", link_cpu, "s", "the link records of the build directory together", ""),
-        ("build-peak-memory", peak, "GB", "the compiles and links whose wall times overlap", ""),
-        ("configure-time", configured, "s", "the last configure of the build directory", detail),
-    )
-    findings: list[check_report.Finding] = []
-    lines: list[str] = []
-    for rule_id, value, unit, what, extra in values:
-        budget = budgets.get(rule_id)
-        threshold = f", warning threshold {budget.warn:g} {unit}" if budget is not None else TOTAL_NO_RULE
-        shown = "no value" if value is None else f"{value:g} {unit}"
-        lines.append(f"{TOTAL_PREFIX} {rule_id} {shown}{extra}{threshold}")
-        findings += loop_history.warning_over(dict(budgets), rule_id, value, unit, what, position)
-    return findings, lines
+
+    def shown(value: float | None, unit: str) -> str:
+        """Return a value in its unit, or the words of no value."""
+        return "no value" if value is None else f"{value:g} {unit}"
+
+    count = float(len(links)) if links else None
+    cpu = link_cpu if links else None
+    return [
+        TotalMeasure(
+            "link-count",
+            count,
+            "links",
+            "the link records of the build directory",
+            f"the build directory holds {len(links)} link records",
+            shown(count, "links"),
+        ),
+        TotalMeasure(
+            "total-link-cpu",
+            cpu,
+            "s",
+            "the link records of the build directory together",
+            f"the link records of the build directory took {link_cpu:g} s of CPU time together",
+            shown(cpu, "s"),
+        ),
+        TotalMeasure(
+            "build-peak-memory", peak, "GB", "the compiles and links whose wall times overlap", "", shown(peak, "GB")
+        ),
+        TotalMeasure(
+            "configure-time",
+            configured,
+            "s",
+            "the last configure of the build directory",
+            "",
+            shown(configured, "s"),
+            detail,
+        ),
+    ]
+
+
+def total_ledger(context: BuildContext, rule_id: str) -> rule_ledger.Ledger:
+    """Read the ledger of a total from the tree of the context (THE TOTALS).
+
+    Raises:
+        TotalRefusal: If the registry has no such rule, or the ledger cannot be read or does not obey its grammar
+    """
+    registry = context.registry if context.registry is not None else rule_registry.load()
+    rule = registry.rules.get(rule_id)
+    shown = rule_ledger.shown_path(rule_id)
+    if rule is None:
+        raise TotalRefusal(f"the registry has no rule {rule_id}", REGISTRY_FILE, 0, "input")
+    try:
+        return rule_ledger.read(rule, context.root)
+    except rows_grammar.RowsError as problem:
+        raise TotalRefusal(f"{shown} does not obey its grammar: {problem}", shown, problem.line, "ledger-row") from None
+    except OSError as problem:
+        raise TotalRefusal(f"{shown} cannot be read ({problem})", shown, 0, "ledger-row") from None
+
+
+def total_rows(ledger: rule_ledger.Ledger) -> dict[str, rule_ledger.Entry]:
+    """Return the baseline row of each configuration of the ledger of a total, by the name of the configuration.
+
+    Complexity: O(r log r) for r rows.
+
+    Raises:
+        TotalRefusal: If a row is not `- | NAME | VALUE | total | REASON` with a value of 0 or more and a reason, or
+            it names a configuration with no configuration rows
+    """
+    shown = rule_ledger.shown_path(ledger.rule)
+    rows: dict[str, rule_ledger.Entry] = {}
+    for entry in sorted(ledger.base.values(), key=lambda item: item.line):
+        is_number = isinstance(entry.value, (int, float)) and entry.value >= 0
+        if entry.key.path or entry.key.entity != TOTAL_ENTITY or not is_number or not entry.reason:
+            raise TotalRefusal(
+                f"{shown}:{entry.line}: a baseline row is `- | NAME | VALUE | {TOTAL_ENTITY} | REASON`, with the name "
+                f"of a configuration, a value of 0 or more and a reason",
+                shown,
+                entry.line,
+                "ledger-row",
+            )
+        if ledger.configuration(entry.key.kind) is None:
+            raise TotalRefusal(
+                f"{shown}:{entry.line}: the row names the configuration {entry.key.kind}, and the ledger has no "
+                f"configuration row of it",
+                shown,
+                entry.line,
+                "ledger-row",
+            )
+        rows[entry.key.kind] = entry
+    return rows
+
+
+def total_configuration(context: BuildContext) -> build_config.BuildConfiguration:
+    """Return the configuration of the build of the context (THE TOTALS).
+
+    Raises:
+        TotalRefusal: If the configuration of the build cannot be read
+    """
+    try:
+        return context.configuration()
+    except (
+        meta_runner.NotApplicable,
+        build_census.CensusError,
+        compdb.CompdbError,
+        build_config.ConfigurationError,
+    ) as problem:
+        raise TotalRefusal(
+            f"the configuration of the build cannot be read, and each baseline row belongs to a configuration: "
+            f"{problem}",
+            context.shown(context.require_build()),
+            0,
+            "configuration",
+        ) from None
+
+
+def total_baseline(context: BuildContext, rule_id: str) -> TotalBaseline:
+    """Return the baseline row of a total that judges the build (THE TOTALS, THE POLICY of assay.core.configuration).
+
+    A build of a configuration that the ledger holds gets the row of its configuration.  A build of a configuration
+    that the ledger does not hold gets the largest row.  Complexity: linear in the rows and the facts.
+
+    Raises:
+        TotalRefusal: If an input cannot be used, or no row can judge the build
+    """
+    ledger = total_ledger(context, rule_id)
+    rows = total_rows(ledger)
+    configuration = total_configuration(context)
+    judged = build_config.judging(rule_id, ledger, configuration)
+    is_bound = judged.name == rule_ledger.MAXIMUM
+    if is_bound:
+        name = max(rows, key=lambda item: (float(rows[item].value), item)) if rows else None
+    else:
+        name = judged.name or ledger.base_name
+    shown = rule_ledger.shown_path(rule_id)
+    if name is None or name not in rows:
+        raise TotalRefusal(
+            f"{shown} holds no baseline row that can judge the build of the configuration {configuration.name}.  "
+            f"Write the baseline: {total_write_command(rule_id, context.shown(context.require_build()), False)}",
+            shown,
+            0,
+            "no-baseline",
+        )
+    entry = rows[name]
+    return TotalBaseline(name, float(entry.value), shown, entry.line, is_bound, judged.note)
 
 
 def build_totals(
-    build_dir: Path, root: Path, budgets: Mapping[str, check_report.Budget]
+    context: BuildContext, budgets: Mapping[str, check_report.Budget]
 ) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the warnings and the summary lines of the build totals of a build directory (THE TOTALS).
+    """Return the warnings and the summary lines of the build totals of the build of a context (THE TOTALS).
 
     Complexity: linear in the files of the build directory.
     """
     from assay.loop import history as loop_history
 
-    return total_build_totals(
-        total_build_records(build_dir),
-        loop_history.configure_time(build_dir),
-        budgets,
-        build_census.shown(build_dir, root),
-    )
+    build = context.require_build()
+    measures = total_build_measures(total_build_records(build), loop_history.configure_time(build))
+    return judged_totals(measures, budgets, build_census.shown(build, context.root), partial(total_baseline, context))
 
 
-def time_totals(
-    build_dir: Path, root: Path, budgets: Mapping[str, check_report.Budget]
-) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the warnings and the summary lines of the time totals of a build directory (THE TOTALS).
+def total_time_inputs(context: BuildContext) -> tuple[build_census.Census, list[float | None]]:
+    """Return the census and the CPU times of the executable tests of the build of a context.
 
-    When the census or the test records of the build cannot be read, the function gives no warning, and one line
-    that tells why.
-    Complexity: one read of the census and of the test records of the build directory.
+    Raises:
+        TotalRefusal: If the census or the test records of the build cannot be read
     """
     from assay.readers import ctest as ctest_reader
 
+    build = context.require_build()
     try:
-        census = build_census.read_census(build_dir, root, read_files=False)
-        test_times = total_test_times(build_dir)
+        return build_census.read_census(build, context.root, read_files=False), total_test_times(build)
     except (
         build_census.NotApplicable,
         build_census.CensusError,
@@ -1357,15 +1685,102 @@ def time_totals(
         OSError,
         ValueError,
     ) as reason:
+        raise TotalRefusal(str(reason), context.shown(build), 0, "input") from None
+
+
+def time_totals(
+    context: BuildContext, budgets: Mapping[str, check_report.Budget]
+) -> tuple[list[check_report.Finding], list[str]]:
+    """Return the warnings and the summary lines of the time totals of the build of a context (THE TOTALS).
+
+    When the census or the test records of the build cannot be read, the function gives no warning, and one line
+    that tells why.
+    Complexity: one read of the census and of the test records of the build directory.
+    """
+    try:
+        census, test_times = total_time_inputs(context)
+    except TotalRefusal as reason:
         return [], [f"{TOTAL_PREFIX} no time totals: {reason}"]
-    return total_time_totals(census, test_times, budgets, build_census.shown(build_dir, root))
+    position = build_census.shown(context.require_build(), context.root)
+    return judged_totals(total_time_measures(census, test_times), budgets, position, partial(total_baseline, context))
 
 
-type Totals = Callable[[Path, Path, Mapping[str, check_report.Budget]], tuple[list[check_report.Finding], list[str]]]
+def total_measure_of(context: BuildContext, rule_id: str) -> TotalMeasure:
+    """Return one total of BASELINE_TOTALS of the build of a context, for the write (THE TOTALS).
+
+    Raises:
+        rule_ledger.LedgerError: If the inputs of the total cannot be read
+    """
+    from assay.loop import history as loop_history
+
+    build = context.require_build()
+    if rule_id in ("link-count", "total-link-cpu"):
+        measures = total_build_measures(total_build_records(build), loop_history.configure_time(build))
+    else:
+        try:
+            measures = total_time_measures(*total_time_inputs(context))
+        except TotalRefusal as refusal:
+            raise rule_ledger.LedgerError(f"the time totals of the build cannot be read: {refusal}") from None
+    return next(measure for measure in measures if measure.rule_id == rule_id)
 
 
-def written_totals(name: str, totals: Totals, build_dir: Path, root: Path) -> list[check_report.Finding]:
-    """Write the summary lines of one group of totals of a build directory, and return their warnings.
+def total_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
+    """Write the configuration rows and the baseline row of the configuration of the build again (THE TOTALS).
+
+    The write keeps the rows of the other configurations.  A new ledger gets the head comment of a total.
+
+    Raises:
+        rule_ledger.LedgerError: If the rule has no baseline, an input cannot be used, or the build gives no total.
+            Also if the ledger does not hold the configuration of the build and the write does not add it.  Also if
+            the write has no reason for a growth over the threshold
+    """
+    rule_id = ledger.rule
+    if rule_id not in BASELINE_TOTALS:
+        raise rule_ledger.LedgerError(f"the rule {rule_id} has no baseline row of each configuration")
+    measure = total_measure_of(context, rule_id)
+    if measure.value is None or measure.missing:
+        raise rule_ledger.LedgerError(
+            f"the build gives no total of {rule_id}: {measure.shown}.  A ccache hit with no earlier compile in the "
+            f"build directory has no time.  Build each such unit again with no cache, then write"
+        )
+    try:
+        rows = total_rows(ledger)
+        configuration = total_configuration(context)
+    except TotalRefusal as refusal:
+        raise rule_ledger.LedgerError(str(refusal)) from None
+    target = build_config.write_target(rule_id, ledger, configuration, context.add_configuration)
+    if isinstance(target, str):
+        raise rule_ledger.LedgerError(target)
+    configurations = (
+        (rule_ledger.Configuration(configuration.name, configuration.facts),)
+        if target.name is None
+        else target.ledger.configurations
+    )
+    old = rows.get(configuration.name)
+    tolerance = context.budget(rule_id).warn
+    if old is not None and not reason and 0 < float(old.value) * (1.0 + tolerance / 100.0) < measure.value:
+        raise rule_ledger.LedgerError(
+            f"the total {measure.shown} is more than the baseline of {total_value_text(float(old.value), measure.unit)} "
+            f"by more than the threshold {tolerance:g}%.  Give the reason of the growth with --reason TEXT"
+        )
+    value: int | float = round(measure.value) if measure.unit == "links" else round(measure.value, 1)
+    entry = rule_ledger.Entry(
+        rule_ledger.Key("", configuration.name, TOTAL_ENTITY),
+        value,
+        reason or (old.reason if old is not None else TOTAL_DEFAULT_REASON),
+    )
+    base = {key: item for key, item in ledger.base.items() if key.kind != configuration.name}
+    base[entry.key] = entry
+    is_new = not ledger.configurations and not ledger.base
+    comment = TOTAL_LEDGER_COMMENT.format(rule=rule_id) if is_new else ledger.comment
+    return replace(ledger, comment=comment, configurations=configurations, base=base)
+
+
+type Totals = Callable[[BuildContext, Mapping[str, check_report.Budget]], tuple[list[check_report.Finding], list[str]]]
+
+
+def written_totals(name: str, totals: Totals, context: BuildContext) -> list[check_report.Finding]:
+    """Write the summary lines of one group of totals of the build of a context, and return their warnings.
 
     `name` names the group in the line of a registry that does not read.
     """
@@ -1374,20 +1789,20 @@ def written_totals(name: str, totals: Totals, build_dir: Path, root: Path) -> li
     except (OSError, ValueError) as reason:
         check_report.write_line(f"{TOTAL_PREFIX} no {name}: {reason}")
         return []
-    findings, lines = totals(build_dir, root, budgets)
+    findings, lines = totals(context, budgets)
     for line in lines:
         check_report.write_line(line)
     return findings
 
 
-def total_report_build(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
-    """Write the summary lines of the build totals of a build directory, and return their warnings."""
-    return written_totals("build totals", build_totals, build_dir, root)
+def total_report_build(context: BuildContext) -> list[check_report.Finding]:
+    """Write the summary lines of the build totals of the build of a context, and return their warnings."""
+    return written_totals("build totals", build_totals, context)
 
 
-def total_report_totals(build_dir: Path, root: Path = REPO_ROOT) -> list[check_report.Finding]:
-    """Write the summary lines of the time totals of a build directory, and return their warnings."""
-    return written_totals("time totals", time_totals, build_dir, root)
+def total_report_totals(context: BuildContext) -> list[check_report.Finding]:
+    """Write the summary lines of the time totals of the build of a context, and return their warnings."""
+    return written_totals("time totals", time_totals, context)
 
 
 def budget_member(rule_id: str) -> meta_runner.Member:

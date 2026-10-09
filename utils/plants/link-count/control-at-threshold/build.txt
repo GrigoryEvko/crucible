@@ -1,8 +1,0 @@
-# The build directory holds two link records, at the planted threshold of two links of link-count, and a value at a
-# threshold is not more than it.  A link with no record does not count.  The build totals of `guard warnings` give
-# no warning.
-format 1
-kind x86_64-debug-asan
-link bin/first
-link bin/second
-link bin/unrecorded record=no

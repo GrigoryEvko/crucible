@@ -1,8 +1,0 @@
-# Two negative fixtures took 1600 s of user time each in their last real compile, 3200 s together, over the
-# threshold 3000 s of total-fixture-cpu.  The census also needs an object of the target all.  The time totals of
-# `guard warnings` give one warning.
-format 1
-kind x86_64-debug-asan
-compile CMakeFiles/lib.dir/unit.cpp.o src/unit.cpp cpu=1
-fixture neg_slow_first test/neg/first.cpp user=1600 system=0
-fixture neg_slow_second test/neg/second.cpp user=1600 system=0

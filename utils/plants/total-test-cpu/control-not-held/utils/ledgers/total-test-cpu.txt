@@ -1,0 +1,5 @@
+# A planted ledger with one configuration other than the configuration of the planted build.
+format 1
+rule total-test-cpu
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+- | x86_64-debug-tsan | 246 | total | the planted baseline

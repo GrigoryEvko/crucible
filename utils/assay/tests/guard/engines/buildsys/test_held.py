@@ -15,7 +15,7 @@ from pathlib import Path
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import testing
-from assay.guard.engines.buildsys import held, planted
+from assay.guard.engines.buildsys import cost_budgets, held, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 
@@ -26,9 +26,15 @@ SLOW_RECORD = (
     '"tests": {"wall_s": 31.0, "cpu_s": 1000.0, "instructions_g": 10000.0, "worst_others_pct": 2.0}}}\n'
 )
 BUILD_HEAD = "format 1\nkind x86_64-debug-asan\n"
-# Two links of 25 s of CPU time each, over the warning threshold 40 s of total-link-cpu together.
+# Two links of 25 s of CPU time each, 50 s together, more than two times the planted baseline of total-link-cpu.  Two
+# links of 5 s each are equal to the baseline.
 SLOW_LINKS = BUILD_HEAD + "link bin/first cpu=25\nlink bin/second cpu=25\n"
 FAST_LINKS = BUILD_HEAD + "link bin/first cpu=5\nlink bin/second cpu=5\n"
+LINK_LEDGER = (
+    "format 1\nrule total-link-cpu\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
+    "- | x86_64-debug-asan | 10 | total | the planted baseline\n"
+)
+LINK_LEDGER_FILE = (f"{rule_ledger.LEDGER_DIRECTORY}/total-link-cpu.txt", LINK_LEDGER)
 
 
 def plant_of(directory: Path, name: str, rows: str | None, files: Sequence[tuple[str, str]] = ()) -> Path:
@@ -123,15 +129,15 @@ def witness_cases(expect: testing.Expect) -> None:
     rule = tree_rule("total-link-cpu")
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         plants = Path(scratch) / "utils" / "plants" / rule.id
-        plant_of(plants, "plant-over", SLOW_LINKS)
-        plant_of(plants, "control-under", FAST_LINKS)
+        plant_of(plants, "plant-over", SLOW_LINKS, [LINK_LEDGER_FILE])
+        plant_of(plants, "control-under", FAST_LINKS, [LINK_LEDGER_FILE])
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             holds = held.witness(rule, Path(scratch))
         expect("a plant with a warning and a clean control hold, because a warning counts", holds == 0)
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         plants = Path(scratch) / "utils" / "plants" / rule.id
-        plant_of(plants, "plant-under", FAST_LINKS)
-        plant_of(plants, "control-over", SLOW_LINKS)
+        plant_of(plants, "plant-under", FAST_LINKS, [LINK_LEDGER_FILE])
+        plant_of(plants, "control-over", SLOW_LINKS, [LINK_LEDGER_FILE])
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             fails = held.witness(rule, Path(scratch))
         expect("a plant with no finding and a control with a warning fail", fails == 1)
@@ -178,10 +184,77 @@ def fixture_write_cases(expect: testing.Expect) -> None:
         expect("a write refuses a build with a fixture that has no record", "neg_unrun" in said)
 
 
+def total_write_cases(expect: testing.Expect) -> None:
+    """The write of the baseline of a total: the row of the configuration of the build, and the rows of the others."""
+    rule = tree_rule("total-link-cpu")
+
+    def write(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger | str:
+        """Return the written ledger, or the text of the refusal."""
+        try:
+            return held.written(rule, context, ledger, reason)
+        except rule_ledger.LedgerError as problem:
+            return str(problem)
+
+    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
+        context = context_of(Path(scratch), FAST_LINKS)
+        first = write(context, rule_ledger.empty(rule), None)
+        expect(
+            "the first write gives the ledger the configuration of the build and its baseline row, with the default "
+            "reason and the head comment of a total",
+            isinstance(first, rule_ledger.Ledger)
+            and [item.name for item in first.configurations] == ["x86_64-debug-asan"]
+            and [(key.kind, entry.value, entry.reason) for key, entry in first.base.items()]
+            == [("x86_64-debug-asan", 10.0, cost_budgets.TOTAL_DEFAULT_REASON)]
+            and first.comment.startswith("# The ledger of the rule total-link-cpu: the baseline"),
+        )
+        held_ledger = rule_ledger.parse(LINK_LEDGER.replace("| 10 |", "| 4 |"), "planted", rule.id, rule.policy)
+        expect(
+            "a write that raises a baseline by more than the threshold needs a reason",
+            "--reason TEXT" in str(write(context, held_ledger, None)),
+        )
+        raised = write(context, held_ledger, "a planted growth")
+        expect(
+            "a write with a reason raises the baseline and keeps the reason",
+            isinstance(raised, rule_ledger.Ledger)
+            and [(entry.value, entry.reason) for entry in raised.base.values()] == [(10.0, "a planted growth")],
+        )
+    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
+        context = context_of(Path(scratch), FAST_LINKS)
+        other = rule_ledger.parse(
+            LINK_LEDGER.replace("x86_64-debug-asan", "x86_64-release"), "planted", rule.id, rule.policy
+        )
+        expect(
+            "a write of a build of a configuration that the ledger does not hold writes nothing",
+            "--add-configuration" in str(write(context, other, None)),
+        )
+        context.add_configuration = True
+        added = write(context, other, None)
+        expect(
+            "with --add-configuration the write adds the configuration of the build and keeps the other rows",
+            isinstance(added, rule_ledger.Ledger)
+            and [item.name for item in added.configurations] == ["x86_64-release", "x86_64-debug-asan"]
+            and sorted((key.kind, entry.value) for key, entry in added.base.items())
+            == [("x86_64-debug-asan", 10.0), ("x86_64-release", 10.0)],
+        )
+    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
+        expect(
+            "a write refuses a build with no link record, which gives no total",
+            "gives no total" in str(write(context_of(Path(scratch), BUILD_HEAD), rule_ledger.empty(rule), None)),
+        )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (gauge_cases, routing_cases, rule_holder_cases, cmake_cases, witness_cases, fixture_write_cases),
+        (
+            gauge_cases,
+            routing_cases,
+            rule_holder_cases,
+            cmake_cases,
+            witness_cases,
+            fixture_write_cases,
+            total_write_cases,
+        ),
     )

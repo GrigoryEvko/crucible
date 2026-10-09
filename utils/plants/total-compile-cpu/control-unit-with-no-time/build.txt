@@ -1,0 +1,7 @@
+# One object of the target all took 100 s of CPU time in its last real compile.  A ccache hit gave the other object,
+# and its record keeps no time of an earlier compile.  The total is not the total of the build, so no baseline judges
+# it, also with no ledger.  The time totals of `guard warnings` give no warning.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/first.cpp.o src/first.cpp cpu=100
+compile CMakeFiles/lib.dir/second.cpp.o src/second.cpp result=hit
