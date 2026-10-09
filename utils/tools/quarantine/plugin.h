@@ -2254,12 +2254,13 @@ void check_route_alias(tree decl);
 void register_expressions(const char* plugin_name);
 void finish_expression_rules();
 
-// include.cpp: the family include closure, the include rules, the seals, the
-// heavy headers, the names of a higher root and the provenance.
+// include.cpp: the family include closure, the include rules, the door units,
+// the seals, the heavy headers, the names of a higher root and the provenance.
 void register_includes(const char* plugin_name);
 void finish_pending_include(const FileEntry* entered);
 void note_project_reference(tree named, location_t location);
 void report_include_closure();
+void report_door_units();
 
 // unit.cpp: the family unit fact.
 void register_unit_facts(const char* plugin_name);

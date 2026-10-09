@@ -1,0 +1,11 @@
+#pragma once
+
+// A base header that is no door file, and that includes a UAPI header.  A
+// header of the C library is only in an arm that the build does not compile,
+// and the plugin reads only the arms that a build compiles.
+
+#include <linux/stddef.h>
+
+#if defined(CRUCIBLE_PLANTED_ARM)
+#include <stdio.h>
+#endif

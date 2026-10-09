@@ -1,0 +1,9 @@
+// A door file that includes the header of its second door row only in an arm
+// that one build compiles.  The parse tree holds each arm, so the row is not
+// stale in a build that does not compile the arm.
+
+#include <linux/netlink.h>
+
+#if defined(CRUCIBLE_PLANTED_ARM)
+#include <linux/types.h>
+#endif

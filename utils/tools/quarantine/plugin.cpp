@@ -443,6 +443,7 @@ void report(bool can_add_dependencies) {
         }
     }
     report_include_closure();
+    report_door_units();
     report_unit_facts();
     report_open_regions();
     report_unclassified();

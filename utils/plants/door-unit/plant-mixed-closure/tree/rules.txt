@@ -1,0 +1,9 @@
+# The rule table of this plant.  The layer os holds the door file and the
+# base header that it includes.  The allow row lets the base header include
+# a header of the C library.
+
+layer os 0 include/foundation/ src/foundation/
+
+allow os <sys/types.h>
+
+door <linux/netlink.h> src/foundation/os/Netlink.cpp

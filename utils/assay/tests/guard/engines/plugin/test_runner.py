@@ -400,6 +400,14 @@ def unit_cases(expect: testing.Expect) -> None:
         == "PROBE: a region | std-object std::vector"
         and quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )
+    doors = ruletable.parse(
+        "layer os 0 src/foundation/\ndoor <sys/socket.h> src/foundation/os/A.cpp\n\ndoor <linux/types.h> "
+        "src/foundation/os/B.cpp\n"
+    )
+    expect(
+        "door_lines gives the line of each door row, in the sequence of the door rows",
+        doors.door_lines == (2, 4) and len(doors.doors) == 2,
+    )
     starts = [(4, "PROBE: one"), (9, "ABI: two")]
     expect(
         "reason_at() gives the reason of the region with the last first line at or before a line, and None before "

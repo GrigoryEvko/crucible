@@ -1,0 +1,9 @@
+# The door file includes a Linux UAPI header, and a base header that
+# includes a header of the C library.  The include closure of the door file
+# then holds the two families.  The finding is at the directive of the door
+# file that starts the path to the second family.
+
+compile netlink src/foundation/os/Netlink.cpp stage=c
+exit netlink pass
+judge netlink
+finding netlink door-unit mixed-headers src/foundation/os/Netlink.cpp:4:0 | <linux/netlink.h> and <sys/types.h>

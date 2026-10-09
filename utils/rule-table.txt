@@ -37,9 +37,10 @@
 #   door HEADER OWNER
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.  The rule door-unit refuses an OWNER that is a
-#       header, and a door file that includes the Linux UAPI headers and the
-#       headers of the C library (utils/tools/quarantine/include.cpp, THE
-#       DOOR UNITS).
+#       header, and a door file whose include closure holds the Linux UAPI
+#       headers and the headers of the C library (utils/tools/quarantine/
+#       include.cpp, THE DOOR UNITS).  It also refuses a row whose OWNER does
+#       not spell an include of HEADER.
 #   admit ENTRY [RESTRICTION...] | REASON
 #       A quarantined file can name the standard library entity ENTRY.  A
 #       file of the language reads the rows as a language row tells, and each

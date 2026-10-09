@@ -1,0 +1,6 @@
+# The owner of each door row spells an include of its header, one of them in
+# an arm that the build does not compile.  No row is stale.
+
+compile netlink src/foundation/os/Netlink.cpp stage=c rules=utils/rule-table.txt
+exit netlink pass
+judge netlink

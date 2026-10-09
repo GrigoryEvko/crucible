@@ -14,3 +14,9 @@ judge glibc
 compile mix src/mix.cpp stage=c
 exit mix pass
 judge mix
+
+# The include closure of a door file holds one family.  A header of the
+# other family in an arm that the build does not compile is no finding.
+compile closure src/foundation/os/Closure.cpp stage=c
+exit closure pass
+judge closure

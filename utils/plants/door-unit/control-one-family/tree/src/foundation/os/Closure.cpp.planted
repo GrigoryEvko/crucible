@@ -1,0 +1,5 @@
+// A door file of a UAPI header, whose include closure holds a base header of
+// the same family.
+
+#include <foundation/Same.h>
+#include <linux/if_packet.h>

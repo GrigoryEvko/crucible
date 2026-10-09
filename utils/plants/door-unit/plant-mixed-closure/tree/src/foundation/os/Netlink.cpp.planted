@@ -1,0 +1,5 @@
+// A door file of a UAPI header.  The base header that it includes brings a
+// header of the C library into its unit.
+
+#include <foundation/Types.h>
+#include <linux/netlink.h>

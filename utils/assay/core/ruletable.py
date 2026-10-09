@@ -358,6 +358,8 @@ class RuleTable:
     denied_syscalls: tuple[str, ...] = ()
     # The host rows and the kernel rows, in the sequence of the file.
     exempts: tuple[Exempt, ...] = ()
+    # The line of each door row, in the sequence of doors.
+    door_lines: tuple[int, ...] = ()
 
     def homes_of(self, rule: str) -> tuple[Home, ...]:
         """Return the home rows of one rule, in the sequence of the file."""
@@ -709,6 +711,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     layers: list[Layer] = []
     allows: list[Allow] = []
     doors: list[tuple[str, str]] = []
+    door_lines: list[int] = []
     admits: list[Admit] = []
     quarantines: list[str] = []
     enforces: list[Enforce] = []
@@ -786,6 +789,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
             if any(header == args[0] for header, _ in doors):
                 raise TableError(f"{where}: the header {args[0]} has a second door")
             doors.append((args[0], args[1]))
+            door_lines.append(number)
         elif kind == "admit":
             if not args or not reason:
                 raise TableError(f"{where}: an admit row is 'admit ENTRY [RESTRICTION...] | REASON', and the reason "
@@ -972,7 +976,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
                      tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls), tuple(primitives),
-                     tuple(denied), tuple(exempts))
+                     tuple(denied), tuple(exempts), tuple(door_lines))
 
 
 def load(path: Path = TABLE) -> RuleTable:

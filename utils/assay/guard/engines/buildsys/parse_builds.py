@@ -10,8 +10,9 @@ THE RULES
          message gives the command that configures the build directory.
       2. `loop syntax` parses each unit of the build (assay.loop.syntax.run).
          A unit that does not parse gives the error parse.
-      3. The rules quarantine, heavy-include and syscall-capability judge
-         the reports of the parse (assay.guard.engines.plugin.runner).  Each
+      3. The rules quarantine, heavy-include, syscall-capability and
+         door-unit judge the reports of the parse
+         (assay.guard.engines.plugin.runner).  Each
          rule that refuses the parse build, or that does not apply to it,
          gives the error counted.
     A change with no arm gives no finding, and the rule reads no parse
@@ -45,7 +46,7 @@ from assay.loop import syntax
 PARENT = "parent"
 TREE = "tree"
 # The rules that judge a parse build (THE RULES, step 3).
-COUNTED_RULES = ("quarantine", "heavy-include", "syscall-capability")
+COUNTED_RULES = ("quarantine", "heavy-include", "syscall-capability", "door-unit")
 
 
 def error(rule_id: str, path: str, message: str, kind: str, entity: str) -> check_report.Finding:

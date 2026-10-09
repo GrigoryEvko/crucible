@@ -1,0 +1,7 @@
+# The rule table of this control.  The door file includes the header of its
+# second row only in an arm that the build does not compile.
+
+layer os 0 include/foundation/ src/foundation/
+
+door <linux/netlink.h> src/foundation/os/Netlink.cpp
+door <linux/types.h> src/foundation/os/Netlink.cpp

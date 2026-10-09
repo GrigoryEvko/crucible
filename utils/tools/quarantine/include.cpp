@@ -16,15 +16,22 @@
 //     one family.  A source file has the extension .c, .cc, .cpp or .cxx.  An
 //     include of a door header by its OWNER gets header-door when the OWNER is
 //     no source file, because each unit that includes such an OWNER also gets
-//     its system declarations.  A door file is the OWNER of a door row.  It
-//     includes Linux UAPI headers or headers of the C library, and not the two
-//     families, because some of their declarations conflict.  The include that
-//     adds the second family to a door file gets mixed-headers, one time for
-//     each file.  A UAPI header has a first directory of kUapiDirectories.  A
-//     header of the C library is no UAPI header, and the directory of the C
-//     library holds it: the first directory of the search chain that holds
-//     <features.h>, which each header of glibc includes.  A header of the C++
-//     library or of the compiler is in neither family.
+//     its system declarations.  A door file is the OWNER of a door row.  Its
+//     include closure holds Linux UAPI headers or headers of the C library, and
+//     not the two families, because some of their declarations conflict.  The
+//     closure is the door file and each file of the root that a file of the
+//     closure includes, through each #include directive whose target the
+//     plugin knows.  The report reads the directives of the door file first,
+//     and then each file of the closure in the sequence that it finds the file.
+//     The directive that adds the second family gets mixed-headers, one time
+//     for each door file.  Its place is the directive of the door file that
+//     starts the path to it.  A UAPI header has a first directory of
+//     kUapiDirectories.  A header of the C library is no UAPI header, and the
+//     directory of the C library holds it: the first directory of the search
+//     chain that holds <features.h>, which each header of glibc includes.  A
+//     header of the C++ library or of the compiler is in neither family, and
+//     the closure does not go through a header outside the root.  The plugin
+//     reads only the arms that a build compiles, as for the seals.
 //
 // THE SEALS (the rule detsafe-ledger)
 //     The include closure of a seal ROOT is ROOT and each file that a file of
@@ -158,16 +165,17 @@ enum class HeaderFamily : std::uint8_t {
     c_library,
 };
 
-// The first header of each family that a door file of the unit includes, and
-// whether the file has its finding mixed-headers.
-struct DoorFamilies {
-    std::string uapi;
-    std::string c_library;
-    bool is_mixed = false;
+// A directive of a file of the root that includes a system header of a family.
+struct FamilyInclude {
+    const FileEntry* from = nullptr;
+    Place directive;
+    HeaderFamily family = HeaderFamily::other;
+    std::string header;  // <NAME>, as the directive spells it
 };
 
-// The families of each door file of the unit, by its entry.
-std::unordered_map<const FileEntry*, DoorFamilies> door_families;
+// Each directive of the unit that includes a system header of a family, in
+// the sequence of the preprocessor.
+std::vector<FamilyInclude> family_includes;
 
 // True when PATH has the extension of a source file.
 bool is_source_path(const std::string& path) {
@@ -222,25 +230,16 @@ HeaderFamily header_family(const PendingInclude& pending, const FileEntry* targe
     return is_c_library ? HeaderFamily::c_library : HeaderFamily::other;
 }
 
-// The families of a door file (THE DOOR UNITS): the include that adds the
-// second family gets mixed-headers, with the first header of each family.
-void check_door_families(const PendingInclude& pending, const FileEntry* target) {
-    const FileEntry& includer = *pending.place.file;
-    if (!is_door_file(includer)) {
+// Keeps a directive of a file of the root that includes a system header of a
+// family, for the report (THE DOOR UNITS).  The report reads the include
+// closure of each door file when the unit knows each directive.
+void note_family_include(const PendingInclude& pending, const FileEntry* target) {
+    if (state.table.doors.empty()) {
         return;
     }
     HeaderFamily family = header_family(pending, target);
-    if (family == HeaderFamily::other) {
-        return;
-    }
-    DoorFamilies& families = door_families[&includer];
-    std::string& first = family == HeaderFamily::uapi ? families.uapi : families.c_library;
-    if (first.empty()) {
-        first = "<" + pending.spelled + ">";
-    }
-    if (!families.is_mixed && !families.uapi.empty() && !families.c_library.empty()) {
-        families.is_mixed = true;
-        add_finding(Kind::mixed_headers, nullptr, pending.place, families.uapi + " and " + families.c_library);
+    if (family != HeaderFamily::other) {
+        family_includes.push_back(FamilyInclude{pending.place.file, pending.place, family, "<" + pending.spelled + ">"});
     }
 }
 
@@ -259,7 +258,7 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
                     target->relative + " (" + what + ") from the layer " + layer_name(includer.layer));
         return;
     }
-    check_door_families(pending, target);
+    note_family_include(pending, target);
     for (const DoorRow& door : state.table.doors) {
         if (door.header == pending.spelled) {
             if (includer.relative != door.owner) {
@@ -462,7 +461,7 @@ void finish_pending_include(const FileEntry* entered) {
     PendingInclude pending = std::move(state.pending);
     state.pending = PendingInclude{};
     const FileEntry* target = entered != nullptr ? entered : resolve_skipped_include(pending);
-    if (target != nullptr && !state.table.seals.empty()) {
+    if (target != nullptr && (!state.table.seals.empty() || !state.table.doors.empty())) {
         state.include_edges.push_back(IncludeEdge{pending.place.file, target, pending.place});
     }
     check_include(pending, target);
@@ -767,7 +766,82 @@ void check_upward_namespaces() {
     }
 }
 
+// The directives of each file of the unit that include a system header of a
+// family, for the door units.
+using FamiliesOf = std::unordered_map<const FileEntry*, std::vector<const FamilyInclude*>>;
+
+// The families of the include closure of the door file DOOR (THE DOOR UNITS).
+// The walk reads the directives of DOOR first, and then each file of the
+// closure in the sequence that it finds the file.  The first directive that
+// adds the second family gets mixed-headers.  Its place is that directive when
+// DOOR holds it, else the directive of DOOR that starts the path to it.
+// Complexity: O(edges and family includes of the unit).
+void check_door_closure(const FileEntry* door, const EdgesOf& edges_of, const FamiliesOf& families_of) {
+    std::string first_uapi;
+    std::string first_c_library;
+    std::unordered_set<const FileEntry*> closure{door};
+    // Each file of the closure, with the directive of DOOR that starts the
+    // path to it, or null for DOOR.
+    std::vector<std::pair<const FileEntry*, const Place*>> queue{{door, nullptr}};
+    for (std::size_t index = 0; index < queue.size(); ++index) {
+        auto [current, start] = queue[index];
+        auto families = families_of.find(current);
+        if (families != families_of.end()) {
+            for (const FamilyInclude* include : families->second) {
+                std::string& first = include->family == HeaderFamily::uapi ? first_uapi : first_c_library;
+                if (first.empty()) {
+                    first = include->header;
+                }
+                if (!first_uapi.empty() && !first_c_library.empty()) {
+                    add_finding(Kind::mixed_headers, nullptr, start != nullptr ? *start : include->directive,
+                                first_uapi + " and " + first_c_library);
+                    return;
+                }
+            }
+        }
+        auto edges = edges_of.find(current);
+        if (edges == edges_of.end()) {
+            continue;
+        }
+        for (const IncludeEdge* edge : edges->second) {
+            if (!edge->to->relative.empty() && closure.insert(edge->to).second) {
+                queue.emplace_back(edge->to, start != nullptr ? start : &edge->directive);
+            }
+        }
+    }
+}
+
 }  // namespace
+
+// The findings of the door units that the report judges when the unit knows
+// each directive: mixed-headers in the include closure of each door file of
+// the unit (THE DOOR UNITS).  Complexity: O(door files * (edges + family
+// includes)) and O(files * door rows) for the door files.
+void report_door_units() {
+    if (state.table.doors.empty() || family_includes.size() < 2) {
+        return;
+    }
+    EdgesOf edges_of;
+    std::unordered_set<const FileEntry*> checked;
+    std::vector<const FileEntry*> doors;
+    auto note_door = [&checked, &doors](const FileEntry* file) {
+        if (checked.insert(file).second && is_door_file(*file)) {
+            doors.push_back(file);
+        }
+    };
+    for (const IncludeEdge& edge : state.include_edges) {
+        edges_of[edge.from].push_back(&edge);
+        note_door(edge.from);
+    }
+    FamiliesOf families_of;
+    for (const FamilyInclude& include : family_includes) {
+        families_of[include.from].push_back(&include);
+        note_door(include.from);
+    }
+    for (const FileEntry* door : doors) {
+        check_door_closure(door, edges_of, families_of);
+    }
+}
 
 // One reference of the code to the declaration or the namespace NAMED at
 // LOCATION, from the walk of a body or of a declaration.  The reference

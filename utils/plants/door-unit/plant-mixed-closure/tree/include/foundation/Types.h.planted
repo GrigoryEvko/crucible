@@ -1,0 +1,6 @@
+#pragma once
+
+// A base header that is no door file, and that includes a header of the C
+// library.
+
+#include <sys/types.h>

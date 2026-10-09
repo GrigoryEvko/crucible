@@ -1,0 +1,7 @@
+# Two door rows are stale: the owner of one does not include its header, and
+# the owner of the other is not in the tree.  The module of the rule gives an
+# error at the line of each stale row, and the compile has no finding.
+
+compile netlink src/foundation/os/Netlink.cpp stage=c rules=utils/rule-table.txt
+exit netlink pass
+judge netlink
