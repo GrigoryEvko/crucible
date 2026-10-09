@@ -3,7 +3,7 @@
 
 compile report generic_lambda.cpp
 exit report pass
-finding report quarantine std-object generic_lambda.cpp:11:26 | std::vector (std::vector<int>)
+finding report quarantine std-object generic_lambda.cpp:11:26 | std::vector
 finding report quarantine c-library-call generic_lambda.cpp:12:20 | memcpy
 finding report quarantine std-entity generic_lambda.cpp:13:43 | std::vector::size
 

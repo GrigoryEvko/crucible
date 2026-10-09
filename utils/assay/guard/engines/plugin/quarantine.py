@@ -27,12 +27,9 @@ THE ENTITY
     The ledger counts the findings of each file, kind and entity.  The entity
     of a row is the part of the entity of a finding that names what the
     plugin refuses (entity_key):
-      * std-object and c-library-object: the library class without the type
-        in parentheses, for example std::vector
       * raw-pointer-object, raw-function-pointer and c-array-object: no
-        entity.  Their text is a type of the code.  An alias in a different
-        file can change that text in a file that no change touched
-      * raw-new-delete: the operator without the type of the expression
+        entity.  The plugin gives the name of the declaration, and the row
+        counts the findings of the file and the kind
       * `layer-header`: the header that the include names, for example
         <vector>, without the layer of the file
       * `upward-include`: the file that the include names, without the two
@@ -40,8 +37,9 @@ THE ENTITY
       * opted-out: "REASON | KIND ENTITY", the reason of the region, and the
         kind and the entity of the finding in it
       * region: the reason of the region
-      * each other kind: the full text, for example std::span::operator[],
-        memcpy, or the header of a `door-header` include
+      * each other kind: the full text, for example std::span,
+        std::span::operator[], memcpy, new, or the header of a `door-header`
+        include
     The entity holds no line, and a change that only moves code keeps each
     row.  A change that removes std::vector from a file and adds std::map to
     it increases the count of std::map, and the rule refuses that change.
@@ -49,6 +47,22 @@ THE ENTITY
     A row of an include then holds no layer.  A file that git moves to a
     different layer keeps the rows of its includes.  The message of each
     finding keeps the full text, with the layers.
+
+    The rule counts each finding line of the build one time.  One
+    declaration must then give one line in each unit.  Because of this, the
+    entity of an object finding holds no printed type.  GCC prints a type with
+    the template arguments and the parameter names of the first
+    specialization that the unit made with the same arguments.  One
+    declaration of a header then gave std::span<unsigned char> in one unit and
+    std::span<unsigned char, 18446744073709551615> in a different unit, and
+    the count of the file changed with the other units of the build.  The
+    plugin writes these entities (utils/tools/quarantine/declaration.cpp, THE
+    ENTITY OF AN OBJECT):
+      * std-object and c-library-object: the library class with no template
+        argument, for example std::span
+      * raw-pointer-object, raw-function-pointer and c-array-object: the name
+        of the declaration
+      * raw-new-delete: the operator, for example new or placement new.
 
 THE LEDGER
     utils/ledgers/quarantine.txt holds the count of each file, kind and
@@ -178,19 +192,14 @@ OPTED_OUT = quarantine_sections.OPTED_OUT
 REGION = quarantine_sections.REGION
 # The kinds that --admit writes with a count more than their rows: a region that covers more, and a new region.
 ADMITTED_KINDS = frozenset((OPTED_OUT, REGION))
-# The kinds with the entity "NAME (TYPE)": the entity of a row is the library name (THE ENTITY).
-NAME_KINDS = frozenset(("std-object", "c-library-object"))
-# The kinds with an entity that is a type of the code: a row has no entity.
-TYPE_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
-NEW_DELETE_KIND = "raw-new-delete"
+# The kinds with the name of a declaration as the entity: a row has no entity (THE ENTITY).
+DECLARATION_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
 # The kinds of an include.  Each kind gives the text after the header or the target in its entity, and the start of
 # that text that the key keeps.  The plugin writes "<HEADER> in ALLOWANCE" and "TARGET (LAYER) from the layer LAYER"
 # (utils/tools/quarantine/include.cpp).
 INCLUDE_KIND_ENDS = {"layer-header": ("> in ", ">"), "upward-include": (" (", "")}
 # The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
 REASON_SEPARATOR = " | "
-# The operators of a new-expression, the longest first.  The type after the operator is not part of the entity.
-NEW_OPERATORS = ("placement new", "new")
 # The rule table of a tree, relative to its root.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 # The highest character, which sorts after each reason of a region.
@@ -235,15 +244,7 @@ def entity_key(kind: str, entity: str) -> str:
     text = " ".join(entity.split())
     if kind in INCLUDE_KIND_ENDS:
         return include_key(kind, text)
-    if kind in NAME_KINDS:
-        return text.split(" (", 1)[0]
-    if kind in TYPE_KINDS:
-        return ""
-    if kind == NEW_DELETE_KIND:
-        return next(
-            (operator for operator in NEW_OPERATORS if text == operator or text.startswith(f"{operator} ")), text
-        )
-    return text
+    return "" if kind in DECLARATION_KINDS else text
 
 
 def opted_out_key(reason: str, entity: str) -> str:

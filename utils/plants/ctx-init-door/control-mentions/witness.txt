@@ -5,7 +5,7 @@
 compile note src/note.cpp stage=c
 exit note pass
 judge note
-finding note quarantine c-array-object src/note.cpp:7:16 | const char [31]
+finding note quarantine c-array-object src/note.cpp:7:16 | note
 
 compile door test/door.cpp stage=c
 exit door pass

@@ -5,4 +5,4 @@ compile unit test/store.cpp stage=c
 exit unit pass
 judge unit
 finding unit padded-list padded-member include/crucible/Store.h:13:29 | plant::Store::slots: plant::Padded \| count=100 holes=56
-finding unit quarantine std-object include/crucible/Store.h:13:29 | std::array (std::array<plant::Padded, 100>)
+finding unit quarantine std-object include/crucible/Store.h:13:29 | std::array

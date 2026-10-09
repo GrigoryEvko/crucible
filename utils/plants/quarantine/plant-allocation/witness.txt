@@ -9,7 +9,7 @@ finding report quarantine std-entity allocation.cpp:8:32 | std::size_t
 finding report quarantine c-library-call allocation.cpp:8:63 | malloc (__builtin_malloc)
 finding report quarantine std-entity allocation.cpp:11:43 | std::size_t
 finding report quarantine raw-new-delete allocation.cpp:12:17 | declaration of operator delete
-finding report quarantine raw-pointer-object allocation.cpp:12:39 | void*
+finding report quarantine raw-pointer-object allocation.cpp:12:39 | pointer
 
 compile error allocation.cpp mode=error out=no errors=report
 exit error fail

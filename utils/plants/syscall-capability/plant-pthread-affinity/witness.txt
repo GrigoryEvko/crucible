@@ -6,6 +6,6 @@ compile pin src/pin.cpp stage=c
 exit pin pass
 judge pin
 finding pin quarantine c-library-call src/pin.cpp:8:82 | pthread_setaffinity_np
-finding pin quarantine c-library-object src/pin.cpp:8:44 | cpu_set_t (const cpu_set_t&)
+finding pin quarantine c-library-object src/pin.cpp:8:44 | cpu_set_t
 finding pin syscall-capability outside-door src/pin.cpp:8:82 | planted::pin(pthread_t, const cpu_set_t&): pthread_setaffinity_np
 finding pin syscall-capability raw-syscall src/pin.cpp:8:82 | planted::pin(pthread_t, const cpu_set_t&): pthread_setaffinity_np

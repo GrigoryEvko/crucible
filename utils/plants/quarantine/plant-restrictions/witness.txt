@@ -10,9 +10,9 @@ exit clean pass
 compile move-algorithm restricted.cpp mode=error out=no
 flag move-algorithm -DPLANT_MOVE_ALGORITHM
 exit move-algorithm fail
-error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
-error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
-error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object int*;
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object first;
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object last;
+error move-algorithm restricted.cpp:51 | quarantine: raw-pointer-object out;
 error move-algorithm restricted.cpp:51 | quarantine: std-entity std::move;
 
 # The restriction concepts admits the concepts of <concepts> only.
@@ -26,7 +26,7 @@ error ranges-swap restricted.cpp:55 | quarantine: std-entity std::ranges::__swap
 compile list-object restricted.cpp mode=error out=no
 flag list-object -DPLANT_LIST_OBJECT
 exit list-object fail
-error list-object restricted.cpp:59 | quarantine: std-object std::initializer_list (std::initializer_list<int>);
+error list-object restricted.cpp:59 | quarantine: std-object std::initializer_list;
 
 # The row of std::byte admits the type, and not the functions of the header.
 compile to-integer restricted.cpp mode=error out=no
@@ -43,7 +43,7 @@ error byte-operator restricted.cpp:67 | quarantine: std-entity std::operator<<;
 compile alignment restricted.cpp mode=error out=no
 flag alignment -DPLANT_ALIGNMENT
 exit alignment fail
-error alignment restricted.cpp:71 | quarantine: std-object std::align_val_t (std::align_val_t);
+error alignment restricted.cpp:71 | quarantine: std-object std::align_val_t;
 
 # The restriction plain-result refuses a result that holds a bool or an
 # enumeration, also in a member, a base or an array, and a dependent result.
@@ -70,7 +70,7 @@ error bit-cast-base restricted.cpp:97 | quarantine: std-entity std::bit_cast;
 compile bit-cast-array restricted.cpp mode=error out=no
 flag bit-cast-array -DPLANT_BIT_CAST_ARRAY
 exit bit-cast-array fail
-error bit-cast-array restricted.cpp:102 | quarantine: c-array-object PlantColor [2];
+error bit-cast-array restricted.cpp:102 | quarantine: c-array-object colors;
 error bit-cast-array restricted.cpp:104 | quarantine: std-entity std::bit_cast;
 
 compile bit-cast-dependent restricted.cpp mode=error out=no

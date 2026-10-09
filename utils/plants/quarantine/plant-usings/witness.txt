@@ -10,8 +10,8 @@ finding report quarantine std-entity usings.cpp:17:9 | std::swap
 finding report quarantine std-entity usings.cpp:22:16 | std::swap
 finding report quarantine std-entity usings.cpp:23:9 | std::swap
 finding report quarantine std-entity usings.cpp:26:47 | std::pmr
-finding report quarantine raw-pointer-object usings.cpp:28:29 | char*
-finding report quarantine raw-pointer-object usings.cpp:28:49 | const char*
+finding report quarantine raw-pointer-object usings.cpp:28:29 | target
+finding report quarantine raw-pointer-object usings.cpp:28:49 | source
 finding report quarantine c-library-call usings.cpp:29:16 | memcpy
 finding report quarantine c-library-call usings.cpp:30:11 | memcpy
 

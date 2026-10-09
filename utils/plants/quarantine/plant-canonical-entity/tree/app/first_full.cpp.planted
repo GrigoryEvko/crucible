@@ -1,0 +1,13 @@
+// This unit makes the specializations of the header first.  The alias gives
+// each argument of std::span, also the default extent, and the declaration
+// gives std::array a parameter with a different name.
+
+#include <array>
+#include <span>
+
+using FullSpan = std::span<unsigned char, static_cast<unsigned long>(-1)>;
+
+template <unsigned long Other>
+int other_count(std::array<int, Other>& values);
+
+#include "Span.h"

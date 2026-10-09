@@ -305,9 +305,26 @@ std::string qualified_name(tree decl) {
     return joined;
 }
 
+// The flags of each text that the plugin prints from a type or a declaration.
+// GCC prints a default template argument only when the first specialization
+// of the unit with those arguments named it.  One header then gives
+// std::span<unsigned char> in one unit and
+// std::span<unsigned char, 18446744073709551615> in a different unit.  With
+// this flag, GCC prints each template argument, and a type gives one text in
+// each unit.  But a dependent type prints the parameter names of the first
+// template of the unit that made the same specialization.  The entity of an
+// object finding holds no printed type because of this (declaration.cpp, THE
+// ENTITY OF AN OBJECT).
+constexpr int kPrintFlags = TFF_NO_OMIT_DEFAULT_TEMPLATE_ARGUMENTS;
+
 std::string type_text(tree type) {
-    const char* printed = type_as_string(type, 0);
+    const char* printed = type_as_string(type, kPrintFlags);
     return printed != nullptr ? std::string(printed) : std::string("(type)");
+}
+
+std::string declaration_text(tree decl) {
+    const char* printed = decl_as_string(decl, kPrintFlags | TFF_NO_TEMPLATE_BINDINGS);
+    return printed != nullptr ? std::string(printed) : qualified_name(decl);
 }
 
 // ── The library and the admitted list ───────────────────────────────────

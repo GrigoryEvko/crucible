@@ -14,6 +14,6 @@ finding routes proof-routes pointer-cast src/routes.cpp:13:42 | pointer-cast: fo
 finding routes proof-routes function-specialization src/routes.cpp:15:17 | function-specialization: forge::route
 finding routes proof-routes member-pointer-specialization src/routes.cpp:17:20 | member-pointer-specialization: forge::Steal
 finding routes proof-routes friend-template-specialization src/routes.cpp:19:19 | friend-template-specialization: forge::Opener
-finding routes quarantine raw-pointer-object src/routes.cpp:11:23 | void*
-finding routes quarantine raw-pointer-object src/routes.cpp:13:27 | void*
-finding routes quarantine raw-pointer-object src/routes.cpp:15:29 | forge::Door*
+finding routes quarantine raw-pointer-object src/routes.cpp:11:23 | raw
+finding routes quarantine raw-pointer-object src/routes.cpp:13:27 | raw
+finding routes quarantine raw-pointer-object src/routes.cpp:15:29 | (unnamed)

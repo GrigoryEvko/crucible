@@ -3,10 +3,10 @@
 
 compile report reopened_std.cpp
 exit report pass
-finding report quarantine raw-pointer-object reopened_std.cpp:14:13 | int*
-finding report quarantine std-object reopened_std.cpp:19:22 | std::vector (std::vector<int>)
+finding report quarantine raw-pointer-object reopened_std.cpp:14:13 | reopened_pointer
+finding report quarantine std-object reopened_std.cpp:19:22 | std::vector
 finding report quarantine std-entity reopened_std.cpp:20:17 | std::size_t
-finding report quarantine raw-pointer-object reopened_std.cpp:24:13 | int*
+finding report quarantine raw-pointer-object reopened_std.cpp:24:13 | gnu_pointer
 
 compile error reopened_std.cpp mode=error out=no errors=report
 exit error fail

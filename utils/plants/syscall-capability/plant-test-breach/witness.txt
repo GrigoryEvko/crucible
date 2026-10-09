@@ -7,5 +7,5 @@ compile pin test/pin.cpp stage=c
 exit pin pass
 judge pin
 finding pin quarantine c-library-call test/pin.cpp:7:59 | sched_setaffinity
-finding pin quarantine c-library-object test/pin.cpp:7:26 | cpu_set_t (const cpu_set_t&)
+finding pin quarantine c-library-object test/pin.cpp:7:26 | cpu_set_t
 finding pin syscall-capability outside-door test/pin.cpp:7:59 | planted::pin(const cpu_set_t&): sched_setaffinity

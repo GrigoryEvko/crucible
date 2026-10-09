@@ -5,5 +5,5 @@
 
 compile sentinel src/use.cpp sentinel=include/fixy/os/CpuPinned.h stage=c
 exit sentinel pass
-finding sentinel quarantine c-library-object src/use.cpp:6:26 | cpu_set_t (const cpu_set_t&)
+finding sentinel quarantine c-library-object src/use.cpp:6:26 | cpu_set_t
 finding sentinel syscall-capability raw-syscall include/fixy/os/CpuPinned.h:10:31 | fixy::detail::set_calling_thread_affinity(const cpu_set_t&): sched_setaffinity

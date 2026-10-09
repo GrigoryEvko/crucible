@@ -3,12 +3,12 @@
 
 compile report opt_out.cpp
 exit report pass
-finding report quarantine raw-pointer-object opt_out.cpp:8:26 | char*
+finding report quarantine raw-pointer-object opt_out.cpp:8:26 | bytes
 finding report quarantine c-library-call opt_out.cpp:8:46 | memset
 finding report quarantine region opt_out.cpp:10:1 | PROBE: the test needs a raw buffer
-finding report quarantine opted-out opt_out.cpp:11:26 | raw-pointer-object char*
+finding report quarantine opted-out opt_out.cpp:11:26 | raw-pointer-object bytes
 finding report quarantine opted-out opt_out.cpp:11:46 | c-library-call memset
-finding report quarantine raw-pointer-object opt_out.cpp:14:25 | char*
+finding report quarantine raw-pointer-object opt_out.cpp:14:25 | bytes
 finding report quarantine c-library-call opt_out.cpp:14:45 | memset
 
 compile error opt_out.cpp mode=error out=no errors=report

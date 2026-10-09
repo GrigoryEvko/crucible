@@ -321,7 +321,9 @@
 //     .crucible.quarantine of the object, in each mode (plugin.cpp).  The
 //     first line is "# crucible-guard 2 stamp=TEXT", and each other line is
 //     "RULE KIND PATH:LINE:COLUMN ENTITY".  utils/assay/readers/sections.py
-//     reads the section.
+//     reads the section.  The entity of an object finding holds no printed
+//     type, and one declaration then gives one line in each unit
+//     (declaration.cpp, THE ENTITY OF AN OBJECT).
 //
 // Each source includes this header before any other header, because the
 // headers of GCC rename some functions of the C library: the standard headers
@@ -1924,7 +1926,11 @@ enum class Library : std::uint8_t {
 std::string identifier_text(tree identifier);
 std::string simple_name(tree decl);
 std::string qualified_name(tree decl);
+// The text of a type or of a declaration, with each template argument
+// (library.cpp, kPrintFlags).  The plugin prints each type and each
+// declaration of an entity with these two functions only.
 std::string type_text(tree type);
+std::string declaration_text(tree decl);
 tree top_namespace(tree decl);
 Library library_of(tree decl);
 const AdmitRow* admitting_row_of_name(const std::string& name, const FileEntry* language = nullptr);

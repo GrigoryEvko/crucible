@@ -1402,7 +1402,7 @@ def build_flags_error(plant: Plant) -> Cases | str:
             "with the flags of the build, an enforce row with the mode error fails the compile of the plant",
             failed.exit != 0
             and [message.split(";")[0] for _, message in failed.errors]
-            == [f"{QUARANTINE_PREFIX}raw-pointer-object int*"],
+            == [f"{QUARANTINE_PREFIX}raw-pointer-object build_plant_pointer"],
             str(failed.errors),
         )
     ]

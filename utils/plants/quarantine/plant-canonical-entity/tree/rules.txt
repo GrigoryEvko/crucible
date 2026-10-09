@@ -1,0 +1,4 @@
+# The rule table of this plant.  It admits no library name, so each name of
+# the standard library that the plant spells is a finding.
+
+quarantine app/

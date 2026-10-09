@@ -1,0 +1,24 @@
+// A header that two units include after different code.  GCC prints a type
+// with the arguments and the parameter names of the first specialization that
+// the unit made with the same arguments.  Each object of this header must
+// then give the same finding in each unit, also when the units print its type
+// in two forms.
+
+#pragma once
+
+#include <array>
+#include <span>
+
+inline int span_bytes(std::span<unsigned char> bytes) {
+    static_cast<void>(bytes);
+    return 0;
+}
+
+inline int span_pointer(std::span<unsigned char>* pointer) { return pointer != nullptr ? 1 : 0; }
+
+template <unsigned long Count>
+int count_values() {
+    std::array<int, Count> values{};
+    static_cast<void>(values);
+    return 0;
+}

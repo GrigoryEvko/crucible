@@ -14,4 +14,4 @@ finding macros proof-routes explicit-instantiation src/macros.cpp:19:1 | explici
 finding macros proof-routes explicit-instantiation src/macros.cpp:21:1 | explicit-instantiation: forge::Box<char>
 finding macros proof-routes raw-allocation src/macros.cpp:23:31 | raw-allocation: forge::Door
 finding macros proof-routes raw-allocation src/macros.cpp:25:46 | raw-allocation: forge::Door
-finding macros quarantine raw-pointer-object src/macros.cpp:13:21 | void*
+finding macros quarantine raw-pointer-object src/macros.cpp:13:21 | raw

@@ -1,0 +1,4 @@
+// The header makes each specialization first, with no default argument and
+// with the parameter names of its own templates.
+
+#include "Span.h"

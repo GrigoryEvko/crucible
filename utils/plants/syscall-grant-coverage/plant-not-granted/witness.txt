@@ -11,9 +11,9 @@ finding uses quarantine c-library-call include/crucible/warden/Hardening.h:27:20
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:29:18 | mlock
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:30:18 | munlock
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:31:20 | prctl
-finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:31:10 | int (*)(int, ...) noexcept
+finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:31:10 | control
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:33:21 | close
-finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:33:10 | int (*)(int)
+finding uses quarantine raw-function-pointer include/crucible/warden/Hardening.h:33:10 | closer
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:35:20 | syscall
 finding uses quarantine c-library-call include/crucible/warden/Hardening.h:38:4 | munlockall
 finding uses syscall-grant-coverage not-granted include/crucible/warden/Hardening.h:29:18 | mlock

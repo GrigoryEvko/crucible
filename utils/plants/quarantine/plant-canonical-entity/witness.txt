@@ -1,0 +1,29 @@
+# One object of a header gives one finding in each unit that includes it.  The
+# unit first_full makes the specializations of std::span and std::array first.
+# GCC then prints the types of the header there with the default extent and
+# with the parameter name Other.  The unit first_default prints them with no
+# extent and with the parameter name Count.  The entity of each object holds
+# no printed type, and the two units then give the same finding lines for the
+# header.
+
+compile first-default app/first_default.cpp
+exit first-default pass
+finding first-default quarantine std-object app/Span.h:12:48 | std::span
+finding first-default quarantine std-object app/Span.h:17:51 | std::span
+finding first-default quarantine raw-pointer-object app/Span.h:17:51 | pointer
+finding first-default quarantine std-object app/Span.h:21:28 | std::array
+
+compile first-full app/first_full.cpp
+exit first-full pass
+finding first-full quarantine std-entity app/first_full.cpp:8:7 | std::span
+finding first-full quarantine std-object app/first_full.cpp:11:41 | std::array
+finding first-full quarantine std-object app/Span.h:12:48 | std::span
+finding first-full quarantine std-object app/Span.h:17:51 | std::span
+finding first-full quarantine raw-pointer-object app/Span.h:17:51 | pointer
+finding first-full quarantine std-object app/Span.h:21:28 | std::array
+
+compile error-default app/first_default.cpp mode=error out=no errors=first-default
+exit error-default fail
+
+compile error-full app/first_full.cpp mode=error out=no errors=first-full
+exit error-full fail

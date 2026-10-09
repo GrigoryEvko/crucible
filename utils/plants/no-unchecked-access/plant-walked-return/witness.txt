@@ -12,5 +12,5 @@ finding walk no-unchecked-access unchecked-use src/walk.cpp:17:93 | planted::pri
 finding walk no-unchecked-access walked-return src/walk.cpp:12:27 | planted::private_member(): walked return
 finding walk no-unchecked-access walked-return src/walk.cpp:16:27 | planted::private_member_through_local(): walked return
 finding walk quarantine std-entity src/walk.cpp:13:99 | std::vector::operator[]
-finding walk quarantine std-object src/walk.cpp:17:10 | std::vector (std::vector<std::meta::info>)
+finding walk quarantine std-object src/walk.cpp:17:10 | std::vector
 finding walk quarantine std-entity src/walk.cpp:18:25 | std::vector::front

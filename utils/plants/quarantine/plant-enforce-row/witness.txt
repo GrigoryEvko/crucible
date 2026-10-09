@@ -3,5 +3,5 @@
 
 compile report enforced.cpp
 exit report fail
-finding report quarantine raw-pointer-object enforced.cpp:4:6 | int*
-error report enforced.cpp:4 | quarantine: raw-pointer-object int*;
+finding report quarantine raw-pointer-object enforced.cpp:4:6 | enforced_pointer
+error report enforced.cpp:4 | quarantine: raw-pointer-object enforced_pointer;

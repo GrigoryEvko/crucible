@@ -10,8 +10,8 @@ compile error generated_unit.cpp mode=error build=planted-build out=no
 flag error -fcontracts
 exit error fail
 error error planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
-error error planted-build/Generated.h:6 | quarantine: raw-pointer-object char*;
-error error planted-build/Generated.h:7 | quarantine: raw-pointer-object char*;
+error error planted-build/Generated.h:6 | quarantine: raw-pointer-object generated_pointer;
+error error planted-build/Generated.h:7 | quarantine: raw-pointer-object generated_expanded_pointer;
 
 # The place in a generated macro on line 7 is a place of the generated file.
 compile report generated_unit.cpp build=planted-build
@@ -20,8 +20,8 @@ exit report fail
 finding report quarantine region @build/Generated.h:2:1 | PROBE: a generated header that the test needs
 finding report quarantine opted-out @build/Generated.h:3:32 | contract-specifier pre
 finding report contract-specifier contract-specifier @build/Generated.h:5:32 | pre
-finding report quarantine raw-pointer-object @build/Generated.h:6:14 | char*
-finding report quarantine raw-pointer-object @build/Generated.h:7:33 | char*
+finding report quarantine raw-pointer-object @build/Generated.h:6:14 | generated_pointer
+finding report quarantine raw-pointer-object @build/Generated.h:7:33 | generated_expanded_pointer
 error report planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
 
 # An unclosed region of a generated file is an error in each mode.
@@ -40,7 +40,7 @@ exit outside fail
 finding outside quarantine region @build/Generated.h:2:1 | PROBE: a generated header that the test needs
 finding outside quarantine opted-out @build/Generated.h:3:32 | contract-specifier pre
 finding outside contract-specifier contract-specifier @build/Generated.h:5:32 | pre
-finding outside quarantine raw-pointer-object @build/Generated.h:6:14 | char*
+finding outside quarantine raw-pointer-object @build/Generated.h:6:14 | generated_pointer
 error outside ../outside-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
 
 compile unrowed generated_unit.cpp rules=rules-without-build.txt build=planted-build out=no

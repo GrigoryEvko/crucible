@@ -21,7 +21,7 @@ finding allocate quarantine raw-new-delete src/allocate.cpp:15:44 | new
 finding allocate quarantine raw-new-delete src/allocate.cpp:17:52 | new
 finding allocate quarantine c-library-call src/allocate.cpp:19:39 | malloc
 finding allocate quarantine c-library-call src/allocate.cpp:21:39 | calloc
-finding allocate quarantine raw-pointer-object src/allocate.cpp:23:24 | void*
+finding allocate quarantine raw-pointer-object src/allocate.cpp:23:24 | old
 finding allocate quarantine c-library-call src/allocate.cpp:23:50 | realloc
 finding allocate quarantine c-library-call src/allocate.cpp:25:53 | aligned_alloc
 finding allocate quarantine c-library-call src/allocate.cpp:27:59 | malloc

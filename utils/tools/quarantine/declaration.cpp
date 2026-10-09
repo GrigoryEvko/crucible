@@ -31,6 +31,26 @@
 //     not a template is gone, so PLUGIN_PRE_GENERICIZE keeps the facts of each
 //     body that a rule reads, by DECL_UID.  A template pattern keeps its body.
 //
+// THE ENTITY OF AN OBJECT
+//     The rule quarantine counts each finding line of a build one time, and
+//     the key of its ledger row holds no printed type (THE ENTITY of
+//     utils/assay/guard/engines/plugin/quarantine.py).  GCC prints a type with
+//     the template arguments and the parameter names of the first
+//     specialization that the unit made with the same arguments.  One
+//     declaration of a header then gave std::span<unsigned char> in one unit
+//     and std::span<unsigned char, 18446744073709551615> in a different unit.
+//     A pattern and its instantiation also print one declaration in two
+//     forms.  Because of this, the entity of an object finding holds no
+//     printed type:
+//         std-object, c-library-object   the library class with no template
+//                                        argument, such as std::span
+//         raw-pointer-object,
+//         raw-function-pointer,
+//         c-array-object                 the name of the declaration
+//         raw-new-delete                 the operator (expression.cpp)
+//     One declaration then gives one finding line in each unit.
+//     record_library_object and record_raw_object give each such entity.
+//
 // THE RULE mint-pattern (CLAUDE.md section XXI)
 //     A mint is a function whose name starts with mint_ and does not end with
 //     an underscore, which is not deleted.  A function that only a friend
@@ -220,13 +240,27 @@ namespace {
 void walk_template(tree template_decl);
 void walk_namespace(tree ns);
 
+// The finding of the declaration DECL, whose type is a raw pointer, a member
+// pointer or a C array.  Its entity is the name of the declaration (THE ENTITY
+// OF AN OBJECT).
+void record_raw_object(Kind kind, tree decl) { record(kind, DECL_SOURCE_LOCATION(decl), simple_name(decl)); }
+
+// The finding of a declaration at LOCATION whose type holds REFUSED, a
+// library class that no admit row admits.  Its entity is the class with no
+// template argument (THE ENTITY OF AN OBJECT).  LANGUAGE is null in a
+// quarantined file.  In a file of the language, LANGUAGE names that file.
+void record_library_object(tree refused, location_t location, const FileEntry* language) {
+    Kind kind = library_of(TYPE_MAIN_DECL(refused)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
+    record_declared(kind, location, qualified_name(refused), language);
+}
+
 // The type that an instantiation deduces for a declaration whose template
 // spells a placeholder, such as `auto held = make(value);` with a dependent
 // initializer.  The code holds an object of that type, as it holds one that a
-// placeholder declares outside a template.  The entity names the class or the
-// kind of the pointer, and not the template arguments of one instantiation,
-// so each instantiation gives the same finding.  The walk of a quarantined
-// file only calls it.
+// placeholder declares outside a template.  The entity is the entity of the
+// declaration in the pattern (THE ENTITY OF AN OBJECT).  Each instantiation
+// and the pattern then give one finding.  The walk of a quarantined file only
+// calls it.
 void check_deduced_object(tree decl, Role role) {
     tree type = role == Role::return_value ? TREE_TYPE(TREE_TYPE(decl)) : TREE_TYPE(decl);
     if (type == NULL_TREE || type == error_mark_node || type_uses_auto(type) != NULL_TREE) {
@@ -234,17 +268,14 @@ void check_deduced_object(tree decl, Role role) {
     }
     location_t location = DECL_SOURCE_LOCATION(decl);
     if (role != Role::return_value && TREE_CODE(type) == POINTER_TYPE) {
-        bool is_function = FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type));
-        record(is_function ? Kind::raw_function_pointer : Kind::raw_pointer_object, location,
-               is_function ? "deduced function pointer" : "deduced pointer");
+        record_raw_object(
+            FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? Kind::raw_function_pointer : Kind::raw_pointer_object, decl);
     } else if (role != Role::return_value && TYPE_PTRMEM_P(type)) {
-        record(Kind::raw_function_pointer, location, "deduced member pointer");
+        record_raw_object(Kind::raw_function_pointer, decl);
     }
     LibraryClasses classes = library_class_in(type, 0, Use::other);
     if (classes.refused != NULL_TREE && !classes.is_refused_name) {
-        bool is_c_library = library_of(TYPE_MAIN_DECL(classes.refused)) == Library::c_library;
-        record(is_c_library ? Kind::c_library_object : Kind::std_object, location,
-               qualified_name(classes.refused) + " (deduced)");
+        record_library_object(classes.refused, location, nullptr);
     }
     record_pending_class(classes, location);
 }
@@ -565,13 +596,13 @@ void check_object(tree decl, Role role) {
     walk_decltype(type, location);
     if (language == nullptr && role != Role::return_value) {
         if (TREE_CODE(type) == POINTER_TYPE) {
-            bool is_function = FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type));
-            record(is_function ? Kind::raw_function_pointer : Kind::raw_pointer_object, location, type_text(type));
+            record_raw_object(
+                FUNC_OR_METHOD_TYPE_P(TREE_TYPE(type)) ? Kind::raw_function_pointer : Kind::raw_pointer_object, decl);
         } else if (TYPE_PTRMEM_P(type)) {
-            record(Kind::raw_function_pointer, location, type_text(type));
+            record_raw_object(Kind::raw_function_pointer, decl);
         }
         if (role != Role::parameter && TREE_CODE(type) == ARRAY_TYPE) {
-            record(Kind::c_array_object, location, type_text(type));
+            record_raw_object(Kind::c_array_object, decl);
         }
     }
     Use use = role == Role::parameter ? Use::parameter : Use::other;
@@ -581,9 +612,7 @@ void check_object(tree decl, Role role) {
         // standard library, and nothing for a struct of the C library, whose
         // objects get their findings where the code declares them.
         if (!classes.is_refused_name) {
-            Kind kind =
-                library_of(TYPE_MAIN_DECL(found)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
-            record_declared(kind, location, qualified_name(found) + " (" + type_text(type) + ")", language);
+            record_library_object(found, location, language);
         } else if (is_standard_class(found)) {
             record_declared(Kind::std_entity, location, qualified_name(found), language);
         }
@@ -809,9 +838,12 @@ void check_instantiation(tree function) {
 }
 
 // The qualified name of FUNCTION with the types of its parameters and its
-// qualifiers, such as fixy::Holder::mint_view(const Carrier&) const.  The
-// types are the spellings of GCC, so each unit gives one text for one
-// function.  Complexity: O(parameters).
+// qualifiers, such as fixy::Holder::mint_view(const Carrier&) const.  type_text
+// prints each template argument, also a default one.  A default argument then
+// gives one text in each unit.  But a parameter of a dependent type prints the
+// parameter names of the first template of the unit that made the same
+// specialization, and two units can give two such names.  Complexity:
+// O(parameters).
 std::string function_signature(tree function) {
     std::string text = qualified_name(function) + '(';
     bool is_first = true;

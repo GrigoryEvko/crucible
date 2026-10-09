@@ -1,40 +1,42 @@
 # The classes of finding of violations.cpp, and the uses that the plugin must
 # not report: a fundamental type through a typedef, an admitted name, a
 # dependent member, base code and a default argument that the base spells.
-# Each stage of the unit gives the same findings.
+# Each stage of the unit gives the same findings.  The entity of an object
+# holds no printed type: a library class, the name of a raw declaration, or
+# the operator of a new-expression.
 
 compile report violations.cpp
 exit report pass
-finding report quarantine std-object violations.cpp:15:18 | std::vector (std::vector<int>)
-finding report quarantine raw-pointer-object violations.cpp:18:10 | int*
-finding report quarantine c-array-object violations.cpp:19:9 | int [4]
-finding report quarantine raw-function-pointer violations.cpp:20:12 | void (*)(int)
-finding report quarantine raw-function-pointer violations.cpp:21:19 | int probe::Holder::*
-finding report quarantine std-object violations.cpp:22:17 | std::basic_string (std::string)
-finding report quarantine std-object violations.cpp:29:13 | std::basic_string (std::string)
-finding report quarantine std-object violations.cpp:29:41 | std::basic_string (const std::string&)
-finding report quarantine raw-pointer-object violations.cpp:31:23 | char*
-finding report quarantine raw-pointer-object violations.cpp:31:43 | const char*
+finding report quarantine std-object violations.cpp:15:18 | std::vector
+finding report quarantine raw-pointer-object violations.cpp:18:10 | raw_member
+finding report quarantine c-array-object violations.cpp:19:9 | array_member
+finding report quarantine raw-function-pointer violations.cpp:20:12 | callback
+finding report quarantine raw-function-pointer violations.cpp:21:19 | member_pointer
+finding report quarantine std-object violations.cpp:22:17 | std::basic_string
+finding report quarantine std-object violations.cpp:29:13 | std::basic_string
+finding report quarantine std-object violations.cpp:29:41 | std::basic_string
+finding report quarantine raw-pointer-object violations.cpp:31:23 | target
+finding report quarantine raw-pointer-object violations.cpp:31:43 | source
 finding report quarantine c-library-call violations.cpp:31:64 | memcpy
-finding report quarantine raw-pointer-object violations.cpp:34:10 | int*
+finding report quarantine raw-pointer-object violations.cpp:34:10 | made
 finding report quarantine raw-new-delete violations.cpp:34:26 | new
 finding report quarantine raw-new-delete violations.cpp:36:12 | delete
 finding report quarantine std-entity violations.cpp:40:13 | std::size_t
-finding report quarantine raw-pointer-object violations.cpp:40:39 | const char*
+finding report quarantine raw-pointer-object violations.cpp:40:39 | text
 finding report quarantine c-library-call violations.cpp:40:65 | strlen
-finding report quarantine std-object violations.cpp:43:22 | std::vector (std::vector<int>)
+finding report quarantine std-object violations.cpp:43:22 | std::vector
 finding report quarantine std-entity violations.cpp:44:14 | std::swap
 finding report quarantine std-entity violations.cpp:44:24 | std::vector::operator[]
 finding report quarantine std-entity violations.cpp:44:36 | std::vector::operator[]
-finding report quarantine std-object violations.cpp:54:20 | std::vector (std::vector<T>)
+finding report quarantine std-object violations.cpp:54:20 | std::vector
 finding report quarantine c-library-call violations.cpp:57:20 | memcpy
-finding report quarantine c-array-object violations.cpp:64:10 | char [8]
-finding report quarantine c-library-object violations.cpp:69:22 | max_align_t (max_align_t)
-finding report quarantine raw-new-delete violations.cpp:75:12 | new T
+finding report quarantine c-array-object violations.cpp:64:10 | bytes
+finding report quarantine c-library-object violations.cpp:69:22 | max_align_t
+finding report quarantine raw-new-delete violations.cpp:75:12 | new
 finding report quarantine std-entity violations.cpp:83:13 | std::size_t
-finding report quarantine std-object violations.cpp:89:18 | std::basic_string_view (std::string_view)
-finding report quarantine std-object violations.cpp:89:45 | std::basic_string (const std::string&)
-finding report quarantine std-object violations.cpp:95:43 | std::atomic (const std::atomic<int>&)
+finding report quarantine std-object violations.cpp:89:18 | std::basic_string_view
+finding report quarantine std-object violations.cpp:89:45 | std::basic_string
+finding report quarantine std-object violations.cpp:95:43 | std::atomic
 finding report quarantine std-entity violations.cpp:95:73 | std::__atomic_base::load
 finding report quarantine std-entity violations.cpp:100:13 | std::size_t
 finding report quarantine std-entity violations.cpp:101:17 | std::size_t

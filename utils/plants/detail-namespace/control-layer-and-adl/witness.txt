@@ -7,9 +7,9 @@
 compile sentinel src/use.cpp sentinel=include/foundation/effects/Door.h stage=c
 exit sentinel pass
 judge sentinel
-finding sentinel quarantine c-array-object src/use.cpp:9:16 | const char [36]
+finding sentinel quarantine c-array-object src/use.cpp:9:16 | note
 
 compile use src/use.cpp stage=c
 exit use pass
 judge use
-finding use quarantine c-array-object src/use.cpp:9:16 | const char [36]
+finding use quarantine c-array-object src/use.cpp:9:16 | note

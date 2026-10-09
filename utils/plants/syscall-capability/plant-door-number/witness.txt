@@ -5,6 +5,6 @@ compile pin src/pin.cpp stage=c
 exit pin pass
 judge pin
 finding pin quarantine c-library-call src/pin.cpp:8:40 | syscall
-finding pin quarantine raw-pointer-object src/pin.cpp:8:16 | void*
+finding pin quarantine raw-pointer-object src/pin.cpp:8:16 | mask
 finding pin syscall-capability outside-door src/pin.cpp:8:40 | planted::pin(void*): syscall(SYS_sched_setaffinity)
 finding pin syscall-capability raw-syscall src/pin.cpp:8:40 | planted::pin(void*): syscall(SYS_sched_setaffinity)

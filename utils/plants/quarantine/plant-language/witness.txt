@@ -19,18 +19,18 @@ error door-header include/fixy/high/Language.h:25 | quarantine: door-header <sys
 compile member language_user.cpp out=no
 flag member -freflection -DPLANT_LANGUAGE_MEMBER
 exit member fail
-error member include/fixy/high/Language.h:64 | quarantine: std-object std::vector (std::vector<int>);
+error member include/fixy/high/Language.h:64 | quarantine: std-object std::vector;
 
 compile local language_user.cpp out=no
 flag local -freflection -DPLANT_LANGUAGE_LOCAL
 exit local fail
-error local include/fixy/high/Language.h:70 | quarantine: std-object std::vector (std::vector<int>);
+error local include/fixy/high/Language.h:70 | quarantine: std-object std::vector;
 error local include/fixy/high/Language.h:71 | quarantine: std-entity std::vector::size;
 
 compile parameter language_user.cpp out=no
 flag parameter -freflection -DPLANT_LANGUAGE_PARAMETER
 exit parameter fail
-error parameter include/fixy/high/Language.h:76 | quarantine: std-object std::source_location (std::source_location);
+error parameter include/fixy/high/Language.h:76 | quarantine: std-object std::source_location;
 error parameter include/fixy/high/Language.h:76 | quarantine: std-entity std::source_location::line;
 
 compile alias language_user.cpp out=no
@@ -51,7 +51,7 @@ error base include/fixy/high/Language.h:88 | quarantine: std-entity std::vector;
 compile template language_user.cpp out=no
 flag template -freflection -DPLANT_LANGUAGE_TEMPLATE
 exit template fail
-error template include/fixy/high/Language.h:94 | quarantine: std-object std::vector (std::vector<T>);
+error template include/fixy/high/Language.h:94 | quarantine: std-object std::vector;
 
 compile std-call language_user.cpp out=no
 flag std-call -freflection -DPLANT_LANGUAGE_STD_CALL
@@ -62,5 +62,5 @@ error std-call include/fixy/high/Language.h:55 | quarantine: std-entity std::swa
 compile runtime-vector language_user.cpp out=no
 flag runtime-vector -freflection -DPLANT_LANGUAGE_RUNTIME_VECTOR
 exit runtime-vector fail
-error runtime-vector include/fixy/high/Language.h:59 | quarantine: std-object std::vector (const std::vector<int>&);
+error runtime-vector include/fixy/high/Language.h:59 | quarantine: std-object std::vector;
 error runtime-vector include/fixy/high/Language.h:59 | quarantine: std-entity std::vector::size;

@@ -1,13 +1,15 @@
 # A placeholder with a dependent initializer holds the deduced library class
 # of each instantiation.  A type that a template parameter gives is no finding
 # in the instantiation (line 25), and the call on line 34 deduces its argument
-# from an object with a finding of its own.
+# from an object with a finding of its own.  The entity names the class with
+# no template argument, and each instantiation and the pattern then give one
+# line.
 
 compile report deduced.cpp
 exit report pass
-finding report quarantine std-object deduced.cpp:13:10 | std::vector (deduced)
-finding report quarantine std-object deduced.cpp:19:6 | std::vector (deduced)
-finding report quarantine std-object deduced.cpp:33:22 | std::vector (std::vector<int, std::allocator<int> >)
+finding report quarantine std-object deduced.cpp:13:10 | std::vector
+finding report quarantine std-object deduced.cpp:19:6 | std::vector
+finding report quarantine std-object deduced.cpp:33:22 | std::vector
 
 compile error deduced.cpp mode=error out=no errors=report
 exit error fail

@@ -449,7 +449,7 @@ include/crucible/MerkleDag.h | std-entity | 2 | std::span::end | -
 include/crucible/MerkleDag.h | std-entity | 1 | std::span::operator[] | -
 include/crucible/MerkleDag.h | std-entity | 3 | std::span::size | -
 include/crucible/MerkleDag.h | std-entity | 1 | std::span::subspan | -
-include/crucible/MerkleDag.h | std-object | 2 | std::array | -
+include/crucible/MerkleDag.h | std-object | 1 | std::array | -
 include/crucible/MerkleDag.h | std-object | 6 | std::span | -
 include/crucible/MetaLog.h | c-library-call | 2 | memcmp | -
 include/crucible/MetaLog.h | c-library-call | 5 | memcpy | -
@@ -557,7 +557,7 @@ include/crucible/Serialize.h | std-entity | 3 | std::span::size | -
 include/crucible/Serialize.h | std-object | 1 | std::array | -
 include/crucible/Serialize.h | std-object | 1 | std::basic_string_view | -
 include/crucible/Serialize.h | std-object | 1 | std::optional | -
-include/crucible/Serialize.h | std-object | 6 | std::span | -
+include/crucible/Serialize.h | std-object | 5 | std::span | -
 include/crucible/SingletonInitGraph.h | raw-pointer-object | 6 | - | -
 include/crucible/SingletonInitGraph.h | std-entity | 3 | std::tuple | -
 include/crucible/SingletonInitGraph.h | std-entity | 2 | std::tuple_size_v | -
@@ -717,7 +717,7 @@ include/crucible/cipher/ComputationCacheFederation.h | std-entity | 1 | std::spa
 include/crucible/cipher/ComputationCacheFederation.h | std-entity | 1 | std::span::size | -
 include/crucible/cipher/ComputationCacheFederation.h | std-object | 5 | std::array | -
 include/crucible/cipher/ComputationCacheFederation.h | std-object | 7 | std::expected | -
-include/crucible/cipher/ComputationCacheFederation.h | std-object | 8 | std::span | -
+include/crucible/cipher/ComputationCacheFederation.h | std-object | 6 | std::span | -
 include/crucible/cipher/FederationProtocol.h | c-library-call | 3 | memcpy | -
 include/crucible/cipher/FederationProtocol.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 include/crucible/cipher/FederationProtocol.h | std-entity | 2 | std::expected::error | -
@@ -730,10 +730,10 @@ include/crucible/cipher/FederationProtocol.h | std-entity | 1 | std::span::opera
 include/crucible/cipher/FederationProtocol.h | std-entity | 11 | std::span::size | -
 include/crucible/cipher/FederationProtocol.h | std-entity | 1 | std::span::subspan | -
 include/crucible/cipher/FederationProtocol.h | std-entity | 13 | std::unexpected | -
-include/crucible/cipher/FederationProtocol.h | std-object | 3 | std::array | -
+include/crucible/cipher/FederationProtocol.h | std-object | 2 | std::array | -
 include/crucible/cipher/FederationProtocol.h | std-object | 1 | std::basic_string_view | -
 include/crucible/cipher/FederationProtocol.h | std-object | 6 | std::expected | -
-include/crucible/cipher/FederationProtocol.h | std-object | 9 | std::span | -
+include/crucible/cipher/FederationProtocol.h | std-object | 8 | std::span | -
 include/crucible/cntp/AfXdp.h | raw-pointer-object | 2 | - | -
 include/crucible/cntp/AfXdp.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 include/crucible/cntp/AfXdp.h | replace-pending:std::bit_cast | 2 | std::bit_cast | -
@@ -783,7 +783,7 @@ include/crucible/cntp/ConnectionPoolRuntime.h | std-object | 3 | std::expected |
 include/crucible/cntp/ConnectionPoolRuntime.h | std-object | 1 | std::optional | -
 include/crucible/cntp/Fec.h | c-library-call | 1 | memcpy | -
 include/crucible/cntp/Fec.h | c-library-call | 2 | memset | -
-include/crucible/cntp/Fec.h | raw-pointer-object | 9 | - | -
+include/crucible/cntp/Fec.h | raw-pointer-object | 8 | - | -
 include/crucible/cntp/Fec.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 include/crucible/cntp/Fec.h | std-entity | 2 | std::array | -
 include/crucible/cntp/Fec.h | std-entity | 12 | std::array::operator[] | -
@@ -804,7 +804,7 @@ include/crucible/cntp/Fec.h | std-object | 4 | std::expected | -
 include/crucible/cntp/Fec.h | std-object | 8 | std::span | -
 include/crucible/cntp/Fountain.h | c-library-call | 1 | memcmp | -
 include/crucible/cntp/Fountain.h | c-library-call | 3 | memcpy | -
-include/crucible/cntp/Fountain.h | raw-pointer-object | 5 | - | -
+include/crucible/cntp/Fountain.h | raw-pointer-object | 3 | - | -
 include/crucible/cntp/Fountain.h | replace-pending:<limits> | 2 | std::numeric_limits::max | -
 include/crucible/cntp/Fountain.h | std-entity | 3 | std::array::operator[] | -
 include/crucible/cntp/Fountain.h | std-entity | 3 | std::countr_zero | -
@@ -841,7 +841,7 @@ include/crucible/cntp/IncastControlRuntime.h | replace-pending:<limits> | 1 | st
 include/crucible/cntp/IncastControlRuntime.h | std-object | 1 | std::array | -
 include/crucible/cntp/IncastControlRuntime.h | std-object | 7 | std::expected | -
 include/crucible/cntp/Integrity.h | c-library-call | 6 | memcpy | -
-include/crucible/cntp/Integrity.h | raw-pointer-object | 9 | - | -
+include/crucible/cntp/Integrity.h | raw-pointer-object | 8 | - | -
 include/crucible/cntp/Integrity.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 include/crucible/cntp/Integrity.h | std-entity | 9 | std::array::data | -
 include/crucible/cntp/Integrity.h | std-entity | 4 | std::array::operator[] | -
@@ -1380,7 +1380,7 @@ include/crucible/perf/SenseHub.h | std-object | 2 | std::optional | -
 include/crucible/perf/SenseHub.h | std-object | 1 | std::unique_ptr | -
 include/crucible/perf/SenseHubV2.h | c-array-object | 1 | - | -
 include/crucible/perf/SenseHubV2.h | std-entity | 8 | std::array::operator[] | -
-include/crucible/perf/SenseHubV2.h | std-object | 6 | std::array | -
+include/crucible/perf/SenseHubV2.h | std-object | 3 | std::array | -
 include/crucible/perf/SenseHubV2.h | std-object | 3 | std::basic_string_view | -
 include/crucible/perf/SenseHubV2.h | std-object | 2 | std::optional | -
 include/crucible/perf/SenseHubV2.h | std-object | 2 | std::unique_ptr | -
@@ -1418,7 +1418,7 @@ include/crucible/perf/detail/BpfHub.h | c-library-object | 5 | bpf_map | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 2 | bpf_object | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 1 | bpf_object_open_opts | -
 include/crucible/perf/detail/BpfHub.h | c-library-object | 2 | bpf_program | -
-include/crucible/perf/detail/BpfHub.h | raw-pointer-object | 35 | - | -
+include/crucible/perf/detail/BpfHub.h | raw-pointer-object | 32 | - | -
 include/crucible/perf/detail/BpfHub.h | replace-pending:std::bit_cast | 4 | std::bit_cast | -
 include/crucible/perf/detail/BpfHub.h | std-entity | 2 | std::basic_string::data | -
 include/crucible/perf/detail/BpfHub.h | std-entity | 1 | std::has_single_bit | -
@@ -1491,7 +1491,7 @@ include/crucible/topology/Discovery.h | std-object | 17 | std::basic_string_view
 include/crucible/topology/Discovery.h | std-object | 8 | std::expected | -
 include/crucible/topology/Discovery.h | std-object | 5 | std::span | -
 include/crucible/topology/Health.h | c-library-call | 1 | log | -
-include/crucible/topology/Health.h | raw-pointer-object | 11 | - | -
+include/crucible/topology/Health.h | raw-pointer-object | 10 | - | -
 include/crucible/topology/Health.h | replace-pending:<limits> | 10 | std::numeric_limits::max | -
 include/crucible/topology/Health.h | std-entity | 4 | std::addressof | -
 include/crucible/topology/Health.h | std-entity | 2 | std::begin | -
@@ -3065,7 +3065,7 @@ test/fixy/session_subtype_attack.h | std-entity | 1 | std::array::operator[] | -
 test/fixy/session_subtype_attack.h | std-entity | 4 | std::vector::operator[] | -
 test/fixy/session_subtype_attack.h | std-entity | 1 | std::vector::push_back | -
 test/fixy/session_subtype_attack.h | std-entity | 2 | std::vector::size | -
-test/fixy/session_subtype_attack.h | std-object | 4 | std::array | -
+test/fixy/session_subtype_attack.h | std-object | 3 | std::array | -
 test/fixy/session_subtype_attack.h | std-object | 2 | std::basic_string_view | -
 test/fixy/session_subtype_attack.h | std-object | 1 | std::pair | -
 test/fixy/session_subtype_attack.h | std-object | 2 | std::span | -
@@ -5344,14 +5344,14 @@ test/layer/checks/fixy/atoms/Simd.cpp | std-entity | 1 | std::array::begin | -
 test/layer/checks/fixy/atoms/Simd.cpp | std-entity | 1 | std::array::end | -
 test/layer/checks/fixy/atoms/Simd.cpp | std-entity | 1 | std::pair | -
 test/layer/checks/fixy/atoms/Simd.cpp | std-object | 1 | std::pair | -
-test/layer/checks/fixy/atoms/Simd.cpp | std-object | 4 | std::span | -
+test/layer/checks/fixy/atoms/Simd.cpp | std-object | 2 | std::span | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-entity | 1 | std::array | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-entity | 1 | std::array::begin | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-entity | 1 | std::array::end | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-entity | 2 | std::get | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-entity | 2 | std::pair | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-object | 1 | std::pair | -
-test/layer/checks/fixy/atoms/Syscall.cpp | std-object | 10 | std::span | -
+test/layer/checks/fixy/atoms/Syscall.cpp | std-object | 5 | std::span | -
 test/layer/checks/fixy/atoms/Syscall.cpp | std-object | 2 | std::tuple | -
 test/layer/checks/fixy/concurrent/HandleTraits.cpp | std-object | 8 | std::optional | -
 test/layer/checks/fixy/concurrent/PayloadRow.cpp | c-array-object | 3 | - | -
@@ -5406,12 +5406,12 @@ test/layer/checks/foundation/diag/Catalog.cpp | std-entity | 3 | std::vector::be
 test/layer/checks/foundation/diag/Catalog.cpp | std-entity | 3 | std::vector::end | -
 test/layer/checks/foundation/diag/Catalog.cpp | std-object | 1 | std::array | -
 test/layer/checks/foundation/diag/Catalog.cpp | std-object | 5 | std::basic_string_view | -
-test/layer/checks/foundation/diag/Catalog.cpp | std-object | 2 | std::span | -
+test/layer/checks/foundation/diag/Catalog.cpp | std-object | 1 | std::span | -
 test/layer/checks/foundation/diag/Insights.cpp | std-entity | 1 | std::operator== | -
 test/layer/checks/foundation/diag/Insights.cpp | std-entity | 1 | std::tuple_element | -
 test/layer/checks/foundation/diag/Insights.cpp | std-object | 24 | std::basic_string_view | -
 test/layer/checks/foundation/diag/JsonEmitter.cpp | std-object | 5 | std::array | -
-test/layer/checks/foundation/effects/Capability.cpp | std-object | 2 | std::span | -
+test/layer/checks/foundation/effects/Capability.cpp | std-object | 1 | std::span | -
 test/layer/checks/foundation/effects/Computation.cpp | raw-function-pointer | 1 | - | -
 test/layer/checks/foundation/effects/Effect.cpp | std-object | 3 | std::span | -
 test/layer/checks/foundation/effects/Resources.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
@@ -5423,7 +5423,7 @@ test/layer/checks/foundation/effects/Resources.cpp | std-entity | 2 | std::vecto
 test/layer/checks/foundation/effects/Resources.cpp | std-entity | 3 | std::vector::begin | -
 test/layer/checks/foundation/effects/Resources.cpp | std-entity | 3 | std::vector::end | -
 test/layer/checks/foundation/effects/Resources.cpp | std-object | 2 | std::basic_string_view | -
-test/layer/checks/foundation/effects/Resources.cpp | std-object | 4 | std::span | -
+test/layer/checks/foundation/effects/Resources.cpp | std-object | 2 | std::span | -
 test/layer/checks/foundation/effects/Resources.cpp | std-object | 1 | std::vector | -
 test/layer/checks/foundation/effects/Row.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
 test/layer/checks/foundation/effects/Row.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
@@ -7297,7 +7297,7 @@ test/test_swim.cpp | std-entity | 2 | std::span | -
 test/test_swim.cpp | std-object | 2 | std::array | -
 test/test_swim.cpp | std-object | 4 | std::expected | -
 test/test_swim.cpp | std-object | 1 | std::optional | -
-test/test_swiss_table.cpp | c-array-object | 6 | - | -
+test/test_swiss_table.cpp | c-array-object | 3 | - | -
 test/test_swiss_table.cpp | std-entity | 1 | std::initializer_list | -
 test/test_symbol_table.cpp | c-array-object | 2 | - | -
 test/test_symbol_table.cpp | replace-pending:std::bit_cast | 6 | std::bit_cast | -

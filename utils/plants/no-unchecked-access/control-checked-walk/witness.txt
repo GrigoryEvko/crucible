@@ -7,7 +7,7 @@ compile walk src/walk.cpp stage=c
 flag walk -freflection
 exit walk pass
 judge walk
-finding walk quarantine c-array-object src/walk.cpp:12:16 | const char [39]
+finding walk quarantine c-array-object src/walk.cpp:12:16 | note
 finding walk quarantine std-entity src/walk.cpp:15:97 | std::vector::operator[]
 
 compile admitted src/admitted.cpp stage=c

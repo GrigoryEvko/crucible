@@ -130,22 +130,22 @@ class Scratch:
         self.objects: dict[str, tuple[list[str], str, bool]] = {}
         # The flags that the target of an object adds to its compile, as each bench target adds -march=native.
         self.flags: dict[str, str] = {}
-        header = "quarantine std-object include/crucible/Vigil.h:10:5 std::vector (std::vector<int>)"
+        header = "quarantine std-object include/crucible/Vigil.h:10:5 std::vector"
         self.add(
             "a",
             [
                 header,
                 "quarantine c-library-call test/fixy/test_a.cpp:4:3 memcpy",
-                "quarantine std-object test/fixy/test_b.cpp:6:5 std::span (std::span<int>)",
+                "quarantine std-object test/fixy/test_b.cpp:6:5 std::span",
                 f"quarantine region test/fixy/test_a.cpp:8:1 {PROBE_REASON}",
-                "quarantine opted-out test/fixy/test_a.cpp:9:1 raw-pointer-object char*",
+                "quarantine opted-out test/fixy/test_a.cpp:9:1 raw-pointer-object bytes",
             ],
         )
         self.add(
             "b",
             [
                 header,
-                "quarantine raw-pointer-object src/canopy/Lifeguard.cpp:7:9 char*",
+                "quarantine raw-pointer-object src/canopy/Lifeguard.cpp:7:9 buffer",
                 "quarantine upward-include include/fixy/session/Handle.h:3:0 include/crucible/X.h",
             ],
         )
@@ -347,17 +347,17 @@ def unit_cases(expect: testing.Expect) -> None:
         and keyed.expected("r")[rule_ledger.Key("x.cpp", "layer-header", "<vector> in the layer X1")] == 2,
     )
     expect(
-        "the entity of a row names what the plugin refuses, with no type of the code",
+        "the entity of a row names what the plugin refuses, and a declaration of a raw object keys no name",
         [
             quarantine.entity_key(kind, entity)
             for kind, entity in (
-                ("std-object", "std::span (std::span<const Row>)"),
-                ("c-library-object", "_IO_FILE (FILE*)"),
-                ("raw-pointer-object", "const crucible::Expr*"),
-                ("c-array-object", "int [2]"),
-                ("raw-function-pointer", "void (*)()"),
-                ("raw-new-delete", "placement new crucible::Node"),
-                ("raw-new-delete", "new int"),
+                ("std-object", "std::span"),
+                ("c-library-object", "_IO_FILE"),
+                ("raw-pointer-object", "expression"),
+                ("c-array-object", "bytes"),
+                ("raw-function-pointer", "callback"),
+                ("raw-new-delete", "placement new"),
+                ("raw-new-delete", "new"),
                 ("raw-new-delete", "delete"),
                 ("raw-new-delete", "declaration of operator new"),
                 ("std-entity", "std::array::operator[]"),
@@ -407,9 +407,9 @@ def unit_cases(expect: testing.Expect) -> None:
     )
     expect(
         "the entity of an opted-out row holds the reason of its region, and the inner kind and entity",
-        quarantine.opted_out_key("PROBE:  a  region", "std-object std::vector (std::vector<int>)")
+        quarantine.opted_out_key("PROBE:  a  region", "std-object std::vector")
         == "PROBE: a region | std-object std::vector"
-        and quarantine.opted_out_key("ABI: x", "raw-pointer-object char*") == "ABI: x | raw-pointer-object",
+        and quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )
     expect(
         "the stamp of a compile command is the value of the plugin argument stamp=",
@@ -664,7 +664,7 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add(
         "a",
         [line for line in lines_a if "test_b.cpp" not in line]
-        + ["quarantine std-object test/fixy/test_a.cpp:12:5 std::array (std::array<int, 2>)"],
+        + ["quarantine std-object test/fixy/test_a.cpp:12:5 std::array"],
     )
     planted = scratch.counts()
     expect(
@@ -687,7 +687,7 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     status, _ = scratch.write()
     expect("the write refuses the rise", status == 1 and scratch.base() == before)
-    scratch.add("a", [line.replace("std::span (std::span<int>)", "std::map (std::map<int, int>)") for line in lines_a])
+    scratch.add("a", [line.replace("test_b.cpp:6:5 std::span", "test_b.cpp:6:5 std::map") for line in lines_a])
     planted = scratch.counts()
     expect(
         "the entity swap keeps each count of a file and kind, so a count for each file lets it go",
@@ -722,18 +722,18 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add(
         "a",
         [
-            line.replace(
-                "test_b.cpp:6:5 std::span (std::span<int>)", "test_b.cpp:40:9 std::span (std::span<const float>)"
-            ).replace("test_a.cpp:4:3", "test_a.cpp:17:3")
+            line.replace("test_b.cpp:6:5 std::span", "test_b.cpp:40:9 std::span").replace(
+                "test_a.cpp:4:3", "test_a.cpp:17:3"
+            )
             for line in lines_a
         ],
     )
-    expect("a move of code and a different type of the same library class keep each row", scratch.errors() == [])
+    expect("a move of code keeps each row", scratch.errors() == [])
     scratch.add("a", lines_a)
     lines_b = scratch.objects["b"][0]
-    scratch.add("b", [line.replace("char*", "const crucible::Expr*") for line in lines_b])
+    scratch.add("b", [line.replace("Lifeguard.cpp:7:9 buffer", "Lifeguard.cpp:7:9 storage") for line in lines_b])
     expect(
-        "a different pointee of a raw pointer keeps the row, because an alias can change that type",
+        "a raw object of a different name keeps the row, because the row of a raw object holds no entity",
         scratch.errors() == [],
     )
     scratch.add("b", lines_b)
@@ -741,7 +741,7 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold a new file, a finding that goes, the list of the findings and a file that git moves."""
-    scratch.add("d", ["quarantine std-object test/fixy/test_d.cpp:5:5 std::array (std::array<int, 2>)"])
+    scratch.add("d", ["quarantine std-object test/fixy/test_d.cpp:5:5 std::array"])
     expect(
         "a new file with one finding fails as a file that the ledger does not hold",
         scratch.errors()

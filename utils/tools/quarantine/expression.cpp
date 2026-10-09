@@ -1168,14 +1168,12 @@ void check_call_routes(tree call, location_t location) {
 
 void walk_expression(tree* expression, BodyWalk& walk);
 
+// A new-expression.  Its entity is the operator, with no printed type
+// (declaration.cpp, THE ENTITY OF AN OBJECT).  The call of an allocation
+// function in owner.cpp gives the same entity.
 void check_new_expression(tree expression, location_t location) {
     bool is_placement = TREE_OPERAND(expression, 0) != NULL_TREE;
-    tree type = TREE_OPERAND(expression, 1);
-    std::string what = is_placement ? "placement new" : "new";
-    if (type != NULL_TREE && TYPE_P(type)) {
-        what += " " + type_text(type);
-    }
-    record(Kind::raw_new_delete, location, what);
+    record(Kind::raw_new_delete, location, is_placement ? "placement new" : "new");
 }
 
 // An explicit temporary, such as one that the code passes to a template: a
@@ -2036,14 +2034,10 @@ void on_route_collection(void*, void*) {
 }
 
 // The key of an explicit instantiation: the instantiated class, or the
-// instantiated function or variable with its scope and its template
-// arguments, as GCC prints them.
+// instantiated function or variable with its scope and each of its template
+// arguments (library.cpp, kPrintFlags).
 std::string instantiation_key(tree entity) {
-    if (TYPE_P(entity)) {
-        return type_text(TYPE_MAIN_VARIANT(entity));
-    }
-    const char* printed = decl_as_string(entity, TFF_NO_TEMPLATE_BINDINGS);
-    return printed != nullptr ? std::string(printed) : qualified_name(entity);
+    return TYPE_P(entity) ? type_text(TYPE_MAIN_VARIANT(entity)) : declaration_text(entity);
 }
 
 // PLUGIN_EXPLICIT_INSTANTIATION gives each explicit instantiation directive

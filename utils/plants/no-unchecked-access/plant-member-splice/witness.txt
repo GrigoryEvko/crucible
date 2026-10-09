@@ -10,4 +10,4 @@ judge splice
 finding splice no-unchecked-access member-splice src/splice.cpp:15:68 | planted::read_member(const planted::Point&): member splice
 finding splice no-unchecked-access member-splice src/splice.cpp:17:50 | namespace-scope: member splice
 finding splice quarantine std-entity src/splice.cpp:12:97 | std::vector::operator[]
-finding splice quarantine raw-function-pointer src/splice.cpp:17:16 | int planted::Point::* const
+finding splice quarantine raw-function-pointer src/splice.cpp:17:16 | member_pointer

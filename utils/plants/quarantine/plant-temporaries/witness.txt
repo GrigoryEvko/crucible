@@ -3,7 +3,7 @@
 
 compile report temporaries.cpp
 exit report pass
-finding report quarantine raw-pointer-object temporaries.cpp:21:32 | const char*
+finding report quarantine raw-pointer-object temporaries.cpp:21:32 | raw
 finding report quarantine std-entity temporaries.cpp:22:25 | std::vector
 finding report quarantine std-entity temporaries.cpp:23:25 | std::basic_string
 finding report quarantine std-entity temporaries.cpp:24:25 | std::vector

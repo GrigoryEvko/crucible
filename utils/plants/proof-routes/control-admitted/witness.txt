@@ -9,4 +9,4 @@ finding admitted proof-routes union src/admitted.cpp:8:7 | union: Scalars
 finding admitted proof-routes pointer-cast src/admitted.cpp:13:36 | pointer-cast: forge::Door
 finding admitted proof-routes explicit-instantiation src/admitted.cpp:15:1 | explicit-instantiation: forge::Ring<4>
 finding admitted proof-routes raw-allocation src/admitted.cpp:17:49 | raw-allocation: forge::Door
-finding admitted quarantine raw-pointer-object src/admitted.cpp:13:22 | void*
+finding admitted quarantine raw-pointer-object src/admitted.cpp:13:22 | raw

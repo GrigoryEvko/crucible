@@ -4,7 +4,7 @@
 
 compile report deep_nesting.cpp timeout=60
 exit report pass
-finding report quarantine std-object deep_nesting.cpp:25:38 | std::vector (DeepNest<70, std::vector<int> >::type)
+finding report quarantine std-object deep_nesting.cpp:25:38 | std::vector
 finding report quarantine c-library-call deep_nesting.cpp:98:34 | __errno_location
 
 compile error deep_nesting.cpp mode=error out=no errors=report timeout=60

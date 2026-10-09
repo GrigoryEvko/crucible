@@ -4,7 +4,7 @@
 compile report isystem_user.cpp
 flag report -isystem gapsother/sys
 exit report pass
-finding report quarantine raw-pointer-object gapsother/sys/Marked.h:8:13 | int*
+finding report quarantine raw-pointer-object gapsother/sys/Marked.h:8:13 | marked_pointer
 
 compile error isystem_user.cpp mode=error out=no errors=report
 flag error -isystem gapsother/sys

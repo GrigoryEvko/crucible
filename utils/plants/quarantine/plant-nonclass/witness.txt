@@ -6,9 +6,9 @@
 compile report nonclass.cpp
 exit report pass
 finding report quarantine std-entity nonclass.cpp:13:13 | std::size_t
-finding report quarantine std-object nonclass.cpp:14:11 | std::byte (std::byte)
+finding report quarantine std-object nonclass.cpp:14:11 | std::byte
 finding report quarantine std-entity nonclass.cpp:15:16 | std::nullptr_t
-finding report quarantine std-object nonclass.cpp:16:18 | std::align_val_t (std::align_val_t)
+finding report quarantine std-object nonclass.cpp:16:18 | std::align_val_t
 finding report quarantine std-entity nonclass.cpp:17:42 | std::tuple_element_t
 finding report quarantine std-entity nonclass.cpp:19:7 | std::size_t
 finding report quarantine std-entity nonclass.cpp:25:45 | std::tuple_size_v
