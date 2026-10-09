@@ -1,0 +1,6 @@
+# The ledger holds each C runtime symbol of the planted configuration: clock_gettime, a door call of the library
+# fixy, the helper __udivti3 of the support library of GCC in the library crucible, and getenv as a ratchet row
+# of the library foundation.
+library foundation base.cpp getenv.cpp
+library fixy base.cpp clock.cpp
+library crucible base.cpp divide.cpp

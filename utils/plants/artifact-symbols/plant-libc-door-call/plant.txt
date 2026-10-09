@@ -1,0 +1,4 @@
+# clock_gettime is a call of glibc that a door of fixy keeps.  In the library crucible it has the mark
+# libc-ratchet, so its row with the mark libc-allow holds nothing.
+library foundation base.cpp
+library crucible base.cpp clock.cpp

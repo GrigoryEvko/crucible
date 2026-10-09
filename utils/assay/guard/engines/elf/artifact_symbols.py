@@ -1,4 +1,4 @@
-"""artifact-symbols — a static library of the tree throws nothing, has no polymorphic type, and gets no libstdc++ symbol.
+"""artifact-symbols — a static library of the tree throws nothing, has no polymorphic type, and gets no runtime symbol.
 
 THE TWO PROPERTIES
     -fno-exceptions and -fno-rtti are not in this build, and the opt-out
@@ -53,6 +53,31 @@ THE LIBSTDC++ SYMBOLS
     The kind of the finding is the mark of the symbol: `allow` for a symbol
     of the allowlist of plan section 13.4 (ALLOWLIST), else `ratchet`.
 
+THE C RUNTIME SYMBOLS
+    Rule R5 also covers the C runtime.  The ledger holds the C runtime
+    symbols of the libraries foundation, fixy and crucible, and a library
+    gets no new one.  A C runtime symbol of a library obeys these two
+    conditions:
+      * An object of the archive has an undefined reference to the symbol,
+        and libstdc++ does not export it.
+      * A file of the C runtime of the compiler gives the symbol.  The files
+        are the shared libraries and the archives of RUNTIME_FILES, and the
+        dynamic loader, which is the interpreter of libc.so.6.
+        "COMPILER -print-file-name=FILE" names each file.
+    A symbol of the sanitizer runtime or of the linker is in no such file,
+    and the rule does not read it.  The kind of the finding is `libc-allow`
+    for a symbol of the allowlist of its library (LIBC_ALLOWLISTS), else
+    `libc-ratchet`.  Each allowlist holds these symbols:
+      * The calls that GCC makes itself (COMPILER_CALLS), and each function
+        of the support library of GCC (SUPPORT_ARCHIVES), such as __udivti3
+        and _Unwind_Resume.
+      * For fixy, the calls of glibc that decision D12 keeps, each in its
+        door (DOOR_CALLS).  The plan names these calls.  When a door must
+        make a related call, the change that adds the door adds the call to
+        the set.
+      * For crucible, __cxa_atexit, which plan section 13.4 admits.
+    At the S4 gate, libfixy.a holds no `libc-ratchet` row.
+
 THE CLASS OF A SYMBOL
     The messages give the class of a symbol: the first class of this list
     that its mangled name gives (assay.readers.elf, THE MANGLED SCOPE).
@@ -73,8 +98,10 @@ THE LEDGER
         @KIND | @build/LIBRARY | MARK | +1 | SYMBOL | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
-    The libstdc++ symbols change with the build, because the inlining and
-    the macro _GLIBCXX_ASSERTIONS change the references.  A configuration
+    MARK is one of MARKS: `allow` and `ratchet` for a libstdc++ symbol, and
+    `libc-allow` and `libc-ratchet` for a C runtime symbol.  The symbols change
+    with the build, because the inlining, the sanitizers and the macro
+    _GLIBCXX_ASSERTIONS change the references.  A configuration
     is a build kind on a target tier (assay.core.target).  The first
     configuration is the base, and a row of a different configuration gives
     its difference.  LIBRARY and ARCHIVE are the file name of the archive.
@@ -104,8 +131,9 @@ THE WRITE
     `guard write --rule artifact-symbols --build-dir DIR` writes the
     configuration and the symbol rows of the build.  A write of the base
     keeps the symbols of each different configuration.  The write gives a
-    row to a new `allow` symbol, and it refuses a new `ratchet` symbol.
-    --raise also writes a new `ratchet` symbol.  Use it only for one of
+    row to a new `allow` or `libc-allow` symbol, and it refuses a new
+    `ratchet` or `libc-ratchet` symbol.  --raise also writes a new such
+    symbol.  Use it only for one of
     RAISE_REASONS, and give the reason in the commit.  A write keeps each
     row throw or vtable that admits a finding, and it removes each such row
     that admits nothing.  It adds no such row: a person writes it with its
@@ -126,11 +154,11 @@ NOT APPLICABLE
     The base has no such rows, because a write writes them
     (assay.guard.engines.plugin.counted, THE RUN).
 
-Complexity: linear in the symbols and the relocations of the libraries, with one run of c++filt.
+Complexity: linear in the symbols and the relocations of the libraries and of the C runtime, with one run of c++filt.
 """
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -155,7 +183,11 @@ REQUIRED_LIBRARIES = ("foundation", "crucible")
 FACTS = frozenset({plugin_runner.KIND_KEY, plugin_runner.TIER_KEY})
 ALLOW = "allow"
 RATCHET = "ratchet"
-MARKS = (ALLOW, RATCHET)
+LIBC_ALLOW = "libc-allow"
+LIBC_RATCHET = "libc-ratchet"
+MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET)
+# The marks of a symbol that a write refuses with no --raise.
+RATCHET_MARKS = (RATCHET, LIBC_RATCHET)
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
 DOWNCAST = "downcast"
@@ -165,6 +197,30 @@ ADMITTED_KINDS = (THROW, VTABLE)
 ALLOWLIST = frozenset(
     {"__cxa_guard_acquire", "__cxa_guard_release", "__cxa_guard_abort", "__cxa_atexit", "__gxx_personality_v0"}
 )
+# The files of the C runtime (THE C RUNTIME SYMBOLS).  True marks a shared library, and its dynamic symbols count.
+# False marks an archive, and the global symbols of its members count.  The first file that gives a name is its owner,
+# and the dynamic loader comes after libm.so.6.  libc_nonshared.a holds the part of glibc that each program links
+# statically, such as atexit.  libgcc_s.so.1 is the shared library of the support library of GCC.
+RUNTIME_FILES = (
+    ("libc.so.6", True),
+    ("libm.so.6", True),
+    ("libc_nonshared.a", False),
+    ("libgcc.a", False),
+    ("libgcc_eh.a", False),
+    ("libgcc_s.so.1", True),
+)
+# The support library of GCC: the helpers of the arithmetic and the unwinder that GCC calls itself.
+SUPPORT_ARCHIVES = ("libgcc.a", "libgcc_eh.a")
+# The calls of the C library that GCC makes itself, which each library can reference (rule R5).
+COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
+# The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).
+DOOR_CALLS = frozenset({"pthread_create", "pthread_join", "sigaction", "dlopen", "clock_gettime", "malloc", "free"})
+# The allowlist of the C runtime symbols of each symbol library, by its target name, without the support library.
+LIBC_ALLOWLISTS = {
+    "foundation": COMPILER_CALLS,
+    "fixy": COMPILER_CALLS | DOOR_CALLS,
+    "crucible": COMPILER_CALLS | {"__cxa_atexit"},
+}
 CLASSES = ("alloc", "abi", "std", "gnu", "c", "other")
 ABI_PREFIXES = ("__cxa_", "__gxx_")
 ABI_SCOPE = "__cxxabiv1"
@@ -186,11 +242,12 @@ RAISE_REASONS = (
     "a new toolchain",
     "code that moved from a base header into a base source file",
     "a new build kind or target",
+    "a class of symbols that the rule did not read before",
 )
 # The two shapes of a base row (THE LEDGER).
 ROW_SHAPE = (
-    "a row is '@build/LIBRARY | allow|ratchet | 1 | SYMBOL | -', or '@build/ARCHIVE | throw|vtable | admit | TEXT | "
-    "REASON'"
+    "a row is '@build/LIBRARY | allow|ratchet|libc-allow|libc-ratchet | 1 | SYMBOL | -', or "
+    "'@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
 )
 
 
@@ -225,8 +282,8 @@ class Examination:
     """The findings of one build, judged, with the facts that the run prints and the write uses.
 
     `configuration` is the build kind and the tier of the build, or None when the ledger cannot be read.  `symbols`
-    gives the count of each key of a libstdc++ symbol, and `admitted` the count of each key that a row throw or
-    vtable admits.
+    gives the count of each key of a libstdc++ symbol and of a C runtime symbol, and `admitted` the count of each key
+    that a row throw or vtable admits.
     """
 
     findings: tuple[check_report.Finding, ...]
@@ -236,6 +293,18 @@ class Examination:
     symbols: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
     admitted: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
     summary: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Runtime:
+    """The C runtime of a compiler (THE C RUNTIME SYMBOLS).
+
+    `owners` gives each name its owner: the first file of the sequence of runtime_of() that gives the name.
+    `support` holds each function of the support library of GCC.
+    """
+
+    owners: Mapping[str, str]
+    support: frozenset[str]
 
 
 # ── The classes and the marks ──────────────────────────────────────
@@ -396,6 +465,63 @@ def read_artifact(path: Path) -> Artifact:
     )
 
 
+def runtime_file(compiler: str, name: str) -> Path:
+    """Return the ELF file of the runtime of the compiler that "COMPILER -print-file-name=NAME" names.
+
+    Raises:
+        runner.BuildError: If the compiler does not run, or it names no ELF file or archive.  A linker script, such as
+            libc.so, is no such file
+    """
+    try:
+        done = proc.require(proc.run(proc.Command([compiler, f"-print-file-name={name}"], timeout_s=proc.QUICK_S)))
+    except proc.ToolFailed as problem:
+        raise runner.BuildError(f"{compiler} does not name its {name}: {problem}") from None
+    path = Path(done.out.strip())
+    if not path.is_absolute() or not path.is_file():
+        raise runner.BuildError(
+            f"{compiler} -print-file-name={name} gives {str(path)!r}, which is not a file.  The rule reads the "
+            f"runtime of the compiler of the build"
+        )
+    resolved = path.resolve()
+    with resolved.open("rb") as handle:
+        magic = handle.read(len(elf.ARCHIVE_MAGIC))
+    if not magic.startswith(elf.MAGIC) and magic != elf.ARCHIVE_MAGIC:
+        raise runner.BuildError(
+            f"{compiler} -print-file-name={name} gives {resolved}, which is not an ELF file or an archive.  The rule "
+            f"reads no linker script"
+        )
+    return resolved
+
+
+def defined_names(path: Path, is_shared: bool) -> frozenset[str]:
+    """Return the global names with a section of a file of the runtime.
+
+    A shared library gives its dynamic symbols, and an archive gives the symbols of each member.
+
+    Raises:
+        runner.BuildError: If the ELF reader cannot read the file, or reads no such name from it
+    """
+    try:
+        if is_shared:
+            with elf.mapped(path) as library:
+                names = frozenset(symbol.name for symbol in library.dynamic_symbols() if symbol.is_defined)
+        else:
+            names = frozenset(
+                symbol.name
+                for member in elf.members(path)
+                for symbol in member.symbols()
+                if symbol.is_defined and not symbol.is_local
+            )
+    except (OSError, elf.ElfError) as problem:
+        raise runner.BuildError(f"the symbols of {path} cannot be read: {problem}") from None
+    if not names:
+        raise runner.BuildError(
+            f"the ELF reader reads no global name with a section from {path}, and the rule has no runtime to compare "
+            f"with"
+        )
+    return names
+
+
 def libstdcxx_exports(compiler: str) -> frozenset[str]:
     """Return the names that the libstdc++ of the compiler gives in its dynamic symbol table, with a section.
 
@@ -403,31 +529,49 @@ def libstdcxx_exports(compiler: str) -> frozenset[str]:
         runner.BuildError: If the compiler names no libstdc++.so, the file is not an ELF shared library, or the ELF
             reader reads no such name
     """
+    return defined_names(runtime_file(compiler, "libstdc++.so"), is_shared=True)
+
+
+def runtime_of(compiler: str) -> Runtime:
+    """Read the C runtime of the compiler: the files of RUNTIME_FILES and the dynamic loader.
+
+    The dynamic loader is the interpreter of libc.so.6.  Complexity: linear in the symbols of the files.
+
+    Raises:
+        runner.BuildError: If a file cannot be found or read, or libc.so.6 names no dynamic loader
+    """
+    files = [(runtime_file(compiler, name), is_shared) for name, is_shared in RUNTIME_FILES]
+    libc = files[0][0]
     try:
-        done = proc.require(proc.run(proc.Command([compiler, "-print-file-name=libstdc++.so"], timeout_s=proc.QUICK_S)))
-    except proc.ToolFailed as problem:
-        raise runner.BuildError(f"{compiler} does not name its libstdc++: {problem}") from None
-    path = Path(done.out.strip())
-    if not path.is_absolute() or not path.is_file() or not elf.is_elf(path.resolve()):
-        raise runner.BuildError(
-            f"{compiler} -print-file-name=libstdc++.so gives {str(path)!r}, which is not an ELF shared library.  The "
-            f"rule reads only an ELF libstdc++, and not a linker script"
-        )
-    try:
-        with elf.mapped(path.resolve()) as library:
-            names = frozenset(symbol.name for symbol in library.dynamic_symbols() if symbol.is_defined)
+        loader = elf.interpreter(libc)
     except (OSError, elf.ElfError) as problem:
-        raise runner.BuildError(f"the dynamic symbols of {path.resolve()} cannot be read: {problem}") from None
-    if not names:
+        raise runner.BuildError(f"the interpreter of {libc} cannot be read: {problem}") from None
+    if loader is None or not Path(loader).is_absolute() or not Path(loader).is_file():
         raise runner.BuildError(
-            f"the ELF reader reads no dynamic name with a section from {path.resolve()}, and the rule has no "
-            f"libstdc++ to compare with"
+            f"{libc} names no dynamic loader that is a file ({loader!r}).  The rule reads the loader for __tls_get_addr"
         )
-    return names
+    files.insert(2, (Path(loader).resolve(), True))
+    owners: dict[str, str] = {}
+    support: set[str] = set()
+    for path, is_shared in files:
+        names = defined_names(path, is_shared)
+        for name in names:
+            owners.setdefault(name, path.name)
+        if path.name in SUPPORT_ARCHIVES:
+            support |= names
+    return Runtime(owners, frozenset(support))
 
 
-def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], frozenset[str]]:
-    """Read each static library of the root, and give the archive names of the symbol libraries.
+def libc_mark_of(library: str, symbol: str, runtime: Runtime) -> str:
+    """Return `libc-allow` for a symbol of the allowlist of a library, else `libc-ratchet` (THE C RUNTIME SYMBOLS).
+
+    `library` is the target name of the library: foundation, fixy or crucible.
+    """
+    return LIBC_ALLOW if symbol in LIBC_ALLOWLISTS[library] or symbol in runtime.support else LIBC_RATCHET
+
+
+def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], Mapping[str, str]]:
+    """Read each static library of the root, and give the target name of each archive of a symbol library.
 
     Raises:
         runner.NotApplicable: If the build has not made each library
@@ -444,14 +588,14 @@ def read_libraries(context: runner.ElfContext) -> tuple[dict[str, Artifact], fro
     if unbuilt:
         raise runner.NotApplicable(f"the build has not made {', '.join(unbuilt)}.  Build the target all")
     artifacts = {path.name: read_artifact(path) for path in libraries.values()}
-    symbol_names = frozenset(libraries[name].name for name in SYMBOL_LIBRARIES if name in libraries)
-    empty = sorted(name for name in symbol_names if not artifacts[name].undefined)
+    symbol_libraries = {libraries[name].name: name for name in SYMBOL_LIBRARIES if name in libraries}
+    empty = sorted(name for name in symbol_libraries if not artifacts[name].undefined)
     if empty:
         raise runner.BuildError(
             f"the ELF reader reads no undefined reference from {', '.join(empty)}, and the rule read nothing there.  "
-            f"An archive that calls nothing is not an archive that uses no libstdc++ symbol"
+            f"An archive that calls nothing is not an archive that uses no runtime symbol"
         )
-    return artifacts, symbol_names
+    return artifacts, symbol_libraries
 
 
 # ── The findings ───────────────────────────────────────────────────
@@ -533,44 +677,83 @@ def class_findings(
     return found
 
 
+def libstdcxx_finding(archive: str, symbol: str, shown: str, used: str, write: str) -> check_report.Finding:
+    """Return the finding of one libstdc++ symbol of a symbol library (THE LIBSTDC++ SYMBOLS).
+
+    `shown` is the demangled name, and `used` names the members that reference the symbol.
+    """
+    if mark_of(symbol) == ALLOW:
+        said = (
+            f"{archive} uses {shown} ({symbol}) in {used}, a symbol of the allowlist of plan section 13.4.  Write the "
+            f"ledger again: {write}"
+        )
+    else:
+        said = (
+            f"{archive} uses the libstdc++ symbol {shown} ({symbol}), of the class {classify(symbol)}, in {used}.  A "
+            f"change can only remove a libstdc++ use (rule R5): use a type of fixy or foundation"
+        )
+    return finding(f"{LIBRARY_PREFIX}{archive}", mark_of(symbol), symbol, said)
+
+
+def libc_finding(
+    archive: str, library: str, symbol: str, runtime: Runtime, used: str, write: str
+) -> check_report.Finding:
+    """Return the finding of one C runtime symbol of a symbol library (THE C RUNTIME SYMBOLS).
+
+    `library` is the target name of the archive, and `used` names the members that reference the symbol.
+    """
+    mark = libc_mark_of(library, symbol, runtime)
+    owner = runtime.owners[symbol]
+    if mark == LIBC_ALLOW:
+        said = (
+            f"{archive} uses {symbol} of {owner} in {used}, a symbol of the allowlist of rule R5 for the library "
+            f"{library}.  Write the ledger again: {write}"
+        )
+    else:
+        said = (
+            f"{archive} uses the C runtime symbol {symbol} of {owner} in {used}.  A change can only remove a C "
+            f"runtime use (rule R5): call a door of fixy/os, or use a type of fixy or foundation"
+        )
+    return finding(f"{LIBRARY_PREFIX}{archive}", mark, symbol, said)
+
+
 def symbol_findings(
     artifacts: Mapping[str, Artifact],
-    symbol_names: Iterable[str],
+    symbol_libraries: Mapping[str, str],
     exports: frozenset[str],
+    runtime: Runtime,
     names: Mapping[str, str],
     build_shown: str,
 ) -> list[check_report.Finding]:
-    """Return one finding for each libstdc++ symbol of each symbol library (THE LIBSTDC++ SYMBOLS)."""
+    """Return one finding for each runtime symbol of each symbol library.
+
+    `symbol_libraries` gives the target name of each archive.  A name that libstdc++ exports is a libstdc++ symbol
+    (THE LIBSTDC++ SYMBOLS).  Each other name that a file of the C runtime gives is a C runtime symbol (THE C RUNTIME
+    SYMBOLS).  Complexity: linear in the undefined names of the archives.
+    """
     write = f"`python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
     found: list[check_report.Finding] = []
-    for archive in sorted(symbol_names):
+    for archive in sorted(symbol_libraries):
         for symbol, members in sorted(artifacts[archive].undefined.items()):
-            if symbol not in exports:
-                continue
-            shown = f"{names[symbol]} ({symbol})"
             used = build_census.names_text(members)
-            if mark_of(symbol) == ALLOW:
-                said = (
-                    f"{archive} uses {shown} in {used}, a symbol of the allowlist of plan section 13.4.  Write the "
-                    f"ledger again: {write}"
-                )
-            else:
-                said = (
-                    f"{archive} uses the libstdc++ symbol {shown}, of the class {classify(symbol)}, in {used}.  A "
-                    f"change can only remove a libstdc++ use (rule R5): use a type of fixy or foundation"
-                )
-            found.append(finding(f"{LIBRARY_PREFIX}{archive}", mark_of(symbol), symbol, said))
+            if symbol in exports:
+                found.append(libstdcxx_finding(archive, symbol, names[symbol], used, write))
+            elif symbol in runtime.owners:
+                found.append(libc_finding(archive, symbol_libraries[archive], symbol, runtime, used, write))
     return found
 
 
 def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
-    """Return the marks of the libstdc++ symbols of each library, and the classes of its ratchet symbols."""
+    """Return the marks of the runtime symbols of each library, and the classes of its libstdc++ ratchet symbols."""
     texts: list[str] = []
     for path in sorted({item.path for item in symbols}):
         marks = Counter(item.kind for item in symbols if item.path == path)
         classes = Counter(classify(item.entity) for item in symbols if item.path == path and item.kind == RATCHET)
         shown = ", ".join(f"{name} {classes[name]}" for name in CLASSES if classes[name]) or "none"
-        texts.append(f"{path.removeprefix(LIBRARY_PREFIX)} {marks[ALLOW]} allow and {marks[RATCHET]} ratchet ({shown})")
+        texts.append(
+            f"{path.removeprefix(LIBRARY_PREFIX)} {marks[ALLOW]} allow and {marks[RATCHET]} ratchet ({shown}), "
+            f"{marks[LIBC_ALLOW]} libc-allow and {marks[LIBC_RATCHET]} libc-ratchet"
+        )
     return "; ".join(texts) or "none"
 
 
@@ -598,16 +781,17 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
             f"the ledger cannot be read: {problem}",
         )
         return Examination((unread,), rule_ledger.empty(rule))
-    artifacts, symbol_names = read_libraries(context)
+    artifacts, symbol_libraries = read_libraries(context)
     tier = context.tier()
     configuration = plugin_runner.BuildConfiguration(
         kind, ((plugin_runner.KIND_KEY, kind), (plugin_runner.TIER_KEY, tier))
     )
     held = plugin_runner.is_held(ledger, configuration)
     exports = libstdcxx_exports(context.compiler())
+    runtime = runtime_of(context.compiler())
     wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
     wanted |= {symbol for artifact in artifacts.values() for _, symbol in artifact.defined}
-    wanted |= {symbol for name in symbol_names for symbol in artifacts[name].undefined if symbol in exports}
+    wanted |= {symbol for name in symbol_libraries for symbol in artifacts[name].undefined if symbol in exports}
     ordered = sorted(wanted)
     try:
         names = dict(zip(ordered, elf.demangle(ordered), strict=True))
@@ -617,13 +801,13 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> Examination
     admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
     classes = class_findings(artifacts, names, admit_rows, counted)
-    symbols = symbol_findings(artifacts, symbol_names, exports, names, context.build_shown())
+    symbols = symbol_findings(artifacts, symbol_libraries, exports, runtime, names, context.build_shown())
     view = ledger if held else replace(ledger, configurations=(), base=admits, deltas={})
     judged = rule_ledger.compare(rule, view, [*classes, *(symbols if held else [])], kind if held else None)
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
-        f"{counted['allocation']} throws of the allocator), {len(symbols)} libstdc++ symbols in {len(symbol_names)} "
-        f"libraries of {kind} on {tier}: {symbol_classes(symbols)}"
+        f"{counted['allocation']} throws of the allocator), {len(symbols)} runtime symbols in "
+        f"{len(symbol_libraries)} libraries of {kind} on {tier}: {symbol_classes(symbols)}"
     )
     return Examination(
         (*row_problems(ledger), *judged),
@@ -715,7 +899,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         return 1
     name = configuration.name
     held = ledger.expected(name) if ledger.configuration(name) is not None else {}
-    new_ratchet = sorted(key for key in examination.symbols if key.kind == RATCHET and key not in held)
+    new_ratchet = sorted(key for key in examination.symbols if key.kind in RATCHET_MARKS and key not in held)
     for key in new_ratchet:
         check_report.write_line(f"guard write: {key.path} gets the ratchet symbol {key.entity}", is_error=True)
     if new_ratchet and request.mode != rule_ledger.WriteMode.RAISE:

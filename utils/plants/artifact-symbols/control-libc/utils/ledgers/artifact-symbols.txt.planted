@@ -1,0 +1,8 @@
+# A planted ledger: each C runtime symbol of the planted configuration, with its mark.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | libc-allow | 1 | __udivti3 | -
+@build/libfixy.a | libc-allow | 1 | clock_gettime | -
+@build/libfoundation.a | libc-ratchet | 1 | getenv | -

@@ -1,0 +1,1 @@
+unsigned __int128 divide_entry(unsigned __int128 dividend, unsigned __int128 divisor) { return dividend / divisor; }

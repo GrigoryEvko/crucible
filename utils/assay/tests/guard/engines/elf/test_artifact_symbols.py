@@ -3,6 +3,7 @@
 THE CASES
     The cases hold these parts of the rule:
       * The class and the mark of a symbol
+      * The files of the C runtime of the compiler, and the owner of a name
       * The shapes of the ledger
       * The throws, the downcasts and the classes of planted archives
       * The run and the write of the rule on a planted build directory.
@@ -201,6 +202,65 @@ def class_cases(expect: testing.Expect) -> None:
         ]
         == [artifact_symbols.ALLOW, artifact_symbols.ALLOW, artifact_symbols.RATCHET, artifact_symbols.RATCHET],
     )
+    planted = artifact_symbols.Runtime(
+        {name: "libc.so.6" for name in ("memcpy", "getenv", "pthread_create", "__cxa_atexit")}
+        | {"__udivti3": "libgcc.a"},
+        frozenset({"__udivti3"}),
+    )
+    allow, ratchet = artifact_symbols.LIBC_ALLOW, artifact_symbols.LIBC_RATCHET
+    for library, symbol, wanted in (
+        ("foundation", "memcpy", allow),
+        ("foundation", "__udivti3", allow),
+        ("foundation", "getenv", ratchet),
+        ("foundation", "pthread_create", ratchet),
+        ("fixy", "pthread_create", allow),
+        ("crucible", "pthread_create", ratchet),
+        ("crucible", "__cxa_atexit", allow),
+        ("fixy", "__cxa_atexit", ratchet),
+    ):
+        expect(
+            f"the C runtime allowlist of {library} gives {symbol} the mark {wanted}",
+            artifact_symbols.libc_mark_of(library, symbol, planted) == wanted,
+        )
+
+
+def runtime_cases(expect: testing.Expect) -> None:
+    """Hold the files of the C runtime of the compiler and the owner of each kind of name (THE C RUNTIME SYMBOLS)."""
+    compiler = runner.plant_compiler()
+    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
+    if compiler is None:
+        return
+    runtime = artifact_symbols.runtime_of(compiler)
+    owners = {
+        name: runtime.owners.get(name, "") for name in ("memcpy", "atexit", "sqrt", "__udivti3", "_Unwind_Resume")
+    }
+    expect(
+        "the owner of a name is the first file of the C runtime that gives it",
+        owners
+        == {
+            "memcpy": "libc.so.6",
+            "atexit": "libc_nonshared.a",
+            "sqrt": "libm.so.6",
+            "__udivti3": "libgcc.a",
+            "_Unwind_Resume": "libgcc_eh.a",
+        },
+    )
+    expect(
+        "the dynamic loader of libc.so.6 owns __tls_get_addr",
+        runtime.owners.get("__tls_get_addr", "").startswith("ld-linux"),
+    )
+    expect(
+        "the support library holds the helpers and the unwinder, and no function of the C library",
+        {"__udivti3", "_Unwind_Resume"} <= runtime.support and "memcpy" not in runtime.support,
+    )
+    expect(
+        "a name of the sanitizer runtime is in no file of the C runtime",
+        "__asan_report_load8" not in runtime.owners,
+    )
+    said = raised(partial(artifact_symbols.runtime_file, compiler, "libc.so"))
+    expect("the linker script libc.so is refused", "linker script" in said)
+    said = raised(partial(artifact_symbols.runtime_file, compiler, "libno-such-runtime.so.9"))
+    expect("a name that the compiler does not find is refused", "not a file" in said)
 
 
 def ledger_cases(expect: testing.Expect) -> None:
@@ -235,6 +295,7 @@ def ledger_cases(expect: testing.Expect) -> None:
         expect(f"the ledger refuses {name}", is_refused(body))
     good = (
         f"{ROWS_KM}@build/lib.a | allow | 1 | __cxa_guard_acquire | -\n"
+        "@build/lib.a | libc-allow | 1 | memcpy | -\n@build/lib.a | libc-ratchet | 1 | getenv | -\n"
         "@build/lib.a | throw | admit | entry | a reason\n@build/lib.a | vtable | admit | Class | a reason\n"
         "@m | @build/lib.a | allow | -1 | __cxa_guard_acquire | -\n"
     )
@@ -458,13 +519,18 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         and artifact_symbols.classify(threads[0]) == "std"
         and f"configuration {KIND} kind {KIND}\n" in scratch.ledger_text(),
     )
-    expect("memcpy and atexit of glibc give no row", "@build/libcrucible.a" not in keys_of(written, KIND))
+    crucible_rows = {key.entity: key.kind for key in written.expected(KIND) if key.path == "@build/libcrucible.a"}
+    expect(
+        "memcpy of glibc gets the mark libc-allow, and atexit of libc_nonshared.a the mark libc-ratchet",
+        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET},
+    )
     status, found, _ = scratch.run()
     expect(
-        "an equal build passes, with one warning for the library that keeps symbols",
+        "an equal build passes, with one warning for each library that keeps symbols",
         status == 0
         and errors_of(found) == []
-        and [item.message.split(" keeps")[0] for item in found] == ["@build/libfoundation.a"],
+        and sorted(item.message.split(" keeps")[0] for item in found)
+        == ["@build/libcrucible.a", "@build/libfoundation.a"],
     )
     scratch.archive("foundation", ["base", "threads", "text"])
     status, found, _ = scratch.run()
@@ -500,11 +566,10 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _ = scratch.write()
     guard_rows = {key.entity: key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfoundation.a"}
     expect(
-        "a write writes the allowlist symbols without --raise, with the mark allow, and no row of libgcc",
+        "a write writes the allowlist symbols without --raise: the mark allow, and libc-allow for the unwinder",
         status == 0
-        and [guard_rows.get(name) for name in ("__cxa_guard_acquire", "__gxx_personality_v0")]
-        == [artifact_symbols.ALLOW, artifact_symbols.ALLOW]
-        and "_Unwind_Resume" not in guard_rows,
+        and [guard_rows.get(name) for name in ("__cxa_guard_acquire", "__gxx_personality_v0", "_Unwind_Resume")]
+        == [artifact_symbols.ALLOW, artifact_symbols.ALLOW, artifact_symbols.LIBC_ALLOW],
     )
     expect("after a write the build with the guard passes", scratch.run()[0] == 0)
 
@@ -691,4 +756,6 @@ def build_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (class_cases, ledger_cases, artifact_cases, build_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (class_cases, runtime_cases, ledger_cases, artifact_cases, build_cases)
+    )

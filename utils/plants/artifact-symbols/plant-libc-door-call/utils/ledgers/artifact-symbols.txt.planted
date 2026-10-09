@@ -1,0 +1,6 @@
+# A planted ledger: clock_gettime of the library crucible with the mark of a door call of fixy.
+format 1
+rule artifact-symbols
+configuration planted kind planted
+configuration planted tier planted
+@build/libcrucible.a | libc-allow | 1 | clock_gettime | -
