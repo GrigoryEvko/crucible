@@ -1,6 +1,7 @@
 """loop syntax — parse each unit of the target all of a parse build with the quarantine plugin.
 
 usage: loop syntax BUILD_DIR [-j JOBS]
+       loop syntax --changed [--root ROOT]
 
 THE PARSE BUILD
     A parse build is a configured build directory with CRUCIBLE_SYNTAX_ONLY
@@ -33,6 +34,23 @@ THE RUN
     Then `guard check --rule quarantine --build-dir BUILD_DIR` reads the
     reports (assay.guard.engines.plugin.runner, THE SECTIONS).
 
+THE CHANGE OF AN ARM
+    An arm is the code of a preprocessor conditional on a macro of an
+    architecture or of an ISA extension (is_arm_macro()).  Examples of such
+    a macro are __aarch64__, __AVX2__ and __ARM_NEON.  arm_files() reads the
+    change of a tree (assay.core.git, THE CHANGE) and the parse tree of each
+    changed C++ file (assay.readers.tsast).  It gives each such file with an
+    arm in its copy in the working tree or at the base.  A change that
+    removes an arm is then a change of an arm too.
+
+    A change of an arm makes each parse build of PARSE_PRESETS necessary,
+    because the arms of one conditional go to the builds of different
+    targets.  The rules parse-x86-64-v3 and parse-aarch64 run the parse
+    builds of such a change (assay.guard.engines.buildsys.parse_builds).
+    `loop syntax --changed` prints each preset that the change of ROOT makes
+    necessary, one on each line.  build_directory() gives the build
+    directory of a preset from the presets files of a tree.
+
 Exit status: 0 when each unit parses, 1 when a unit does not parse or a step
 fails, 2 on a usage error.  `guard selftest tests.loop.test_syntax` does a test
 of the module.
@@ -40,9 +58,11 @@ of the module.
 
 import os
 import shutil
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from assay.core import configuration as build_config
 from assay.core import proc
@@ -50,6 +70,9 @@ from assay.core import report as check_report
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import compdb, ninja
 from assay.readers import sections as quarantine_sections
+
+if TYPE_CHECKING:
+    from assay.readers import tsast
 
 # The prefix of the name of each input target (THE RUN, step 1).
 INPUT_PREFIX = "cmake_object_order_depends_target_"
@@ -65,6 +88,67 @@ PARSE_TIMEOUT_S = 900.0
 INPUT_TIMEOUT_S = 1800.0
 # The lines of the errors of a unit that the run prints.
 SHOWN_ERROR_LINES = 12
+# The parses at one time: the default of -j, and the PROCESSORS of the test of a rule that runs a parse build.
+JOBS = 96
+# The presets of the parse builds that a change of an arm makes necessary (THE CHANGE OF AN ARM).
+PARSE_PRESETS = ("syntax-x86-64-v3", "syntax-aarch64")
+# The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
+ARCHITECTURES = frozenset(
+    {
+        "x86_64",
+        "i386",
+        "i486",
+        "i586",
+        "i686",
+        "amd64",
+        "aarch64",
+        "arm",
+        "thumb",
+        "riscv",
+        "powerpc",
+        "powerpc64",
+        "ppc64",
+        "s390x",
+        "loongarch64",
+        "mips",
+    }
+)
+# The ISA extensions of the macros __NAME__: each family by its first letters, and each other extension by its name.
+ISA_FAMILIES = ("SSE", "AVX", "AMX_")
+ISA_EXTENSIONS = frozenset(
+    {
+        "SSSE3",
+        "BMI",
+        "BMI2",
+        "FMA",
+        "FMA4",
+        "F16C",
+        "POPCNT",
+        "LZCNT",
+        "PCLMUL",
+        "AES",
+        "SHA",
+        "VAES",
+        "VPCLMULQDQ",
+        "GFNI",
+        "ADX",
+        "AMX",
+        "MOVBE",
+    }
+)
+# The prefix of an ARM macro, such as __ARM_NEON, and the architecture macros of the other compilers.
+ARM_PREFIX = "__ARM_"
+OTHER_ARCHITECTURES = frozenset({"_M_X64", "_M_AMD64", "_M_ARM64", "_M_IX86"})
+# The field of each preprocessor conditional of the parse tree that holds the names of its condition.
+CONDITION_FIELDS = {
+    "preproc_if": "condition",
+    "preproc_elif": "condition",
+    "preproc_ifdef": "name",
+    "preproc_elifdef": "name",
+}
+# The macros of a presets file that build_directory() expands.
+SOURCE_DIR_MACRO = "${sourceDir}"
+PRESET_NAME_MACRO = "${presetName}"
 
 
 class ParseError(Exception):
@@ -255,8 +339,107 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
     return 1 if failed else 0
 
 
+def is_arm_macro(name: str) -> bool:
+    """Return True for a macro of an architecture or of an ISA extension that a compiler gives (THE CHANGE OF AN ARM).
+
+    The macros are __NAME__ and __NAME of ARCHITECTURES, each macro with the prefix ARM_PREFIX, and each macro of
+    OTHER_ARCHITECTURES.  A macro __NAME__ of an ISA extension of ISA_FAMILIES or ISA_EXTENSIONS is one too.
+    """
+    if name in OTHER_ARCHITECTURES:
+        return True
+    if not name.startswith("__"):
+        return False
+    if name.startswith(ARM_PREFIX):
+        return len(name) > len(ARM_PREFIX)
+    bare = name[2:].removesuffix("__")
+    if bare in ARCHITECTURES:
+        return True
+    return name.endswith("__") and (bare in ISA_EXTENSIONS or bare.startswith(ISA_FAMILIES))
+
+
+def arm_macros(tree: tsast.Tree) -> frozenset[str]:
+    """Return each macro of is_arm_macro() that a preprocessor condition of a parse tree names (THE CHANGE OF AN ARM).
+
+    A comment and a string hold no identifier node.  A macro name in one then counts for nothing.  Complexity: linear
+    in the nodes of the tree.
+    """
+    from assay.readers import tsast
+
+    found: set[str] = set()
+    for node in tree.find(*CONDITION_FIELDS):
+        part = node.child_by_field(CONDITION_FIELDS[node.type])
+        if part is None:
+            continue
+        leaves = [part] if part.type == "identifier" else list(part.descendants("identifier"))
+        found.update(word for leaf in leaves if is_arm_macro(word := tsast.lexeme(leaf)))
+    return frozenset(found)
+
+
+def arm_files(root: Path) -> dict[str, frozenset[str]]:
+    """Return each changed C++ file of a tree that holds an arm, with the macros of its arms (THE CHANGE OF AN ARM).
+
+    The macros of a file are those of its copy in the working tree and of its copy at the base of the change.  A tree
+    with no base of a change gives no file.  Complexity: one diff, one read of each changed C++ file at the base, and
+    one parse tree of each copy.
+
+    Raises:
+        ParseError: If git cannot read the change, a file cannot be read, or the parse kit is not installed
+    """
+    from assay.core import git
+    from assay.readers import tsast
+
+    try:
+        base = git.change_base(root)
+        if base is None:
+            return {}
+        paths = [path for path in git.changed_files(root, base) if tsast.is_in_cpp_scope(path)]
+        earlier = git.blobs(root, [f"{base}:{path}" for path in paths])
+    except git.GitError as problem:
+        raise ParseError(f"the change of {root} cannot be read: {problem}") from None
+    found: dict[str, set[str]] = {}
+    try:
+        with tempfile.TemporaryDirectory(prefix="syntax-base-") as scratch:
+            kept: list[str] = []
+            for path, data in zip(paths, earlier, strict=True):
+                if data is not None:
+                    copy = Path(scratch) / path
+                    copy.parent.mkdir(parents=True, exist_ok=True)
+                    copy.write_bytes(data)
+                    kept.append(path)
+            present = [path for path in paths if (root / path).is_file()]
+            trees = [*tsast.parse_files(root, present), *tsast.parse_files(Path(scratch), kept)]
+    except (OSError, tsast.KitMissing) as problem:
+        raise ParseError(f"the changed C++ files of {root} cannot be parsed: {problem}") from None
+    for tree in trees:
+        macros = arm_macros(tree)
+        if macros:
+            found.setdefault(tree.path.as_posix(), set()).update(macros)
+    return {path: frozenset(macros) for path, macros in sorted(found.items())}
+
+
+def build_directory(root: Path, preset: str) -> Path:
+    """Return the build directory of a configure preset of the presets files of a tree (THE CHANGE OF AN ARM).
+
+    The function expands the macros ${sourceDir} and ${presetName} of the field binaryDir.
+
+    Raises:
+        ParseError: If no presets file gives the preset, or the preset gives no binaryDir
+    """
+    from assay.readers import cmake
+
+    for presets_file in cmake.presets(root):
+        for item in presets_file.configure:
+            if item.name != preset:
+                continue
+            if item.binary_dir is None:
+                raise ParseError(f"the preset {preset} of {presets_file.path} gives no binaryDir")
+            text = item.binary_dir.replace(SOURCE_DIR_MACRO, str(root)).replace(PRESET_NAME_MACRO, preset)
+            return Path(text) if Path(text).is_absolute() else root / text
+    raise ParseError(f"no presets file of {root} gives the configure preset {preset}")
+
+
 def main(argv: list[str]) -> int:
-    """Parse the arguments, and do the run of a parse build.
+    """Parse the arguments, and do the run of a parse build, or print the parse presets of a change.
 
     Args:
         argv: The words after `loop syntax`
@@ -268,9 +451,22 @@ def main(argv: list[str]) -> int:
     from assay.core.paths import REPO_ROOT
 
     parser = cli.parser("loop syntax", "parse each unit of all of a parse build with the quarantine plugin")
-    parser.add_argument("build_dir", metavar="BUILD_DIR", help="a build of a preset syntax-*")
-    parser.add_argument("-j", "--jobs", type=int, default=96, help="the parses at one time; 96 when not given")
+    parser.add_argument("build_dir", metavar="BUILD_DIR", nargs="?", help="a build of a preset syntax-*")
+    parser.add_argument("-j", "--jobs", type=int, default=JOBS, help=f"the parses at one time; {JOBS} when not given")
+    parser.add_argument("--changed", action="store_true", help="print each parse preset that the change needs")
+    parser.add_argument("--root", type=Path, default=REPO_ROOT, help="the tree of --changed")
     options = parser.parse_args(argv)
     if options.jobs < 1:
         parser.error(f"JOBS must be a positive integer, not '{options.jobs}'")
+    if options.changed == (options.build_dir is not None):
+        parser.error("give BUILD_DIR or --changed, and not the two")
+    if options.changed:
+        try:
+            needed = PARSE_PRESETS if arm_files(options.root.resolve()) else ()
+        except ParseError as problem:
+            check_report.write_line(f"loop syntax: {problem}", is_error=True)
+            return 1
+        for preset in needed:
+            check_report.write_line(preset)
+        return 0
     return run(Path(options.build_dir).resolve(), REPO_ROOT, options.jobs)

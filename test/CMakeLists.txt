@@ -5006,7 +5006,10 @@ endforeach()
 # The rules of the engine build read this build directory: the compile
 # database, the replies of the CMake file API, build.ninja and the logs of
 # Ninja, the records of the build launcher and of the tests, and the census
-# (cmake/Guards.cmake).  No build rule reads the parse trees of the tree.
+# (cmake/Guards.cmake).  The rules parse-x86-64-v3 and parse-aarch64 read the
+# parse trees of the changed files, so their tests require the fixture
+# tsast_trees.  When the change holds an arm, each one runs a parse build with
+# the JOBS of assay.loop.syntax, so its test has as many PROCESSORS.
 # The rule reconfigure-noop configures a build again and builds it, and a
 # ctest test cannot do that to the build that runs it.  So it gets only its
 # witness, and a step of the CI build job runs the check.  The rule
@@ -5025,6 +5028,7 @@ endforeach()
 # property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
 # directory makes the three tests DEPEND on each fixture.
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
+set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees PROCESSORS 96)
 set_property(TEST guard_contract_header_unit APPEND PROPERTY LABELS foundation)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 if(_vessel_disabled)

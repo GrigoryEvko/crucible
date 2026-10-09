@@ -1,0 +1,8 @@
+// A unit with an arm for AVX2 and an arm for each other target.
+int lanes() {
+#if defined(__AVX2__)
+    return 8;
+#else
+    return 1;
+#endif
+}

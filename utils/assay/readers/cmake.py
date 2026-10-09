@@ -245,21 +245,28 @@ class Toolchain:
 
 
 class Preset:
-    """One configure preset: its name, its cache variables and its environment.
+    """One configure preset: its name, its cache variables, its environment and its build directory.
 
     A value is a text, or None when the presets file gives a value that is
-    not a text, such as a boolean or null.
+    not a text, such as a boolean or null.  `binary_dir` is the field
+    binaryDir as the file gives it, with its macros, or None when the preset
+    gives no text there.
     """
 
-    __slots__ = ("cache_variables", "environment", "name")
+    __slots__ = ("binary_dir", "cache_variables", "environment", "name")
 
     def __init__(
-        self, name: str, cache_variables: Mapping[str, str | None], environment: Mapping[str, str | None]
+        self,
+        name: str,
+        cache_variables: Mapping[str, str | None],
+        environment: Mapping[str, str | None],
+        binary_dir: str | None = None,
     ) -> None:
         """Hold the parts of one preset."""
         self.name = name
         self.cache_variables = dict(cache_variables)
         self.environment = dict(environment)
+        self.binary_dir = binary_dir
 
     def __repr__(self) -> str:
         """Return the preset for a message."""
@@ -669,7 +676,15 @@ def _preset_file(path: Path) -> PresetFile:
         name = item.get("name")
         if not isinstance(name, str) or not name:
             return PresetFile(path, (), f"the item {position} of configurePresets has no name, and CMake refuses it")
-        found.append(Preset(name, _preset_values(item.get("cacheVariables")), _preset_values(item.get("environment"))))
+        binary_dir = item.get("binaryDir")
+        found.append(
+            Preset(
+                name,
+                _preset_values(item.get("cacheVariables")),
+                _preset_values(item.get("environment")),
+                binary_dir if isinstance(binary_dir, str) else None,
+            )
+        )
     return PresetFile(path, tuple(found), None)
 
 

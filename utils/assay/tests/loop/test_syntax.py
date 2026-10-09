@@ -116,6 +116,90 @@ def unit_cases(expect: testing.Expect) -> None:
         )
 
 
+def macro_cases(expect: testing.Expect) -> None:
+    """Hold the names that is_arm_macro() accepts, and the names that it refuses."""
+    accepted = (
+        "__aarch64__",
+        "__x86_64__",
+        "__x86_64",
+        "__i386__",
+        "__mips",
+        "__ARM_NEON",
+        "__ARM_NEON__",
+        "__ARM_FEATURE_SVE",
+        "__AVX2__",
+        "__AVX512BW__",
+        "__SSE4_2__",
+        "__FMA__",
+        "__AMX_TILE__",
+        "_M_ARM64",
+    )
+    refused = (
+        "__linux__",
+        "__APPLE__",
+        "__SANITIZE_THREAD__",
+        "__SHARED__",
+        "__clang__",
+        "__cplusplus",
+        "PLANTED_AVX2",
+        "__AVX2",
+        "__ARM_",
+        "ARM_NEON",
+        "_M_PLANTED",
+    )
+    expect(
+        "is_arm_macro accepts each macro of an architecture or an ISA extension",
+        all(syntax.is_arm_macro(name) for name in accepted),
+    )
+    expect("is_arm_macro refuses each other macro", not any(syntax.is_arm_macro(name) for name in refused))
+
+
+def change_cases(expect: testing.Expect) -> None:
+    """Hold arm_files() on a planted change, and build_directory() on a planted presets file."""
+    from assay.core import git
+
+    simd = b"int lanes() {\n#if defined(__AVX2__) && !defined(__AVX512BW__)\n    return 8;\n#endif\n    return 1;\n}\n"
+    neon = b"#ifdef __ARM_NEON\nint wide = 4;\n#elif defined(OTHER)\nint wide = 2;\n#endif\n"
+    plain = b"// __aarch64__ in a comment is no arm.\nint one() { return 1; }\n"
+    presets = (
+        b'{"version": 6, "configurePresets": [{"name": "syntax-planted", '
+        b'"binaryDir": "${sourceDir}/build-${presetName}"}, {"name": "bare"}]}'
+    )
+    files = {"src/simd.cpp": simd, "src/neon.h": neon, "src/plain.cpp": plain, "notes.txt": b"__AVX2__\n"}
+    with git.scratch_repository({**files, "CMakePresets.json": presets}) as root:
+        git.commit_all(root, "The base of the change")
+        expect("a tree with no change gives no arm file", syntax.arm_files(root) == {})
+        (root / "src" / "plain.cpp").write_bytes(plain + b"int two() { return 2; }\n")
+        (root / "notes.txt").write_bytes(b"__aarch64__\n")
+        expect(
+            "a change of a file with no arm and of a file that is no C++ gives no arm file",
+            syntax.arm_files(root) == {},
+        )
+        (root / "src" / "simd.cpp").write_bytes(b"int lanes() { return 1; }\n")
+        (root / "src" / "neon.h").unlink()
+        (root / "src" / "fresh.cpp").write_bytes(b"#if __x86_64__\nint x = 1;\n#endif\n")
+        removed = {"src/neon.h": frozenset({"__ARM_NEON"}), "src/simd.cpp": frozenset({"__AVX2__", "__AVX512BW__"})}
+        expect(
+            "an arm that the change removes, a removed file with an arm, and a new file with an arm are changes of arms",
+            syntax.arm_files(root) == {"src/fresh.cpp": frozenset({"__x86_64__"}), **removed},
+        )
+        expect(
+            "build_directory expands sourceDir and presetName",
+            syntax.build_directory(root, "syntax-planted") == root / "build-syntax-planted",
+        )
+        for preset, text in (("bare", "gives no binaryDir"), ("missing", "gives the configure preset missing")):
+            try:
+                syntax.build_directory(root, preset)
+                problem = ""
+            except syntax.ParseError as error:
+                problem = str(error)
+            expect(f"build_directory refuses the preset {preset}", text in problem)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (word_cases, native_cases, build_cases, unit_cases))
+    return testing.run(
+        __name__.removeprefix("assay."),
+        argv,
+        (word_cases, native_cases, build_cases, unit_cases, macro_cases, change_cases),
+    )

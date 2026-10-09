@@ -1,0 +1,7 @@
+// The unit needs no __AVX2__ arm and no __aarch64__ arm.  A comment holds no
+// node of a condition, so the change needs no parse build.
+#if defined(PLANTED_FEATURE)
+int one() { return 2; }
+#else
+int one() { return 1; }
+#endif

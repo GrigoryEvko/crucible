@@ -162,6 +162,11 @@ def file_change_cases(expect: Callable[[str, bool], None]) -> None:
             fresh is not None and fresh.old_path is None and fresh.hunks == (git.Hunk(0, 0, 1, 2),),
         )
         expect("a removed file has no entry", "moved.cpp" not in changes)
+        (root / "untracked.cpp").write_bytes(b"int third = 3;\n")
+        expect(
+            "changed_files gives a changed, a removed, a moved, an added and a new file",
+            git.changed_files(root, base) == ("fresh.cpp", "kept.cpp", "moved.cpp", "renamed.cpp", "untracked.cpp"),
+        )
         expect(
             "the head of a hunk reads the counts, and a count that the diff omits is 1",
             git.hunk_of("@@ -3 +4,0 @@ int x;") == git.Hunk(3, 1, 4, 0)

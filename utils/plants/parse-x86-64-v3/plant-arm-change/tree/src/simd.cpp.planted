@@ -1,0 +1,9 @@
+// A unit with an arm for AVX2 and an arm for each other target.  The change
+// edits the AVX2 arm, and no parse build of the plant is configured.
+int lanes() {
+#if defined(__AVX2__)
+    return 16;
+#else
+    return 1;
+#endif
+}

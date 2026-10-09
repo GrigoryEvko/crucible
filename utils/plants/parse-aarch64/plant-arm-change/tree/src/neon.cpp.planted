@@ -1,0 +1,9 @@
+// A unit with an arm for NEON and an arm for each other target.  The change
+// edits the NEON arm, and no parse build of the plant is configured.
+int lanes() {
+#ifdef __ARM_NEON
+    return 2;
+#else
+    return 1;
+#endif
+}

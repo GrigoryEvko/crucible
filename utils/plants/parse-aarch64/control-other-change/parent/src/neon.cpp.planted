@@ -1,0 +1,8 @@
+// A unit with an arm for NEON and an arm for each other target.
+int lanes() {
+#ifdef __ARM_NEON
+    return 4;
+#else
+    return 1;
+#endif
+}

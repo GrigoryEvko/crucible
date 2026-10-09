@@ -39,8 +39,9 @@ THE MOVES
     new file.
 
 THE CHANGE
-    change_base() gives the commit that a change starts from, and
-    file_changes() gives the hunks between that commit and the working tree.
+    change_base() gives the commit that a change starts from.
+    file_changes() gives the hunks between that commit and the working tree,
+    and changed_files() gives each path that the change touches.
     The base is the first of these commits that applies:
       * The commit that the environment variable CHANGE_BASE_VARIABLE names.
       * When HEAD is on a branch other than main, and the repository has a
@@ -504,6 +505,20 @@ def file_changes(root: Path, base: str) -> dict[str, FileChange]:
             hunks.append(hunk)
     keep()
     return found
+
+
+def changed_files(root: Path, base: str) -> tuple[str, ...]:
+    """Return each path that the working tree changes against a commit, sorted (THE CHANGE).
+
+    The paths are each changed, added and deleted file of the diff, and each new file (new_files()).  A moved file
+    gives its path at the base and its path in the working tree.  Complexity: linear in the paths of the diff.
+
+    Raises:
+        GitError: If git fails
+    """
+    output = run(root, "diff", "--name-only", "--no-renames", "-z", base, "--")
+    names = {name for name in output.decode("utf-8", "surrogateescape").split("\0") if name}
+    return tuple(sorted(names | set(new_files(root))))
 
 
 def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:

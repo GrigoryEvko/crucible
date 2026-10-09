@@ -187,19 +187,24 @@ def preset_cases(expect: testing.Expect) -> None:
         root = Path(scratch)
         expect("a tree with no presets file has no preset file", cmake.presets(root) == ())
         (root / "CMakePresets.json").write_text(
-            '{"version": 6, "configurePresets": [{"name": "planted", "cacheVariables": {"A": "1", "B": {"type": '
-            '"BOOL", "value": "ON"}, "C": true}, "environment": {"E": "x", "N": null}}]}',
+            '{"version": 6, "configurePresets": [{"name": "planted", "binaryDir": "${sourceDir}/build-planted", '
+            '"cacheVariables": {"A": "1", "B": {"type": "BOOL", "value": "ON"}, "C": true}, "environment": {"E": '
+            '"x", "N": null}}, {"name": "bare", "binaryDir": 3}]}',
             encoding="utf-8",
         )
         (root / "CMakeUserPresets.json").write_text("{", encoding="utf-8")
         first, second = cmake.presets(root)
-        (preset,) = first.configure
+        preset, bare = first.configure
         expect(
             "a preset gives each cache variable and each environment value as a text, or None for no text",
             preset.name == "planted"
             and preset.cache_variables == {"A": "1", "B": "ON", "C": None}
             and preset.environment == {"E": "x", "N": None}
             and first.problem is None,
+        )
+        expect(
+            "a preset gives its binaryDir with its macros, or None when the field is not a text",
+            preset.binary_dir == "${sourceDir}/build-planted" and bare.binary_dir is None,
         )
         expect(
             "a presets file that is not JSON gives a problem, and the other file still gives its presets",

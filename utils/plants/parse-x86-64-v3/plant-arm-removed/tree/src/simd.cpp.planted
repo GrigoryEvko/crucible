@@ -1,0 +1,3 @@
+// The change removes the arms.  The copy of the unit at the base holds them,
+// so the change is a change of an arm.
+int lanes() { return 1; }

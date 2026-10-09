@@ -175,8 +175,9 @@ endfunction()
 # the field held-by gets only its witness too, because its holder judges it and it has no run of its own.  Its
 # witness runs the judge of the holder on each plant.  The witness gets the patched compiler, the cmake and the
 # ninja of the build (ASSAY_TEST_CXX, ASSAY_TEST_CMAKE and ASSAY_TEST_NINJA), because some plants compile a planted
-# unit or configure a planted project.  No build rule reads the parse trees, so the tests do not require the
-# fixture tsast_trees.  Exit 77 is a skip: the rule does not apply to the build.
+# unit or configure a planted project.  The tests do not require the fixture tsast_trees.  test/CMakeLists.txt
+# gives the fixture to the test of each build rule that reads the parse trees.  Exit 77 is a skip: the rule does
+# not apply to the build.
 function(crucible_build_rule_tests warnings_dir)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "NO_CHECK")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=build[ \t]" rows)
