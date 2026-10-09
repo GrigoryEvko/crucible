@@ -27,6 +27,22 @@ MEASURE
     measurement also holds the user instructions of the command (THE
     INSTRUCTION COUNT below).
 
+THE OWN RUN
+    A process that is a test itself, such as the fixture driver `loop
+    fixture`, measures its own run: start_self() at the start of its work,
+    and measure_self() at its end.  The CPU time and the peak memory of
+    getrusage start with the process.  The wall time starts at the monotonic
+    clock less process_lead_s(): the CPU time and the run-queue wait of the
+    task since its fork, from /proc/self/schedstat.  The wall time then holds
+    the start of the interpreter and the imports before start_self(), apart
+    from the time that the process slept in them.  On 2026-10-09, 20 runs of
+    the fixture neg_platform_apple_aarch64 from the store took 33.1 ms at
+    p50, from the spawn to wait4 in the parent.  The record of the driver
+    gave 29.0 ms at p50, 4.3 ms less (3.7 ms to 6.3 ms).  The remaining time
+    is the spawn in the parent and the exit after the record.  With the
+    clock alone, the record gave 10.0 ms, 22.6 ms less.  A host with no
+    schedstat file gives the clock alone.
+
 THE INSTRUCTION COUNT
     The CPU time of one compile rises with the load of the host, because two
     threads share each core.  The number of user instructions does not: four
@@ -169,6 +185,8 @@ TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu", "
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")
+# The CPU time and the run-queue wait of this task since its fork, in nanoseconds (THE OWN RUN).
+SCHEDSTAT_FILE = "/proc/self/schedstat"
 # CRUCIBLE_COUNT_INSTRUCTIONS=0 opens no instruction counter, as on a host with no counter.
 INSTRUCTIONS_ENV = "CRUCIBLE_COUNT_INSTRUCTIONS"
 # The number of the system call perf_event_open on each architecture of the tree.
@@ -415,16 +433,44 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
                        applied_limit, instructions)
 
 
-def start_self() -> tuple[float, float]:
-    """Return the start of a measure of this process: the monotonic clock in seconds and the one-minute load average.
+def process_lead_s() -> float:
+    """Return the time of this process before the call, from /proc/self/schedstat, in seconds.
 
-    A process that is a test itself, such as the fixture driver, measures its own run with measure_self().
+    The kernel gives the CPU time of the task and its wait on a run queue
+    since the fork, in nanoseconds.  Their sum is the wall time of the task
+    since the fork, less the time that the task slept.  An example of a sleep
+    is a read from a disk.  The sum is then a lower bound of that wall time.
+    A kernel with no schedstat file gives 0.
     """
+    try:
+        descriptor = os.open(SCHEDSTAT_FILE, os.O_RDONLY)
+    except OSError:
+        return 0.0
+    try:
+        fields = os.read(descriptor, 128).split()
+    except OSError:
+        fields = []
+    finally:
+        os.close(descriptor)
+    if len(fields) < 2 or not (fields[0].isdigit() and fields[1].isdigit()):
+        return 0.0
+    return (int(fields[0]) + int(fields[1])) / 1e9
+
+
+def start_self() -> tuple[float, float]:
+    """Return the start of a measure of this process: the monotonic clock at its start, and the one-minute load average.
+
+    A process that is a test itself, such as the fixture driver, measures its
+    own run with measure_self().  The start is the monotonic clock less
+    process_lead_s().  The wall time of measure_self() then holds the start
+    of the interpreter and the imports before the call (THE OWN RUN).
+    """
+    now = time.perf_counter()
     try:
         load = os.getloadavg()[0]
     except OSError:
         load = -1.0
-    return time.perf_counter(), load
+    return now - process_lead_s(), load
 
 
 def measure_self(exit_code: int, start: tuple[float, float]) -> Measurement:
@@ -432,12 +478,9 @@ def measure_self(exit_code: int, start: tuple[float, float]) -> Measurement:
 
     The CPU time holds this process and each process that it waited for, and
     the peak memory is that of the largest of them.  The CPU time and the
-    peak memory start with the process.  The wall time starts at
-    start_self(), after the start of the interpreter and the imports of the
-    caller.  The wall time of a fixture run is then approximately 10 ms less
-    than the wall time of the same run in `loop test-step`, which measures the
-    process from its start.  This difference changes a verdict of the rule
-    test-time only for a run that is 10 ms or less from one of its thresholds.
+    peak memory start with the process.  The wall time starts at the start
+    that start_self() gives, which holds the start of the interpreter (THE
+    OWN RUN).
 
     Args:
         exit_code: The status that the process ends with

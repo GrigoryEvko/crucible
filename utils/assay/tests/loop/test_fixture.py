@@ -879,6 +879,13 @@ class StoreTest:
         status, said = run_driver("")
         self.expect(status == 0 and "[test-" not in said and record().get("result") == "passed",
                     f"a fixture under the thresholds passes with no finding, and its record says passed: {status}")
+        # A run from the store starts no process.  Its CPU time is then a part of its wall time, from the start of
+        # the interpreter on.  The record gives each time with a precision of 1 ms.
+        status, said = run_driver("")
+        cost = record().get("cost")
+        self.expect(status == 0 and isinstance(cost, dict) and cost["wall_s"] >= cost["cpu_s"] - 0.002,
+                    f"the wall time of the record of the driver holds the start of its interpreter, and it is no "
+                    f"less than its CPU time: {cost}")
         status, _ = run_driver("test_fixture")
         self.expect(status == 0 and not record_path.exists(),
                     "under the test launcher, the driver writes no record of the test")
