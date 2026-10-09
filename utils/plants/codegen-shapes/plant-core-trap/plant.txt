@@ -1,0 +1,6 @@
+# The family side of the probe load adds a check into a trap, and the probe declares no check and no branch.  The
+# unit has the hardening flags, and the hardening explains a trap check only after a declared check or branch.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fharden-compares -fharden-conditional-branches -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fharden-compares -fharden-conditional-branches -fcontract-evaluation-semantic=observe
+probe load | a load is the load of a raw pointer

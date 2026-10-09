@@ -6,13 +6,15 @@
 // the raw form that the family replaces: a std::atomic operation, a raw pointer
 // loop, memcpy or memset, a std::unique_ptr or std::optional access, or
 // std::unreachable.  The check compares the instructions of the two functions
-// of each pair with the expectation of the pair.
+// of each pair, and the probe of the pair in the rule declares the
+// differences that the family function can add.
 //
-// test/shape/CMakeLists.txt compiles this unit with one fixed set of flags in
-// each preset.  Each function takes its operands as parameters, so the
-// optimizer cannot fold an operand into the code.  Each function is
-// [[gnu::used]] in an unnamed namespace.  The compiler then emits it with the
-// signature that it declares, and its name stays in this unit.
+// test/shape/CMakeLists.txt compiles this unit with the flags of the
+// foundation library.  Each build then compares the pairs with its own flags.
+// Each function takes its operands as parameters, and the optimizer cannot
+// fold an operand into the code.  Each function is [[gnu::used]] in an
+// unnamed namespace.  The compiler then emits it with the signature that it
+// declares, and its name stays in this unit.
 //
 // The raw forms are in one opt-out region of the class ORACLE.  Each raw form
 // is the reference for the shape of its family operation, so it must stay raw.

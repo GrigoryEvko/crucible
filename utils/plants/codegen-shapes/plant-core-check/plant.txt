@@ -1,0 +1,6 @@
+# The family side of the probe checked adds a check into a call of the fatal exit, and the probe declares no check.
+# The unit has the flags of a Debug unit, and the fatal call then stays in the hot part.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+probe checked | a load adds no check

@@ -1,9 +1,9 @@
-"""codegen-shapes — a hot operation of a core family compiles to its raw code, and a constant-time primitive has no branch.
+"""codegen-shapes — a hot operation of a core family adds no instruction to its raw code, and a constant-time primitive has no branch.
 
 THE PARTS
     The rule reads the compile database of a build
     (assay.guard.engines.elf.runner, THE BUILD), and it has two parts:
-      core           the probes of test/shape/core_shapes.cpp (THE PROBES)
+      core           the probe pairs of test/shape/core_shapes.cpp (THE PAIRS)
       constant-time  the wrappers of the primitives of fixy::ct (THE WRAPPERS)
     The core part reads the compile of the probe unit, and the
     constant-time part reads the compile of the release unit
@@ -12,7 +12,7 @@ THE PARTS
     the rule does not apply (exit 77).  A plant gives its parts with rows
     "part NAME" of its plant.txt.
 
-THE PROBES
+THE PAIRS
     test/shape/core_shapes.cpp holds two functions for each probe of PROBES.
     The function NAME does one hot operation of a family of
     include/foundation/core.  The function NAME_raw does the same work with
@@ -22,52 +22,106 @@ THE PROBES
       * memcpy or memset
       * An access through std::unique_ptr or std::optional
       * std::unreachable.
-    test/shape/CMakeLists.txt compiles the unit into the object library
-    core_shape_probes.  Each preset gives the
-    unit the same flags: the code flags of cmake/CodeFlags.cmake, and
-    FIXED_FLAGS, with -O3 and -march=x86-64-v3.  The rule compiles the unit
-    again into a scratch directory with the command of the compile database.
-    A run after a change of a header of the base then reads the code of the
-    change.  A plant gives its expectations with rows of its plant.txt, and
-    PROBES does not apply to it:
+    test/shape/CMakeLists.txt compiles the unit with the flags of the
+    foundation library of the build.  Each build then compares the two
+    functions of a pair with its own level, target, `-fharden-` flags and
+    contract semantic.  A probe declares the differences that its family
+    side can add (THE VERDICT).  A plant gives its probes with rows of its
+    plant.txt, and PROBES does not apply to it:
 
-        probe NAME relation=same|loop|cost bound=N [extra=N] [calls=A,B] [raw-calls=A,B] [cold=yes] [locked=yes] | CLAIM
+        probe NAME [check=KIND[,KIND...]] [branch=yes] [calls=NAME[,NAME...]] | CLAIM
 
-THE FLAGS OF THE PROBES
-    The rule takes the code words of the probe unit and of each unit of the
-    target foundation.  The words of the probe unit that change with the
-    preset (PER_PRESET) must be FIXED_FLAGS.  Its other words must be the
-    words of the foundation units, less their words that change with the
-    preset.  A flag that the tree adds to each build, or removes from each
-    build, then fails the rule until test/shape/CMakeLists.txt changes too.
+THE FLAGS OF THE PAIRS
+    The probe unit must have the code words of each unit of the target
+    foundation, and no other code word.  A code word is a word of the compile
+    command that changes the code.  The level, the target, a sanitizer, a
+    `-fharden-` flag and the contract semantic count too.  Each foundation
+    unit must have the same code words.  A word that does not change the
+    code, such as a warning, an include directory or the debug information,
+    is no code word.
 
-THE SHAPE
-    The rule disassembles the probe object with assay.readers.objdump.  A
-    function has a hot part, and it can have a cold part,
-    `NAME [clone .cold]` in a section .text.unlikely.  A count of
-    instructions does not count the nop instructions that align the code.
-    For each probe:
-      - The bound: the hot part of NAME has at most `bound` instructions.
-      - The relation to NAME_raw:
-          same   the two hot parts have the same instructions, in sequence
-          loop   each inner loop is the same in the two hot parts.  NAME
-                 has at most `extra` more instructions.  An inner loop is
-                 the instructions from the target of a conditional jump back
-                 to that jump
-          cost   the hot part of NAME has at most `extra` instructions more
-                 than the hot part of NAME_raw
-      - The calls: the hot part of NAME calls the functions of `calls`, and
-        no other function.  NAME_raw calls those of `raw_calls`.  A jump to
-        a different function is a call.
-      - The lock: with `locked`, each hot part holds a locked instruction (a
-        lock prefix, or xchg with a memory operand).  Without `locked`, no
-        hot part holds one.
-      - The cold call: with `cold`, NAME has a cold part, and its hot part
-        jumps into it.  The cold part calls the exit function of
-        include/foundation/core/Report.h.  Without `cold`, NAME has no cold
-        part.
-    The run prints the disassembly of the two functions of a probe that
-    fails.
+THE COMPILES
+    The rule compiles the probe unit again into a scratch directory, with
+    the command of the compile database less each word that starts with
+    SANITIZER_WORDS.  A sanitizer adds a test to each memory access, and the
+    test is not a part of the code of an operation.  The verdict reads this
+    compile.  When the command holds a sanitizer word, the rule also compiles
+    the command as it is.  The run then prints the counts of each pair with
+    the sanitizer, and it gives no verdict for them.  A run after a change of
+    a header of the base reads the code of the change.
+
+THE WALK
+    The rule disassembles the object with assay.readers.objdump.  A function
+    has a hot part, and it can have a cold part, `NAME [clone .cold]` in a
+    section .text.unlikely.  The walk reads the instructions of the two parts,
+    with no nop that aligns the code.  An instruction is on a returning path
+    when a path from the entry of the hot part goes to it.  A path from it
+    must also go to a ret, or to a jump to a different function.  These
+    instructions end a path that does not return:
+      - a trap: ud2, int3 or hlt
+      - a call of a function that does not return (NORETURN_NAMES,
+        NORETURN_PREFIXES, and a name with the end NORETURN_SUFFIX)
+      - a call before a trap, or at the end of its part.
+    A path that does not return is a failure path.  Its kind is the first
+    kind of FAILURE_KINDS that has a callee of the path, or trap when the
+    path has no such callee.  The verdict reads only the instructions on
+    returning paths, in the sequence of their addresses, the hot part first.
+
+THE NORMALIZATION
+    Each instruction becomes one text:
+      - A general register becomes g64, g32, g16 or g8 for its width.  A
+        vector register becomes v128, v256 or v512, and each register `k0`
+        to `k7` becomes k.  rsp, rbp, rip, fs and gs keep their names,
+        because each one has a specified role.  Two functions with a
+        difference only in the allocation of their registers then give the
+        same texts.
+      - A jump in the function becomes the kind of its target: "->" for code
+        that returns, "<-" for an earlier instruction of the same part (the
+        edge of a loop), and "!KIND" for a failure path of the kind KIND.  A
+        conditional jump with one returning edge and one failure path names
+        the failure path.
+      - A relocation replaces its address with its symbol.  A call and a tail
+        jump name their callee.  A local constant .LC12 becomes .LC, and a
+        different section symbol, such as a switch table, keeps only the
+        kind of its section.  The displacement of rip goes.
+      - The mnemonic keeps its lock or rep prefix.  A constant operand and
+        each other displacement stay.
+
+THE VERDICT
+    The rule finds one longest subsequence of the texts of the two
+    functions.  The family-only instructions are the instructions of NAME
+    that are not in it.  Each family-only instruction has one class:
+      check     a conditional jump into a failure path
+      branch    a jump into returning code
+      call      a call, or a jump to a different function
+      division  div or idiv
+      indexed   a memory operand with an index register, other than lea
+      plain     each other instruction.
+    These family-only instructions are errors:
+      - A check of a kind that the probe does not declare with check=KIND.
+        In a unit with a flag of HARDENING_FLAGS, a check of the kind trap
+        is a second test on an edge of a branch.  The rule accepts two such
+        checks for each family-only check and branch that the probe declares.
+      - A branch, when the probe does not declare branch=yes.
+      - A call of a callee that the probe does not declare with calls=NAME.
+      - A division, and an indexed load.
+      - An instruction in a loop of NAME, when the probe does not declare
+        branch=yes.  A loop is the instructions from the target of a jump "<-"
+        to that jump.
+    The two functions must hold the same locked instructions (a lock prefix,
+    or xchg with a memory operand).  The family side then does the same atomic
+    work.  A probe that declares nothing must give NAME at most the count of
+    instructions of NAME_raw.  The raw side can do more work, such as a spill
+    to the stack.  The family side can also do the same work with different
+    plain instructions.
+
+THE COSTS
+    A probe that declares a difference has a known cost on the hot path.
+    When its family side has more instructions than its raw side, the run
+    gives a warning with the two counts and the family-only instructions.
+    The cost then stays in the output of each run.  The run also prints the
+    counts of each pair, and the run prints the disassembly of the two
+    functions of a probe with an error.
 
 THE WRAPPERS
     The rule compiles one wrapper for each constant-time primitive of
@@ -114,17 +168,19 @@ THE CENSUSES
     with such a name must have its cases in CTCRYPTO_CASES.  The map is
     empty, because no production function states the grade.
 
-Complexity: one compile of the probe unit, twelve compiles of the wrapper unit, and one load of each parse tree.
+Complexity: one or two compiles of the probe unit, and for each pair one longest subsequence, quadratic in its
+instructions.  Twelve compiles of the wrapper unit, and one load of each parse tree.
 """
 
 import os
 import platform
 import shlex
 import tempfile
+from bisect import bisect_left
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Literal
 
 from assay.core import proc
 from assay.core import registry as rule_registry
@@ -147,27 +203,67 @@ CT_HEADER = "include/fixy/ConstantTime.h"
 
 # ── The constants of the core part ─────────────────────────────────
 
-# The flags of the probe unit that have a different value in each preset of the tree.  The expectations of PROBES
-# apply to these values.
-FIXED_FLAGS = (
-    "-O3",
-    "-march=x86-64-v3",
-    "-mtune=generic",
-    "-DNDEBUG",
-    "-fPIC",
-    "-fno-strict-overflow",
-    "-fcontract-evaluation-semantic=observe",
-)
 # The exit function of include/foundation/core/Report.h: each cold function of `foundation::core::detail` with a
 # name that starts with report_.
 FATAL_PREFIX = "foundation::core::detail::report_"
 RAW_SUFFIX = "_raw"
 COLD_SUFFIX = " [clone .cold]"
 ANONYMOUS = "(anonymous namespace)::"
-# The marks of a local constant, before the number that a compare of two instructions does not read.
-LOCAL_MARKS = (".LC", ".")
+# The mark of a local constant, before the number that a compare of two instructions does not read.
+LOCAL_CONSTANT = ".LC"
 # The prefixes that a compare of two instructions keeps.
 KEPT_PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne"})
+# The words of a compile command that start a sanitizer.  The compile of the verdict has none of them (THE COMPILES).
+SANITIZER_WORDS = ("-fsanitize", "-fno-sanitize")
+# The flags that put a second test and a trap on each edge of a conditional branch (THE VERDICT).  A word with the
+# prefix HARDENING_OFF turns such a flag off.
+HARDENING_FLAGS = ("-fharden-compares", "-fharden-conditional-branches")
+HARDENING_OFF = "-fno-harden-"
+# The number of second tests after one branch: one on each of its two edges.
+HARDENING_TESTS = 2
+# The kinds of a failure path, the first kind first, each with the prefixes of the names of its callees (THE WALK).
+FAILURE_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("fatal", (FATAL_PREFIX,)),
+    ("contract", ("handle_contract_violation",)),
+    ("assertion", ("std::__glibcxx_assert_fail",)),
+    ("stack", ("__stack_chk_fail",)),
+    ("exit", ("abort", "exit", "_exit", "std::terminate", "__cxa_throw", "__cxa_rethrow", "std::__throw_")),
+    ("sanitizer", ("__asan_report_", "__ubsan_handle_")),
+)
+TRAP = "trap"
+CHECK_KINDS = frozenset({*(kind for kind, _ in FAILURE_KINDS), TRAP})
+# The callees that do not return.  A call of one ends its path (THE WALK).
+NORETURN_NAMES = frozenset(
+    {"abort", "exit", "_exit", "std::terminate", "__cxa_throw", "__cxa_rethrow", "__stack_chk_fail"}
+)
+NORETURN_PREFIXES = (
+    FATAL_PREFIX,
+    "std::__glibcxx_assert_fail",
+    "std::__throw_",
+    "__asan_report_",
+    "__ubsan_handle_builtin_unreachable",
+)
+# The end of the name of an UBSan handler that stops the program.
+NORETURN_SUFFIX = "_abort"
+TRAP_MNEMONICS = frozenset({"ud2", "int3", "hlt"})
+DIVISIONS = frozenset({"div", "idiv"})
+# The mnemonics that calculate an address and read no memory.
+ADDRESS_ONLY = frozenset({"lea"})
+# The callee of a call or a jump with no symbol: a call in the object, or a jump through a register.
+LOCAL_CALLEE = "<local>"
+INDIRECT_CALLEE = "<indirect>"
+# The distance from the address of a 32-bit relocation of a jump to the end of the jump.
+JUMP_FIELD = 4
+# The register names of x86-64 that keep their names, because each one has a specified role (THE NORMALIZATION).
+FIXED_REGISTERS = frozenset({"rsp", "esp", "sp", "spl", "rbp", "ebp", "bp", "bpl", "rip", "fs", "gs"})
+# The four legacy registers with a high byte, the two with no high byte, and the vector classes.
+HIGH_BYTE_REGISTERS = ("a", "b", "c", "d")
+INDEX_REGISTERS = ("si", "di")
+VECTOR_CLASSES = (("xmm", "v128"), ("ymm", "v256"), ("zmm", "v512"))
+MASK_CLASS = "k"
+PROBE_KEYS = frozenset({"check", "branch", "calls"})
+YES = "yes"
+LIST_SEPARATOR = ","
 # The words of a compile command that do not change the code.  An option of SEPARATE_VALUE takes the next word as
 # its value.
 SEPARATE_VALUE = frozenset({"-o", "-c", "-MF", "-MT", "-MQ", "-I", "-isystem", "-iquote", "-include", "-x"})
@@ -190,44 +286,6 @@ NOT_CODE_PREFIXES = (
     "-isystem",
     "-iquote",
 )
-# The flags that change with the preset or with the target in the tree: the level, the target and the sanitizers.
-# The list also holds the -fharden- flags, the contract semantic, the profile and the analyzer.  It also holds the
-# overflow rule of the UBSan-strict preset, the -fPIC of a library and the macros of a build type.
-PER_PRESET = (
-    "-O",
-    "-march=",
-    "-mtune=",
-    "-mcpu=",
-    "-mno-outline-atomics",
-    "-fsanitize",
-    "-fno-sanitize",
-    "-fharden-",
-    "-fno-harden-",
-    "-fcontract-evaluation-semantic=",
-    "-fprofile-",
-    "-fno-profile-",
-    "-fbranch-probabilities",
-    "-fauto-profile",
-    "-fanalyzer",
-    "-fstrict-overflow",
-    "-fno-strict-overflow",
-    "-fPIC",
-    "-fPIE",
-    "-fpic",
-    "-fpie",
-    "-fno-pic",
-    "-fno-pie",
-    "-D_GLIBCXX_ASSERTIONS",
-    "-D_GLIBCXX_SANITIZE_VECTOR",
-    "-DNDEBUG",
-    "-UNDEBUG",
-    "-DCRUCIBLE_PGO",
-    "-DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE",
-)
-RELATIONS = ("same", "loop", "cost")
-PROBE_KEYS = frozenset({"relation", "bound", "extra", "calls", "raw-calls", "cold", "locked"})
-FLAG_KEYS = ("cold", "locked")
-YES = "yes"
 
 # ── The constants of the constant-time part ────────────────────────
 
@@ -292,8 +350,6 @@ NAME_OWNERS = frozenset({"template_type", "template_function", "template_method"
 # The registers of a memory operand that give no address from a secret.
 PUBLIC_REGISTERS = frozenset({"rsp", "rip", "ptr"})
 
-Relation = Literal["same", "loop", "cost"]
-
 
 class CompileFailed(RuntimeError):
     """A compile or a disassembly of the rule fails."""
@@ -304,123 +360,97 @@ class CompileFailed(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Probe:
-    """The expectation of one pair of functions of the probe unit."""
+    """The declaration of one pair of functions of the probe unit (THE VERDICT).
+
+    `checks` holds the kinds of the failure paths that the family side can add a check into, `branches` lets the
+    family side add a branch and work in a loop, and `calls` holds the callees that the family side can add.
+    """
 
     name: str
-    relation: Relation
-    bound: int
     claim: str
-    extra: int = 0
+    checks: tuple[str, ...] = ()
+    branches: bool = False
     calls: tuple[str, ...] = ()
-    raw_calls: tuple[str, ...] = ()
-    cold: bool = False
-    locked: bool = False
+
+    @property
+    def declares_cost(self) -> bool:
+        """True when the probe declares a difference that its family side can add."""
+        return bool(self.checks or self.branches or self.calls)
 
 
-# The expectations.  A bound is the count of instructions that the hot part has on 2026-10-02, with the patched GCC
-# 16.2.1.  A change that makes a hot part longer fails.  A change of a family that adds a check to a hot path then
-# stops here.  Each count includes the endbr64 of -fcf-protection and the ret.
+# The declarations.  A probe with no declaration claims that its family operation adds no instruction to its raw
+# code.  The claim of a probe with a declaration tells its cost.  When the family side of such a pair is longer, each
+# run gives a warning with the counts of the pair (THE COSTS).
 PROBES: tuple[Probe, ...] = (
-    Probe("atomic_load", "same", 3, "load_acquire is the acquire load of std::atomic"),
-    Probe("atomic_store", "same", 3, "store_release is the release store of std::atomic, with no lock"),
-    Probe("atomic_exchange", "same", 4, "exchange_acq_rel is the xchg of std::atomic", locked=True),
-    Probe("atomic_cas", "same", 5, "cas_acq_rel is the lock cmpxchg of std::atomic", locked=True),
+    Probe("atomic_load", "load_acquire is the acquire load of std::atomic"),
+    Probe("atomic_store", "store_release is the release store of std::atomic, with no lock"),
+    Probe("atomic_exchange", "exchange_acq_rel is the xchg of std::atomic"),
+    Probe("atomic_cas", "cas_acq_rel is the lock cmpxchg of std::atomic"),
     Probe(
         "atomic_cas_pair",
-        "cost",
-        5,
-        "cas_acq_rel of a value of two words keeps the value in a register.  std::atomic stores the expected "
-        "value on the stack",
-        locked=True,
+        "cas_acq_rel of a value of two words keeps the value in a register.  std::atomic stores the expected value "
+        "on the stack",
     ),
-    Probe("atomic_fetch_add", "same", 4, "fetch_add_acq_rel is the lock xadd of std::atomic", locked=True),
-    Probe("atomic_fetch_sub", "same", 5, "fetch_sub_acq_rel is the neg and lock xadd of std::atomic", locked=True),
-    Probe("atomic_fetch_or", "same", 9, "fetch_or_acq_rel is the lock cmpxchg loop of std::atomic", locked=True),
-    Probe("atomic_fetch_and", "same", 9, "fetch_and_acq_rel is the lock cmpxchg loop of std::atomic", locked=True),
+    Probe("atomic_fetch_add", "fetch_add_acq_rel is the lock xadd of std::atomic"),
+    Probe("atomic_fetch_sub", "fetch_sub_acq_rel is the neg and lock xadd of std::atomic"),
+    Probe("atomic_fetch_or", "fetch_or_acq_rel is the lock cmpxchg loop of std::atomic"),
+    Probe("atomic_fetch_and", "fetch_and_acq_rel is the lock cmpxchg loop of std::atomic"),
     Probe(
         "atomic_fetch_max",
-        "cost",
-        7,
-        "fetch_max_acq_rel is a lock cmpxchg loop that does not write when the value stays the same",
-        locked=True,
+        "fetch_max_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
+        "The raw form writes each time, and its loop has a different shape",
+        branches=True,
     ),
     Probe(
         "atomic_fetch_min",
-        "cost",
-        7,
-        "fetch_min_acq_rel is a lock cmpxchg loop that does not write when the value stays the same",
-        locked=True,
+        "fetch_min_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
+        "The raw form writes each time, and its loop has a different shape",
+        branches=True,
     ),
-    Probe("tally_add", "same", 3, "Tally::add is the lock add of a relaxed std::atomic counter", locked=True),
-    Probe("tally_read", "same", 3, "Tally::read is the load of a relaxed std::atomic counter"),
+    Probe("tally_add", "Tally::add is the lock add of a relaxed std::atomic counter"),
+    Probe("tally_read", "Tally::read is the load of a relaxed std::atomic counter"),
     Probe(
         "view_sum",
-        "loop",
-        77,
-        "a range-for over a View is the vectorized loop of a raw pointer loop, because the optimizer removes the "
-        "checks of the cursor",
+        "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the cursor",
     ),
-    Probe("view_window", "same", 13, "window gives its Option with no test of the niche of the Option"),
+    Probe("view_window", "window gives its Option with no test of the niche of the Option"),
     Probe(
         "view_append",
-        "cost",
-        18,
-        "the append path is the bounds compare of the window and one memmove.  The copy into the window does no "
-        "test of the lengths.  The family code has one register move more",
-        extra=1,
+        "the append path is the bounds compare of the window and one memmove.  The copy into the window does no test "
+        "of the lengths, and the family code has more register moves.  At -O1, the loop over the Option of the window "
+        "keeps the test of its niche",
+        branches=True,
         calls=("memmove",),
-        raw_calls=("memcpy",),
     ),
     Probe(
         "view_fill",
-        "cost",
-        7,
-        "fill of bytes is one memset.  The family code first tests for an empty View and returns, because a View "
-        "can be empty with no buffer, and memset of a null pointer is undefined",
-        extra=3,
-        calls=("memset",),
-        raw_calls=("memset",),
+        "fill of bytes first tests for an empty View and returns, because a View can be empty with no buffer, and "
+        "memset of a null pointer is undefined.  At -O1, GCC does not change the loop of the fill into memset",
+        branches=True,
     ),
-    Probe(
-        "box_get",
-        "cost",
-        6,
-        "Box::get adds one test and one branch to a cold call of the fatal exit",
-        extra=2,
-        cold=True,
-    ),
+    Probe("box_get", "Box::get adds one test and one branch to a call of the fatal exit", checks=("fatal",)),
     Probe(
         "option_expect",
-        "cost",
-        7,
-        "Option::expect adds one test and one branch to a cold call of the fatal exit.  A payload that fills the "
-        "low word of the register puts the flag at bit 32, so the code also uses a move and a shift to read the "
-        "flag",
-        extra=4,
-        cold=True,
+        "Option::expect adds one test and one branch to a call of the fatal exit.  A payload that fills the low word "
+        "of the register puts the flag at bit 32, and the code then also uses a move and a shift to read the payload",
+        checks=("fatal",),
     ),
     Probe(
         "option_expect_niche",
-        "cost",
-        6,
-        "Option::expect of an Option with a niche adds one compare and one branch to a cold call of the fatal exit",
-        extra=2,
-        cold=True,
+        "Option::expect of an Option with a niche adds one compare and one branch to a call of the fatal exit",
+        checks=("fatal",),
     ),
     Probe(
         "switch_unreachable",
-        "cost",
-        7,
-        "a switch with fixy::unreachable() has one bounds compare on the hot path, and the call of the fatal "
-        "exit is in the cold part",
-        extra=2,
-        cold=True,
+        "a switch with fixy::unreachable() adds one bounds compare and one branch to a call of the fatal exit.  At "
+        "-O1, std::unreachable stops the process with a trap after the same compare",
+        checks=("fatal",),
     ),
 )
 
 
 def probe_of_row(row: rows_grammar.Row) -> Probe:
-    """Return the probe of a row "probe NAME KEY=VALUE... | CLAIM" of the plant.txt of a plant (THE PROBES).
+    """Return the probe of a row "probe NAME KEY=VALUE... | CLAIM" of the plant.txt of a plant (THE PAIRS).
 
     Raises:
         rows_grammar.RowsError: If the row does not have that shape
@@ -428,37 +458,18 @@ def probe_of_row(row: rows_grammar.Row) -> Probe:
     if len(row.words) < 2 or len(row.cells) != 1:
         raise row.error("a probe row is 'probe NAME KEY=VALUE... | CLAIM'")
     values = rows_grammar.fields(row, PROBE_KEYS, 2)
-    relation = values.get("relation", "")
-    if relation not in RELATIONS or "bound" not in values or any(values.get(key, YES) != YES for key in FLAG_KEYS):
-        raise row.error(
-            f"a probe row has relation={'|'.join(RELATIONS)} and bound=N, and cold and locked have the value {YES}"
-        )
 
     def names(key: str) -> tuple[str, ...]:
         """Return the names of a list field of the row."""
-        return tuple(item for item in values.get(key, "").split(",") if item)
+        return tuple(item for item in values.get(key, "").split(LIST_SEPARATOR) if item)
 
-    relation_value: Relation = "same" if relation == "same" else "loop" if relation == "loop" else "cost"
-    return Probe(
-        row.words[1],
-        relation_value,
-        rows_grammar.number(values["bound"], 10**6, row, "bound"),
-        row.cells[0],
-        rows_grammar.number(values.get("extra", "0"), 10**6, row, "extra"),
-        names("calls"),
-        names("raw-calls"),
-        "cold" in values,
-        "locked" in values,
-    )
+    checks = names("check")
+    if values.get("branch", YES) != YES or not set(checks) <= CHECK_KINDS:
+        raise row.error(f"branch has the value {YES}, and each kind of check is one of {sorted(CHECK_KINDS)}")
+    return Probe(row.words[1], row.cells[0], checks, "branch" in values, names("calls"))
 
 
 # ── The disassembly ────────────────────────────────────────────────
-
-
-def without_local_number(symbol: str) -> str:
-    """Return a symbol with no number at its end after ".LC" or ".", such as ".LC" for ".LC12"."""
-    stripped = symbol.rstrip("0123456789")
-    return stripped if stripped != symbol and stripped.endswith(LOCAL_MARKS) else symbol
 
 
 def strip_arguments(symbol: str) -> str:
@@ -489,14 +500,22 @@ def relocation_target(symbol: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Instruction:
-    """One instruction of a disassembled function, with the symbol of its relocation."""
+    """One instruction of a disassembled function, with its memory operands and its relocation.
+
+    `memory` holds the text of each memory operand.  `symbol` is the symbol of the relocation as objdump prints it,
+    such as the section symbol .text.unlikely.NAME, `name` is the name that c++filt gives for it with no parameter
+    list, and `addend` is the addend of the relocation.
+    """
 
     offset: int
     prefixes: tuple[str, ...]
     mnemonic: str
     operands: str
     lines: tuple[str, ...]
-    relocation: str | None = None
+    memory: tuple[str, ...] = ()
+    symbol: str | None = None
+    name: str | None = None
+    addend: int = 0
 
     @property
     def is_padding(self) -> bool:
@@ -506,40 +525,22 @@ class Instruction:
     @property
     def is_locked(self) -> bool:
         """True when the instruction is a locked read-modify-write: a lock prefix, or xchg with a memory operand."""
-        return "lock" in self.prefixes or (self.mnemonic == "xchg" and "[" in self.operands)
+        return "lock" in self.prefixes or (self.mnemonic == "xchg" and bool(self.memory))
 
     @property
     def is_jump(self) -> bool:
-        """True when the instruction is a jump, conditional or not."""
-        return self.mnemonic.startswith("j")
+        """True when the instruction is a jump, conditional or not, or a loop instruction."""
+        return self.mnemonic.startswith(("j", "loop"))
 
     @property
-    def signature(self) -> str:
-        """The mnemonic with its lock prefix or rep prefix, for the compare of two loops."""
+    def head(self) -> str:
+        """The mnemonic with its lock prefix or rep prefix (THE NORMALIZATION)."""
         return " ".join([*(prefix for prefix in self.prefixes if prefix in KEPT_PREFIXES), self.mnemonic])
 
-    def target(self) -> int | None:
-        """Return the offset that a jump in its own section goes to, or None."""
-        if not self.is_jump or self.relocation is not None:
-            return None
-        word = self.operands.split(" ", 1)[0]
-        return objdump.hex_number(word.removeprefix("0x"))
-
-    def normalized(self, cold_section: str | None) -> str:
-        """Return the instruction as text that does not change with the name of its function.
-
-        A reference to the cold part of the function reads `<cold>`, and a local constant has no number.
-        """
-        symbol = ""
-        if self.relocation is not None:
-            symbol = self.relocation
-            if symbol == cold_section or symbol.endswith(COLD_SUFFIX):
-                symbol = "<cold>"
-            elif symbol.startswith("."):
-                symbol = without_local_number(symbol)
-            symbol = f" -> {symbol}"
-        kept = [prefix for prefix in self.prefixes if prefix in KEPT_PREFIXES]
-        return " ".join([*kept, self.mnemonic, self.operands]).strip() + symbol
+    @property
+    def shown(self) -> str:
+        """The instruction line as objdump prints it, with one space between two words."""
+        return " ".join(self.lines[0].split()) if self.lines else self.head
 
 
 @dataclass(frozen=True, slots=True)
@@ -569,77 +570,13 @@ class Code:
     hot: Part | None = None
     cold: Part | None = None
 
-    def cold_section(self) -> str | None:
-        """Return the section of the cold part, or None."""
-        return None if self.cold is None else self.cold.section
-
-    def is_own(self, symbol: str) -> bool:
-        """True when a relocation symbol names a part of this function."""
-        sections = {part.section for part in (self.hot, self.cold) if part is not None}
-        return symbol in sections or symbol.endswith(COLD_SUFFIX)
-
-    def calls(self, part: Part | None) -> list[str]:
-        """Return the callee of each call of a part, and of each jump to a different function.
-
-        A call with no relocation stays in this object, and it reads `<local>`.
-        """
-        if part is None:
-            return []
-        callees: list[str] = []
-        for instruction in part.instructions:
-            if instruction.mnemonic == "call":
-                callees.append(instruction.relocation or "<local>")
-            elif (
-                instruction.mnemonic == "jmp"
-                and instruction.relocation is not None
-                and not self.is_own(instruction.relocation)
-            ):
-                callees.append(instruction.relocation)
-        return callees
-
-    def jumps_to_cold(self) -> bool:
-        """True when the hot part has a jump into the cold part."""
-        if self.hot is None or self.cold is None:
-            return False
-        cold = self.cold.section
-        return any(
-            instruction.is_jump
-            and instruction.relocation is not None
-            and (instruction.relocation == cold or instruction.relocation.endswith(COLD_SUFFIX))
-            for instruction in self.hot.instructions
-        )
-
-    def is_locked(self) -> bool:
-        """True when the hot part holds a locked instruction."""
-        return self.hot is not None and any(instruction.is_locked for instruction in self.hot.instructions)
-
-    def normalized(self) -> list[str]:
-        """Return the hot part as text that does not change with the name of the function."""
-        if self.hot is None:
-            return []
-        return [instruction.normalized(self.cold_section()) for instruction in self.hot.counted()]
-
-    def loops(self) -> list[tuple[str, ...]]:
-        """Return the signatures of each inner loop of the hot part, sorted.
-
-        A loop is the instructions from the target of a conditional jump back to that jump.  Complexity: O(n^2) in
-        the instructions of the hot part.
-        """
-        if self.hot is None:
-            return []
-        found: list[tuple[str, ...]] = []
-        for instruction in self.hot.instructions:
-            target = instruction.target()
-            if instruction.mnemonic == "jmp" or target is None or target > instruction.offset:
-                continue
-            found.append(
-                tuple(inner.signature for inner in self.hot.counted() if target <= inner.offset <= instruction.offset)
-            )
-        return sorted(found)
+    def parts(self) -> tuple[Part, ...]:
+        """Return the hot part and the cold part that the function has, the hot part first."""
+        return tuple(part for part in (self.hot, self.cold) if part is not None)
 
     def text(self) -> str:
         """Return each part of the function as objdump prints it."""
-        parts = [part.text() for part in (self.hot, self.cold) if part is not None]
+        parts = [part.text() for part in self.parts()]
         return "\n".join(parts) if parts else "  (no code)"
 
 
@@ -665,7 +602,10 @@ def codes_of(functions: Sequence[objdump.Function]) -> dict[str, Code]:
                 item.mnemonic,
                 item.operands,
                 item.lines,
+                item.memory_operands,
+                None if item.relocation is None else item.relocation.symbol,
                 None if item.relocation is None else relocation_target(item.relocation.name),
+                0 if item.relocation is None else item.relocation.addend,
             )
             for item in function.instructions
         )
@@ -673,78 +613,455 @@ def codes_of(functions: Sequence[objdump.Function]) -> dict[str, Code]:
     return {name: Code(name, held.get(False), held.get(True)) for name, held in parts.items()}
 
 
-def probe_problems(probe: Probe, family: Code, raw: Code) -> list[str]:
-    """Return each way in which the code of one probe does not meet its expectation (THE SHAPE)."""
-    if family.hot is None or raw.hot is None:
-        return [f"the object holds no hot part of {family.name if family.hot is None else raw.name}"]
+# ── The walk ───────────────────────────────────────────────────────
+
+# The position of one instruction of a function: the index of its part, and its index in the part.  The entry of the
+# function is the first instruction of its hot part.
+Place = tuple[int, int]
+ENTRY: Place = (0, 0)
+
+
+class StepClass(StrEnum):
+    """The class of one instruction on a returning path (THE VERDICT)."""
+
+    CHECK = "check"
+    BRANCH = "branch"
+    CALL = "call"
+    DIVISION = "division"
+    INDEXED = "indexed"
+    PLAIN = "plain"
+
+
+@dataclass(frozen=True, slots=True)
+class Step:
+    """One instruction on a returning path, after THE NORMALIZATION.
+
+    `detail` is the kind of the failure path of a check, and the callee of a call.  `head` is the mnemonic with its
+    kept prefix, and `shown` is the line that objdump prints.
+    """
+
+    text: str
+    kind: StepClass
+    detail: str
+    head: str
+    is_locked: bool
+    is_in_loop: bool
+    shown: str
+
+
+@dataclass(frozen=True, slots=True)
+class Flow:
+    """The control flow of the parts of one function (THE WALK).
+
+    `successors` gives the positions that each position can go to, `callees` gives the callee of each call and of
+    each jump to a different function, and `returning` holds the positions on a returning path.
+    """
+
+    parts: tuple[tuple[Instruction, ...], ...]
+    successors: Mapping[Place, tuple[Place, ...]]
+    callees: Mapping[Place, str]
+    returning: frozenset[Place]
+
+
+def is_noreturn(callee: str) -> bool:
+    """True when a call of the callee ends its path (THE WALK)."""
+    return callee in NORETURN_NAMES or callee.startswith(NORETURN_PREFIXES) or callee.endswith(NORETURN_SUFFIX)
+
+
+def place_at(offsets: Sequence[int], part: int, offset: int) -> Place | None:
+    """Return the position of the first instruction of a part at or after an offset, or None after the last one.
+
+    A jump to a nop that aligns the code then goes to the instruction after the nop.  Complexity: logarithmic in the
+    instructions of the part.
+    """
+    index = bisect_left(offsets, offset)
+    return (part, index) if index < len(offsets) else None
+
+
+def jump_target(
+    instruction: Instruction, part: int, sections: Mapping[str, int], offsets: Sequence[Sequence[int]]
+) -> tuple[Place | None, bool]:
+    """Return the position that a jump goes to in its function, and True when the jump goes out of the function.
+
+    A jump with a relocation names a section of the function or a different symbol.  The address of the relocation is
+    the last field of the jump, and the target is then the addend and JUMP_FIELD after the section start.  A jump with
+    no relocation names an offset of its own part, or a register.
+    """
+    if instruction.symbol is not None:
+        section = sections.get(instruction.symbol)
+        if section is None:
+            return None, True
+        return place_at(offsets[section], section, instruction.addend + JUMP_FIELD), False
+    number = objdump.hex_number(instruction.operands.split(" ", 1)[0].removeprefix("0x"))
+    return (None, True) if number is None else (place_at(offsets[part], part, number), False)
+
+
+def callee_of(instruction: Instruction) -> str:
+    """Return the callee of a call or of a jump out of the function: its name, or a mark with no name."""
+    if instruction.name is not None:
+        return instruction.name
+    number = objdump.hex_number(instruction.operands.split(" ", 1)[0].removeprefix("0x"))
+    return INDIRECT_CALLEE if number is None else LOCAL_CALLEE
+
+
+def reachable(edges: Mapping[Place, Sequence[Place]], starts: Iterable[Place]) -> set[Place]:
+    """Return each position on a walk of the edges from the starts, the starts too.
+
+    Complexity: linear in the edges.
+    """
+    found = set(starts)
+    pending = list(found)
+    while pending:
+        for after in edges.get(pending.pop(), ()):
+            if after not in found:
+                found.add(after)
+                pending.append(after)
+    return found
+
+
+def returning_places(successors: Mapping[Place, tuple[Place, ...]], exits: Iterable[Place]) -> frozenset[Place]:
+    """Return each position on a path from the entry of the hot part to an exit (THE WALK).
+
+    Complexity: linear in the edges.
+    """
+    predecessors: dict[Place, list[Place]] = {}
+    for place, targets in successors.items():
+        for target in targets:
+            predecessors.setdefault(target, []).append(place)
+    entry = [ENTRY] if ENTRY in successors else []
+    return frozenset(reachable(predecessors, exits) & reachable(successors, entry))
+
+
+def flow_of(code: Code) -> Flow:
+    """Return the control flow of a function (THE WALK).
+
+    A ret is an exit, and a jump to a different function is an exit too.  A trap and a call that does not return end
+    a path.
+    Complexity: linear in the instructions of the function.
+    """
+    owned = code.parts()
+    parts = tuple(tuple(part.counted()) for part in owned)
+    sections = {part.section: index for index, part in enumerate(owned)}
+    offsets = [[instruction.offset for instruction in items] for items in parts]
+    successors: dict[Place, tuple[Place, ...]] = {}
+    callees: dict[Place, str] = {}
+    exits: list[Place] = []
+    for part, items in enumerate(parts):
+        for index, instruction in enumerate(items):
+            place = (part, index)
+            following: tuple[Place, ...] = ((part, index + 1),) if index + 1 < len(items) else ()
+            mnemonic = instruction.mnemonic
+            successors[place] = following
+            if mnemonic == "ret" or mnemonic in TRAP_MNEMONICS:
+                successors[place] = ()
+                if mnemonic == "ret":
+                    exits.append(place)
+            elif instruction.is_jump:
+                target, leaves = jump_target(instruction, part, sections, offsets)
+                is_conditional = mnemonic != "jmp"
+                if leaves:
+                    callees[place] = callee_of(instruction)
+                    exits.append(place)
+                taken = () if target is None else (target,)
+                successors[place] = tuple(dict.fromkeys((*following, *taken))) if is_conditional else taken
+            elif mnemonic == "call":
+                callee = callee_of(instruction)
+                callees[place] = callee
+                if is_noreturn(callee) or not following or items[index + 1].mnemonic in TRAP_MNEMONICS:
+                    successors[place] = ()
+    return Flow(parts, successors, callees, returning_places(successors, exits))
+
+
+def failure_kind(flow: Flow, start: Place) -> str:
+    """Return the kind of the failure path from a position (THE WALK).
+
+    The kind is the first kind of FAILURE_KINDS that has a callee of the path, or trap.  Complexity: linear in the
+    instructions of the path.
+    """
+    called = {flow.callees[place] for place in reachable(flow.successors, [start]) if place in flow.callees}
+    return next((kind for kind, prefixes in FAILURE_KINDS if any(name.startswith(prefixes) for name in called)), TRAP)
+
+
+# ── The normalization ──────────────────────────────────────────────
+
+
+# The class of each name of a general register of x86-64 with no specified role (THE NORMALIZATION).
+GENERAL_CLASSES = (
+    {
+        name: width
+        for letter in HIGH_BYTE_REGISTERS
+        for name, width in (
+            (f"r{letter}x", "g64"),
+            (f"e{letter}x", "g32"),
+            (f"{letter}x", "g16"),
+            (f"{letter}l", "g8"),
+            (f"{letter}h", "g8"),
+        )
+    }
+    | {
+        name: width
+        for base in INDEX_REGISTERS
+        for name, width in ((f"r{base}", "g64"), (f"e{base}", "g32"), (base, "g16"), (f"{base}l", "g8"))
+    }
+    | {
+        name: width
+        for number in range(8, 16)
+        for name, width in (
+            (f"r{number}", "g64"),
+            (f"r{number}d", "g32"),
+            (f"r{number}w", "g16"),
+            (f"r{number}b", "g8"),
+        )
+    }
+)
+
+
+def register_class(word: str) -> str:
+    """Return the class of a register name, or the word itself when it names no register of a class."""
+    general = GENERAL_CLASSES.get(word)
+    if general is not None or word in FIXED_REGISTERS:
+        return general or word
+    for prefix, vector in VECTOR_CLASSES:
+        if word.startswith(prefix) and word[len(prefix) :].isdigit():
+            return vector
+    is_mask = len(word) == 2 and word.startswith(MASK_CLASS) and word[1].isdigit()
+    return MASK_CLASS if is_mask else word
+
+
+def operand_words(operands: str) -> list[str]:
+    """Return the operands as words and marks: a word is a run of letters, digits and "_", and each other character
+    is a mark.  Complexity: linear in the text."""
+    words: list[str] = []
+    current: list[str] = []
+    for character in operands:
+        if character.isalnum() or character == "_":
+            current.append(character)
+            continue
+        if current:
+            words.append("".join(current))
+            current = []
+        words.append(character)
+    if current:
+        words.append("".join(current))
+    return words
+
+
+def normalized_operands(operands: str) -> str:
+    """Return the operands with the class of each register, and with no displacement of rip (THE NORMALIZATION)."""
+    words = operand_words(operands)
+    kept: list[str] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
+        kept.append(register_class(word))
+        has_displacement = index + 1 < len(words) and words[index] in ("+", "-") and words[index + 1].startswith("0x")
+        if word == "rip" and has_displacement:
+            index += 2
+    return "".join(kept)
+
+
+def symbol_text(instruction: Instruction) -> str:
+    """Return the symbol of the relocation of an instruction that is no jump and no call (THE NORMALIZATION)."""
+    symbol = instruction.symbol
+    if symbol is None:
+        return ""
+    if symbol.startswith(LOCAL_CONSTANT) and symbol[len(LOCAL_CONSTANT) :].isdigit():
+        return f" -> {LOCAL_CONSTANT}"
+    if symbol.startswith("."):
+        return f" -> .{symbol[1:].split('.', 1)[0]}"
+    return f" -> {instruction.name or symbol}"
+
+
+def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str, StepClass, str, Place | None]:
+    """Return the text and the class of one instruction on a returning path, and its failure kind or its callee.
+
+    The fourth value is the target of a loop edge, or None.
+
+    A conditional jump with a returning edge and a failure edge is a check of the failure path.  A jump into an
+    earlier instruction of its own part is the edge of a loop.
+    """
+    head = instruction.head
+    callee = flow.callees.get(place)
+    if callee is not None:
+        return f"{head} {callee}", StepClass.CALL, callee, None
+    if instruction.is_jump:
+        targets = flow.successors[place]
+        returning = [target for target in targets if target in flow.returning]
+        failures = [target for target in targets if target not in flow.returning]
+        if failures and returning:
+            kind = failure_kind(flow, failures[0])
+            return f"{head} !{kind}", StepClass.CHECK, kind, None
+        taken = returning[-1] if returning else None
+        loop = taken if taken is not None and taken[0] == place[0] and taken[1] <= place[1] else None
+        return f"{head} {'->' if loop is None else '<-'}", StepClass.BRANCH, "", loop
+    text = f"{head} {normalized_operands(instruction.operands)}".strip() + symbol_text(instruction)
+    if instruction.mnemonic in DIVISIONS:
+        return text, StepClass.DIVISION, "", None
+    if instruction.mnemonic not in ADDRESS_ONLY and any("*" in address for address in instruction.memory):
+        return text, StepClass.INDEXED, "", None
+    return text, StepClass.PLAIN, "", None
+
+
+def steps_of(code: Code) -> tuple[Step, ...]:
+    """Return the instructions of a function on its returning paths, in sequence (THE WALK, THE NORMALIZATION).
+
+    Complexity: linear in the instructions of the function, and quadratic in the instructions of its loops.
+    """
+    flow = flow_of(code)
+    places = [
+        (part, index)
+        for part, items in enumerate(flow.parts)
+        for index in range(len(items))
+        if (part, index) in flow.returning
+    ]
+    position = {place: number for number, place in enumerate(places)}
+    in_loop: set[int] = set()
+    drafts: list[tuple[str, StepClass, str, Instruction]] = []
+    for number, place in enumerate(places):
+        instruction = flow.parts[place[0]][place[1]]
+        text, kind, detail, loop = classified(flow, place, instruction)
+        if loop is not None and loop in position:
+            in_loop.update(range(position[loop], number + 1))
+        drafts.append((text, kind, detail, instruction))
+    return tuple(
+        Step(text, kind, detail, instruction.head, instruction.is_locked, number in in_loop, instruction.shown)
+        for number, (text, kind, detail, instruction) in enumerate(drafts)
+    )
+
+
+# ── The verdict ────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class Verdict:
+    """The verdict of one pair: its problems, the family-only instructions, and the counts of the two sides."""
+
+    problems: tuple[str, ...]
+    added: tuple[Step, ...]
+    family_count: int
+    raw_count: int
+
+    @property
+    def is_longer(self) -> bool:
+        """True when the family side has more instructions on its returning paths than the raw side."""
+        return self.family_count > self.raw_count
+
+
+def family_only(family: Sequence[Step], raw: Sequence[Step]) -> list[Step]:
+    """Return the instructions of the family side that are not in one longest subsequence of the texts (THE VERDICT).
+
+    Of two subsequences of the same length, the rule always takes the same one, and each run then gives the same
+    instructions.  Complexity: O(n * m) in the instructions of the two sides.
+    """
+    rows, columns = len(family), len(raw)
+    lengths = [[0] * (columns + 1) for _ in range(rows + 1)]
+    for row in range(rows - 1, -1, -1):
+        for column in range(columns - 1, -1, -1):
+            if family[row].text == raw[column].text:
+                lengths[row][column] = lengths[row + 1][column + 1] + 1
+            else:
+                lengths[row][column] = max(lengths[row + 1][column], lengths[row][column + 1])
+    added: list[Step] = []
+    row = column = 0
+    while row < rows and column < columns:
+        if family[row].text == raw[column].text:
+            row += 1
+            column += 1
+        elif lengths[row + 1][column] >= lengths[row][column + 1]:
+            added.append(family[row])
+            row += 1
+        else:
+            column += 1
+    added.extend(family[row:])
+    return added
+
+
+def is_hardened(flags: Sequence[str]) -> bool:
+    """True when the last word of a flag of HARDENING_FLAGS, or of its negation, turns that flag on."""
+    states: dict[str, bool] = {}
+    for word in flags:
+        for flag in HARDENING_FLAGS:
+            if word == flag:
+                states[flag] = True
+            elif word == HARDENING_OFF + flag.removeprefix("-fharden-"):
+                states[flag] = False
+    return any(states.values())
+
+
+def step_problem(probe: Probe, step: Step) -> str | None:
+    """Return the problem of one family-only instruction, or None when the probe declares it (THE VERDICT)."""
+    if step.kind is StepClass.CHECK and step.detail not in probe.checks:
+        return f"the family side adds a check into a {step.detail} path: {step.shown}"
+    if step.kind is StepClass.BRANCH and not probe.branches:
+        return f"the family side adds a branch: {step.shown}"
+    if step.kind is StepClass.CALL and step.detail not in probe.calls:
+        return f"the family side adds a call of {step.detail}: {step.shown}"
+    if step.kind is StepClass.DIVISION:
+        return f"the family side adds a division: {step.shown}"
+    if step.kind is StepClass.INDEXED:
+        return f"the family side adds a load with an index register: {step.shown}"
+    if step.is_in_loop and not probe.branches:
+        return f"the family side adds work to a loop: {step.shown}"
+    return None
+
+
+def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened: bool) -> Verdict:
+    """Return the verdict of one pair (THE VERDICT).
+
+    In a unit with a flag of HARDENING_FLAGS, a family-only check into a trap path that the probe does not declare is
+    a second test.  The rule accepts HARDENING_TESTS of them for each family-only check and branch that the probe
+    declares.
+    """
+    added = family_only(family, raw)
     problems: list[str] = []
-    count = len(family.hot.counted())
-    raw_count = len(raw.hot.counted())
-    if count > probe.bound:
-        problems.append(f"the hot part of {family.name} has {count} instructions, over the bound of {probe.bound}")
-    if probe.relation == "same":
-        if family.normalized() != raw.normalized():
-            problems.append(f"the hot part of {family.name} is not the instruction sequence of {raw.name}")
-    elif count > raw_count + probe.extra:
+    declared = hardening_tests = 0
+    for step in added:
+        if hardened and step.kind is StepClass.CHECK and step.detail == TRAP and TRAP not in probe.checks:
+            hardening_tests += 1
+            continue
+        problem = step_problem(probe, step)
+        if problem is not None:
+            problems.append(problem)
+        elif step.kind in (StepClass.CHECK, StepClass.BRANCH):
+            declared += 1
+    if hardening_tests > HARDENING_TESTS * declared:
         problems.append(
-            f"the hot part of {family.name} has {count} instructions, and {raw.name} has {raw_count}.  "
-            f"The expectation permits {probe.extra} more"
+            f"the family side adds {hardening_tests} checks into a trap path, and the hardening of its {declared} "
+            f"declared checks and branches gives at most {HARDENING_TESTS * declared}"
         )
-    if probe.relation == "loop" and family.loops() != raw.loops():
+    family_locks = sorted({step.head for step in family if step.is_locked})
+    raw_locks = sorted({step.head for step in raw if step.is_locked})
+    if family_locks != raw_locks:
         problems.append(
-            f"the inner loops of {family.name} are {family.loops()}, and those of {raw.name} are {raw.loops()}"
+            f"the family side holds the locked instructions {family_locks}, and the raw side holds {raw_locks}.  The "
+            f"two sides do not do the same atomic work"
         )
-    for code, expected in ((family, probe.calls), (raw, probe.raw_calls)):
-        callees = code.calls(code.hot)
-        if sorted(callees) != sorted(expected):
-            problems.append(
-                f"the hot part of {code.name} calls {callees or 'no function'}, and the expectation is "
-                f"{list(expected) or 'no call'}"
-            )
-    for code in (family, raw):
-        if code.is_locked() != probe.locked:
-            state = "holds a locked instruction" if code.is_locked() else "holds no locked instruction"
-            problems.append(f"the hot part of {code.name} {state}, and the expectation is the opposite")
-    problems += cold_problems(probe, family)
-    return problems
-
-
-def cold_problems(probe: Probe, family: Code) -> list[str]:
-    """Return each way in which the cold part of a family function does not meet the cold call of its probe."""
-    if not probe.cold:
-        if family.cold is None:
-            return []
-        unwanted = (
-            f"{family.name} has a cold part, and the expectation is none.  A check that can fail is then on the "
-            f"path of the operation"
+    if not probe.declares_cost and len(family) > len(raw):
+        problems.append(
+            f"the family side has {len(family)} instructions on its returning paths, and the raw side has "
+            f"{len(raw)}.  The probe declares no cost"
         )
-        return [unwanted]
-    if family.cold is None:
-        return [
-            f"{family.name} has no cold part.  The call of the fatal exit is then in the hot part, or it is missing"
-        ]
-    problems: list[str] = []
-    if not family.jumps_to_cold():
-        problems.append(f"the hot part of {family.name} has no jump into its cold part")
-    if not any(callee.startswith(FATAL_PREFIX) for callee in family.calls(family.cold)):
-        problems.append(f"the cold part of {family.name} does not call the fatal exit {FATAL_PREFIX}*")
-    return problems
+    return Verdict(tuple(problems), tuple(added), len(family), len(raw))
 
 
-def shape_findings(
-    functions: Mapping[str, Code], probes: Iterable[Probe]
-) -> tuple[list[check_report.Finding], list[str]]:
-    """Judge each probe against the disassembly of the probe object.
+def pair_findings(
+    functions: Mapping[str, Code], probes: Iterable[Probe], hardened: bool
+) -> tuple[list[check_report.Finding], list[str], dict[str, Verdict]]:
+    """Judge each pair of the probe object (THE VERDICT, THE COSTS).
 
     Returns:
-        The findings, and the disassembly of each probe with a finding
+        The errors and the warnings of the costs, the disassembly of each probe with an error, and the verdict of
+        each probe
     """
     found: list[check_report.Finding] = []
     shown: list[str] = []
+    verdicts: dict[str, Verdict] = {}
     for probe in probes:
         family = functions.get(probe.name, Code(probe.name))
         raw = functions.get(probe.name + RAW_SUFFIX, Code(probe.name + RAW_SUFFIX))
-        problems = probe_problems(probe, family, raw)
+        result = verdict(probe, steps_of(family), steps_of(raw), hardened)
+        verdicts[probe.name] = result
         found += [
             check_report.Finding(
                 "error",
@@ -755,14 +1072,22 @@ def shape_findings(
                 "shape",
                 probe.name,
             )
-            for problem in problems
+            for problem in result.problems
         ]
-        if problems:
+        if result.problems:
             shown.append(
                 f"probe {probe.name}, the family function:\n{family.text()}\n"
                 f"probe {probe.name}, the raw function:\n{raw.text()}"
             )
-    return found, shown
+        elif probe.declares_cost and result.is_longer:
+            added = ", ".join(step.text for step in result.added)
+            message = (
+                f"probe {probe.name}: the family side has {result.family_count} instructions on its returning paths, "
+                f"and the raw side has {result.raw_count}.  The family-only instructions are: {added}.  The claim: "
+                f"{probe.claim}"
+            )
+            found.append(check_report.Finding("warning", PROBE_SOURCE, 0, RULE, message, "cost", probe.name))
+    return found, shown, verdicts
 
 
 # ── The flags ──────────────────────────────────────────────────────
@@ -785,31 +1110,24 @@ def code_flags(words: Sequence[str], source: str) -> list[str]:
 
 
 def flag_findings(probe_flags: Sequence[str], base_flags: Sequence[Sequence[str]]) -> list[check_report.Finding]:
-    """Compare the code words of the probe unit with those of the foundation units (THE FLAGS OF THE PROBES)."""
+    """Compare the code words of the probe unit with those of the foundation units (THE FLAGS OF THE PAIRS)."""
     messages: list[str] = []
-    fixed = sorted({flag for flag in probe_flags if flag.startswith(PER_PRESET)})
-    if fixed != sorted(FIXED_FLAGS):
-        messages.append(
-            f"the probe unit has the flags {fixed} of PER_PRESET, and the expectations of PROBES apply to "
-            f"{' '.join(FIXED_FLAGS)}"
-        )
-    probe_set = {flag for flag in probe_flags if not flag.startswith(PER_PRESET)}
-    base_sets = [{flag for flag in flags if not flag.startswith(PER_PRESET)} for flags in base_flags]
+    base_sets = [set(flags) for flags in base_flags]
     if not base_sets:
         messages.append("the compile database has no unit of the target foundation.  The rule cannot compare the flags")
     for other in base_sets[1:]:
         if other != base_sets[0]:
             messages.append(f"the foundation units do not have the same code flags: {sorted(other ^ base_sets[0])}")
+    probe_set = set(probe_flags)
     base_set = base_sets[0] if base_sets else probe_set
     messages += [
-        f"each foundation unit compiles with {flag}, and the probe unit does not.  When each build takes "
-        f"{flag}, give it to {PROBE_CMAKE} through a list of cmake/CodeFlags.cmake.  When its value changes "
-        f"with the preset, add it to PER_PRESET and to FIXED_FLAGS"
+        f"each foundation unit compiles with {flag}, and the probe unit does not.  Give the probe unit of "
+        f"{PROBE_CMAKE} the flags of the foundation library.  Then each build compares the pairs with its own flags"
         for flag in sorted(base_set - probe_set)
     ]
     messages += [
-        f"the probe unit compiles with {flag}, and no foundation unit does.  Remove it from {PROBE_CMAKE}, or "
-        f"add it to FIXED_FLAGS when the tree gives it a value that changes with the preset"
+        f"the probe unit compiles with {flag}, and no foundation unit does.  Remove the flag from {PROBE_CMAKE}.  "
+        f"Then the pairs compile with the flags of the foundation library"
         for flag in sorted(probe_set - base_set)
     ]
     return [check_report.Finding("error", PROBE_CMAKE, 0, RULE, message, "flags") for message in messages]
@@ -818,21 +1136,45 @@ def flag_findings(probe_flags: Sequence[str], base_flags: Sequence[Sequence[str]
 # ── The core part ──────────────────────────────────────────────────
 
 
-def compiled_object(entry: compdb.CompileEntry, obj: Path) -> None:
-    """Compile the unit of a row of the compile database into a different object.
+def has_sanitizer(entry: compdb.CompileEntry) -> bool:
+    """True when the compile command of a row holds a sanitizer word (THE COMPILES)."""
+    return any(word.startswith(SANITIZER_WORDS) for word in entry.argv())
+
+
+def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool) -> list[str]:
+    """Return the compile command of a row with a different object (THE COMPILES).
+
+    The command has no sanitizer word when `with_sanitizers` is False.
+    """
+    words: list[str] = []
+    arguments = list(entry.argv())
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        index += 1
+        if word == "-o" and index < len(arguments):
+            words += [word, str(obj)]
+            index += 1
+        elif with_sanitizers or not word.startswith(SANITIZER_WORDS):
+            words.append(word)
+    return words
+
+
+def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool) -> dict[str, Code]:
+    """Compile the unit of a row of the compile database into a scratch object, and return the code of each function.
 
     The quarantine plugin writes only the section of the object, because the command gives it no report directory.
 
     Raises:
-        CompileFailed: If the compile fails
+        CompileFailed: If the compile or the disassembly fails
     """
-    words = list(entry.argv())
-    if "-o" in words:
-        place = words.index("-o")
-        words[place + 1] = str(obj)
-    result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory)))
-    if result.exit != 0:
-        raise CompileFailed(f"the compile of {entry.file} fails:\n{result.err[-2000:]}")
+    with tempfile.TemporaryDirectory(prefix="codegen-shapes-") as scratch:
+        obj = Path(scratch) / "core_shapes.o"
+        words = command_words(entry, obj, with_sanitizers)
+        result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory)))
+        if result.exit != 0:
+            raise CompileFailed(f"the compile of {entry.file} fails:\n{result.err[-2000:]}")
+        return codes_of(disassembled(obj))
 
 
 def disassembled(obj: Path) -> tuple[objdump.Function, ...]:
@@ -862,7 +1204,7 @@ def foundation_entries(context: runner.ElfContext) -> list[compdb.CompileEntry]:
 
 
 def planted_probes(context: runner.ElfContext) -> tuple[Probe, ...] | None:
-    """Return the probes of the plant.txt of a plant, or None for a build (THE PROBES).
+    """Return the probes of the plant.txt of a plant, or None for a build (THE PAIRS).
 
     Raises:
         runner.BuildError: If a probe row does not have its shape
@@ -875,8 +1217,24 @@ def planted_probes(context: runner.ElfContext) -> tuple[Probe, ...] | None:
         raise runner.BuildError(str(problem)) from None
 
 
+def count_lines(
+    verdicts: Mapping[str, Verdict], instrumented: Mapping[str, Code] | None, probes: Iterable[Probe]
+) -> list[str]:
+    """Return one line with the counts of each pair, and the counts with the sanitizer of the build (THE COSTS)."""
+    lines: list[str] = []
+    for probe in probes:
+        result = verdicts[probe.name]
+        line = f"{RULE}: probe {probe.name}: family {result.family_count}, raw {result.raw_count}"
+        if instrumented is not None:
+            family = len(steps_of(instrumented.get(probe.name, Code(probe.name))))
+            raw = len(steps_of(instrumented.get(probe.name + RAW_SUFFIX, Code(probe.name + RAW_SUFFIX))))
+            line += f".  With the sanitizer: family {family}, raw {raw}"
+        lines.append(line)
+    return lines
+
+
 def core_findings(context: runner.ElfContext) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the findings of the core part, and the disassembly of each probe with a finding.
+    """Return the findings of the core part, and the lines that the run prints (THE COMPILES, THE COSTS).
 
     Raises:
         runner.BuildError: If the build cannot be read
@@ -893,16 +1251,12 @@ def core_findings(context: runner.ElfContext) -> tuple[list[check_report.Finding
                 "unit",
             )
         ], []
-    found = flag_findings(
-        code_flags(probe.argv(), probe.file),
-        [code_flags(entry.argv(), entry.file) for entry in foundation_entries(context)],
-    )
+    probe_flags = code_flags(probe.argv(), probe.file)
+    found = flag_findings(probe_flags, [code_flags(entry.argv(), entry.file) for entry in foundation_entries(context)])
     probes = planted_probes(context) or PROBES
     try:
-        with tempfile.TemporaryDirectory(prefix="codegen-shapes-") as scratch:
-            obj = Path(scratch) / "core_shapes.o"
-            compiled_object(probe, obj)
-            functions = codes_of(disassembled(obj))
+        functions = compiled_codes(probe, with_sanitizers=False)
+        instrumented = compiled_codes(probe, with_sanitizers=True) if has_sanitizer(probe) else None
     except CompileFailed as problem:
         return [
             *found,
@@ -922,8 +1276,8 @@ def core_findings(context: runner.ElfContext) -> tuple[list[check_report.Finding
                 "missing",
             ),
         ], []
-    shapes, shown = shape_findings(functions, probes)
-    return [*found, *shapes], shown
+    pairs, shown, verdicts = pair_findings(functions, probes, is_hardened(probe_flags))
+    return [*found, *pairs], [*shown, *count_lines(verdicts, instrumented, probes)]
 
 
 # ── The wrappers ───────────────────────────────────────────────────
@@ -1330,7 +1684,7 @@ def parts_of(context: runner.ElfContext) -> tuple[str, ...]:
 
 
 def examine(context: runner.ElfContext) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the findings of each part of the build, and the disassembly of each probe with a finding (THE PARTS).
+    """Return the findings of each part of the build, and the lines that the run prints (THE PARTS, THE COSTS).
 
     Raises:
         runner.NotApplicable: If the host is not x86_64, or the call gives no build directory
@@ -1365,7 +1719,9 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build, write its findings, and print the disassembly of each probe with a finding.
+    """Run the rule on the build, write its findings, and print the counts of each pair (THE COSTS).
+
+    The run also prints the disassembly of the two functions of each probe with an error.
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -1380,8 +1736,8 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
         check_report.write_line(block)
     if status == 0:
         check_report.write_line(
-            f"{RULE}: {len(PROBES)} probes hold, the flags of the probe unit agree with the tree, and "
-            f"{len(wrapper_source(CTCRYPTO_CASES)[1])} wrappers have no refused instruction for "
-            f"{len(MARCHES) * 4} targets"
+            f"{RULE}: the {len(PROBES)} pairs hold with the flags of this build, the probe unit has the flags of the "
+            f"foundation library, and {len(wrapper_source(CTCRYPTO_CASES)[1])} wrappers have no refused instruction "
+            f"for {len(MARCHES) * 4} targets"
         )
     return status

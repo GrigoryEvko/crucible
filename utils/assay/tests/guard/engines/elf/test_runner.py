@@ -374,7 +374,7 @@ def run_cases(expect: testing.Expect) -> None:
         planted = runner.PlantedBuild(
             entries=(probe,),
             targets={"foundation": frozenset()},
-            rows=rows_grammar.parse("part core\nprobe bad relation=nothing bound=1 | a planted claim\n", "plant.txt"),
+            rows=rows_grammar.parse("part core\nprobe bad branch=no | a planted claim\n", "plant.txt"),
         )
         said = raised(
             partial(runner.judged_plant, rules["codegen-shapes"], runner.ElfContext(root, None, planted)),

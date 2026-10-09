@@ -1,0 +1,6 @@
+# The probe checked declares the check that its family side adds, and the pair has no error.  The family side has
+# more instructions than its raw side, and the run gives a warning with the two counts: the cost stays in the output.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
+probe checked check=fatal | a checked load adds a test and a branch to a call of the fatal exit

@@ -1,0 +1,6 @@
+namespace {
+
+[[gnu::used, gnu::noinline]] void bump(int* counter) { *counter += 1; }
+[[gnu::used, gnu::noinline]] void bump_raw(int* counter) { __atomic_fetch_add(counter, 1, __ATOMIC_RELAXED); }
+
+}  // namespace

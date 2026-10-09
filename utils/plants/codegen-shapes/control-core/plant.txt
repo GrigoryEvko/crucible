@@ -1,8 +1,9 @@
-# A probe unit whose family functions compile to the instructions that their expectations give, and whose flags
-# are the flags of the foundation unit.
+# A probe unit with the flags of a Release unit, the hardening flags too, and the same code flags as the foundation
+# unit.  The family side of load is its raw side, checked adds the check that its probe declares, and count has the
+# loop of its raw side.
 part core
-unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -mtune=generic -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
-unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
-probe load relation=same bound=2 | a load is the load of a raw pointer
-probe checked relation=cost bound=4 extra=2 cold=yes | a checked load adds a test and a branch to a cold call of the fatal exit
-probe count relation=loop bound=80 extra=8 | a sum over an array is the loop of a raw pointer loop
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fharden-compares -fharden-conditional-branches -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fharden-compares -fharden-conditional-branches -fcontract-evaluation-semantic=observe
+probe load | a load is the load of a raw pointer
+probe checked check=fatal | a checked load adds a test and a branch to a call of the fatal exit
+probe count | a sum over an array is the loop of a raw pointer

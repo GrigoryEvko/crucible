@@ -1,0 +1,12 @@
+namespace {
+
+[[gnu::used, gnu::noinline]] int load(const int* pointer) {
+    int const value = *pointer;
+    if (value == 7) [[unlikely]] {
+        __builtin_trap();
+    }
+    return value;
+}
+[[gnu::used, gnu::noinline]] int load_raw(const int* pointer) { return *pointer; }
+
+}  // namespace

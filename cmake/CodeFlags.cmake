@@ -6,8 +6,7 @@
 # must compile the code of a Release build in each build type, with no
 # warning flag and no sanitizer.  The constant-time taint tests and the
 # timing harness of test/ct are such targets.  So a change of a list changes
-# the library and the taint tests together.  crucible_code_target() applies
-# the lists with no flag of a Release build, to the probe unit of test/shape.
+# the library and the taint tests together.
 #
 #   CRUCIBLE_CODE_FLAGS          the code flags that each build takes
 #   CRUCIBLE_RELEASE_CODE_FLAGS  the code flags that each build other than
@@ -74,23 +73,14 @@ set(CRUCIBLE_CODE_DEFINITIONS
   _FORTIFY_SOURCE=3                    # 228  max glibc buffer checks
 )
 
-# Gives TARGET the code flags, the definitions and the FP floor that each
-# build takes, and no flag of a Release build.  The probe unit of test/shape
-# takes these lists, and the rule codegen-shapes compares its flags with the
-# flags of the units of the foundation library.  The target gets no warning
-# flag, no sanitizer and no contract semantic from this call.
-function(crucible_code_target target)
-  target_compile_options(${target} PRIVATE ${CRUCIBLE_CODE_FLAGS})
+# Gives TARGET the code flags, the definitions and the FP floor of a Release
+# unit of the tree, in each build type.  The target gets no warning flag, no
+# sanitizer and no contract semantic from this call.  The rule codegen-shapes
+# takes the flags of a Release build from the compile of such a target.
+function(crucible_release_code_target target)
+  target_compile_options(${target} PRIVATE ${CRUCIBLE_CODE_FLAGS} ${CRUCIBLE_RELEASE_CODE_FLAGS})
   target_compile_definitions(${target} PRIVATE ${CRUCIBLE_CODE_DEFINITIONS})
   target_link_libraries(${target} PRIVATE crucible_fp_strict)
-endfunction()
-
-# Gives TARGET the code flags, the definitions and the FP floor of a Release
-# unit of the tree, in each build type.  The rule codegen-shapes takes the
-# flags of a Release build from the compile of such a target.
-function(crucible_release_code_target target)
-  crucible_code_target(${target})
-  target_compile_options(${target} PRIVATE ${CRUCIBLE_RELEASE_CODE_FLAGS})
 endfunction()
 
 # The words of a compile that change with the kind of build, and the words

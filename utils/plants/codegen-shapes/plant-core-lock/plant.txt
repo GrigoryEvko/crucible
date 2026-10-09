@@ -1,0 +1,6 @@
+# The family side of the probe bump adds one to the counter with no lock, and the raw side adds it with a lock.  The
+# two sides have the same count of instructions, but they do not do the same atomic work.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+probe bump | a relaxed add is the lock add of the raw counter

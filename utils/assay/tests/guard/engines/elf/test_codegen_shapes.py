@@ -2,22 +2,27 @@
 
 THE CASES
     The cases hold these parts of the rule:
-      * Each kind of finding of THE SHAPE on planted disassemblies
-      * The flags of the probes and of the wrappers, and the probe rows of a
-        plant
-      * The refused instructions of planted constant-time functions
+      * The normalization of the registers, of rip and of the symbols
+      * The walk of planted disassemblies: the returning paths, the failure
+        paths and their kinds, and the loops
+      * The verdict of planted pairs: each class of family-only instruction,
+        the second tests of the `-fharden-` flags and the locked instructions
+      * The count of a probe with no declaration, and the warning of a cost
+      * The flags of the probe unit, the `-fharden-` flags, the probe rows of
+        a plant and the command of the compile of the verdict
+      * The flags and the refused instructions of the constant-time wrappers
       * The reflection census and the census of the grade.
     The compile cases use the compiler that ASSAY_TEST_CXX names.
 
 THE PROBE UNIT OF THE BUILD
     ASSAY_TEST_BUILD_DIR names the build directory, and the registration of
     the test in test/CMakeLists.txt gives it.  The case compiles the probe
-    unit with the command of the compile database of that build.  The probes
-    of PROBES must hold.  Then the case copies include/foundation/core/Region.h
-    to a directory that comes first on the include path.  It puts a second
-    test of the limits into View::window of the copy.  The probes view_window and
-    view_append must then fail, and no other probe.  The case applies only on
-    an x86_64 host.
+    unit with the command of the verdict: the command of the compile database
+    with no sanitizer word.  The pairs of PROBES must hold.  Then the case
+    copies include/foundation/core/Region.h to a directory that comes first on
+    the include path.  It puts a second test of the limits into View::window
+    of the copy.  The probes view_window and view_append must then fail, and
+    no other probe.  The case applies only on an x86_64 host.
 """
 
 import os
@@ -38,39 +43,10 @@ PLANT_HEADER = Path("include/foundation/core/Region.h")
 # The words of a compile command that load the quarantine plugin.  A compile with a copied header does not use them.
 PLUGIN_WORDS = ("-fplugin=", "-fplugin-arg-")
 PLUGIN_MACRO = "-DCRUCIBLE_QUARANTINE_ACTIVE"
-SYNTHETIC_HEAD = "\nDisassembly of section .text.{name}:\n\n0000000000000000 <(anonymous namespace)::{name}(int)>:\n"
-SYNTHETIC_COLD = (
-    "\nDisassembly of section .text.unlikely.{name}:\n\n"
-    "0000000000000000 <(anonymous namespace)::{name}(int) [clone .cold]>:\n"
-)
-FATAL_CALL = (
-    "   0:\tcall   QWORD PTR [rip+0x0]        # 6 <x>\n"
-    "\t\t\t2: R_X86_64_GOTPCRELX\tfoundation::core::detail::report_fatal_(char const*, char const*, "
-    "unsigned int, char const*)-0x4\n"
-)
-LOAD = "   0:\tendbr64\n   4:\tmov    rax,QWORD PTR [rdi]\n   7:\tret\n"
-EXCHANGE = "   0:\tendbr64\n   4:\tmov    rax,rsi\n   7:\txchg   QWORD PTR [rdi],rax\n   a:\tret\n"
-CHECKED = (
-    "   0:\tendbr64\n   4:\ttest   rdi,rdi\n   7:\tje     d <x+0xd>\n"
-    "\t\t\t9: R_X86_64_PC32\t.text.unlikely.probe-0x4\n   d:\tmov    eax,DWORD PTR [rdi]\n   f:\tret\n"
-)
-LOOP = (
-    "   0:\tendbr64\n   4:\tvpaddd ymm0,ymm0,YMMWORD PTR [rax]\n   8:\tadd    rax,0x20\n"
-    "   c:\tcmp    rax,rdx\n   f:\tjne    4 <x+0x4>\n  11:\tret\n"
-)
-OTHER_LOOP = (
-    "   0:\tendbr64\n   4:\tvpaddd ymm0,ymm0,YMMWORD PTR [rax]\n   8:\tadd    rax,0x20\n"
-    "   c:\tlea    rcx,[rax+0x1]\n   e:\tcmp    rax,rdx\n  11:\tjne    4 <x+0x4>\n  13:\tret\n"
-)
-COPY = "   0:\tendbr64\n   4:\tjmp    QWORD PTR [rip+0x0]        # a <x>\n\t\t\t6: R_X86_64_GOTPCRELX\tmemmove-0x4\n"
-RAW_COPY = "   0:\tendbr64\n   4:\tjmp    QWORD PTR [rip+0x0]        # a <x>\n\t\t\t6: R_X86_64_GOTPCRELX\tmemcpy-0x4\n"
-PLAIN = "   0:\tendbr64\n   4:\tmov    eax,DWORD PTR [rdi]\n   6:\tret\n"
-PADDED = "   0:\tendbr64\n   4:\tmov    rax,QWORD PTR [rdi]\n   7:\txchg   ax,ax\n   9:\tret\n"
-HELPER_CALL = "   7:\tcall   QWORD PTR [rip+0x0]\n\t\t\t9: R_X86_64_GOTPCRELX\thelper-0x4\n   d:\tret"
-FATAL_IN_HOT = (
-    "   7:\tcall   QWORD PTR [rip+0x0]\n\t\t\t9: R_X86_64_GOTPCRELX\t"
-    "foundation::core::detail::report_fatal_(char const*)-0x4\n   d:\tret"
-)
+# The distance between two planted instructions.
+STEP = 4
+FATAL = "R_X86_64_GOTPCRELX\tfoundation::core::detail::report_fatal_(char const*)-0x4"
+ZERO_COST = shapes.Probe("probe", "c")
 # The planted constant-time functions: one refused instruction of each kind, a compare and a clean function.  The
 # variants with the -fharden- flags give the compare a branch.
 PLANTED_CT = r"""
@@ -104,186 +80,304 @@ RELEASE = [
     "-fcontract-evaluation-semantic=observe",
 ]
 
+# A planted line of a part: the instruction, and the relocation after it or None.  A word @N of the instruction is
+# the offset of the instruction N of the same part.
+Line = tuple[str, str | None]
 
-def synthetic(name: str, body: str, cold: str | None = None) -> str:
-    """Return the objdump text of one synthetic function: its hot part and its cold part."""
-    text = SYNTHETIC_HEAD.format(name=name) + body
-    if cold is not None:
-        text += SYNTHETIC_COLD.format(name=name) + cold
+
+def cold(index: int) -> str:
+    """Return the relocation of a jump into the instruction `index` of the cold part of the planted function."""
+    addend = index * STEP - shapes.JUMP_FIELD
+    return f"R_X86_64_PC32\t.text.unlikely.probe{'+' if addend >= 0 else '-'}0x{abs(addend):x}"
+
+
+def part_text(section: str, symbol: str, lines: Sequence[Line]) -> str:
+    """Return the objdump text of one planted part, with an instruction at each STEP bytes."""
+    rows = [f"\nDisassembly of section {section}:\n\n0000000000000000 <{symbol}>:"]
+    for index, (text, relocation) in enumerate(lines):
+        words = [
+            f"{int(word[1:]) * STEP:x} <x+0x{int(word[1:]) * STEP:x}>" if word[:1] == "@" else word
+            for word in text.split(" ")
+        ]
+        mnemonic, operands = words[0], " ".join(words[1:])
+        rows.append(f"  {index * STEP:x}:\t{mnemonic:<6} {operands}".rstrip())
+        if relocation is not None:
+            rows.append(f"\t\t\t{index * STEP + 2:x}: {relocation}")
+    return "\n".join(rows) + "\n"
+
+
+def planted(name: str, hot: Sequence[Line], cold_lines: Sequence[Line] = ()) -> str:
+    """Return the objdump text of one planted function with its hot part and its cold part."""
+    text = part_text(f".text.{name}", f"(anonymous namespace)::{name}(int)", hot)
+    if cold_lines:
+        text += part_text(f".text.unlikely.{name}", f"(anonymous namespace)::{name}(int) [clone .cold]", cold_lines)
     return text
 
 
-def probe(relation: shapes.Relation, bound: int, extra: int = 0, **flags: object) -> shapes.Probe:
-    """Return a planted probe with the name probe, a relation, a bound, the number of more instructions and flags."""
-    calls = flags.get("calls", ())
-    raw_calls = flags.get("raw_calls", ())
-    return shapes.Probe(
+def code_of(name: str, hot: Sequence[Line], cold_lines: Sequence[Line] = ()) -> shapes.Code:
+    """Return the code of one planted function."""
+    return shapes.codes_of(objdump.parse(planted(name, hot, cold_lines), name))[name]
+
+
+def plain(*texts: str) -> list[Line]:
+    """Return planted lines with no relocation."""
+    return [(text, None) for text in texts]
+
+
+# ── The normalization ──────────────────────────────────────────────
+
+
+def normalization_cases(expect: testing.Expect) -> None:
+    """Hold the class of each register, the removal of the displacement of rip, and the text of a symbol."""
+    cases = (
+        ("mov rax,QWORD PTR [rdi+0x8]", "mov g64,QWORD PTR [g64+0x8]"),
+        ("add r9d,ecx", "add g32,g32"),
+        ("movzx eax,dil", "movzx g32,g8"),
+        ("vpaddd ymm0,ymm1,ymm15", "vpaddd v256,v256,v256"),
+        ("kmovw k1,eax", "kmovw k,g32"),
+        ("mov QWORD PTR [rbp-0x8],rsi", "mov QWORD PTR [rbp-0x8],g64"),
+        ("lea rax,[rip+0x0]", "lea g64,[rip]"),
+        ("lea rax,[rip+0xffffffffffffffaa]", "lea g64,[rip]"),
+        ("mov eax,DWORD PTR [rax+rdi*4]", "mov g32,DWORD PTR [g64+g64*4]"),
+    )
+    for source, wanted in cases:
+        text = f"{source.split(' ', 1)[0]} {shapes.normalized_operands(source.split(' ', 1)[1])}"
+        expect(f"the operands of '{source}' become '{wanted}'", text == wanted)
+    for symbol, wanted in ((".LC12", " -> .LC"), (".rodata.CSWTCH.151", " -> .rodata"), ("memmove", " -> memmove")):
+        instruction = shapes.Instruction(0, (), "lea", "rax,[rip+0x0]", (), (), symbol, symbol)
+        expect(f"the symbol {symbol} becomes '{wanted}'", shapes.symbol_text(instruction) == wanted)
+
+
+# ── The walk ───────────────────────────────────────────────────────
+
+
+def walk_cases(expect: testing.Expect) -> None:
+    """Plant functions for each part of THE WALK, and hold the texts and the classes of their steps."""
+    fatal_inline = code_of(
         "probe",
-        relation,
-        bound,
-        "c",
-        extra,
-        tuple(calls) if isinstance(calls, tuple) else (),
-        tuple(raw_calls) if isinstance(raw_calls, tuple) else (),
-        flags.get("cold") is True,
-        flags.get("locked") is True,
+        [
+            *plain("endbr64", "test rdi,rdi", "je @5", "mov eax,DWORD PTR [rdi]", "ret", "lea rdi,[rip+0x0]"),
+            ("call QWORD PTR [rip+0x0]", FATAL),
+            *plain("mov eax,0x25", "ret"),
+        ],
+    )
+    texts = [step.text for step in shapes.steps_of(fatal_inline)]
+    expect(
+        "a call of the fatal exit ends its path, also when code follows it, and the jump into it is a check",
+        texts == ["endbr64", "test g64,g64", "je !fatal", "mov g32,DWORD PTR [g64]", "ret"],
+    )
+    fall_through = code_of(
+        "probe",
+        [
+            *plain("endbr64", "test rdi,rdi", "jne @4"),
+            ("call QWORD PTR [rip+0x0]", FATAL),
+            *plain("mov eax,0x1", "ret"),
+        ],
+    )
+    steps = shapes.steps_of(fall_through)
+    expect(
+        "a conditional jump whose failure path is its fall-through is a check of that path",
+        [step.text for step in steps] == ["endbr64", "test g64,g64", "jne !fatal", "mov g32,0x1", "ret"]
+        and steps[2].kind is shapes.StepClass.CHECK,
+    )
+    hardened = code_of(
+        "probe",
+        [*plain("endbr64", "test rdi,rdi"), ("je @0", cold(0)), *plain("test rdi,rdi"), ("je @0", cold(2))]
+        + plain("mov eax,DWORD PTR [rdi]", "ret"),
+        [("call QWORD PTR [rip+0x0]", FATAL), *plain("ud2", "ud2")],
+    )
+    details = [step.detail for step in shapes.steps_of(hardened) if step.kind is shapes.StepClass.CHECK]
+    expect(
+        "a jump into the cold part names the kind of the failure path there: fatal, then trap",
+        details == ["fatal", "trap"],
+    )
+    tail = code_of(
+        "probe", [*plain("endbr64", "mov rdx,rsi"), ("jmp QWORD PTR [rip+0x0]", "R_X86_64_GOTPCRELX\tmemset-0x4")]
+    )
+    steps = shapes.steps_of(tail)
+    expect(
+        "a jump to a different function is an exit and a call of that function",
+        steps[-1].kind is shapes.StepClass.CALL and steps[-1].detail == "memset" and len(steps) == 3,
+    )
+    loop = code_of(
+        "probe",
+        plain("endbr64", "xor eax,eax", "add eax,DWORD PTR [rdi]", "add rdi,0x4", "cmp rdi,rsi", "jne @2", "ret"),
+    )
+    marks = [step.is_in_loop for step in shapes.steps_of(loop)]
+    expect("a jump into an earlier instruction marks the loop", marks == [False, False, True, True, True, True, False])
+    padded = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "xchg ax,ax", "nop", "ret"))
+    expect("a nop that aligns the code is no step", len(shapes.steps_of(padded)) == 3)
+
+
+# ── The verdict ────────────────────────────────────────────────────
+
+
+def judged(probe: shapes.Probe, family: shapes.Code, raw: shapes.Code, hardened: bool = False) -> shapes.Verdict:
+    """Return the verdict of a planted pair."""
+    return shapes.verdict(probe, shapes.steps_of(family), shapes.steps_of(raw), hardened)
+
+
+def verdict_cases(expect: testing.Expect) -> None:
+    """Plant one pair for each part of THE VERDICT, and hold its problems."""
+    load = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "ret"))
+    load_other = code_of("probe", plain("endbr64", "mov rcx,QWORD PTR [rsi]", "ret"))
+    spill = code_of(
+        "probe",
+        plain("endbr64", "push rbp", "mov rbp,rsp", "mov QWORD PTR [rbp-0x8],rdi", "mov rax,QWORD PTR [rdi]")
+        + plain("pop rbp", "ret"),
+    )
+    longer = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "lea rax,[rax+rax*2+0x1]", "ret"))
+    swapped = code_of("probe", plain("endbr64", "lea rax,[rdi+rsi*4]", "mov eax,DWORD PTR [rax]", "ret"))
+    swapped_raw = code_of("probe", plain("endbr64", "shl rsi,0x2", "mov eax,DWORD PTR [rdi+rsi*1]", "ret"))
+    branch = code_of(
+        "probe",
+        plain(
+            "endbr64", "mov eax,DWORD PTR [rdi]", "cmp eax,0x7", "je @5", "ret", "mov eax,DWORD PTR [rdi+0x4]", "ret"
+        ),
+    )
+    check = code_of(
+        "probe",
+        [*plain("endbr64", "test rdi,rdi"), ("je @0", cold(0))] + plain("mov rax,QWORD PTR [rdi]", "ret"),
+        [("call QWORD PTR [rip+0x0]", FATAL), *plain("ud2")],
+    )
+    hardened_check = code_of(
+        "probe",
+        [*plain("endbr64", "test rdi,rdi"), ("je @0", cold(0)), *plain("test rdi,rdi"), ("je @0", cold(2))]
+        + plain("mov rax,QWORD PTR [rdi]", "ret"),
+        [("call QWORD PTR [rip+0x0]", FATAL), *plain("ud2", "ud2")],
+    )
+    trap = code_of(
+        "probe",
+        [*plain("endbr64", "test rdi,rdi"), ("je @0", cold(0))] + plain("mov rax,QWORD PTR [rdi]", "ret"),
+        plain("ud2"),
+    )
+    call = code_of("probe", [*plain("endbr64"), ("jmp QWORD PTR [rip+0x0]", "R_X86_64_GOTPCRELX\tmemmove-0x4")])
+    call_raw = code_of("probe", [*plain("endbr64"), ("jmp QWORD PTR [rip+0x0]", "R_X86_64_GOTPCRELX\tmemcpy-0x4")])
+    division = code_of("probe", plain("endbr64", "mov eax,edi", "xor edx,edx", "div esi", "ret"))
+    division_raw = code_of("probe", plain("endbr64", "mov eax,edi", "xor edx,edx", "shr esi,1", "mov eax,esi", "ret"))
+    indexed = code_of("probe", plain("endbr64", "mov eax,DWORD PTR [rdi+rsi*4]", "ret"))
+    loop = plain("endbr64", "xor eax,eax", "add eax,DWORD PTR [rdi]", "add rdi,0x4", "cmp rdi,rsi", "jne @2", "ret")
+    loop_raw = code_of("probe", loop)
+    loop_work = code_of(
+        "probe",
+        plain("endbr64", "add eax,DWORD PTR [rdi]", "add rdi,0x4", "add rdx,0x1", "cmp rdi,rsi", "jne @1", "ret"),
+    )
+    locked = code_of("probe", plain("endbr64", "lock add DWORD PTR [rdi],0x1", "ret"))
+    unlocked = code_of("probe", plain("endbr64", "add DWORD PTR [rdi],0x1", "ret"))
+    fatal = shapes.Probe("probe", "c", checks=("fatal",))
+    cases: tuple[tuple[str, shapes.Probe, shapes.Code, shapes.Code, bool, tuple[str, ...]], ...] = (
+        ("a pair with the same instructions", ZERO_COST, load, load, False, ()),
+        ("a pair that differs only in its registers", ZERO_COST, load_other, load, False, ()),
+        ("a raw side with a spill to the stack", ZERO_COST, load, spill, False, ()),
+        ("a family side with more plain instructions", ZERO_COST, longer, load, False, ("declares no cost",)),
+        ("plain instructions of the same count", ZERO_COST, swapped, swapped_raw, False, ()),
+        ("a family-only branch", ZERO_COST, branch, load, False, ("adds a branch",)),
+        ("a declared branch", shapes.Probe("probe", "c", branches=True), branch, load, False, ()),
+        ("a family-only check", ZERO_COST, check, load, False, ("check into a fatal path",)),
+        ("a declared check", fatal, check, load, False, ()),
+        ("a declared check and its hardening test", fatal, hardened_check, load, True, ()),
+        ("a hardening test with no hardening", fatal, hardened_check, load, False, ("check into a trap path",)),
+        ("a trap with no declared check", ZERO_COST, trap, load, True, ("gives at most 0",)),
+        ("a family-only call", ZERO_COST, call, call_raw, False, ("call of memmove",)),
+        ("a declared call", shapes.Probe("probe", "c", calls=("memmove",)), call, call_raw, False, ()),
+        ("a family-only division", ZERO_COST, division, division_raw, False, ("division",)),
+        ("a family-only indexed load", ZERO_COST, indexed, load, False, ("index register",)),
+        ("a family-only lea with an index", ZERO_COST, swapped, swapped_raw, False, ()),
+        ("family-only work in a loop", ZERO_COST, loop_work, loop_raw, False, ("work to a loop",)),
+        ("a lost lock", ZERO_COST, unlocked, locked, False, ("locked instructions",)),
+    )
+    for title, probe, family, raw, hardened, wanted in cases:
+        problems = judged(probe, family, raw, hardened).problems
+        holds = all(any(part in problem for problem in problems) for part in wanted) if wanted else not problems
+        expect(f"the verdict of '{title}' gives {list(wanted) or 'no problem'}", holds)
+    functions = {"probe": check, "probe_raw": load}
+    found, shown, verdicts = shapes.pair_findings(functions, (fatal,), False)
+    expect(
+        "a declared cost of a longer family side gives one warning with the counts, and no error",
+        [item.level for item in found] == ["warning"]
+        and "family side has 5" in found[0].message
+        and not shown
+        and verdicts["probe"].is_longer,
+    )
+    found, shown, _ = shapes.pair_findings(functions, (ZERO_COST,), False)
+    expect(
+        "an undeclared check gives an error and the disassembly of the two functions",
+        bool(found) and all(item.level == "error" for item in found) and len(shown) == 1,
     )
 
 
-# ── The shape ──────────────────────────────────────────────────────
-
-
-def shape_cases(expect: testing.Expect) -> None:
-    """Plant one disassembly for each kind of finding of THE SHAPE, and hold each verdict."""
-    cases: tuple[tuple[str, shapes.Probe, str, str, str | None, tuple[str, ...]], ...] = (
-        ("a clean pair", probe("same", 3), LOAD, LOAD, None, ()),
-        ("a nop that aligns the code", probe("same", 3), PADDED, LOAD, None, ()),
-        (
-            "an extra instruction",
-            probe("same", 3),
-            LOAD.replace("   7:\tret", "   7:\tmov    rcx,rax\n   a:\tret"),
-            LOAD,
-            None,
-            ("over the bound", "not the instruction sequence"),
-        ),
-        (
-            "a call where none belongs",
-            probe("cost", 4, 1),
-            LOAD.replace("   7:\tret", HELPER_CALL),
-            LOAD,
-            None,
-            ("calls ['helper']",),
-        ),
-        (
-            "a missing memmove",
-            probe("same", 3, calls=("memmove",), raw_calls=("memmove",)),
-            LOAD,
-            LOAD,
-            None,
-            ("expectation is ['memmove']",),
-        ),
-        (
-            "a memmove and a memcpy",
-            probe("cost", 2, calls=("memmove",), raw_calls=("memcpy",)),
-            COPY,
-            RAW_COPY,
-            None,
-            (),
-        ),
-        ("a missing lock", probe("same", 3, locked=True), LOAD, LOAD, None, ("holds no locked instruction",)),
-        ("a lock where none belongs", probe("same", 4), EXCHANGE, EXCHANGE, None, ("holds a locked instruction",)),
-        (
-            "a cold call in the hot part",
-            probe("cost", 4, 1, cold=True),
-            LOAD.replace("   7:\tret", FATAL_IN_HOT),
-            LOAD,
-            None,
-            ("has no cold part", "calls ['foundation::core::detail::report_fatal_']"),
-        ),
-        (
-            "a cold part with no jump into it",
-            probe("cost", 3, cold=True),
-            LOAD,
-            LOAD,
-            FATAL_CALL,
-            ("no jump into its cold part",),
-        ),
-        (
-            "a cold part with no fatal exit",
-            probe("cost", 5, 2, cold=True),
-            CHECKED,
-            PLAIN,
-            "   0:\tud2\n",
-            ("does not call the fatal exit",),
-        ),
-        ("a checked access", probe("cost", 5, 2, cold=True), CHECKED, PLAIN, FATAL_CALL, ()),
-        ("a cold part where none belongs", probe("cost", 5, 2), CHECKED, PLAIN, FATAL_CALL, ("has a cold part",)),
-        (
-            "a family part over the raw part",
-            probe("cost", 9, 1, cold=True),
-            CHECKED,
-            PLAIN,
-            FATAL_CALL,
-            ("permits 1 more",),
-        ),
-        ("the same loop", probe("loop", 6), LOOP, LOOP, None, ()),
-        ("a different loop", probe("loop", 7, 1), OTHER_LOOP, LOOP, None, ("inner loops",)),
-    )
-    for title, planted, family_body, raw_body, cold, expected in cases:
-        text = synthetic("probe", family_body, cold) + synthetic("probe_raw", raw_body)
-        found, shown = shapes.shape_findings(shapes.codes_of(objdump.parse(text, title)), (planted,))
-        messages = [item.message for item in found]
-        holds = all(any(part in message for message in messages) for part in expected) if expected else not messages
-        expect(f"the shape case '{title}' gives {list(expected) or 'no finding'}", holds and bool(shown) == bool(found))
+# ── The flags ──────────────────────────────────────────────────────
 
 
 def flag_cases(expect: testing.Expect) -> None:
-    """Plant compile commands for each kind of finding of THE FLAGS OF THE PROBES."""
-    base = ["g++", "-DX=1", "-Iinclude", "-std=c++26", "-fno-plt", "-Wall", "-o", "out.o", "-c", "unit.cpp"]
-    probe_words = ["g++", "-DX=1", "-std=c++26", "-fno-plt", *shapes.FIXED_FLAGS, "-fplugin=q.so", "-c", "probe.cpp"]
+    """Plant compile commands for each kind of finding of THE FLAGS OF THE PAIRS."""
+    base = ["g++", "-DX=1", "-Iinclude", "-std=c++26", "-fno-plt", "-O3", "-fPIC", "-Wall", "-o", "o.o", "-c", "u.cpp"]
+    probe_words = ["g++", "-DX=1", "-std=c++26", "-fno-plt", "-O3", "-fPIC", "-fplugin=q.so", "-g", "-c", "p.cpp"]
     cases: tuple[tuple[str, list[str], list[str], int, tuple[str, ...]], ...] = (
-        ("the same flags", base, probe_words, 2, ()),
-        (
-            "flags of the base that change with the preset",
-            [*base, "-O1", "-g", "-fsanitize=address", "-fharden-compares", "-D_GLIBCXX_ASSERTIONS=1", "-fPIC"],
-            probe_words,
-            2,
-            (),
-        ),
-        (
-            "a new flag of the base",
-            [*base, "-fno-jump-tables"],
-            probe_words,
-            2,
-            ("compiles with -fno-jump-tables, and the probe",),
-        ),
+        ("the same code words", base, probe_words, 2, ()),
+        ("a new flag of the base", [*base, "-fno-jump-tables"], probe_words, 2, ("-fno-jump-tables, and the probe",)),
         ("a flag that the base lost", base, [*probe_words, "-fno-common"], 2, ("no foundation unit does",)),
-        ("a new flag of each preset", [*base, "-fno-tree-vectorize"], probe_words, 2, ("-fno-tree-vectorize",)),
-        ("a missing fixed flag", base, [word for word in probe_words if word != "-DNDEBUG"], 2, ("PER_PRESET",)),
-        (
-            "a different target",
-            base,
-            [word.replace("x86-64-v3", "native") for word in probe_words],
-            2,
-            ("expectations of PROBES",),
-        ),
+        ("a different level", base, [w.replace("-O3", "-O1") for w in probe_words], 2, ("-O3, and the probe",)),
+        ("a sanitizer of the base only", [*base, "-fsanitize=address"], probe_words, 2, ("-fsanitize=address",)),
         ("no foundation unit", base, probe_words, 0, ("no unit of the target foundation",)),
     )
-    for title, base_words, probe_flags, units, expected in cases:
+    for title, base_words, probe_flags, units, wanted in cases:
         found = shapes.flag_findings(
-            shapes.code_flags(probe_flags, "probe.cpp"), [shapes.code_flags(base_words, "unit.cpp")] * units
+            shapes.code_flags(probe_flags, "p.cpp"), [shapes.code_flags(base_words, "u.cpp")] * units
         )
         messages = [item.message for item in found]
-        holds = all(any(part in message for message in messages) for part in expected) and bool(messages) == bool(
-            expected
-        )
-        expect(f"the flag case '{title}' gives {list(expected) or 'no finding'}", holds)
+        holds = all(any(part in message for message in messages) for part in wanted) and bool(messages) == bool(wanted)
+        expect(f"the flag case '{title}' gives {list(wanted) or 'no finding'}", holds)
     found = shapes.flag_findings(
-        shapes.code_flags(probe_words, "probe.cpp"),
-        [shapes.code_flags(base, "unit.cpp"), shapes.code_flags([*base, "-fno-common"], "unit.cpp")],
+        shapes.code_flags(probe_words, "p.cpp"),
+        [shapes.code_flags(base, "u.cpp"), shapes.code_flags([*base, "-fno-common"], "u.cpp")],
     )
     expect(
         "foundation units with different code flags give a finding",
         any("do not have the same code flags" in item.message for item in found),
     )
+    hardening = (
+        (["-O3", "-fharden-compares"], True),
+        (["-fharden-conditional-branches", "-fno-harden-conditional-branches"], False),
+        (["-fharden-compares", "-fno-harden-conditional-branches"], True),
+        (["-O1"], False),
+    )
+    for words, is_on in hardening:
+        expect(
+            f"the flags {words} turn the second tests {'on' if is_on else 'off'}", shapes.is_hardened(words) == is_on
+        )
+    entry = compdb.CompileEntry(
+        "p.cpp", "/b", "/b/p.o", "g++ -O1 -fsanitize=address -fno-sanitize-recover=all -o /b/p.o -c p.cpp"
+    )
+    verdict_words = shapes.command_words(entry, Path("/s/x.o"), with_sanitizers=False)
+    expect(
+        "the compile of the verdict has no sanitizer word and writes the scratch object",
+        verdict_words == ["g++", "-O1", "-o", "/s/x.o", "-c", "p.cpp"] and shapes.has_sanitizer(entry),
+    )
+    expect(
+        "the compile with the sanitizer keeps each word",
+        shapes.command_words(entry, Path("/s/x.o"), with_sanitizers=True)[2:4]
+        == ["-fsanitize=address", "-fno-sanitize-recover=all"],
+    )
 
 
 def probe_row_cases(expect: testing.Expect) -> None:
-    """Hold the probe rows of a plant (THE PROBES)."""
+    """Hold the probe rows of a plant (THE PAIRS)."""
     rows = rows_grammar.parse(
-        "probe load relation=cost bound=4 extra=2 calls=memmove,memset raw-calls=memcpy cold=yes locked=yes | claim\n"
-        "probe bad relation=other bound=1 | a planted claim\n"
+        "probe load check=fatal,trap branch=yes calls=memmove,memset | claim\n"
+        "probe plain | a planted claim\n"
+        "probe bad branch=no | a planted claim\n"
+        "probe bad check=other | a planted claim\n"
         "probe bad relation=same | a planted claim\n"
-        "probe bad relation=same bound=1 cold=no | a planted claim\n"
-        "probe bad relation=same bound=1\n",
+        "probe bad check=fatal\n",
         "plant.txt",
     )
     expect(
         "a probe row gives each field of its probe",
-        shapes.probe_of_row(rows[0])
-        == shapes.Probe("load", "cost", 4, "claim", 2, ("memmove", "memset"), ("memcpy",), True, True),
+        shapes.probe_of_row(rows[0]) == shapes.Probe("load", "claim", ("fatal", "trap"), True, ("memmove", "memset")),
     )
-    for row in rows[1:]:
+    expect("a probe row with no field declares no cost", not shapes.probe_of_row(rows[1]).declares_cost)
+    for row in rows[2:]:
         try:
             shapes.probe_of_row(row)
             is_refused = False
@@ -471,26 +565,19 @@ def plant_window(header: Path) -> str:
 
 
 def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None) -> list[str]:
-    """Return the compile command of a row with the object `obj`, and with the directory `include` first.
+    """Return the command of the verdict for a row, with the object `obj`, and with the directory `include` first.
 
     With a directory, the command does not hold the words of the quarantine plugin.
     """
-    words = [entry.argv()[0], *([] if include is None else [f"-I{include}"])]
-    arguments = list(entry.argv()[1:])
-    index = 0
-    while index < len(arguments):
-        word = arguments[index]
-        index += 1
-        if word == "-o":
-            words += ["-o", str(obj)]
-            index += 1
-        elif include is None or not (word.startswith(PLUGIN_WORDS) or word == PLUGIN_MACRO):
-            words.append(word)
-    return words
+    words = shapes.command_words(entry, obj, with_sanitizers=False)
+    kept = [
+        word for word in words[1:] if include is None or not (word.startswith(PLUGIN_WORDS) or word == PLUGIN_MACRO)
+    ]
+    return [words[0], *([] if include is None else [f"-I{include}"]), *kept]
 
 
 def failed_probes(entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe]) -> set[str]:
-    """Compile the probe unit of a row, and return the name of each probe with a finding.
+    """Compile the probe unit of a row with the command of the verdict, and return the name of each probe with an error.
 
     Raises:
         proc.ToolFailed: If the compile fails
@@ -500,8 +587,9 @@ def failed_probes(entry: compdb.CompileEntry, include: Path | None, probes: Sequ
         command = proc.Command(compile_words(entry, obj, include), timeout_s=proc.TOOL_S, cwd=Path(entry.directory))
         proc.require(proc.run(command))
         functions = shapes.codes_of(shapes.disassembled(obj))
-    found, _ = shapes.shape_findings(functions, probes)
-    return {item.entity for item in found}
+    hardened = shapes.is_hardened(shapes.code_flags(entry.argv(), entry.file))
+    found, _, _ = shapes.pair_findings(functions, probes, hardened)
+    return {item.entity for item in found if item.level == "error"}
 
 
 def build_probe_cases(expect: testing.Expect) -> None:
@@ -520,13 +608,13 @@ def build_probe_cases(expect: testing.Expect) -> None:
     if entry is None:
         return
     expect(
-        "each probe of PROBES holds on the probe unit of the build", failed_probes(entry, None, shapes.PROBES) == set()
+        "each pair of PROBES holds on the probe unit of the build", failed_probes(entry, None, shapes.PROBES) == set()
     )
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-plant-") as scratch:
         include = Path(scratch) / "include"
-        planted = include / PLANT_HEADER.relative_to("include")
-        planted.parent.mkdir(parents=True)
-        planted.write_text(plant_window(REPO_ROOT / PLANT_HEADER), encoding="utf-8")
+        planted_header = include / PLANT_HEADER.relative_to("include")
+        planted_header.parent.mkdir(parents=True)
+        planted_header.write_text(plant_window(REPO_ROOT / PLANT_HEADER), encoding="utf-8")
         failed = failed_probes(entry, include, shapes.PROBES)
     expect(
         "a second test of the limits in View::window fails the probes view_window and view_append, and no other",
@@ -540,7 +628,9 @@ def main(argv: list[str]) -> int:
         __name__.removeprefix("assay."),
         argv,
         (
-            shape_cases,
+            normalization_cases,
+            walk_cases,
+            verdict_cases,
             flag_cases,
             probe_row_cases,
             wrapper_flag_cases,

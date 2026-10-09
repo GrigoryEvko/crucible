@@ -17,8 +17,8 @@ namespace {
 
 [[gnu::used, gnu::noinline]] int count(const int* values, long length) {
     int total = 0;
-    for (long index = 0; index < length; ++index) {
-        total += values[index];
+    for (const int* cursor = values; cursor != values + length; ++cursor) {
+        total += *cursor;
     }
     return total;
 }

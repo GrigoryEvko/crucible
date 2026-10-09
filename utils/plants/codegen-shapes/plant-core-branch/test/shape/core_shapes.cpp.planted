@@ -1,0 +1,13 @@
+namespace {
+
+// The second load can fault.  The compiler then cannot move it before the compare, and the branch stays.
+[[gnu::used, gnu::noinline]] int load(const int* pointer) {
+    int const value = *pointer;
+    if (value == 7) [[unlikely]] {
+        return pointer[1];
+    }
+    return value;
+}
+[[gnu::used, gnu::noinline]] int load_raw(const int* pointer) { return *pointer; }
+
+}  // namespace

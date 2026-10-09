@@ -1,6 +1,5 @@
-# The family function of the probe load does more work than its raw form, and the expectation is the same
-# instructions.
+# The family side of the probe load does more work than its raw side, and the probe declares no cost.
 part core
-unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -mtune=generic -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
-unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fno-strict-overflow -D_GLIBCXX_ASSERTIONS=1
-probe load relation=same bound=2 | a load is the load of a raw pointer
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+probe load | a load is the load of a raw pointer

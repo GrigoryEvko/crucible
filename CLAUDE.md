@@ -1039,10 +1039,12 @@ Release build in each build type. The test `ct_taint_flags`
 (`cmake/CodeFlagsCheck.cmake`) reads the flags of each compile from the CMake
 file API. It fails when a target of `test/ct` and the foundation library do not
 have the same code flags, apart from the flags that change with the kind of
-build. The probe unit of `test/shape` takes the code lists through
-`crucible_code_target()`, with the fixed flags of the rule `codegen-shapes`.
-That rule reads the flags of the probe unit, of the foundation library and of
-`test/ct/dudect.cpp` from the compile database (§XXII R12).
+build. The probe unit of `test/shape` links `crucible_dialect` and is
+position-independent, as the foundation library is. It then compiles with the
+flags of the foundation library in each build type. The rule `codegen-shapes`
+refuses a probe unit with code flags that are not those of the foundation
+library. It reads the flags of `test/ct/dudect.cpp` from the compile database
+(§XXII R12).
 
 In each preset, `cmake/BuildLauncher.cmake` puts `loop step` (`utils/assay/loop/step.py`)
 in front of each compile command and in front of ccache. It also puts the
@@ -3221,7 +3223,13 @@ On 2026-10-09, the census held 1296 findings in 970 rows of 646 of the 2159 fixt
 
 ### Hot path and compile time (R12 to R17)
 
-A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each probe of `test/shape/core_shapes.cpp`. It also refuses a branch, a call, a division and an indexed load in the compiled primitives of `fixy::ct`. The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
+A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each pair of `test/shape/core_shapes.cpp`: a family operation, and the raw code that it replaces in an `ORACLE` opt-out region. The two functions of a pair compile in one unit with the flags of the foundation library of the build. Each build type then compares them with its own level, target, hardening flags and contract semantic. The compile of the verdict has no sanitizer flag, because a sanitizer adds a test to each memory access. In a build with a sanitizer, the run also prints the counts of each pair with the sanitizer.
+
+The rule reads the instructions on the paths that return, and it normalizes them: a register becomes its class and its width, a jump becomes its kind of target, and a relocation becomes its symbol. Then it finds the instructions that only the family side has. It refuses each such instruction that is a check, a branch or a call, unless the pair declares that difference. It always refuses a division and a load with an index register. It refuses each such instruction in a loop, unless the pair declares a branch. In a unit with the hardening flags, a declared check or branch can have the second test that the hardening puts on each of its two edges. The two sides must hold the same locked instructions. A pair that declares no difference must give the family side no more instructions than the raw side.
+
+A declared difference is a cost on the hot path. When the family side of such a pair is longer, each run gives a warning with the counts of the pair. In the Release build of 2026-10-09, those pairs were `box_get`, `option_expect`, `option_expect_niche`, `switch_unreachable`, `view_append` and `view_fill`.
+
+The rule also refuses a branch, a call, a division and an indexed load in the compiled primitives of `fixy::ct`. The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
 
 ### Static TLS (R19)
 

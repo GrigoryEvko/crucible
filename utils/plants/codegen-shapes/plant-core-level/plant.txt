@@ -1,0 +1,6 @@
+# The probe unit compiles at -O3, and the foundation unit compiles at -O1.  The pairs then do not compile with the
+# flags of the foundation library.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -fPIC -fno-strict-overflow
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow
+probe load | a load is the load of a raw pointer
