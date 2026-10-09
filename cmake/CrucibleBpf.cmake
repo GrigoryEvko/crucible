@@ -8,13 +8,14 @@
 #
 # Each call to crucible_bpf_program(NAME source.bpf.c):
 #   1. Compiles `source.bpf.c` with `clang -target bpf -O2 -g`.
-#   2. Embeds the resulting .o as a C array via `xxd -i`.  The embed
-#      file declares two extern symbols:
+#   2. Writes the bytes of the object as a list of literals with
+#      `xxd -i`, and writes the embed unit that includes that list.  The
+#      embed unit defines two const symbols with C linkage:
 #          extern const unsigned char  <name>_bpf_bytecode[];
 #          extern const unsigned int   <name>_bpf_bytecode_len;
 #      Userspace loader code references those externs from a
 #      crucible::perf TU.
-#   3. Appends the generated .c to the global property
+#   3. Appends the embed unit to the global property
 #      CRUCIBLE_BPF_EMBED_SOURCES.  After all crucible_bpf_program()
 #      calls finish, the parent CMakeLists pulls that property and
 #      adds it to the crucible target's source list.
@@ -137,7 +138,7 @@ set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 # crucible_bpf_program(<name> <source> [EXTRA_FLAGS <flag>...])
 #
 # Compiles <source> (a .bpf.c file path relative to CMAKE_SOURCE_DIR)
-# to BPF bytecode and embeds it as a C array via xxd.  BPF programs may
+# to BPF bytecode and embeds it as a const array.  BPF programs may
 # live under any subsystem-owned `include/crucible/*/bpf/` directory;
 # the compile command includes both that source directory and the shared
 # perf BPF directory so existing common.h/vmlinux.h consumers keep working
@@ -161,14 +162,6 @@ set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 #     }
 #
 # and passes that pair to `bpf_object__open_mem(...)`.
-#
-# xxd derives the C identifier from the input file's PATH AS GIVEN
-# (not its full path).  We stage the .o into a file named exactly
-# `<name>_bpf_bytecode` (no extension), `cd` into its directory, and
-# run xxd with the bare basename — that's what makes the generated
-# array's C identifier come out as `<name>_bpf_bytecode`.  The
-# staging file lives in a per-program `bpf_embed/<name>/` subdir so
-# parallel CMake jobs can't race on the same staged path.
 function(crucible_bpf_program name source)
   if (NOT CRUCIBLE_HAVE_BPF)
     return()
@@ -181,8 +174,7 @@ function(crucible_bpf_program name source)
   get_filename_component(_BPF_SRC_DIR "${_BPF_SRC}" DIRECTORY)
   set(_BPF_OBJ          "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.o")
   set(_BPF_DEPFILE      "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.d")
-  set(_BPF_EMBED_DIR    "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed/${name}")
-  set(_BPF_EMBED_STAGED "${_BPF_EMBED_DIR}/${name}_bpf_bytecode")
+  set(_BPF_BYTES        "${CMAKE_CURRENT_BINARY_DIR}/${name}_bpf_bytecode.inc")
   set(_BPF_EMBED_C      "${CMAKE_CURRENT_BINARY_DIR}/${name}_bpf_bytecode.c")
 
   # The compile uses clang with `-target bpf`.  It uses -O2, because the
@@ -236,31 +228,45 @@ function(crucible_bpf_program name source)
     VERBATIM
     COMMENT "Compiling BPF ${source} → ${name}.bpf.o")
 
-  # Convert .bpf.o → C array via xxd -i.  See the comment block at
-  # the top of this function for why we stage to a path named
-  # exactly `<name>_bpf_bytecode` and run xxd from that directory.
+  # The embed command writes the bytes of the object as a list of
+  # literals.  xxd reads the object from its standard input, so it writes
+  # no declaration and no name.
   add_custom_command(
-    OUTPUT  ${_BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${_BPF_EMBED_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${_BPF_OBJ} ${_BPF_EMBED_STAGED}
-    COMMAND sh -c "cd ${_BPF_EMBED_DIR} && ${XXD_EXECUTABLE} -i ${name}_bpf_bytecode > ${_BPF_EMBED_C}.tmp"
-    COMMAND ${CMAKE_COMMAND} -E rename ${_BPF_EMBED_C}.tmp ${_BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E remove -f ${_BPF_EMBED_STAGED}
+    OUTPUT  ${_BPF_BYTES}
+    COMMAND sh -c "${XXD_EXECUTABLE} -i < ${_BPF_OBJ} > ${_BPF_BYTES}.tmp"
+    COMMAND ${CMAKE_COMMAND} -E rename ${_BPF_BYTES}.tmp ${_BPF_BYTES}
     DEPENDS ${_BPF_OBJ}
     DEPENDS_EXPLICIT_ONLY
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Embedding BPF bytecode for ${name}")
 
-  # The embed file is xxd-generated (not present at configure time).
-  # Compile it as C++ rather than enabling C project-wide — the file
-  # is pure data (`unsigned char ...[] = { ... };`) and parses
-  # identically in both languages.  -w silences warnings that would
-  # otherwise trip -Werror.
+  # The embed unit defines the two symbols that the userspace loader
+  # declares.  The array is const, so the compiler puts it in .rodata and
+  # not in writable .data.  The array has the alignment 8, as the ELF
+  # object of a bpftool skeleton has, because the ELF64 headers hold
+  # 8-byte words and libelf reads them in place.  The unit includes the
+  # list of the embed command, so the dependency file of its compile and
+  # the direct mode of ccache name the list.  The unit does not use an
+  # embed directive, because ccache 4.12 hashes no file that the directive
+  # names.  A changed object then gets a hit on the stale array.
+  #
+  # The configure step writes the unit, and it writes the file again only
+  # when its content changes.  The unit keeps the suffix .c, which is its
+  # path in the ledger of the rule quarantine, and it compiles as C++.
+  # OBJECT_DEPENDS makes its compile wait for the list.
+  file(CONFIGURE OUTPUT ${_BPF_EMBED_C} @ONLY CONTENT
+"// The embed unit of the BPF object @name@.bpf.o.  cmake/CrucibleBpf.cmake writes it.
+extern \"C\" {
+alignas(8) extern const unsigned char @name@_bpf_bytecode[] = {
+#include \"@name@_bpf_bytecode.inc\"
+};
+extern const unsigned int @name@_bpf_bytecode_len = sizeof(@name@_bpf_bytecode);
+}
+")
   set_source_files_properties(${_BPF_EMBED_C} PROPERTIES
-    GENERATED TRUE
     LANGUAGE CXX
-    COMPILE_OPTIONS "-w")
+    OBJECT_DEPENDS ${_BPF_BYTES})
 
   set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BPF_EMBED_SOURCES
     ${_BPF_EMBED_C})

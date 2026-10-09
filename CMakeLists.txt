@@ -575,8 +575,8 @@ set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
 #
 # Promoted from bench/ on 2026-05-03.  When libbpf + a
 # BPF-capable clang are available, we compile the kernel-side BPF
-# programs under include/crucible/perf/bpf/, embed each as a C array
-# via xxd, and bundle them with their userspace loaders into a
+# programs under include/crucible/perf/bpf/, embed each as a const
+# array, and bundle them with their userspace loaders into a
 # `crucible_perf` static library that crucible PUBLICly links.  Every
 # consumer of `crucible` then transparently gets the perf subsystem;
 # headers like <crucible/perf/SenseHub.h> are always included via
@@ -754,7 +754,8 @@ if (CRUCIBLE_HAVE_BPF)
   # contract semantic of the build.  The link also puts libfoundation.a
   # after libcrucible_perf.a on every consumer's link line, so the
   # contract handler that the perf contract clauses call resolves.  The
-  # generated BPF byte arrays compile with -w (cmake/CrucibleBpf.cmake).
+  # embed units of the BPF objects (cmake/CrucibleBpf.cmake) compile with
+  # the same warning set.
   target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF foundation)
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)

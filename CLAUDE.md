@@ -2992,7 +2992,7 @@ The base is `include/foundation`, `include/fixy`, `src/foundation` and `src/fixy
 
 A `host` row gives the files of a host build tool that links a foreign API, and a `kernel` row gives kernel C that a different compiler compiles. The quarantine rule does not apply to such a file, and its row gives the reason. At this time the `host` row holds only the GCC plugin of `utils/tools/quarantine/`, which links the tree API of GCC. Another tool joins only with a row of its own and its reason. The `kernel` row holds the BPF directories under `include/crucible/`, which Clang compiles for the BPF target. A base file that includes a file of either class gets the finding `upward-include`.
 
-A C++ file that the build writes is quarantined too, such as a generated header or a unit that `xxd` writes. The rule table and each finding name it by `@build/` and its path in the build directory, also when the build directory is outside the source root. The row `quarantine @build/` holds each such file, and the ratchet counts its findings under that name. The plugin gives an error for a file of the build directory that no row holds.
+A C++ file that the build writes is quarantined too, such as a generated header or the embed unit of a BPF object (`cmake/CrucibleBpf.cmake`). The rule table and each finding name it by `@build/` and its path in the build directory, also when the build directory is outside the source root. The row `quarantine @build/` holds each such file, and the ratchet counts its findings under that name. The plugin gives an error for a file of the build directory that no row holds.
 
 ### The rule for each new line (R6)
 
