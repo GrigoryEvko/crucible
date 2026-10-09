@@ -32,6 +32,20 @@ exit no-class fail
 error no-class {repo}/include/foundation/Quarantine.h:* | the reason of a region starts with its class
 error no-class {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
 
+compile no-word reason_without_word.cpp out=no
+exit no-word fail
+error no-word {repo}/include/foundation/Quarantine.h:* | the reason of a region starts with its class
+error no-word {repo}/include/foundation/Quarantine.h:* | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+
+compile code-on-lines code_on_region_lines.cpp out=no
+exit code-on-lines fail
+error code-on-lines code_on_region_lines.cpp:4 | write 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' alone on its line
+error code-on-lines code_on_region_lines.cpp:6 | write 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' alone on its line
+
+compile language language_region.cpp out=no
+exit language fail
+error language include/fixy/core/Region.h:8 | a file of the language holds no 'CRUCIBLE_I_KNOW_WHAT_IM_DOING' region
+
 compile macro-reason region_macro_reason.cpp out=no
 exit macro-reason fail
 error macro-reason region_macro_reason.cpp:8 | write the reason of a region as one plain string literal in the call

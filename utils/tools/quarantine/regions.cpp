@@ -6,10 +6,14 @@
 // #pragma quarantine END_I_KNOW_WHAT_IM_DOING.  The plugin refuses such a
 // pragma of a file under the root that the macros do not make, a use of a
 // macro inside another macro, a reason that is not one plain string literal in
-// the call, and a reason that does not start with its class.  A finding inside
-// a region is reported as opted-out and is not an error.  The report gives each
-// region of the unit a line of the kind region, and the ledger of the rule
-// quarantine counts the regions of each file and reason.
+// the call, and a reason that does not start with its class and a word.  It
+// also refuses a macro with other code on its line, because a region holds
+// each line from the line of its begin macro to the line of its end macro.  A
+// file of the language holds no region, because each finding there is an
+// error in each build.  A finding inside a region is reported as opted-out and
+// is not an error.  The report gives each region of the unit a line of the
+// kind region, and the ledger of the rule quarantine counts the regions of
+// each file and reason.
 
 #include "plugin.h"
 
@@ -79,12 +83,9 @@ Place region_place(location_t location, const char* macro, const char* pragma, l
     return place_of(expansion, Scope::tree);
 }
 
-// True when the source spells the call of the begin macro at EXPANSION as
-// CRUCIBLE_I_KNOW_WHAT_IM_DOING("REASON") on one line, with only spaces and
-// tabs between the tokens.  The ledger counts each region by its reason, and a
-// search of the source finds a region by its reason only in this form.
-// Complexity: O(length of the line).
-bool is_plain_region_call(location_t expansion, const std::string& reason) {
+// The line of the source that holds EXPANSION, and the index of the column of
+// EXPANSION in it.  Returns false when the plugin cannot read the line.
+bool region_line_at(location_t expansion, std::string& text, std::size_t& at) {
     expanded_location where = expand_location(expansion);
     if (where.file == nullptr || where.line <= 0 || where.column <= 0) {
         return false;
@@ -93,10 +94,26 @@ bool is_plain_region_call(location_t expansion, const std::string& reason) {
     if (!line) {
         return false;
     }
-    std::string text(line.get_buffer(), line.length());
-    std::size_t at = static_cast<std::size_t>(where.column - 1);
+    text.assign(line.get_buffer(), line.length());
+    at = static_cast<std::size_t>(where.column - 1);
+    return true;
+}
+
+bool is_blank(char byte) { return byte == ' ' || byte == '\t' || byte == '\r'; }
+
+// True when the source spells the call of the begin macro at EXPANSION as
+// CRUCIBLE_I_KNOW_WHAT_IM_DOING("REASON") on one line, with only spaces and
+// tabs between the tokens.  The ledger counts each region by its reason, and a
+// search of the source finds a region by its reason only in this form.
+// Complexity: O(length of the line).
+bool is_plain_region_call(location_t expansion, const std::string& reason) {
+    std::string text;
+    std::size_t at = 0;
+    if (!region_line_at(expansion, text, at)) {
+        return false;
+    }
     auto take = [&text, &at](const std::string& word) {
-        while (at < text.size() && (text[at] == ' ' || text[at] == '\t')) {
+        while (at < text.size() && is_blank(text[at])) {
             ++at;
         }
         if (text.compare(at, word.size(), word) != 0) {
@@ -108,11 +125,44 @@ bool is_plain_region_call(location_t expansion, const std::string& reason) {
     return take(kBeginMacro) && take("(") && take("\"" + reason + "\"") && take(")");
 }
 
-bool has_reason_class(const std::string& reason) {
-    for (const char* reason_class : kReasonClasses) {
-        if (has_prefix(reason, reason_class)) {
-            return true;
+// True when the line of EXPANSION holds only the call CALL that starts at
+// EXPANSION, with blanks before and after it.  A region holds each line from
+// the line of its begin macro to the line of its end macro, so code on the
+// line of a macro would be inside the region.  Complexity: O(length of the
+// line).
+bool is_alone_on_line(location_t expansion, const std::string& call) {
+    std::string text;
+    std::size_t at = 0;
+    if (!region_line_at(expansion, text, at) || text.compare(at, call.size(), call) != 0) {
+        return false;
+    }
+    for (std::size_t index = 0; index < at; ++index) {
+        if (!is_blank(text[index])) {
+            return false;
         }
+    }
+    for (std::size_t index = at + call.size(); index < text.size(); ++index) {
+        if (!is_blank(text[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// True when REASON starts with a reason class and holds a letter or a digit
+// after it.  A class with no word after it gives no reason.
+bool is_classed_reason(const std::string& reason) {
+    for (const char* reason_class : kReasonClasses) {
+        if (!has_prefix(reason, reason_class)) {
+            continue;
+        }
+        for (std::size_t index = std::strlen(reason_class); index < reason.size(); ++index) {
+            char byte = reason[index];
+            if ((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')) {
+                return true;
+            }
+        }
+        return false;
     }
     return false;
 }
@@ -156,11 +206,26 @@ void handle_begin_pragma(cpp_reader*) {
                  reason.c_str());
         return;
     }
-    if (!has_reason_class(reason)) {
+    if (!is_classed_reason(reason)) {
         error_at(location,
                  "the reason of a region starts with its class: %<ABI:%>, %<C-HEADER:%>, %<PROBE:%>, %<ORACLE:%> "
-                 "or %<MEASURE:%> (CLAUDE.md section XXII); the reason is %qs",
+                 "or %<MEASURE:%>, and words after the class give the reason (CLAUDE.md section XXII); the reason "
+                 "is %qs",
                  reason.c_str());
+        return;
+    }
+    // An error that keeps the region, so that its end macro closes it.
+    if (!is_alone_on_line(expansion, std::string(kBeginMacro) + "(\"" + reason + "\")")) {
+        error_at(expansion,
+                 "write %qs alone on its line: the region holds each line from its begin to its end, so code on the "
+                 "line of the macro is inside the region",
+                 kBeginMacro);
+    }
+    if (place.file->language_layer >= 0) {
+        error_at(expansion,
+                 "a file of the language holds no %qs region: each finding there is an error in each build, and no "
+                 "region opts it out (CLAUDE.md section XXII)",
+                 kBeginMacro);
         return;
     }
     if (!state.regions.empty() && state.regions.back().end_line == 0) {
@@ -192,6 +257,18 @@ void handle_end_pragma(cpp_reader*) {
     location_t expansion = UNKNOWN_LOCATION;
     Place place = region_place(location, kEndMacro, kEndPragma, expansion);
     if (place.file == nullptr) {
+        return;
+    }
+    // An error that keeps the end, so that it closes its region.
+    if (!is_alone_on_line(expansion, kEndMacro)) {
+        error_at(expansion,
+                 "write %qs alone on its line: the region holds each line from its begin to its end, so code on the "
+                 "line of the macro is inside the region",
+                 kEndMacro);
+    }
+    // The begin macro of a file of the language gave the error, and it opened
+    // no region.
+    if (place.file->language_layer >= 0) {
         return;
     }
     if (state.regions.empty() || state.regions.back().end_line != 0) {

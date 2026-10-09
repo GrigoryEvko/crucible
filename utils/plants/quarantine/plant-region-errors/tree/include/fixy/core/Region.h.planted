@@ -1,0 +1,10 @@
+// A file of the language holds no region.  The std object in it stays an
+// error in the mode report, because no region opts it out.
+#pragma once
+
+#include <foundation/Quarantine.h>
+#include <vector>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a region in a file of the language")
+inline std::vector<int> language_numbers{};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

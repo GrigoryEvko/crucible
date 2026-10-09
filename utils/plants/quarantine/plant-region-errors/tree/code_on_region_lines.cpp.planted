@@ -1,0 +1,6 @@
+// Code on the line of a region macro is inside the region, so each such line
+// is an error.  The region stays open and closed, so no other error follows.
+#include <foundation/Quarantine.h>
+int before_value = 0; CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a region with code before its begin")
+int inside_value = 0;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING int after_value = 0;

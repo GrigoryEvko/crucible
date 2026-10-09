@@ -7,6 +7,7 @@ layer high 1 include/fixy/high/
 
 allow low <cstddef>
 allow low <cstring>
+allow low <foundation/Quarantine.h>
 allow low <source_location>
 allow low <vector>
 
@@ -20,11 +21,16 @@ admit std::bit_cast until Scalar plain-result | a copy of the bits into a type t
 admit std::source_location until Report | the place of a call
 admit std::unreachable until Report | a hint to the optimizer
 
+language low include/fixy/core/
+
+quarantine code_on_region_lines.cpp
 quarantine end_without_region.cpp
+quarantine language_region.cpp
 quarantine opt_out.cpp
 quarantine own_region_macro.cpp
 quarantine raw_pragma.cpp
 quarantine reason_without_class.cpp
+quarantine reason_without_word.cpp
 quarantine region_end_wrapper.cpp
 quarantine region_macro_reason.cpp
 quarantine region_without_reason.cpp
