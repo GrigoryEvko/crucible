@@ -62,6 +62,41 @@ def answer_cases(expect: Callable[[str, bool], None]) -> None:
         )
 
 
+def numbered_lines(count: int, changed: frozenset[int]) -> bytes:
+    """Return COUNT lines of the same length, with other text on each line of CHANGED."""
+    return "".join(
+        f"{'changed line' if index in changed else 'the first text'} {index:02d} of the moved file\n"
+        for index in range(count)
+    ).encode()
+
+
+def move_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check THE MOVES: a rename with most lines kept is a move, and a rewrite that keeps half of the lines is not."""
+    with git.scratch_repository({"old.cpp": numbered_lines(20, frozenset())}) as root:
+        git.commit_all(root, "The first commit")
+        (root / "old.cpp").unlink()
+        (root / "rewritten.cpp").write_bytes(numbered_lines(20, frozenset(range(8))))
+        git.run(root, "add", "-A", "--", ".")
+        plain = git.run(root, "diff", "--find-renames", "--name-status", "HEAD", "--").decode()
+        expect(
+            "the plant is a rewrite that the default of git (50 %) reports as a move",
+            plain.startswith("R") and "rewritten.cpp" in plain,
+        )
+        expect("moves gives no move for a rewrite below MOVE_SIMILARITY", git.moves(root) == {})
+        rewrite = git.commit_all(root, "Rewrite the file under a new name")
+        expect(
+            "changes gives the rule history no move for that rewrite",
+            git.changes(root, ["rewritten.cpp"])[rewrite][1] == {},
+        )
+        (root / "rewritten.cpp").unlink()
+        (root / "renamed.cpp").write_bytes(numbered_lines(20, frozenset(range(9))))
+        git.run(root, "add", "-A", "--", ".")
+        expect(
+            "moves gives the old path of a rename that keeps 19 of 20 lines",
+            git.moves(root) == {"renamed.cpp": "rewritten.cpp"},
+        )
+
+
 def isolation_cases(expect: Callable[[str, bool], None]) -> None:
     """Check that a repository variable of this process does not reach a git command."""
     with git.scratch_repository({"own.txt": b"own\n"}) as own, git.scratch_repository({"other.txt": b"x\n"}) as other:
@@ -108,6 +143,7 @@ def main(argv: list[str]) -> int:
 
     command_cases(expect)
     answer_cases(expect)
+    move_cases(expect)
     isolation_cases(expect)
     if failures:
         print(f"tests.core.test_git: FAILED, {len(failures)} case(s) did not hold")

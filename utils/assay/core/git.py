@@ -27,6 +27,16 @@ THE HISTORY
     commit, at its first parent, at HEAD and in the working tree.  A merge is
     not one of the commits, because a merge brings a change that a commit of
     the other side made.
+
+THE MOVES
+    A move is a file that git finds as renamed with a similarity of
+    MOVE_SIMILARITY percent or more.  moves() gives the ledger writers the
+    previous path of each moved file, and the file takes the rows of that
+    path.  changes() gives the rule history the same moves.  The default of
+    git is 50 %.  With that default, a file that keeps half of its lines takes
+    each row of its previous path.  Its new half can then hold new findings of
+    the same entities.  A rewrite below the threshold is a removed file and a
+    new file.
 """
 
 import contextlib
@@ -45,6 +55,9 @@ SCRATCH_IDENTITY = {"GIT_AUTHOR_NAME": "crucible-scratch", "GIT_AUTHOR_EMAIL": "
                     "GIT_COMMITTER_NAME": "crucible-scratch", "GIT_COMMITTER_EMAIL": "crucible-scratch@invalid"}
 # The time limit of one git command, in seconds.
 TIMEOUT_S = 300.0
+# The lowest similarity of a move, in percent (THE MOVES), and the option of git that finds such moves.
+MOVE_SIMILARITY = 90
+FIND_MOVES = f"--find-renames={MOVE_SIMILARITY}%"
 
 
 class NotIsolated(Exception):
@@ -256,7 +269,7 @@ def changes(root: Path, paths: Sequence[str]) -> dict[str, tuple[frozenset[str],
 
     Complexity: linear in the size of the log.
     """
-    log = run(root, "log", "--no-merges", "--full-history", "--topo-order", "--full-diff", "--find-renames",
+    log = run(root, "log", "--no-merges", "--full-history", "--topo-order", "--full-diff", FIND_MOVES,
               "--name-status", f"--format={RECORD}%H", "--", *paths).decode("utf-8", "replace")
     found: dict[str, tuple[frozenset[str], dict[str, str]]] = {}
     for record in log.split(RECORD)[1:]:
@@ -319,12 +332,12 @@ def path_history(root: Path, paths: Sequence[str], groups: Sequence[Sequence[str
 
 
 def moves(root: Path, base: str = "HEAD") -> dict[str, str]:
-    """Return the old path of each file that git reports as moved between `base` and the working tree.
+    """Return the old path of each file that git reports as moved between `base` and the working tree (THE MOVES).
 
     A tree that is not a git work tree, or a failed git command, gives no move.
     """
     try:
-        output = run(root, "diff", "--find-renames", "--name-status", "-z", base, "--")
+        output = run(root, "diff", FIND_MOVES, "--name-status", "-z", base, "--")
     except GitError:
         return {}
     found: dict[str, str] = {}

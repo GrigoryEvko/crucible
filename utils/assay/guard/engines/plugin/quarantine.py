@@ -127,8 +127,10 @@ WRITE THE LEDGER
       each such count on each run.
     * --reason TEXT gives the reason cell of each new row.
     * A file that git reports as moved takes the rows of its earlier path in
-      each configuration.  Git reports a move with `git diff --find-renames
-      HEAD`, after `git mv` or `git add`.
+      each configuration.  Git reports a move after `git mv` or `git add`,
+      when the similarity of the two files is a minimum of
+      assay.core.git.MOVE_SIMILARITY percent (THE MOVES of assay.core.git).  A
+      rewrite below it is a new file.
     * The write removes the rows of a source file that the tree does not hold
       in each configuration, because no build compiles it.  A file of the
       build directory keeps its rows, because a build of a different
