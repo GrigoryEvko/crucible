@@ -2124,9 +2124,11 @@ A `Result` is a union and a tag. Its error is a scoped enum or a trivially copya
 // ── CRUCIBLE_INVARIANT ─────────────────────────────────────────
 // Fact the optimizer can exploit. `[[assume]]` in release (free).
 // The debug branch calls foundation::detail::fail_invariant, a cold
-// noreturn helper in include/foundation/Platform.h. The helper reads
-// the tracer one time: with no debugger it prints the predicate, and
-// with a debugger it traps. Then it calls std::abort(). The
+// noreturn helper. include/foundation/Platform.h declares it, and
+// src/foundation/Platform.cpp holds its body. The helper reads the
+// tracer one time through the file door of the base: with no debugger
+// it writes the predicate through the Report sink, and with a
+// debugger it traps. Then it calls abort. The
 // foundation::detail stand-ins exist because libstdc++ 16 declares
 // <debugging> and ships no definition for it.
 #ifdef NDEBUG
@@ -3064,7 +3066,6 @@ Only the files of the two door directories can include a system header, a Linux 
 A raw system call has no fallback of the C library. `foundation::os::minimum_kernel()` gives the largest release that a call of the enumeration `foundation::os::Syscall` needs, and the start-up check of `src/foundation/os/Syscall.cpp` refuses an older kernel before main (§XIV). Each such header has one owner file, its door. A `door` row of the rule table names the door of a header, and only that file can include the header. glibc stays the process runtime: startup, thread-local storage, thread start, `malloc` and `dlopen`. The plan moves each other system header of the base to its door.
 
 At this time, base files include 9 system headers that have no `door` row: `<fcntl.h>`, `<pthread.h>`, `<sched.h>`, `<signal.h>`, `<sys/mman.h>`, `<sys/stat.h>`, `<sys/syscall.h>`, `<time.h>` and `<unistd.h>`. The plugin gives a finding of the kind `layer-header` for each such include. The ratchet counts these findings, and their count can only decrease. Stage 2 of the plan gives each of these headers a door. These are the steps for each file that includes one:
-- `include/foundation/Platform.h` (`<fcntl.h>`, `<unistd.h>`): unit 2a moves the debugger probe out of the header, and the probe reads `/proc` through `foundation::os::read_file`
 - `include/fixy/os/OwnedMmap.h` (`<sys/mman.h>`): the header is a file of the door directory of fixy, and the last step of this list gives `<sys/mman.h>` its door file
 - `include/fixy/session/Watch.h` (`<pthread.h>`, `<signal.h>`, `<time.h>`, `<unistd.h>`): unit 2b moves the code into a source file of `src/fixy/session`, which calls the doors of `fixy/os` and includes no system header
 - `src/fixy/os/Topology.cpp` (`<sched.h>`, `<unistd.h>`): unit 2b moves the reads of the sysfs probe onto the doors of `foundation/os`

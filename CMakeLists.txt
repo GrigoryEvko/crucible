@@ -365,7 +365,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # `foundation` is a static library.  It owns the weak contract handler and
 # the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary that links
 # `foundation` or `fixy` without `crucible`.  It also holds the cold bodies of
-# foundation headers, so that an includer does not compile them: the
+# foundation headers, so that an includer does not compile them: the probe
+# of a tracer and the failure arm of the assertion macros, the
 # diagnostic sink, the abort of a saturated permission pool, the threads of a
 # spawning permission fork, and the formatter of the Report family.  It also
 # holds the door directory of the base floor, src/foundation/os: the raw
@@ -378,6 +379,7 @@ add_library(foundation STATIC
   src/foundation/DiagRuntime.cpp
   src/foundation/Permission.cpp
   src/foundation/PermissionFork.cpp
+  src/foundation/Platform.cpp
   src/foundation/core/Report.cpp
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp

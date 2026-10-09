@@ -31,12 +31,7 @@
 
 #include <bit>
 #include <contracts>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
 #include <type_traits>
-#include <unistd.h>
 #include <version>
 
 // GCC reports 202400L for `-std=c++26`, the draft value. The floor sits there
@@ -221,27 +216,18 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // is_debugger_present in <debugging> but ships no definitions for them, so
 // the assertion macros below would fail to link against the standard names.
 // These are stand-ins with the same behaviour.
+//
+// src/foundation/Platform.cpp holds the bodies of is_debugger_present and
+// fail_invariant.  So no includer of this header compiles them, and this
+// header includes no system header and no stdio.  Each program that expands
+// an assertion macro links the library foundation.
 
 namespace foundation::detail {
 
-[[nodiscard]] inline bool is_debugger_present() noexcept {
-    int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return false;
-    char buf[4096];
-    ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
-    ::close(fd);
-    if (n <= 0) return false;
-    buf[n] = '\0';
-    const char* p = buf;
-    while ((p = std::strstr(p, "TracerPid:")) != nullptr) {
-        p += sizeof("TracerPid:") - 1;
-        while (*p == ' ' || *p == '\t')
-            ++p;
-        if (*p != '0' && *p >= '0' && *p <= '9') return true;
-        break;
-    }
-    return false;
-}
+// True when a tracer, such as a debugger, is attached to the process.  The
+// probe reads TracerPid of /proc/self/status one time for each call.  A
+// failed read gives false.
+[[nodiscard, gnu::cold]] bool is_debugger_present() noexcept;
 
 [[gnu::always_inline]] inline void breakpoint() noexcept { __builtin_trap(); }
 
@@ -250,34 +236,18 @@ namespace foundation::detail {
         __builtin_trap();
 }
 
-// The failure arm shared by the two assertion macros below.
+// The failure arm of the assertion macros below.  With no tracer, it writes
+// "foundation: WHAT failed: PREDICATE (FILE:LINE)" to standard error.  With
+// a tracer, it traps at the failure.  Then it calls abort.  The write
+// uses the sink of the Report family and no stdio, so a call from a signal
+// handler is safe.
 //
-// Written inline, that arm is a tracer probe, three address loads, a format
-// call and a trap, which the compiler lays down next to the code being
-// guarded. The guard itself is one compare, so the diagnostic outweighs it
-// by an order of magnitude and shares the instruction line with a hot body
-// that never executes it. Outlined behind a cold call, a use site keeps the
-// compare and a five-instruction call stub, and the rest moves to
-// .text.unlikely. That is the shape the code guide asks for.
-//
-// noreturn is what lets the caller drop everything after the call. It is the
-// same promise std::abort already carries, so the failure arm was terminal
-// before this and stays terminal now: a SIGABRT handler that jumps out, as
-// the test probe does, leaves through the jump rather than returning here.
-//
-// The tracer is read once. Written out, the check ran twice, once for the
-// message and once inside breakpoint_if_debugging.
-[[noreturn]] [[gnu::cold, gnu::noinline]] inline void fail_invariant(const char* what, const char* predicate,
-                                                                     const char* file, int line) noexcept {
-    const bool traced = is_debugger_present();
-    if (!traced) {
-        std::fprintf(stderr, "foundation: %s failed: %s (%s:%d)\n", what, predicate, file, line);
-    } else {
-        // Stop in the debugger at the failure, not inside abort.
-        __builtin_trap();
-    }
-    std::abort();
-}
+// The call is cold and is not inline, so a use site keeps one compare and
+// one call, and the arm stays out of the instruction lines of the hot code.
+// noreturn lets the caller drop each instruction after the call.  A SIGABRT
+// handler that jumps out, as the test probe does, leaves through the jump.
+[[noreturn, gnu::cold]] void fail_invariant(const char* what, const char* predicate, const char* file,
+                                            int line) noexcept;
 
 }  // namespace foundation::detail
 

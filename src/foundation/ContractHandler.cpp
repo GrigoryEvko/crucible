@@ -14,7 +14,8 @@
 // that POSIX makes async-signal-safe.  It writes to standard error through
 // the sink write of the Report family (src/foundation/os/ReportSink.cpp),
 // with a small buffer on the stack.  The debugger probe of
-// foundation/Platform.h uses open, read, close and strstr.  Nothing here
+// src/foundation/Platform.cpp reads /proc through the file door of the
+// base, foundation/os/File.h.  Nothing here
 // calls stdio, allocates or takes a lock.  A core dump or a debugger gives
 // the stack.
 //

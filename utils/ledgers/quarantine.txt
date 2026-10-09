@@ -2047,11 +2047,6 @@ include/foundation/Lifetime.h | layer-header | 1 | <bit> | -
 include/foundation/Lifetime.h | layer-header | 1 | <span> | -
 include/foundation/Platform.h | door-header | 1 | <contracts> has the door src/foundation/ContractHandler.cpp | -
 include/foundation/Platform.h | layer-header | 1 | <bit> | -
-include/foundation/Platform.h | layer-header | 1 | <cstdio> | -
-include/foundation/Platform.h | layer-header | 1 | <cstdlib> | -
-include/foundation/Platform.h | layer-header | 1 | <cstring> | -
-include/foundation/Platform.h | layer-header | 1 | <fcntl.h> | -
-include/foundation/Platform.h | layer-header | 1 | <unistd.h> | -
 include/foundation/Platform.h | layer-header | 1 | <version> | -
 include/foundation/Saturate.h | layer-header | 1 | <numeric> | -
 include/foundation/Simd.h | layer-header | 1 | <bit> | -
