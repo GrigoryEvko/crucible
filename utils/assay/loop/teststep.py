@@ -22,8 +22,8 @@ WHAT THE SUBCOMMAND DOES
     standard streams.  The environment of the command gets
     CRUCIBLE_TEST_LAUNCHED with the name of the test.  A fixture driver in the
     command then gives the record and the judge to this subcommand.  It
-    writes the record BUILD/test-records/NAME.test.cost (THE RECORD in
-    meter.py), and it ends as the command ended: with its status, or on its
+    writes the record BUILD/test-records/NAME.test.cost (assay.core.record,
+    THE RECORDS), and it ends as the command ended: with its status, or on its
     signal.  With no --build-dir, the build directory is the nearest
     directory above the program with a build-kind.txt.  With no such
     directory, the subcommand writes no record.  A failure to measure, to
@@ -97,6 +97,7 @@ import os
 import sys
 
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 
 # The name Callable is only for the types, and a test does not pay the import of collections.abc.
 TYPE_CHECKING = False
@@ -370,7 +371,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
     if build_dir is not None:
-        safely(lambda: cost_meter.write_test_record(build_dir, name, program, run, result), None)
+        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run))
+        safely(lambda: cost_record.write(cost_record.test_record_file(build_dir, name), record), None)
     return status
 
 
@@ -398,7 +400,7 @@ def main(argv: list[str]) -> int:
     if build_dir is not None:
         build_dir = os.path.abspath(build_dir)
     is_built = build_dir is not None and program.startswith(build_dir + os.sep)
-    place = program if is_built or build_dir is None else cost_meter.test_record_file(build_dir, name)
+    place = program if is_built or build_dir is None else cost_record.test_record_file(build_dir, name)
     # The launcher reads the registry before the test runs.  The parse then frees its memory before the start of the
     # test, and the start uses that memory again, with fewer page faults.
     budget = read_budget()

@@ -10,8 +10,8 @@ front of each link of an executable or a shared library:
 WHAT THE SUBCOMMAND DOES
     It runs the command through utils/assay/core/meter.py, with the same
     standard streams, so the output of the step is the output of the
-    command.  It writes the record OUTPUT.cost (the format is in meter.py),
-    and it exits with the status of the command.  The record of a compile
+    command.  It writes the record OUTPUT.cost with assay.core.record, and it
+    exits with the status of the command.  The record of a compile
     also holds the user instructions of the compiler run when the host gives
     an exact count (meter.py, THE INSTRUCTION COUNT), which costs
     approximately 1 ms.  When the command ends on a signal, the subcommand
@@ -76,6 +76,7 @@ import os
 import sys
 
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 
 STEP_ROWS = {"compile": ("compile-cpu", "compile-memory"), "link": ("link-time", "link-memory")}
 CPU_LIMIT_FACTOR = 3
@@ -220,47 +221,38 @@ def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
         No count when the compiler run has no exact count
     """
     if not is_ccache:
-        return () if run.instructions is None else ((cost_meter.COMPILER_COUNT_KEY, run.instructions),)
+        return () if run.instructions is None else ((cost_record.COMPILER_COUNT_KEY, run.instructions),)
     if count_path is None:
         return ()
     has_run, compiler = cost_meter.read_compiler_count(count_path)
     if not has_run or compiler is None:
         return ()
-    counts = [(cost_meter.COMPILER_COUNT_KEY, compiler)]
+    counts = [(cost_record.COMPILER_COUNT_KEY, compiler)]
     if run.instructions is not None and run.instructions >= compiler:
-        counts.append((cost_meter.CCACHE_COUNT_KEY, run.instructions - compiler))
+        counts.append((cost_record.CCACHE_COUNT_KEY, run.instructions - compiler))
     return tuple(counts)
 
 
-def write(step: str, output: str, source: str | None, run: cost_meter.Measurement, result: str,
-          counts: tuple[tuple[str, int], ...] = ()) -> None:
-    """Write the record of one step beside its output.
+def step_record(step: cost_record.Step, output: str, source: str | None, run: cost_meter.Measurement, result: str,
+                counts: tuple[tuple[str, int], ...] = ()) -> cost_record.CostRecord:
+    """Return the record of one step: its fields, the bytes of its output, and its cost block when it is not a hit.
+
+    A hit keeps the last cost of the earlier record of the output (assay.core.record, THE WRITE).
 
     Args:
-        step: "compile" or "link"
+        step: COMPILE or LINK of assay.core.record
         output: The absolute output path
         source: The absolute source of a compile, or None
         run: The measurement of the command
         result: The result of judge()
         counts: The instruction counts of the cost block, from compile_counts()
     """
-    record_path = output + cost_meter.RECORD_SUFFIX
-    fields = [("format", str(cost_meter.RECORD_FORMAT)), ("step", f'"{step}"'), ("result", f'"{result}"')]
-    if source is not None:
-        fields.append(("source", cost_meter.quote(source)))
-    fields.append(("output", cost_meter.quote(output)))
     try:
-        fields.append(("output_bytes", str(os.stat(output).st_size)))
+        size: int | None = os.stat(output).st_size
     except OSError:
-        pass
-    fields.append(("exit", str(run.exit_code)))
-    if result == "hit":
-        carried = cost_meter.carried_cost(record_path)
-        if carried is not None:
-            fields.append(("last_cost", carried))
-    else:
-        fields.append(("cost", cost_meter.cost_block(run, counts)))
-    cost_meter.write_record(record_path, fields)
+        size = None
+    cost = None if result == cost_record.HIT else cost_record.measured(run, counts)
+    return cost_record.CostRecord(step, result, source, output, size, run.exit_code, cost)
 
 
 def main(argv: list[str]) -> int:
@@ -273,9 +265,9 @@ def main(argv: list[str]) -> int:
         2 on a usage error.  Else the function ends the process as the command ended
     """
     arguments = argv
-    step = "compile"
+    step: cost_record.Step = cost_record.COMPILE
     if arguments[:1] == ["--link"]:
-        step, arguments = "link", arguments[1:]
+        step, arguments = cost_record.LINK, arguments[1:]
     if not arguments:
         print("usage: loop step [--link] COMMAND [ARG]...", file=sys.stderr)
         return 2
@@ -346,7 +338,8 @@ def main(argv: list[str]) -> int:
     except BaseException:  # noqa: BLE001
         pass
     try:
-        write(step, output, source, run, result, counts)
+        # The record of an output is OUTPUT.cost.  record_file() gives it as a Path, and pathlib costs an import.
+        cost_record.write(output + cost_record.SUFFIX, step_record(step, output, source, run, result, counts))
     except BaseException:  # noqa: BLE001
         pass
     cost_meter.end_like(status)

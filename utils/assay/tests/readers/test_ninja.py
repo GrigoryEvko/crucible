@@ -20,6 +20,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc, testing
+from assay.core import record as cost_record
 from assay.loop import step as launcher
 from assay.readers import cmake, ninja
 
@@ -317,8 +318,8 @@ def scratch_ninja() -> str:
 def stopped_steps(expect: testing.Expect, program: str, build: Path) -> None:
     """Run the edge that stops its Ninja and the edge that ends with an error, and write the output of foreign.o.
 
-    The writer of the build launcher (assay.loop.step) then writes the record
-    of the two steps, as the launcher writes it adjacent to each output.
+    The record of each step of the build launcher (assay.loop.step) then goes
+    adjacent to its output, as the launcher writes it.
     """
     stopped = proc.run(proc.Command([program, "-C", str(build), "stopped.o"], timeout_s=proc.TOOL_S))
     failed = proc.run(proc.Command([program, "-C", str(build), "failed.o"], timeout_s=proc.TOOL_S))
@@ -329,7 +330,9 @@ def stopped_steps(expect: testing.Expect, program: str, build: Path) -> None:
     (build / "foreign.o").write_bytes(b"")
     for name, result, exit_code in (("stopped", "built", 0), ("failed", "failed", 1)):
         run = cost_meter.Measurement(exit_code, 0.0, 0.0, 0.0, 0, 0.0, 0.0, None)
-        launcher.write("compile", str(build / f"{name}.o"), str(build / f"{name}.c"), run, result)
+        output = str(build / f"{name}.o")
+        step = launcher.step_record(cost_record.COMPILE, output, str(build / f"{name}.c"), run, result)
+        cost_record.write(cost_record.record_file(output), step)
 
 
 def built_cases(expect: testing.Expect) -> None:

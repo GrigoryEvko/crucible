@@ -45,8 +45,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
-from assay.core import meter as cost_meter
 from assay.core import proc
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
 from assay.loop import teststep as test_launcher
@@ -776,7 +776,7 @@ class StoreTest:
 
         def record(fixture: str) -> tuple[dict[str, object], list[str]]:
             """Return the header and the paths of the record of one fixture, or an empty header."""
-            path = self.build / "neg-compile" / fixture / f"{fixture}.inputs"
+            path = Path(cost_record.fixture_record_file(self.build, fixture))
             try:
                 first, *paths = path.read_text().splitlines()
                 return json.loads(first), paths
@@ -829,7 +829,7 @@ class StoreTest:
         table.write_text(planted_registry(("test-time", 0, 0, "s"), ("test-memory", 1000, 2000, "GB")))
         ledgers = self.root / "test-ledgers"
         ledgers.mkdir()
-        record_path = Path(cost_meter.test_record_file(str(self.build), "neg_size"))
+        record_path = Path(cost_record.test_record_file(self.build, "neg_size"))
 
         def record() -> dict[str, object]:
             """Return the record of the test neg_size, and remove it, or an empty record."""

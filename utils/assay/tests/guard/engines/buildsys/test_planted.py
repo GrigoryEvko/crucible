@@ -85,7 +85,7 @@ def build_cases(expect: testing.Expect) -> None:
         link = cost_record.read_of(build / "bin" / "tool")
         expect(
             "a link row writes the output and its record of a link",
-            link.step == cost_record.Step.LINK and link.cost is not None and link.cost.cpu_s == 1.5,
+            link.step == cost_record.LINK and link.cost is not None and link.cost.cpu_s == 1.5,
         )
         model = cmake_reader.codemodel(build)
         expect(
@@ -118,7 +118,7 @@ def build_cases(expect: testing.Expect) -> None:
         records = ctest.costs(build)
         expect(
             "a test-record row writes the record of `loop test-step`",
-            records["exe_planted"].wall_s == 4.5 and records["exe_planted"].cpu_s == 4.0,
+            records["exe_planted"].cost.wall_s == 4.5 and records["exe_planted"].cost.cpu_s == 4.0,
         )
         expect("a file row writes a file of the tree", (context.root / "include" / "one.h").stat().st_size == 100)
         expect(

@@ -4,7 +4,6 @@ format 1
 rule job-owners
 utils/assay/core/cache.py | print | 2 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/cache.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/core/meter.py | cost-record | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | print | 2 | meter_compiler | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | repository-root | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/core/meter.py | subprocess | 1 | measure | A start of the meter of each compile, link and test, outside assay.core.proc on purpose.  An import of proc adds about 0.27 ms to each step (the docstring of assay.core.proc, THE TWO STARTS OUTSIDE THIS MODULE)
@@ -127,8 +126,6 @@ utils/assay/tests/guard/test_history.py | print | 1 | main.expect | A use of tod
 utils/assay/tests/loop/test_fixture.py | cache-root | 1 | StoreTest.run | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_fixture.py | print | 8 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_step.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/tests/loop/test_step.py | cost-record | 1 | Bench.__init__ | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/tests/loop/test_step.py | cost-record | 1 | Bench.record | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_step.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/readers/test_compdb.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/readers/test_compdb.py | print | 1 | main.expect | A use of today.  The change that calls the owner of the job lowers the count

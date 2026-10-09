@@ -51,9 +51,9 @@ THE CRITICAL PATH
 
 THE COST RECORDS
     For each compile and each link that ran, the recorder reads the record
-    OUTPUT.cost of `loop step` (utils/assay/loop/step.py), when the build
-    wrote it.  The CPU time and the instructions of a compile come from its
-    cost block.  The instructions are those of the compiler run, also for a
+    OUTPUT.cost of `loop step` with assay.core.record, when the build wrote
+    it.  The CPU time and the instructions of a compile come from its cost
+    block.  The instructions are those of the compiler run, also for a
     ccache miss (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).  A ccache hit
     holds no cost.  The instructions of the compiles are a sum
     only when each compile that did not hit has an exact count.  The peak
@@ -114,6 +114,7 @@ from pathlib import Path
 from assay.core import git
 from assay.core import meter as cost_meter
 from assay.core import proc
+from assay.core import record as cost_record
 from assay.core import report as check_report
 from assay.readers import ninja as ninja_files
 
@@ -416,23 +417,23 @@ def critical_path(graph: CompactGraph, spans: dict[int, tuple[int, int]]) -> tup
     return best[last][0], chain[::-1]
 
 
-def read_cost_record(path: Path, since_epoch: float) -> dict[str, object] | None:
-    """Return the record of the build launcher at one path when the build of since_epoch wrote it.
+def read_cost_record(output: Path, since_epoch: float) -> cost_record.CostRecord | None:
+    """Return the record of the build launcher of one output when the build of since_epoch wrote it.
 
     Args:
-        path: The record OUTPUT.cost
+        output: The output of a compile or a link
         since_epoch: The start of the build, in seconds since the epoch
 
     Returns:
-        The record, or None when it is missing, older than the build or not a record
+        The record, or None when it is missing, older than the build or not a record of a build step
     """
+    path = cost_record.record_file(output)
     try:
         if path.stat().st_mtime < since_epoch - RECORD_SLACK_S:
             return None
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return cost_record.read(path)
+    except (OSError, cost_record.RecordError):
         return None
-    return record if isinstance(record, dict) else None
 
 
 def number(block: object, key: str) -> float | None:
@@ -443,7 +444,7 @@ def number(block: object, key: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
-def peak_concurrent_gb(blocks: list[dict[str, object]]) -> float | None:
+def peak_concurrent_gb(blocks: list[cost_record.Cost]) -> float | None:
     """Return the largest sum of the peak memory of the steps whose wall times overlap.
 
     Each block gives the interval [end - wall_s, end].  Complexity: O(n log n) for n blocks, because of the sort.
@@ -452,16 +453,13 @@ def peak_concurrent_gb(blocks: list[dict[str, object]]) -> float | None:
         blocks: The cost blocks of the steps
 
     Returns:
-        The sum in GB of 2^30 bytes, or None when no block has the three numbers
+        The sum in GB of 2^30 bytes, or None when the call gives no block
     """
     events: list[tuple[float, int, float]] = []
     for block in blocks:
-        end, wall, peak = number(block, "end"), number(block, "wall_s"), number(block, "peak_rss_kb")
-        if end is None or wall is None or peak is None:
-            continue
         # At one time, an end comes before a start, so two steps that touch do not overlap.
-        events.append((end - wall, 1, peak))
-        events.append((end, 0, -peak))
+        events.append((block.end - block.wall_s, 1, float(block.peak_rss_kb)))
+        events.append((block.end, 0, -float(block.peak_rss_kb)))
     if not events:
         return None
     current = largest = 0.0
@@ -500,33 +498,32 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
     if manifest is not None and manifest in spans:
         start, end = spans[manifest]
         facts["reconfigure_s"] = round((end - start) / 1000, 2)
-    blocks: list[dict[str, object]] = []
+    blocks: list[cost_record.Cost] = []
     compiles = {"records": 0, "hits": 0, "cpu_s": 0.0, "instructions": 0, "exact": True}
     links = {"records": 0, "cpu_s": 0.0}
     for edge in spans:
         kind = graph.kinds[edge]
         if kind not in ("compile", "link") or not graph.outputs[edge]:
             continue
-        record = read_cost_record(Path(absolute_output(build, graph.outputs[edge][0]) + cost_meter.RECORD_SUFFIX),
-                                  since_epoch)
+        record = read_cost_record(Path(absolute_output(build, graph.outputs[edge][0])), since_epoch)
         if record is None:
             continue
-        block = record.get("cost")
         target = compiles if kind == "compile" else links
         target["records"] += 1
-        if record.get("result") == "hit":
+        if record.is_hit:
             compiles["hits"] += 1
             continue
-        if not isinstance(block, dict):
+        block = record.cost
+        if block is None:
             continue
         blocks.append(block)
-        target["cpu_s"] += number(block, "cpu_s") or 0.0
+        target["cpu_s"] += block.cpu_s
         if kind == "compile":
-            count = number(block, cost_meter.COMPILER_COUNT_KEY)
+            count = block.compiler_instructions
             if count is None:
                 compiles["exact"] = False
             else:
-                compiles["instructions"] += int(count)
+                compiles["instructions"] += count
     facts["compile_records"] = compiles["records"]
     facts["ccache_hits"] = compiles["hits"]
     facts["compile_cpu_s"] = round(compiles["cpu_s"], 1)
@@ -907,11 +904,11 @@ def self_test() -> int:
     expect("others_share gives no share without /proc/stat", others_share(HostSample(None, 4, 0, 0), after, 1) is None)
     expect("others_share does not go below zero",
            others_share(HostSample(100.0, 4, 0, 0), HostSample(100.5, 4, 2.0, 0), 1.0) == 0.0)
+    def block(end: float, wall: float, peak_gb: float) -> cost_record.Cost:
+        return cost_record.Cost(wall, wall, 0.0, wall, int(peak_gb * KB_PER_GB), 1.0, end)
+
     expect("peak_concurrent_gb adds the steps that overlap, and two steps that touch do not overlap",
-           peak_concurrent_gb([{"end": 10.0, "wall_s": 10.0, "peak_rss_kb": KB_PER_GB},
-                               {"end": 6.0, "wall_s": 2.0, "peak_rss_kb": 2 * KB_PER_GB},
-                               {"end": 14.0, "wall_s": 4.0, "peak_rss_kb": 4 * KB_PER_GB},
-                               {"end": 1.0, "wall_s": 1.0}]) == 4.0)
+           peak_concurrent_gb([block(10.0, 10.0, 1), block(6.0, 2.0, 2), block(14.0, 4.0, 4)]) == 4.0)
     expect("peak_concurrent_gb gives no value for no block", peak_concurrent_gb([]) is None)
 
     with tempfile.TemporaryDirectory(prefix="loop-history-") as work:
@@ -943,17 +940,18 @@ def self_test() -> int:
         expect("critical_path counts no edge that did not run, and no glob check",
                critical_path(graph, {edge[str(build / "CMakeFiles/cmake.verify_globs")]: (0, 50000)}) == (0, []))
 
-        for name, record in (("a.o", {"step": "compile", "result": "built",
-                                      "cost": {"cpu_s": 4.0, "wall_s": 5.0, "end": time.time(),
-                                               "peak_rss_kb": KB_PER_GB,
-                                               cost_meter.COMPILER_COUNT_KEY: 2_000_000_000}}),
-                             ("c.o", {"step": "compile", "result": "hit"}),
-                             ("tool", {"step": "link", "result": "built",
-                                       "cost": {"cpu_s": 1.5, "wall_s": 3.0, "end": time.time() - 100,
-                                                "peak_rss_kb": KB_PER_GB // 2}})):
-            (build / f"{name}{cost_meter.RECORD_SUFFIX}").write_text(json.dumps(record), encoding="utf-8")
-        old_record = build / f"other{cost_meter.RECORD_SUFFIX}"
-        old_record.write_text(json.dumps({"step": "link", "result": "built", "cost": {"cpu_s": 9.0}}), encoding="utf-8")
+        compiled = cost_record.Cost(4.0, 4.0, 0.0, 5.0, KB_PER_GB, 1.0, time.time(),
+                                    ((cost_record.COMPILER_COUNT_KEY, 2_000_000_000),))
+        linked = cost_record.Cost(1.5, 1.5, 0.0, 3.0, KB_PER_GB // 2, 1.0, time.time() - 100)
+        planted_records = {
+            "a.o": cost_record.CostRecord(cost_record.COMPILE, "built", None, None, None, 0, compiled),
+            "c.o": cost_record.CostRecord(cost_record.COMPILE, cost_record.HIT, None, None, None, 0, None),
+            "tool": cost_record.CostRecord(cost_record.LINK, "built", None, None, None, 0, linked),
+            "other": cost_record.CostRecord(cost_record.LINK, "built", None, None, None, 0, linked.replaced(cpu_s=9.0)),
+        }
+        for name, planted in planted_records.items():
+            cost_record.write(cost_record.record_file(build / name), planted)
+        old_record = cost_record.record_file(build / "other")
         os.utime(old_record, (time.time() - 3600, time.time() - 3600))
         facts = summarize_build(build, graph, log_before, log_after, time.time() - 10)
         expect("summarize_build counts the edges by kind, without the glob check",

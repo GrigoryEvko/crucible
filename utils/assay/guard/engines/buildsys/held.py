@@ -65,6 +65,7 @@ from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
@@ -154,10 +155,11 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
         raise unreadable("the records of the tests", problem) from None
     found: list[check_report.Finding] = []
     for name, record in sorted(records.items()):
+        cost = record.cost
         run = cost_meter.Measurement(
-            record.exit_code, record.cpu_s, 0.0, record.wall_s, record.peak_rss_kb, 0.0, record.end, None
+            record.exit, cost.user_s, cost.system_s, cost.wall_s, cost.peak_rss_kb, cost.load, cost.end, None
         )
-        place = context.shown(cost_meter.test_record_file(str(build), name))
+        place = context.shown(cost_record.test_record_file(build, name))
         for level, row, message in teststep.judge(name, run, budget, kind, ledgers):
             shown_level: check_report.Level = "error" if level == "error" else "warning"
             found.append(check_report.Finding(shown_level, place, 0, row, message))
@@ -199,7 +201,7 @@ def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[ch
                 found += checked
         elif reason != "missing":
             raise unreadable(f"the record of the fixture {name}", reason)
-        log, _ = store.read_log(build / build_census.FIXTURE_DIR / name / f"{name}.sarif")
+        log, _ = store.read_log(build / cost_record.FIXTURE_DIRECTORY / name / f"{name}.sarif")
         if log is not None:
             # evaluate() prints the output of the compile and its count of errors for the reader of a test.  The
             # witness prints only its verdicts.

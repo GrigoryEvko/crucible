@@ -51,6 +51,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
@@ -162,7 +163,7 @@ class Bench:
         self.source.write_text("int main() { return 0; }\n", encoding="utf-8")
         self.object = root / "out" / "source.o"
         self.object.parent.mkdir()
-        self.record_path = Path(f"{self.object}.cost")
+        self.record_path = cost_record.record_file(self.object)
         # The directory of the planted ledgers.  A ledger with no row has no file.
         self.ledgers = root / "ledgers"
         self.ledgers.mkdir()
@@ -192,7 +193,7 @@ class Bench:
     def record(self, output: Path | None = None) -> dict[str, object]:
         """Return the record of an output, or an empty dictionary."""
         try:
-            return json.loads(Path(f"{output or self.object}.cost").read_text(encoding="utf-8"))
+            return json.loads(cost_record.record_file(output or self.object).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
 
@@ -249,15 +250,15 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            and float(first["cost"]["cpu_s"]) > 0 and first.get("source") == str(bench.source))
     expect("the stats log of the call is removed", not Path(f"{bench.object}.ccache-stats").exists())
     host_counts = host_gives_counter()
-    counted = first["cost"].get(cost_meter.COMPILER_COUNT_KEY)
+    counted = first["cost"].get(cost_record.COMPILER_COUNT_KEY)
     expect(f"a compile record holds the user instructions of the compiler run exactly when the host gives a counter, "
            f"and a compile with no ccache holds no ccache part "
            f"(this host: {'a counter' if host_counts else 'no counter'})",
            ((isinstance(counted, int) and counted > 0) if host_counts else counted is None)
-           and cost_meter.CCACHE_COUNT_KEY not in first["cost"] and "instructions" not in first["cost"])
+           and cost_record.CCACHE_COUNT_KEY not in first["cost"] and "instructions" not in first["cost"])
     bench.launch(bench.tool, **{cost_meter.INSTRUCTIONS_ENV: "0"})
     expect(f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
-           bench.record().get("result") == "built" and cost_meter.COMPILER_COUNT_KEY not in bench.record()["cost"])
+           bench.record().get("result") == "built" and cost_record.COMPILER_COUNT_KEY not in bench.record()["cost"])
 
     result = bench.launch(bench.tool, PLANTED_MODE="fail")
     expect("a failed compile passes status 1 and gives a failed record",
@@ -290,8 +291,8 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 0 and bench.record().get("result") == "built"
            and "cache_miss" in outer.read_text(encoding="utf-8"))
     missed = bench.record().get("cost", {})
-    compiler_count = missed.get(cost_meter.COMPILER_COUNT_KEY)
-    rest_count = missed.get(cost_meter.CCACHE_COUNT_KEY)
+    compiler_count = missed.get(cost_record.COMPILER_COUNT_KEY)
+    rest_count = missed.get(cost_record.CCACHE_COUNT_KEY)
     expect(f"a ccache miss records the count of the compiler run alone, and the rest of the step apart, exactly when "
            f"the host gives a counter, and the launcher removes the file of counts (this host: "
            f"{'a counter' if host_counts else 'no counter'})",
@@ -301,8 +302,8 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_PREFIX=shutil.which("env") or "env")
     expect("with CCACHE_PREFIX in the environment, the launcher sets no meter, and the record holds no count",
            result.exit == 0 and bench.record().get("result") == "built"
-           and cost_meter.COMPILER_COUNT_KEY not in bench.record()["cost"]
-           and cost_meter.CCACHE_COUNT_KEY not in bench.record()["cost"])
+           and cost_record.COMPILER_COUNT_KEY not in bench.record()["cost"]
+           and cost_record.CCACHE_COUNT_KEY not in bench.record()["cost"])
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", PLANTED_MODE="fail")
     expect("a failed compile through ccache passes status 1 and the output of the compiler through the meter",
            result.exit == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
@@ -475,8 +476,8 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
                cold_run.exit == 0 and warm_run.exit == 0 and cold.get("result") == "built"
                and warm.get("result") == "hit" and warm.get("last_cost") == cold.get("cost"))
         if host_gives_counter():
-            counts = [record.get("cost", {}).get(cost_meter.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
-            rest = cold.get("cost", {}).get(cost_meter.CCACHE_COUNT_KEY)
+            counts = [record.get("cost", {}).get(cost_record.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
+            rest = cold.get("cost", {}).get(cost_record.CCACHE_COUNT_KEY)
             agree = (all(isinstance(count, int) and count > 0 for count in counts)
                      and all(abs(count - counts[0]) <= COUNT_TOLERANCE * counts[0] for count in counts[1:]))
             expect(f"the real ccache: a direct compile, a compile with CCACHE_DISABLE and a compile through a cold "

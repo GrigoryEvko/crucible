@@ -298,9 +298,9 @@ def planted_record(
 def build_total_cases(expect: testing.Expect) -> None:
     """Give the four build totals of planted records and a planted configure, and compare each one with thresholds."""
     records = [
-        planted_record(cost_record.Step.LINK, 2.0, 10.0, 4.0, 2.0),
-        planted_record(cost_record.Step.COMPILE, 5.0, 9.0, 5.0, 3.0),
-        cost_record.CostRecord(cost_record.Step.COMPILE, "hit", None, None, None, 0, None, None),
+        planted_record(cost_record.LINK, 2.0, 10.0, 4.0, 2.0),
+        planted_record(cost_record.COMPILE, 5.0, 9.0, 5.0, 3.0),
+        cost_record.CostRecord(cost_record.COMPILE, cost_record.HIT, None, None, None, 0, None, None),
     ]
     budgets = {
         rule_id: check_report.Budget(rule_id, limit, limit, "u", "m")
@@ -342,14 +342,20 @@ def record_cases(expect: testing.Expect) -> None:
             ("planted_script", "/usr/bin/python3", 7.0),
         ):
             run = cost_meter.Measurement(0, cpu, 0.0, cpu, 1024, 1.0, 1.0, None)
-            cost_meter.write_test_record(str(build), name, program, run, "passed")
+            record = cost_record.TestRecord(name, "passed", program, 0, cost_record.measured(run))
+            cost_record.write(cost_record.test_record_file(build, name), record)
         expect(
             "the record of an executable test gives its CPU time, and the record of a script test has no part",
             cost_budgets.total_test_times(build) == [2.5],
         )
         run = cost_meter.Measurement(0, 2.0, 0.0, 4.0, 2048, 1.0, 10.0, None)
-        step_meter.write("link", str(build / "test" / "test_planted"), None, run, "built")
-        step_meter.write("compile", str(build / "test" / "a.cpp.o"), str(build / "a.cpp"), run, "built")
+        steps: list[tuple[cost_record.Step, Path, str | None]] = [
+            (cost_record.LINK, build / "test" / "test_planted", None),
+            (cost_record.COMPILE, build / "test" / "a.cpp.o", str(build / "a.cpp")),
+        ]
+        for step, output, source in steps:
+            built = step_meter.step_record(step, str(output), source, run, "built")
+            cost_record.write(cost_record.record_file(output), built)
         expect(
             "the build records are the records of the links and the compiles, and no record of a test",
             sorted(str(item.step) for item in cost_budgets.total_build_records(build)) == ["compile", "link"],

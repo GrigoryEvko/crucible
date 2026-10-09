@@ -277,12 +277,15 @@ def functions_of(text: str, row: rows_grammar.Row) -> list[tuple[str, int]]:
     return found
 
 
-def write_record(step: str, output: Path, source: Path | None, run: cost_meter.Measurement, result: str) -> None:
-    """Write the record of one step with the writer of `loop step`."""
+def write_record(
+    step: cost_record.Step, output: Path, source: Path | None, run: cost_meter.Measurement, result: str
+) -> None:
+    """Write the record of one step as `loop step` writes it."""
     from assay.loop import step as step_meter
 
-    counts = step_meter.compile_counts(run, False, None) if step == "compile" else ()
-    step_meter.write(step, str(output), None if source is None else str(source), run, result, counts)
+    counts = step_meter.compile_counts(run, False, None) if step == cost_record.COMPILE else ()
+    record = step_meter.step_record(step, str(output), None if source is None else str(source), run, result, counts)
+    cost_record.write(cost_record.record_file(output), record)
 
 
 def spoil_record(output: Path, how: str) -> None:
@@ -325,13 +328,13 @@ def plant_compile(planted: Planted, row: rows_grammar.Row, root: Path, build: Pa
     if result == "hit" and ("last-cpu" in fields or "last-instructions" in fields):
         last_cpu = number(fields, "last-cpu", row, 1.0)
         write_record(
-            "compile",
+            cost_record.COMPILE,
             output,
             source,
             measurement(last_cpu, last_cpu, 0.1, count_of(fields, "last-instructions", row)),
             "built",
         )
-    write_record("compile", output, source, run, result)
+    write_record(cost_record.COMPILE, output, source, run, result)
     spoil_record(output, record)
 
 
@@ -356,7 +359,7 @@ def plant_link(planted: Planted, row: rows_grammar.Row, build: Path) -> None:
         return
     cpu = number(fields, "cpu", row, 0.5)
     write_record(
-        "link",
+        cost_record.LINK,
         output,
         None,
         measurement(cpu, cpu, number(fields, "peak", row, 0.1)),
@@ -439,8 +442,6 @@ def plant_fixture(planted: Planted, row: rows_grammar.Row, root: Path, build: Pa
     Raises:
         rows_grammar.RowsError: If the row does not have the shape of a fixture row
     """
-    from assay.loop.fixture import store
-
     if len(row.words) < 3:
         raise row.error("a fixture row is 'fixture NAME SOURCE [FIELD=VALUE]... | FILE...'")
     fields = rows_grammar.fields(row, FIXTURE_FIELDS, start=3)
@@ -466,17 +467,15 @@ def plant_fixture(planted: Planted, row: rows_grammar.Row, root: Path, build: Pa
     if record == "no":
         return
     files = tuple(file_path(item, root, build) for item in rows_grammar.head_words(row.cells[0])) if row.cells else ()
-    result = store.CompileResult(
-        1,
-        "",
+    planted_record = cost_record.FixtureRecord(
+        name,
+        "compiled",
         number(fields, "user", row, 1.0),
         number(fields, "system", row, 0.1),
         count_of(fields, "instructions", row),
         None if record == "blind" else files,
     )
-    scratch = build / "neg-compile" / name
-    scratch.mkdir(parents=True, exist_ok=True)
-    store.write_inputs_record(scratch, name, result, False)
+    cost_record.write(cost_record.fixture_record_file(build, name), planted_record)
 
 
 def plant_test(planted: Planted, row: rows_grammar.Row, root: Path, build: Path) -> None:
@@ -512,9 +511,9 @@ def plant_test_record(row: rows_grammar.Row, root: Path, build: Path) -> None:
     wall = number(fields, "wall", row, 1.0)
     run = measurement(number(fields, "cpu", row, wall), wall, number(fields, "peak", row, 0.1))
     program = expanded(fields.get("program", f"{build}/test/{row.words[1]}"), root, build)
-    cost_meter.write_test_record(
-        str(build), row.words[1], program, run, choice(fields, "result", ("passed", "failed", "rejected"), row)
-    )
+    result = choice(fields, "result", ("passed", "failed", "rejected"), row)
+    record = cost_record.TestRecord(row.words[1], result, program, run.exit_code, cost_record.measured(run))
+    cost_record.write(cost_record.test_record_file(build, row.words[1]), record)
 
 
 def plant_file(row: rows_grammar.Row, base: Path) -> None:

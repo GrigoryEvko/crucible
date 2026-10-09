@@ -96,7 +96,17 @@ PARSER_TOOLS = PATH_TOOLS | frozenset(
 # The closure of each hidden subcommand: the modules of the package, and the first names of the other modules.
 CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "assay.loop.step": (
-        frozenset({"assay", "assay.core", "assay.core.meter", "assay.loop", "assay.loop.step"}),
+        frozenset(
+            {
+                "assay",
+                "assay.core",
+                "assay.core.meter",
+                "assay.core.record",
+                "assay.core.value",
+                "assay.loop",
+                "assay.loop.step",
+            }
+        ),
         STEP_METER,
     ),
     "assay.loop.meter_compiler": (
@@ -104,7 +114,17 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
         STEP_METER,
     ),
     "assay.loop.teststep": (
-        frozenset({"assay", "assay.core", "assay.core.meter", "assay.loop", "assay.loop.teststep"}),
+        frozenset(
+            {
+                "assay",
+                "assay.core",
+                "assay.core.meter",
+                "assay.core.record",
+                "assay.core.value",
+                "assay.loop",
+                "assay.loop.teststep",
+            }
+        ),
         STEP_METER,
     ),
     "assay.loop.fixture.store": (
@@ -113,6 +133,8 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
                 "assay",
                 "assay.core",
                 "assay.core.paths",
+                "assay.core.record",
+                "assay.core.value",
                 "assay.loop",
                 "assay.loop.fixture",
                 "assay.loop.fixture.store",

@@ -330,11 +330,12 @@ and imports no report module.
 
 The record of a run
 -------------------
-After each run, from a compile or from the store, the driver writes
-`NAME.inputs` in the scratch directory of the fixture: the result, the CPU
-times, the instruction count, and each file that the compile read.  The list is
-the dependency file of GCC, the list of the `-M -MG` pass after a fatal error,
-or the list of the stored result.  The rule parse-total (`guard check --rule
+After each run, from a compile or from the store, the driver writes the
+fixture record `NAME.inputs` in the scratch directory of the fixture
+(assay.core.record, THE RECORDS): the result, the CPU times, the instruction
+count, and each file that the compile read.  The list is the dependency file
+of GCC, the list of the `-M -MG` pass after a fatal error, or the list of the
+stored result.  The rule parse-total (`guard check --rule
 parse-total`) adds the bytes of these files for each fixture.
 
 The test record
@@ -375,6 +376,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
+from assay.core import record as cost_record
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.readers import compdb, sarif
 
@@ -2709,29 +2711,20 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
     return store.record(key, result, list(result.inputs), missing, named, started_ns, roots)
 
 
-_INPUTS_FORMAT = 1
-_INPUTS_SUFFIX = ".inputs"
 _COMMAND_SUFFIX = ".command"
 
 
-def write_inputs_record(scratch: Path, fixture_name: str, result: CompileResult, is_stored: bool) -> None:
-    """Write the record of a run of the fixture: the cost and each file that its compile read.
+def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, is_stored: bool) -> None:
+    """Write the record of a run of the fixture: the cost of its compile and each file that the compile read.
 
-    The record is `scratch/NAME.inputs`.  Its first line is a JSON object,
-    and each line after it is one absolute path.  The rules parse-total,
-    header-fanout and instruction-total read it.  A path with a line break, which no file of the tree has, gives a
-    record that says that the driver does not know the inputs.  A failure to
-    write changes no verdict.
+    The record is BUILD_DIR/neg-compile/NAME/NAME.inputs (assay.core.record,
+    THE RECORDS).  The rules parse-total, header-fanout and instruction-total
+    read it.  A failure to write changes no verdict.
     """
-    inputs = result.inputs
-    if inputs is not None and any("\n" in path for path in inputs):
-        inputs = None
-    header = {"format": _INPUTS_FORMAT, "fixture": fixture_name, "result": "stored" if is_stored else "compiled",
-              "user_s": round(result.user_s, 3), "system_s": round(result.system_s, 3),
-              "instructions": result.instructions, "has_inputs": inputs is not None}
-    text = json.dumps(header) + "\n" + "".join(f"{path}\n" for path in inputs or ())
+    record = cost_record.FixtureRecord(fixture_name, "stored" if is_stored else "compiled", result.user_s,
+                                       result.system_s, result.instructions, result.inputs)
     try:
-        _write_atomic(scratch / f"{fixture_name}{_INPUTS_SUFFIX}", text.encode("utf-8", "surrogateescape"))
+        cost_record.write(cost_record.fixture_record_file(build_dir, fixture_name), record)
     except OSError:
         pass
 
@@ -3059,7 +3052,7 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
 
     The budget is None when the driver stops before it reads the budget.
     """
-    scratch = build_dir / "neg-compile" / fixture_name
+    scratch = build_dir / cost_record.FIXTURE_DIRECTORY / fixture_name
     scratch.mkdir(parents=True, exist_ok=True)
     found = find_compile_command(build_dir, source, scratch / f"{fixture_name}{_COMMAND_SUFFIX}")
     if found is None:
@@ -3078,7 +3071,7 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,
                                       roots, sarif_log)
-    write_inputs_record(scratch, fixture_name, result, is_stored)
+    write_run_record(build_dir, fixture_name, result, is_stored)
     verdict, unmatched = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
     own_reason = 0

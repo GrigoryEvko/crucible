@@ -8,8 +8,8 @@ A UNIT
         of a build does not depend on the targets that it built after all.
       * A negative fixture: a test of the build (assay.readers.ctest) whose
         command runs `utils/bin/loop fixture` (fixture_words()).  The driver
-        writes the record build/neg-compile/NAME/NAME.inputs after each run
-        (utils/assay/loop/fixture/store.py, The record of a run).
+        writes the record build/neg-compile/NAME/NAME.inputs after each run,
+        and assay.core.record reads it (THE RECORDS of that module).
 
 THE FILES OF A UNIT
     The files of an object come from the dependency log of Ninja
@@ -42,7 +42,6 @@ FAILURES
 
 from __future__ import annotations
 
-import json
 import os
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -55,9 +54,6 @@ from assay.readers import compdb, ctest, ninja
 # The command of a negative fixture runs the master loop with the subcommand fixture.
 FIXTURE_MASTER = "utils/bin/loop"
 FIXTURE_SUBCOMMAND = "fixture"
-FIXTURE_DIR = "neg-compile"
-INPUTS_SUFFIX = ".inputs"
-INPUTS_FORMAT = 1
 # The number of names that a message lists before it gives only the count.
 SHOWN_NAMES = 5
 
@@ -208,7 +204,7 @@ def object_cost(path: Path) -> Cost:
         record = cost_record.read_of(path)
     except cost_record.RecordError:
         return Cost()
-    block = record.cost or record.last_cost
+    block = record.real_cost
     return Cost() if block is None else Cost(block.cpu_s, block.compiler_instructions)
 
 
@@ -264,32 +260,19 @@ def read_fixture(
         The unit and its file names, or None and None with the reason that the record cannot count ("missing" for
         no record)
     """
-    path = build_dir / FIXTURE_DIR / name / f"{name}{INPUTS_SUFFIX}"
+    path = Path(cost_record.fixture_record_file(build_dir, name))
     try:
-        text = path.read_text(encoding="utf-8", errors="surrogateescape")
-    except FileNotFoundError:
+        record = cost_record.read_fixture(path)
+    except cost_record.MissingRecord:
         return None, None, "missing"
-    except OSError as problem:
-        return None, None, f"the record {path} cannot be read ({problem})"
-    first, _, body = text.partition("\n")
-    try:
-        header = json.loads(first)
-    except ValueError:
-        header = None
-    if not isinstance(header, dict) or header.get("format") != INPUTS_FORMAT or header.get("fixture") != name:
-        return None, None, f"the record {path} is not a record of format {INPUTS_FORMAT} of {name}"
-    if header.get("has_inputs") is not True:
+    except cost_record.RecordError as problem:
+        return None, None, str(problem)
+    if record.inputs is None:
         return None, None, f"the record {path} says that the driver does not know the files of the compile"
-    user, system, count = header.get("user_s"), header.get("system_s"), header.get("instructions")
-    times = [value for value in (user, system) if isinstance(value, (int, float)) and not isinstance(value, bool)]
-    cost = Cost(
-        sum(times) if len(times) == 2 else None,
-        count if isinstance(count, int) and not isinstance(count, bool) else None,
-    )
-    names = body.splitlines() if read_files else None
+    names = list(record.inputs) if read_files else None
     if read_files and not names:
         return None, None, f"the record {path} names no file"
-    return Unit("fixture", name, shown(source, root), cost), names, ""
+    return Unit("fixture", name, shown(source, root), Cost(record.cpu_s, record.instructions)), names, ""
 
 
 def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
@@ -322,7 +305,7 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
     if fixtures and len(missing) == len(fixtures):
         raise NotApplicable(
             f"no fixture of the build has a record, because the fixtures did not run in this build "
-            f"directory.  The record is {FIXTURE_DIR}/NAME/NAME{INPUTS_SUFFIX}, and ctest -R '^neg_' "
+            f"directory.  The record is {cost_record.fixture_record_file('', 'NAME')}, and ctest -R '^neg_' "
             f"writes it"
         )
     if missing:

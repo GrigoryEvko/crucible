@@ -103,39 +103,9 @@ A CI RUNNER
     and each check that judges a time calls ci_verdict().
 
 THE RECORD
-    write_record(path, fields) writes a JSON object with one key on each line.
-    It writes a scratch file and renames it, so a reader sees the whole record
-    or the earlier one.  The keys of a record:
-      format        1
-      step          "compile" or "link" (a launcher of tests writes "test")
-      result        "built", "failed", "rejected" (the launcher refused the
-                    output after the step) or "hit" (ccache gave the output)
-      source        the source of a compile
-      output        the absolute path of the output
-      output_bytes  the size of the output after the step, when it exists
-      exit          the status of the command, or minus the signal number
-      cost          for each result except "hit": cpu_s, user_s, system_s,
-                    wall_s, peak_rss_kb, load (the one-minute load average at
-                    the start) and end (seconds since the epoch).  A compile
-                    also has compiler_instructions, the exact user
-                    instructions of the compiler run, when the host gives
-                    the count (A COMPILE THROUGH CCACHE).  A ccache miss also
-                    has ccache_instructions, the instructions of the rest of
-                    the step: the preprocessor run, ccache and the meter
-      last_cost     for "hit": the cost block of the earlier record, when it
-                    had one, so a hit does not erase the last real measure
-    cost_block() writes the cost block, and carried_cost() reads it back as
-    text, with no JSON parser.  A cost block of an earlier format holds the
-    key instructions, the count of the full step, and no reader takes it.
-
-    The record of a step of the build is OUTPUT.cost, in the directory of
-    its output.  The record of a test is test_record_file(): NAME.test.cost
-    in the directory test-records of the build directory.  Its keys are
-    format, step ("test"), result ("passed", "failed" or "rejected"), test
-    (the name of the test), command (the program of the test), exit and
-    cost.  `loop test-step` writes it for an executable test and for a
-    script test, and `loop fixture` writes it for a negative fixture.
-    assay.readers.ctest reads it (costs()).
+    A launcher writes the record of each step with assay.core.record, from
+    its Measurement (record.measured()).  That module holds the format of
+    each record and its one reader and writer.
 
 THE REGISTRY AND THE LEDGERS
     budget_rows() reads the two thresholds of some measured rules of
@@ -169,13 +139,7 @@ import os
 import sys
 import time
 
-RECORD_FORMAT = 1
-RECORD_SUFFIX = ".cost"
-# The directory of the records of the tests in a build directory, and the suffix of one record (THE RECORD).
-TEST_RECORD_DIRECTORY = "test-records"
-TEST_RECORD_SUFFIX = ".test" + RECORD_SUFFIX
 KIND_FILE = "build-kind.txt"
-CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 KB_PER_GB = 1024 * 1024
 # The measured rules of utils/registry.txt whose value is a time.  The self-test
 # of utils/assay/core/report.py holds this set equal to the rules of unit s.
@@ -202,9 +166,6 @@ PERF_READ_TIMES = 0x1 | 0x2
 # disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec.
 PERF_ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
 PERF_FLAG_FD_CLOEXEC = 8
-# The keys of the counts in the cost block of a compile record (THE RECORD).
-COMPILER_COUNT_KEY = "compiler_instructions"
-CCACHE_COUNT_KEY = "ccache_instructions"
 # The variable that names the file of the counts of the compiler runs of one ccache call, the suffix of that file
 # beside the object, and the line of a run whose count is not exact (A COMPILE THROUGH CCACHE).
 COMPILER_COUNT_ENV = "CRUCIBLE_COMPILER_COUNT"
@@ -588,118 +549,6 @@ def end_like(exit_code: int) -> None:
         os.kill(os.getpid(), -exit_code)
         os._exit(128 - exit_code)
     os._exit(exit_code)
-
-
-def quote(text: str) -> str:
-    """Return text as a JSON string, with each character outside printable ASCII escaped.
-
-    Args:
-        text: The text, which can hold surrogate escapes of a file name
-
-    Returns:
-        The JSON string, with its quotes
-    """
-    parts = ['"']
-    for char in text:
-        code = ord(char)
-        if char in '"\\':
-            parts.append("\\" + char)
-        elif 0x20 <= code < 0x7F:
-            parts.append(char)
-        elif code > 0xFFFF:
-            code -= 0x10000
-            parts.append(f"\\u{0xD800 + (code >> 10):04x}\\u{0xDC00 + (code & 0x3FF):04x}")
-        else:
-            parts.append(f"\\u{code:04x}")
-    parts.append('"')
-    return "".join(parts)
-
-
-def cost_block(run: Measurement, counts: tuple[tuple[str, int], ...] = ()) -> str:
-    """Return the cost block of one measurement as JSON text.
-
-    Args:
-        run: The measurement
-        counts: The key and the exact value of each instruction count of the block (THE RECORD)
-
-    Returns:
-        The block, with the times, the peak memory and each count
-    """
-    extra = "".join(f', "{key}": {value}' for key, value in counts)
-    return (f'{{"cpu_s": {run.cpu_s:.3f}, "user_s": {run.user_s:.3f}, "system_s": {run.system_s:.3f}, '
-            f'"wall_s": {run.wall_s:.3f}, "peak_rss_kb": {run.peak_rss_kb}, "load": {run.load:.2f}, '
-            f'"end": {run.end:.3f}{extra}}}')
-
-
-def carried_cost(record_path: str) -> str | None:
-    """Return the cost block of the earlier record of an output, as its JSON text.
-
-    Args:
-        record_path: The record file
-
-    Returns:
-        The value of its "cost" or "last_cost" line, or None
-    """
-    try:
-        with open(record_path, encoding="utf-8") as handle:
-            for line in handle:
-                for key in CARRIED_KEYS:
-                    if line.startswith(key):
-                        return line[len(key):].rstrip().rstrip(",")
-    except OSError:
-        return None
-    return None
-
-
-def write_record(path: str, fields: list[tuple[str, str]]) -> None:
-    """Write one record, a JSON object with one key on each line.
-
-    Args:
-        path: The record file
-        fields: Each key and its value as JSON text, in order
-    """
-    staging = f"{path}.{os.getpid()}.tmp"
-    # The text is ASCII, because quote() escapes each other character.  Python loads the UTF-8 codec at its start,
-    # and the ASCII codec costs one more import on each step and each test.
-    with open(staging, "w", encoding="utf-8") as handle:
-        handle.write("{\n" + ",\n".join(f'"{key}": {value}' for key, value in fields) + "\n}\n")
-    os.replace(staging, path)
-
-
-def test_record_file(build_dir: str, name: str) -> str:
-    """Return the record of one test in a build directory (THE RECORD).
-
-    Args:
-        build_dir: The build directory
-        name: The name of the test
-
-    Returns:
-        BUILD_DIR/test-records/NAME.test.cost
-    """
-    return os.path.join(build_dir, TEST_RECORD_DIRECTORY, name + TEST_RECORD_SUFFIX)
-
-
-def write_test_record(build_dir: str, name: str, command: str, run: Measurement, result: str) -> None:
-    """Write the record of one test, and make its directory when necessary.
-
-    The function makes the directory only when the write finds no directory.
-    A test of a build directory with records then makes no more system calls.
-
-    Args:
-        build_dir: The build directory
-        name: The name of the test
-        command: The program of the test
-        run: The measurement of the test
-        result: "passed", "failed" or "rejected" (the judge refused a test with the status 0)
-    """
-    path = test_record_file(build_dir, name)
-    fields = [("format", str(RECORD_FORMAT)), ("step", '"test"'), ("result", f'"{result}"'), ("test", quote(name)),
-              ("command", quote(command)), ("exit", str(run.exit_code)), ("cost", cost_block(run))]
-    try:
-        write_record(path, fields)
-    except FileNotFoundError:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        write_record(path, fields)
 
 
 def ccache_hit(stats_path: str, outer_log: str | None) -> bool:

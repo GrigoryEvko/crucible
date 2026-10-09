@@ -69,6 +69,7 @@ from pathlib import Path
 
 from assay.core import git, proc
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 from assay.core.paths import REPO_ROOT
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_reader
@@ -200,7 +201,7 @@ def test_lines(build_dir: Path) -> list[str]:
         records = ctest_reader.costs(build_dir)
     except ctest_reader.CtestError as problem:
         return [f"loop gauge --cold: the records of the tests cannot be read: {problem}"]
-    times = {name: record.wall_s for name, record in records.items()}
+    times = {name: record.cost.wall_s for name, record in records.items()}
     fixtures = [seconds for name, seconds in times.items() if name.startswith(FIXTURE_PREFIX)]
     lines = [f"tests: {len(times)}, of them {len(fixtures)} negative fixtures; sum of the wall times "
              f"{sum(times.values()):.0f} s, of the fixtures {sum(fixtures):.0f} s",
@@ -339,8 +340,9 @@ def plant_tests(build_dir: Path) -> None:
     (build_dir / JUNIT_NAME).write_text(PLANTED_JUNIT, encoding="utf-8")
     for name, seconds, exit_code in PLANTED_TESTS:
         run = cost_meter.Measurement(exit_code, seconds / 2, 0.0, seconds, 4096, 1.0, 1.0, None)
-        cost_meter.write_test_record(str(build_dir), name, "/b/test/" + name, run,
-                                     "passed" if exit_code == 0 else "failed")
+        record = cost_record.TestRecord(name, "passed" if exit_code == 0 else "failed", "/b/test/" + name, exit_code,
+                                        cost_record.measured(run))
+        cost_record.write(cost_record.test_record_file(build_dir, name), record)
 
 
 def self_test() -> int:

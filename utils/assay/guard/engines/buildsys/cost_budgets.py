@@ -204,11 +204,11 @@ class StepRule:
 
 
 STEP_RULES = {
-    "compile-cpu": StepRule(cost_record.Step.COMPILE, Quantity.TIME),
-    "compile-instructions": StepRule(cost_record.Step.COMPILE, Quantity.INSTRUCTIONS),
-    "compile-memory": StepRule(cost_record.Step.COMPILE, Quantity.MEMORY),
-    "link-time": StepRule(cost_record.Step.LINK, Quantity.TIME),
-    "link-memory": StepRule(cost_record.Step.LINK, Quantity.MEMORY),
+    "compile-cpu": StepRule(cost_record.COMPILE, Quantity.TIME),
+    "compile-instructions": StepRule(cost_record.COMPILE, Quantity.INSTRUCTIONS),
+    "compile-memory": StepRule(cost_record.COMPILE, Quantity.MEMORY),
+    "link-time": StepRule(cost_record.LINK, Quantity.TIME),
+    "link-memory": StepRule(cost_record.LINK, Quantity.MEMORY),
 }
 OBJECT_RULES = frozenset({"function-size", "object-text"})
 HEADER_ALONE = "header-alone"
@@ -395,7 +395,7 @@ def step_record(output: Output, step: cost_record.Step) -> cost_record.CostRecor
     found = cost_record.read_of(output.path)
     name = cost_record.record_file(output.path).name
     if found.step != step:
-        raise cost_record.RecordError(f"the record {name} is not a {step} record of format {cost_meter.RECORD_FORMAT}")
+        raise cost_record.RecordError(f"the record {name} is not a {step} record of format {cost_record.FORMAT}")
     size = output.path.stat().st_size
     if found.output_bytes != size:
         raise cost_record.RecordError(
@@ -453,7 +453,7 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
     """
     build = context.require_build()
     spec = STEP_RULES[rule_id]
-    noun = "compile job" if spec.step == cost_record.Step.COMPILE else "link"
+    noun = "compile job" if spec.step == cost_record.COMPILE else "link"
     values: list[cost_budget.Measure] = []
     held: set[str] = set()
     counted: set[str] = set()
@@ -570,7 +570,7 @@ def object_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
 def sentinel_time(context: BuildContext, output: Output) -> str:
     """Return a clause that tells the CPU time of one sentinel compile from its record, for the message of a header."""
     try:
-        found = step_record(output, cost_record.Step.COMPILE)
+        found = step_record(output, cost_record.COMPILE)
     except cost_record.RecordError:
         return "its sentinel has no usable record"
     has_check_file = output.source is not None and output.source.is_relative_to(context.root / HEADER_ALONE_CHECK_FILES)
@@ -672,7 +672,7 @@ def measured_of(context: BuildContext, rule_id: str) -> Measured:
     Raises:
         NotApplicable: If the rule does not apply to the build
     """
-    if rule_id in STEP_RULES and STEP_RULES[rule_id].step == cost_record.Step.LINK:
+    if rule_id in STEP_RULES and STEP_RULES[rule_id].step == cost_record.LINK:
         outputs, problems = link_outputs(context, rule_id)
     else:
         outputs, problems = compile_outputs(context, rule_id)
@@ -909,7 +909,7 @@ def compile_first_count(object_path: Path) -> int | None:
         found = cost_record.read_of(object_path)
     except cost_record.RecordError:
         return None
-    if found.step != cost_record.Step.COMPILE or found.result not in ("built", "hit"):
+    if found.step != cost_record.COMPILE or found.result not in ("built", "hit"):
         return None
     cost = found.real_cost
     return None if cost is None else cost.compiler_instructions
@@ -1128,7 +1128,7 @@ def total_test_times(build_dir: Path) -> list[float | None]:
 
     build = build_dir.resolve()
     return [
-        record.cpu_s
+        record.cost.cpu_s
         for record in ctest_reader.costs(build_dir).values()
         if os.path.isabs(record.program) and Path(record.program).resolve().is_relative_to(build)
     ]
@@ -1183,8 +1183,8 @@ def total_build_records(build_dir: Path) -> list[cost_record.CostRecord]:
     Complexity: linear in the files of the build directory.
     """
     records: list[cost_record.CostRecord] = []
-    for path in sorted(build_dir.rglob(f"*{cost_meter.RECORD_SUFFIX}")):
-        if path.name.endswith(cost_meter.TEST_RECORD_SUFFIX):
+    for path in sorted(build_dir.rglob(f"*{cost_record.SUFFIX}")):
+        if path.name.endswith(cost_record.TEST_SUFFIX):
             continue
         try:
             records.append(cost_record.read(path))
@@ -1209,14 +1209,9 @@ def total_build_totals(
     """
     from assay.loop import history as loop_history
 
-    links = [record for record in records if record.step == cost_record.Step.LINK]
+    links = [record for record in records if record.step == cost_record.LINK]
     link_cpu = round(sum(record.cost.cpu_s for record in links if record.cost is not None), 1)
-    blocks: list[dict[str, object]] = [
-        {"end": record.cost.end, "wall_s": record.cost.wall_s, "peak_rss_kb": record.cost.peak_rss_kb}
-        for record in records
-        if record.cost is not None
-    ]
-    peak = loop_history.peak_concurrent_gb(blocks)
+    peak = loop_history.peak_concurrent_gb([record.cost for record in records if record.cost is not None])
     configured = loop_history.number(configure, "total_s") if configure is not None else None
     detail = (
         ""

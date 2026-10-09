@@ -17,6 +17,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc, testing
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.loop import teststep as test_launcher
@@ -126,7 +127,7 @@ class Planted:
     def _record_of(self, name: str) -> dict[str, object]:
         """Return the record of one test of the build directory, or no field when the test has no record."""
         try:
-            found: object = json.loads(Path(cost_meter.test_record_file(str(self.build), name)).read_text())
+            found: object = json.loads(Path(cost_record.test_record_file(self.build, name)).read_text())
         except FileNotFoundError:
             return {}
         return found if isinstance(found, dict) else {}
@@ -236,7 +237,7 @@ class Planted:
         expect(
             "a passed script test over the time error threshold fails, with an error line that names its record",
             status == 1
-            and f"{cost_meter.test_record_file(str(self.build), 'planted_script')}:0: error: [test-time] " in said
+            and f"{cost_record.test_record_file(self.build, 'planted_script')}:0: error: [test-time] " in said
             and self._record_of("planted_script")["result"] == "rejected",
         )
         status, said = self.launch(program, "3")

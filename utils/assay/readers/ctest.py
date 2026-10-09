@@ -13,9 +13,9 @@ THE INPUTS
       two different cases, and the message of the child element skipped tells
       them apart (THE STATUS OF A TEST).
     * The record of each test.  `loop test-step` and `loop fixture` write
-      BUILD_DIR/test-records/NAME.test.cost after each run of a test
-      (assay.core.meter, THE RECORD).  It holds the result, the status, the
-      program and the cost of the last run.
+      BUILD_DIR/test-records/NAME.test.cost after each run of a test, and
+      assay.core.record reads it (THE RECORDS of that module).  It holds the
+      result, the status, the program and the cost of the last run.
 
 THE STATUS OF A TEST
     results() gives each test of a JUnit report one status of TestStatus:
@@ -48,8 +48,8 @@ WHAT THE READER GIVES
     its properties, and the CMake file and the line of its call.  With a
     label, it gives only the tests with that label.  parse() reads the JSON of
     a listing.  results() gives the status of each test of a JUnit report
-    (THE STATUS OF A TEST).
-    costs() gives the last record of each test by its name, as a TestRecord.
+    (THE STATUS OF A TEST).  costs() gives the last record of each test by
+    its name, as a TestRecord of assay.core.record.
 
     A file of the build directory that the reader cannot read gives a
     CtestError, which names the file and the command that writes it.
@@ -63,8 +63,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import meter as cost_meter
 from assay.core import paths, proc
+from assay.core import record as cost_record
 from assay.readers import cmake
 
 TIMEOUT_S = 300.0
@@ -117,20 +117,6 @@ class TestEntry:
     def words_of(self, name: str) -> tuple[str, ...]:
         """Return the value of one property as words, empty when the test has no such property."""
         return self.properties.get(name, ())
-
-
-@dataclass(frozen=True, slots=True)
-class TestRecord:
-    """The record of the last run of one test (assay.core.meter, THE RECORD)."""
-
-    name: str
-    result: str
-    program: str
-    exit_code: int
-    cpu_s: float
-    wall_s: float
-    peak_rss_kb: int
-    end: float
 
 
 def _frames(record: Mapping[str, object], graph: Mapping[str, object]) -> list[tuple[str, int, str]]:
@@ -291,63 +277,7 @@ def results(report: Path) -> dict[str, TestStatus]:
     return statuses
 
 
-def _number(block: Mapping[str, object], key: str, path: Path) -> float:
-    """Return one number of the cost block of a record.
-
-    Raises:
-        CtestError: If the block has no number of that key
-    """
-    value = block.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise CtestError(f"the record {path} has no number {key} in its cost.  {RECORD_COMMAND} writes it")
-    return float(value)
-
-
-def read_record(path: Path) -> TestRecord:
-    """Read one record of a test.
-
-    Raises:
-        CtestError: If the record cannot be read, or it is not a record of a test of the format of assay.core.meter
-    """
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as problem:
-        raise CtestError(f"the record {path} cannot be read ({problem}).  {RECORD_COMMAND} writes it") from None
-    block = record.get("cost") if isinstance(record, dict) else None
-    if (
-        not isinstance(record, dict)
-        or record.get("format") != cost_meter.RECORD_FORMAT
-        or record.get("step") != "test"
-        or not isinstance(block, dict)
-    ):
-        raise CtestError(
-            f"the record {path} is not a record of a test of format {cost_meter.RECORD_FORMAT}.  "
-            f"{RECORD_COMMAND} writes it"
-        )
-    name, result, program, exit_code = (record.get(key) for key in ("test", "result", "command", "exit"))
-    if not (
-        isinstance(name, str)
-        and isinstance(result, str)
-        and isinstance(program, str)
-        and isinstance(exit_code, int)
-        and not isinstance(exit_code, bool)
-    ):
-        raise CtestError(f"the record {path} has no test, result, command or exit.  {RECORD_COMMAND} writes it")
-    if path.name != name + cost_meter.TEST_RECORD_SUFFIX:
-        raise CtestError(f"the record {path} is the record of the test {name}, and its file has another name")
-    return TestRecord(
-        name,
-        result,
-        program,
-        exit_code,
-        _number(block, "cpu_s", path),
-        _number(block, "wall_s", path),
-        int(_number(block, "peak_rss_kb", path)),
-        _number(block, "end", path),
-    )
-
-
-def costs(build_dir: Path) -> dict[str, TestRecord]:
+def costs(build_dir: Path) -> dict[str, cost_record.TestRecord]:
     """Return the record of the last run of each test of a build directory, by the name of the test.
 
     A test that did not run in the build directory has no record.  The record of a test that the build does not
@@ -358,9 +288,12 @@ def costs(build_dir: Path) -> dict[str, TestRecord]:
     Raises:
         CtestError: If a record cannot be read
     """
-    directory = build_dir / cost_meter.TEST_RECORD_DIRECTORY
-    records: dict[str, TestRecord] = {}
-    for path in paths.listing(directory, f"*{cost_meter.TEST_RECORD_SUFFIX}"):
-        record = read_record(path)
+    directory = build_dir / cost_record.TEST_DIRECTORY
+    records: dict[str, cost_record.TestRecord] = {}
+    for path in paths.listing(directory, f"*{cost_record.TEST_SUFFIX}"):
+        try:
+            record = cost_record.read_test(path)
+        except cost_record.RecordError as problem:
+            raise CtestError(f"{problem}.  {RECORD_COMMAND} writes it") from None
         records[record.name] = record
     return records

@@ -7,7 +7,7 @@ THE JUDGE
     utils/registry.txt.  They compare the peak memory of its largest process
     with the measured rule test-memory.  A test over an error threshold that
     no ledger row admits fails.  Each run writes the record of the test,
-    BUILD_DIR/test-records/NAME.test.cost (assay.core.meter, THE RECORD).
+    BUILD_DIR/test-records/NAME.test.cost (assay.core.record, THE RECORDS).
     Each test writes its warnings to the file RULE.NAME.txt of the warnings
     directory.  The step meter keeps a judge of its own, because the import
     closure of a step meter does not hold assay.core.report
@@ -173,10 +173,10 @@ def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | Non
         raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
     base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
     for name, record in sorted(records.items()):
-        if name not in names or check_report.classify(record.wall_s, budget) != "error":
+        if name not in names or check_report.classify(record.cost.wall_s, budget) != "error":
             continue
         key = rule_ledger.Key("", kind, name)
         earlier = ledger.base.get(key)
         kept = earlier.reason if earlier is not None else reason or DEFAULT_REASON
-        base[key] = rule_ledger.Entry(key, round(record.wall_s, 2), kept)
+        base[key] = rule_ledger.Entry(key, round(record.cost.wall_s, 2), kept)
     return replace(ledger, base=base)

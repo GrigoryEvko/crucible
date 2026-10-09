@@ -5050,7 +5050,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # ledger above its lowest committed value gives a warning.  The test modules
 # of the rows grammar, the registry, the ledgers, the rule history, the
 # process module, the git module, the paths, the run of the cases, the reader
-# of the cost records, the judge of the max rules, the runner and the planted
+# and writer of the cost records, the record class of the step meters, the
+# judge of the max rules, the runner and the planted
 # build of the engine build, the reader
 # of the compile database, the Python reader, the reader of the reports of
 # mypy and ruff, the package scope, the STE table, the counted rules of the
@@ -5077,7 +5078,8 @@ foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifac
     ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}")
 endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
-        core.test_paths core.test_testing core.test_record core.test_budget guard.engines.buildsys.test_runner
+        core.test_paths core.test_testing core.test_record core.test_value core.test_budget
+        guard.engines.buildsys.test_runner
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held readers.test_compdb readers.test_python
         readers.test_tool_reports
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure

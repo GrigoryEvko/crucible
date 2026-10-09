@@ -20,6 +20,7 @@ from pathlib import Path
 
 from assay.core import meter as cost_meter
 from assay.core import proc, testing
+from assay.core import record as cost_record
 from assay.core.paths import REPO_ROOT
 from assay.readers import cmake, ctest
 
@@ -223,17 +224,13 @@ def record_cases(expect: testing.Expect) -> None:
         build = Path(scratch)
         expect("a build directory with no record gives no record", ctest.costs(build) == {})
         run = cost_meter.Measurement(3, 1.5, 0.25, 2.0, 2048, 0.5, 100.0, None)
-        cost_meter.write_test_record(str(build), "planted_test", "/b/test/planted_test", run, "failed")
+        record = Path(cost_record.test_record_file(build, "planted_test"))
+        written = cost_record.TestRecord("planted_test", "failed", "/b/test/planted_test", 3, cost_record.measured(run))
+        cost_record.write(record, written)
         expect(
             "costs gives the record of each test by its name, with its result, its status and its cost",
-            ctest.costs(build)
-            == {
-                "planted_test": ctest.TestRecord(
-                    "planted_test", "failed", "/b/test/planted_test", 3, 1.75, 2.0, 2048, 100.0
-                )
-            },
+            ctest.costs(build) == {"planted_test": written} and written.cost.cpu_s == 1.75,
         )
-        record = Path(cost_meter.test_record_file(str(build), "planted_test"))
         record.write_text(record.read_text().replace('"test": "planted_test"', '"test": "another_test"'))
         expect(
             "costs refuses a record whose file has the name of another test",
@@ -327,7 +324,7 @@ def project_cases(expect: testing.Expect) -> None:
         records = ctest.costs(build)
         expect(
             "costs reads the record that the launcher writes for each script test that ran, and no other",
-            {name: (record.result, record.exit_code) for name, record in records.items()}
+            {name: (record.result, record.exit) for name, record in records.items()}
             == {"planted_pass": ("passed", 0), "planted_fail": ("failed", 1), "planted_skip": ("failed", 77)}
             and records["planted_pass"].program == sys.executable,
         )
