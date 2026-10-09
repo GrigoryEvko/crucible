@@ -1,5 +1,5 @@
 # The ledger of the rule history: the rises of the past that no measurement in a commit admits, and
-# the commits that changed the key or the format of a ledger.
+# the commits that changed the key or the format of a ledger or made the scope of a rule larger.
 # A row PATH | KIND | admit | ENTITY | REASON admits one error of the rule.  The row
 # utils/registry.txt | warn|error | admit | COMMIT RULE | REASON admits the rise of a threshold, and
 # the row utils/ledgers/quarantine.txt | raise | admit | COMMIT | REASON admits a raise of the
@@ -14,9 +14,25 @@
 format 1
 rule history
 utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows
+utils/ledgers/artifact-symbols.txt | rebase | admit | 8ba9b3078 | The ledger holds the configurations x86_64-debug-tsan and x86_64-debug-ubsan-strict. The commit added their 25 difference rows of archives that it did not change, and the ledger grew from 93 to 118 rows
+utils/ledgers/artifact-symbols.txt | rebase | admit | b957c6fd9 | The rule reads each import of each static library of the root, with its provider and its version. The commit added 370 rows of archives that it did not change, and the ledger grew from 118 to 394 rows
+utils/ledgers/artifact-symbols.txt | rebase | admit | cb6cc5d17 | The rule reads each throw helper of libstdc++ in each static library of the root. The commit added 21 rows of archives that it did not change, and the ledger grew from 79 to 99 rows
+utils/ledgers/ctx-testing-boundary.txt | rebase | admit | 15f4eafcc | The move into the owner family of the quarantine plugin keys each row by its function and its namespace. No counted key of the 2 rows stayed in the 6 rows
+utils/ledgers/detail-namespace.txt | rebase | admit | 15f4eafcc | The move into the owner family of the quarantine plugin keys each row by its function and its namespace. No counted key of the 59 rows stayed in the 96 rows
 utils/ledgers/escape-doors.txt | rebase | admit | 789d5940a | The move into the quarantine plugin keys each row by the qualified name of its function, and the plugin reads each base header in its sentinel unit. No key stayed
 utils/ledgers/fullness-guard.txt | rebase | admit | 805f38cfa | The module of the parse tree keys each row by its function and its comparison, and no key of the line texts stayed
+utils/ledgers/heavy-include.txt | rebase | admit | 630ccd5ec | The ledger counts the parse builds for x86-64-v3 and for aarch64. The commit added the 2 rows of <arm_neon.h> in crucible/SwissTable.h and crucible/cntp/Fec.h, which it did not change
 utils/ledgers/mint-pattern.txt | rebase | admit | 31b099a27 | The move into the quarantine plugin keys each row by the qualified name of its mint and the missing axis, and each marker of the source became a row. No key stayed
+utils/ledgers/no-unchecked-access.txt | rebase | admit | 15f4eafcc | The move into the owner family of the quarantine plugin keys each row by its function and its use. No counted key of the 33 rows stayed in the 76 rows
 utils/ledgers/quarantine.txt | raise | admit | fd5f25863 | Each build compiles the SenseHub v2 sources, and no configuration compiled them before. The 143 new findings were in the tree, and the commit adds no code to a quarantined file
+utils/ledgers/quarantine.txt | rebase | admit | 0d986b893 | The ledger counts the build with ThreadSanitizer, and the rule table gives <unistd.h> its door. The commit added 61 rows and increased 61 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | 2d0ddde35 | The plugin judges each library name that the front end folds. The commit added 368 rows and increased 464 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | 627d85c10 | The plugin counts the member of each class member access and the enumeration of a using-enum-declaration. The commit added 257 rows and increased 396 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | 6b508bb99 | The plugin counts splices, namespace reflections and a quarantined macro body in each file that expands it. The commit added 10 rows and increased 85 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | a4b3bbb75 | The rule table gives <pthread.h> its door src/fixy/os/ThreadTasks.cpp. The commit added 4 rows of door-header in files that it did not change. Its new region of test_os_thread_tasks.cpp stays growth
+utils/ledgers/quarantine.txt | rebase | admit | ad9befdcb | The plugin counts the library names, objects and calls of each base file in its sentinel unit as base kinds. The commit added 1387 rows and increased 1388 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | b31dd02d4 | The plugin counts a raw pointer in a return type and a reference to a C array as declared types. The commit added 12 rows and increased 107 counts in files that it did not change
+utils/ledgers/quarantine.txt | rebase | admit | d073bb9a5 | The plugin walks the end of each unit after the parse, before the middle end releases the parameter lists. The commit added 3 rows and increased 7 counts in files that it did not change
+utils/ledgers/syscall-capability.txt | rebase | admit | 630ccd5ec | The ledger counts the parse builds for x86-64-v3 and for aarch64. The commit added the 9 rows of the aarch64 arms of src/perf/PmuSample.cpp and src/perf/ProcGauges.cpp, which it did not change
 utils/ledgers/syscall-capability.txt | rebase | admit | fae822439 | The move into the owner family of the quarantine plugin keys each row by its holder and the system call, and each marker of the source became a row. No key stayed
 utils/ledgers/trait-guard.txt | rebase | admit | 51b0ded90 | The move into the family home of the quarantine plugin keys each row by its file, and no key of the 142 rows stayed
