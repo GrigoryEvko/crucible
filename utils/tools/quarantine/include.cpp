@@ -5,7 +5,9 @@
 // The include rules apply to each #include directive that a base or a
 // quarantined file holds.  A base file can include a header of its own layer
 // and of each lower layer, and each header outside the root that the allow
-// rows give its layer.  A door header can have only its door as includer.  A
+// rows give its layer.  An allow row with `until FAMILY` gives such an include
+// the pending kind of the header (kPendingKindPrefix and the header), and the
+// ratchet counts it.  A door header can have only its door as includer.  A
 // file of the language gets the allowance of its own layer and of the layer of
 // its language row, whichever is lower.
 //
@@ -162,10 +164,22 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
         allowed_rank = layer_rank(includer.language_layer);
         allowance += ", a file of the language with the allowance of the layer " + layer_name(includer.language_layer);
     }
-    for (const auto& [layer, header] : state.table.allows) {
-        if (header == pending.spelled && layer_rank(layer) <= allowed_rank) {
+    // An allow row with no `until` admits the include.  A row with `until`
+    // gives it the pending kind of the header, and no enforce mode of the
+    // scope include makes that kind an error.
+    const AllowRow* pending_row = nullptr;
+    for (const AllowRow& allow : state.table.allows) {
+        if (allow.header != pending.spelled || layer_rank(allow.layer) > allowed_rank) {
+            continue;
+        }
+        if (allow.pending.until.empty()) {
             return;
         }
+        pending_row = &allow;
+    }
+    if (pending_row != nullptr) {
+        add_finding(Kind::replace_pending, &pending_row->pending, pending.place, "<" + pending.spelled + ">");
+        return;
     }
     add_finding(Kind::layer_header, nullptr, pending.place, "<" + pending.spelled + "> in " + allowance);
 }

@@ -1,0 +1,8 @@
+# An include that an allow row with `until` gives is a pending finding, and
+# the ledger counts it, so the build has no error.
+
+compile uses include/fixy/Uses.cpp rules=utils/rule-table.txt stage=c
+exit uses pass
+judge uses
+configuration x86_64-debug-asan
+finding uses quarantine replace-pending:<cmath> include/fixy/Uses.cpp:1:0 | <cmath>

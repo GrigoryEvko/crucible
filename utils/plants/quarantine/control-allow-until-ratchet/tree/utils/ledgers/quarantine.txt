@@ -1,0 +1,6 @@
+# The ledger of the control.  The base configuration counts the one pending
+# include of the base file include/fixy/Uses.cpp.
+format 1
+rule quarantine
+configuration x86_64-debug-asan kind x86_64-debug-asan
+include/fixy/Uses.cpp | replace-pending:<cmath> | 1 | <cmath> | -

@@ -1,0 +1,12 @@
+# An enforce row of the scope include changes no other kind: a raw pointer of
+# a quarantined file stays a finding and no error.  An include that an allow
+# row with `until` gives is a finding of the kind replace-pending:<cmath>, and
+# no enforce row of the scope include makes it an error.
+
+compile base src/fixy/Scoped.cpp
+exit base pass
+finding base quarantine replace-pending:<cmath> src/fixy/Scoped.cpp:1:0 | <cmath>
+
+compile quarantined quarantined.cpp
+exit quarantined pass
+finding quarantined quarantine raw-pointer-object quarantined.cpp:1:6 | scoped_pointer

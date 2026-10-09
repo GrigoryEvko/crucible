@@ -1,0 +1,8 @@
+# An include that an allow row with `until` gives is a pending finding.  An
+# enforce row of the scope all makes each kind an error, also the pending
+# kind, as it does for a use that an admit row with `until` admits.
+
+compile all src/fixy/Scoped.cpp
+exit all fail
+finding all quarantine replace-pending:<cmath> src/fixy/Scoped.cpp:1:0 | <cmath>
+error all src/fixy/Scoped.cpp:1 | quarantine: replace-pending:<cmath> <cmath>;

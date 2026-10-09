@@ -26,10 +26,14 @@
 #       A layer of the base.  Each file under a PATH of the row is a base file
 #       of the layer.  A base file can include a header of its own layer and
 #       of each layer with a lower RANK.
-#   allow LAYER HEADER
+#   allow LAYER HEADER [until FAMILY]
 #       A file of LAYER, and a file of each layer with a higher RANK, can
 #       include the header HEADER.  Each other header that is not in the
-#       source root is a finding in a base file.
+#       source root is a finding in a base file.  With `until FAMILY`, the
+#       family of the base replaces the header, and each such include is a
+#       finding of the kind replace-pending:HEADER.  The ratchet refuses a new
+#       include, and an enforce row of the scope include does not make the
+#       finding an error.
 #   door HEADER OWNER
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.
@@ -71,12 +75,16 @@
 #       with the same last name in a different directory.
 #   quarantine PATH
 #       Each file under PATH is quarantined.
-#   enforce PATH MODE
+#   enforce PATH MODE [include]
 #       MODE is report or error.  Each finding in a file under PATH that has
 #       error mode is a compile error in each build.  A finding in report mode
-#       is a line of the section .crucible.quarantine of the object.  A change
-#       of the mode of a file compiles again only the units with a finding in
-#       that file, and a change of a reason or of a comment compiles nothing.
+#       is a line of the section .crucible.quarantine of the object.  With the
+#       word include, the row sets the mode of the three include kinds only:
+#       layer-header, door-header and upward-include.  With no word, the row
+#       sets the mode of each kind.  One PATH has one row of each scope at
+#       most.  A change of the mode of a file compiles again only the units
+#       with a finding in that file, and a change of a reason or of a comment
+#       compiles nothing.
 #   language LAYER PATH...
 #       Each base file under a PATH is a file of the language.  It can include
 #       a header outside the source root only if the allow rows give it to
@@ -203,7 +211,9 @@
 #   layer row and a quarantine row decide the class of a file in this way.
 #   The plugin gives an error for a file under the source root or in the
 #   build directory that no layer row and no quarantine row holds.  A file
-#   that no enforce row holds has report mode.
+#   that no enforce row holds has report mode.  The longest PATH of a row of
+#   the scope include or of no scope decides the mode of the include kinds,
+#   and for one PATH the row of the scope include decides.
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h

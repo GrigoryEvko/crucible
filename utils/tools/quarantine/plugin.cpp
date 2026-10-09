@@ -45,8 +45,11 @@
 //     rules=PATH     the rule table (necessary)
 //     mode=report    each finding is a line of the section of the object, a
 //                    line of the report file of out=, or else a note.  A
-//                    finding in a file whose enforce mode is error, and that
-//                    no region opts out, is an error
+//                    finding that no region opts out is an error when the
+//                    enforce mode of its file is error.  The mode of the
+//                    scope include decides an include kind, and the mode of
+//                    the scope all decides each other kind (EnforceRow in
+//                    plugin.h)
 //     mode=error     each finding that no region opts out is an error
 //     out=DIR        also write the report of the unit to a file in DIR
 //     stamps=DIR     the directory of the mode stamps (THE DEPENDENCIES)
@@ -76,7 +79,7 @@
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
-//     a row of the table, with the enforce mode of that file.  At
+//     a row of the table, with the two enforce modes of that file.  At
 //     PLUGIN_FINISH_UNIT, the plugin adds the mode stamp of each file with a
 //     finding that a mode can make an error to the dependency file of the
 //     unit.  A file with no mode stamp adds DIR/enforce.txt.  A change of the
@@ -432,7 +435,11 @@ void report(bool can_add_dependencies) {
         Rule rule_of_finding = rule_of(finding.kind);
         bool is_language = finding.file->language_layer >= 0 && finding.pending == nullptr
                         && rule_of_finding == Rule::quarantine;
-        bool is_error = state.is_error_mode || finding.file->is_error_mode || is_language;
+        // An enforce row of the scope include sets the mode of the include
+        // kinds only, and each other kind keeps the mode of the scope all.
+        bool is_file_error =
+            is_include_kind(finding.kind) ? finding.file->is_include_error_mode : finding.file->is_error_mode;
+        bool is_error = state.is_error_mode || is_file_error || is_language;
         // The contract rule and the unit facts give an error in each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);

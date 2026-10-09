@@ -1,0 +1,8 @@
+# An enforce row of the scope include makes an include of a header that the
+# layer cannot include an error in the mode report.  The report holds the
+# finding too.
+
+compile scope src/fixy/Scoped.cpp
+exit scope fail
+finding scope quarantine layer-header src/fixy/Scoped.cpp:1:0 | <cmath> in the layer low
+error scope src/fixy/Scoped.cpp:1 | quarantine: layer-header <cmath> in the layer low;

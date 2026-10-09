@@ -12,7 +12,9 @@ table tables/a-rank-of-two-layers.txt refused 2 | the rank belongs to a second l
 table tables/a-layer-with-two-rows.txt refused 2 | the layer has a second row
 table tables/a-path-in-a-layer-row-and-a-quarantine-row.txt refused 2 | the path a/ is also in the layer one
 table tables/an-allow-row-of-no-layer.txt refused 1 | the allow row names the layer none, and no layer row gives it
-table tables/a-header-with-no-angle-brackets.txt refused 2 | an allow row is 'allow LAYER HEADER', with a HEADER in angle brackets
+table tables/a-header-with-no-angle-brackets.txt refused 2 | an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets
+table tables/an-allow-row-with-until-and-no-family.txt refused 2 | an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets
+table tables/an-allow-row-with-a-word-that-is-not-until.txt refused 2 | an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets
 table tables/a-door-whose-owner-is-a-directory.txt refused 1 | a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
 table tables/a-door-whose-owner-is-a-file-of-the-build-directory.txt refused 1 | a door row is 'door HEADER OWNER', with a HEADER in angle brackets and one OWNER file of the source root
 table tables/a-layer-row-with-a-path-of-the-build-directory.txt refused 1 | a layer row holds no path of the build directory, because the build writes no base file
@@ -36,8 +38,10 @@ table tables/an-in-path-outside-the-base.txt refused 3 | the path b/ of an in re
 table tables/an-absolute-path.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
 table tables/a-path-with-a-parent-component.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
 table tables/a-path-with-an-empty-component.txt refused 1 | a quarantine row is 'quarantine PATH', with a PATH relative to the source root
-table tables/an-unknown-enforce-mode.txt refused 1 | an enforce row is 'enforce PATH MODE', and MODE is report or error
-table tables/a-path-with-two-enforce-rows.txt refused 2 | the path has a second enforce row
+table tables/an-unknown-enforce-mode.txt refused 1 | an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode to the include kinds
+table tables/an-unknown-enforce-scope.txt refused 1 | an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode to the include kinds
+table tables/a-path-with-two-enforce-rows.txt refused 2 | the path has a second enforce row of the same scope
+table tables/a-path-with-two-enforce-rows-of-the-scope-include.txt refused 2 | the path has a second enforce row of the same scope
 table tables/a-language-row-with-no-path.txt refused 2 | a language row is 'language LAYER PATH...'
 table tables/a-language-row-of-no-layer.txt refused 2 | the language row names the layer none, and no layer row gives it
 table tables/a-language-path-outside-the-base.txt refused 3 | the path b/x.h of a language row is in no layer; it must be a path of the base

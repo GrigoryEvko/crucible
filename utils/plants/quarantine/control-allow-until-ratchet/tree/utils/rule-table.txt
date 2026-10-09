@@ -1,0 +1,10 @@
+# The rule table of this control.  The Scalar family replaces <cmath>, so an
+# include of it in a base file is a pending finding.  The compile and the
+# module of the rule read this file.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+allow low <cmath> until Scalar
+
+quarantine src/

@@ -400,7 +400,8 @@ struct FileEntry {
     std::string relative;  // empty when the file is outside the root
     std::string real;  // the real path, empty for a scratch buffer
     int layer = -1;  // the index of the layer row of a base file
-    bool is_error_mode = false;  // the enforce mode of the file is error
+    bool is_error_mode = false;  // the enforce mode of the kinds of the file is error
+    bool is_include_error_mode = false;  // the enforce mode of the include kinds of the file is error
     // The index of the layer of the language row of a base file of the
     // language, whose allowance caps the outside includes, or -1.
     int language_layer = -1;
@@ -448,9 +449,14 @@ struct DoorRow {
     std::string owner;
 };
 
+// One enforce row.  A row of the scope include sets the mode of the three
+// include kinds only (is_include_kind).  A row of the scope all sets the mode
+// of each kind.  The longest path decides, and for one path the row of the
+// scope include decides the include kinds.
 struct EnforceRow {
     std::string path;
     bool is_error = false;
+    bool is_include_scope = false;
 };
 
 struct LanguageRow {
@@ -478,6 +484,16 @@ struct AdmitRow {
     bool is_consteval_only = false;  // the entity is a consteval-only class or a member of one
     std::string unless_macro;
     std::vector<std::string> in_paths;
+};
+
+// One allow row: a header outside the root that a layer, and each higher
+// layer, can include.  A row with `until FAMILY` gives each such include a
+// finding of the pending kind of its admit row PENDING, which no enforce mode
+// of the scope include makes an error.  The ratchet still counts the include.
+struct AllowRow {
+    int layer = -1;  // the index of the layer row
+    std::string header;  // the name inside the angle brackets
+    AdmitRow pending;  // the header and its family for a row with `until`, else an empty until
 };
 
 // One seal row: the include closure of ROOT holds no file under a PREFIX, and
@@ -597,7 +613,7 @@ struct OwnerRow {
 // name inside its angle brackets.
 struct RuleTable {
     std::vector<LayerRow> layers;
-    std::vector<std::pair<int, std::string>> allows;  // the layer index and the header
+    std::vector<AllowRow> allows;
     std::vector<DoorRow> doors;
     std::vector<AdmitRow> admits;
     std::vector<std::string> quarantines;
@@ -1572,13 +1588,30 @@ inline void classify_by_table(FileEntry& entry) {
             }
         }
     }
+    // The longest path decides each mode.  For the include kinds, a row of the
+    // scope include of the same path decides before a row of the scope all.
     std::size_t mode_length = 0;
     bool has_mode = false;
+    std::size_t include_length = 0;
+    bool has_include_mode = false;
+    bool is_include_row_decided = false;
     for (const EnforceRow& row : state.table.enforces) {
-        if (row_holds(row.path, entry.relative) && (!has_mode || row.path.size() > mode_length)) {
+        if (!row_holds(row.path, entry.relative)) {
+            continue;
+        }
+        if (!row.is_include_scope && (!has_mode || row.path.size() > mode_length)) {
             entry.is_error_mode = row.is_error;
             mode_length = row.path.size();
             has_mode = true;
+        }
+        bool is_longer = !has_include_mode || row.path.size() > include_length;
+        bool is_same_and_narrower =
+            has_include_mode && row.path.size() == include_length && row.is_include_scope && !is_include_row_decided;
+        if (is_longer || is_same_and_narrower) {
+            entry.is_include_error_mode = row.is_error;
+            include_length = row.path.size();
+            has_include_mode = true;
+            is_include_row_decided = row.is_include_scope;
         }
     }
     for (const GrantRow& grant : state.table.grants) {

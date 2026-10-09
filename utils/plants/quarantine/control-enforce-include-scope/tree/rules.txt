@@ -1,0 +1,13 @@
+# The rule table of this control.  The enforce rows of the scope include give
+# the include kinds of src/fixy/ and of quarantined.cpp the mode error.  The
+# Scalar family replaces <cmath>, so an include of it is a pending finding.
+
+layer low 0 include/fixy/ src/fixy/
+
+allow low <cstddef>
+allow low <cmath> until Scalar
+
+quarantine quarantined.cpp
+
+enforce src/fixy/ error include
+enforce quarantined.cpp error include

@@ -146,6 +146,15 @@ std::string number_message(const std::string& text) {
          + ", the largest number of a rank or an arity";
 }
 
+// The errors of an allow row and of an enforce row that do not obey the
+// format of their words.  ruletable.ALLOW_FORMAT and ruletable.ENFORCE_FORMAT
+// give the same texts.
+constexpr const char* kAllowFormat =
+    "an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets";
+constexpr const char* kEnforceFormat =
+    "an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode "
+    "to the include kinds";
+
 // The error of an admit row that does not obey the format of its words.
 constexpr const char* kAdmitFormat =
     "an admit row is 'admit ENTRY [RESTRICTION...] | REASON'.  The restrictions are 'until FAMILY', 'arity N', "
@@ -490,7 +499,7 @@ bool load_rule_table(const std::string& path) {
     RuleTable table;
     std::vector<std::pair<std::string, std::string>> class_paths;  // a path of a layer or quarantine row, and its row
     std::vector<std::pair<std::string, int>> allow_layers;  // the layer name of each allow row, and its line
-    std::vector<std::string> allow_headers;
+    std::vector<AllowRow> allow_rows;  // each allow row, with no layer index until the layers are known
     std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
     std::vector<std::pair<std::string, int>> language_layers;  // the layer name of each language row, and its line
     std::vector<std::pair<std::string, int>> language_path_lines;  // each path of a language row, and its line
@@ -572,12 +581,21 @@ bool load_rule_table(const std::string& path) {
             }
             table.layers.push_back(std::move(layer));
         } else if (kind == "allow") {
-            if (args.size() != 2 || !is_header(args[1])) {
-                refuse("an allow row is 'allow LAYER HEADER', with a HEADER in angle brackets");
+            bool has_until = args.size() == 4 && args[2] == "until";
+            if ((args.size() != 2 && !has_until) || !is_header(args[1])) {
+                refuse(kAllowFormat);
                 continue;
             }
             allow_layers.emplace_back(args[0], line_number);
-            allow_headers.push_back(args[1].substr(1, args[1].size() - 2));
+            AllowRow allow;
+            allow.header = args[1].substr(1, args[1].size() - 2);
+            if (has_until) {
+                allow.pending.entry = allow.header;
+                allow.pending.is_header = true;
+                allow.pending.until = args[3];
+                allow.pending.pending_kind = std::string(kPendingKindPrefix) + args[1];
+            }
+            allow_rows.push_back(std::move(allow));
         } else if (kind == "door") {
             if (args.size() != 2 || !is_header(args[0]) || !is_plain_path(args[1]) || args[1].back() == '/'
                 || has_prefix(args[1], kBuildPrefix)) {
@@ -618,16 +636,18 @@ bool load_rule_table(const std::string& path) {
             add_class_path(args[0], "a quarantine row");
             table.quarantines.push_back(args[0]);
         } else if (kind == "enforce") {
-            if (args.size() != 2 || (args[1] != "report" && args[1] != "error") || !is_plain_path(args[0])) {
-                refuse("an enforce row is 'enforce PATH MODE', and MODE is report or error");
+            bool has_scope = args.size() == 3 && args[2] == "include";
+            if ((args.size() != 2 && !has_scope) || (args[1] != "report" && args[1] != "error")
+                || !is_plain_path(args[0])) {
+                refuse(kEnforceFormat);
                 continue;
             }
             for (const EnforceRow& known : table.enforces) {
-                if (known.path == args[0]) {
-                    refuse("the path has a second enforce row");
+                if (known.path == args[0] && known.is_include_scope == has_scope) {
+                    refuse("the path has a second enforce row of the same scope");
                 }
             }
-            table.enforces.push_back(EnforceRow{args[0], args[1] == "error"});
+            table.enforces.push_back(EnforceRow{args[0], args[1] == "error", has_scope});
         } else if (kind == "language") {
             if (args.size() < 2) {
                 refuse("a language row is 'language LAYER PATH...'");
@@ -838,7 +858,9 @@ bool load_rule_table(const std::string& path) {
             is_valid = false;
             continue;
         }
-        table.allows.emplace_back(layer, allow_headers[index]);
+        AllowRow allow = allow_rows[index];
+        allow.layer = layer;
+        table.allows.push_back(std::move(allow));
     }
     for (std::size_t index = 0; index < language_layers.size(); ++index) {
         for (std::size_t known = 0; known < table.layers.size(); ++known) {

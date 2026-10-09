@@ -1,0 +1,1 @@
+int quarantined_entry(int value) { return value; }

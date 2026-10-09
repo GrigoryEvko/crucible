@@ -1,0 +1,11 @@
+# The rule table of this plant.  The Scalar family replaces <cmath>, and the
+# enforce row of the scope all gives each kind of src/fixy/ the mode error.
+
+layer low 0 include/fixy/ src/fixy/
+
+allow low <cstddef>
+allow low <cmath> until Scalar
+
+quarantine quarantined.cpp
+
+enforce src/fixy/ error

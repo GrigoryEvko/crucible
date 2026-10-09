@@ -38,6 +38,16 @@ from assay.core.paths import REPO_ROOT
 
 TABLE = REPO_ROOT / "utils" / "rule-table.txt"
 MODES = ("report", "error")
+# The word of an enforce row with a mode for the three include kinds only: `layer-header`, `door-header` and
+# `upward-include`.
+INCLUDE_SCOPE = "include"
+# The errors of an `allow` row and of an enforce row that do not obey the format of their words.  rule_table.cpp
+# gives the same texts.
+ALLOW_FORMAT = "an allow row is 'allow LAYER HEADER [until FAMILY]', with a HEADER in angle brackets"
+ENFORCE_FORMAT = (
+    "an enforce row is 'enforce PATH MODE [include]', and MODE is report or error.  The word include limits the mode "
+    "to the include kinds"
+)
 ROW_KINDS = (
     "layer",
     "allow",
@@ -153,6 +163,31 @@ class Layer:
     name: str
     rank: int
     paths: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Allow:
+    """One `allow` row: the layer and the header in angle brackets.
+
+    `until` names the family that replaces the header, or is "".  An include of the header in a file of the layer, or
+    of a higher layer, is then a finding of the pending kind of the header and not an error.
+    """
+
+    layer: str
+    header: str
+    until: str = ""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Enforce:
+    """One enforce row: a path, its mode (report or error) and its scope.
+
+    The scope is "all" for each kind, or INCLUDE_SCOPE for the three include kinds only.
+    """
+
+    path: str
+    mode: str
+    scope: str = "all"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -276,11 +311,11 @@ class RuleTable:
     """The rows of one rule table, in the order of the file."""
 
     layers: tuple[Layer, ...]
-    allows: tuple[tuple[str, str], ...]
+    allows: tuple[Allow, ...]
     doors: tuple[tuple[str, str], ...]
     admits: tuple[Admit, ...]
     quarantines: tuple[str, ...]
-    enforces: tuple[tuple[str, str], ...]
+    enforces: tuple[Enforce, ...]
     # The layer whose allowance caps the outside includes, and the paths of
     # each language row.
     languages: tuple[tuple[str, tuple[str, ...]], ...] = ()
@@ -326,12 +361,29 @@ class RuleTable:
         return best
 
     def mode_of(self, rel: str) -> str:
-        """Return the enforce mode of a path relative to the source root: report or error."""
+        """Return the enforce mode of the kinds of a path relative to the source root: report or error.
+
+        The longest path of an enforce row of the scope all gives the mode.  Complexity: O(rows).
+        """
         mode = "report"
         best_length = -1
-        for path, row_mode in self.enforces:
-            if holds(path, rel) and len(path) > best_length:
-                mode, best_length = row_mode, len(path)
+        for row in self.enforces:
+            if row.scope != INCLUDE_SCOPE and holds(row.path, rel) and len(row.path) > best_length:
+                mode, best_length = row.mode, len(row.path)
+        return mode
+
+    def include_mode_of(self, rel: str) -> str:
+        """Return the enforce mode of the include kinds of a path relative to the source root: report or error.
+
+        The longest path of an enforce row of each scope gives the mode.  For one path, the row of the scope include
+        gives it.  Complexity: O(rows).
+        """
+        mode = "report"
+        best = (-1, False)
+        for row in self.enforces:
+            rank = (len(row.path), row.scope == INCLUDE_SCOPE)
+            if holds(row.path, rel) and rank > best:
+                mode, best = row.mode, rank
         return mode
 
 
@@ -623,11 +675,11 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     except rows_grammar.RowsError as problem:
         raise TableError(str(problem)) from None
     layers: list[Layer] = []
-    allows: list[tuple[str, str]] = []
+    allows: list[Allow] = []
     doors: list[tuple[str, str]] = []
     admits: list[Admit] = []
     quarantines: list[str] = []
-    enforces: list[tuple[str, str]] = []
+    enforces: list[Enforce] = []
     languages: list[tuple[str, tuple[str, ...]]] = []
     class_paths: dict[str, str] = {}
     allow_lines: list[tuple[str, str]] = []
@@ -686,10 +738,10 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 class_paths[path] = f"the layer {args[0]}"
             layers.append(Layer(args[0], rank, tuple(args[2:])))
         elif kind == "allow":
-            if len(args) != 2:
-                raise TableError(f"{where}: an allow row is 'allow LAYER HEADER'")
+            if len(args) not in (2, 4) or (len(args) == 4 and args[2] != "until"):
+                raise TableError(f"{where}: {ALLOW_FORMAT}")
             _check_header(args[1], where)
-            allows.append((args[0], args[1]))
+            allows.append(Allow(args[0], args[1], args[3] if len(args) == 4 else ""))
             allow_lines.append((args[0], where))
         elif kind == "door":
             if len(args) != 2 or args[1].endswith("/") or args[1].startswith(BUILD_PREFIX):
@@ -846,12 +898,13 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                 deny_lines[denied_name] = number
             denied.extend(args)
         else:
-            if len(args) != 2 or args[1] not in MODES:
-                raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
+            if len(args) not in (2, 3) or args[1] not in MODES or (len(args) == 3 and args[2] != INCLUDE_SCOPE):
+                raise TableError(f"{where}: {ENFORCE_FORMAT}")
             _check_path(args[0], where)
-            if any(path == args[0] for path, _ in enforces):
-                raise TableError(f"{where}: the path {args[0]} has a second enforce row")
-            enforces.append((args[0], args[1]))
+            scope = args[2] if len(args) == 3 else "all"
+            if any(row.path == args[0] and row.scope == scope for row in enforces):
+                raise TableError(f"{where}: the path {args[0]} has a second enforce row of the same scope")
+            enforces.append(Enforce(args[0], args[1], scope))
     known = {layer.name for layer in layers}
     for layer_name, where in allow_lines:
         if layer_name not in known:

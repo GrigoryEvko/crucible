@@ -11,6 +11,7 @@ table tables/the-largest-rank-with-zeros-before-it.txt accepted
 table tables/a-tab-between-two-words.txt accepted
 table tables/one-entry-as-a-header-and-as-a-name.txt accepted
 table tables/seal-heavy-and-light-rows.txt accepted
+table tables/one-path-with-a-row-of-each-scope.txt accepted
 
 white-space accepted
 

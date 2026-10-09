@@ -20,9 +20,11 @@ files under the directory OUT:
                   (extra_files_to_hash), so a cache hit never gives the object
                   of a compile under different enforce modes.
     modes/PATH    One mode stamp for each source file that a layer row or a
-                  quarantine row holds: "error" or "report", the enforce mode
-                  of the file.  The plugin names the mode stamp of each file
-                  with a finding in the dependencies of the unit.  So a change
+                  quarantine row holds.  The stamp gives two words, each
+                  "error" or "report": the enforce mode of each kind of the
+                  file, and the enforce mode of its include kinds.  The plugin
+                  names the mode stamp of each file with a finding in the
+                  dependencies of the unit.  So a change
                   of the mode of a file compiles again only the units with a
                   finding in that file.  For a file with no mode stamp, such as
                   a file that the tree got after the last configure, the plugin
@@ -66,7 +68,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
     word `until` of such a row.
     """
     lines = [f"layer {layer.name} {layer.rank} {' '.join(sorted(layer.paths))}" for layer in table.layers]
-    lines += [f"allow {layer} {header}" for layer, header in table.allows]
+    lines += [f"allow {allow.layer} {allow.header}{' until' if allow.until else ''}" for allow in table.allows]
     lines += [f"door {header} {owner}" for header, owner in table.doors]
     for admit in table.admits:
         words = [admit.entry]
@@ -110,8 +112,9 @@ def facts_text(table: layer_rules.RuleTable) -> str:
 
 
 def enforce_text(table: layer_rules.RuleTable) -> str:
-    """Return the canonical text of the enforce rows of TABLE."""
-    return "".join(f"enforce {path} {mode}\n" for path, mode in sorted(table.enforces))
+    """Return the canonical text of the enforce rows of TABLE, with the scope of each row."""
+    rows = sorted((row.path, row.mode, row.scope) for row in table.enforces)
+    return "".join(f"enforce {path} {mode} {scope}\n" for path, mode, scope in rows)
 
 
 def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -> dict[str, str]:
@@ -122,7 +125,8 @@ def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -
     O(files under the rows) times O(rows) for the class and the mode.
 
     Returns:
-        A map from the path relative to ROOT to "error" or "report"
+        A map from the path relative to ROOT to the two modes of the file, each "error" or "report".  The first is the
+        mode of each kind, and the second is the mode of the include kinds
     """
     paths = sorted({path for layer in table.layers for path in layer.paths} | set(table.quarantines))
     candidates: set[str] = set()
@@ -143,7 +147,7 @@ def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -
     for relative in sorted(candidates):
         file_class, _ = table.class_of(relative)
         if file_class:
-            modes[relative] = table.mode_of(relative)
+            modes[relative] = f"{table.mode_of(relative)} {table.include_mode_of(relative)}"
     return modes
 
 
@@ -256,7 +260,20 @@ def self_test() -> int:
         written, _ = run(reordered + "enforce app/util.h error\n")
         changed = {path for path, value in stamps().items() if first.get(path) != value}
         expect("an error row for one file changes the mode stamp of that file only, and enforce.txt",
-               written == 2 and changed == {"app/util.h"} and stamps()["app/util.h"][0] == "error\n")
+               written == 2 and changed == {"app/util.h"} and stamps()["app/util.h"][0] == "error error\n")
+
+        written, _ = run(reordered + "enforce app/ error include\n")
+        changed = {path for path, value in stamps().items() if first.get(path) != value}
+        expect("an error row of the include scope changes the include mode of each file under its path only",
+               written == len(changed) + 1 and changed == {"app/main.cpp", "app/util.h"}
+               and stamps()["app/main.cpp"][0] == "report error\n"
+               and "enforce app/ error include\n" in (out / "enforce.txt").read_text(encoding="utf-8"))
+
+        run(reordered.replace("allow low <cstdint>", "allow low <cstdint> until Scalar"))
+        expect("an allow row with `until` is a fact, and its family is not",
+               "allow low <cstdint> until\n" in (out / "facts.txt").read_text(encoding="utf-8")
+               and "Scalar" not in (out / "facts.txt").read_text(encoding="utf-8"))
+        run(reordered)
 
         written, _ = run(reordered.replace("arity 1", "arity 2"))
         expect("a changed restriction changes facts.txt",
