@@ -237,8 +237,6 @@ crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
-crucible_test(test_merkle_dag_visualizer)
-crucible_test(test_vis_layout)  # vis/NetworkSimplex.h optimality, vis/SugiyamaLayout.h placement and layering, detect_u_shape
 crucible_test(test_memory_plan)
 # The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
 # on its own against a build whose codegen changed — a profile-guided build

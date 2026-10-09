@@ -41,5 +41,5 @@ configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
-- | x86_64-debug-asan | 8727423836718 | fixtures | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness
-- | x86_64-debug-asan | 9841082170241 | objects | the measure of the Debug build of all and of each negative fixture at be4dcbd05 on 2026-10-08. The growth of 2.14 % over 751d38a23 is the new tests of the core families, the NUMA doors, the iteration detector, the flag matrix and the SenseHub v2 sources, the new fixtures, and the include of fixy/Core.h in the test harness
+- | x86_64-debug-asan | 8687991516523 | fixtures | the measure of the Debug build of all and of each negative fixture with no ccache on 2026-10-09, after the deletion of the trace visualizer. The sum falls 0.88 % against main at 2e268171c, from 18576.1 G to 18412.6 G instructions
+- | x86_64-debug-asan | 9724612723270 | objects | the measure of the Debug build of all and of each negative fixture with no ccache on 2026-10-09, after the deletion of the trace visualizer. The sum falls 0.88 % against main at 2e268171c, from 18576.1 G to 18412.6 G instructions

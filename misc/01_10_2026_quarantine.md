@@ -1044,7 +1044,6 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 | 5B | observe | observe, warden, topology | part | |
 | 5B | cog-mimic | cog, mimic, forge | part | |
 | 5B | perf | perf, the BPF users | part | BPF C headers get whole-file opt-out regions |
-| 5B | vis | vis | part | TraceVisualizer, SugiyamaLayout, SvgRenderer are among the largest files |
 | 5B | rest | the remaining `include/crucible` files | part | |
 | 5C | bench | `bench/` | 2,602 | `bench_harness.h` first (541 findings) |
 | 5C | fuzz | `test/fuzz/` | 1,272 | the libFuzzer entry keeps an opt-out region |

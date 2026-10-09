@@ -811,7 +811,7 @@ Tracked in `tools/crucible-lint/health-dashboard.html`, regenerated weekly.
 
 ```
 crucible/
-├── include/, src/, test/, bench/, vis/   ← substrate (existing)
+├── include/, src/, test/, bench/         ← substrate (existing)
 ├── misc/                                  ← design docs (existing)
 │   ├── fixy.md (deferred design)
 │   ├── ci-pipeline.md (this design)

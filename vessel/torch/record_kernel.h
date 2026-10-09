@@ -416,11 +416,11 @@ inline thread_local uint32_t backward_depth = 0;
 // Narrow and derived is still the better trade. These bits are a label: the
 // content hash folds the schema hash, the tensor metadata and the scalars and
 // never reads op_flags, so no phase can move a region's identity, its cache
-// key or a replay guard. What reads them is a reader of the trace —
-// Serialize.h carries them to the file and TraceVisualizer.h splits the
-// forward and backward columns on them. A label is worth having only if it
-// says the same thing about the same computation every time, and a phase the
-// caller set by hand said whatever that caller had remembered to call. Two
+// key or a replay guard. Only the readers of the trace use them. Serialize.h
+// and the trace export of vessel_api.cpp write them to the file. A label is
+// worth having only if it says the same thing about the same computation
+// every time, and a phase the caller set by hand said whatever that caller
+// had remembered to call. Two
 // loops over one model labelled one computation two ways, and the label of the
 // loop that skipped a call was silently FORWARD throughout.
 // =====================================================================

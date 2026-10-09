@@ -83,7 +83,6 @@ include/crucible/mimic/          Fences, semaphores and the Cog projection of th
 include/crucible/observe/        Metrics, health observations, histograms, synthetic probes
 include/crucible/perf/           BPF sensors: scheduler, syscalls, lock contention, PMU samples
 include/crucible/topology/       Discovery, Pingmesh, PTP, congestion telemetry
-include/crucible/vis/            Trace visualization: block detection, Sugiyama layout, SVG
 include/crucible/warden/         Deadline watchdog, hardening policy, quarantine, CPU topology
 src/                             The .cpp files of the foundation, crucible and crucible_perf
                                  libraries

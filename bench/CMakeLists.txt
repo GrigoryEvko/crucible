@@ -159,16 +159,6 @@ if(_record_leaf_not_measured)
   set_tests_properties(bench_record_leaf PROPERTIES DISABLED TRUE)
 endif()
 
-# ── Visualization tool ────────────────────────────────────────────────
-# Not a benchmark — a utility for rendering .crtrace traces as SVG.
-# Usage: ./render_trace <trace.crtrace> [-o output.svg] [--blocks-only]
-# bench/serve.html is the static live-trace WebSocket viewer.  It has no CMake
-# target because browsers open it directly; keep it here while it only serves
-# bench traces, promote to utils/scripts/ only if a launcher/backend appears.
-add_executable(render_trace render_trace.cpp)
-target_link_libraries(render_trace PRIVATE crucible)
-target_compile_options(render_trace PRIVATE -O2)
-
 # ── bench-caps target ────────────────────────────────────────────────
 #
 # The bench binary needs three capabilities to load + attach the BPF

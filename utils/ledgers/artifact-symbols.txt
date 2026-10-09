@@ -73,9 +73,6 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libcrucible_vigil.a | helper-throw | 5 | _ZSt19__throw_logic_errorPKc | -
 @build/libcrucible_vigil.a | helper-throw | 11 | _ZSt20__throw_length_errorPKc | -
 @build/libcrucible_vigil.a | vtable | admit | std::thread::_State_impl< | std::jthread starts each thread through std::thread::_State_impl, a polymorphic class template of libstdc++.  src/BackgroundThread.cpp starts the thread of the background pipeline with std::jthread by design (CLAUDE.md §IX)
-@build/libcrucible_vis.a | helper-throw | 5 | _ZSt19__throw_logic_errorPKc | -
-@build/libcrucible_vis.a | helper-throw | 244 | _ZSt20__throw_length_errorPKc | -
-@build/libcrucible_vis.a | helper-throw | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -
 @build/libfixy.a | allow | 1 | __gxx_personality_v0 | -
 @build/libfixy.a | libc-allow | 1 | __stack_chk_fail | -
 @build/libfixy.a | libc-allow | 1 | memcmp | -
@@ -129,9 +126,6 @@ configuration x86_64-release tier znver5-f612fd24
 @x86_64-release | @build/libcrucible_perf.a | helper-throw | -28 | _ZSt20__throw_length_errorPKc | -
 @x86_64-release | @build/libcrucible_vigil.a | helper-throw | -1 | _ZSt19__throw_logic_errorPKc | -
 @x86_64-release | @build/libcrucible_vigil.a | helper-throw | -3 | _ZSt20__throw_length_errorPKc | -
-@x86_64-release | @build/libcrucible_vis.a | helper-throw | -2 | _ZSt19__throw_logic_errorPKc | -
-@x86_64-release | @build/libcrucible_vis.a | helper-throw | -68 | _ZSt20__throw_length_errorPKc | -
-@x86_64-release | @build/libcrucible_vis.a | helper-throw | +1 | _ZSt24__throw_out_of_range_fmtPKcz | -
 @x86_64-release | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev | -
 @x86_64-release | @build/libfixy.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
 @x86_64-release | @build/libfixy.a | ratchet | +1 | _ZTISt9bad_alloc | -

@@ -1566,32 +1566,6 @@ include/crucible/topology/TopologyGraph.h | std-entity | 2 | std::span::end | -
 include/crucible/topology/TopologyGraph.h | std-entity | 1 | std::span::operator[] | -
 include/crucible/topology/TopologyGraph.h | std-entity | 3 | std::span::size | -
 include/crucible/topology/TopologyGraph.h | std-object | 9 | std::span | -
-include/crucible/vis/BlockDetector.h | c-array-object | 3 | - | -
-include/crucible/vis/BlockDetector.h | raw-pointer-object | 4 | - | -
-include/crucible/vis/BlockDetector.h | std-object | 8 | std::basic_string | -
-include/crucible/vis/BlockDetector.h | std-object | 1 | std::basic_string_view | -
-include/crucible/vis/BlockDetector.h | std-object | 1 | std::span | -
-include/crucible/vis/BlockDetector.h | std-object | 2 | std::vector | -
-include/crucible/vis/LiveTraceVisualizer.h | raw-pointer-object | 1 | - | -
-include/crucible/vis/LiveTraceVisualizer.h | std-entity | 1 | std::basic_string::empty | -
-include/crucible/vis/LiveTraceVisualizer.h | std-entity | 2 | std::basic_string::operator+= | -
-include/crucible/vis/LiveTraceVisualizer.h | std-entity | 1 | std::basic_string_view | -
-include/crucible/vis/LiveTraceVisualizer.h | std-entity | 2 | std::operator+ | -
-include/crucible/vis/LiveTraceVisualizer.h | std-entity | 2 | std::to_string | -
-include/crucible/vis/LiveTraceVisualizer.h | std-object | 5 | std::basic_string | -
-include/crucible/vis/LiveTraceVisualizer.h | std-object | 4 | std::basic_string_view | -
-include/crucible/vis/NetworkSimplex.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
-include/crucible/vis/NetworkSimplex.h | std-object | 2 | std::span | -
-include/crucible/vis/NetworkSimplex.h | std-object | 1 | std::vector | -
-include/crucible/vis/SugiyamaLayout.h | std-object | 3 | std::span | -
-include/crucible/vis/SugiyamaLayout.h | std-object | 1 | std::vector | -
-include/crucible/vis/SvgRenderer.h | std-entity | 2 | std::basic_string::operator+= | -
-include/crucible/vis/SvgRenderer.h | std-object | 5 | std::basic_string | -
-include/crucible/vis/SvgRenderer.h | std-object | 11 | std::basic_string_view | -
-include/crucible/vis/TraceVisualizer.h | raw-pointer-object | 2 | - | -
-include/crucible/vis/TraceVisualizer.h | std-object | 6 | std::basic_string | -
-include/crucible/vis/TraceVisualizer.h | std-object | 2 | std::basic_string_view | -
-include/crucible/vis/TraceVisualizer.h | std-object | 21 | std::vector | -
 include/crucible/warden/CpuTopology.h | c-array-object | 6 | - | -
 include/crucible/warden/CpuTopology.h | c-library-call | 1 | access | -
 include/crucible/warden/CpuTopology.h | c-library-call | 1 | atoi | -
@@ -2753,188 +2727,6 @@ src/topology/Telemetry.cpp | std-object | 21 | std::basic_string_view | -
 src/topology/Telemetry.cpp | std-object | 3 | std::expected | -
 src/topology/Telemetry.cpp | std-object | 2 | std::from_chars_result | -
 src/topology/Telemetry.cpp | std-object | 4 | std::pair | -
-src/vis/BlockDetector.cpp | c-library-call | 1 | strcmp | -
-src/vis/BlockDetector.cpp | c-library-call | 1 | strstr | -
-src/vis/BlockDetector.cpp | raw-pointer-object | 2 | - | -
-src/vis/BlockDetector.cpp | replace-pending:std::bit_cast | 2 | std::bit_cast | -
-src/vis/BlockDetector.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
-src/vis/BlockDetector.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
-src/vis/BlockDetector.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
-src/vis/BlockDetector.cpp | std-entity | 1 | __gnu_cxx::operator== | -
-src/vis/BlockDetector.cpp | std-entity | 4 | std::basic_string | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::basic_string::c_str | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::basic_string::empty | -
-src/vis/BlockDetector.cpp | std-entity | 3 | std::basic_string::operator+= | -
-src/vis/BlockDetector.cpp | std-entity | 4 | std::basic_string::operator= | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::basic_string_view | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::basic_string_view::empty | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::basic_string_view::find | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::basic_string_view::rfind | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::basic_string_view::size | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::basic_string_view::substr | -
-src/vis/BlockDetector.cpp | std-entity | 4 | std::operator+ | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::operator== | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::ranges::__minmax_fn::operator() | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::ranges::min_max_result | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::ranges::minmax | -
-src/vis/BlockDetector.cpp | std-entity | 5 | std::span::operator[] | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::to_string | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::vector | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::vector::begin | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::vector::empty | -
-src/vis/BlockDetector.cpp | std-entity | 1 | std::vector::end | -
-src/vis/BlockDetector.cpp | std-entity | 16 | std::vector::operator[] | -
-src/vis/BlockDetector.cpp | std-entity | 5 | std::vector::push_back | -
-src/vis/BlockDetector.cpp | std-entity | 2 | std::vector::size | -
-src/vis/BlockDetector.cpp | std-object | 9 | std::basic_string | -
-src/vis/BlockDetector.cpp | std-object | 4 | std::basic_string_view | -
-src/vis/BlockDetector.cpp | std-object | 2 | std::ranges::min_max_result | -
-src/vis/BlockDetector.cpp | std-object | 1 | std::span | -
-src/vis/BlockDetector.cpp | std-object | 4 | std::vector | -
-src/vis/NetworkSimplex.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -
-src/vis/NetworkSimplex.cpp | std-entity | 9 | __gnu_cxx::__normal_iterator | -
-src/vis/NetworkSimplex.cpp | std-entity | 11 | __gnu_cxx::__normal_iterator::operator* | -
-src/vis/NetworkSimplex.cpp | std-entity | 9 | __gnu_cxx::__normal_iterator::operator++ | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator- | -
-src/vis/NetworkSimplex.cpp | std-entity | 9 | __gnu_cxx::operator== | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::max | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::__all_of_fn::operator() | -
-src/vis/NetworkSimplex.cpp | std-entity | 2 | std::ranges::__fill_fn::operator() | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::__max_element_fn::operator() | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::__min_element_fn::operator() | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::all_of | -
-src/vis/NetworkSimplex.cpp | std-entity | 2 | std::ranges::fill | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::max_element | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::ranges::min_element | -
-src/vis/NetworkSimplex.cpp | std-entity | 6 | std::span | -
-src/vis/NetworkSimplex.cpp | std-entity | 5 | std::span::begin | -
-src/vis/NetworkSimplex.cpp | std-entity | 5 | std::span::end | -
-src/vis/NetworkSimplex.cpp | std-entity | 12 | std::span::operator[] | -
-src/vis/NetworkSimplex.cpp | std-entity | 6 | std::span::size | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::span::subspan | -
-src/vis/NetworkSimplex.cpp | std-entity | 4 | std::vector | -
-src/vis/NetworkSimplex.cpp | std-entity | 2 | std::vector::assign | -
-src/vis/NetworkSimplex.cpp | std-entity | 3 | std::vector::back | -
-src/vis/NetworkSimplex.cpp | std-entity | 5 | std::vector::begin | -
-src/vis/NetworkSimplex.cpp | std-entity | 3 | std::vector::empty | -
-src/vis/NetworkSimplex.cpp | std-entity | 5 | std::vector::end | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::vector::operator= | -
-src/vis/NetworkSimplex.cpp | std-entity | 58 | std::vector::operator[] | -
-src/vis/NetworkSimplex.cpp | std-entity | 3 | std::vector::pop_back | -
-src/vis/NetworkSimplex.cpp | std-entity | 8 | std::vector::push_back | -
-src/vis/NetworkSimplex.cpp | std-entity | 1 | std::vector::resize | -
-src/vis/NetworkSimplex.cpp | std-object | 7 | std::span | -
-src/vis/NetworkSimplex.cpp | std-object | 23 | std::vector | -
-src/vis/SugiyamaLayout.cpp | replace-pending:<limits> | 4 | std::numeric_limits::max | -
-src/vis/SugiyamaLayout.cpp | std-entity | 17 | __gnu_cxx::__normal_iterator | -
-src/vis/SugiyamaLayout.cpp | std-entity | 24 | __gnu_cxx::__normal_iterator::operator* | -
-src/vis/SugiyamaLayout.cpp | std-entity | 22 | __gnu_cxx::__normal_iterator::operator++ | -
-src/vis/SugiyamaLayout.cpp | std-entity | 22 | __gnu_cxx::operator== | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::ceil | -
-src/vis/SugiyamaLayout.cpp | std-entity | 4 | std::max | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::min | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::ranges::__all_of_fn::operator() | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::ranges::__copy_fn::operator() | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::__max_element_fn::operator() | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::__sort_fn::operator() | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::__stable_sort_fn::operator() | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::ranges::all_of | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::ranges::copy | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::max_element | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::sort | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::ranges::stable_sort | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::span | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::span::begin | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::span::empty | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::span::end | -
-src/vis/SugiyamaLayout.cpp | std-entity | 3 | std::span::size | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::swap | -
-src/vis/SugiyamaLayout.cpp | std-entity | 19 | std::vector | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::vector::assign | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::vector::back | -
-src/vis/SugiyamaLayout.cpp | std-entity | 21 | std::vector::begin | -
-src/vis/SugiyamaLayout.cpp | std-entity | 2 | std::vector::clear | -
-src/vis/SugiyamaLayout.cpp | std-entity | 4 | std::vector::empty | -
-src/vis/SugiyamaLayout.cpp | std-entity | 20 | std::vector::end | -
-src/vis/SugiyamaLayout.cpp | std-entity | 86 | std::vector::operator[] | -
-src/vis/SugiyamaLayout.cpp | std-entity | 1 | std::vector::pop_back | -
-src/vis/SugiyamaLayout.cpp | std-entity | 14 | std::vector::push_back | -
-src/vis/SugiyamaLayout.cpp | std-entity | 4 | std::vector::resize | -
-src/vis/SugiyamaLayout.cpp | std-entity | 13 | std::vector::size | -
-src/vis/SugiyamaLayout.cpp | std-object | 6 | std::span | -
-src/vis/SugiyamaLayout.cpp | std-object | 31 | std::vector | -
-src/vis/SvgRenderer.cpp | c-array-object | 2 | - | -
-src/vis/SvgRenderer.cpp | c-library-call | 1 | snprintf | -
-src/vis/SvgRenderer.cpp | replace-pending:std::bit_cast | 2 | std::bit_cast | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::abs | -
-src/vis/SvgRenderer.cpp | std-entity | 107 | std::basic_string::operator+= | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::basic_string_view | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::basic_string_view::begin | -
-src/vis/SvgRenderer.cpp | std-entity | 4 | std::basic_string_view::empty | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::basic_string_view::end | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::basic_string_view::value_type | -
-src/vis/SvgRenderer.cpp | std-entity | 117 | std::operator+ | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::to_chars | -
-src/vis/SvgRenderer.cpp | std-entity | 1 | std::to_chars_result | -
-src/vis/SvgRenderer.cpp | std-object | 2 | std::basic_string | -
-src/vis/SvgRenderer.cpp | std-object | 11 | std::basic_string_view | -
-src/vis/SvgRenderer.cpp | std-object | 1 | std::to_chars_result | -
-src/vis/TraceVisualizer.cpp | c-array-object | 3 | - | -
-src/vis/TraceVisualizer.cpp | c-library-call | 1 | snprintf | -
-src/vis/TraceVisualizer.cpp | raw-pointer-object | 9 | - | -
-src/vis/TraceVisualizer.cpp | std-entity | 7 | __gnu_cxx::__normal_iterator | -
-src/vis/TraceVisualizer.cpp | std-entity | 10 | __gnu_cxx::__normal_iterator::operator* | -
-src/vis/TraceVisualizer.cpp | std-entity | 10 | __gnu_cxx::__normal_iterator::operator++ | -
-src/vis/TraceVisualizer.cpp | std-entity | 10 | __gnu_cxx::operator== | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::__detail::_Node_iterator | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::__detail::_Node_iterator::operator* | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::__detail::_Node_iterator::operator++ | -
-src/vis/TraceVisualizer.cpp | std-entity | 7 | std::__detail::_Node_iterator::operator-> | -
-src/vis/TraceVisualizer.cpp | std-entity | 6 | std::__detail::operator== | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::abs | -
-src/vis/TraceVisualizer.cpp | std-entity | 4 | std::basic_string | -
-src/vis/TraceVisualizer.cpp | std-entity | 6 | std::basic_string::empty | -
-src/vis/TraceVisualizer.cpp | std-entity | 9 | std::basic_string::operator+= | -
-src/vis/TraceVisualizer.cpp | std-entity | 7 | std::basic_string::operator= | -
-src/vis/TraceVisualizer.cpp | std-entity | 2 | std::basic_string::size | -
-src/vis/TraceVisualizer.cpp | std-entity | 2 | std::get | -
-src/vis/TraceVisualizer.cpp | std-entity | 2 | std::make_move_iterator | -
-src/vis/TraceVisualizer.cpp | std-entity | 17 | std::max | -
-src/vis/TraceVisualizer.cpp | std-entity | 9 | std::min | -
-src/vis/TraceVisualizer.cpp | std-entity | 28 | std::operator+ | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::pair | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::ranges::__sort_fn::operator() | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::ranges::sort | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::span | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::span::begin | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::span::end | -
-src/vis/TraceVisualizer.cpp | std-entity | 15 | std::to_string | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::unordered_map | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::unordered_map::begin | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::unordered_map::emplace | -
-src/vis/TraceVisualizer.cpp | std-entity | 6 | std::unordered_map::end | -
-src/vis/TraceVisualizer.cpp | std-entity | 5 | std::unordered_map::find | -
-src/vis/TraceVisualizer.cpp | std-entity | 3 | std::unordered_map::operator[] | -
-src/vis/TraceVisualizer.cpp | std-entity | 5 | std::unordered_set::insert | -
-src/vis/TraceVisualizer.cpp | std-entity | 16 | std::vector | -
-src/vis/TraceVisualizer.cpp | std-entity | 2 | std::vector::back | -
-src/vis/TraceVisualizer.cpp | std-entity | 10 | std::vector::begin | -
-src/vis/TraceVisualizer.cpp | std-entity | 7 | std::vector::empty | -
-src/vis/TraceVisualizer.cpp | std-entity | 11 | std::vector::end | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::vector::front | -
-src/vis/TraceVisualizer.cpp | std-entity | 1 | std::vector::insert | -
-src/vis/TraceVisualizer.cpp | std-entity | 3 | std::vector::operator= | -
-src/vis/TraceVisualizer.cpp | std-entity | 112 | std::vector::operator[] | -
-src/vis/TraceVisualizer.cpp | std-entity | 14 | std::vector::push_back | -
-src/vis/TraceVisualizer.cpp | std-entity | 38 | std::vector::size | -
-src/vis/TraceVisualizer.cpp | std-object | 5 | std::__detail::_Node_iterator | -
-src/vis/TraceVisualizer.cpp | std-object | 14 | std::basic_string | -
-src/vis/TraceVisualizer.cpp | std-object | 2 | std::basic_string_view | -
-src/vis/TraceVisualizer.cpp | std-object | 1 | std::pair | -
-src/vis/TraceVisualizer.cpp | std-object | 1 | std::span | -
-src/vis/TraceVisualizer.cpp | std-object | 5 | std::unordered_map | -
-src/vis/TraceVisualizer.cpp | std-object | 4 | std::unordered_set | -
-src/vis/TraceVisualizer.cpp | std-object | 42 | std::vector | -
 test/compute_vit.h | c-array-object | 14 | - | -
 test/cpu_kernels.h | c-array-object | 1 | - | -
 test/cpu_kernels.h | c-library-call | 1 | memcpy | -
@@ -6818,21 +6610,6 @@ test/test_merkle_dag.cpp | std-entity | 1 | std::vector::size | -
 test/test_merkle_dag.cpp | std-object | 2 | std::expected | -
 test/test_merkle_dag.cpp | std-object | 8 | std::span | -
 test/test_merkle_dag.cpp | std-object | 1 | std::vector | -
-test/test_merkle_dag_visualizer.cpp | c-array-object | 1 | - | -
-test/test_merkle_dag_visualizer.cpp | raw-new-delete | 1 | placement new | -
-test/test_merkle_dag_visualizer.cpp | raw-pointer-object | 9 | - | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator::operator* | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator::operator++ | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | __gnu_cxx::operator== | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 1 | std::basic_string::find | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 1 | std::basic_string::npos | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | std::operator== | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | std::vector | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | std::vector::begin | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 2 | std::vector::end | -
-test/test_merkle_dag_visualizer.cpp | std-entity | 1 | std::vector::size | -
-test/test_merkle_dag_visualizer.cpp | std-object | 2 | std::basic_string | -
 test/test_meta_log.cpp | c-array-object | 7 | - | -
 test/test_meta_log.cpp | raw-pointer-object | 1 | - | -
 test/test_meta_log.cpp | replace-pending:std::bit_cast | 15 | std::bit_cast | -
@@ -7646,38 +7423,6 @@ test/test_vigil_metadata.cpp | std-object | 3 | std::vector | -
 test/test_vigil_producer.cpp | std-entity | 1 | std::thread::join | -
 test/test_vigil_producer.cpp | std-object | 1 | std::thread | -
 test/test_vigil_unrepeated_prefix.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
-test/test_vis_layout.cpp | c-library-call | 2 | fprintf | -
-test/test_vis_layout.cpp | c-library-call | 2 | stderr | -
-test/test_vis_layout.cpp | raw-pointer-object | 15 | - | -
-test/test_vis_layout.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -
-test/test_vis_layout.cpp | replace-pending:<limits> | 1 | std::numeric_limits::quiet_NaN | -
-test/test_vis_layout.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
-test/test_vis_layout.cpp | std-entity | 2 | __gnu_cxx::__normal_iterator::operator* | -
-test/test_vis_layout.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
-test/test_vis_layout.cpp | std-entity | 1 | __gnu_cxx::operator== | -
-test/test_vis_layout.cpp | std-entity | 2 | std::abs | -
-test/test_vis_layout.cpp | std-entity | 1 | std::initializer_list | -
-test/test_vis_layout.cpp | std-entity | 3 | std::max | -
-test/test_vis_layout.cpp | std-entity | 3 | std::min | -
-test/test_vis_layout.cpp | std-entity | 4 | std::ranges::__all_of_fn::operator() | -
-test/test_vis_layout.cpp | std-entity | 1 | std::ranges::__max_element_fn::operator() | -
-test/test_vis_layout.cpp | std-entity | 1 | std::ranges::__sort_fn::operator() | -
-test/test_vis_layout.cpp | std-entity | 5 | std::ranges::all_of | -
-test/test_vis_layout.cpp | std-entity | 1 | std::ranges::max_element | -
-test/test_vis_layout.cpp | std-entity | 1 | std::ranges::min_element | -
-test/test_vis_layout.cpp | std-entity | 1 | std::ranges::sort | -
-test/test_vis_layout.cpp | std-entity | 1 | std::span | -
-test/test_vis_layout.cpp | std-entity | 1 | std::span::begin | -
-test/test_vis_layout.cpp | std-entity | 1 | std::span::end | -
-test/test_vis_layout.cpp | std-entity | 1 | std::span::operator[] | -
-test/test_vis_layout.cpp | std-entity | 2 | std::span::size | -
-test/test_vis_layout.cpp | std-entity | 1 | std::swap | -
-test/test_vis_layout.cpp | std-entity | 5 | std::vector | -
-test/test_vis_layout.cpp | std-entity | 36 | std::vector::operator[] | -
-test/test_vis_layout.cpp | std-entity | 4 | std::vector::push_back | -
-test/test_vis_layout.cpp | std-entity | 8 | std::vector::size | -
-test/test_vis_layout.cpp | std-object | 6 | std::span | -
-test/test_vis_layout.cpp | std-object | 36 | std::vector | -
 test/test_vit.cpp | c-library-call | 12 | printf | -
 test/test_vit.cpp | raw-pointer-object | 2 | - | -
 test/test_vit_ops.cpp | c-array-object | 3 | - | -
@@ -8505,47 +8250,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-entity | +5 | std::unique_ptr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-entity | +7 | std::unique_ptr::operator-> | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_trace_ring.cpp | std-object | +5 | std::unique_ptr | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +1 | __errno_location | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +14 | fprintf | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +17 | stderr | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +1 | stdout | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +1 | strerror | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-call | +1 | strlen | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | c-library-object | +1 | _IO_FILE | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | raw-pointer-object | +8 | - | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_ios::fail | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_ios::operator! | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_ofstream::close | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_ostream::write | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::append | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::c_str | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::data | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::basic_string::find_last_of | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::npos | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::operator= | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string::resize | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::basic_string::size | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::basic_string_view | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::basic_string_view::data | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string_view::find_last_of | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::basic_string_view::size | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::basic_string_view::substr | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::from_chars | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::from_chars_result | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::ios_base::binary | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::ios_base::out | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::ios_base::trunc | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +4 | std::operator== | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::operator\| | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::unique_ptr::operator* | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +2 | std::unique_ptr::operator-> | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-entity | +1 | std::vector::size | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +1 | std::basic_ofstream | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +4 | std::basic_string | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +9 | std::basic_string_view | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +1 | std::from_chars_result | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +1 | std::unique_ptr | -
-@x86_64-debug-asan-bench-fuzz | bench/render_trace.cpp | std-object | +1 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_cvtb2mask512 | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_pcmpeqb512_mask | -
 @x86_64-debug-asan-bench-fuzz | include/crucible/SwissTable.h | replace-pending:std::bit_cast | +2 | std::bit_cast | -
