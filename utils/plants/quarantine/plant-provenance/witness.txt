@@ -1,9 +1,11 @@
 # Each directive that changes the file, the line or the system flag of the
-# code after it is an error in the mode report.
+# code after it is an error in the mode report.  The walks of the end of a
+# unit run after the error too, so each raw pointer is a note.
 
 compile line-directive line_directive.cpp out=no
 exit line-directive fail
 error line-directive line_directive.cpp:9 | quarantine: 'line_directive.cpp' holds a '#line' directive
+note line-directive line_directive.cpp:6 | quarantine: raw-pointer-object before_directive
 
 compile line-marker line_marker.cpp out=no
 exit line-marker fail
@@ -12,3 +14,5 @@ error line-marker line_marker.cpp:6 | quarantine: a line marker of 'line_marker.
 compile system-marked system_marked.cpp out=no
 exit system-marked fail
 error system-marked gapsother/marked/SystemMarked.h:9 | quarantine: 'gapsother/marked/SystemMarked.h' holds a '#line' directive
+note system-marked gapsother/marked/SystemMarked.h:11 | quarantine: raw-pointer-object marked_pointer
+note system-marked system_marked.cpp:6 | quarantine: raw-pointer-object later_pointer

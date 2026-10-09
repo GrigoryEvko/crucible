@@ -1214,7 +1214,7 @@ void walk_namespace_member(tree decl, const HomeRow* scope_row, tree scope_named
         default:
             break;
     }
-    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl) || is_erroneous_decl(decl)) {
         return;
     }
     // A friend that a class template instance injects is no declaration of

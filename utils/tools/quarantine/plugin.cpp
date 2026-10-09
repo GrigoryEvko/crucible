@@ -37,8 +37,9 @@
 //                            parse, and before the middle end, it walks every
 //                            namespace that a system header does not own
 //                            (declaration.cpp) and runs the other walks of the
-//                            end of the unit.  An object compile and a parse
-//                            then read the same trees.
+//                            end of the unit, also after a compile error.  An
+//                            object compile and a parse then read the same
+//                            trees.
 //     PLUGIN_FINISH_UNIT     the report.
 //     PLUGIN_FINISH          the report, if the unit did not reach
 //                            PLUGIN_FINISH_UNIT.
@@ -380,12 +381,13 @@ void walk_unit() {
 // the function of the dynamic initializers, and the middle end has not run.
 // The middle end releases the parameters of a declaration that an emitted
 // function calls, so a walk at PLUGIN_FINISH_UNIT did not see them, and an
-// object compile and a parse gave different findings.
+// object compile and a parse gave different findings.  A unit with a compile
+// error gets the walks too, so a negative fixture that stops on its expected
+// error gives its findings.  The walks skip a declaration that the error left
+// with no type (is_erroneous_decl of plugin.h).
 void parse_and_walk() {
     front_end_parse_file();
-    if (!seen_error()) {
-        walk_unit();
-    }
+    walk_unit();
 }
 
 void on_finish_unit(void*, void*) {

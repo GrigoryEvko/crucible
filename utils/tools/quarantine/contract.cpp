@@ -116,7 +116,7 @@ void walk_contract_template(tree template_decl) {
 }
 
 void walk_contract_decl(tree decl) {
-    if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)
+    if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl) || is_erroneous_decl(decl)
         || in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
         return;
     }

@@ -1,0 +1,10 @@
+# A unit that stops on a compile error, as a negative fixture does, gets the
+# walks of the end of the unit too (plugin.cpp, THE HOOKS OF THE UNIT).  The
+# data members on lines 10 and 11 and the parameter on line 14 are findings.
+
+compile report after_error.cpp
+exit report fail
+finding report quarantine raw-pointer-object after_error.cpp:10:10 | member
+finding report quarantine std-object after_error.cpp:11:22 | std::vector
+finding report quarantine raw-pointer-object after_error.cpp:14:19 | sink
+error report after_error.cpp:16 | 'undeclared_name' was not declared in this scope

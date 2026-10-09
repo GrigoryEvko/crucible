@@ -1,0 +1,18 @@
+// A unit that stops on a compile error, as a negative fixture does.  The walks
+// of the end of the unit run after the error too (plugin.cpp, THE HOOKS OF THE
+// UNIT), so the data members and the parameter below are findings.
+
+#include <vector>
+
+namespace stopped {
+
+struct Holder {
+    int* member = nullptr;
+    std::vector<int> cells;
+};
+
+void consume(int* sink) noexcept;
+
+int broken_value = undeclared_name;
+
+}  // namespace stopped

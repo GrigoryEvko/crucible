@@ -1817,6 +1817,13 @@ inline Place place_of(location_t location, Scope scope) {
     return place;
 }
 
+// True when the front end gave DECL no type after an error.  The walks of the
+// end of a unit also run after a compile error (THE HOOKS OF THE UNIT of
+// plugin.cpp), and they skip such a declaration.
+inline bool is_erroneous_decl(tree decl) {
+    return decl == error_mark_node || (DECL_P(decl) && TREE_TYPE(decl) == error_mark_node);
+}
+
 inline bool is_quarantined(location_t location) {
     return place_of(location, Scope::quarantine).file_class == FileClass::quarantined;
 }

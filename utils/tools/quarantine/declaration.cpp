@@ -518,7 +518,7 @@ void walk_namespace_member(tree decl) {
         default:
             break;
     }
-    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl) || is_erroneous_decl(decl)) {
         return;
     }
     if (in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
@@ -3028,7 +3028,7 @@ struct PropertyWalk {
         // function, a variable or an alias asks only when a test that reads no
         // place admits it.  The walk then reads no place for each declaration
         // of a file that the family does not read.
-        if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+        if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl) || is_erroneous_decl(decl)) {
             return;
         }
         switch (TREE_CODE(decl)) {
