@@ -1,0 +1,25 @@
+// Reflections and splices of library entities.  A reflection of a namespace
+// names the namespace.  A splice of a library entity is a use of the entity,
+// also when the front end folds it and the source spells no name of it
+// (owner.cpp, THE FOLDED NAMES).
+
+#include <fixy/Find.h>
+
+#include <array>
+#include <compare>
+#include <exception>
+
+namespace reflected {
+
+inline void runtime_splice() {
+    [: fixy::member_of_std("terminate") :]();
+}
+
+constexpr bool folded_splice = [: fixy::member_of_std("is_eq") :](1 <=> 1);
+
+constexpr std::array<int, 2> cells{};
+constexpr unsigned long folded_member = cells.[: fixy::member_named(^^decltype(cells), "size") :]();
+
+constexpr std::meta::info namespace_reflection = ^^std;
+
+}  // namespace reflected

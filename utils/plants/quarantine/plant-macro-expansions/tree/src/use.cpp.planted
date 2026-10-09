@@ -1,0 +1,25 @@
+// A quarantined unit that expands the macros of a quarantined header.  The
+// body of HELPER_MAKE_CELLS names std::vector, and each expansion counts here
+// too.  Each expansion of HELPER_REQUIRE is one use of has_value.
+
+#include <crucible/Helper.h>
+
+#include <optional>
+
+namespace use {
+
+inline unsigned long first_count() {
+    return HELPER_MAKE_CELLS().size();
+}
+
+inline unsigned long second_count() {
+    return HELPER_MAKE_CELLS().size();
+}
+
+inline int checked(const std::optional<int>& value) {
+    HELPER_REQUIRE(!value.has_value());
+    HELPER_REQUIRE(!value.has_value());
+    return 1;
+}
+
+}  // namespace use

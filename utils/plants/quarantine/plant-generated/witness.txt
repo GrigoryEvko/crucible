@@ -12,8 +12,10 @@ exit error fail
 error error planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
 error error planted-build/Generated.h:6 | quarantine: raw-pointer-object generated_pointer;
 error error planted-build/Generated.h:7 | quarantine: raw-pointer-object generated_expanded_pointer;
+error error generated_unit.cpp:3 | quarantine: raw-pointer-object generated_expanded_pointer;
 
 # The place in a generated macro on line 7 is a place of the generated file.
+# The unit expands the macro on its line 3, and that place counts too.
 compile report generated_unit.cpp build=planted-build
 flag report -fcontracts
 exit report fail
@@ -22,6 +24,7 @@ finding report quarantine opted-out @build/Generated.h:3:32 | contract-specifier
 finding report contract-specifier contract-specifier @build/Generated.h:5:32 | pre
 finding report quarantine raw-pointer-object @build/Generated.h:6:14 | generated_pointer
 finding report quarantine raw-pointer-object @build/Generated.h:7:33 | generated_expanded_pointer
+finding report quarantine raw-pointer-object generated_unit.cpp:3:1 | generated_expanded_pointer
 error report planted-build/Generated.h:5 | the 'pre' contract specifier is not permitted in this tree
 
 # An unclosed region of a generated file is an error in each mode.

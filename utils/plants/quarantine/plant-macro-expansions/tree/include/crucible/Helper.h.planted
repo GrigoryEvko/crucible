@@ -1,0 +1,16 @@
+// A quarantined header with macros.  The body of the first macro names a
+// library class.  The walk gives a call in the argument of the second macro
+// the place of the ! of its body.
+
+#pragma once
+
+#include <vector>
+
+#define HELPER_MAKE_CELLS() std::vector<int>{}
+
+#define HELPER_REQUIRE(condition) \
+    do {                          \
+        if (!(condition)) {       \
+            return 0;             \
+        }                         \
+    } while (0)

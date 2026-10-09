@@ -207,7 +207,11 @@ bool check_foreign_use(tree decl, location_t location) {
     if (place.file_class != FileClass::quarantined) {
         return false;
     }
-    state.foreign_uses.push_back(ForeignUse{DECL_UID(decl), place, qualified_name(decl) + " (C linkage)"});
+    std::string entity = qualified_name(decl) + " (C linkage)";
+    if (Place expansion = expansion_place_of(location, place); expansion.file != nullptr) {
+        state.foreign_uses.push_back(ForeignUse{DECL_UID(decl), expansion, entity});
+    }
+    state.foreign_uses.push_back(ForeignUse{DECL_UID(decl), place, std::move(entity)});
     return true;
 }
 
@@ -2031,9 +2035,10 @@ inline void judge_decl_event(tree decl, location_t location) {
 //     fold, and PLUGIN_MEMBER_ACCESS gives the member of each class member
 //     access, such as size in std::array<int, 3>{}.size().  The instantiation
 //     of a template gives the member of an access that depends on a template
-//     parameter, such as items.push_back(1) for a std::vector.  The plugin
-//     keeps each such name of a library declaration in a counted file (a
-//     parsed name).  A data member of a member access is no parsed name, because the
+//     parameter, such as items.push_back(1) for a std::vector.
+//     PLUGIN_REFLECTION gives the entity of a splice, which spells no name of
+//     it (note_reflection_name).  The plugin keeps each such name of a library
+//     declaration in a counted file (a parsed name).  A data member of a member access is no parsed name, because the
 //     walk gives no finding of a data member.  The parser gives a qualified
 //     name an event at its first name too, and only the event where the
 //     source spells the identifier of the declaration is a parsed name.  The
@@ -2200,14 +2205,14 @@ std::string name_key(const Place& place, tree identifier) {
 
 // One walked name of IDENTIFIER at PLACE, the place of LOCATION.  A second
 // read of one use at one place keeps one entry, so one use claims one parsed
-// name.
+// name.  Each expansion of one token of a macro body is a use of its own, so
+// the expansion point is part of the place.
 void add_walked(const Place& place, location_t location, tree identifier, Claim claim) {
-    if (identifier == NULL_TREE || !counts_folded_name(place)
-        || !folded_names.walked_keys.insert(name_key(place, identifier) + ' ' + std::to_string(static_cast<int>(claim)))
-                .second) {
+    if (identifier == NULL_TREE || !counts_folded_name(place)) {
         return;
     }
     WalkedName walked{place.file, place.line, place.column, identifier, claim};
+    std::string key = name_key(place, identifier) + ' ' + std::to_string(static_cast<int>(claim));
     if (linemap_location_from_macro_expansion_p(line_table, location)) {
         Place point = place_of(linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr),
                                Scope::quarantine);
@@ -2215,9 +2220,12 @@ void add_walked(const Place& place, location_t location, tree identifier, Claim 
             walked.expansion_file = point.file;
             walked.expansion_line = point.line;
             walked.expansion_column = point.column;
+            key += ' ' + name_key(point, identifier);
         }
     }
-    folded_names.walked.push_back(walked);
+    if (folded_names.walked_keys.insert(key).second) {
+        folded_names.walked.push_back(walked);
+    }
 }
 
 // Each place of WALKED: its own place, and its expansion point (WalkedName).
@@ -2380,9 +2388,11 @@ tree identifier_of(tree decl) {
 // The parsed name of NODE at LOCATION, when NODE names a library declaration
 // in a counted file (THE FOLDED NAMES).  A namespace and an enumerator name
 // no finding, and neither does a data member that IS_MEMBER marks, the member
-// of a class member access.  A first test of the library verdict by DECL_UID
-// leaves for a declaration of the tree.
-[[gnu::noinline]] void note_parsed_name(tree node, location_t location, bool is_member = false) {
+// of a class member access.  A splice spells no name, so a name that is not
+// IS_SPELLED takes no test of the spelling.  A first test of the library
+// verdict by DECL_UID leaves for a declaration of the tree.
+[[gnu::noinline]] void note_parsed_name(tree node, location_t location, bool is_member = false,
+                                        bool is_spelled = true) {
     tree functions = BASELINK_P(node) ? BASELINK_FUNCTIONS(node) : node;
     tree first = functions != NULL_TREE && TREE_CODE(functions) == OVERLOAD ? OVL_FIRST(functions) : functions;
     if (first == NULL_TREE || !DECL_P(first) || TREE_CODE(first) == NAMESPACE_DECL || TREE_CODE(first) == CONST_DECL
@@ -2402,7 +2412,7 @@ tree identifier_of(tree decl) {
     // declaration only at the last name, so the event there is the use.  A
     // tentative parse gives one event more than one time, and the place keys
     // one use.
-    if (!spells_identifier_at(location, identifier, is_member)
+    if ((is_spelled && !spells_identifier_at(location, identifier, is_member))
         || !folded_names.parsed_keys.insert(name_key(place, identifier)).second) {
         return;
     }
@@ -2777,16 +2787,17 @@ void on_using_form(void* gcc_data, void*) {
 // of a template.  An access in a counted file keeps its member as a parsed name
 // (THE FOLDED NAMES): the front end can fold a call of a member function, such
 // as std::array<int, 3>{}.size() in a constant initializer, and the walk of a
-// pattern cannot resolve a dependent member.  An access at a location of the last file outside the root
-// leaves after one test of the location.  For the rules of THE NAMES OF THE
-// SOURCE, an access to a data member that no rule can judge, with no splice,
-// leaves after one read of the list of member verdicts.
+// pattern cannot resolve a dependent member.  A splice of a member spells no
+// name of the member.  An access at a location of the last file outside the
+// root leaves after one test of the location.  For the rules of THE NAMES OF
+// THE SOURCE, an access to a data member that no rule can judge, with no
+// splice, leaves after one read of the list of member verdicts.
 void on_member_access(tree node, tree, location_t location, bool is_splice, void*) {
     bool is_outside = location - first_test.outside_first < first_test.outside_length
                    || (location - first_test.inside_first >= first_test.inside_length && judge_location(location));
     if (!is_outside
         && (location - first_test.inside_first >= first_test.inside_length || first_test.is_inside_counted)) {
-        note_parsed_name(node, location, true);
+        note_parsed_name(node, location, true, !is_splice);
     }
     if (!name_rules.has_rows) {
         return;
@@ -2798,11 +2809,42 @@ void on_member_access(tree node, tree, location_t location, bool is_splice, void
     judge_member_access(node, location, is_splice);
 }
 
-// A reflection of the access class or of a namespace that holds it, and a
-// splice that designates a member of an object.
+// The reflection of a library namespace and the splice of a library entity in
+// a counted file (THE FOLDED NAMES).  The parser gives each other name of a
+// reflect-expression an event of PLUGIN_NAME_USE.  A splice spells no name of
+// the entity that it designates.
+void note_reflection_name(const plugin_reflection_data& data) {
+    tree entity = data.entity;
+    if (entity == NULL_TREE || entity == error_mark_node || !may_count_at(data.location)) {
+        return;
+    }
+    if (TREE_CODE(entity) == NAMESPACE_DECL) {
+        if (counts_folded_name(place_of(data.location, Scope::quarantine))) {
+            record_namespace_name(entity, std::string{}, data.location);
+        }
+        return;
+    }
+    if (data.kind != PLUGIN_SPLICE) {
+        return;
+    }
+    if (TYPE_P(entity)) {
+        entity = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(entity));
+    }
+    if (entity != NULL_TREE) {
+        note_parsed_name(entity, data.location, false, false);
+    }
+}
+
+// A reflection and a splice: the names of THE FOLDED NAMES, a reflection of
+// the access class or of a namespace that holds it, and a splice that
+// designates a member of an object.
 void on_reflection(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_reflection_data*>(gcc_data);
     if (data == nullptr) {
+        return;
+    }
+    note_reflection_name(*data);
+    if (!name_rules.has_rows) {
         return;
     }
     build_name_rules();
@@ -3495,6 +3537,7 @@ void register_owner(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_MEMBER_ACCESS, direct_callback<plugin_member_access_func>(on_member_access),
                       nullptr);
     register_callback(plugin_name, PLUGIN_USING_FORM, on_using_form, nullptr);
+    register_callback(plugin_name, PLUGIN_REFLECTION, on_reflection, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_decl_names, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type_names, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function_folded, nullptr);
@@ -3504,7 +3547,6 @@ void register_owner(const char* plugin_name) {
     if (!name_rules.has_rows) {
         return;
     }
-    register_callback(plugin_name, PLUGIN_REFLECTION, on_reflection, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function_names, nullptr);
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_names, nullptr);
 }

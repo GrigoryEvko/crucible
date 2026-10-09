@@ -1943,7 +1943,28 @@ inline bool is_inside_system_assert(location_t location) {
     return false;
 }
 
-// A finding of the quarantine rule, at a place in a quarantined file.
+// The place where a different quarantined file expands a macro whose body
+// spells the token at LOCATION, when PLACE, the place of the token, is in a
+// quarantined file.  A finding in the body of a macro of a quarantined file
+// also counts at each place that expands the macro in another quarantined
+// file, so a new expansion in a new file is a new finding.  A token of a macro
+// argument stands in the file that expands the macro, and it gets no second
+// place.  The result has no file when there is no such place.
+inline Place expansion_place_of(location_t location, const Place& place) {
+    if (place.file_class != FileClass::quarantined || !linemap_location_from_macro_expansion_p(line_table, location)) {
+        return Place{};
+    }
+    Place expansion =
+        place_of(linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr), Scope::quarantine);
+    if (expansion.file_class != FileClass::quarantined || expansion.file == place.file) {
+        return Place{};
+    }
+    return expansion;
+}
+
+// A finding of the quarantine rule, at a place in a quarantined file, and at
+// each place that expands the macro of the place in another quarantined file
+// (expansion_place_of).
 inline void record(Kind kind, location_t location, const std::string& entity) {
     if (is_inside_system_assert(location)) {
         return;
@@ -1951,6 +1972,9 @@ inline void record(Kind kind, location_t location, const std::string& entity) {
     Place place = place_of(location, Scope::quarantine);
     if (place.file_class == FileClass::quarantined) {
         add_finding(kind, nullptr, place, entity);
+        if (Place expansion = expansion_place_of(location, place); expansion.file != nullptr) {
+            add_finding(kind, nullptr, expansion, entity);
+        }
     }
 }
 
@@ -1960,8 +1984,9 @@ inline void record(Kind kind, location_t location, const std::string& entity) {
 // base file that is no file of the language (THE BASE KINDS).  Each other kind
 // is no finding in a base file, because the base holds the raw pointers, the
 // arrays and the builtins of its families.  The caller decides the admission
-// with the admit rows of the file that holds LOCATION.  PENDING is the admit
-// row of a finding of the kind replace-pending, or null.
+// with the admit rows of the file that holds LOCATION, and a finding of a
+// quarantined file also counts at each place of expansion_place_of.  PENDING
+// is the admit row of a finding of the kind replace-pending, or null.
 inline void record_library_kind(Kind kind, const AdmitRow* pending, location_t location, const std::string& entity) {
     if (is_inside_system_assert(location)) {
         return;
@@ -1969,6 +1994,9 @@ inline void record_library_kind(Kind kind, const AdmitRow* pending, location_t l
     Place place = place_of(location, Scope::quarantine);
     if (place.file_class == FileClass::quarantined || language_of(place) != nullptr) {
         add_finding(language_kind(kind, place), pending, place, entity);
+        if (Place expansion = expansion_place_of(location, place); expansion.file != nullptr) {
+            add_finding(kind, pending, expansion, entity);
+        }
     }
 }
 

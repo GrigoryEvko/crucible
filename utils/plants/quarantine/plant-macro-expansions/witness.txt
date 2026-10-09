@@ -1,0 +1,20 @@
+# A finding in the body of a macro of a quarantined header counts in the body,
+# and at each place where a different quarantined file expands the macro
+# (expansion_place_of of plugin.h): the unit expands HELPER_MAKE_CELLS on lines
+# 12 and 16.  The call of size is spelled in the unit.  The walk gives the call
+# of has_value in each argument of HELPER_REQUIRE the place of the ! on line 13
+# of the header, and the walked name of each expansion claims the parsed name
+# of its argument, so each expansion on lines 20 and 21 is one use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use quarantine std-entity include/crucible/Helper.h:9:34 | std::vector
+finding use quarantine std-entity include/crucible/Helper.h:13:13 | std::optional::has_value
+finding use quarantine std-entity src/use.cpp:12:12 | std::vector
+finding use quarantine std-entity src/use.cpp:12:36 | std::vector::size
+finding use quarantine std-entity src/use.cpp:16:12 | std::vector
+finding use quarantine std-entity src/use.cpp:16:36 | std::vector::size
+finding use quarantine std-object src/use.cpp:19:46 | std::optional
+finding use quarantine std-entity src/use.cpp:20:5 | std::optional::has_value
+finding use quarantine std-entity src/use.cpp:21:5 | std::optional::has_value

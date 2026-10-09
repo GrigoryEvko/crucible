@@ -1,9 +1,11 @@
 # A macro body of a claim tree issues getpid, and a unit expands the macro.
 # The finding stands in the macro body, with the holder "macro NAME", so one
-# row admits the body in each file that expands it.
+# row admits the body in each file that expands it.  The finding of the rule
+# quarantine also counts where the unit expands the macro.
 
 compile use src/use.cpp stage=c
 exit use pass
 judge use
 finding use quarantine c-library-call include/crucible/Raw.h:7:38 | getpid
+finding use quarantine c-library-call src/use.cpp:6:27 | getpid
 finding use syscall-capability raw-syscall include/crucible/Raw.h:7:38 | macro CRUCIBLE_PLANT_PID: getpid

@@ -1,0 +1,19 @@
+# A reflection of a namespace names the namespace, as a using-directive does:
+# line 23.  A splice of a library entity is a use of the entity, from the event
+# of the splice (owner.cpp, THE FOLDED NAMES).  The front end folds the splice
+# of a function on line 18 and the splice of a member on line 21, and the walk
+# reads the call of the splice on line 15.  The base query of
+# include/fixy/Find.h finds each entity, so the unit spells no name of it.
+
+compile report reflections.cpp
+flag report -freflection
+exit report pass
+finding report quarantine std-entity reflections.cpp:15:43 | std::terminate
+finding report quarantine std-entity reflections.cpp:18:64 | std::is_eq
+finding report quarantine std-object reflections.cpp:20:30 | std::array
+finding report quarantine std-entity reflections.cpp:21:96 | std::array::size
+finding report quarantine std-entity reflections.cpp:23:52 | std
+
+compile error reflections.cpp mode=error out=no errors=report
+flag error -freflection
+exit error fail

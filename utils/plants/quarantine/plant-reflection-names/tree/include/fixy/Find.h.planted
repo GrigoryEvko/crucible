@@ -1,0 +1,25 @@
+// A base query that finds a member of a namespace or of a class by its
+// identifier.  The quarantined unit splices the result, and its source spells
+// no name of the member.
+
+#pragma once
+
+#include <meta>
+#include <string_view>
+
+namespace fixy {
+
+consteval std::meta::info member_named(std::meta::info scope, std::string_view name) {
+    for (std::meta::info member : std::meta::members_of(scope, std::meta::access_context::current())) {
+        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) {
+            return member;
+        }
+    }
+    return ^^int;
+}
+
+consteval std::meta::info member_of_std(std::string_view name) {
+    return member_named(^^std, name);
+}
+
+}  // namespace fixy
