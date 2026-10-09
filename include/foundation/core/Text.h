@@ -12,7 +12,9 @@
 //
 // A CText comes from a string literal.  The consteval constructor proves the
 // zero at the end and refuses a zero before it, so a reader that stops at the
-// first zero reads each character of the text and no other byte.
+// first zero reads each character of the text and no other byte.  A CText of
+// a path that a program builds at run time comes from
+// foundation::os::PathText, which keeps the same two facts.
 //
 // A TextView comes from a string literal or from an owner of the base, such
 // as FixedText::view().  The constructor from a literal is consteval, so
@@ -53,6 +55,7 @@ void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 // guard keeps each caller outside the base out.
 [[nodiscard]] constexpr char const* text_first_(TextView text) noexcept;
 [[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
+[[nodiscard]] constexpr CText c_text_over_(char const* first, std::size_t size) noexcept;
 
 template <std::size_t Capacity>
 [[nodiscard]] constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept;
@@ -115,6 +118,9 @@ class CText {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     friend constexpr char const* detail::c_text_first_(CText text) noexcept;
+    friend constexpr CText detail::c_text_over_(char const* first, std::size_t size) noexcept;
+
+    constexpr CText(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
 
 public:
     // The empty text.
@@ -179,6 +185,12 @@ constexpr char const* text_first_(TextView text) noexcept { return text.first_; 
 
 // The first character of a CText.  A zero follows its last character.
 constexpr char const* c_text_first_(CText text) noexcept { return text.first_; }
+
+// A CText over the size characters at first.  The caller is an owner of the
+// base that keeps a zero at first[size] and no zero before it, such as
+// foundation::os::PathText or the name of an entry that the kernel writes
+// with its zero.
+constexpr CText c_text_over_(char const* first, std::size_t size) noexcept { return CText{first, size}; }
 
 template <std::size_t Capacity>
 constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept {

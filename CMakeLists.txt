@@ -371,7 +371,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # spawning permission fork, and the formatter of the Report family.  It also
 # holds the door directory of the base floor, src/foundation/os: the raw
 # system call primitive with its start-up check of the kernel, the sink write
-# of the Report family and the file door.  `fixy` is a static library for the same reason: it holds
+# of the Report family, the file door and the directory door.  `fixy` is a
+# static library for the same reason: it holds
 # the cold bodies of fixy headers, the probe of the machine topology and the
 # door that starts the stage threads of a pipeline.
 add_library(foundation STATIC
@@ -381,6 +382,7 @@ add_library(foundation STATIC
   src/foundation/PermissionFork.cpp
   src/foundation/Platform.cpp
   src/foundation/core/Report.cpp
+  src/foundation/os/Directory.cpp
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp
   src/foundation/os/Intercepted.cpp

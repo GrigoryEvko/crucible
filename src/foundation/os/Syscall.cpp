@@ -33,6 +33,7 @@ namespace foundation::os {
 static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FDCWD of <linux/fcntl.h>");
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenCloseOnExec == O_CLOEXEC, "kOpenCloseOnExec is not O_CLOEXEC of <linux/fcntl.h>");
+static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
 
 namespace {
 
@@ -53,10 +54,30 @@ constexpr long kNoCall = -1;
             return __NR_close;
         case Syscall::uname:
             return __NR_uname;
+        case Syscall::getdents64:
+            return __NR_getdents64;
+        case Syscall::sched_getaffinity:
+            return __NR_sched_getaffinity;
         default:
             return kNoCall;
     }
 }
+
+// Each enumerator has its number, so no call of the enumeration reaches the
+// kernel as a number that no call has.  The walk reads each enumerator, so a
+// new enumerator with no case stops the build here.
+[[nodiscard]] consteval bool each_call_has_a_number() noexcept {
+    for (std::meta::info const enumerator : std::meta::enumerators_of(^^Syscall)) {
+        if (number_of(std::meta::extract<Syscall>(enumerator)) == kNoCall) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static_assert(each_call_has_a_number(),
+              "an enumerator of foundation::os::Syscall has no case in number_of: give it the __NR_ number of "
+              "<asm/unistd.h>");
 
 // The one system call instruction.  The kernel reads the number and the six
 // words from fixed registers, and it gives the result in one register.  Each
@@ -124,6 +145,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::write:
         case Syscall::close:
         case Syscall::uname:
+        case Syscall::getdents64:
+        case Syscall::sched_getaffinity:
         default:
             break;
     }

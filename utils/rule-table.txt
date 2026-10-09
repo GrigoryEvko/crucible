@@ -232,6 +232,7 @@ door <asm-generic/errno-base.h> src/foundation/os/Syscall.cpp
 door <linux/utsname.h> src/foundation/os/Syscall.cpp
 door <asm/errno.h> src/foundation/os/Errno.cpp
 door <linux/fcntl.h> src/foundation/os/Syscall.cpp
+door <linux/auxvec.h> src/fixy/os/Topology.cpp
 door <linux/io_uring.h> include/fixy/os/Io.h
 door <sys/sendfile.h> include/fixy/os/Io.h
 door <linux/mempolicy.h> include/fixy/os/NumaPlacement.h
@@ -529,6 +530,10 @@ witness <foundation/core/Region.h> private | foundation::core::ViewCursor<int> |
 # A TextView comes only from a literal or from an owner of the base layer,
 # so no pointer and no count that a caller holds become a TextView.
 witness <foundation/core/Text.h> private | foundation::core::TextView | foundation::core::TextView{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()}
+# A CText comes only from a literal or from an owner of the base layer that
+# keeps a zero after its last character, so no pointer that a caller holds
+# becomes a CText.
+witness <foundation/core/Text.h> private | foundation::core::CText | foundation::core::CText{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

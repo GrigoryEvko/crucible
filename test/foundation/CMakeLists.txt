@@ -2045,9 +2045,17 @@ foundation_neg_compile_test(neg_core_fill_const
 # ── The door directory of the base floor: foundation/os ───────────────
 #
 # The file door reads a file of /proc into a FixedText, gives the error of
-# the open and of the read, and closes each descriptor.  The kernel floor
-# judges each kind of release text.
+# the open and of the read, and closes each descriptor.  The directory door
+# lists /proc/self, stops when the visitor asks, and closes each descriptor.
+# A PathText refuses an append that does not fit and a zero byte.  The
+# kernel floor judges each kind of release text.
 foundation_test(test_os_floor)
+
+# The CText of a temporary PathText would point into an object that the
+# full expression ends.
+foundation_neg_compile_test(neg_os_path_text_of_temporary
+  "use of deleted function .*foundation::os::PathText<Capacity>::c_text\\(\\) const &&"
+  "a CText of a temporary PathText points into an object that the full expression ends")
 
 # ── The attack ledger of the primitive families ───────────────────────
 #

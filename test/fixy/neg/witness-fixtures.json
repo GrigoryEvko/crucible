@@ -142,6 +142,11 @@
       "constructor": "\\bBox\\("
     },
     {
+      "name": "neg_witness_core_ctext_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCText\\("
+    },
+    {
       "name": "neg_witness_core_optioncursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOptionCursor\\("
@@ -849,6 +854,10 @@
     },
     {
       "type": "foundation::core::TextView",
+      "header": "foundation/core/Text.h"
+    },
+    {
+      "type": "foundation::core::CText",
       "header": "foundation/core/Text.h"
     },
     {

@@ -12,7 +12,8 @@
 //
 // The probe runs one time for each process.  Its body, with the sysfs
 // reads and the three parsers below, is in src/fixy/os/Topology.cpp
-// in the library fixy, so an includer compiles none of it.
+// in the library fixy, so an includer compiles none of it.  The probe
+// reads through the file door and the directory door of foundation/os.
 
 #include <fixy/Core.h>
 #include <foundation/Pinned.h>
@@ -261,9 +262,7 @@ private:
     // the defaults in place rather than propagating out.
     explicit Topology(std::string_view sysfs_root) noexcept;
 
-#if __has_include(<filesystem>)
     void probe_linux_(std::string_view sysfs_root) noexcept;
-#endif
 };
 
 }  // namespace fixy::concurrent

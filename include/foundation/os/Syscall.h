@@ -21,8 +21,8 @@
 //   and src/fixy/os.  Each call is also the kind raw-syscall of that rule,
 //   and the ledger of the rule gives the capability claim of each call.
 //
-//   The deny rows of the rule table hold each system call that the base never
-//   issues raw, because the C library owns its state: the signal calls, the
+//   The deny rows of the rule table hold each system call that the base does
+//   not issue raw, because the C library owns its state: the signal calls, the
 //   thread and process starts, the thread and TLS state, the credentials, the
 //   program break and the exits.  The enumeration names none of them, and the
 //   rule syscall-capability refuses a raw call of one (denied-syscall).
@@ -56,6 +56,8 @@ enum class Syscall : std::uint8_t {
     openat,
     close,
     uname,
+    getdents64,
+    sched_getaffinity,
 };
 
 // True when the call can wait with no bound for another process, for example
