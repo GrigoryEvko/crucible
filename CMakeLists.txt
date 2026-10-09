@@ -305,6 +305,17 @@ include(cmake/BuildLauncher.cmake)
 # artifact-links reads the maps.
 include(cmake/LinkMap.cmake)
 
+# Each link of the tree gets the run path of the libstdc++ of the toolchain,
+# also a target that does not link crucible_dialect, such as a test of
+# test/ct.  The toolchain file sets CRUCIBLE_TOOLCHAIN_RUN_PATH on each
+# configure (cmake/ToolchainRunPath.cmake), so an edit of the run path reaches
+# each build directory with a plain configure.  The option applies to each
+# target after this line, so it comes before the first target.  A configure
+# with no toolchain file gives no run path.
+if(DEFINED CRUCIBLE_TOOLCHAIN_RUN_PATH)
+  add_link_options("LINKER:-rpath,${CRUCIBLE_TOOLCHAIN_RUN_PATH}")
+endif()
+
 # Ninja starts the compiles of the targets in cmake/compile-first.txt before
 # the other compiles of the tests.  The file defers its work to the end
 # of this directory, when each target exists.

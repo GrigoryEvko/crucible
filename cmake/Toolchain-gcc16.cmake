@@ -107,13 +107,7 @@ set(CMAKE_RANLIB       "${_crucible_ranlib}" CACHE FILEPATH "Crucible patched gc
 # which is not on the system path. The rpath is derived from the resolved
 # prefix so it always matches the compiler that produced the binary.
 # `setup gcc` configures GCC with --prefix=<prefix>/usr, so the libraries of
-# the compiler are in <prefix>/usr/lib64 only.
-set(_crucible_rpath "-Wl,-rpath,${_crucible_prefix}/usr/lib64")
-
-# Use the *_INIT variants: these seed the cache without clobbering preset- or
-# command-line-supplied CMAKE_*_LINKER_FLAGS, and compose with per-preset flags.
-# CMake seeds the cache only at the first configure of a build directory.  A
-# change of the rpath reaches an existing build directory after `cmake --fresh`.
-set(CMAKE_EXE_LINKER_FLAGS_INIT    "${_crucible_rpath}")
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_crucible_rpath}")
-set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_crucible_rpath}")
+# the compiler are in <prefix>/usr/lib64 only.  The root CMakeLists.txt gives
+# each link the rpath (cmake/ToolchainRunPath.cmake).
+include("${CMAKE_CURRENT_LIST_DIR}/ToolchainRunPath.cmake")
+crucible_toolchain_run_path("${_crucible_prefix}" "${_crucible_prefix}/usr/lib64")

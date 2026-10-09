@@ -83,7 +83,7 @@ if(_crucible_cross_qemu)
 endif()
 
 # The libstdc++ of the cross compiler, for a program that the emulator runs.
-set(_crucible_cross_rpath "-Wl,-rpath,${_crucible_cross_prefix}/usr/${_crucible_cross_triplet}/lib64")
-set(CMAKE_EXE_LINKER_FLAGS_INIT    "${_crucible_cross_rpath}")
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "${_crucible_cross_rpath}")
-set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_crucible_cross_rpath}")
+# The root CMakeLists.txt gives each link this rpath (cmake/ToolchainRunPath.cmake).
+include("${CMAKE_CURRENT_LIST_DIR}/ToolchainRunPath.cmake")
+crucible_toolchain_run_path("${_crucible_cross_prefix}"
+                            "${_crucible_cross_prefix}/usr/${_crucible_cross_triplet}/lib64")
