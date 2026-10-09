@@ -71,9 +71,9 @@ import signal
 from pathlib import Path
 from types import FrameType
 
+from assay.core import proc, testing
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.core import testing
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.mutation import run as mutation_run
@@ -81,7 +81,7 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import tsast
 
 RULE = "gate-mutants"
-JOBS = max(1, min(32, (os.cpu_count() or 1) // 4))
+JOBS = max(1, min(proc.DEFAULT_JOBS, (os.cpu_count() or 1) // 4))
 NEGATIVE_CAP = 80
 SYNTAX_CAP = 12
 RUN_CAP = 4

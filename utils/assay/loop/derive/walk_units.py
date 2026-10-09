@@ -65,7 +65,7 @@ UNIT_PARENT = "/test/layer/walk_units"
 INCLUDE_FLAG = "-I"
 OUTPUT_FLAG = "-o"
 # The default number of measure compiles at one time.
-MEASURE_JOBS = 96
+MEASURE_JOBS = proc.DEFAULT_JOBS
 # The default number of measures of each unit.
 MEASURE_RUNS = 1
 GIGA = 1e9

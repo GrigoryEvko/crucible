@@ -102,7 +102,7 @@ INCLUDE = "include"
 HEADER_SUFFIXES = (".h", ".hpp")
 # The runs of each measure.  The median of three is the rule of the gauge.
 MEASURE_RUNS = 3
-MEASURE_JOBS = 96
+MEASURE_JOBS = proc.DEFAULT_JOBS
 # The instructions of one G, the unit of a measure (THE ROWS).
 GIGA = 10**9
 # The unit word of a measure cell.

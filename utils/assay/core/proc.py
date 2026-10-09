@@ -90,6 +90,15 @@ THE TWO STARTS OUTSIDE THIS MODULE
     the build tool or ctest owns the life of the step, and RLIMIT_CPU of the
     meter stops a step that runs away.
 
+THE JOB COUNT
+    DEFAULT_JOBS is the one default of the parallel work of the package: a
+    build, a test run, a parse build and the compiles of a measure.  The build
+    presets and the test presets of CMakePresets.json give the same count.
+    The build host runs large virtual machines beside the tree, so the count
+    is low.  On 2026-10-09 the host held 22 GB of available memory with no
+    build, and a compile of the tree can take 1.3 GB.  Give -j N or --jobs N
+    for a larger count when the host has the memory.
+
 WHY THE MODULE IMPORTS LITTLE
     loop fixture runs for each negative fixture of each test run, and it
     imports this module.  So the module imports only os and time at its top,
@@ -108,6 +117,8 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     import subprocess
 
+# The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).
+DEFAULT_JOBS = 16
 # The time limits of three classes of work, in seconds (THE TIME LIMIT).
 QUICK_S = 120.0
 TOOL_S = 900.0

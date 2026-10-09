@@ -154,8 +154,8 @@ Every unit obeys these instructions. The brief of each unit repeats them.
 
 - **Run every command in the foreground.** A command must block until it ends. Use a timeout of up to 600,000 ms, and split a long step into several calls. Never start a Monitor. Never end the turn while a command runs. Each stop sends the owner a notification.
 - Report only once, in the final report. Send an interim message only for a question that blocks the unit.
-- Run `free -g` before each heavy command. Wait while the available memory is below 64 GB (section 20.2).
-- Build with the job count that the stage gives. The default is 96 jobs or more for each unit, and at most six heavy units run at the same time (section 20.2).
+- Run `free -g` before each heavy command. Wait while the available memory is below the level of section 20.2.
+- Build with the job count that the stage gives. The default is 16 jobs for each unit, and one heavy unit runs at a time (section 20.2).
 - Never `nice` a ctest run.
 
 ### 5.4 Checks before landing
@@ -2292,11 +2292,11 @@ The owner approved each decision of this table on 2026-10-03 (D15). The first co
 
 | Situation | Units at the same time | Jobs for each unit |
 |---|---|---|
-| one unit alone on the host | 1 | 96 jobs or more |
-| a wave of heavy units | at most 6 | 96 jobs or more, for builds and for ctest (the owner set 96 as the default on 2026-10-02) |
+| one unit alone on the host | 1 | 16 jobs |
+| a wave of heavy units | 1 at a time, under one shared lock | 16 jobs, for builds and for ctest (the owner set 16 as the default on 2026-10-09, because large virtual machines now share the host; the default was 96 from 2026-10-02) |
 | a wave with read-only units | the heavy limit plus any number of read-only units | read-only units run no build |
 
-Before each heavy command, run `free -g`. Wait while the "available" column is below 64 GB.
+`DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` hold the default. Before each heavy command, run `free -g`. Wait while the "available" column is below 16 GB.
 
 ### 20.3 What can run together
 

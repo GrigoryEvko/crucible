@@ -42,7 +42,7 @@ Usage
                       [--timeout S] [--no-tests]
     guard selftest loop.gauge_cold
 
-    --jobs N         The parallelism of the build and the tests.  The default is 96
+    --jobs N         The parallelism of the build and the tests.  The default is DEFAULT_JOBS of assay.core.proc
     --preset NAME    The configure preset.  The default is default
     --build-dir DIR  The build directory.  The default is ROOT/build-gauge
     --target NAME    Build NAME and not `all`.  Give it again for more targets
@@ -77,7 +77,7 @@ from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_files
 from assay.setup import pins as cmake_pin
 
-DEFAULT_JOBS = 96
+DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_TIMEOUT_S = 900
 DEFAULT_BUILD_NAME = "build-gauge"
 REPORT_NAME = "gauge-report.txt"

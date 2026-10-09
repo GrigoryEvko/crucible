@@ -37,7 +37,7 @@ THE COLLECTION
 
 THE ENVIRONMENT
     CRUCIBLE_PGO_DIR            The profile root.  The preset value is ROOT/pgo
-    CRUCIBLE_PGO_JOBS           The build parallelism.  The default is 96
+    CRUCIBLE_PGO_JOBS           The build parallelism.  The default is DEFAULT_JOBS of assay.core.proc
     CRUCIBLE_PGO_BENCH_TIMEOUT  The time limit of each bench, in seconds.  The default is 900
     CRUCIBLE_PGO_SKIP           Bench names to skip: shell patterns of fnmatch, with a comma between two patterns
 
@@ -68,7 +68,7 @@ from assay.setup import pins as cmake_pin
 
 PRESET = "pgo-generate"
 BUILD_DIR_NAME = "build-pgo-generate"
-DEFAULT_JOBS = 96
+DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_BENCH_TIMEOUT_S = 900
 BENCH_FOLDER = "crucible_bench"
 COUNTER_SUFFIX = ".gcda"

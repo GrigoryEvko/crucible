@@ -123,7 +123,7 @@ INPUT_TIMEOUT_S = 1800.0
 # The lines of the errors of a unit that the run prints.
 SHOWN_ERROR_LINES = 12
 # The parses at one time: the default of -j, and the PROCESSORS of the test of a rule that runs a parse build.
-JOBS = 96
+JOBS = proc.DEFAULT_JOBS
 # The presets of the parse builds that a change of an arm makes necessary (THE CHANGE OF AN ARM).
 PARSE_PRESETS = ("syntax-x86-64-v3", "syntax-aarch64")
 # The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
