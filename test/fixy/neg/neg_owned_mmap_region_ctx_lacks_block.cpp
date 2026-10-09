@@ -3,7 +3,7 @@
 // context that owns IO and Block.  A context with IO and no Block is
 // refused.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

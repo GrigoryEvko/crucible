@@ -2,7 +2,7 @@
 // pinned one, and it is refused here, at the rule the caller violated,
 // rather than one layer deeper on the duplicate-mode clause.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

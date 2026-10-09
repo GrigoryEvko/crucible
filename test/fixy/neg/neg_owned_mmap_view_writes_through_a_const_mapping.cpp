@@ -1,7 +1,7 @@
 // A const mapping gives only a View of const elements.  A View that writes
 // needs a mutable borrow of the mapping.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 namespace {
 struct Region {

@@ -2,7 +2,7 @@
 // PROT_* word of a tag from a variable template maps whatever word a
 // specialization writes, and this file writes PROT_WRITE | PROT_EXEC for
 // a class of its own.  The PROT_* word of each tag is a row of a closed
-// table in fixy/OwnedMmap.h, and no variable template holds it, so the
+// table in fixy/os/OwnedMmap.h, and no variable template holds it, so the
 // specialization names nothing.
 //
 // The static_assert names the gate of the table, and it shows that the

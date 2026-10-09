@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 #include <cstddef>
 #include <cstdint>

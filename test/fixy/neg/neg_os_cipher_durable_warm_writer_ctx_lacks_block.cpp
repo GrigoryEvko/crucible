@@ -1,7 +1,7 @@
 // The warm writer opens a file, so its gate folds the stance atoms into
 // CtxFitsFileMint and a context without Block is refused.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

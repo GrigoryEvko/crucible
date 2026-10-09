@@ -41,7 +41,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 #include <fixy/Refined.h>
 
 namespace crucible {

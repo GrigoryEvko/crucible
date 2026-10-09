@@ -1,7 +1,7 @@
 // mint_temporary_file creates a stream in the file system, which is IO.
 // The foreground context owns no effect, so the gate refuses it.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

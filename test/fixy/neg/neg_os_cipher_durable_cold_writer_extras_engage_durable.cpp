@@ -1,7 +1,7 @@
 // cold_writer_stance pins the sync to Fsync.  An extra that engages the
 // durability axis is refused at the stance rule.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

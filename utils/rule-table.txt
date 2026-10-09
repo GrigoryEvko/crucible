@@ -623,14 +623,14 @@ witness <fixy/os/Sched.h> deleted | fixy::sched::SchedProofDoor | fixy::sched::S
 # are private, and apply_affinity_to_mask, which makes the pin, is the sole
 # friend.
 witness <fixy/os/Sched.h> private | fixy::sched::PriorAffinity | fixy::sched::PriorAffinity{}
-witness <fixy/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}}
+witness <fixy/os/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}}
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
 # `OwnedFile{stdin}` close standard input.  The constructor is private.
 # OwnedFileDoor does the fopen and the tmpfile for the two mints, so a
 # handle exists only over a stream libc returned.  No object of the door
 # exists.
-witness <fixy/OwnedFile.h> private | fixy::OwnedFile | fixy::OwnedFile{stdout}
-witness <fixy/OwnedFile.h> deleted | fixy::OwnedFileDoor | fixy::OwnedFileDoor{}
+witness <fixy/os/OwnedFile.h> private | fixy::OwnedFile | fixy::OwnedFile{stdout}
+witness <fixy/os/OwnedFile.h> deleted | fixy::OwnedFileDoor | fixy::OwnedFileDoor{}
 witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # The three doors of OwnedFd.  No object of a door exists, its members

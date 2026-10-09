@@ -11,7 +11,7 @@
 // a node id and never uses it as a position.
 //
 // The probe runs one time for each process.  Its body, with the sysfs
-// reads and the three parsers below, is in src/fixy/concurrent/Topology.cpp
+// reads and the three parsers below, is in src/fixy/os/Topology.cpp
 // in the library fixy, so an includer compiles none of it.
 
 #include <fixy/Core.h>

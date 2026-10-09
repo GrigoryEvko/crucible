@@ -9,7 +9,7 @@
 # directories neg/ count the sites of the negative-compile fixtures, which no build compiles.
 format 1
 rule erased-brand
-include/fixy/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
+include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
 include/fixy/session/Payload.h | erased-brand | 1 | foundation::permissions::LentPermission | -
 include/fixy/session/Payload.h | erased-brand | 6 | foundation::permissions::Permission | -
 include/fixy/session/Payload.h | erased-brand | 7 | foundation::permissions::ReadLoan | -

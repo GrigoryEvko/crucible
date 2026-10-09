@@ -3,7 +3,7 @@
 // sanitizer, and there is no conversion between the two tags: the
 // laundering is the only edge.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

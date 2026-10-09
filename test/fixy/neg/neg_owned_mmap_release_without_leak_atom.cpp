@@ -4,7 +4,7 @@
 // atom catalog rather than a trait a translation unit could specialize,
 // so this door cannot be opened from outside.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 #include <utility>
 

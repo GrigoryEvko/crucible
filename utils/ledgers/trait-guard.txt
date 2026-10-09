@@ -45,9 +45,9 @@ include/fixy/Fn.h | open-read | 1 | fixy::detail::binding_row::of_ | -
 include/fixy/Fn.h | open-read | 1 | fixy::detail::role::is_accepted_fn | -
 include/fixy/Fn.h | open-read | 3 | fixy::is_fn_v | -
 include/fixy/Machine.h | open-read | 1 | fixy::machine_transition_v | -
-include/fixy/OwnedMmap.h | open-read | 1 | fixy::atom_pack::detail::atoms_row_ | -
-include/fixy/OwnedMmap.h | open-read | 2 | fixy::atom_pack::has_row | -
-include/fixy/OwnedMmap.h | open-read | 1 | fixy::atom_pack::names_tag | -
+include/fixy/os/OwnedMmap.h | open-read | 1 | fixy::atom_pack::detail::atoms_row_ | -
+include/fixy/os/OwnedMmap.h | open-read | 2 | fixy::atom_pack::has_row | -
+include/fixy/os/OwnedMmap.h | open-read | 1 | fixy::atom_pack::names_tag | -
 include/fixy/OwnedRegion.h | open-read | 1 | fixy::is_owned_region_v | -
 include/fixy/Refined.h | open-read | 1 | fixy::refined::bound_fits | -
 include/fixy/Reject.h | open-read | 1 | fixy::collision::rules_of | -
@@ -214,9 +214,9 @@ test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::relax | -
 test/layer/checks/fixy/Budgeted.cpp | open-read | 1 | fixy::mint_budget_authority | -
 test/layer/checks/fixy/EpochVersioned.cpp | open-read | 1 | fixy::mint_version_source | -
 test/layer/checks/fixy/EpochVersioned.cpp | open-read | 2 | fixy::select_fresher | -
-test/layer/checks/fixy/OwnedFile.cpp | open-read | 2 | fixy::OwnedFile::release | -
-test/layer/checks/fixy/OwnedMmap.cpp | open-read | 1 | fixy::OwnedMmap | -
-test/layer/checks/fixy/Path.cpp | open-read | 1 | fixy::sanitize::path_traversal::sanitize_path_no_dotdot | -
+test/layer/checks/fixy/os/OwnedFile.cpp | open-read | 2 | fixy::OwnedFile::release | -
+test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | fixy::OwnedMmap | -
+test/layer/checks/fixy/os/Path.cpp | open-read | 1 | fixy::sanitize::path_traversal::sanitize_path_no_dotdot | -
 test/layer/checks/fixy/ScopedView.cpp | open-read | 1 | fixy::mint_linear_view | -
 test/layer/checks/fixy/ScopedView.cpp | open-read | 1 | fixy::mint_view | -
 test/layer/checks/fixy/Witnessed.cpp | open-read | 1 | fixy::mint_witnessed_under | -

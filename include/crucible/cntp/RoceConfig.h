@@ -6,7 +6,7 @@
 
 #include <crucible/cntp/Pacing.h>
 #include <fixy/Ctx.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/Fs.h>

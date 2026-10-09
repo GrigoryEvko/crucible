@@ -31,7 +31,7 @@
 //     with, and the stance is a claim about those flags.  Only the mint
 //     that chose them can make it.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/Fs.h>

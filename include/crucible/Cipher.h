@@ -19,7 +19,7 @@
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <fixy/Bands.h>
 #include <fixy/Mutation.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>

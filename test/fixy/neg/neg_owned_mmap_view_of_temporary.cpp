@@ -2,7 +2,7 @@
 // the end of the full expression, and the View would dangle, so the
 // rvalue overload of view() is deleted.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 namespace {
 struct Region {

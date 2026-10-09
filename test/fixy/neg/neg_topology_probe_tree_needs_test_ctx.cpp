@@ -5,7 +5,7 @@
 // owns the Test capability reaches it.  A background context owns Bg and
 // no Test, and is refused.
 
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 

@@ -961,15 +961,15 @@
     },
     {
       "type": "fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>",
-      "header": "fixy/OwnedMmap.h"
+      "header": "fixy/os/OwnedMmap.h"
     },
     {
       "type": "fixy::OwnedFile",
-      "header": "fixy/OwnedFile.h"
+      "header": "fixy/os/OwnedFile.h"
     },
     {
       "type": "fixy::OwnedFileDoor",
-      "header": "fixy/OwnedFile.h"
+      "header": "fixy/os/OwnedFile.h"
     },
     {
       "type": "fixy::io::IoUringRing",

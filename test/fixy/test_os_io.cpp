@@ -17,7 +17,7 @@
 // defect in this code, and a test that fails on them reports the
 // environment rather than the tree.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
 

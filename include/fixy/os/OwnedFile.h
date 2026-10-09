@@ -7,7 +7,7 @@
 // close the standard input of the process at the end of its scope, and
 // nothing in that line shows the risk.  It also lets two handles hold one
 // stream, and the stream then closes two times.  So the constructor is
-// private, as the constructor of fixy/OwnedMmap.h from an address is.
+// private, as the constructor of fixy/os/OwnedMmap.h from an address is.
 // OwnedFileDoor below is its one caller.  The door opens the stream
 // itself, so each stream that this class holds came from std::fopen or
 // std::tmpfile.

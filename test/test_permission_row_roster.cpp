@@ -121,7 +121,7 @@ constexpr RosterEntry kEmptyRowRoster[] = {
      "the metrics channel names the brand of its reader root, so a root of another brand opens no reader"},
     {"crucible::ledger::probe_detail::ProbeRegionTag",
      "a region tag of the probe map door, which mints the root, and a root maps no memory"},
-    {"fixy::detail::DummyTag", "a sample tag of fixy/OwnedMmap.h, which its checks and a test read"},
+    {"fixy::detail::DummyTag", "a sample tag of fixy/os/OwnedMmap.h, which its checks and a test read"},
     {"fixy::detail::owned_region_test_tag", "a self-test tag of fixy/OwnedRegion.h"},
     {"fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag",
      "a witness tag of fixy/concurrent/SwmrSession.h"},

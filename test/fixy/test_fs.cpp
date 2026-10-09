@@ -11,8 +11,8 @@
 // the test removes on the way out.  What the kernel can refuse — an
 // unwritable /tmp — is skipped rather than failed.
 
-#include <fixy/OwnedFile.h>
-#include <fixy/Path.h>
+#include <fixy/os/OwnedFile.h>
+#include <fixy/os/Path.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 

@@ -2,7 +2,7 @@
 // move of the handle.  A call on a named handle that it does not move is
 // refused, even with a leak atom as the witness.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <cstdio>
 

@@ -1,6 +1,6 @@
-// The compile-time checks of fixy/Path.h.
+// The compile-time checks of fixy/os/Path.h.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 
 namespace fixy::detail::path_self_test {
 

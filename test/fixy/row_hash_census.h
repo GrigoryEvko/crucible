@@ -47,7 +47,7 @@
 #include <fixy/concurrent/StageShape.h>
 #include <fixy/concurrent/SubstrateSessionBridge.h>
 #include <fixy/concurrent/SwmrSession.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/ConstantTime.h>
 #include <fixy/Corpus.h>
@@ -80,10 +80,10 @@
 #include <fixy/os/SpinLock.h>
 #include <fixy/os/ThreadName.h>
 #include <fixy/os/Time.h>
-#include <fixy/OwnedFile.h>
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedFile.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/OwnedRegion.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
 #include <fixy/Reject.h>

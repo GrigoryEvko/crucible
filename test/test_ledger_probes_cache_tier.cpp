@@ -5,7 +5,7 @@
 #include <crucible/ledger/probes/CacheTier.h>
 
 #include <fixy/Core.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/NumaCounters.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>

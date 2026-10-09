@@ -16,7 +16,7 @@
 // path and the parse are in src/fixy/os/NumaCounters.cpp.
 
 #include <fixy/Core.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/os/Fs.h>

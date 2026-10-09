@@ -12,7 +12,7 @@
 
 #include <fixy/OwnedRegion.h>
 #include <fixy/concurrent/ParallelismRule.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/Spawn.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

@@ -46,7 +46,7 @@
 //     not rely on the one inside mint_file.  A constraint failure a
 //     layer down is a hard error at the call site.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>

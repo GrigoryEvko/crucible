@@ -51,7 +51,7 @@
 #include <crucible/ledger/Ledger.h>
 #include <crucible/ledger/ProbeSettings.h>
 #include <fixy/Core.h>
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
 #include <foundation/Platform.h>

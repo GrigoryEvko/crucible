@@ -1,6 +1,6 @@
 // The cold writer opens a file, so a context without Block is refused.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

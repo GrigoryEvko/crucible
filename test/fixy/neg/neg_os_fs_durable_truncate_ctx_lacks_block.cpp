@@ -1,7 +1,7 @@
 // mint_durable_truncate_file carries its own requires-clause, so a
 // context without Block is refused here rather than inside mint_file.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

@@ -29,7 +29,7 @@
 // and the read can wait on the kernel.  The gate is fixy::CtxFitsFileOpen.
 // Only the two parsers take no context.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 

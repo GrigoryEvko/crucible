@@ -24,7 +24,7 @@
 
 #include <crucible/ledger/HostFingerprint.h>
 #include <fixy/Bits.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <foundation/effects/Ctx.h>
 
 #include <algorithm>

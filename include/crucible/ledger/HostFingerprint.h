@@ -39,10 +39,10 @@
 #include <crucible/mimic/CogMimic.h>
 #include <fixy/Bits.h>
 #include <fixy/Ctx.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/Fs.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>

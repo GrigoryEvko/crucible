@@ -1,6 +1,6 @@
-// The compile-time checks of fixy/OwnedMmap.h.
+// The compile-time checks of fixy/os/OwnedMmap.h.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 namespace fixy {
 

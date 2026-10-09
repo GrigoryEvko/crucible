@@ -879,7 +879,7 @@ At the end of the migration, the families of §XXII replace each row of these ta
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason |
+| Exceptions | **not a flag** — the rule `artifact-symbols` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/os/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and a row `throw` of `utils/ledgers/artifact-symbols.txt` admits the function of each other such throw, with its reason |
 | RTTI | **not a flag** — the rule `artifact-symbols` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that a row `vtable` of `utils/ledgers/artifact-symbols.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
@@ -1723,7 +1723,7 @@ The working set is the saturated sum of the read and written bytes. The factor r
 
 The promise: **never regresses**. If the rule says sequential, parallel must not be measurably faster (within 5%, measured by `bench/bench_no_regression.cpp`). If it says parallel, the speedup must justify the sync cost.
 
-`fixy::concurrent::Topology` (`include/fixy/concurrent/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/os/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
+`fixy::concurrent::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/os/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
 
 #### Decision matrix — which Permission primitive
 
@@ -2558,7 +2558,7 @@ that an includer does not compile them: the abort of `Permission.h` in
 `src/foundation/Permission.cpp`, and the thread start of
 `foundation/permissions/ForkTasks.h` in `src/foundation/PermissionFork.cpp`. Two
 cold bodies are in the library `fixy`: the sysfs probe of
-`fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`, and the door
+`fixy/os/Topology.h` in `src/fixy/os/Topology.cpp`, and the door
 of `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`. The door starts the
 stage threads of `fixy/concurrent/Pipeline.h` and the workers of
 `fixy/os/Spawn.h`, and it calls the thread start of `ForkTasks.h`, so the tree
@@ -3064,9 +3064,9 @@ A raw system call has no fallback of the C library. `foundation::os::minimum_ker
 
 At this time, base files include 9 system headers that have no `door` row: `<fcntl.h>`, `<pthread.h>`, `<sched.h>`, `<signal.h>`, `<sys/mman.h>`, `<sys/stat.h>`, `<sys/syscall.h>`, `<time.h>` and `<unistd.h>`. The plugin gives a finding of the kind `layer-header` for each such include. The ratchet counts these findings, and their count can only decrease. Stage 2 of the plan gives each of these headers a door. These are the steps for each file that includes one:
 - `include/foundation/Platform.h` (`<fcntl.h>`, `<unistd.h>`): unit 2a moves the debugger probe out of the header, and the probe reads `/proc` through `foundation::os::read_file`
-- `include/fixy/OwnedMmap.h` (`<sys/mman.h>`): unit 2b moves the header into `include/fixy/os`
+- `include/fixy/os/OwnedMmap.h` (`<sys/mman.h>`): the header is a file of the door directory of fixy, and the last step of this list gives `<sys/mman.h>` its door file
 - `include/fixy/session/Watch.h` (`<pthread.h>`, `<signal.h>`, `<time.h>`, `<unistd.h>`): unit 2b moves the code into a source file of `src/fixy/session`, which calls the doors of `fixy/os` and includes no system header
-- `src/fixy/concurrent/Topology.cpp` (`<sched.h>`, `<unistd.h>`): unit 2b moves the sysfs probe into `src/fixy/os`
+- `src/fixy/os/Topology.cpp` (`<sched.h>`, `<unistd.h>`): unit 2b moves the reads of the sysfs probe onto the doors of `foundation/os`
 - `include/fixy/concurrent/Pipeline.h` (`<pthread.h>`, `<sched.h>`): unit 2d moves its affinity read behind the door of `fixy/os/Sched.h`
 - The headers of `include/fixy/os`: unit 2b gives each system header one door file.
 

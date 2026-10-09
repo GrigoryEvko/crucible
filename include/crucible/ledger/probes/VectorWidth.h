@@ -54,7 +54,7 @@
 // and is there as a second line, not as the first.
 
 #include <crucible/ledger/ProbeSupport.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Saturate.h>
 #include <foundation/Simd.h>

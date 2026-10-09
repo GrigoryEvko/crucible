@@ -3,7 +3,7 @@
 // door built, so the gate refuses an element that is not an
 // implicit-lifetime type at each depth.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/Lifetime.h>
 
 namespace {

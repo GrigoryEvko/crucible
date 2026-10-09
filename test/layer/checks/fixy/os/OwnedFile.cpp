@@ -1,6 +1,6 @@
-// The compile-time checks of fixy/OwnedFile.h.
+// The compile-time checks of fixy/os/OwnedFile.h.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 namespace fixy {
 

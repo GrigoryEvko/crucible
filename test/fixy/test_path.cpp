@@ -1,4 +1,4 @@
-// Sentinel TU for fixy/Path.h: each predicate answers on its success
+// Sentinel TU for fixy/os/Path.h: each predicate answers on its success
 // path and on every distinct variant of PathTraversalError, so a
 // regression in one rule reddens here rather than hiding behind a
 // neighbouring rule that happens to reject the same input.
@@ -7,7 +7,7 @@
 // arithmetic: the value constructor of Tagged is private, so every
 // tainted path here is minted.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 
 #include <cstdio>
 #include <cstdlib>

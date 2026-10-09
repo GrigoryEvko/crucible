@@ -3,7 +3,7 @@
 // struct is not one, and the witness is a reflection query over the atom
 // catalog rather than a trait a translation unit could specialize.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <cstdio>
 #include <utility>

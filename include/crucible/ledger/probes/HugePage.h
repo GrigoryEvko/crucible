@@ -62,7 +62,7 @@
 // anything.
 
 #include <crucible/ledger/ProbeSupport.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 
 #include <algorithm>
 #include <bit>

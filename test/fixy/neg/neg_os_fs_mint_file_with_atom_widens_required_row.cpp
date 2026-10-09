@@ -18,7 +18,7 @@
 // atoms lift to, so the mode atom alone would pass.  Only the Bg the
 // with atom contributes is missing.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/Fs.h>
 

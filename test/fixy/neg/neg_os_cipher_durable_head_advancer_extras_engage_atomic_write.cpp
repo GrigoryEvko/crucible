@@ -2,7 +2,7 @@
 // that engages the atomicity axis is refused at the stance rule.  The
 // extra here names Rename, and any other atomicity tag is the same test.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

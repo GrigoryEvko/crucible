@@ -61,7 +61,7 @@
 
 #include <crucible/ledger/ProbeSupport.h>
 #include <fixy/Core.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/NumaPlacement.h>
 
 #include <algorithm>

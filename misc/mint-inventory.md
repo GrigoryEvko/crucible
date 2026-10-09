@@ -189,7 +189,6 @@ does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | HS14: 2 |
-| `OwnedMmap::mint_region` | `include/fixy/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -206,7 +205,6 @@ does not apply to the row.
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_owned_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_owned_region(T*, std::size_t, foundation::permissions::Permission<Tag, Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 16 |
 | `mint_owned_region(foundation::effects::Alloc, Allocator&, std::size_t, foundation::permissions::Permission<Tag, Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - (alloc) | Y | Y | token | · | HS14: 16 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -218,7 +216,6 @@ does not apply to the row.
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
 | `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
-| `mint_temporary_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -254,6 +251,7 @@ does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
+| `OwnedMmap::mint_region` | `include/fixy/os/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
@@ -266,12 +264,14 @@ does not apply to the row.
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_owned_file` | `include/fixy/os/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_spawn` | `include/fixy/os/Spawn.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_temporary_file` | `include/fixy/os/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_warm_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |

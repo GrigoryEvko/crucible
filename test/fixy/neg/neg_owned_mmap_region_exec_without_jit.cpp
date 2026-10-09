@@ -3,7 +3,7 @@
 // word from the type, so an executable page comes only from a region
 // typed prot::Exec, and that type asks for the licence.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

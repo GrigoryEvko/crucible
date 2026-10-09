@@ -397,10 +397,10 @@ set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
-  src/fixy/concurrent/Topology.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
   src/fixy/os/ThreadTasks.cpp
+  src/fixy/os/Topology.cpp
 )
 target_include_directories(fixy PUBLIC include/)
 target_link_libraries(fixy PUBLIC foundation)
@@ -793,7 +793,7 @@ endif()
 #
 # The bodies compile with the definitions that crucible gives its
 # consumers, so each header reads the same macros in both places.  The
-# pipeline reads the cache clusters of fixy/concurrent/Topology.h, whose probe
+# pipeline reads the cache clusters of fixy/os/Topology.h, whose probe
 # is in libfixy.a, so this library links fixy, and fixy links foundation.
 add_library(crucible_vigil STATIC
   src/BackgroundThread.cpp

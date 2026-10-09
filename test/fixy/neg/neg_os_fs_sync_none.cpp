@@ -2,7 +2,7 @@
 // durability does not call sync, and a tag that would fall out of the
 // switch is refused at the gate rather than reaching it.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

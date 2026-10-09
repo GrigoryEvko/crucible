@@ -4,7 +4,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/Sched.h>
 
 #include <algorithm>

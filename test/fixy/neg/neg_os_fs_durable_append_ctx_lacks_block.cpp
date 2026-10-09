@@ -2,7 +2,7 @@
 // three atoms it fixes, so a context without Block is refused at this
 // signature rather than one layer down inside mint_file.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

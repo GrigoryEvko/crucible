@@ -1,7 +1,7 @@
 // An empty atom pack names no mode, and there is no default: opening
 // a file without saying how is refused rather than opened O_RDONLY.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

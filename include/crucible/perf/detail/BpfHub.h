@@ -10,7 +10,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Mutation.h>
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/Refined.h>
 #include <fixy/os/Mmap.h>
 #include <foundation/Lifetime.h>

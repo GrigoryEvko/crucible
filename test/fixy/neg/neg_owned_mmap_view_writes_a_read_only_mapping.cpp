@@ -2,7 +2,7 @@
 // access.  A View of mutable elements would write them, so the gate asks
 // for a View of const elements.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 namespace {
 struct Region {

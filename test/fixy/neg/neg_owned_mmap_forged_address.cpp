@@ -12,7 +12,7 @@
 // returned.  Its sibling, neg_owned_mmap_forged_through_mint_linear.cpp,
 // covers the route that goes through the generic Linear forwarder.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 
 namespace {
 struct StackRegionTag final {};

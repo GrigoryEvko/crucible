@@ -2,7 +2,7 @@
 // would say that a commit was made when none was.  A caller that needs
 // no commit does not call commit_atomic, and the gate refuses None.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
 
 #include <filesystem>

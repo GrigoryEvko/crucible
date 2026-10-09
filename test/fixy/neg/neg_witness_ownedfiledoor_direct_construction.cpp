@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <cstddef>
 #include <cstdint>

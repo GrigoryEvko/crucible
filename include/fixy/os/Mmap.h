@@ -33,7 +33,7 @@
 //     tag and the brand of the exclusive permission the caller presents,
 //     so a mapping has an identity past its tag.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
@@ -84,7 +84,7 @@ namespace fixy::mmap {
 // MADV_* value of each tag, and the walk that asks each declared tag for
 // a row.
 //
-// The PROT_* and MAP_* tables are in fixy/OwnedMmap.h, beside the one
+// The PROT_* and MAP_* tables are in fixy/os/OwnedMmap.h, beside the one
 // door that maps, because that door calculates its bits from the type of
 // the region that it builds.
 
@@ -105,7 +105,7 @@ template <typename Advice>
 concept KnownAdvice = ::fixy::atom_pack::has_row(advice_table, ^^Advice);
 
 // The value of a tag that has a row.  The lookup is a function and not a
-// variable template, for the reason fixy/OwnedMmap.h gives for its bits.
+// variable template, for the reason fixy/os/OwnedMmap.h gives for its bits.
 [[nodiscard]] consteval int advice_value_of(std::meta::info advice_tag) noexcept {
     return ::fixy::atom_pack::value_for(advice_table, advice_tag);
 }
@@ -266,7 +266,7 @@ inline constexpr bool pack_has_anonymous_v = (is_anonymous_share_v<Atoms> || ...
 // The last clause is the gate of OwnedMmap::mint_region, read over the
 // region type and the modifiers of the pack.  So the licence of an
 // executable page and the row of a mapping are one rule, stated once, in
-// fixy/OwnedMmap.h.
+// fixy/os/OwnedMmap.h.
 template <typename Ctx, typename... Atoms>
 concept CtxFitsMmapMint =
     ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && detail::all_atom_tags_known_v<Atoms...>
@@ -336,7 +336,7 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
           ::off_t offset = 0) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in
-    // fixy/OwnedMmap.h, so that no address but the kernel's can become a
+    // fixy/os/OwnedMmap.h, so that no address but the kernel's can become a
     // region, and its bits come from the region type.  What this mint
     // adds is the atom pack: which atoms, and the row they lift to.
     auto region =

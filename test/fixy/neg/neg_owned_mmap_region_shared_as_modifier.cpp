@@ -4,7 +4,7 @@
 // caller gives it MAP_SHARED.  A primary share tag is part of the type and
 // is not a modifier, so a shared range cannot pass for an anonymous one.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

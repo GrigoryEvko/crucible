@@ -1,4 +1,4 @@
-// Sentinel TU for fixy/OwnedFile.h: the handle is move-only, the empty
+// Sentinel TU for fixy/os/OwnedFile.h: the handle is move-only, the empty
 // state answers every query, close_explicit reports the flush result the
 // destructor cannot, and the only way to a live handle is one of the two
 // mints that perform the open.
@@ -11,7 +11,7 @@
 // release.
 
 #include <fixy/Ctx.h>
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <cerrno>
 #include <cstdio>

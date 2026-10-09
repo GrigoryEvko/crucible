@@ -12,7 +12,7 @@
 // sibling, neg_owned_file_forged_through_mint_linear.cpp, covers the
 // route that goes through the generic Linear forwarder.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <cstdio>
 

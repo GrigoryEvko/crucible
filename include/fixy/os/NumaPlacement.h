@@ -46,7 +46,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/FixedArray.h>
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <foundation/Brand.h>

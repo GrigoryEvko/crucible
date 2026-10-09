@@ -1,6 +1,6 @@
-// The compile-time checks of fixy/concurrent/Topology.h.
+// The compile-time checks of fixy/os/Topology.h.
 
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 
 namespace fixy::concurrent {
 

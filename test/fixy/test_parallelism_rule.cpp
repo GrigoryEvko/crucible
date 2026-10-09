@@ -9,7 +9,7 @@
 // and returns from its case, because nothing in this tree throws.
 
 #include <fixy/concurrent/ParallelismRule.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 
 #include <cstddef>
 #include <cstdint>

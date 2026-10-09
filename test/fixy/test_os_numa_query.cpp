@@ -8,7 +8,7 @@
 // test/fixy/test_core_region.cpp does.
 
 #include <fixy/Core.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/os/Mmap.h>
 #include <fixy/os/NumaCounters.h>
 #include <fixy/os/NumaPlacement.h>

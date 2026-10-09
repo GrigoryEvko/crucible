@@ -2,7 +2,7 @@
 // one a reader will open by name afterwards, so an unsanitized target
 // is refused with the same tag mismatch as an unsanitized open.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

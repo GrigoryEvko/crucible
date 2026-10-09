@@ -38,7 +38,7 @@
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/ledger/Verdict.h>
 #include <fixy/Ctx.h>
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/os/Fs.h>

@@ -1,7 +1,7 @@
 // mint_owned_file opens a stream, and an open is IO.  A background drain
 // context owns Bg and Alloc and no IO, so the gate refuses it.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

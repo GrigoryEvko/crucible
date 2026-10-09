@@ -14,7 +14,7 @@
 //
 // This fixture is the standing witness that it stays false.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 #include <fixy/Qtt.h>
 
 #include <cstdio>

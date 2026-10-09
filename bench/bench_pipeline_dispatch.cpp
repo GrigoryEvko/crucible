@@ -7,7 +7,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 
 #include <foundation/effects/Ctx.h>
 

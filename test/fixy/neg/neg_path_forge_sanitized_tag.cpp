@@ -3,7 +3,7 @@
 // mechanism exists to prevent, so the mint refuses a tag the catalog
 // reaches only through retag.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 
 #include <filesystem>
 

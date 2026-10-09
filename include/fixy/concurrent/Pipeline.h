@@ -35,7 +35,7 @@
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Stage.h>
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ChannelBinding.h>

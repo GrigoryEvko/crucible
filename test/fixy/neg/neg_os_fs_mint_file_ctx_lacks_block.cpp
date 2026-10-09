@@ -3,7 +3,7 @@
 // atom pack and the pack lifts to IO and Block, so a context holding IO
 // alone is refused at the requires-clause.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

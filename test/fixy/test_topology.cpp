@@ -3,7 +3,7 @@
 // bounds a value, relates two values, or names the small set a value
 // may come from, and never pins the number itself.
 
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 

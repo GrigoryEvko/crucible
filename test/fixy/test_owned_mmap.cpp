@@ -2,7 +2,7 @@
 // the only door there is: the constructor that claims an address is
 // private, so a region exists only over what ::mmap returned.
 //
-// Sentinel TU for fixy/OwnedMmap.h: the region is move-only, the leak
+// Sentinel TU for fixy/os/OwnedMmap.h: the region is move-only, the leak
 // witness admits only the leak atom, release binds to an rvalue, and the
 // kernel maps the protection that the type claims.
 //
@@ -10,7 +10,7 @@
 // checked first.  Then this TU maps anonymous pages, so the unmap path,
 // the move path and the release gated on a leak atom all run.
 
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>
 
 #include <sys/mman.h>

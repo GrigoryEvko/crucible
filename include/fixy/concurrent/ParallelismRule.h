@@ -52,7 +52,7 @@
 //  3. is_core_private_tier and is_core_resident name the one question the
 //     callers ask, so no caller writes its own comparison.
 
-#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Topology.h>
 #include <foundation/NoObject.h>
 #include <foundation/Saturate.h>
 

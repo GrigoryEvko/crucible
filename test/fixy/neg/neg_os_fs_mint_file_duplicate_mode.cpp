@@ -2,7 +2,7 @@
 // would fold two O_* words together; has_duplicate_mode_v is true and
 // the gate refuses the instantiation.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>

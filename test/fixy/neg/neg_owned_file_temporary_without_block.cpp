@@ -2,7 +2,7 @@
 // wait in the kernel, so mint_temporary_file asks for Block beside IO.  A
 // context that owns IO and not Block is refused.
 
-#include <fixy/OwnedFile.h>
+#include <fixy/os/OwnedFile.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

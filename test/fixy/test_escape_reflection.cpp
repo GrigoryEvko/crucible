@@ -20,8 +20,8 @@
 #include <foundation/reflect/RawEscape.h>
 
 #include <fixy/Borrowed.h>
-#include <fixy/OwnedFile.h>
-#include <fixy/OwnedMmap.h>
+#include <fixy/os/OwnedFile.h>
+#include <fixy/os/OwnedMmap.h>
 #include <fixy/OwnedRegion.h>
 #include <fixy/Qtt.h>
 #include <fixy/Secret.h>

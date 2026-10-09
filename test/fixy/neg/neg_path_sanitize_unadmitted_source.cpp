@@ -4,7 +4,7 @@
 // three external lanes is what stops operator-supplied bytes from
 // reaching the directory-anchored open helpers.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 
 #include <filesystem>
 #include <utility>

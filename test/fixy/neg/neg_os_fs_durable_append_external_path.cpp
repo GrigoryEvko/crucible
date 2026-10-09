@@ -1,7 +1,7 @@
 // The durable append mint takes Path<Sanitized> like the file mint it
 // forwards to, and the tag mismatch is refused at this signature.
 
-#include <fixy/Path.h>
+#include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
