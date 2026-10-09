@@ -7,7 +7,7 @@
 // Sibling of neg_spawn_callable_carries_throws.cpp, where the atom is a
 // template argument of the callable.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

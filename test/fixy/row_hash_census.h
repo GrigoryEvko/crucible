@@ -37,10 +37,12 @@
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
+#include <fixy/concurrent/PermissionFork.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/RingValue.h>
+#include <fixy/concurrent/Spawn.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/StageEndpointBridge.h>
@@ -75,7 +77,6 @@
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
-#include <fixy/os/Spawn.h>
 #include <fixy/os/Socket.h>
 #include <fixy/os/SpinLock.h>
 #include <fixy/os/ThreadName.h>
@@ -480,6 +481,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::concurrent::mpsc_tag, kGradeVocabulary},
     {^^::fixy::concurrent::spsc_tag, kGradeVocabulary},
     {^^::fixy::spawn, "the holder of the parallel-for fan-out: static members only, and no object of it exists"},
+    {^^::fixy::thread, "the options and the name of a thread that the thread door starts: settings of the door, which "
+                       "carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},
@@ -899,7 +902,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^fp::federation_admission_key, kPasskey},
     {^^fp::FederationAdmission, "the verifier of federation handshakes: it holds the local key and the replay window, "
                                 "the peer tokens that it admits fold, and it is never a value in a signature"},
-    {^^fp::PermissionForkRunner,
+    {^^::fixy::concurrent::PermissionForkThreads,
      "the holder of the fork body: it has static members only, no object of it exists, and it is never a value"},
 
     {^^fe::canonical_row, kMetafunction},

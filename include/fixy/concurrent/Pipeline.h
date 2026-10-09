@@ -41,6 +41,7 @@
 #include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/Runtime.h>
 #include <foundation/effects/Ctx.h>
@@ -729,15 +730,19 @@ private:
     // The CPUs come from the mask of the caller at each run.  Two pipelines
     // of one size then do not share their cores, and a mask that the caller
     // sets after the first run still applies.  The threads start and join in
-    // src/fixy/os/ThreadTasks.cpp, so a translation unit that includes this
-    // header does not compile <thread>.
+    // src/fixy/os/ThreadTasks.cpp, the door of fixy/os/ThreadTasks.h.  The
+    // stages wait on each other, so when no stage thread starts, the
+    // process ends.
     template <class Ctx, std::size_t... Is>
     void run_threaded_(Ctx const& ctx, std::index_sequence<Is...>) && noexcept {
         const std::array<int, sizeof...(Is)> affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>(ctx);
         std::tuple<stage_frame_<Stages>...> frames{stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus[Is]}...};
-        std::array<::fixy::spawn::detail::thread_task, sizeof...(Is)> const tasks{
-            ::fixy::spawn::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
-        ::fixy::spawn::detail::run_thread_tasks(tasks);
+        std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{
+            ::fixy::thread::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
+        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), tasks.size()),
+                                                 ::fixy::thread::ThreadOptions{})
+            .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "
+                    "them on the calling thread");
     }
 
     std::tuple<Stages...> stages_;

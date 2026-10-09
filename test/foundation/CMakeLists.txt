@@ -945,21 +945,6 @@ foundation_neg_compile_test(neg_perm_set_union_shared_tag
   "foundation/permissions/PermSet\\.h:[0-9]+:[0-9]+: error: uncaught exception of type .std::meta::exception.. .what\\(\\).: .foundation::permissions \\[PermissionImbalance\\]: perm_set_union_t requires disjoint operands"
   "using foundation::permissions::perm_set_union_t = .* \\[with PS1 = foundation::permissions::PermSet<user_code::Alpha, user_code::Beta>. PS2 = foundation::permissions::PermSet<user_code::Alpha>\\]")
 
-# A fork whose child pack is not a declared partition of the parent.
-# The satisfaction notes name the fork's fit concept and the pack trait
-# that evaluated false.
-foundation_neg_compile_test(neg_permission_fork_pack_does_not_partition
-  "constraints not satisfied"
-  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
-  "can_split_into_pack_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
-
-# The spawning arm in a context whose row has no Bg effect.  The
-# partition is declared, so the only atom that fails is the capability.
-foundation_neg_compile_test(neg_permission_fork_without_bg
-  "constraints not satisfied"
-  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
-  "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
-
 # Each conjunct of the inline arm's fit, refused at the door.  Without
 # the conjunct the call passes the door and fails later, inside the body,
 # with a message that names no fork, so each note below tells the two
@@ -983,18 +968,16 @@ foundation_neg_compile_test(neg_permission_fork_duplicate_child_names_the_fork
   "static assertion failed"
   "mint_permission_fork_inline: Child region tags must be PAIRWISE DISTINCT")
 
-# The fork body is a private member of PermissionForkRunner, and the two
-# fork mints are its only friends: no other scope calls it, derives from
-# the runner to reach it, or takes its address.
-foundation_neg_compile_test(neg_permission_fork_runner_body_is_private
-  "is private within this context"
-  "PermissionForkRunner::run_")
-foundation_neg_compile_test(neg_permission_fork_runner_derived_look_alike
-  "cannot derive from .final. base"
-  "PermissionForkRunner")
-foundation_neg_compile_test(neg_permission_fork_runner_body_address
-  "is private within this context"
-  "PermissionForkRunner::run_")
+# The write borrow door lends a token that the caller gives up for the
+# time of the body.  A named token stays with the caller, so the door
+# refuses it, and a context that does not admit the row of the tag is
+# refused at the door.
+foundation_neg_compile_test(neg_with_write_view_named_token
+  "use of deleted function"
+  "with_write_view lends its token to the body and hands the token back")
+foundation_neg_compile_test(neg_with_write_view_row_not_admitted
+  "no matching function for call to .with_write_view"
+  "satisfaction of .CtxAdmitsPermission<Tag, Ctx>.")
 
 # ── The lift from a marker to its effect row ─────────────────────────
 foundation_test(test_lift)
@@ -1960,9 +1943,8 @@ foundation_neg_compile_test(neg_core_box_consume_not_movable
 # ── The Atomic family ─────────────────────────────────────────────────
 #
 # An Atomic holds a lock-free value with one bit pattern for each value,
-# and each operation names its memory order.  The test runs four threads,
-# so the tsan preset checks each order.
-foundation_test(test_core_atomic)
+# and each operation names its memory order.  The runtime test runs four
+# threads, and foundation starts no thread, so test/fixy holds it.
 
 foundation_neg_compile_test(neg_core_atomic_padded_payload
   "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."

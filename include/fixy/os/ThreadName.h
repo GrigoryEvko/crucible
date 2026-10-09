@@ -7,12 +7,11 @@
 // Naming writes to the calling thread's entry under /proc, so the mint takes an
 // init-phase context.  Code that holds no context cannot name a thread.
 
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
-
-#include <pthread.h>
 
 #include <array>
 #include <cstddef>
@@ -116,13 +115,13 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 // witness can build.  A phase token that the
 // first naming call consumed would end the phase it exists to describe.
 //
-// Not constexpr: the body performs a kernel side effect.
+// Not constexpr: the body performs a kernel side effect.  The thread door of
+// fixy/os/ThreadTasks.h gives the name, and the name type excludes the one
+// failure of the call.
 template <ThreadNameLiteral Name, typename Ctx>
     requires CtxIsInitPhase<Ctx>
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept {
-    // ERANGE is the only documented failure and the name type excludes it, so
-    // there is nothing to report and nothing to throw.
-    (void)::pthread_setname_np(::pthread_self(), Name.c_str());
+    ::fixy::thread::detail::name_calling_thread(Name.c_str());
     return ThreadNamed<Name>{};
 }
 

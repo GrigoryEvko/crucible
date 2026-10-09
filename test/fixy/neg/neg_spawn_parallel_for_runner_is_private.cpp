@@ -11,7 +11,7 @@
 //
 // Expected diagnostic: the fan-out is private within this context.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 #include <tuple>
 #include <utility>

@@ -3,7 +3,7 @@
 // Effect::Bg.  A foreground context is refused here rather than one layer
 // down inside foundation.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

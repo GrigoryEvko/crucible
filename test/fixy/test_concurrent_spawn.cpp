@@ -1,12 +1,12 @@
 // The two spawn mints, run for real: children that join, and shards that
 // are recombined into the region they came from.
 //
-// The static properties of the mints live in fixy/os/Spawn.h, where they
+// The static properties of the mints live in fixy/concurrent/Spawn.h, where they
 // fire wherever the types are used. What is here is the behaviour: that
 // every child body ran, that the parent Permission comes back, and that
 // a recombined region still describes the same storage.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <algorithm>

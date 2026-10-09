@@ -1,4 +1,4 @@
-// A design note of fixy/os/Spawn.h: the body takes its shard by mutable
+// A design note of fixy/concurrent/Spawn.h: the body takes its shard by mutable
 // reference and gives it back, because recombine consumes every shard to
 // reissue the parent's Permission.  A body that took the shard by rvalue
 // and consumed it would leave the parent to a helper that mints a
@@ -9,7 +9,7 @@
 // to one diagnostic, where calling the mint with such a body cascades into
 // four.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 namespace eff = foundation::effects;
 

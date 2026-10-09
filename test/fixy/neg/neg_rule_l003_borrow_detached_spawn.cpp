@@ -6,7 +6,7 @@
 // L003 alone.
 
 #include <fixy/Fn.h>
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::borrow,

@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 #include <cstddef>
 #include <cstdint>

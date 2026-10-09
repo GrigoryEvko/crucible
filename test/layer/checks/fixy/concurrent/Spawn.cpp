@@ -1,6 +1,6 @@
-// The compile-time checks of fixy/os/Spawn.h.
+// The compile-time checks of fixy/concurrent/Spawn.h.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 namespace fixy::spawn::detail::spawn_self_test {
 
@@ -29,10 +29,10 @@ static_assert(!::foundation::effects::LiftsToRow<atom_spawn::syscall_only<"r">>)
 static_assert(!::foundation::effects::LiftsToRow<atom_spawn::subprocess<"r">>);
 
 static_assert(::fixy::atom::detail::every_roster_member_is_atom_<::fixy::atom::detail::spawn_atom_samples>(),
-              "fixy/os/Spawn.h: a member of spawn_atom_samples is not an atom.");
+              "fixy/concurrent/Spawn.h: a member of spawn_atom_samples is not an atom.");
 static_assert(
     ::fixy::atom::detail::every_roster_member_on_axis_<::fixy::atom::detail::spawn_atom_samples, Axis::Protocol>(),
-    "fixy/os/Spawn.h: every spawn rationale atom engages Axis::Protocol.");
+    "fixy/concurrent/Spawn.h: every spawn rationale atom engages Axis::Protocol.");
 
 static_assert(std::is_empty_v<atom_spawn::detach_with<"x">>);
 static_assert(sizeof(atom_spawn::detach_with<"x">) == 1);

@@ -32,6 +32,7 @@ test_cntp_fountain
 test_cntp_path_swap
 test_collision
 test_compute
+test_concurrent_spawn
 test_concurrent_swmr_session
 test_crdt
 test_crucible_context

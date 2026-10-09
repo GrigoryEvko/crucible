@@ -1,15 +1,18 @@
 // Tests of foundation/core/Atomic.h: Atomic, CacheLine and Tally, alone
 // and under contention.  The tsan preset runs the same binary, so each
-// order that the names claim is checked by ThreadSanitizer too.
+// order that the names claim is checked by ThreadSanitizer too.  The test
+// is a fixy test, because foundation starts no thread: the fork of
+// fixy/concurrent/PermissionFork.h starts the four threads.
 
 #include <foundation/core/Atomic.h>
 
+#include <fixy/concurrent/PermissionFork.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
-#include "philox_stream.h"
+#include "../foundation/philox_stream.h"
 
 #include <bit>
 #include <cstdint>
@@ -81,8 +84,8 @@ void run_on_four_threads(Body const& body) {
     auto whole = ::foundation::permissions::mint_permission_root<worker_tags::Whole>();
     using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
     using ::foundation::permissions::WriteView;
-    auto rebuilt = ::foundation::permissions::mint_permission_fork<worker_tags::First, worker_tags::Second,
-                                                                   worker_tags::Third, worker_tags::Fourth>(
+    auto rebuilt = ::fixy::concurrent::mint_permission_fork<worker_tags::First, worker_tags::Second, worker_tags::Third,
+                                                            worker_tags::Fourth>(
         WorkerCtx{eff::testing::bg()}, std::move(whole),
         [&body](WriteView<worker_tags::First, WholeBrand> const&, WorkerCtx const&) noexcept { body(); },
         [&body](WriteView<worker_tags::Second, WholeBrand> const&, WorkerCtx const&) noexcept { body(); },

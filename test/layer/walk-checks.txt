@@ -96,6 +96,7 @@ fixy/atoms/Stdio.cpp | 0.1 | ::fixy::atom::stdio, unknown
 fixy/atoms/Sync.cpp | 0.3 | ::fixy::atom::sync, unknown
 fixy/atoms/Syscall.cpp | 2.2 | ::fixy::atom::syscall, unknown
 fixy/concurrent/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
+fixy/concurrent/Spawn.cpp | 0.4 | unknown
 fixy/concurrent/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/handle/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/os/CipherDurable.cpp | 0.1 | unknown
@@ -103,7 +104,6 @@ fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown
 fixy/os/Path.cpp | 0.0 | ::fixy::tags::admitted_retags
-fixy/os/Spawn.cpp | 0.4 | unknown
 fixy/session/Checkpoint.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/session/Crash.cpp | 0.7 | ::fixy::session::combinators
 fixy/session/Delegate.cpp | 0.2 | ::fixy::session::combinators

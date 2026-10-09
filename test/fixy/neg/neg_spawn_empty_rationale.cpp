@@ -3,7 +3,7 @@
 // fixed-string non-type template parameter counts the trailing NUL, so an
 // empty literal has size 1.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 int main() {
     [[maybe_unused]] fixy::atom::spawn::detach_with<""> unjustified{};

@@ -58,7 +58,7 @@ The doc-block of `include/foundation/algebra/Graded.h` gives four storage regime
 The first three cost `sizeof(T)`. `test/fixy/test_wrapper_verification.cpp` checks the layout of each wrapper against its regime.
 
 **Structural wrappers — deliberately not graded.** These wrappers follow non-graded disciplines (RAII, typestate, structural constraint) that do not fit the `Graded<M, L, T>` shape:
-- `Permission<Tag, Brand>` + `mint_permission_fork` (`foundation/permissions/Permission.h`, `foundation/permissions/PermissionFork.h`) — CSL frame-rule linear tokens (misc/THREADING.md).
+- `Permission<Tag, Brand>` + `mint_permission_fork` (`foundation/permissions/Permission.h`, `fixy/concurrent/PermissionFork.h`) — CSL frame-rule linear tokens (misc/THREADING.md).
 - `SessionHandle<Proto, Resource, LoopCtx, Policy, PS>` (`fixy/session/Handle.h`) — type-state binary and MPST session types in `include/fixy/session/`, namespace `fixy::session` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop). The last parameter threads a CSL `PermSet<Tags...>` through the protocol position. `Send<Transferable<T, X>, K>` consumes `Permission<X>` from the set, and `Recv<Transferable<T, X>, K>` produces it. A `Continue` must see the permission set of its loop entry. A handle at `End` closes only when the set holds no open loan. `mint_permissioned_session` mints a handle with a non-empty set.
 - `mint_substrate_session<Substrate, Direction>(ctx, handle)` and `mint_endpoint<Substrate, Direction>(ctx, handle)` (`fixy/concurrent/SubstrateSessionBridge.h`, `fixy/concurrent/Endpoint.h`) — the typed-session door over a handle of `PermissionedSpscChannel` or `PermissionedMpscChannel`. The session has the empty permission set.
 - `PermissionedMetaLog<UserTag, Brand>` + `metalog_session::{mint_metalog_producer_session,mint_metalog_consumer_session}` (`include/crucible/PermissionedMetaLog.h`, `include/crucible/MetaLogSession.h`) — role-typed foreground append / background drain façade over the production `MetaLog` TensorMeta side-channel. Each session owns its channel handle and has the empty permission set.
@@ -1687,7 +1687,7 @@ Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of z
 |---|---|---|---|
 | Separating conjunction `*` | `mint_permission_split<L,R>(Permission<In>&&)` | `foundation/permissions/Permission.h` | Splitting a region into disjoint subregions |
 | Frame rule | Linearity (move-only `Permission<Tag>`) | `foundation/permissions/Permission.h` | Every exclusive ownership claim |
-| Parallel composition rule | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `foundation/permissions/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
+| Parallel composition rule | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `fixy/concurrent/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
 | Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `foundation/permissions/Permission.h` | Multi-reader / single-writer with mode upgrade |
 | Lifetime-bound borrow | `with_read_view(source, body)` gives the body a `ReadView<Tag, Brand> const&` of the brand of the source. `mint_read_loan` parks the token while a `ReadLoan` travels | `foundation/permissions/ReadView.h` | Scoped read borrow: the view exists only for the body's call |
 | Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
@@ -1723,7 +1723,7 @@ The working set is the saturated sum of the read and written bytes. The factor r
 
 The promise: **never regresses**. If the rule says sequential, parallel must not be measurably faster (within 5%, measured by `bench/bench_no_regression.cpp`). If it says parallel, the speedup must justify the sync cost.
 
-`fixy::concurrent::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/os/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
+`fixy::concurrent::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/concurrent/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
 
 #### Decision matrix — which Permission primitive
 
@@ -1743,7 +1743,8 @@ Need shared-read across threads (lifetime escapes)?
 
 Need structured fork-join (split parent → N children → rejoin)?
     → mint_permission_fork<Children...>(ctx, parent, callables...)
-                                            (CSL parallel rule, jthread-based, RAII join)
+                                            (CSL parallel rule, fixy/concurrent/PermissionFork.h:
+                                             one thread for each child, joined in the call)
 
 Need one writer that publishes the latest value to many readers?
     → SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>
@@ -2349,7 +2350,7 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 | Float representation | **IEEE 754** | `-fno-fast-math` enforces |
 | Stack size | **8 MB** (Linux default) | Large arrays → arena, not stack |
 | Canonical VA bits | **48** (x86-64 without LA57) | Pointer-tagging schemes assume this |
-| Thread API | **pthreads** (via `std::jthread`) | Linux only |
+| Thread API | **pthreads** (the thread door of `fixy/os/ThreadTasks.h` in the base, `std::jthread` outside it) | Linux only |
 | Syscall ABI | **Linux x86_64 / aarch64** | No Windows, no macOS in production |
 | Kernel | **The release of `foundation::os::minimum_kernel()`** | A raw system call has no fallback of the C library. The function derives the release from each call of `foundation::os::Syscall`, and the start-up check of `src/foundation/os/Syscall.cpp` refuses an older kernel with a message |
 
@@ -2554,18 +2555,19 @@ These library types make the axioms from §II true at compile time. They are in 
 | `fixy/Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
 | `fixy/ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
 | `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`, `mint_permission_combine_n` and `mint_permission_share`. |
-| `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule, as a fork-join with one `std::jthread` for each child. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, which asks for `can_split_into_pack_v<Parent, Children...>` and a context that has `Effect::Bg`. `mint_permission_fork_inline` does the bodies inline in child order. Each mint gives back the parent permission after all bodies complete. |
+| `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | The `WriteView` that a fork lends a body, and its one door `with_write_view`, which lends a token to a body and gives the token back. `mint_permission_fork_inline<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule with the bodies inline in child order. Its constraint `CtxFitsPermissionForkInline<Ctx, Parent, Children...>` asks for `can_split_into_pack_v<Parent, Children...>`. Foundation starts no thread. |
+| `fixy/concurrent/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the same rule as a fork-join with one thread for each child, which the thread door of `fixy/os/ThreadTasks.h` starts and joins. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, the inline fit and a context that has `Effect::Bg`. Each mint gives back the parent permission after all bodies complete. |
 
 Every header is self-contained. Two cold bodies are in the library `foundation`, so
 that an includer does not compile them: the abort of `Permission.h` in
-`src/foundation/Permission.cpp`, and the thread start of
-`foundation/permissions/ForkTasks.h` in `src/foundation/PermissionFork.cpp`. Two
+`src/foundation/Permission.cpp`, and the formatter of the Report family. Two
 cold bodies are in the library `fixy`: the sysfs probe of
-`fixy/os/Topology.h` in `src/fixy/os/Topology.cpp`, and the door
-of `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`. The door starts the
-stage threads of `fixy/concurrent/Pipeline.h` and the workers of
-`fixy/os/Spawn.h`, and it calls the thread start of `ForkTasks.h`, so the tree
-has one copy of that body.
+`fixy/os/Topology.h` in `src/fixy/os/Topology.cpp`, and the door of
+`fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`. The door is the one
+owner of `<pthread.h>`. It starts and joins the threads of the fork of
+`fixy/concurrent/PermissionFork.h`, the stage threads of
+`fixy/concurrent/Pipeline.h` and the workers of `fixy/concurrent/Spawn.h`, so the
+tree has one copy of that body.
 The other headers are header-only. The dependency rule is the layer
 rule, and the rule `layer-boundary` of the quarantine plugin and the rule
 `layer-residual` of the parse tree enforce it: `foundation` names only
@@ -2954,7 +2956,7 @@ A handle of an SPSC or MPSC channel goes into a session through `mint_substrate_
 - **Every mint MUST be `[[nodiscard]] constexpr noexcept`**, with two exceptions, and each exception is `[[nodiscard]] noexcept` only. The first is a factory that genuinely allocates: `constexpr` would lie about the runtime cost. The second is a factory whose body can never be constant evaluated, because it reads runtime state such as an atomic, a thread identity or a system call. The build has no `-fimplicit-constexpr`, and `-Winvalid-constexpr` with `-Werror` refuses `constexpr` on such a function. Never hide runtime state behind `if consteval` to keep the keyword: a constant evaluation would then read a value that the program never has.
 - **Returned types are CONCRETE, not type-erased.** `mint_endpoint<...>(ctx, h)` returns `Endpoint<Substr, Dir, Ctx>`, not `auto`-erased-into-virtual. Concept-overloaded specialization downstream depends on the concrete type.
 - **Diagnostics route through `foundation::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
-- **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (for example `PermissionForkRunner::spawn_` and `PermissionForkRunner::run_` in `foundation/permissions/PermissionFork.h`) so `grep "mint_"` returns only the public surface.
+- **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (for example `PermissionForkThreads::run_` and `PermissionForkThreads::start_and_join_` in `fixy/concurrent/PermissionFork.h`) so `grep "mint_"` returns only the public surface.
 - **Session ctx-bound mints use the permissioned family.** `mint_session<Proto>(ctx, res)` is the empty-`PermSet` shim; `mint_permissioned_session<Proto>(ctx, res, perms...)` is the non-empty `PermSet` form. Both route through the same ctx row gate and local permission-flow closure gate.
 - **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
 - **Inventory of every mint** lives in `misc/mint-inventory.md`. `python3 utils/bin/loop derive mint-inventory --write --build-dir build` writes it from the mint records that the quarantine plugin writes into the objects of a build (`utils/tools/quarantine/declaration.cpp`). The rule `mint-pattern` reads the same records, and it holds each mint of `include/` to the §XXI flags. Each row of `utils/ledgers/mint-pattern.txt` admits one flag of one mint with its reason. Each row of the inventory gives the §XXI flags (nodiscard, constexpr, noexcept, a type-level constraint) and the authorization shape (ctx, token or member). It also says whether the constraint of a ctx-bound mint gates its context, and it counts the HS14 fixtures of the mint's own layer. The rule `derived-files` fails when the inventory differs from the records of the build. The rule `mint-floor` fails on a mint under the HS14 floor that no row of `utils/ledgers/mint-floor.txt` admits.
@@ -3065,7 +3067,7 @@ Only the files of the two door directories can include a system header, a Linux 
 
 A raw system call has no fallback of the C library. `foundation::os::minimum_kernel()` gives the largest release that a call of the enumeration `foundation::os::Syscall` needs, and the start-up check of `src/foundation/os/Syscall.cpp` refuses an older kernel before main (§XIV). Each such header has one owner file, its door. A `door` row of the rule table names the door of a header, and only that file can include the header. glibc stays the process runtime: startup, thread-local storage, thread start, `malloc` and `dlopen`. The plan moves each other system header of the base to its door.
 
-At this time, base files include 9 system headers that have no `door` row: `<fcntl.h>`, `<pthread.h>`, `<sched.h>`, `<signal.h>`, `<sys/mman.h>`, `<sys/stat.h>`, `<sys/syscall.h>`, `<time.h>` and `<unistd.h>`. The plugin gives a finding of the kind `layer-header` for each such include. The ratchet counts these findings, and their count can only decrease. Stage 2 of the plan gives each of these headers a door. These are the steps for each file that includes one:
+At this time, base files include 8 system headers that have no `door` row: `<fcntl.h>`, `<sched.h>`, `<signal.h>`, `<sys/mman.h>`, `<sys/stat.h>`, `<sys/syscall.h>`, `<time.h>` and `<unistd.h>`. The plugin gives a finding of the kind `layer-header` for each such include. `<pthread.h>` has the door `src/fixy/os/ThreadTasks.cpp`, which starts, names and joins each thread of the base, and each other include of it is a finding of the kind `door-header`. The ratchet counts these findings, and their count can only decrease. Stage 2 of the plan gives each of these headers a door. These are the steps for each file that includes one:
 - `include/fixy/os/OwnedMmap.h` (`<sys/mman.h>`): the header is a file of the door directory of fixy, and the last step of this list gives `<sys/mman.h>` its door file
 - `include/fixy/session/Watch.h` (`<pthread.h>`, `<signal.h>`, `<time.h>`, `<unistd.h>`): unit 2b moves the code into a source file of `src/fixy/session`, which calls the doors of `fixy/os` and includes no system header
 - `include/fixy/concurrent/Pipeline.h` (`<pthread.h>`, `<sched.h>`): unit 2d moves its affinity read behind the door of `fixy/os/Sched.h`

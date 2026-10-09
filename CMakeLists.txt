@@ -366,20 +366,19 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary that links
 # `foundation` or `fixy` without `crucible`.  It also holds the cold bodies of
 # foundation headers, so that an includer does not compile them: the probe
-# of a tracer and the failure arm of the assertion macros, the
-# diagnostic sink, the abort of a saturated permission pool, the threads of a
-# spawning permission fork, and the formatter of the Report family.  It also
-# holds the door directory of the base floor, src/foundation/os: the raw
-# system call primitive with its start-up check of the kernel, the sink write
-# of the Report family, the file door and the directory door.  `fixy` is a
-# static library for the same reason: it holds
-# the cold bodies of fixy headers, the probe of the machine topology and the
-# door that starts the stage threads of a pipeline.
+# of a tracer and the failure arm of the assertion macros, the diagnostic
+# sink, the abort of a saturated permission pool and the formatter of the
+# Report family.  It also holds the door directory of the base floor,
+# src/foundation/os: the raw system call primitive with its start-up check of
+# the kernel, the sink write of the Report family, the file door and the
+# directory door.  foundation starts no thread.  `fixy` is a static library
+# for the same reason: it holds the cold bodies of fixy headers, the probe of
+# the machine topology and the door that starts and joins each thread of the
+# base.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
   src/foundation/Permission.cpp
-  src/foundation/PermissionFork.cpp
   src/foundation/Platform.cpp
   src/foundation/core/Report.cpp
   src/foundation/os/Directory.cpp

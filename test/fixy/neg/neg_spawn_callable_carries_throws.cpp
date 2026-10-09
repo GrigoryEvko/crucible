@@ -6,7 +6,7 @@
 // The family here is a named one, not the default.  A check that matched
 // only the default family would admit this callable.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>

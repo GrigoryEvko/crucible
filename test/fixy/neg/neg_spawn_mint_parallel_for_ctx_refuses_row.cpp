@@ -10,7 +10,7 @@
 // Expected diagnostic: mint_parallel_for has no viable candidate, and the
 // note names the CtxAdmitsPermission conjunct of CtxFitsParallelFor.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>

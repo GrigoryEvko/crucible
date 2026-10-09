@@ -1,11 +1,11 @@
-// The spawning arm of the fork starts one thread per child, which is
-// background work.  The partition is declared, but the foreground
-// context's row has no Bg effect, so the fit concept is not satisfied.
-// The inline arm would accept this context.
+// The arm of the fork that starts one thread per child does background
+// work.  The partition is declared, but the foreground context's row has
+// no Bg effect, so the fit concept is not satisfied.  The inline arm
+// would accept this context.
 
+#include <fixy/concurrent/PermissionFork.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/permissions/PermissionFork.h>
 
 #include <type_traits>
 #include <utility>
@@ -33,7 +33,7 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 
 int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork<Left, Right>(
+    [[maybe_unused]] auto rebuilt = ::fixy::concurrent::mint_permission_fork<Left, Right>(
         ::foundation::effects::testing::foreground(), std::move(whole),
         [](auto const& /*left_view*/, FgCtx const&) noexcept {},
         [](auto const& /*right_view*/, FgCtx const&) noexcept {});

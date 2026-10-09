@@ -1826,13 +1826,16 @@ include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <string_view> | -
 include/fixy/concurrent/PayloadRow.h | layer-header | 1 | <vector> | -
 include/fixy/concurrent/PermissionedMpscChannel.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/PermissionedSpscChannel.h | layer-header | 1 | <optional> | -
+include/fixy/concurrent/Pipeline.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <algorithm> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <array> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <atomic> | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <pthread.h> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <sched.h> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <tuple> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <vector> | -
+include/fixy/concurrent/Spawn.h | layer-header | 1 | <array> | -
+include/fixy/concurrent/Spawn.h | layer-header | 1 | <tuple> | -
+include/fixy/concurrent/Spawn.h | layer-header | 1 | <vector> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <array> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <bit> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <cstring> | -
@@ -1925,17 +1928,10 @@ include/fixy/os/Sched.h | layer-header | 1 | <unistd.h> | -
 include/fixy/os/Socket.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Socket.h | layer-header | 1 | <expected> | -
 include/fixy/os/Socket.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Spawn.h | layer-header | 1 | <array> | -
-include/fixy/os/Spawn.h | layer-header | 1 | <span> | -
-include/fixy/os/Spawn.h | layer-header | 1 | <tuple> | -
-include/fixy/os/Spawn.h | layer-header | 1 | <vector> | -
-include/fixy/os/Spawn.h | upward-include | 1 | include/fixy/concurrent/ParallelismRule.h | -
 include/fixy/os/SpinLock.h | layer-header | 1 | <atomic> | -
 include/fixy/os/SpinLock.h | layer-header | 1 | <mutex> | -
 include/fixy/os/ThreadName.h | layer-header | 1 | <array> | -
-include/fixy/os/ThreadName.h | layer-header | 1 | <pthread.h> | -
 include/fixy/os/ThreadName.h | layer-header | 1 | <string_view> | -
-include/fixy/os/ThreadTasks.h | layer-header | 1 | <span> | -
 include/fixy/os/Time.h | layer-header | 1 | <array> | -
 include/fixy/os/Time.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Time.h | layer-header | 1 | <ctime> | -
@@ -2023,12 +2019,12 @@ include/fixy/session/Subtype.h | layer-header | 1 | <string> | -
 include/fixy/session/Subtype.h | layer-header | 1 | <string_view> | -
 include/fixy/session/Subtype.h | layer-header | 1 | <vector> | -
 include/fixy/session/VigilModeCell.h | layer-header | 1 | <atomic> | -
+include/fixy/session/Watch.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 include/fixy/session/Watch.h | layer-header | 1 | <array> | -
 include/fixy/session/Watch.h | layer-header | 1 | <atomic> | -
 include/fixy/session/Watch.h | layer-header | 1 | <csignal> | -
 include/fixy/session/Watch.h | layer-header | 1 | <cstdio> | -
 include/fixy/session/Watch.h | layer-header | 1 | <cstdlib> | -
-include/fixy/session/Watch.h | layer-header | 1 | <pthread.h> | -
 include/fixy/session/Watch.h | layer-header | 1 | <signal.h> | -
 include/fixy/session/Watch.h | layer-header | 1 | <source_location> | -
 include/fixy/session/Watch.h | layer-header | 1 | <string_view> | -
@@ -2164,7 +2160,6 @@ include/foundation/effects/Resources.h | layer-header | 1 | <vector> | -
 include/foundation/effects/Row.h | layer-header | 1 | <array> | -
 include/foundation/effects/Row.h | layer-header | 1 | <bit> | -
 include/foundation/effects/Row.h | layer-header | 1 | <string_view> | -
-include/foundation/permissions/ForkTasks.h | layer-header | 1 | <span> | -
 include/foundation/permissions/PermSet.h | layer-header | 1 | <array> | -
 include/foundation/permissions/PermSet.h | layer-header | 1 | <string_view> | -
 include/foundation/permissions/PermSet.h | layer-header | 1 | <vector> | -
@@ -2442,7 +2437,6 @@ src/cog/SrIov.cpp | std-entity | 1 | std::expected::has_value | -
 src/cog/SrIov.cpp | std-entity | 11 | std::unexpected | -
 src/cog/SrIov.cpp | std-object | 8 | std::expected | -
 src/cog/SrIov.cpp | std-object | 2 | std::span | -
-src/fixy/os/ThreadTasks.cpp | layer-header | 1 | <span> | -
 src/fixy/os/Topology.cpp | layer-header | 1 | <algorithm> | -
 src/fixy/os/Topology.cpp | layer-header | 1 | <cstdio> | -
 src/fixy/os/Topology.cpp | layer-header | 1 | <string> | -
@@ -2459,10 +2453,6 @@ src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstdlib> | -
 src/foundation/DiagRuntime.cpp | layer-header | 1 | <cstring> | -
 src/foundation/Permission.cpp | layer-header | 1 | <cstdio> | -
 src/foundation/Permission.cpp | layer-header | 1 | <cstdlib> | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <cstdlib> | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <span> | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <thread> | -
-src/foundation/PermissionFork.cpp | layer-header | 1 | <vector> | -
 src/perf/LockContention.cpp | c-array-object | 1 | - | -
 src/perf/LockContention.cpp | c-library-call | 1 | lock_contention_bpf_bytecode (C linkage) | -
 src/perf/LockContention.cpp | c-library-call | 1 | lock_contention_bpf_bytecode_len (C linkage) | -
@@ -3286,6 +3276,26 @@ test/fixy/test_concurrent_snapshot.cpp | std-object | 2 | std::chrono::time_poin
 test/fixy/test_concurrent_snapshot.cpp | std-object | 6 | std::jthread | -
 test/fixy/test_concurrent_snapshot.cpp | std-object | 4 | std::optional | -
 test/fixy/test_concurrent_snapshot.cpp | std-object | 1 | std::vector | -
+test/fixy/test_concurrent_spawn.cpp | c-library-call | 15 | fprintf | -
+test/fixy/test_concurrent_spawn.cpp | c-library-call | 15 | stderr | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 2 | std::__atomic_base::fetch_add | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 1 | std::__atomic_base::load | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 1 | std::all_of | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 5 | std::array | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 2 | std::array::fill | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 14 | std::array::operator[] | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 1 | std::array::value_type | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 2 | std::atomic | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 1 | std::find | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 2 | std::min | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 5 | std::operator== | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 1 | std::set::size | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 8 | std::this_thread::get_id | -
+test/fixy/test_concurrent_spawn.cpp | std-entity | 4 | std::thread::id | -
+test/fixy/test_concurrent_spawn.cpp | std-object | 7 | std::array | -
+test/fixy/test_concurrent_spawn.cpp | std-object | 1 | std::atomic | -
+test/fixy/test_concurrent_spawn.cpp | std-object | 1 | std::set | -
+test/fixy/test_concurrent_spawn.cpp | std-object | 2 | std::thread::id | -
 test/fixy/test_concurrent_swmr_session.cpp | c-library-call | 5 | fprintf | -
 test/fixy/test_concurrent_swmr_session.cpp | c-library-call | 5 | stderr | -
 test/fixy/test_concurrent_swmr_session.cpp | raw-pointer-object | 1 | - | -
@@ -3325,6 +3335,7 @@ test/fixy/test_concurrent_swmr_session.cpp | std-object | 1 | std::vector | -
 test/fixy/test_constant_time.cpp | c-array-object | 4 | - | -
 test/fixy/test_constant_time.cpp | std-entity | 13 | std::span | -
 test/fixy/test_constant_time.cpp | std-entity | 1 | std::to_integer | -
+test/fixy/test_core_atomic.cpp | replace-pending:std::bit_cast | 5 | std::bit_cast | -
 test/fixy/test_core_region.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 test/fixy/test_core_region.cpp | std-object | 1 | std::expected | -
 test/fixy/test_corpus.cpp | std-entity | 2 | std::basic_string_view::contains | -
@@ -3634,26 +3645,6 @@ test/fixy/test_os_socket.cpp | std-entity | 1 | std::error_code::message | -
 test/fixy/test_os_socket.cpp | std-entity | 1 | std::expected::error | -
 test/fixy/test_os_socket.cpp | std-entity | 1 | std::expected::operator-> | -
 test/fixy/test_os_socket.cpp | std-object | 1 | std::expected | -
-test/fixy/test_os_spawn.cpp | c-library-call | 15 | fprintf | -
-test/fixy/test_os_spawn.cpp | c-library-call | 15 | stderr | -
-test/fixy/test_os_spawn.cpp | std-entity | 2 | std::__atomic_base::fetch_add | -
-test/fixy/test_os_spawn.cpp | std-entity | 1 | std::__atomic_base::load | -
-test/fixy/test_os_spawn.cpp | std-entity | 1 | std::all_of | -
-test/fixy/test_os_spawn.cpp | std-entity | 5 | std::array | -
-test/fixy/test_os_spawn.cpp | std-entity | 2 | std::array::fill | -
-test/fixy/test_os_spawn.cpp | std-entity | 14 | std::array::operator[] | -
-test/fixy/test_os_spawn.cpp | std-entity | 1 | std::array::value_type | -
-test/fixy/test_os_spawn.cpp | std-entity | 2 | std::atomic | -
-test/fixy/test_os_spawn.cpp | std-entity | 1 | std::find | -
-test/fixy/test_os_spawn.cpp | std-entity | 2 | std::min | -
-test/fixy/test_os_spawn.cpp | std-entity | 5 | std::operator== | -
-test/fixy/test_os_spawn.cpp | std-entity | 1 | std::set::size | -
-test/fixy/test_os_spawn.cpp | std-entity | 8 | std::this_thread::get_id | -
-test/fixy/test_os_spawn.cpp | std-entity | 4 | std::thread::id | -
-test/fixy/test_os_spawn.cpp | std-object | 7 | std::array | -
-test/fixy/test_os_spawn.cpp | std-object | 1 | std::atomic | -
-test/fixy/test_os_spawn.cpp | std-object | 1 | std::set | -
-test/fixy/test_os_spawn.cpp | std-object | 2 | std::thread::id | -
 test/fixy/test_os_spinlock.cpp | c-library-call | 9 | fprintf | -
 test/fixy/test_os_spinlock.cpp | c-library-call | 9 | stderr | -
 test/fixy/test_os_spinlock.cpp | raw-pointer-object | 2 | - | -
@@ -3670,6 +3661,20 @@ test/fixy/test_os_spinlock.cpp | std-object | 1 | std::array | -
 test/fixy/test_os_spinlock.cpp | std-object | 2 | std::atomic | -
 test/fixy/test_os_spinlock.cpp | std-object | 1 | std::jthread | -
 test/fixy/test_os_spinlock.cpp | std-object | 2 | std::optional | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-array-object | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call __sched_cpucount | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 2 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call memcpy (__builtin_memcpy) | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_attr_destroy | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_attr_getguardsize | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_attr_getstacksize | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_getaffinity_np | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_getattr_np | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_getname_np | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 3 | ORACLE: the C library reports the attributes of the calling thread \| c-library-call pthread_self | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-object cpu_set_t | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| c-library-object pthread_attr_t | -
+test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| door-header <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+test/fixy/test_os_thread_tasks.cpp | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/test_os_time.cpp | c-library-call | 40 | fprintf | -
 test/fixy/test_os_time.cpp | c-library-call | 1 | pthread_kill | -
 test/fixy/test_os_time.cpp | c-library-call | 1 | pthread_self | -
@@ -3678,6 +3683,7 @@ test/fixy/test_os_time.cpp | c-library-call | 1 | sigemptyset | -
 test/fixy/test_os_time.cpp | c-library-call | 40 | stderr | -
 test/fixy/test_os_time.cpp | c-library-object | 1 | sigaction | -
 test/fixy/test_os_time.cpp | c-library-object | 1 | timespec | -
+test/fixy/test_os_time.cpp | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/fixy/test_os_time.cpp | std-entity | 1 | std::atomic | -
 test/fixy/test_os_time.cpp | std-entity | 1 | std::atomic::load | -
 test/fixy/test_os_time.cpp | std-entity | 1 | std::atomic::store | -
@@ -4735,6 +4741,7 @@ test/foundation/abort_probe.h | c-library-call | 1 | sigemptyset | -
 test/foundation/abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
 test/foundation/abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/foundation/abort_probe.h | c-library-object | 2 | sigaction | -
+test/foundation/abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/foundation/abort_probe.h | foreign-symbol | 1 | foundation::test::abort_probe_longjmp (asm label longjmp) | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::min | -
@@ -4803,7 +4810,6 @@ test/foundation/test_contract_handler.cpp | std-entity | 6 | std::basic_string_v
 test/foundation/test_contract_handler.cpp | std-entity | 2 | std::basic_string_view::starts_with | -
 test/foundation/test_contract_handler.cpp | std-object | 1 | std::basic_string | -
 test/foundation/test_contract_handler.cpp | std-object | 2 | std::basic_string_view | -
-test/foundation/test_core_atomic.cpp | replace-pending:std::bit_cast | 5 | std::bit_cast | -
 test/foundation/test_core_box.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 test/foundation/test_core_scalar.cpp | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type \| c-array-object | -
 test/foundation/test_core_scalar.cpp | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
@@ -5078,19 +5084,18 @@ test/foundation/test_read_view.cpp | c-library-call | 5 | fprintf | -
 test/foundation/test_read_view.cpp | c-library-call | 5 | stderr | -
 test/foundation/test_read_view.cpp | raw-pointer-object | 1 | - | -
 test/foundation/test_read_view.cpp | std-entity | 1 | std::__atomic_base::fetch_add | -
-test/foundation/test_read_view.cpp | std-entity | 3 | std::__atomic_base::load | -
-test/foundation/test_read_view.cpp | std-entity | 2 | std::__atomic_base::store | -
-test/foundation/test_read_view.cpp | std-entity | 6 | std::atomic | -
-test/foundation/test_read_view.cpp | std-entity | 18 | std::get | -
+test/foundation/test_read_view.cpp | std-entity | 1 | std::__atomic_base::load | -
+test/foundation/test_read_view.cpp | std-entity | 3 | std::atomic | -
+test/foundation/test_read_view.cpp | std-entity | 16 | std::get | -
 test/foundation/test_read_view.cpp | std-entity | 1 | std::jthread::join | -
 test/foundation/test_read_view.cpp | std-entity | 3 | std::optional::has_value | -
 test/foundation/test_read_view.cpp | std-entity | 2 | std::optional::operator* | -
-test/foundation/test_read_view.cpp | std-entity | 9 | std::pair | -
+test/foundation/test_read_view.cpp | std-entity | 8 | std::pair | -
 test/foundation/test_read_view.cpp | std-entity | 1 | std::tuple_element::type | -
-test/foundation/test_read_view.cpp | std-object | 3 | std::atomic | -
+test/foundation/test_read_view.cpp | std-object | 1 | std::atomic | -
 test/foundation/test_read_view.cpp | std-object | 1 | std::jthread | -
 test/foundation/test_read_view.cpp | std-object | 2 | std::optional | -
-test/foundation/test_read_view.cpp | std-object | 9 | std::pair | -
+test/foundation/test_read_view.cpp | std-object | 8 | std::pair | -
 test/foundation/test_read_view_escape_attacks.cpp | c-array-object | 1 | - | -
 test/foundation/test_read_view_escape_attacks.cpp | c-library-call | 1 | fprintf | -
 test/foundation/test_read_view_escape_attacks.cpp | c-library-call | 1 | printf | -
@@ -5699,6 +5704,7 @@ test/test_abort_probe.h | c-library-call | 1 | sigemptyset | -
 test/test_abort_probe.h | c-library-object | 1 | __jmp_buf_tag | -
 test/test_abort_probe.h | c-library-object | 1 | __sigset_t | -
 test/test_abort_probe.h | c-library-object | 2 | sigaction | -
+test/test_abort_probe.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/test_abort_probe.h | foreign-symbol | 1 | crucible::test::abort_probe_longjmp (asm label longjmp) | -
 test/test_arena.cpp | c-library-call | 1 | strcmp | -
 test/test_arena.cpp | raw-pointer-object | 12 | - | -

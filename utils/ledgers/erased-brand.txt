@@ -123,7 +123,6 @@ test/foundation/neg/neg_lifetime_start_as_proof_array.cpp | erased-brand | 3 | f
 test/foundation/neg/neg_permission_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_forged_without_key.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/foundation/neg/neg_permission_fork_runner_body_address.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_tag_not_empty.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_read_loan_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::ReadLoan | -
 test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::ReadLoan | -

@@ -102,6 +102,7 @@
 
 #include <fixy/SelfContained.h>
 #include <fixy/concurrent/PayloadRow.h>
+#include <fixy/concurrent/PermissionFork.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/NetworkModel.h>
 #include <fixy/session/Payload.h>
@@ -2798,15 +2799,15 @@ concept CtxFitsForkedChannel = WellFormedRunnableProtocol<Proto> && WellFormedRu
                             && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
                             && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
                             && CtxAdmitsChannelRow<Ctx, Proto, dual_of_t<Proto>>
-                            && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
+                            && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel and starts its two sides on two threads through
-// foundation's permission_fork.  The parent permission splits into
-// SelfTag and PeerTag.  The self body runs Proto over self_resource, and
-// the peer body runs the dual over peer_resource.  Each body gets its
-// endpoint, the fork's view of its child permission and the context, and
-// must return its endpoint at End.  The call returns the parent
-// permission after the two threads join.
+// mint_permission_fork of fixy/concurrent/PermissionFork.h.  The parent
+// permission splits into SelfTag and PeerTag.  The self body runs Proto
+// over self_resource, and the peer body runs the dual over peer_resource.
+// Each body gets its endpoint, the fork's view of its child permission
+// and the context, and must return its endpoint at End.  The call returns
+// the parent permission after the two threads join.
 //
 // No thread holds the two endpoints when the mint makes them.  Each
 // endpoint exists in the thread that runs its body, so ownership is a
@@ -2881,7 +2882,7 @@ concept CtxFitsForkedSides =
     && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
     && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
-    && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
+    && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
     && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
     && ForkedSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>
     && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
@@ -2981,7 +2982,7 @@ public:
         using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
         const auto [self_endpoint, peer_endpoint] =
             detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority(^^ResourceSelf)>(loc);
-        return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
+        return ::fixy::concurrent::mint_permission_fork<SelfTag, PeerTag>(
             ctx, std::move(parent),
             SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
             PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});

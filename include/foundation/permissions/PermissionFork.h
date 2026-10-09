@@ -19,38 +19,28 @@
 // body that returns its token does not close this route.  A token is
 // empty, so a moved-from token is a valid token of the same type, and a
 // body can return one after it moved the real one away.  The view has no
-// copy and no move, and only the fork constructs one, so nothing that a
-// body does with its view yields a token.  The fork rebuilds the parent
-// with mint_permission_combine_n, which consumes the children that the
-// split gave, so the rebuild is the combine of a split and nothing else.
+// copy and no move, and only the write borrow door constructs one, so
+// nothing that a body does with its view yields a token.  The fork
+// rebuilds the parent with mint_permission_combine_n, which consumes the
+// children that the split gave, so the rebuild is the combine of a split
+// and nothing else.
 //
-// This layer carries no cost model, so it cannot decide whether the
-// bodies run on their own threads or inline in child order.  It offers
-// the two arms as two mints and the layer above chooses.  The spawning
-// arm requires a context that owns the background effect; the inline
-// arm requires no effect beyond what the tags themselves need.
-//
-// The two arms share one body and one set of checks; the arm is a bool
-// parameter of both, and the checks' diagnostics name the arm they
-// fire for.  The body is a private member of PermissionForkRunner, whose
-// only friends are the two mints.
-//
-// One thread per child, spawned and joined inside the call.  That suits
-// a few children with long bodies.  It is the wrong shape for many short
-// tasks, which want a work-stealing pool instead.  The threads start and
-// join in src/foundation/PermissionFork.cpp, so a translation unit that
-// includes this header does not compile <thread>.
+// This header starts no thread.  It holds the view, the write borrow door
+// with_write_view, the checks of a fork, and the arm that runs the bodies
+// one after another on the calling thread.  The arm that runs each body on
+// a thread of its own is mint_permission_fork of
+// fixy/concurrent/PermissionFork.h, above the thread door of fixy/os.  The
+// layer above chooses between the two arms, because this layer carries no
+// cost model.
 //
 // A callable's own noexcept specification is all that is checked here.
-// The fixy::atom::ctrl::throws atom is above this layer.  fixy/os/Spawn.h
-// refuses a callable whose type carries it.
+// The fixy::atom::ctrl::throws atom is above this layer.
+// fixy/concurrent/Spawn.h refuses a callable whose type carries it.
 
 #include <foundation/Brand.h>
-#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
-#include <foundation/permissions/ForkTasks.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>
@@ -66,14 +56,21 @@
 
 namespace foundation::permissions {
 
-class PermissionForkRunner;
+namespace detail {
 
-// The proof that a fork body holds: exclusive access to one child region
-// for the time that the body runs.  It carries the brand of the parent,
-// so it names the region of that fork and no other region of the tag.
+// The only code that constructs a WriteView.  It has no member that
+// returns a view: a view exists only as a local of lend, for the time that
+// the body runs.
+struct write_view_door;
+
+}  // namespace detail
+
+// The proof that a body holds: exclusive access to one region for the
+// time that the body runs.  It carries the brand of the token that the
+// door lends, so it names that region and no other region of the tag.
 //
-// No copy and no move, so no view leaves the body that the fork lends it
-// to, and only the fork constructs one.  With every copy and move deleted
+// No copy and no move, so no view leaves the body that the door lends it
+// to, and only the door constructs one.  With every copy and move deleted
 // and the default constructor private, no constructor is trivial.  The
 // destructor is user-provided because GCC 16 counts a deleted member as
 // trivial and would call the class trivially copyable, so std::bit_cast
@@ -90,7 +87,7 @@ class [[nodiscard]] WriteView {
     static_assert(PermissionTag<Tag>, "WriteView<Tag, Brand>: Tag must be an empty non-union class type, as a "
                                       "Permission tag is.");
     static_assert(::foundation::brand::IsBrand<Brand>, "WriteView<Tag, Brand>: Brand must be an empty class type: "
-                                                       "the brand of the parent of the fork.");
+                                                       "the brand of the token that the door lends.");
 
 public:
     using tag_type = Tag;
@@ -115,11 +112,11 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 
 private:
-    // A proof that is built from nothing is not a proof.  Only the fork
+    // A proof that is built from nothing is not a proof.  Only the door
     // reaches this constructor.
     constexpr WriteView() noexcept {}
 
-    friend class PermissionForkRunner;
+    friend struct detail::write_view_door;
 };
 
 template <typename Ctx, typename Parent, typename... Children>
@@ -128,15 +125,12 @@ concept CtxFitsPermissionForkInline =
     && (CtxAdmitsPermission<Children, Ctx> && ...)
     && can_split_into_pack_v<Parent, Children...> && has_split_pack_authoring_witness_v<Parent, Children...>;
 
-template <typename Ctx, typename Parent, typename... Children>
-concept CtxFitsPermissionFork = CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
-
 namespace detail {
 
-// Each arm keeps one copy of each body and calls that copy as an lvalue,
-// so the check calls the decayed type as an lvalue too: the body that
-// the check admits is the body that runs.
+// The body of one borrow, and of one child of a fork.  Each arm of a fork
+// keeps one copy of each body and calls that copy as an lvalue, so the
+// check calls the decayed type as an lvalue too: the body that the check
+// admits is the body that runs.
 template <typename Callable, typename Child, typename Brand, typename Ctx>
 concept PermissionForkBody =
     std::is_invocable_v<std::decay_t<Callable>&, WriteView<Child, Brand> const&, Ctx const&>
@@ -190,187 +184,91 @@ struct fork_diagnostic {
     [[nodiscard]] consteval char const* data() const noexcept { return text.data(); }
 };
 
-// The four checks both arms make.  The split this delegates to asserts
-// the pairwise-distinct one again; asserting it here makes the
-// diagnostic name the fork.  The constraint on the runner's body refuses
-// a count mismatch and a body that cannot take its child first, so of
-// the four only the pairwise-distinct check can fire.
-template <bool Spawn, typename Ctx, typename Brand, typename ChildrenTuple, typename CallablesTuple>
+// The check that each arm makes after its constraint.  The constraint of
+// each mint refuses a count mismatch and a body that cannot take its child
+// first.  The split that a fork delegates to asserts the pairwise-distinct
+// check again, and asserting it here makes the diagnostic name the arm.
+template <bool Spawn, typename... Children>
 consteval void permission_fork_check_() noexcept {
-    []<typename... Children, typename... Callables>(std::tuple<Children...>*, std::tuple<Callables...>*) {
-        static_assert(sizeof...(Children) == sizeof...(Callables),
-                      fork_diagnostic(Spawn, ": number of Child tags must match number of callables."));
-        static_assert(tags_are_distinct({^^Children...}),
-                      fork_diagnostic(Spawn, Spawn ? ": Child region tags must be PAIRWISE DISTINCT — "
-                                                     "forking two threads with Permission<A> each would alias "
-                                                     "region A and produce a data race."
-                                                   : ": Child region tags must be PAIRWISE DISTINCT — "
-                                                     "two bodies with Permission<A> each would alias region A."));
-        static_assert(
-            (std::is_invocable_v<std::decay_t<Callables>&, WriteView<Children, Brand> const&, Ctx const&> && ...),
-            fork_diagnostic(Spawn, ": each callable must be invocable as "
-                                   "Callable_i(WriteView<Child_i, Brand> const&, Ctx const&)."));
-        static_assert(
-            (std::is_nothrow_invocable_v<std::decay_t<Callables>&, WriteView<Children, Brand> const&, Ctx const&>
-             && ...),
-            fork_diagnostic(Spawn, ": callables must be noexcept."));
-    }(static_cast<ChildrenTuple*>(nullptr), static_cast<CallablesTuple*>(nullptr));
+    static_assert(tags_are_distinct({^^Children...}),
+                  fork_diagnostic(Spawn, Spawn ? ": Child region tags must be PAIRWISE DISTINCT — "
+                                                 "forking two threads with Permission<A> each would alias "
+                                                 "region A and produce a data race."
+                                               : ": Child region tags must be PAIRWISE DISTINCT — "
+                                                 "two bodies with Permission<A> each would alias region A."));
 }
 
-// The fit of one arm: the spawning arm needs the background effect, the
-// inline arm does not.  The runner below states it again on its own body,
-// so the check stands where the threads start and not only at the doors.
-template <bool Spawn, typename Ctx, typename Parent, typename... Children>
-concept CtxFitsPermissionForkArm = (Spawn && CtxFitsPermissionFork<Ctx, Parent, Children...>)
-                                || (!Spawn && CtxFitsPermissionForkInline<Ctx, Parent, Children...>);
-
-}  // namespace detail
-
-// The two mints, declared before the runner so that its friend
-// declarations name them and nothing else.
-template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
-[[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                             Callables&&... callables) noexcept;
-
-template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
-[[nodiscard]] constexpr Permission<Parent, Brand>
-mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
-
-// The body of a fork: split the parent, lend each body the view of its
-// child, and combine the children once every body has finished.  It does
-// the work of the two mints, so only the two mints may reach it.  Every
-// member is private and static, the two mints are the only friends, and
-// the class is final and cannot be built, so no other scope can call a
-// member, derive to reach one, or take one's address.
-//
-// A free function template in a detail namespace once held this body.
-// Any translation unit could call it, and it carried no constraint, so a
-// caller under the foreground context started threads the spawning mint
-// would have refused for want of the background effect.
-//
-// The friend declarations repeat each mint's constraint exactly, because
-// the language requires it.  The class sits in this namespace, not in
-// detail, for the reason Permission.h gives for perm_mint_key: a friend
-// declaration in a nested namespace would declare a new function there
-// and befriend that one instead.
-class PermissionForkRunner final : ::foundation::NoObject<PermissionForkRunner> {
-    template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-        requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
-                                                    ^^std::tuple<Callables...>))
-    friend Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                          Callables&&... callables) noexcept;
-
-    template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-        requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
-                                                    ^^std::tuple<Callables...>))
-    friend constexpr Permission<Parent, Brand>
-    mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
-
-    // Runs one body with the view of its child.  The view is a local of
-    // this frame, so it ends when the body returns.
-    template <typename Child, typename Brand, typename Ctx, typename Body>
-    static constexpr void run_body_(Body& body, Ctx const& ctx) noexcept {
-        WriteView<Child, Brand> const view{};
-        body(view, ctx);
-    }
-
-    // The frame of one spawned body: the body in the tuple of the fork, and
-    // the context of the fork.
-    template <typename Body, typename Ctx>
-    struct spawn_frame_ {
-        Body* body = nullptr;
-        Ctx const* ctx = nullptr;
-    };
-
-    // Runs on the thread of one body.  The thread moves the body out of
-    // the tuple and copies the context, so the body lives on its own thread
-    // and ends there.  The fork waits in the join, so it does not touch the
-    // tuple or the context while a thread reads them.
-    template <typename Child, typename Brand, typename Ctx, typename Body>
-    static void run_spawned_(void* frame) noexcept {
-        spawn_frame_<Body, Ctx> const& source = *static_cast<spawn_frame_<Body, Ctx>*>(frame);
-        Body body = std::move(*source.body);
-        Ctx const child_ctx = *source.ctx;
-        run_body_<Child, Brand>(body, child_ctx);
-    }
-
-    template <typename Brand, typename... Children, typename Ctx, typename Bodies, std::size_t... Is>
-    static void spawn_(Ctx const& ctx, Bodies& bodies, std::index_sequence<Is...>) noexcept {
-        std::tuple<spawn_frame_<std::tuple_element_t<Is, Bodies>, Ctx>...> frames{
-            spawn_frame_<std::tuple_element_t<Is, Bodies>, Ctx>{&std::get<Is>(bodies), &ctx}...};
-        std::array<detail::fork_task, sizeof...(Is)> const tasks{detail::fork_task{
-            &std::get<Is>(frames), &run_spawned_<Children...[Is], Brand, Ctx, std::tuple_element_t<Is, Bodies>>}...};
-        detail::run_fork_tasks(tasks);
-    }
-
-    template <typename Brand, typename... Children, typename Ctx, typename Bodies, std::size_t... Is>
-    static constexpr void run_inline_(Ctx const& ctx, Bodies& bodies, std::index_sequence<Is...>) noexcept {
-        (run_body_<Children...[Is], Brand>(std::get<Is>(bodies), ctx), ...);
-    }
-
-    // The children carry the parent's brand, the views carry it into the
-    // bodies, and the combine carries it back out, so the region that
-    // returns is the one that went in.
-    template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-        requires detail::CtxFitsPermissionForkArm<Spawn, Ctx, Parent, Children...>
-              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
-                                                    ^^std::tuple<Callables...>))
-    static constexpr Permission<Parent, Brand> run_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                    Callables&&... callables) noexcept {
-        detail::permission_fork_check_<Spawn, Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>();
-
-        auto children = mint_permission_split_n<Children...>(ctx, std::move(parent));
-
-        auto bodies = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
-
-        if constexpr (Spawn) {
-            spawn_<Brand, Children...>(ctx, bodies, std::index_sequence_for<Children...>{});
-        } else {
-            run_inline_<Brand, Children...>(ctx, bodies, std::index_sequence_for<Children...>{});
-        }
-
-        // The children never left this frame.  The combine consumes each
-        // of them, and it checks the manifest and the brand again.
-        return std::apply(
-            [&ctx](auto&... child) noexcept { return mint_permission_combine_n<Parent>(ctx, std::move(child)...); },
-            children);
+struct write_view_door {
+    // Complexity: the cost of the body.  The frame holds the token and one
+    // empty view, so the door adds no instruction when it is inlined.  The
+    // door discards the result of the body, as a fork does.
+    template <typename Ctx, typename Tag, typename Brand, typename Body>
+    [[nodiscard]] static constexpr Permission<Tag, Brand> lend(Ctx const& ctx, Permission<Tag, Brand>&& token,
+                                                               Body& body) noexcept {
+        Permission<Tag, Brand> held{std::move(token)};
+        WriteView<Tag, Brand> const view{};
+        static_cast<void>(body(view, ctx));
+        return held;
     }
 };
 
+}  // namespace detail
+
+// The write borrow.  The door takes the token by value category rvalue,
+// keeps it in its own frame, gives the body a WriteView by const reference
+// and the context, and hands the token back when the body returns.  While
+// the body runs, the caller holds no name for the token, so the body
+// cannot move it, end it or split it.  The context admits the row of the
+// tag, as each mint of the tag asks.
+template <typename Ctx, typename Tag, typename Brand, typename Body>
+    requires ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Tag, Ctx>
+          && detail::PermissionForkBody<Body, Tag, Brand, Ctx>
+[[nodiscard]] constexpr Permission<Tag, Brand> with_write_view(Ctx const& ctx, Permission<Tag, Brand>&& token,
+                                                               Body&& body) noexcept {
+    return detail::write_view_door::lend(ctx, std::move(token), body);
+}
+
+// A named token stays with the caller while the body runs, so the body
+// could move it or end it through a capture.  The deleted twin refuses a
+// named token and a const one, which cannot move into the frame.  It takes
+// no token that the caller gives with std::move, so a call that the gate of
+// the door refuses names that gate.
+template <typename Ctx, typename Token, typename Body>
+    requires IsPermission<std::remove_cvref_t<Token>>
+              && (std::is_lvalue_reference_v<Token> || std::is_const_v<std::remove_reference_t<Token>>)
+void with_write_view(Ctx const&, Token&&, Body&&) =
+    delete("with_write_view lends its token to the body and hands the token back.  Pass the token with std::move, "
+           "and keep the token that the call returns");
+
+// The bodies run one after another on the calling thread, in child order.
+// Each body borrows the view of its own child through with_write_view,
+// and the fork combines the children that the door gave back.
+//
 // The clause names two gates, and folding them behind one name to read as
 // a single concept was measured and reverted.  The children half then
 // goes through a variable template over a tuple of the child tags, which
 // is one atomic constraint, so the compiler stops reporting there: the
-// two fixtures on this mint lost the conjunct that answered false — the
-// absent background capability, the pack that does not partition — and
-// named a tuple wrapper instead.  Both halves stay spelled here.
-template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
-[[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                             Callables&&... callables) noexcept {
-    return PermissionForkRunner::run_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
-}
-
-// The bodies run one after another on the calling thread, in child
-// order.  The split and the combine are the same as the spawning arm's,
-// so a body still borrows its own child and nothing else.
-// The inline arm spells its two halves for the same reason as the arm
-// above, and differs from it in one conjunct: it demands no background
-// capability, because it starts no thread.
+// fixtures on this mint lost the conjunct that answered false, the pack
+// that does not partition, and named a tuple wrapper instead.  Both
+// halves stay spelled here.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
           && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
 [[nodiscard]] constexpr Permission<Parent, Brand>
 mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
-    return PermissionForkRunner::run_<false, Children...>(ctx, std::move(parent),
-                                                          std::forward<Callables>(callables)...);
+    detail::permission_fork_check_<false, Children...>();
+    auto children = mint_permission_split_n<Children...>(ctx, std::move(parent));
+    auto bodies = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
+    // The comma fold runs the bodies in child order.  Each door gives its
+    // child back into the place that it took the child from.
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) constexpr noexcept {
+        ((std::get<Is>(children) = with_write_view(ctx, std::move(std::get<Is>(children)), std::get<Is>(bodies))), ...);
+    }(std::index_sequence_for<Children...>{});
+    // The children never left this frame.  The combine consumes each of
+    // them, and it checks the manifest and the brand again.
+    return std::apply(
+        [&ctx](auto&... child) noexcept { return mint_permission_combine_n<Parent>(ctx, std::move(child)...); },
+        children);
 }
 
 namespace row_discipline {

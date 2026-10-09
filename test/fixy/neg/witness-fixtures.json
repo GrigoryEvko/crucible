@@ -102,6 +102,11 @@
       "constructor": "\\bProducerHandle\\("
     },
     {
+      "name": "neg_witness_concurrent_permissionforkthreads_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bPermissionForkThreads\\("
+    },
+    {
       "name": "neg_witness_concurrent_pipeline_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bPipeline\\("
@@ -350,11 +355,6 @@
       "name": "neg_witness_permissions_permission_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bPermission\\("
-    },
-    {
-      "name": "neg_witness_permissions_permissionforkrunner_direct_construction",
-      "reason": "use of deleted function",
-      "constructor": "\\bPermissionForkRunner\\("
     },
     {
       "name": "neg_witness_permissions_readloan_direct_construction",
@@ -685,12 +685,12 @@
       "header": "foundation/permissions/Permission.h"
     },
     {
-      "type": "foundation::permissions::PermissionForkRunner",
-      "header": "foundation/permissions/PermissionFork.h"
+      "type": "fixy::concurrent::PermissionForkThreads",
+      "header": "fixy/concurrent/PermissionFork.h"
     },
     {
       "type": "fixy::spawn::ParallelForRunner",
-      "header": "fixy/os/Spawn.h"
+      "header": "fixy/concurrent/Spawn.h"
     },
     {
       "type": "foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>",

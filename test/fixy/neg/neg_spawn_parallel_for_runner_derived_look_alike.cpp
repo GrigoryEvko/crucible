@@ -8,7 +8,7 @@
 //
 // Expected diagnostic: a final base cannot be derived from.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 namespace {
 struct LookAlike : fixy::spawn::ParallelForRunner {};

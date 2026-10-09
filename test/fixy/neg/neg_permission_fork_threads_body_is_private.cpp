@@ -1,21 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The fork body splits a parent, starts one body per child and rebuilds
-// the parent.  That is the work of the two fork mints, so only the two
-// mints may reach it: the body is a private static member of
-// PermissionForkRunner, and the mints are its only friends.
+// The body of the fork splits a parent, starts one thread per child and
+// rebuilds the parent.  That is the work of mint_permission_fork, so only
+// the mint may reach it: the body is a private static member of
+// PermissionForkThreads, and the mint is its only friend.
 //
 // This caller builds everything a fork needs, honestly: a declared
 // partition, a background context and noexcept bodies.  So the only
-// rejection left is the access check on the body itself.  A body that
-// any translation unit could call once started threads under the
-// foreground context, which the spawning mint refuses.
+// rejection left is the access check on the body itself.  A body that any
+// translation unit could call would start threads under a context that the
+// mint refuses.
 //
 // Expected diagnostic: the body is private within this context.
 
+#include <fixy/concurrent/PermissionFork.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/permissions/PermissionFork.h>
 
 #include <type_traits>
 #include <utility>
@@ -43,7 +43,7 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 
 int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = ::foundation::permissions::PermissionForkRunner::run_<true, Left, Right>(
+    [[maybe_unused]] auto rebuilt = ::fixy::concurrent::PermissionForkThreads::run_<Left, Right>(
         BgCtx{::foundation::effects::testing::bg()}, std::move(whole),
         [](auto const& /*left_view*/, BgCtx const&) noexcept {},
         [](auto const& /*right_view*/, BgCtx const&) noexcept {});

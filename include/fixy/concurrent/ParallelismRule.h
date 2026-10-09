@@ -34,7 +34,7 @@
 // a fraction of that many CPUs, which is worse than staying sequential.
 //
 // This header is the one place the cache thresholds live.  The rule
-// reads the probed sizes at run time.  fixy/os/Spawn.h and
+// reads the probed sizes at run time.  fixy/concurrent/Spawn.h and
 // fixy/concurrent/Pipeline.h ask is_core_resident or recommend rather
 // than compare sizes of their own.
 //

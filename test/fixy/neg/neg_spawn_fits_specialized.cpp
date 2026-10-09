@@ -4,7 +4,7 @@
 // spawn_fits is a function at namespace scope that is not a template, so
 // no specialization matches it.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 
 #include <meta>
 

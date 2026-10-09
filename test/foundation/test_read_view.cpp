@@ -166,11 +166,12 @@ struct has_split_pack_authoring_witness<fork_tags::Whole, fork_tags::Left, fork_
 namespace {
 
 // The view that a fork lends a body: an empty proof that no code outside
-// the fork builds, that cannot leave the body, and that is no token.
+// the write borrow door builds, that cannot leave the body, and that is no
+// token.
 struct WriteViewBrand {};
 using ForkView = WriteView<fork_tags::Left, WriteViewBrand>;
 static_assert(sizeof(ForkView) == 1, "a WriteView is an empty proof");
-static_assert(!std::is_default_constructible_v<ForkView>, "only the fork builds a WriteView");
+static_assert(!std::is_default_constructible_v<ForkView>, "only the write borrow door builds a WriteView");
 static_assert(!std::is_copy_constructible_v<ForkView> && !std::is_move_constructible_v<ForkView>,
               "a WriteView cannot leave the body that the fork lends it to");
 static_assert(!std::is_copy_assignable_v<ForkView> && !std::is_move_assignable_v<ForkView>);
@@ -186,46 +187,12 @@ namespace {
 
 namespace eff = ::foundation::effects;
 
-// The spawning arm wants a context that owns the background effect; the
-// inline arm runs in any context, here the foreground one.
-using BgDrainCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+// The inline arm runs in any context, here the foreground one.  The arm
+// that starts threads is tested in test/fixy/test_concurrent_permission_fork.cpp.
 using HotFgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
-// Two writers, each with its own write permission, read one view of the
-// shared configuration.  The fork joins before the body of the door
-// returns, so each child holds a reference to a view that outlives it.
-void test_fork_inside_the_door() {
-    auto config_perm = mint_permission_root<ConfigData>();
-
-    std::atomic<int> left_done{0};
-    std::atomic<int> right_done{0};
-
-    auto whole = mint_permission_root<fork_tags::Whole>();
-    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
-
-    auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](auto const& cv) {
-        return mint_permission_fork<fork_tags::Left, fork_tags::Right>(
-            BgDrainCtx{::foundation::effects::testing::bg()}, std::move(whole),
-            [&cv, &left_done](WriteView<fork_tags::Left, WholeBrand> const&, BgDrainCtx const&) noexcept {
-                (void)cv;
-                left_done.store(1, std::memory_order_release);
-            },
-            [&cv, &right_done](WriteView<fork_tags::Right, WholeBrand> const&, BgDrainCtx const&) noexcept {
-                (void)cv;
-                right_done.store(1, std::memory_order_release);
-            });
-    });
-
-    // The fork has returned, so both workers have joined.
-    CRUCIBLE_TEST_REQUIRE(left_done.load() == 1);
-    CRUCIBLE_TEST_REQUIRE(right_done.load() == 1);
-
-    permission_drop(std::move(rebuilt));
-    permission_drop(std::move(config_back));
-}
-
-// The same fork on the inline arm: the bodies run in child order on
-// this thread, and the foreground context needs no background effect.
+// A fork on the inline arm inside the door: the bodies run in child order
+// on this thread, and the foreground context needs no background effect.
 void test_fork_inline_inside_the_door() {
     auto config_perm = mint_permission_root<ConfigData>();
 
@@ -337,7 +304,6 @@ int main() {
     run_test("test_door_value_body", test_door_value_body);
     run_test("test_door_struct_body", test_door_struct_body);
     run_test("test_door_lends_the_view_of_the_source_brand", test_door_lends_the_view_of_the_source_brand);
-    run_test("test_fork_inside_the_door", test_fork_inside_the_door);
     run_test("test_fork_inline_inside_the_door", test_fork_inline_inside_the_door);
     run_test("test_door_over_a_share_guard", test_door_over_a_share_guard);
     run_test("test_loan_across_threads", test_loan_across_threads);

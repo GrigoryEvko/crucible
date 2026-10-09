@@ -32,12 +32,12 @@
 // SessionMintDoor::fork_channel of fixy/session/Handle.h, whose gate
 // admits the relation of this mint (ForkedSidesAgree).
 
+#include <fixy/concurrent/PermissionFork.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Subtype.h>
 
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/permissions/PermissionFork.h>
 
 #include <concepts>
 #include <cstddef>
@@ -70,7 +70,7 @@ concept CtxFitsAsyncForkedChannel =
     && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto> && StatesOneChannelCapacity<ResourceSelf, ResourcePeer>
     && SubtypeAsync<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
     && SubtypeAsync<PeerProto, dual_of_t<SelfProto>, ResourcePeer>
-    && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
+    && ::fixy::concurrent::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel whose self side runs SelfProto and whose peer side runs
 // PeerProto, and starts the two sides on two threads.  The call returns

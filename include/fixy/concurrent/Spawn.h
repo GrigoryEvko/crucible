@@ -30,12 +30,13 @@
 //     element, and recombine consumes all of them to reissue the parent.
 //
 //  4. mint_spawn takes the budget of its children as a parameter, and
-//     fixy/concurrent/ParallelismRule.h chooses the arm from it.
-//     foundation ships two arms: mint_permission_fork (one thread per
-//     child, needs Effect::Bg) and mint_permission_fork_inline (bodies in
-//     child order on the calling thread).  A working set in the private
-//     cache of one core runs inline, and a larger one starts one thread
-//     per child.  The context carries no workload axis, and
+//     fixy/concurrent/ParallelismRule.h chooses the arm from it.  The two
+//     arms are mint_permission_fork of fixy/concurrent/PermissionFork.h
+//     (one thread per child, needs Effect::Bg) and
+//     mint_permission_fork_inline of foundation/permissions/PermissionFork.h
+//     (bodies in child order on the calling thread).  A working set in
+//     the private cache of one core runs inline, and a larger one starts
+//     one thread per child.  The context carries no workload axis, and
 //     foundation/effects/Ctx.h tells a fork to take its budget as a
 //     parameter.  The context must still own Effect::Bg, because the
 //     choice happens at run time and the spawning arm must be admissible.
@@ -58,9 +59,11 @@
 #include <fixy/Throws.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/concurrent/ParallelismRule.h>
+#include <fixy/concurrent/PermissionFork.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -69,7 +72,6 @@
 #include <array>
 #include <cstddef>
 #include <meta>
-#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -181,7 +183,7 @@ namespace detail {
     const std::vector<std::meta::info> child_tags = std::meta::template_arguments_of(children);
     std::vector<std::meta::info> fork_arguments{ctx, parent};
     fork_arguments.insert(fork_arguments.end(), child_tags.begin(), child_tags.end());
-    return std::meta::extract<bool>(std::meta::substitute(^^perm::CtxFitsPermissionFork, fork_arguments))
+    return std::meta::extract<bool>(std::meta::substitute(^^::fixy::concurrent::CtxFitsPermissionFork, fork_arguments))
         && perm::detail::each_body_takes_its_child(ctx, brand, children, callables);
 }
 
@@ -218,7 +220,8 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
         return perm::mint_permission_fork_inline<Children...>(ctx, std::move(parent),
                                                               std::forward<Callables>(callables)...);
     }
-    return perm::mint_permission_fork<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
+    return ::fixy::concurrent::mint_permission_fork<Children...>(ctx, std::move(parent),
+                                                                 std::forward<Callables>(callables)...);
 }
 
 // The background capability is demanded even when N is one or the budget
@@ -309,12 +312,14 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     static void run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
                             std::index_sequence<Is...>) noexcept {
         std::array<worker_frame_<Shards, Body>, sizeof...(Is)> frames{};
-        std::array<detail::thread_task, sizeof...(Is)> tasks{};
+        std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{};
         for (std::size_t worker = 0; worker < threads; ++worker) {
             frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
-            tasks[worker] = detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
+            tasks[worker] = ::fixy::thread::detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
         }
-        detail::run_thread_tasks(std::span<const detail::thread_task>{tasks.data(), threads});
+        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), threads),
+                                                 ::fixy::thread::ThreadOptions{})
+            .expect("mint_parallel_for: no worker thread started");
     }
 };
 

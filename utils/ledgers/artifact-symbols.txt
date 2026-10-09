@@ -67,6 +67,15 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libfixy.a | libc-allow | 1 | memcpy | -
 @build/libfixy.a | libc-allow | 1 | memmove | -
 @build/libfixy.a | libc-allow | 1 | memset | -
+@build/libfixy.a | libc-allow | 1 | pthread_attr_destroy | -
+@build/libfixy.a | libc-allow | 1 | pthread_attr_init | -
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setaffinity_np | -
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setguardsize | -
+@build/libfixy.a | libc-allow | 1 | pthread_attr_setstacksize | -
+@build/libfixy.a | libc-allow | 1 | pthread_create | -
+@build/libfixy.a | libc-allow | 1 | pthread_join | -
+@build/libfixy.a | libc-allow | 1 | pthread_self | -
+@build/libfixy.a | libc-allow | 1 | pthread_setname_np | -
 @build/libfixy.a | libc-ratchet | 1 | __errno_location | -
 @build/libfixy.a | libc-ratchet | 1 | __fprintf_chk | -
 @build/libfixy.a | libc-ratchet | 1 | memchr | -
@@ -86,31 +95,16 @@ configuration x86_64-release tier znver5-f612fd24
 @build/libfoundation.a | libc-allow | 1 | __stack_chk_fail | -
 @build/libfoundation.a | libc-allow | 1 | memset | -
 @build/libfoundation.a | libc-ratchet | 1 | __fprintf_chk | -
-@build/libfoundation.a | libc-ratchet | 1 | __libc_single_threaded | -
 @build/libfoundation.a | libc-ratchet | 1 | abort | -
 @build/libfoundation.a | libc-ratchet | 1 | flockfile | -
 @build/libfoundation.a | libc-ratchet | 1 | funlockfile | -
 @build/libfoundation.a | libc-ratchet | 1 | fwrite | -
 @build/libfoundation.a | libc-ratchet | 1 | getenv | -
-@build/libfoundation.a | libc-ratchet | 1 | pthread_self | -
-@build/libfoundation.a | libc-ratchet | 1 | sched_yield | -
 @build/libfoundation.a | libc-ratchet | 1 | stderr | -
 @build/libfoundation.a | libc-ratchet | 1 | strcmp | -
 @build/libfoundation.a | libc-ratchet | 1 | strlen | -
-@build/libfoundation.a | ratchet | 1 | _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE | -
-@build/libfoundation.a | ratchet | 1 | _ZNSt6thread4joinEv | -
-@build/libfoundation.a | ratchet | 1 | _ZNSt6thread6_StateD2Ev | -
-@build/libfoundation.a | ratchet | 1 | _ZNSt8__detail13__notify_implEPKvbRKNS_16__wait_args_baseE | -
-@build/libfoundation.a | ratchet | 1 | _ZSt20__throw_length_errorPKc | -
 @build/libfoundation.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
 @build/libfoundation.a | ratchet | 1 | _ZSt24__throw_out_of_range_fmtPKcz | -
-@build/libfoundation.a | ratchet | 1 | _ZSt9terminatev | -
-@build/libfoundation.a | ratchet | 1 | _ZTINSt6thread6_StateE | -
-@build/libfoundation.a | ratchet | 1 | _ZTVN10__cxxabiv120__si_class_type_infoE | -
-@build/libfoundation.a | ratchet | 1 | _ZdlPvm | -
-@build/libfoundation.a | ratchet | 1 | _Znwm | -
-@build/libfoundation.a | ratchet | 1 | __cxa_begin_catch | -
-@build/libfoundation.a | vtable | admit | std::thread::_State_impl< | std::jthread starts each thread through std::thread::_State_impl, a polymorphic class template of libstdc++.  src/foundation/PermissionFork.cpp starts the threads of a spawning permission fork and of the door of fixy/os/ThreadTasks.h with std::jthread by design (CLAUDE.md §IX)
 @x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_ | -
 @x86_64-release | @build/libcrucible.a | ratchet | -1 | _ZSt9terminatev | -
 @x86_64-release | @build/libfixy.a | ratchet | +1 | _ZNSt9bad_allocD1Ev | -

@@ -2,7 +2,7 @@
 // is spawned, so the contract does not change shape with N.  A foreground
 // context is refused.
 
-#include <fixy/os/Spawn.h>
+#include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>

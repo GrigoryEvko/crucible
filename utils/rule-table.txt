@@ -241,6 +241,7 @@ door <linux/netlink.h> include/fixy/os/Socket.h
 door <sys/socket.h> include/fixy/os/Socket.h
 door <linux/ptp_clock.h> include/fixy/os/Time.h
 door <sys/ioctl.h> include/fixy/os/Time.h
+door <pthread.h> src/fixy/os/ThreadTasks.cpp
 door <contracts> src/foundation/ContractHandler.cpp
 
 admit <type_traits> | a type trait is a compile-time query, and it makes no object
@@ -448,14 +449,14 @@ witness <foundation/permissions/Permission.h> private | foundation::permissions:
 # permission token.
 witness <foundation/permissions/Permission.h> private | foundation::permissions::erase_brand_key | foundation::permissions::erase_brand_key{}
 witness <foundation/permissions/Permission.h> no-match | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{}
-# Only the fork builds the view that it lends a body.  Any empty class is
-# a brand, so a second canonical tag stands in for one here.
+# Only the write borrow door builds the view that it lends a body.  Any
+# empty class is a brand, so a second canonical tag stands in for one here.
 witness <foundation/permissions/PermissionFork.h> private | foundation::permissions::WriteView<foundation::permissions::tag::HugePageTag, foundation::permissions::tag::MmapRegionTag> | foundation::permissions::WriteView<foundation::permissions::tag::HugePageTag, foundation::permissions::tag::MmapRegionTag>{}
 # Only an admission builds the key of a federation peer token, after a
 # handshake verifies.
 witness <foundation/permissions/Permission.h> private | foundation::permissions::federation_admission_key | foundation::permissions::federation_admission_key{}
-witness <foundation/permissions/PermissionFork.h> deleted | foundation::permissions::PermissionForkRunner | foundation::permissions::PermissionForkRunner{}
-witness <fixy/os/Spawn.h> deleted | fixy::spawn::ParallelForRunner | fixy::spawn::ParallelForRunner{}
+witness <fixy/concurrent/PermissionFork.h> deleted | fixy::concurrent::PermissionForkThreads | fixy::concurrent::PermissionForkThreads{}
+witness <fixy/concurrent/Spawn.h> deleted | fixy::spawn::ParallelForRunner | fixy::spawn::ParallelForRunner{}
 witness <foundation/permissions/Permission.h> private | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{}
 witness <foundation/permissions/Permission.h> private | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()}
 witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{}

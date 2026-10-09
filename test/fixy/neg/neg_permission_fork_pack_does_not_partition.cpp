@@ -2,9 +2,9 @@
 // a declared partition of the parent.  No can_split_into_pack<Whole, Left,
 // Right> is declared here, so the fork's fit concept is not satisfied.
 
+#include <fixy/concurrent/PermissionFork.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/permissions/PermissionFork.h>
 
 #include <utility>
 
@@ -24,7 +24,7 @@ using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
 
 int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork<Left, Right>(
+    [[maybe_unused]] auto rebuilt = ::fixy::concurrent::mint_permission_fork<Left, Right>(
         // Built honestly, so the only rejection is the partition check
         // this fixture is named for.  A context carries the capability
         // it claims; a fixture that failed to build its context

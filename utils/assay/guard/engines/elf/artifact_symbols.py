@@ -213,8 +213,26 @@ RUNTIME_FILES = (
 SUPPORT_ARCHIVES = ("libgcc.a", "libgcc_eh.a")
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
-# The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).
-DOOR_CALLS = frozenset({"pthread_create", "pthread_join", "sigaction", "dlopen", "clock_gettime", "malloc", "free"})
+# The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).  The thread door
+# of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, and names it.
+DOOR_CALLS = frozenset(
+    {
+        "pthread_create",
+        "pthread_join",
+        "pthread_attr_init",
+        "pthread_attr_destroy",
+        "pthread_attr_setstacksize",
+        "pthread_attr_setguardsize",
+        "pthread_attr_setaffinity_np",
+        "pthread_self",
+        "pthread_setname_np",
+        "sigaction",
+        "dlopen",
+        "clock_gettime",
+        "malloc",
+        "free",
+    }
+)
 # The allowlist of the C runtime symbols of each symbol library, by its target name, without the support library.
 LIBC_ALLOWLISTS = {
     "foundation": COMPILER_CALLS,

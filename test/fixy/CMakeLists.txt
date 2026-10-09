@@ -4840,10 +4840,58 @@ fixy_neg_compile_test(neg_fp_log_poly_of_subnormal
 # fixtures below: a refused door is a compile error, not a runtime result.
 fixy_test(test_os_spinlock)
 
-# test_os_spawn runs both mints for real: that every child body ran, that
-# the parent Permission comes back, that the budget chooses the arm, and
-# that a recombined region still describes the storage it started with.
-fixy_test(test_os_spawn)
+# test_concurrent_spawn runs both mints for real: that every child body
+# ran, that the parent Permission comes back, that the budget chooses the
+# arm, and that a recombined region still describes the storage it started
+# with.
+fixy_test(test_concurrent_spawn)
+
+# test_os_thread_tasks starts threads through the door of
+# fixy/os/ThreadTasks.h with each option, and reads each option back from
+# the thread that it started.  test_concurrent_permission_fork runs the fork
+# that starts one thread per child.  test_core_atomic runs the Atomic family
+# of foundation alone and on four threads, which the fork starts.
+fixy_test(test_os_thread_tasks)
+fixy_test(test_concurrent_permission_fork)
+fixy_test(test_core_atomic)
+
+# The door starts threads only for a context that owns Bg or Init, and a
+# thread name is a literal of 1 to 15 characters.
+fixy_neg_compile_test(neg_thread_run_joined_from_the_foreground
+  "no matching function for call to .run_joined"
+  "required for the satisfaction of .CtxStartsThreads<Ctx>.")
+fixy_neg_compile_test(neg_thread_name_too_long
+  "conversion from .const char \\[17\\]. to non-scalar type .const fixy::thread::ThreadName. requested"
+  "neg_thread_name_too_long\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_thread_name_holds_a_zero_byte
+  "call to non-.constexpr. function .static void fixy::thread::ThreadName::name_holds_a_zero_byte_\\(\\)."
+  "neg_thread_name_holds_a_zero_byte\\.cpp:13:[0-9]+:")
+
+# The fork that starts one thread per child.  A child pack that is not a
+# declared partition of the parent, and a context whose row has no Bg
+# effect, are refused at the door.  The satisfaction notes name the fit of
+# the fork and the conjunct that evaluated false.
+fixy_neg_compile_test(neg_permission_fork_pack_does_not_partition
+  "constraints not satisfied"
+  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
+  "can_split_into_pack_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
+fixy_neg_compile_test(neg_permission_fork_without_bg
+  "constraints not satisfied"
+  "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
+  "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+
+# The body of the fork is a private member of PermissionForkThreads, and
+# the mint is its only friend: no other scope calls it, derives from the
+# class to reach it, or takes its address.
+fixy_neg_compile_test(neg_permission_fork_threads_body_is_private
+  "is private within this context"
+  "PermissionForkThreads::run_")
+fixy_neg_compile_test(neg_permission_fork_threads_derived_look_alike
+  "cannot derive from .final. base"
+  "PermissionForkThreads")
+fixy_neg_compile_test(neg_permission_fork_threads_body_address
+  "is private within this context"
+  "PermissionForkThreads::run_")
 
 # test_parallelism_rule asks the cost model the questions whose answers
 # hold on any host: the tier boundaries, the sequential answer inside L2,
@@ -4899,7 +4947,7 @@ fixy_neg_compile_test(neg_blocking_guard_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait, \\{anonymous\\}::GateBrand>::GateGuard\\("
   "candidate expects 3 arguments, 2 provided")
 
-# Deviation 1 of fixy/os/Spawn.h, and the hole fixy/Throws.h closes: the
+# Deviation 1 of fixy/concurrent/Spawn.h, and the hole fixy/Throws.h closes: the
 # callable here carries the atom at a NAMED exception family.  A check
 # that compares against the default specialization alone does not match
 # it.

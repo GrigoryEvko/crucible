@@ -94,8 +94,8 @@
 namespace fixy {
 
 // The two spawn atoms L003 reads, declared rather than included.
-// fixy/os/Spawn.h defines them beside the spawning mints, and including
-// it here would pull std::thread and the permission layer into every
+// fixy/concurrent/Spawn.h defines them beside the spawning mints, and including
+// it here would pull the thread door and the permission layer into every
 // header that sees this one.  A partial specialisation needs only the
 // template's name, and the redeclaration must match Spawn.h's template
 // head exactly, so a change there that this file does not follow is a
@@ -650,7 +650,7 @@ template <class Anchor = void>
 // at all.  A roster whose axis is populated by some other family is
 // invisible to it: the atoms exist, nothing reads them, and the guard
 // whose name promises completeness reports clean.  That is how
-// fixy/os/Spawn.h's three atoms sat outside the population while the
+// fixy/concurrent/Spawn.h's three atoms sat outside the population while the
 // check said every axis was covered, and it is the same shape as an
 // allowlist key naming a file that is gone — a guard that cannot fail
 // the way its name implies.
