@@ -3,11 +3,12 @@
 `guard selftest tests.readers.test_elf` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
 
-The planted cases write files with the writer of the module: sections, symbol
-tables, relocation tables, version tables, a segment of the interpreter and
-archives.  The compile cases use the compiler that ASSAY_TEST_CXX names, and
-the registration of the test in test/CMakeLists.txt gives the compiler of the
-build.  They compile small units and read the objects that the compiler gives.
+The planted cases write files with the writer of the module.  The files hold
+sections, symbol tables, relocation tables, version tables, a dynamic section,
+group sections, a segment of the interpreter and archives.  The compile cases use the compiler
+that ASSAY_TEST_CXX names, and the registration of the test in
+test/CMakeLists.txt gives the compiler of the build.  They compile small units,
+link a shared library, and read the files that the compiler gives.
 """
 
 import os
@@ -33,6 +34,11 @@ int throwing_entry(int value) {
     return local_twice(value) + shared_counter;
 }
 Shape* make_shape() { static Shape shape; return &shape; }
+"""
+# A unit of a shared library that calls the C library.  The library then gets libc.so.6 and a version of glibc.
+LINKED_UNIT = """\
+#include <cstdio>
+int report(int value) { return std::printf("%d\\n", value); }
 """
 
 
@@ -275,6 +281,102 @@ def version_cases(expect: testing.Expect) -> None:
         ],
     )
     expect("a symbol of .symtab has no version", elf.Member(data, "dynamic").symbols() == ())
+    expect(
+        "version_needs gives the file, the index, the weak flag and the name of each needed version",
+        elf.Member(data, "dynamic").version_needs() == (elf.NeededVersion("libother.so", 4, False, "NEED_4"),),
+    )
+    strings = b"\0libc.so.6\0GLIBC_2.2.5\0GLIBC_2.34\0"
+    two = elf.VERNEED_LAYOUT.pack(1, 2, 1, elf.VERNEED_LAYOUT.size, 0)
+    two += elf.VERNAUX_LAYOUT.pack(0, 0, 2, 11, elf.VERNAUX_LAYOUT.size)
+    two += elf.VERNAUX_LAYOUT.pack(0, elf.VER_FLG_WEAK, 3, 23, 0)
+    weak = elf.make_file(
+        [
+            elf.Planted(".dynstr", strings, elf.SHT_STRTAB),
+            elf.Planted(".gnu.version_r", two, elf.SHT_GNU_VERNEED, link=1, info=1),
+        ]
+    )
+    expect(
+        "an entry with two auxiliary entries gives two needed versions, and the second one is weak",
+        elf.Member(weak, "weak").version_needs()
+        == (
+            elf.NeededVersion("libc.so.6", 2, False, "GLIBC_2.2.5"),
+            elf.NeededVersion("libc.so.6", 3, True, "GLIBC_2.34"),
+        ),
+    )
+    cut = elf.make_file(
+        [
+            elf.Planted(".dynstr", strings, elf.SHT_STRTAB),
+            elf.Planted(".gnu.version_r", two[:-4], elf.SHT_GNU_VERNEED, link=1, info=1),
+        ]
+    )
+    expect("a cut auxiliary entry is refused", refuses(lambda: elf.Member(cut, "cut").version_needs()))
+
+
+def dynamic_cases(expect: testing.Expect) -> None:
+    """Check dynamic() on a planted dynamic section: the string tags, a number tag, and the end at DT_NULL."""
+    strings = b"\0libx.so.1\0/run/lib\0libself.so\0"
+    entries = (
+        elf.DYNAMIC_LAYOUT.pack(elf.DT_NEEDED, 1)
+        + elf.DYNAMIC_LAYOUT.pack(elf.DT_RUNPATH, 11)
+        + elf.DYNAMIC_LAYOUT.pack(elf.DT_SONAME, 20)
+        + elf.DYNAMIC_LAYOUT.pack(30, 8)
+        + elf.DYNAMIC_LAYOUT.pack(elf.DT_NULL, 0)
+        + elf.DYNAMIC_LAYOUT.pack(elf.DT_NEEDED, 1)
+    )
+    data = elf.make_file(
+        [
+            elf.Planted(".dynamic", entries, elf.SHT_DYNAMIC, link=2, entry_size=elf.DYNAMIC_LAYOUT.size),
+            elf.Planted(".dynstr", strings, elf.SHT_STRTAB),
+        ]
+    )
+    expect(
+        "dynamic gives each entry before DT_NULL, with the text of each string tag",
+        elf.Member(data, "dynamic").dynamic()
+        == (
+            elf.DynamicEntry(elf.DT_NEEDED, 1, "libx.so.1"),
+            elf.DynamicEntry(elf.DT_RUNPATH, 11, "/run/lib"),
+            elf.DynamicEntry(elf.DT_SONAME, 20, "libself.so"),
+            elf.DynamicEntry(30, 8, ""),
+        ),
+    )
+    expect(
+        "a file with no dynamic section has no entry",
+        elf.Member(elf.make_file(planted_sections()), "x").dynamic() == (),
+    )
+
+
+def group_cases(expect: testing.Expect) -> None:
+    """Check groups() on planted group sections, and each refused group."""
+    table, strings = elf.symbol_table([elf.PlantedSymbol("_ZTV5Shape", kind=elf.STT_OBJECT, section=1)])
+
+    def file_with(words: tuple[int, ...], info: int = 1) -> bytes:
+        """Return a file with a data section, a group of the words, and the symbol table of its signature."""
+        return elf.make_file(
+            [
+                elf.Planted(".data.rel.ro._ZTV5Shape", b"V", flags=elf.SHF_ALLOC),
+                elf.Planted(".group", struct.pack(f"<{len(words)}I", *words), elf.SHT_GROUP, link=3, info=info),
+                elf.Planted(".symtab", table, elf.SHT_SYMTAB, link=4, entry_size=elf.SYMBOL_SIZE),
+                elf.Planted(".strtab", strings, elf.SHT_STRTAB),
+            ]
+        )
+
+    expect(
+        "groups gives the signature, the COMDAT flag and the members of a group",
+        elf.Member(file_with((elf.GRP_COMDAT, 1)), "comdat").groups() == (elf.Group(2, "_ZTV5Shape", True, (1,)),),
+    )
+    expect(
+        "a group with no COMDAT flag is not a COMDAT group",
+        [item.is_comdat for item in elf.Member(file_with((0, 1)), "plain").groups()] == [False],
+    )
+    expect("a group with no flag word is refused", refuses(lambda: elf.Member(file_with(()), "empty").groups()))
+    expect(
+        "a signature outside the symbol table is refused",
+        refuses(lambda: elf.Member(file_with((elf.GRP_COMDAT, 1), info=9), "far").groups()),
+    )
+    expect(
+        "a member outside the section header table is refused",
+        refuses(lambda: elf.Member(file_with((elf.GRP_COMDAT, 40)), "member").groups()),
+    )
 
 
 def archive_cases(expect: testing.Expect) -> None:
@@ -346,6 +448,15 @@ def file_cases(expect: testing.Expect) -> None:
         program.write_bytes(elf.make_file(planted_sections(), interpreter_path="/planted/ld.so"))
         expect("interpreter() reads the segment PT_INTERP", elf.interpreter(program) == "/planted/ld.so")
         expect("a file with no PT_INTERP has no interpreter", elf.interpreter(plain) is None)
+        with elf.mapped(program) as mapped:
+            segments = mapped.segments()
+        expect(
+            "segments gives the one program header of the planted program",
+            [(item.index, item.kind, item.file_size, item.memory_size) for item in segments]
+            == [(0, elf.PT_INTERP, len(b"/planted/ld.so\0"), len(b"/planted/ld.so\0"))],
+        )
+        with elf.mapped(plain) as mapped:
+            expect("a file with no program header table has no segment", mapped.segments() == ())
         script = scratch / "script"
         script.write_text("#!/bin/sh\n", encoding="utf-8")
         expect("a file that is not ELF has no interpreter", elf.interpreter(script) is None)
@@ -441,6 +552,44 @@ def compile_cases(expect: testing.Expect) -> None:
             "the section of the throwing function holds the typeinfo of int before the call of __cxa_throw",
             [item.symbol for item in throwing if item.symbol in ("_ZTIi", "__cxa_throw")] == ["_ZTIi", "__cxa_throw"],
         )
+        vtable = [item for item in member.groups() if item.signature == "_ZTV5Shape"]
+        expect(
+            "the vtable of the inline class is a COMDAT group with its section",
+            len(vtable) == 1
+            and vtable[0].is_comdat
+            and any(member.sections()[index].name.endswith("_ZTV5Shape") for index in vtable[0].sections),
+        )
+        link_cases(expect, cxx, scratch)
+
+
+def link_cases(expect: testing.Expect, cxx: str, scratch: Path) -> None:
+    """Link LINKED_UNIT into a shared library with a name, a run path and libc, and read its dynamic parts."""
+    (scratch / "linked.cpp").write_text(LINKED_UNIT, encoding="utf-8")
+    compile_argv = [cxx, "-std=c++26", "-O1", "-fPIC", "-c", "linked.cpp", "-o", "linked.o"]
+    proc.require(proc.run(proc.Command(compile_argv, timeout_s=proc.QUICK_S, cwd=scratch)))
+    argv = [
+        cxx,
+        "-shared",
+        "linked.o",
+        "-o",
+        "libunit.so",
+        "-Wl,-soname,libunit.so.1,--enable-new-dtags,-rpath,/planted/run",
+    ]
+    proc.require(proc.run(proc.Command(argv, timeout_s=proc.QUICK_S, cwd=scratch)))
+    with elf.mapped(scratch / "libunit.so") as library:
+        entries = library.dynamic()
+        kinds = {item.kind for item in library.segments()}
+        needs = library.version_needs()
+    tagged = {(item.tag, item.text) for item in entries}
+    expect(
+        "the dynamic section names libc.so.6, the soname and the run path",
+        {(elf.DT_NEEDED, "libc.so.6"), (elf.DT_SONAME, "libunit.so.1"), (elf.DT_RUNPATH, "/planted/run")} <= tagged,
+    )
+    expect("the shared library has a segment PT_LOAD and a segment PT_DYNAMIC", {elf.PT_LOAD, elf.PT_DYNAMIC} <= kinds)
+    expect(
+        "the shared library needs a version of glibc from libc.so.6",
+        any(item.file == "libc.so.6" and item.name.startswith("GLIBC_") for item in needs),
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -451,6 +600,8 @@ def main(argv: list[str]) -> int:
         tls_cases,
         relocation_cases,
         version_cases,
+        dynamic_cases,
+        group_cases,
         archive_cases,
         file_cases,
         demangle_cases,

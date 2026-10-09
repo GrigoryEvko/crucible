@@ -60,6 +60,30 @@ THE RELOCATIONS
     the name of its symbol.  For the symbol of a section, it is the name of
     that section, as objdump -r prints it.  For no symbol, it is empty.
 
+THE SEGMENTS
+    segments() gives each entry of the program header table, and
+    interpreter() reads the path of the segment PT_INTERP.  An object of the
+    type ET_REL has no such table, and it gives no segment.
+
+THE DYNAMIC SECTION
+    dynamic() gives each entry of the section SHT_DYNAMIC in its sequence,
+    before the first DT_NULL.  The text of an entry with a string tag
+    (STRING_TAGS), such as DT_NEEDED or DT_RUNPATH, comes from the strings
+    that sh_link names.  The text of each other entry is empty.
+
+THE GROUPS
+    groups() gives each section of the type SHT_GROUP.  Its first word holds
+    the flags, and GRP_COMDAT marks a COMDAT group.  Each other word is the
+    index of a member section.  The signature is the name of the symbol that
+    sh_info names in the symbol table of sh_link.  A link keeps one COMDAT
+    group of each signature.
+
+THE NEEDED VERSIONS
+    version_needs() gives each auxiliary entry of the table SHT_GNU_verneed:
+    the file of the shared library, the version index, the weak flag
+    VER_FLG_WEAK and the version name.  A dynamic symbol with that version
+    index gets its definition from that file.
+
 THE DEMANGLER
     demangle() starts c++filt one time for all its names, with --no-verbose.
     Each name then has the text that nm --demangle and objdump -C give.  No
@@ -122,9 +146,11 @@ SHT_PROGBITS = 1
 SHT_SYMTAB = 2
 SHT_STRTAB = 3
 SHT_RELA = 4
+SHT_DYNAMIC = 6
 SHT_NOBITS = 8
 SHT_REL = 9
 SHT_DYNSYM = 11
+SHT_GROUP = 17
 SHT_SYMTAB_SHNDX = 18
 SHT_GNU_VERDEF = 0x6FFFFFFD
 SHT_GNU_VERNEED = 0x6FFFFFFE
@@ -141,7 +167,22 @@ STT_TLS = 6
 STB_LOCAL = 0
 STB_GLOBAL = 1
 STB_WEAK = 2
+PT_LOAD = 1
+PT_DYNAMIC = 2
 PT_INTERP = 3
+PT_TLS = 7
+# The flag word of a group section that makes the group a COMDAT group (THE GROUPS).
+GRP_COMDAT = 0x1
+# The tags of the dynamic section (THE DYNAMIC SECTION).  The value of a string tag is an offset in the strings of the
+# dynamic section.
+DT_NULL = 0
+DT_NEEDED = 1
+DT_SONAME = 14
+DT_RPATH = 15
+DT_RUNPATH = 29
+STRING_TAGS = frozenset({DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH})
+# The flag of an auxiliary entry of SHT_GNU_verneed for a version that only a weak reference uses.
+VER_FLG_WEAK = 0x2
 # The bit of a version index that hides the version from a link (nm prints "@" and not "@@").
 VERSION_HIDDEN = 0x8000
 # The version indexes of a symbol that has no version: local, and global.
@@ -178,6 +219,10 @@ SYMBOL_LAYOUT = struct.Struct("<IBBHQQ")
 # r_offset, r_info, r_addend.  A REL entry has no r_addend.
 RELA_LAYOUT = struct.Struct("<QQq")
 REL_LAYOUT = struct.Struct("<QQ")
+# d_tag, d_val.
+DYNAMIC_LAYOUT = struct.Struct("<qQ")
+# The flag word and each section index of a group section.
+GROUP_WORD = struct.Struct("<I")
 # vd_version, vd_flags, vd_ndx, vd_cnt, vd_hash, vd_aux, vd_next, and vda_name, vda_next.
 VERDEF_LAYOUT = struct.Struct("<HHHHIII")
 VERDAUX_LAYOUT = struct.Struct("<II")
@@ -358,6 +403,74 @@ class Relocation(Record):
         self.symbol = symbol
         self.symbol_index = symbol_index
         self.addend = addend
+
+
+class Segment(Record):
+    """One entry of the program header table (THE SEGMENTS)."""
+
+    __slots__ = ("address", "align", "file_size", "flags", "index", "kind", "memory_size", "offset")
+
+    def __init__(
+        self,
+        index: int,
+        kind: int,
+        flags: int,
+        offset: int,
+        address: int,
+        file_size: int,
+        memory_size: int,
+        align: int,
+    ) -> None:
+        """Hold the parts of one program header."""
+        self.index = index
+        self.kind = kind
+        self.flags = flags
+        self.offset = offset
+        self.address = address
+        self.file_size = file_size
+        self.memory_size = memory_size
+        self.align = align
+
+
+class DynamicEntry(Record):
+    """One entry of the dynamic section: its tag, its value, and the text of a string tag (THE DYNAMIC SECTION)."""
+
+    __slots__ = ("tag", "text", "value")
+
+    def __init__(self, tag: int, value: int, text: str = "") -> None:
+        """Hold the parts of one dynamic entry."""
+        self.tag = tag
+        self.value = value
+        self.text = text
+
+
+class Group(Record):
+    """One group section: its index, its signature, its COMDAT flag and the index of each member (THE GROUPS)."""
+
+    __slots__ = ("index", "is_comdat", "sections", "signature")
+
+    def __init__(self, index: int, signature: str, is_comdat: bool, sections: tuple[int, ...]) -> None:
+        """Hold the parts of one group section."""
+        self.index = index
+        self.signature = signature
+        self.is_comdat = is_comdat
+        self.sections = sections
+
+
+class NeededVersion(Record):
+    """One version that a file gets from a shared library: the file, the index, the weak flag and the name.
+
+    THE NEEDED VERSIONS gives the parts.
+    """
+
+    __slots__ = ("file", "index", "is_weak", "name")
+
+    def __init__(self, file: str, index: int, is_weak: bool, name: str) -> None:
+        """Hold the parts of one auxiliary entry of SHT_GNU_verneed."""
+        self.file = file
+        self.index = index
+        self.is_weak = is_weak
+        self.name = name
 
 
 def name_at(names: bytes, offset: int) -> str:
@@ -555,7 +668,7 @@ class Member:
         indexes = self.table_of(SHT_GNU_VERSYM)
         if indexes is None:
             return {}
-        names = {**self.version_names(SHT_GNU_VERDEF), **self.version_names(SHT_GNU_VERNEED)}
+        names = {**self.definition_names(), **{need.index: need.name for need in self.version_needs()}}
         data = self.data(indexes)
         found: dict[int, tuple[str, bool]] = {}
         for index, (word,) in enumerate(struct.iter_unpack("<H", data[: len(data) - len(data) % 2])):
@@ -564,18 +677,16 @@ class Member:
                 found[index] = (names[number], bool(word & VERSION_HIDDEN))
         return found
 
-    def version_names(self, kind: int) -> dict[int, str]:
-        """Return the name of each version index that a table SHT_GNU_verdef or SHT_GNU_verneed gives.
+    def definition_names(self) -> dict[int, str]:
+        """Return the name of each version index that the table SHT_GNU_verdef gives.
 
-        An entry of SHT_GNU_verdef names its version with its first auxiliary
-        entry.  An entry of SHT_GNU_verneed names each version with an
-        auxiliary entry of its own.  Complexity: linear in the entries of the
-        table.
+        An entry names its version with its first auxiliary entry.
+        Complexity: linear in the entries of the table.
 
         Raises:
             ElfError: If an entry is not fully in the table
         """
-        table = self.table_of(kind)
+        table = self.table_of(SHT_GNU_VERDEF)
         if table is None:
             return {}
         data = self.data(table)
@@ -583,27 +694,49 @@ class Member:
         found: dict[int, str] = {}
         offset = 0
         for _ in range(table.info):
-            if kind == SHT_GNU_VERDEF:
-                if offset + VERDEF_LAYOUT.size > len(data):
-                    raise ElfError(f"{self.where}: an entry of SHT_GNU_verdef is not fully in its table")
-                _, _, number, count, _, aux, following = VERDEF_LAYOUT.unpack_from(data, offset)
-                if count and offset + aux + VERDAUX_LAYOUT.size <= len(data):
-                    found[number] = name_at(names, VERDAUX_LAYOUT.unpack_from(data, offset + aux)[0])
-            else:
-                if offset + VERNEED_LAYOUT.size > len(data):
-                    raise ElfError(f"{self.where}: an entry of SHT_GNU_verneed is not fully in its table")
-                _, count, _, aux, following = VERNEED_LAYOUT.unpack_from(data, offset)
-                place = offset + aux
-                for _ in range(count):
-                    if place + VERNAUX_LAYOUT.size > len(data):
-                        raise ElfError(f"{self.where}: an auxiliary entry of SHT_GNU_verneed is not fully in its table")
-                    _, _, number, name, step = VERNAUX_LAYOUT.unpack_from(data, place)
-                    found[number] = name_at(names, name)
-                    place += step
+            if offset + VERDEF_LAYOUT.size > len(data):
+                raise ElfError(f"{self.where}: an entry of SHT_GNU_verdef is not fully in its table")
+            _, _, number, count, _, aux, following = VERDEF_LAYOUT.unpack_from(data, offset)
+            if count and offset + aux + VERDAUX_LAYOUT.size <= len(data):
+                found[number] = name_at(names, VERDAUX_LAYOUT.unpack_from(data, offset + aux)[0])
             if not following:
                 break
             offset += following
         return found
+
+    def version_needs(self) -> tuple[NeededVersion, ...]:
+        """Return each version that the table SHT_GNU_verneed holds, with its file (THE NEEDED VERSIONS).
+
+        The versions come in the sequence of the table.  Complexity: linear in
+        the entries of the table.
+
+        Raises:
+            ElfError: If an entry or an auxiliary entry is not fully in the table
+        """
+        table = self.table_of(SHT_GNU_VERNEED)
+        if table is None:
+            return ()
+        data = self.data(table)
+        names = self.data(self.linked(table))
+        found: list[NeededVersion] = []
+        offset = 0
+        for _ in range(table.info):
+            if offset + VERNEED_LAYOUT.size > len(data):
+                raise ElfError(f"{self.where}: an entry of SHT_GNU_verneed is not fully in its table")
+            _, count, file_name, aux, following = VERNEED_LAYOUT.unpack_from(data, offset)
+            place = offset + aux
+            for _ in range(count):
+                if place + VERNAUX_LAYOUT.size > len(data):
+                    raise ElfError(f"{self.where}: an auxiliary entry of SHT_GNU_verneed is not fully in its table")
+                _, flags, number, name, step = VERNAUX_LAYOUT.unpack_from(data, place)
+                found.append(
+                    NeededVersion(name_at(names, file_name), number, bool(flags & VER_FLG_WEAK), name_at(names, name))
+                )
+                place += step
+            if not following:
+                break
+            offset += following
+        return tuple(found)
 
     def relocations(self, ignored_prefixes: Sequence[str] = ()) -> tuple[Relocation, ...]:
         """Return each relocation entry, with the name of its symbol (THE RELOCATIONS).
@@ -669,6 +802,29 @@ class Member:
             return sections[symbol.section].name if symbol.section < len(sections) else ""
         return symbol.name
 
+    def segments(self) -> tuple[Segment, ...]:
+        """Return each entry of the program header table, or no entry for a file with no table (THE SEGMENTS).
+
+        Complexity: linear in the number of program headers.
+
+        Raises:
+            ElfError: If the program header table is not fully in the file
+        """
+        (table_offset,) = struct.unpack_from("<Q", self.buffer, self.start + PROGRAM_TABLE_AT)
+        entry_size, count = struct.unpack_from("<HH", self.buffer, self.start + TABLE_SIZES_AT)
+        if table_offset == 0 or count == 0:
+            return ()
+        if entry_size != PROGRAM_HEADER_SIZE or table_offset + count * PROGRAM_HEADER_SIZE > self.size:
+            raise ElfError(f"{self.where}: the program header table is not fully in the file")
+        return tuple(
+            Segment(index, kind, flags, offset, address, file_size, memory_size, align)
+            for index, (kind, flags, offset, address, _, file_size, memory_size, align) in enumerate(
+                PROGRAM_LAYOUT.iter_unpack(
+                    self.buffer[self.start + table_offset : self.start + table_offset + count * PROGRAM_HEADER_SIZE]
+                )
+            )
+        )
+
     def interpreter(self) -> str | None:
         """Return the program interpreter of the segment PT_INTERP, or None for a file with no such segment.
 
@@ -677,23 +833,67 @@ class Member:
         Raises:
             ElfError: If the program header table or the segment is not fully in the file
         """
-        (table_offset,) = struct.unpack_from("<Q", self.buffer, self.start + PROGRAM_TABLE_AT)
-        entry_size, count = struct.unpack_from("<HH", self.buffer, self.start + TABLE_SIZES_AT)
-        if table_offset == 0 or count == 0:
+        segment = next((item for item in self.segments() if item.kind == PT_INTERP), None)
+        if segment is None:
             return None
-        if entry_size != PROGRAM_HEADER_SIZE or table_offset + count * PROGRAM_HEADER_SIZE > self.size:
-            raise ElfError(f"{self.where}: the program header table is not fully in the file")
-        for index in range(count):
-            kind, _, offset, _, _, file_size, _, _ = PROGRAM_LAYOUT.unpack_from(
-                self.buffer, self.start + table_offset + index * PROGRAM_HEADER_SIZE
-            )
-            if kind != PT_INTERP:
+        if segment.offset + segment.file_size > self.size:
+            raise ElfError(f"{self.where}: the segment of the interpreter is not fully in the file")
+        begin = self.start + segment.offset
+        return os.fsdecode(bytes(self.buffer[begin : begin + segment.file_size]).rstrip(b"\0"))
+
+    def dynamic(self) -> tuple[DynamicEntry, ...]:
+        """Return each entry of the section SHT_DYNAMIC before DT_NULL, with the text of a string tag.
+
+        THE DYNAMIC SECTION tells the read.  A file with no such section gives
+        no entry.  Complexity: linear in the entries.
+
+        Raises:
+            ElfError: If the section or its strings are not fully in the file
+        """
+        table = self.table_of(SHT_DYNAMIC)
+        if table is None:
+            return ()
+        data = self.data(table)
+        names = self.data(self.linked(table))
+        found: list[DynamicEntry] = []
+        for tag, value in DYNAMIC_LAYOUT.iter_unpack(data[: len(data) - len(data) % DYNAMIC_LAYOUT.size]):
+            if tag == DT_NULL:
+                break
+            found.append(DynamicEntry(tag, value, name_at(names, value) if tag in STRING_TAGS else ""))
+        return tuple(found)
+
+    def groups(self) -> tuple[Group, ...]:
+        """Return each group section, in the sequence of the section header table (THE GROUPS).
+
+        Complexity: linear in the sections and the words of the groups.
+
+        Raises:
+            ElfError: If a group has no flag word or no signature in its symbol table, or a member is not a section
+        """
+        sections = self.sections()
+        found: list[Group] = []
+        for section in sections:
+            if section.kind != SHT_GROUP:
                 continue
-            if offset + file_size > self.size:
-                raise ElfError(f"{self.where}: the segment of the interpreter is not fully in the file")
-            text = bytes(self.buffer[self.start + offset : self.start + offset + file_size]).rstrip(b"\0")
-            return os.fsdecode(text)
-        return None
+            data = self.data(section)
+            words = [word for (word,) in GROUP_WORD.iter_unpack(data[: len(data) - len(data) % GROUP_WORD.size])]
+            symbols = self.symbol_table_at(section.link)
+            if not words or section.info >= len(symbols):
+                raise ElfError(
+                    f"{self.where}: the group section {section.index} has no flag word, or its signature is not an "
+                    f"entry of its symbol table"
+                )
+            if any(index >= len(sections) for index in words[1:]):
+                raise ElfError(f"{self.where}: a member of the group section {section.index} is not a section")
+            found.append(
+                Group(
+                    section.index,
+                    self.symbol_name(symbols[section.info]),
+                    bool(words[0] & GRP_COMDAT),
+                    tuple(words[1:]),
+                )
+            )
+        return tuple(found)
 
 
 def archive_spans(data: bytes, where: str) -> Iterator[tuple[str, int, int]]:
