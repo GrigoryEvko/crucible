@@ -26,10 +26,10 @@ configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c
 @build/libcrucible_vigil.a | x86_64-debug-tsan | 32626 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_vigil.a | x86_64-debug-ubsan-strict | 46680 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_vigil.a | x86_64-release | 29146 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-debug-asan | 84727 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-debug-tsan | 23203 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-debug-ubsan-strict | 39697 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-release | 32062 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-asan | 83322 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-tsan | 22763 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-ubsan-strict | 38755 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-release | 31648 | - | the first measure of the library code in each static library of the root
 @build/libfoundation.a | x86_64-debug-asan | 10059 | - | the first measure of the library code in each static library of the root
 @build/libfoundation.a | x86_64-debug-tsan | 4838 | - | the first measure of the library code in each static library of the root
 @build/libfoundation.a | x86_64-debug-ubsan-strict | 11430 | - | the first measure of the library code in each static library of the root
