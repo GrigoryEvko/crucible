@@ -69,6 +69,15 @@
 #   plugin-kinds compares kinds.txt with the kinds of the rows of the engine
 #   plugin of utils/registry.txt.
 #
+# THE TIME OF THE BUILD
+#   A configure that builds the plugin writes the start and the end of that
+#   build to ${CMAKE_BINARY_DIR}/quarantine/plugin-build-time.txt, in seconds
+#   since the epoch.  The span holds the compiles, the link and the run that
+#   writes kinds.txt.  The rule plugin-build-time judges the span, and the rule
+#   configure-time judges the configure less the span
+#   (utils/assay/loop/history.py, THE PLUGIN BUILD).  A configure that builds
+#   no plugin writes no such file.
+#
 # The root CMakeLists.txt includes this file after the ccache block and the
 # PGO block, which can also clear the compiler launcher, and before the first
 # target.  A project that is not the tree, such as the project of
@@ -205,7 +214,9 @@ set(_crucible_quarantine_recorded_key "")
 if(EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}.key")
   file(READ "${CRUCIBLE_QUARANTINE_PLUGIN}.key" _crucible_quarantine_recorded_key)
 endif()
+unset(_crucible_quarantine_build_start)
 if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_recorded_key STREQUAL _crucible_quarantine_key)
+  string(TIMESTAMP _crucible_quarantine_build_start "%s.%f" UTC)
   set(_crucible_quarantine_objects_dir "${_crucible_quarantine_out}/plugin-objects")
   file(REMOVE_RECURSE "${_crucible_quarantine_objects_dir}")
   file(MAKE_DIRECTORY "${_crucible_quarantine_objects_dir}")
@@ -253,6 +264,13 @@ if(NOT EXISTS "${_crucible_quarantine_kinds}")
     message(FATAL_ERROR "cc1plus did not load the quarantine plugin ${CRUCIBLE_QUARANTINE_PLUGIN}, or the plugin did "
       "not write ${_crucible_quarantine_kinds}:\n${_crucible_quarantine_error}")
   endif()
+endif()
+
+# The time of the plugin build (THE TIME OF THE BUILD).
+if(DEFINED _crucible_quarantine_build_start)
+  string(TIMESTAMP _crucible_quarantine_build_end "%s.%f" UTC)
+  file(WRITE "${_crucible_quarantine_out}/plugin-build-time.txt"
+    "${_crucible_quarantine_build_start} ${_crucible_quarantine_build_end}\n")
 endif()
 
 # The witness of the plugin: it compiles each plant and each control of the

@@ -72,12 +72,13 @@ THE HOST LOAD
     is small for the two.
 
 THE WARNINGS OF A LINE
-    judge_line() compares one line with three measured rules of
+    judge_line() compares one line with four measured rules of
     utils/registry.txt, and each finding is a warning: noop-build-time for the
     wall time of a build that ran no edge but the glob check, build-peak-memory
-    for the peak concurrent memory of the build, and configure-time for a
-    CMake run inside the build.  `loop test` prints the warnings of its line,
-    and the table prints the warnings of each line that it shows.
+    for the peak concurrent memory of the build, configure-time for a CMake
+    run inside the build less its plugin build, and plugin-build-time for that
+    plugin build.  `loop test` prints the warnings of its line, and the table
+    prints the warnings of each line that it shows.
 
 THE CONFIGURE TIME
     The root CMakeLists.txt writes the start and the end of each configure to
@@ -87,6 +88,19 @@ THE CONFIGURE TIME
     gives the configure, the generate step, the reply and their sum.  The
     start is the first line of the root CMakeLists.txt, approximately 0.5 s
     after the start of the cmake process.
+
+THE PLUGIN BUILD
+    A configure that builds the quarantine plugin writes the start and the
+    end of that build to PLUGIN_BUILD_TIME_FILE of the build directory.
+    utils/tools/quarantine/Quarantine.cmake writes the file (THE TIME OF THE
+    BUILD).  The rule plugin-build-time judges that wall time, and
+    configure_time() gives it as plugin_build_s.
+
+    The configure and the sum of configure_time() do not hold the plugin
+    build.  The rule configure-time then judges the configure less the
+    plugin build.  A plugin build counts for one configure only when its
+    start and its end are in that configure.  plugin_build_since() gives the
+    plugin build of a CMake run in a build or of a step of the gauge.
 
 THE TABLE
     `loop history BUILD_DIR [-n N]` prints the last N lines (20 by default)
@@ -119,6 +133,8 @@ from assay.core import report as check_report
 from assay.readers import ninja as ninja_files
 
 CONFIGURE_TIME_FILE = "configure-time.txt"
+# The start and the end of the last plugin build, in the directory of the plugin (THE PLUGIN BUILD).
+PLUGIN_BUILD_TIME_FILE = Path("quarantine") / "plugin-build-time.txt"
 # The end of the configure can be a few milliseconds after the time that the file system gives build.ninja.
 CONFIGURE_SLACK_S = 0.05
 # The directory of the reply of the CMake file API, and the pattern of its index file.
@@ -498,6 +514,9 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
     if manifest is not None and manifest in spans:
         start, end = spans[manifest]
         facts["reconfigure_s"] = round((end - start) / 1000, 2)
+        plugin_s = plugin_build_since(build, since_epoch)
+        if plugin_s is not None:
+            facts["plugin_build_s"] = plugin_s
     blocks: list[cost_record.Cost] = []
     compiles = {"records": 0, "hits": 0, "cpu_s": 0.0, "instructions": 0, "exact": True}
     links = {"records": 0, "cpu_s": 0.0}
@@ -542,16 +561,50 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
     return facts
 
 
-def configure_time(build: Path) -> dict[str, object] | None:
-    """Return the times of the last configure of a build directory.
+def plugin_build_span(build: Path) -> tuple[float, float] | None:
+    """Return the start and the end of the last plugin build of a build directory (THE PLUGIN BUILD).
 
     Args:
         build: The build directory
 
     Returns:
-        The start (ISO 8601, UTC), and the configure, the generate step, the reply of the file API and their sum in
-        seconds.  None when the build directory has no configure-time.txt, or when the last configure wrote no
-        build.ninja after its end
+        The start and the end in seconds since the epoch.  None when the build directory has no such file, or when
+        the file does not hold a start and an end at or after it
+    """
+    try:
+        start_text, end_text = (build / PLUGIN_BUILD_TIME_FILE).read_text(encoding="ascii").split()
+        start, end = float(start_text), float(end_text)
+    except (OSError, ValueError):
+        return None
+    return (start, end) if start <= end else None
+
+
+def plugin_build_since(build: Path, since_epoch: float) -> float | None:
+    """Return the wall time of the last plugin build of a build directory when it started at or after a time.
+
+    Args:
+        build: The build directory
+        since_epoch: The start of the step that can hold the plugin build, in seconds since the epoch
+
+    Returns:
+        The wall time in seconds, or None when the last plugin build started before that time or has no record
+    """
+    span = plugin_build_span(build)
+    if span is None or span[0] < since_epoch:
+        return None
+    return round(span[1] - span[0], 2)
+
+
+def configure_time(build: Path) -> dict[str, object] | None:
+    """Return the times of the last configure of a build directory (THE CONFIGURE TIME, THE PLUGIN BUILD).
+
+    Args:
+        build: The build directory
+
+    Returns:
+        The start (ISO 8601, UTC), and the configure, the generate step, the reply of the file API, their sum and the
+        plugin build in seconds.  The configure and the sum do not hold the plugin build.  None when the build
+        directory has no configure-time.txt, or when the last configure wrote no build.ninja after its end
     """
     try:
         start_text, end_text = (build / CONFIGURE_TIME_FILE).read_text(encoding="ascii").split()
@@ -567,8 +620,11 @@ def configure_time(build: Path) -> dict[str, object] | None:
             replied = max(replied, index.stat().st_mtime)
         except OSError:
             continue
-    return {"start": iso_time(start), "configure_s": round(end - start, 2), "generate_s": round(max(0.0, written - end), 2),
-            "file_api_s": round(replied - written, 2), "total_s": round(replied - start, 2)}
+    span = plugin_build_span(build)
+    plugin_s = span[1] - span[0] if span is not None and start <= span[0] and span[1] <= end else 0.0
+    return {"start": iso_time(start), "configure_s": round(end - start - plugin_s, 2),
+            "generate_s": round(max(0.0, written - end), 2), "file_api_s": round(replied - written, 2),
+            "total_s": round(replied - start - plugin_s, 2), "plugin_build_s": round(plugin_s, 2)}
 
 
 def warning_over(budgets: dict[str, check_report.Budget], row: str, value: float | None, unit: str, what: str,
@@ -615,8 +671,13 @@ def judge_line(line: dict[str, object], budgets: dict[str, check_report.Budget],
                                  "the build with no edge to run", place)
     findings += warning_over(budgets, "build-peak-memory", number(build, "peak_memory_gb"), "GB",
                              "the compiles and links of the build together", place)
-    findings += warning_over(budgets, "configure-time", number(build, "reconfigure_s"), "s",
-                             "the CMake run inside the build", place)
+    reconfigure_s = number(build, "reconfigure_s")
+    plugin_s = number(build, "plugin_build_s")
+    configured_s = None if reconfigure_s is None else round(reconfigure_s - (plugin_s or 0.0), 2)
+    findings += warning_over(budgets, "configure-time", configured_s, "s",
+                             "the CMake run inside the build, less its plugin build,", place)
+    findings += warning_over(budgets, "plugin-build-time", plugin_s, "s",
+                             "the plugin build of the CMake run inside the build", place)
     return findings
 
 
@@ -968,6 +1029,13 @@ def self_test() -> int:
         log_after[str(manifest)] = ninja_files.LogRecord(0, 6300, 3, "h")
         expect("summarize_build gives the time of a CMake run inside the build",
                summarize_build(build, graph, log_before, log_after, time.time() - 10)["reconfigure_s"] == 6.3)
+        plugin_file = build / PLUGIN_BUILD_TIME_FILE
+        plugin_file.parent.mkdir(parents=True)
+        plugin_file.write_text(f"{time.time() - 5.0} {time.time() - 1.5}\n", encoding="ascii")
+        expect("summarize_build gives the plugin build of a CMake run inside the build",
+               summarize_build(build, graph, log_before, log_after, time.time() - 10).get("plugin_build_s") == 3.5)
+        expect("summarize_build gives no plugin build that started before the build",
+               "plugin_build_s" not in summarize_build(build, graph, log_before, log_after, time.time() - 2))
         ninja_files.plant_graph(build, PLANTED_NINJA + "build extra: phony all\n")
         changed = load_graph(build)
         expect("load_graph reads build.ninja again after it changes",
@@ -977,10 +1045,23 @@ def self_test() -> int:
                configure_time(build) is None)
         written = manifest.stat().st_mtime
         (build / CONFIGURE_TIME_FILE).write_text(f"{written - 6.5} {written - 2.0}\n", encoding="ascii")
+        plugin_file.write_text(f"{written - 9.0} {written - 7.0}\n", encoding="ascii")
         times = configure_time(build)
-        expect("configure_time gives the configure, the generate step and their sum",
+        expect("configure_time gives the configure, the generate step and their sum, with no plugin build outside it",
                times is not None and times["configure_s"] == 4.5 and times["generate_s"] == 2.0
-               and times["file_api_s"] == 0.0 and times["total_s"] == 6.5)
+               and times["file_api_s"] == 0.0 and times["total_s"] == 6.5 and times["plugin_build_s"] == 0.0)
+        plugin_file.write_text(f"{written - 6.0} {written - 3.0}\n", encoding="ascii")
+        times = configure_time(build)
+        expect("configure_time gives the plugin build in the configure, and the configure and the sum without it",
+               times is not None and times["configure_s"] == 1.5 and times["total_s"] == 3.5
+               and times["plugin_build_s"] == 3.0)
+        plugin_file.write_text(f"{written - 6.0} {written - 1.0}\n", encoding="ascii")
+        times = configure_time(build)
+        expect("configure_time gives no plugin build that ends after the configure",
+               times is not None and times["plugin_build_s"] == 0.0 and times["total_s"] == 6.5)
+        plugin_file.write_text("not a time\n", encoding="ascii")
+        expect("plugin_build_span gives nothing for a file that does not hold two times",
+               plugin_build_span(build) is None)
         reply = build / FILE_API_REPLY
         reply.mkdir(parents=True)
         for name, offset in (("index-old.json", -100.0), ("index-new.json", 1.5)):
@@ -993,7 +1074,8 @@ def self_test() -> int:
         expect("configure_time gives nothing when the last configure wrote no build.ninja after its end",
                configure_time(build) is None)
         budgets = {row: check_report.Budget(row, limit, limit, "u", "m")
-                   for row, limit in (("noop-build-time", 0.5), ("build-peak-memory", 100.0), ("configure-time", 10.0))}
+                   for row, limit in (("noop-build-time", 0.5), ("build-peak-memory", 100.0), ("configure-time", 10.0),
+                                      ("plugin-build-time", 6.0))}
         idle = {"build": {"status": 0, "wall_s": 0.9, "edges": 0, "peak_memory_gb": None}}
         expect("judge_line warns on a slow build that ran no edge",
                [(found.check, found.level) for found in judge_line(idle, budgets, "h")]
@@ -1002,6 +1084,10 @@ def self_test() -> int:
         expect("judge_line warns on the peak memory and on a slow CMake run, and not on the time of a build with work",
                sorted(found.check for found in judge_line(busy, budgets, "h")) == ["build-peak-memory",
                                                                                     "configure-time"])
+        rebuilt: dict[str, object] = {"build": {"status": 0, "wall_s": 20.0, "edges": 9, "reconfigure_s": 14.0,
+                                                "plugin_build_s": 7.0}}
+        expect("judge_line judges a CMake run less its plugin build, and the plugin build on its own rule",
+               [found.check for found in judge_line(rebuilt, budgets, "h")] == ["plugin-build-time"])
         expect("judge_line gives no warning for a line with no build or with values under the thresholds",
                judge_line({"build": None}, budgets, "h") == []
                and judge_line({"build": {"status": 0, "wall_s": 0.2, "edges": 0}}, budgets, "h") == [])

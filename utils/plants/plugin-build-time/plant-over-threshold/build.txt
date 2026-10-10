@@ -1,0 +1,5 @@
+# The last configure of the build directory took 20 s, with a plugin build of 16 s, over the threshold 14 s of
+# plugin-build-time.  The build totals of `guard warnings` give one warning.
+format 1
+kind x86_64-debug-asan
+configure seconds=20 plugin=16

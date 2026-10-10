@@ -142,10 +142,27 @@ def configure_cases(expect: testing.Expect) -> None:
         times = loop_history.configure_time(context.require_build())
         expect(
             "a configure row gives a configure of its seconds, with no generate step and no reply after it",
-            times is not None and times["total_s"] == 12.5 and times["configure_s"] == 12.5,
+            times is not None
+            and times["total_s"] == 12.5
+            and times["configure_s"] == 12.5
+            and times["plugin_build_s"] == 0.0,
+        )
+    with tempfile.TemporaryDirectory(prefix="test-planted-") as scratch:
+        context = context_of(Path(scratch), "format 1\nkind x86_64-debug-asan\nconfigure seconds=12.5 plugin=8\n")
+        times = loop_history.configure_time(context.require_build())
+        expect(
+            "a configure row with a plugin build gives the plugin build, and the configure without it",
+            times is not None
+            and times["total_s"] == 4.5
+            and times["configure_s"] == 4.5
+            and times["plugin_build_s"] == 8.0,
         )
     expect("a configure row with no seconds is refused", is_refused("format 1\nconfigure\n"))
     expect("a configure row with a word that is no number is refused", is_refused("format 1\nconfigure seconds=x\n"))
+    expect(
+        "a configure row with a plugin build longer than the configure is refused",
+        is_refused("format 1\nconfigure seconds=3 plugin=4\n"),
+    )
 
 
 def refused_cases(expect: testing.Expect) -> None:

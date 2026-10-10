@@ -1084,8 +1084,12 @@ the maps of the Debug build held 86 MB, and the relink of each artifact took
 
 In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the quarantine
 plugin of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and
-the plugin arguments on each C++ compile. The plugin applies the quarantine
-rule of §XXII and the contract rule of §XII. `CRUCIBLE_QUARANTINE_MODE` is
+the plugin arguments on each C++ compile. A configure that builds the plugin
+writes the start and the end of that build to `quarantine/plugin-build-time.txt`
+of the build directory. The rule `plugin-build-time` judges that wall time, and
+the rule `configure-time` judges the configure less it (§XV "The budgets of the
+tree"). On 2026-10-11, five builds of the plugin took 6.51 s to 7.01 s. The
+plugin applies the quarantine rule of §XXII and the contract rule of §XII. `CRUCIBLE_QUARANTINE_MODE` is
 `REPORT`, the default, or `ERROR` (§XXII). On 2026-10-09, the plugin added 38 to
 236 million user instructions to a compile: 0.44% to 1.64% of six units of 2.3
 to 46 billion instructions, and 0.66% of their sum. The argument
@@ -2509,7 +2513,8 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `edit-test-cpu` | The CPU time of that test run | 2,500 s | 5,000 s. A warning only when the step has an instruction count | `loop gauge` | Before each stage gate |
 | `edit-build-wall` | The wall time of that build at 192 jobs, when other processes used at most 10 % of the host | 15 s | 25 s | `loop gauge` | Before each stage gate |
 | `edit-test-wall` | The wall time of that test run at 192 jobs, when other processes used at most 10 % of the host | 15 s | 30 s | `loop gauge` | Before each stage gate |
-| `configure-time` | The wall time of one configure, to the last file that CMake writes | 10 s | None, warnings only | `guard warnings`, the loop history and `loop gauge` | CI step "Check warnings", each loop, before each stage gate |
+| `configure-time` | The wall time of one configure, to the last file that CMake writes, less the plugin build in it | 10 s | None, warnings only | `guard warnings`, the loop history and `loop gauge` | CI step "Check warnings", each loop, before each stage gate |
+| `plugin-build-time` | The wall time of the build of the quarantine plugin in one configure: the compiles, the link and the run that writes the kinds | 14 s | None, warnings only | `guard warnings`, the loop history and `loop gauge` | CI step "Check warnings", each loop, before each stage gate |
 | `noop-build-time` | The wall time of `cmake --build` when no edge but the glob check of CMake runs | 0.5 s | None, warnings only | The loop history and `loop gauge` | Each loop, before each stage gate |
 | `build-peak-memory` | The largest sum of the peak memory of the compiles and links whose wall times overlap, an upper bound | 128 GB | None, warnings only | `guard warnings`, the loop history and `loop gauge` | CI step "Check warnings", each loop, before each stage gate |
 | `link-count` | The link records of a build directory, against the baseline of the configuration | A change over 2 % | None, warnings only | `guard warnings` | CI step "Check warnings" |

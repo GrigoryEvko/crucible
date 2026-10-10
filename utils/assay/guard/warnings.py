@@ -334,7 +334,7 @@ def planted_record(
 
 
 def build_total_cases(expect: testing.Expect) -> None:
-    """Give the four build totals of planted records and a planted configure, and judge each one."""
+    """Give the five build totals of planted records and a planted configure, and judge each one."""
     records = [
         planted_record(cost_record.LINK, 2.0, 10.0, 4.0, 2.0),
         planted_record(cost_record.COMPILE, 5.0, 9.0, 5.0, 3.0),
@@ -347,24 +347,42 @@ def build_total_cases(expect: testing.Expect) -> None:
             ("total-link-cpu", 100.0, "%"),
             ("build-peak-memory", 4.0, "GB"),
             ("configure-time", 10.0, "s"),
+            ("plugin-build-time", 6.0, "s"),
         )
     }
-    configure = {"start": "2026-10-02T00:00:00Z", "configure_s": 9.0, "generate_s": 3.0, "total_s": 12.0}
+    configure = {
+        "start": "2026-10-02T00:00:00Z",
+        "configure_s": 9.0,
+        "generate_s": 3.0,
+        "total_s": 12.0,
+        "plugin_build_s": 7.0,
+    }
     measures = cost_budgets.total_build_measures(records, configure)
     found, lines = cost_budgets.judged_totals(
         measures, budgets, "build", planted_baselines({"link-count": 1.0, "total-link-cpu": 0.5})
     )
     expect(
         "the build totals warn on a growth of the link CPU over its baseline, and on the peak memory of the steps "
-        "that overlap and the configure over their thresholds.  A link count equal to its baseline gives nothing",
+        "that overlap, the configure and the plugin build over their thresholds.  A link count equal to its baseline "
+        "gives nothing",
         sorted((item.check, item.kind) for item in found)
-        == [("build-peak-memory", ""), ("configure-time", ""), ("total-link-cpu", "growth")]
+        == [("build-peak-memory", ""), ("configure-time", ""), ("plugin-build-time", ""), ("total-link-cpu", "growth")]
         and all(item.level == "warning" for item in found)
         and any("5 GB" in item.message for item in found),
     )
     expect(
-        "the build totals give one line for each total, with the parts of the configure",
-        len(lines) == 4 and "link-count 1 links" in lines[0] and "(configure 9.0 s, generate 3.0 s" in lines[3],
+        "the build totals give one line for each total, with the parts of the configure and its plugin build",
+        len(lines) == 5
+        and "link-count 1 links" in lines[0]
+        and "(configure 9.0 s, generate 3.0 s" in lines[3]
+        and "less a plugin build of 7.0 s" in lines[3]
+        and "plugin-build-time 7 s" in lines[4],
+    )
+    no_plugin = cost_budgets.total_build_measures([], {**configure, "plugin_build_s": 0.0})
+    found, _ = cost_budgets.judged_totals(no_plugin, budgets, "build", planted_baselines({}))
+    expect(
+        "a last configure that built no plugin gives plugin-build-time no value and no warning",
+        "plugin-build-time" not in {item.check for item in found},
     )
     found, lines = cost_budgets.judged_totals(
         cost_budgets.total_build_measures([], None), budgets, "build", planted_baselines({})
@@ -372,7 +390,7 @@ def build_total_cases(expect: testing.Expect) -> None:
     expect(
         "the build totals give no warning with no record and no configure, and no baseline judges a total with no "
         "value",
-        not found and "no value" in lines[0] and "no value" in lines[3],
+        not found and "no value" in lines[0] and "no value" in lines[3] and "no value" in lines[4],
     )
     registry = check_report.read_budgets()
     expect("the registry has a measured rule for each build total", all(rule_id in registry for rule_id in budgets))

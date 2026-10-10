@@ -131,8 +131,9 @@ THE TOTALS
     records.  The rule instruction-total judges the cost of the compiles of
     the objects, with a count that the load of the host does not change
     (assay.guard.engines.buildsys.cost_totals).  build_totals() gives
-    link-count, total-link-cpu, build-peak-memory and configure-time, from the
-    records of the build launcher.  total_report_totals() and
+    link-count, total-link-cpu, build-peak-memory, configure-time and
+    plugin-build-time, from the records of the build launcher and of the last
+    configure (assay.loop.history, THE PLUGIN BUILD).  total_report_totals() and
     total_report_build() print one line for each total.  A total gives a
     warning only, because the CPU time increases with the load of the shared
     host.  These rules are held by guard warnings, and this module gives no
@@ -162,9 +163,9 @@ THE TOTALS
                      the build, and the warning tells to run each unit
     No baseline judges a total with no value, such as a build directory with
     no link record.  The line of such a total tells that it has no value.
-    build-peak-memory and configure-time keep the absolute thresholds of their
-    rows, because the loop history and loop gauge judge them with the same
-    rows (assay.loop.history).
+    build-peak-memory, configure-time and plugin-build-time keep the absolute
+    thresholds of their rows, because the loop history and loop gauge judge
+    them with the same rows (assay.loop.history).
     `guard write --rule RULE --build-dir DIR [--add-configuration] [--reason
     TEXT]` writes the configuration rows and the row of the configuration of
     the build through total_written(), the function of WRITERS of
@@ -1489,9 +1490,10 @@ def total_build_records(build_dir: Path) -> list[cost_record.CostRecord]:
 def total_build_measures(
     records: Sequence[cost_record.CostRecord], configure: Mapping[str, object] | None
 ) -> list[TotalMeasure]:
-    """Return the four build totals of the records of a build directory and of its last configure (THE TOTALS).
+    """Return the five build totals of the records of a build directory and of its last configure (THE TOTALS).
 
-    A build directory with no link record gives link-count and total-link-cpu no value.
+    A build directory with no link record gives link-count and total-link-cpu no value.  A last configure that built
+    no plugin gives plugin-build-time no value.
 
     Args:
         records: The records of the compiles and the links of the build directory
@@ -1503,12 +1505,15 @@ def total_build_measures(
     link_cpu = round(sum(record.cost.cpu_s for record in links if record.cost is not None), 1)
     peak = loop_history.peak_concurrent_gb([record.cost for record in records if record.cost is not None])
     configured = loop_history.number(configure, "total_s") if configure is not None else None
+    plugin_s = loop_history.number(configure, "plugin_build_s") if configure is not None else None
+    plugin_s = plugin_s if plugin_s else None
     detail = (
         ""
         if configure is None
         else (
             f" (configure {configure['configure_s']} s, generate {configure['generate_s']} s, reply of the file API "
-            f"{configure.get('file_api_s', 0)} s, at {configure['start']})"
+            f"{configure.get('file_api_s', 0)} s, at {configure['start']}, less a plugin build of "
+            f"{configure.get('plugin_build_s', 0)} s)"
         )
     )
 
@@ -1542,10 +1547,18 @@ def total_build_measures(
             "configure-time",
             configured,
             "s",
-            "the last configure of the build directory",
+            "the last configure of the build directory, less its plugin build,",
             "",
             shown(configured, "s"),
             detail,
+        ),
+        TotalMeasure(
+            "plugin-build-time",
+            plugin_s,
+            "s",
+            "the plugin build of the last configure of the build directory",
+            "",
+            shown(plugin_s, "s"),
         ),
     ]
 

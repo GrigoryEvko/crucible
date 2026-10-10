@@ -88,11 +88,13 @@ THE MEASURED RULES
     was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
     the host CPU time in the step, in each run.  Else the report gives the
     wall time and the reason, and no finding.
-    Three rules give warnings only: configure-time for the first and the
-    second configure, noop-build-time for the build with nothing to do, and
-    build-peak-memory for the median of the peak concurrent memory of the
-    edit builds.  For each build step, the report also gives the critical
-    path (utils/assay/loop/history.py, THE CRITICAL PATH).
+    Four rules give warnings only: configure-time for the first and the
+    second configure less the plugin build of each, plugin-build-time for
+    that plugin build (utils/assay/loop/history.py, THE PLUGIN BUILD),
+    noop-build-time for the build with nothing to do, and build-peak-memory
+    for the median of the peak concurrent memory of the edit builds.  For
+    each build step, the report also gives the critical path
+    (utils/assay/loop/history.py, THE CRITICAL PATH).
 
 THE REPORT
     The report prints each finding in the format of utils/assay/core/report.py,
@@ -169,6 +171,8 @@ NOT_RUNNABLE = 3
 # The rule that configures the build again and refuses a compile after it, and the master of the copy that runs it.
 RECONFIGURE_RULE = "reconfigure-noop"
 GUARD_MASTER = Path("utils/bin/guard")
+# The steps that configure the copy.  Each one can build the quarantine plugin (THE REPORT, judge_others()).
+CONFIGURE_STEPS = frozenset({"configure", "reconfigure"})
 # The step that runs its compiles with no ccache, and the variable of ccache that turns ccache off (THE MEASUREMENT).
 UNCACHED_STEP = "warm-build"
 CCACHE_OFF = {"CCACHE_DISABLE": "1"}
@@ -180,7 +184,7 @@ class GaugeError(Exception):
 
 @dataclass(slots=True)
 class StepResult:
-    """The measures of one step, and for a build step its peak concurrent memory and its critical path."""
+    """The measures of one step, with the memory and the critical path of a build and the plugin build of a configure."""
 
     name: str
     status: int
@@ -192,6 +196,7 @@ class StepResult:
     peak_memory_gb: float | None = None
     critical_path_s: float | None = None
     critical_path: tuple[str, ...] = ()
+    plugin_build_s: float | None = None
 
 
 @dataclass(slots=True)
@@ -379,7 +384,7 @@ def runs_without_ccache(name: str) -> bool:
 
 
 def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], logs: Path,
-             build: Path | None = None) -> StepResult:
+             build: Path | None = None, configured: Path | None = None) -> StepResult:
     """Run one step with its output in a log, and measure it.
 
     Args:
@@ -389,6 +394,8 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
         environment: The environment of the command
         logs: The directory of the logs
         build: For a build step, the build directory, whose ninja log gives the edges that ran
+        configured: For a configure step, the build directory.  Its record of the plugin build gives the plugin build
+            of the step
 
     Returns:
         The measures.  A step that runs past the limit BUILD_S of assay.core.proc gets the status of its end on the
@@ -411,6 +418,8 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
     step = StepResult(name, status, float(result["wall_s"]), float(result["cpu_s"]), float(result["system_s"]),
                       None if result["others_pct"] is None else float(result["others_pct"]),
                       None if instructions is None else round(instructions / GIGA, 1))
+    if configured is not None:
+        step.plugin_build_s = loop_history.plugin_build_since(configured, timer.started_epoch)
     if build is not None:
         facts = loop_history.summarize_build(build, loop_history.load_graph(build), before, ninja_files.log(build),
                                              timer.started_epoch)
@@ -533,7 +542,7 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
 
 def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budget],
                  place: str) -> list[check_report.Finding]:
-    """Return the warnings of the configure steps, of the build with nothing to do, and of the peak memory.
+    """Return the warnings of the configure steps, their plugin builds, the build with nothing to do and the memory.
 
     Args:
         results: The measures of each step
@@ -545,9 +554,12 @@ def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budg
     """
     findings: list[check_report.Finding] = []
     for result in results:
-        if result.name in ("configure", "reconfigure"):
-            findings += loop_history.warning_over(budgets, "configure-time", result.wall_s, "s",
-                                                  f"the step {result.name}", place)
+        if result.name in CONFIGURE_STEPS:
+            plugin_s = result.plugin_build_s or 0.0
+            findings += loop_history.warning_over(budgets, "configure-time", round(result.wall_s - plugin_s, 2), "s",
+                                                  f"the step {result.name}, less its plugin build,", place)
+            findings += loop_history.warning_over(budgets, "plugin-build-time", result.plugin_build_s, "s",
+                                                  f"the plugin build of the step {result.name}", place)
         elif result.name == "noop-build":
             findings += loop_history.warning_over(budgets, "noop-build-time", result.wall_s, "s",
                                                   "the build with no edge to run", place)
@@ -614,7 +626,7 @@ def record_step(item: object, where: str) -> StepResult:
                       record_number(item, "cpu_s", where), record_number(item, "system_s", where),
                       loop_history.number(item, "others_pct"), loop_history.number(item, "instructions_g"),
                       loop_history.number(item, "peak_memory_gb"), loop_history.number(item, "critical_path_s"),
-                      tuple(str(part) for part in path))
+                      tuple(str(part) for part in path), loop_history.number(item, "plugin_build_s"))
 
 
 def record_median(item: object, where: str) -> Median:
@@ -767,7 +779,8 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         if report is not None:
             report.unlink(missing_ok=True)
         step_environment = {**environment, **CCACHE_OFF} if runs_without_ccache(name) else environment
-        result = run_step(name, command, tree, step_environment, logs, build if command is build_command else None)
+        result = run_step(name, command, tree, step_environment, logs, build if command is build_command else None,
+                          build if name in CONFIGURE_STEPS else None)
         results.append(result)
         path = ""
         if result.critical_path:
@@ -1099,9 +1112,14 @@ def self_test() -> int:
                and len([note for note in notes if f"{WALL_JOBS // 8} jobs" in note]) == 2)
         other_rows = {row: check_report.Budget(row, limit, limit, "u", "m")
                       for row, limit in (("configure-time", 10.0), ("noop-build-time", 0.5),
-                                         ("build-peak-memory", 100.0))}
+                                         ("build-peak-memory", 100.0), ("plugin-build-time", 6.0))}
+        rebuilt = result("configure", 15.0, 1, 1, None)
+        rebuilt.plugin_build_s = 7.0
+        expect("judge_others judges a configure less its plugin build, and the plugin build on its own rule",
+               [f.check for f in judge_others([rebuilt], other_rows, "h")] == ["plugin-build-time"])
         steps = [result("configure", 12.0, 1, 1, None), result("noop-build", 0.3, 0, 1, None),
                  result("reconfigure", 6.0, 1, 1, None)]
+        steps[2].plugin_build_s = 2.0
         for name, peak in (("edit-build-1", 90.0), ("edit-build-2", 120.0), ("edit-build-3", 130.0)):
             steps.append(result(name, 20, 200, 1, 60))
             steps[-1].peak_memory_gb = peak
