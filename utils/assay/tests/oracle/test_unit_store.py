@@ -177,6 +177,20 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
         "a new source does not wait for the settle period: its first build stores the result",
         not renamed_first.is_stored and unit_store().static(renamed).is_stored,
     )
+    # An empty element of LD_LIBRARY_PATH names the working directory of the loader (THE RUN ENVIRONMENT of the
+    # store).  The first build of a new program then also stores its result.
+    with environment_variable("LD_LIBRARY_PATH", f"{early_library}{os.pathsep}"):
+        new_program = [("new_main.cpp", program[0][1])]
+        written_ns = unit_store().sources(new_program)[0].stat().st_ctime_ns
+        new_first = unit_store(latest_start_ns=written_ns + compile_store._SETTLE_NS).program(new_program)
+        new_second = unit_store().program(new_program)
+    expect(
+        "with an empty element in LD_LIBRARY_PATH, the first build of a new program stores the result",
+        not new_first.is_stored
+        and new_first.stdout == "value 8\n"
+        and new_second.is_stored
+        and new_second.stdout == "value 8\n",
+    )
     directory = unit_store().sources(static)[0].parent
     (directory / "probe.h").write_text("#pragma once\ninline constexpr int probe_value = 4;\n")
     beside = unit_store().static(static)

@@ -58,7 +58,8 @@ THE KEY OF A PROGRAM
         objects that a shared object uses.  These files are in /etc, which is
         not a search root.
       - The arguments of the run, and each environment variable of the C
-        library (RUN_ENVIRONMENT, RUN_ENVIRONMENT_PREFIXES).
+        library in the run environment (RUN_ENVIRONMENT,
+        RUN_ENVIRONMENT_PREFIXES, THE RUN ENVIRONMENT).
     The inputs of a result of a program are the inputs of each compile, and
     these inputs:
       - Each file that the linker opened, from its --verbose report, and
@@ -69,6 +70,17 @@ THE KEY OF A PROGRAM
     with no file is a probed path, and a file at that path then makes the
     result a miss.  The object files and the program are outputs, and they
     are not inputs.  The program runs in an empty directory.
+
+THE RUN ENVIRONMENT
+    The run of a program and the list of its loader get the environment of
+    the caller, with no empty element in LD_LIBRARY_PATH.  _run_environment()
+    gives that environment.  The loader reads an empty element as the working
+    directory.  The program runs in a new empty directory.  There, such an
+    element finds no file, and the run with no such element gives the same
+    result.  The list of the loader runs in the directory of the sources.
+    There, an empty element gives a probed path in that directory.  The first
+    build of a new program writes its sources in the settle period of that
+    probe.  The store then keeps no result of the build.
 
 THE PATHS OF A RECORD
     The store makes a probed path from each dependency with ".." in its part
@@ -112,7 +124,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,6 +153,8 @@ RUN_TIMEOUT_S = 600
 # The environment variables that the C library reads in the run of a program.
 RUN_ENVIRONMENT = frozenset({"LANG", "TZ"})
 RUN_ENVIRONMENT_PREFIXES = ("LD_", "LC_", "GLIBC_", "MALLOC_")
+# The search path of the loader, which the run environment keeps with no empty element (THE RUN ENVIRONMENT).
+LIBRARY_PATH = "LD_LIBRARY_PATH"
 # The programs of a link that the compiler driver finds.  The loader of the
 # linker also maps the shared objects of the LTO plugin.
 LINK_PROGRAMS = ("collect2", "ld", "liblto_plugin.so", "lto-wrapper")
@@ -310,6 +324,20 @@ def respelled_roots(inputs: _Inputs) -> _Inputs:
     )
 
 
+def _run_environment(base: Mapping[str, str]) -> dict[str, str]:
+    """Return the environment of the run of a program and of the list of its loader (THE RUN ENVIRONMENT).
+
+    The environment is ``base`` with no empty element in LD_LIBRARY_PATH, and
+    with no LD_LIBRARY_PATH when each element is empty.  Complexity: O(n) for
+    the n variables of ``base``.
+    """
+    environment = dict(base)
+    searched = [element for element in environment.pop(LIBRARY_PATH, "").split(os.pathsep) if element]
+    if searched:
+        environment[LIBRARY_PATH] = os.pathsep.join(searched)
+    return environment
+
+
 def _loader_identity(memo: Path) -> list[object]:
     """Return the path and the bytes of each file of the loader configuration, of its cache and of its preload list.
 
@@ -362,6 +390,7 @@ class UnitStore:
         self.scratch = scratch
         self.latest_start_ns = latest_start_ns
         self.environment = compile_store.compile_environment(os.environ)
+        self.run_environment = _run_environment(os.environ)
         self.module = _digest(Path(__file__).read_bytes())
         root = store_root if store_root is not None else cache_dir.cache_root(STORE_NAME)
         self.store: compile_store.ResultStore | None = None
@@ -524,12 +553,11 @@ class UnitStore:
             return None
         return identity
 
-    @staticmethod
-    def _run_identity(arguments: Sequence[str]) -> list[object]:
-        """Return the arguments and the environment variables of the C library for the run of a program."""
+    def _run_identity(self, arguments: Sequence[str]) -> list[object]:
+        """Return the arguments and the variables of the C library in the run environment of a program."""
         environment = sorted(
             [name, value]
-            for name, value in os.environ.items()
+            for name, value in self.run_environment.items()
             if name in RUN_ENVIRONMENT or name.startswith(RUN_ENVIRONMENT_PREFIXES)
         )
         return [list(arguments), environment]
@@ -763,7 +791,11 @@ class UnitStore:
         empty = work / "run"
         empty.mkdir()
         try:
-            ran = proc.run(proc.Command([str(program), *unit.arguments], timeout_s=RUN_TIMEOUT_S, cwd=empty))
+            ran = proc.run(
+                proc.Command(
+                    [str(program), *unit.arguments], timeout_s=RUN_TIMEOUT_S, cwd=empty, env=self.run_environment
+                )
+            )
         except proc.TimedOut:
             return UnitResult(124, "", f"the run of the program took more than {RUN_TIMEOUT_S} s"), inputs, False
         result = UnitResult(ran.exit, _kept(ran.stdout), _kept(ran.stderr))
@@ -773,9 +805,10 @@ class UnitStore:
         """Return each path that the loader tries for ``program``, or None.
 
         A tried path that exists is a dependency, and one that does not is a
-        probed path.  The loader lists the objects under LD_DEBUG=libs.  The
-        key holds the cache of the loader (_loader_identity), so a list that
-        names a different cache gives None.
+        probed path.  The loader lists the objects under LD_DEBUG=libs, in the
+        run environment of the program (THE RUN ENVIRONMENT).  The key holds
+        the cache of the loader (_loader_identity), so a list that names a
+        different cache gives None.
         """
         try:
             interpreter = elf.interpreter(program)
@@ -783,7 +816,7 @@ class UnitStore:
             return None
         if interpreter is None:
             return _Inputs()
-        environment = {name: value for name, value in os.environ.items() if name != "LD_DEBUG_OUTPUT"}
+        environment = {name: value for name, value in self.run_environment.items() if name != "LD_DEBUG_OUTPUT"}
         environment["LD_DEBUG"] = "libs"
         listed = proc.run(
             proc.Command([interpreter, "--list", str(program)], timeout_s=proc.QUICK_S, cwd=directory, env=environment)
