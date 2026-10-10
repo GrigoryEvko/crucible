@@ -12,6 +12,7 @@ full write on planted builds.
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -151,7 +152,7 @@ def run_cases(expect: testing.Expect) -> None:
 
 
 def write_cases(expect: testing.Expect) -> None:
-    """Hold the writes that stop: the mode admit, a build that does not apply and a build that fails.
+    """Hold the writes that stop: the mode admit, a build that does not apply, a build that fails, and an unadmitted error.
 
     Each write goes through the function that writer() gives.  The cases then also hold writer().
     """
@@ -176,6 +177,23 @@ def write_cases(expect: testing.Expect) -> None:
         expect("a build that the rule does not read writes nothing and exits 77", status == runner.SKIPPED)
         status, text = written(rule_ledger.WriteMode.LOWER, runner.BuildError("a planted failure"))
         expect("a build that the rule cannot read writes nothing", status == 1 and "a planted failure" in text)
+        unadmitted = check_report.Finding("error", "build/tool", 0, RULE, "a planted error that no row admits")
+        configuration = build_config.BuildConfiguration(
+            "k", ((build_config.KIND_KEY, "k"), (build_config.TIER_KEY, "t"))
+        )
+        inspection = configured.Inspection(
+            (unadmitted,),
+            rule_ledger.empty(rule),
+            configuration,
+            counts={key("@build/a", "fact", "x"): 1},
+            unadmitted=(unadmitted,),
+        )
+        request = runner.WriteRequest(root, root, rule_ledger.WriteMode.RAISE, reason="a planted reason")
+        status, text = quiet(lambda: configured.writer(lambda _rule, _context: inspection, policy)(rule, request))
+        expect(
+            "a build with an error that no row admits writes nothing, also with --raise",
+            status == 1 and "no row admits" in text and not rule_ledger.ledger_path(RULE, root).exists(),
+        )
 
 
 def main(argv: list[str]) -> int:

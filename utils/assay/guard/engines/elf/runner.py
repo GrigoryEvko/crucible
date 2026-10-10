@@ -51,19 +51,23 @@ THE PLANTS
         shared NAME UNIT...            compile each unit with -fPIC, and link
                                        the shared library libNAME.so of a link
                                        line
-        program DIRECTORY NAME UNIT... compile each unit, and link the program
+        program DIRECTORY NAME UNIT... [| WORD...]
+                                       compile each unit, and link the program
                                        DIRECTORY/NAME of the target all with
                                        its map (cmake/LinkMap.cmake).  Its
-                                       source directory is DIRECTORY
+                                       source directory is DIRECTORY.  The
+                                       words of the cell go at the end of the
+                                       link line
         unit TARGET UNIT | WORD...     a row of the compile database: the
                                        unit, an object of the target TARGET,
                                        with the compiler and the words
         cache NAME VALUE               a variable of the CMake cache
 
-    UNIT is a path relative to the tree, and a word {root} of a unit row is
-    the root of the copy.  A row with a different head word is a row of the
-    module of the rule, which reads it from the PlantedBuild.  A plant that
-    the rule refuses must give an error, and a control must give none.
+    UNIT is a path relative to the tree.  A word {root} of a unit row or of a
+    program row is the root of the copy.  A row with a different head word is
+    a row of the module of the rule, which reads it from the PlantedBuild.  A
+    plant that the rule refuses must give an error, and a control must give
+    none.
 
 THE RUN
     A module that judges its findings itself gives judge(rule, context),
@@ -467,21 +471,22 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
     from concurrent.futures import ThreadPoolExecutor
 
     rows = manifest_rows(tree)
+    # The shape of each row, its number of words, and the numbers of cells that it can have (THE PLANTS).
     shapes = {
-        "kind": ("kind KIND", 2, 0),
-        "tier": ("tier TIER", 2, 0),
-        "cache": ("cache NAME VALUE", 3, 0),
-        "library": ("library NAME UNIT...", 3, 0),
-        "archive": ("archive NAME UNIT...", 3, 0),
-        "shared": ("shared NAME UNIT...", 3, 0),
-        PROGRAM_ROW: ("program DIRECTORY NAME UNIT...", 4, 0),
-        "unit": ("unit TARGET UNIT | WORD...", 3, 1),
+        "kind": ("kind KIND", 2, (0,)),
+        "tier": ("tier TIER", 2, (0,)),
+        "cache": ("cache NAME VALUE", 3, (0,)),
+        "library": ("library NAME UNIT...", 3, (0,)),
+        "archive": ("archive NAME UNIT...", 3, (0,)),
+        "shared": ("shared NAME UNIT...", 3, (0,)),
+        PROGRAM_ROW: ("program DIRECTORY NAME UNIT... [| WORD...]", 4, (0, 1)),
+        "unit": ("unit TARGET UNIT | WORD...", 3, (1,)),
     }
     for row in rows:
         shape = shapes.get(row.words[0])
         if shape is not None and (
             len(row.words) < shape[1]
-            or len(row.cells) != shape[2]
+            or len(row.cells) not in shape[2]
             or (row.words[0] not in (*LIBRARY_ROWS, PROGRAM_ROW) and len(row.words) != shape[1])
         ):
             raise refused(row, shape[0])
@@ -527,7 +532,8 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
         program = build / row.words[1] / row.words[2]
         program.parent.mkdir(parents=True, exist_ok=True)
         objects = [str(object_of(build, unit)) for unit in row.words[3:]]
-        compiled([compiler, *objects, "-o", str(program), f"-Wl,-Map={program}.map"], build)
+        words = [word.replace(ROOT_WORD, str(tree)) for cell in row.cells for word in rows_grammar.head_words(cell)]
+        compiled([compiler, *objects, "-o", str(program), f"-Wl,-Map={program}.map", *words], build)
         linked.append((row.words[1], program))
     entries: list[compdb.CompileEntry] = []
     targets: dict[str, set[str]] = {}

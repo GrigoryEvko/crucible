@@ -1,0 +1,7 @@
+# A planted ledger: the run path of the planted program, with two directories that the host gives.
+format 1
+rule artifact-links
+configuration planted kind planted
+configuration planted tier planted
+@build/tools | runpath | 1 | $ORIGIN | -
+@build/tools | runpath | 1 | {build} | -

@@ -300,7 +300,7 @@ def link_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> li
     words = artifact_links.path_words(context.compiler(), build_dir)
     with elf.mapped(artifact.path) as member:
         is_vessel = artifact_links.group_of(artifact.directory) == artifact_links.VESSEL
-        facts = artifact_links.member_facts(member, words, is_vessel)
+        facts = artifact_links.member_facts(member, member.dynamic(), words, is_vessel)
     facts |= artifact_links.map_facts(artifact.path, build_dir)
     kinds = Counter(kind for kind, _ in facts)
     counted = ", ".join(f"{kind} {kinds[kind]}" for kind in artifact_links.KINDS if kinds[kind])

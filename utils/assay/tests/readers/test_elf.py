@@ -353,6 +353,32 @@ def dynamic_cases(expect: testing.Expect) -> None:
         "the directories of a run path are the parts between the colons, with no empty part",
         elf.DynamicEntry(elf.DT_RUNPATH, 0, "/a/lib::$ORIGIN:").directories() == ("/a/lib", "$ORIGIN"),
     )
+    expect(
+        "the parts of a run path keep each empty part",
+        elf.DynamicEntry(elf.DT_RUNPATH, 0, "/a/lib::$ORIGIN:").parts() == ("/a/lib", "", "$ORIGIN", ""),
+    )
+    with tempfile.TemporaryDirectory(prefix="elf-origin-") as scratch_text:
+        scratch = Path(scratch_text).resolve()
+        (scratch / "bin").mkdir()
+        (scratch / "lib").symlink_to(scratch / "bin")
+        program = scratch / "lib" / "tool"
+        expanded = {
+            part: elf.expanded_origin(part, program)
+            for part in ("/a/lib", "$ORIGIN", "${ORIGIN}/../lib", "$ORIGIN/x$ORIGIN", "$ORIGIN.d", "$ORIGIN_x")
+        }
+        expect(
+            "$ORIGIN and ${ORIGIN} give the resolved directory of the object, and a part with no $ stays",
+            expanded["/a/lib"] == "/a/lib"
+            and expanded["$ORIGIN"] == f"{scratch}/bin"
+            and expanded["${ORIGIN}/../lib"] == f"{scratch}/bin/../lib"
+            and expanded["$ORIGIN/x$ORIGIN"] == f"{scratch}/bin/x{scratch}/bin"
+            and expanded["$ORIGIN.d"] == f"{scratch}/bin.d",
+        )
+        expect(
+            "a name character after $ORIGIN, $LIB, $PLATFORM and a lone $ give None",
+            expanded["$ORIGIN_x"] is None
+            and all(elf.expanded_origin(part, program) is None for part in ("$LIB", "/a/$PLATFORM/b", "/a$", "${LIB}")),
+        )
 
 
 def group_cases(expect: testing.Expect) -> None:

@@ -36,6 +36,22 @@ THE PATHS
     directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
     prefix.
 
+THE RUN PATH DIRECTORIES
+    The loader reads each directory of DT_RUNPATH and DT_RPATH on each start
+    of an artifact.  The rule refuses each such directory that the host of
+    the build does not give (missing_directories()).  The ELF reader expands
+    $ORIGIN and ${ORIGIN} to the directory of the artifact (assay.readers.elf,
+    THE DYNAMIC SECTION).  These directories are errors:
+      * A path that is not on the host, or that is not a directory
+      * An empty part, which the loader reads as the working directory
+      * A relative directory, which the loader also reads from the working
+        directory
+      * A directory with a $ other than $ORIGIN, such as $LIB, because the
+        rule does not expand it.
+    The error names the directory with the words of THE PATHS, and also its
+    path on the host.  No ledger row admits such an error, and a write of
+    the ledger refuses a build with one (configured.Inspection.unadmitted).
+
 THE MAP
     cmake/LinkMap.cmake makes GNU ld write the map of each link adjacent to
     its output, as OUTPUT.map.  The rule reads the archive members of the map
@@ -70,10 +86,11 @@ NOT APPLICABLE
         (assay.core.configuration.is_parse_build)
       * A build with no linked artifact, or one that has not made each one.
 
-Complexity: linear in the artifacts, their symbols and sections, and the archive members of their maps.
+Complexity: linear in the artifacts, their symbols and sections, the directories of their run paths, and the archive
+members of their maps.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,6 +142,13 @@ ROW_SHAPE = (
     f"a row is '@build/GROUP | KIND | 1 | ENTITY | -', with a GROUP of {', '.join(sorted({*GROUPS.values(), TOOLS}))} "
     f"and a KIND of {', '.join(KINDS)}"
 )
+# The kind of the error of a run path directory that the host does not give, and the reason of each such directory.
+MISSING_KIND = "missing-directory"
+NO_PATH_REASON = "is not on the host"
+FILE_REASON = "is not a directory"
+EMPTY_REASON = "is empty, and the loader reads an empty part as the working directory"
+RELATIVE_REASON = "is relative, and the loader reads it from the working directory"
+TOKEN_REASON = "holds a $ other than $ORIGIN, and the rule does not expand it"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +159,34 @@ class Fact:
     kind: str
     entity: str
     example: str
+
+
+@dataclass(frozen=True, slots=True)
+class MissingDirectory:
+    """A run path directory that the host does not give, with the artifacts that name it (THE RUN PATH DIRECTORIES).
+
+    `directory` is the part of the run path with the words of THE PATHS.  `host_path` is its path on the host after
+    the expansion of $ORIGIN, or the part itself when the rule cannot find a directory.  `example` is one artifact
+    that names it, and `artifacts` the number of such artifacts.
+    """
+
+    directory: str
+    host_path: str
+    reason: str
+    example: str
+    artifacts: int
+
+
+@dataclass(frozen=True, slots=True)
+class LinkReading:
+    """The facts of the linked artifacts, the number of artifacts of each group, and the missing run path directories.
+
+    `missing` holds each run path directory that the host does not give (THE RUN PATH DIRECTORIES).
+    """
+
+    facts: tuple[Fact, ...]
+    counts: Mapping[str, int]
+    missing: tuple[MissingDirectory, ...]
 
 
 # ── The facts ──────────────────────────────────────────────────────
@@ -176,13 +228,16 @@ def file_type_of(member: elf.Member, entries: Iterable[elf.DynamicEntry]) -> str
     return f"type {kind}"
 
 
-def member_facts(member: elf.Member, words: Iterable[tuple[str, str]], is_vessel: bool) -> set[tuple[str, str]]:
-    """Return the facts of one linked artifact that its ELF file gives (THE FACTS).
+def member_facts(
+    member: elf.Member, entries: Sequence[elf.DynamicEntry], words: Iterable[tuple[str, str]], is_vessel: bool
+) -> set[tuple[str, str]]:
+    """Return the facts of one linked artifact that its ELF file and its dynamic entries give (THE FACTS).
+
+    `entries` are the entries of member.dynamic(), which the caller reads one time.
 
     Raises:
         elf.ElfError: If a table of the file is not fully in the file
     """
-    entries = member.dynamic()
     found = {(NEEDED, entry.text) for entry in entries if entry.tag == elf.DT_NEEDED}
     for entry in entries:
         if entry.tag in (elf.DT_RUNPATH, elf.DT_RPATH):
@@ -207,6 +262,42 @@ def member_facts(member: elf.Member, words: Iterable[tuple[str, str]], is_vessel
             for symbol in member.dynamic_symbols()
             if symbol.is_undefined
         }
+    return found
+
+
+def directory_problem(part: str, artifact: Path) -> tuple[str, str]:
+    """Return the path on the host of one part of a run path, and the reason why the host does not give it.
+
+    The reason is an empty text for a directory that the host gives (THE RUN PATH DIRECTORIES).  The ELF reader replaces
+    $ORIGIN with the directory of the artifact (assay.readers.elf, THE DYNAMIC SECTION).
+    """
+    if not part:
+        return part, EMPTY_REASON
+    host_path = elf.expanded_origin(part, artifact)
+    if host_path is None:
+        return part, TOKEN_REASON
+    path = Path(host_path)
+    if not path.is_absolute():
+        return host_path, RELATIVE_REASON
+    if path.is_dir():
+        return host_path, ""
+    return host_path, FILE_REASON if path.exists() else NO_PATH_REASON
+
+
+def missing_directories(entries: Iterable[elf.DynamicEntry], artifact: Path) -> list[tuple[str, str, str]]:
+    """Return each part of the run path of an artifact that the host does not give (THE RUN PATH DIRECTORIES).
+
+    Each item is the part of the run path, its path on the host and the reason.  An entry with an empty text names no
+    directory.  Complexity: one stat for each part of the run path.
+    """
+    found: list[tuple[str, str, str]] = []
+    for entry in entries:
+        if entry.tag not in (elf.DT_RUNPATH, elf.DT_RPATH) or not entry.text:
+            continue
+        for part in entry.parts():
+            host_path, reason = directory_problem(part, artifact)
+            if reason:
+                found.append((part, host_path, reason))
     return found
 
 
@@ -244,8 +335,11 @@ def kinds_of(context: runner.ElfContext) -> frozenset[str]:
     return frozenset(KINDS)
 
 
-def read_facts(context: runner.ElfContext, build_dir: Path) -> tuple[list[Fact], Mapping[str, int]]:
-    """Read the facts of each linked artifact, and give the count of the artifacts of each group.
+def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
+    """Read the facts and the run path directories of each linked artifact, and count the artifacts of each group.
+
+    The rule reads the run path directories of each artifact, also with a row `facts` of a plant (THE RUN PATH
+    DIRECTORIES).
 
     Raises:
         runner.NotApplicable: If the build has no linked artifact, or has not made each one
@@ -254,19 +348,22 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> tuple[list[Fact],
     linked = context.linked_artifacts()
     if not linked:
         raise runner.NotApplicable("the build has no linked artifact in the target all")
-    absent = sorted(build_census.shown(path, context.root) for _, path in linked if not path.is_file())
-    if absent:
-        raise runner.NotApplicable(f"the build has not made {len(absent)} artifacts, such as {absent[0]}")
+    unmade = sorted(build_census.shown(path, context.root) for _, path in linked if not path.is_file())
+    if unmade:
+        raise runner.NotApplicable(f"the build has not made {len(unmade)} artifacts, such as {unmade[0]}")
     words = path_words(context.compiler(), build_dir)
     kinds = kinds_of(context)
     first: dict[tuple[str, str, str], str] = {}
     counts: dict[str, int] = {}
+    missing: dict[tuple[str, str, str], tuple[str, int]] = {}
     for directory, path in linked:
         group = group_of(directory)
         counts[group] = counts.get(group, 0) + 1
         try:
             with elf.mapped(path) as member:
-                facts = member_facts(member, words, group == VESSEL)
+                entries = member.dynamic()
+                facts = member_facts(member, entries, words, group == VESSEL)
+                parts = missing_directories(entries, path)
         except (OSError, elf.ElfError) as problem:
             raise runner.BuildError(f"the ELF reader cannot read {path}: {problem}") from None
         if STATIC_MEMBER in kinds:
@@ -275,7 +372,15 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> tuple[list[Fact],
         for kind, entity in facts:
             if kind in kinds:
                 first.setdefault((group, kind, entity), shown)
-    return [Fact(*key, example) for key, example in sorted(first.items())], counts
+        for part, host_path, reason in parts:
+            key = (shown_path(part, words), host_path, reason)
+            example, number = missing.get(key, (shown, 0))
+            missing[key] = (example, number + 1)
+    return LinkReading(
+        tuple(Fact(*key, example) for key, example in sorted(first.items())),
+        counts,
+        tuple(MissingDirectory(*key, *named) for key, named in sorted(missing.items())),
+    )
 
 
 # ── The ledger and the findings ────────────────────────────────────
@@ -309,6 +414,23 @@ def finding_of(fact: Fact) -> check_report.Finding:
     )
 
 
+def missing_finding(item: MissingDirectory) -> check_report.Finding:
+    """Return the error of one run path directory that the host does not give (THE RUN PATH DIRECTORIES)."""
+    named = f"{item.example} names" if item.artifacts == 1 else f"{item.example} and {item.artifacts - 1} more name"
+    host_path = f" ({item.host_path})" if item.host_path != item.directory else ""
+    return check_report.Finding(
+        "error",
+        item.example,
+        0,
+        RULE,
+        f"{named} the run path directory '{item.directory}'{host_path}, which {item.reason}.  No ledger row admits a "
+        f"run path directory that the host does not give: correct the link line, such as the run path of the "
+        f"toolchain in cmake/ToolchainRunPath.cmake",
+        MISSING_KIND,
+        item.directory,
+    )
+
+
 def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.Inspection:
     """Read the linked artifacts of the build, and judge their facts against the ledger (THE LEDGER).
 
@@ -324,24 +446,29 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     ledger = configured.read_ledger(rule, context.root)
     if isinstance(ledger, configured.Inspection):
         return ledger
-    facts, counts = read_facts(context, build_dir)
+    reading = read_facts(context, build_dir)
+    counts = reading.counts
     configuration = configured.configuration_of(context)
     judged = build_config.judging(RULE, ledger, configuration)
-    found = [finding_of(fact) for fact in facts]
+    found = [finding_of(fact) for fact in reading.facts]
     verdict = rule_ledger.compare(rule, ledger, found, judged.name)
+    # The ledger does not judge a run path directory that the host does not give (THE RUN PATH DIRECTORIES).
+    missing = tuple(missing_finding(item) for item in reading.missing)
     groups = ", ".join(f"{counts[name]} {name}" for name in sorted(counts))
     summary = (
-        f"{RULE}: {sum(counts.values())} linked artifacts ({groups}), {len(facts)} facts of {configuration.name} on "
-        f"{context.tier()}, judged against {judged.words}"
+        f"{RULE}: {sum(counts.values())} linked artifacts ({groups}), {len(reading.facts)} facts of "
+        f"{configuration.name} on {context.tier()}, judged against {judged.words}.  Run path directories that the host "
+        f"does not give: {len(missing)}"
     )
     return configured.Inspection(
-        (*row_problems(ledger), *verdict),
+        (*row_problems(ledger), *verdict, *missing),
         ledger,
         configuration,
         judged,
         {rule_ledger.key_of(item): 1 for item in found},
         {},
         summary,
+        missing,
     )
 
 

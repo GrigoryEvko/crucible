@@ -1,0 +1,4 @@
+# The run path of the planted program names the root of the copy and $ORIGIN, the directory of the program.  The
+# host gives the two directories, and the ledger holds the run path.
+facts runpath
+program examples planted_tool tool.cpp | -Wl,--enable-new-dtags -Wl,-rpath,{root} -Wl,-rpath,$ORIGIN

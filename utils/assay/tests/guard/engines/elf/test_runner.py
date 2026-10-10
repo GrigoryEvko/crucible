@@ -237,7 +237,8 @@ def manifest_cases(expect: testing.Expect) -> None:
             ("library one", "library NAME UNIT..."),
             ("archive one", "archive NAME UNIT..."),
             ("shared one", "shared NAME UNIT..."),
-            ("program examples tool", "program DIRECTORY NAME UNIT..."),
+            ("program examples tool", "program DIRECTORY NAME UNIT... [| WORD...]"),
+            ("program examples tool main.cpp | -s | -s", "program DIRECTORY NAME UNIT... [| WORD...]"),
             ("unit target u.cpp", "unit TARGET UNIT | WORD..."),
             ("kind a | b", "kind KIND"),
         )
@@ -322,6 +323,18 @@ def compile_cases(expect: testing.Expect) -> None:
             "a program row links the program in its directory, with its map adjacent to it",
             placed == [("examples", Path("examples/tool"))]
             and (scratch / "program" / "examples" / "tool.map").is_file(),
+        )
+        (tree / runner.MANIFEST).write_text(
+            "program examples tool main.cpp | -Wl,--enable-new-dtags -Wl,-rpath,{root}/lib\n", encoding="utf-8"
+        )
+        worded = runner.planted_build(tree, scratch / "worded", compiler)
+        run_paths: list[str] = []
+        if worded.linked:
+            with elf.mapped(worded.linked[0][1]) as linked_program:
+                run_paths = [entry.text for entry in linked_program.dynamic() if entry.tag == elf.DT_RUNPATH]
+        expect(
+            "the cell of a program row goes on the link line, with the root of the copy for the word {root}",
+            run_paths == [f"{tree}/lib"],
         )
         (tree / "c.cpp").write_text(BROKEN_UNIT, encoding="utf-8")
         (tree / runner.MANIFEST).write_text("library foundation c.cpp\n", encoding="utf-8")

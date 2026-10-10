@@ -1,0 +1,4 @@
+# The run path of the planted program names a directory that the host does not give.  The ledger holds the run
+# path, and no ledger row admits a run path directory that the host does not give.
+facts runpath
+program examples planted_tool tool.cpp | -Wl,--enable-new-dtags -Wl,-rpath,{root}/planted-missing

@@ -6,9 +6,11 @@ Each case writes one line.  Exit 0 when each case holds, else 1.
 THE CASES
     The cases hold the groups and the paths of the rule, and the facts of
     planted programs.  They also hold a link with no map, and the verdict of
-    a planted ledger.  The compile cases use the compiler that ASSAY_TEST_CXX names, and the
-    registration of the test in test/CMakeLists.txt gives the compiler of the
-    build.
+    a planted ledger.  The directory cases hold each reason of a run path
+    directory that the host does not give.  A planted program names such a
+    directory in its run path.  The compile cases use the compiler that
+    ASSAY_TEST_CXX names, and the registration of the test in
+    test/CMakeLists.txt gives the compiler of the build.
 """
 
 from pathlib import Path
@@ -17,6 +19,7 @@ from tempfile import TemporaryDirectory
 from assay.core import ledger as rule_ledger
 from assay.core import testing
 from assay.guard.engines.elf import artifact_links, runner
+from assay.readers import elf
 
 # A program with a constructor and a call of atexit, and a program that calls the C library.
 TOOL = """\
@@ -67,9 +70,11 @@ def fact_cases(expect: testing.Expect) -> None:
     with TemporaryDirectory(prefix="artifact-links-") as scratch_text:
         scratch = Path(scratch_text)
         context = planted_context(scratch, compiler)
-        facts, counts = artifact_links.read_facts(context, scratch / "build")
+        reading = artifact_links.read_facts(context, scratch / "build")
+        facts, counts = reading.facts, reading.counts
         found = {(fact.group, fact.kind, fact.entity) for fact in facts}
         expect("each program counts in its group", counts == {"tests": 1, "tools": 1, "vessel": 1})
+        expect("a program with no run path names no missing directory", reading.missing == ())
         expect(
             "a program gives its needed libraries, its file type and its interpreter",
             {("tools", "needed", "libc.so.6"), ("tools", "elf-type", "executable")} <= found
@@ -121,6 +126,92 @@ def fact_cases(expect: testing.Expect) -> None:
         expect("a link with no map is an error that names the file of cmake", "cmake/LinkMap.cmake" in said)
 
 
+def directory_cases(expect: testing.Expect) -> None:
+    """Hold each reason of a run path directory that the host does not give (THE RUN PATH DIRECTORIES)."""
+    with TemporaryDirectory(prefix="artifact-links-directories-") as scratch_text:
+        scratch = Path(scratch_text).resolve()
+        (scratch / "bin").mkdir()
+        (scratch / "file").write_text("", encoding="utf-8")
+        parts = (
+            str(scratch),
+            f"{scratch}/bin/..",
+            f"{scratch}/missing",
+            f"{scratch}/file",
+            "",
+            "$ORIGIN",
+            "${ORIGIN}/missing",
+            "$LIB",
+            "$ORIGINAL",
+            "relative",
+        )
+        entries = (
+            elf.DynamicEntry(elf.DT_NEEDED, 0, "libc.so.6"),
+            elf.DynamicEntry(elf.DT_RUNPATH, 0, ":".join(parts)),
+            elf.DynamicEntry(elf.DT_RPATH, 0, ""),
+        )
+        found = artifact_links.missing_directories(entries, scratch / "bin" / "tool")
+        expect(
+            "a directory of the host and $ORIGIN give nothing, and each other part gives its path and its reason",
+            found
+            == [
+                (f"{scratch}/missing", f"{scratch}/missing", artifact_links.NO_PATH_REASON),
+                (f"{scratch}/file", f"{scratch}/file", artifact_links.FILE_REASON),
+                ("", "", artifact_links.EMPTY_REASON),
+                ("${ORIGIN}/missing", f"{scratch}/bin/missing", artifact_links.NO_PATH_REASON),
+                ("$LIB", "$LIB", artifact_links.TOKEN_REASON),
+                ("$ORIGINAL", "$ORIGINAL", artifact_links.TOKEN_REASON),
+                ("relative", "relative", artifact_links.RELATIVE_REASON),
+            ],
+        )
+        item = artifact_links.MissingDirectory(
+            "{toolchain}/lib64", "/opt/gcc/lib64", artifact_links.NO_PATH_REASON, "test/check", 3
+        )
+        finding = artifact_links.missing_finding(item)
+        said = "test/check and 2 more name the run path directory '{toolchain}/lib64' (/opt/gcc/lib64), which is not"
+        expect(
+            "the error names the directory with its word, its path on the host, the artifacts and the reason",
+            finding.level == "error" and finding.kind == artifact_links.MISSING_KIND and said in finding.message,
+        )
+
+
+def missing_cases(expect: testing.Expect) -> None:
+    """Build a planted program with a run path directory that the host does not give.
+
+    Hold that no ledger row admits its error.
+    """
+    compiler = runner.plant_compiler()
+    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
+    if compiler is None:
+        return
+    with TemporaryDirectory(prefix="artifact-links-missing-") as scratch_text:
+        scratch = Path(scratch_text)
+        tree = scratch / "tree"
+        tree.mkdir()
+        (tree / "tool.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+        (tree / runner.MANIFEST).write_text(
+            "program examples tool tool.cpp | -Wl,--enable-new-dtags -Wl,-rpath,{root}/planted-missing "
+            "-Wl,-rpath,{root}\n",
+            encoding="utf-8",
+        )
+        context = runner.ElfContext(tree, None, runner.planted_build(tree, scratch / "build", compiler))
+        rule = rule_ledger.rule_of(artifact_links.RULE)
+        ledger = rule_ledger.ledger_path(artifact_links.RULE, context.root)
+        ledger.parent.mkdir(parents=True)
+        head = f"format {rule_ledger.FORMAT}\nrule {artifact_links.RULE}\nconfiguration planted kind planted\n"
+        ledger.write_text(f"{head}configuration planted tier planted\n", encoding="utf-8")
+        counts = artifact_links.examine(rule, context).counts
+        rows = "".join(f"{item.path} | {item.kind} | 1 | {item.entity} | -\n" for item in counts)
+        ledger.write_text(f"{head}configuration planted tier planted\n{rows}", encoding="utf-8")
+        inspection = artifact_links.examine(rule, context)
+        errors = [(item.kind, item.entity) for item in inspection.findings if item.level == "error"]
+        expect(
+            "a ledger with each fact holds the run path, and the missing directory is still the one error",
+            "@build/tools | runpath | 1 | {build}/planted-missing | -" in rows
+            and errors == [(artifact_links.MISSING_KIND, "{build}/planted-missing")]
+            and [(item.kind, item.entity) for item in inspection.unadmitted] == errors,
+        )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (path_cases, fact_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (path_cases, fact_cases, directory_cases, missing_cases))

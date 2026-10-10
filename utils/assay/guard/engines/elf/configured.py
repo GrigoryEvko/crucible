@@ -28,8 +28,10 @@ THE WRITE
       * The mode admit does not apply.  A person writes each admit row with
         its reason.
       * A ledger with a row problem writes nothing.  A build that the rule
-        cannot read writes nothing.  A build of a configuration that the
-        ledger does not hold writes only with --add-configuration.
+        cannot read writes nothing.  A build with an error that no row of the
+        ledger admits writes nothing (Inspection.unadmitted).  A build of a
+        configuration that the ledger does not hold writes only with
+        --add-configuration.
       * A ledger with no configuration gets the build as its base.
       * The refusals of the rule (WritePolicy.refusals) are rows that only
         --raise writes.  A configuration that the write adds is compared with
@@ -69,7 +71,8 @@ class Inspection:
 
     `configuration` is the build kind and the tier of the build, or None when the ledger cannot be read.  `judged`
     gives the rows that judge the build.  `counts` gives the count of each key that a write writes, and `admitted`
-    the count of each key that an admit row admits.
+    the count of each key that an admit row admits.  `unadmitted` gives each error of `findings` that no row of the
+    ledger can admit, and a write writes nothing while one holds (THE WRITE).
     """
 
     findings: tuple[check_report.Finding, ...]
@@ -79,6 +82,7 @@ class Inspection:
     counts: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
     admitted: Mapping[rule_ledger.Key, int] = field(default_factory=dict)
     summary: str = ""
+    unadmitted: tuple[check_report.Finding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,7 +194,11 @@ def write_inspection(
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1
     ledger, configuration = inspection.ledger, inspection.configuration
-    problems = policy.row_problems(ledger) if configuration is not None else list(inspection.findings)
+    problems = (
+        [*policy.row_problems(ledger), *inspection.unadmitted]
+        if configuration is not None
+        else list(inspection.findings)
+    )
     if configuration is None or problems:
         check_report.write_line(
             f"guard write: the ledger of {rule.id} is not written: {problems[0].message}", is_error=True

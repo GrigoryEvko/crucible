@@ -8,9 +8,10 @@ THE READERS
       * The rule artifact-symbols reads the symbols and the relocations of
         the members of the static libraries.  It also reads the symbols of
         each provider of an import, with the versions of a shared library.
-      * The rule artifact-links reads the dynamic section, the segments and
-        the init arrays of each linked artifact.  It also reads the sections,
-        the dynamic symbols and the versions from each shared library.
+      * The rule artifact-links reads the dynamic section with its run path,
+        the segments and the init arrays of each linked artifact.  It also
+        reads the sections, the dynamic symbols and the versions from each
+        shared library.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.dwarf reads the debug sections, their relocations and
@@ -76,6 +77,15 @@ THE DYNAMIC SECTION
     before the first DT_NULL.  The text of an entry with a string tag
     (STRING_TAGS), such as DT_NEEDED or DT_RUNPATH, comes from the strings
     that sh_link names.  The text of each other entry is empty.
+
+    The text of DT_RUNPATH and DT_RPATH holds a search path, with a colon
+    between two parts.  parts() gives each part, also an empty part, and
+    directories() gives each part that is not empty.  expanded_origin()
+    replaces each substitution sequence $ORIGIN or ${ORIGIN} of the System V
+    gABI with the directory of the object.  The loader ends the name of a
+    sequence $NAME at the first character that is not a letter, a digit or an
+    underscore.  A part with a different $, such as $LIB, $PLATFORM or
+    $ORIGINAL, gives None.
 
 THE GROUPS
     groups() gives each section of the type SHT_GROUP.  Its first word holds
@@ -209,6 +219,12 @@ DT_RPATH = 15
 DT_RUNPATH = 29
 DT_FLAGS_1 = 0x6FFFFFFB
 STRING_TAGS = frozenset({DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH})
+# The separator of the parts of a run path (THE DYNAMIC SECTION).  The mark of a substitution sequence, and the two
+# forms of the sequence of the directory of the object.
+RUN_PATH_SEPARATOR = ":"
+SEQUENCE_MARK = "$"
+ORIGIN_BRACED = "${ORIGIN}"
+ORIGIN_NAMED = "$ORIGIN"
 # The bit of DT_FLAGS_1 that marks a PIE (THE FILE TYPE).
 DF_1_PIE = 0x08000000
 # e_type of the ELF header (THE FILE TYPE).
@@ -489,9 +505,13 @@ class DynamicEntry(Record):
         self.value = value
         self.text = text
 
+    def parts(self) -> tuple[str, ...]:
+        """Return each part of the text of an entry DT_RUNPATH or DT_RPATH between the colons, also an empty part."""
+        return tuple(self.text.split(RUN_PATH_SEPARATOR))
+
     def directories(self) -> tuple[str, ...]:
-        """Return the directories of an entry DT_RUNPATH or DT_RPATH: the parts of its text between the colons."""
-        return tuple(part for part in self.text.split(":") if part)
+        """Return the directories of an entry DT_RUNPATH or DT_RPATH: the parts of its text that are not empty."""
+        return tuple(part for part in self.parts() if part)
 
 
 class Group(Record):
@@ -533,6 +553,36 @@ def name_at(names: bytes, offset: int) -> str:
         return ""
     stop = names.find(b"\0", offset)
     return names[offset : stop if stop >= 0 else len(names)].decode("utf-8", "surrogateescape")
+
+
+def is_name_character(text: str) -> bool:
+    """Return True when `text` is one ASCII letter, digit or underscore, which continues the name of a sequence $NAME."""
+    return len(text) == 1 and text.isascii() and (text.isalnum() or text == "_")
+
+
+def expanded_origin(part: str, object_path: Path) -> str | None:
+    """Replace each $ORIGIN of a part of a run path with the directory of the object (THE DYNAMIC SECTION).
+
+    The directory is the parent of the resolved `object_path`, and the function resolves it only for a part with a
+    sequence.  The result is None for a part with a $ other than $ORIGIN and ${ORIGIN}.  Complexity: linear in the
+    part.
+    """
+    pieces: list[str] = []
+    origin = ""
+    index = 0
+    while (mark := part.find(SEQUENCE_MARK, index)) >= 0:
+        named_end = mark + len(ORIGIN_NAMED)
+        if part.startswith(ORIGIN_BRACED, mark):
+            end = mark + len(ORIGIN_BRACED)
+        elif part.startswith(ORIGIN_NAMED, mark) and not is_name_character(part[named_end : named_end + 1]):
+            end = named_end
+        else:
+            return None
+        origin = origin or str(object_path.resolve().parent)
+        pieces += (part[index:mark], origin)
+        index = end
+    pieces.append(part[index:])
+    return "".join(pieces)
 
 
 def is_elf(path: str | os.PathLike[str]) -> bool:
