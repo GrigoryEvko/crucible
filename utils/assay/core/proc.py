@@ -91,11 +91,11 @@ THE TWO STARTS OUTSIDE THIS MODULE
     meter stops a step that runs away.
 
 THE JOB COUNT
-    DEFAULT_JOBS is the one default of the parallel work of the package: a
-    build, a test run, a parse build and the compiles of a measure.  The build
-    presets and the test presets of CMakePresets.json give the same count.
-    The build host runs large virtual machines beside the tree, so the count
-    is low.  On 2026-10-09 the host held 22 GB of available memory with no
+    DEFAULT_JOBS is the one default count of the parallel work of the package.
+    That work is a build, a test run, a parse build and the compiles of a
+    measure.  The build presets and the test presets of CMakePresets.json give
+    the same count.  The count is low, because large virtual machines share the
+    build host with the tree.  On 2026-10-09 the host held 22 GB of available memory with no
     build, and a compile of the tree can take 1.3 GB.  Give -j N or --jobs N
     for a larger count when the host has the memory.
 

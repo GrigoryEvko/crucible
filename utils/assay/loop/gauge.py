@@ -154,8 +154,8 @@ LONGEST_MARK = (1 << MARK_BITS) - 1
 INDENT_WIDTH = 4
 QUIET_OTHERS_PCT = 10.0
 # The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.  The default
-# job count is lower (THE JOB COUNT of assay.core.proc), so a default run judges the instructions and the CPU time
-# and gives the wall times with no finding.  Give --jobs 192 for the wall gate.
+# job count is lower (THE JOB COUNT of assay.core.proc).  A default run judges the instructions and the CPU time,
+# and it gives the wall times with no finding.  Give --jobs 192 for the wall gate.
 WALL_JOBS = 192
 DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_RUNS = 3
