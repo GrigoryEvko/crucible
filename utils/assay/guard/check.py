@@ -25,9 +25,11 @@ that a build rule reads, and the run then judges only their ledger rows (THE
 PATHS of that module).  A rule with a holder has no run of its own: the
 holder applies it.
 
-Each run also holds the cache of the compiled modules of the package under its
-limit, when its turn is due (assay.core.cache, THE COMPILED MODULES).  A
-failure of that work changes no verdict of a rule.
+Each run also holds the cache of the compiled modules of the package in its
+limit, when its turn is due (assay.core.cache, THE COMPILED MODULES).  It
+holds the cost store of the build launcher in its limit in the same way
+(assay.core.cost_store, THE STORE).  A failure of that work changes no
+verdict of a rule.
 """
 
 import importlib
@@ -36,7 +38,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from assay.core import cache
+from assay.core import cache, cost_store
 from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
@@ -141,10 +143,11 @@ def main(argv: list[str]) -> int:
     registry = load_registry()
     if registry is None:
         return 2
-    try:
-        cache.hold_compiled_bound()
-    except OSError:
-        pass
+    for hold in (cache.hold_compiled_bound, cost_store.hold_bound):
+        try:
+            hold()
+        except OSError:
+            pass
     if len(argv) >= 2 and argv[0] == "--rule":
         rule = registry.rules.get(argv[1])
         if rule is not None and rule.legacy is not None:

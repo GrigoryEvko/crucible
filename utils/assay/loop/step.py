@@ -53,9 +53,22 @@ THE MEASURED RULES
 A CCACHE HIT
     A compile sets CCACHE_STATSLOG to OBJECT.ccache-stats.  A hit counter in
     that log means that ccache gave a stored object and the compiler did not
-    run.  The record then says "hit" and holds no time, and it keeps the cost
-    of the last real compile of the earlier record as "last_cost".  A hit has
+    run.  The record then says "hit" and holds no time of its own.  A hit has
     no memory to judge.
+
+THE COST STORE
+    After each compile through ccache that ran the compiler, the subcommand
+    writes the cost block of the step into the cost store
+    (assay.core.cost_store).  The key of the entry holds the object and the
+    command.  A hit reads the block of its key, and its record keeps the
+    block as "last_cost".  The compile that made the object can be in a
+    different build directory or work tree.  A hit with a key that the store
+    does not hold has no last cost.
+
+    The subcommand imports the store and hashlib only for a compile through
+    ccache.  On 2026-10-11 the store added a median of 15 ms to a step of
+    the largest object of the Debug build, 10.74 MB.  The host was busy, and
+    the 21 runs of a hit and of a miss each added 9 ms at the minimum.
 
 A COMPILE THROUGH CCACHE
     A compile whose command starts with a program named ccache runs with the
@@ -90,6 +103,8 @@ LEDGERS_ENV = "CRUCIBLE_BUILD_LEDGERS"
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # The registry of the measured rules, utils/registry.txt.
 REGISTRY_FILE = os.path.join(UTILS, "registry.txt")
+# The source root of the build, which CMake gives the launcher as the directory above utils (THE COST STORE).
+SOURCE_ROOT = os.path.dirname(UTILS)
 
 
 def step_paths(step: str, command: list[str]) -> tuple[str, str | None] | None:
@@ -238,11 +253,44 @@ def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
     return tuple(counts)
 
 
-def step_record(step: cost_record.Step, output: str, source: str | None, run: cost_meter.Measurement, result: str,
-                counts: tuple[tuple[str, int], ...] = ()) -> cost_record.CostRecord:
-    """Return the record of one step: its fields, the bytes of its output, and its cost block when it is not a hit.
+def remembered_cost(output: str, command: list[str], result: str, run: cost_meter.Measurement,
+                    counts: tuple[tuple[str, int], ...]) -> cost_record.Cost | None:
+    """Write the cost of a compile through ccache into the cost store, or read the cost of a hit from it.
 
-    A hit keeps the last cost of the earlier record of the output (assay.core.record, THE WRITE).
+    THE COST STORE gives the rules.  A built compile writes its cost block
+    with the key of its object and its command.  A hit reads the block of
+    its key.
+
+    Args:
+        output: The absolute output path
+        command: The command of the step, from the first word after the launcher
+        result: The result of judge(): "built" or "hit"
+        run: The measurement of the command
+        counts: The instruction counts of the cost block, from compile_counts()
+
+    Returns:
+        For a hit, the cost of the compile that made the object, or None when the store holds no cost of its key.
+        For a built compile, None
+
+    Raises:
+        OSError: If the object cannot be read, or the store cannot be written
+    """
+    from assay.core import cost_store
+
+    key = cost_store.key_of(output, command, cost_meter.build_dir_of(output), SOURCE_ROOT)
+    if key is None:
+        return None
+    if result != cost_record.HIT:
+        cost_store.put(key, cost_record.cost_text(cost_record.measured(run, counts)))
+        return None
+    block = cost_store.get(key, run.end)
+    return None if block is None else cost_record.cost_from_text(block)
+
+
+def step_record(step: cost_record.Step, output: str, source: str | None, run: cost_meter.Measurement, result: str,
+                counts: tuple[tuple[str, int], ...] = (),
+                last_cost: cost_record.Cost | None = None) -> cost_record.CostRecord:
+    """Return the record of one step: its fields, the bytes of its output, and its cost block when it is not a hit.
 
     Args:
         step: COMPILE or LINK of assay.core.record
@@ -251,13 +299,16 @@ def step_record(step: cost_record.Step, output: str, source: str | None, run: co
         run: The measurement of the command
         result: The result of judge()
         counts: The instruction counts of the cost block, from compile_counts()
+        last_cost: For a hit, the cost of the compile that made the object, from remembered_cost(), or None
     """
     try:
         size: int | None = os.stat(output).st_size
     except OSError:
         size = None
-    cost = None if result == cost_record.HIT else cost_record.measured(run, counts)
-    return cost_record.CostRecord(step, result, source, output, size, run.exit_code, cost)
+    is_hit = result == cost_record.HIT
+    cost = None if is_hit else cost_record.measured(run, counts)
+    return cost_record.CostRecord(step, result, source, output, size, run.exit_code, cost,
+                                  last_cost if is_hit else None)
 
 
 def main(argv: list[str]) -> int:
@@ -323,11 +374,14 @@ def main(argv: list[str]) -> int:
     result = "built" if status == 0 else "failed"
     line = None
     counts: tuple[tuple[str, int], ...] = ()
+    last_cost = None
     try:
         if step == "compile":
             counts = compile_counts(run, is_ccache, count_path)
         hit = stats_path is not None and cost_meter.ccache_hit(stats_path, outer_log)
         result, line = judge(step, output, run, budget, hit)
+        if is_ccache and result in (cost_record.HIT, "built"):
+            last_cost = remembered_cost(output, arguments, result, run, counts)
     except BaseException:  # noqa: BLE001
         pass
     if result == "rejected":
@@ -344,7 +398,8 @@ def main(argv: list[str]) -> int:
         pass
     try:
         # The record of an output is OUTPUT.cost.  record_file() gives it as a Path, and pathlib costs an import.
-        cost_record.write(output + cost_record.SUFFIX, step_record(step, output, source, run, result, counts))
+        cost_record.write(output + cost_record.SUFFIX,
+                          step_record(step, output, source, run, result, counts, last_cost))
     except BaseException:  # noqa: BLE001
         pass
     cost_meter.end_like(status)

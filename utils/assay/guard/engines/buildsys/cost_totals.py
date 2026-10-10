@@ -20,6 +20,8 @@ THE CENSUS TOTALS
                      rule, or it names a configuration with no configuration rows
       configuration  the configuration of the build cannot be read
       census         an input of the census is there and cannot be read
+      no-count       a unit has no instruction count, and the units do not
+                     show a host with no counter (THE RULE instruction-total)
     The entity of such a finding is the name of the configuration.  Before
     the configuration is known, it is the build kind, and before the kind is
     known, the ID of the rule.
@@ -127,10 +129,13 @@ THE RULE header-fanout
 
 THE RULE instruction-total
     The total is the sum of the user instructions of each unit.  The count of
-    a unit is the count of its last compile that ran the compiler.  An object
-    gets its count from the record of the build launcher, and a fixture from
-    its own record.  A compile with no ccache and a ccache miss give the same
-    count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).  The count covers
+    a unit is the count of the compile that made its output.  An object gets
+    its count from the record of the build launcher, and a fixture from its
+    own record.  A compile with no ccache and a ccache miss give the same
+    count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).  The record
+    of a ccache hit keeps the count of the compile that made its object, from
+    the cost store (utils/assay/core/cost_store.py).  A build directory with
+    a hit for each compile then has the total of a cold build.  The count covers
     the template instantiation and the constant evaluation that the bytes do
     not show.  The count does not change with the load of the host.  Two
     clean builds of one tree have sums with a difference of less than 0.01 %.
@@ -143,9 +148,12 @@ THE RULE instruction-total
     The rule gives the kinds growth, fall and zero-baseline of the rule
     parse-total, for the instruction total.  The entity is the name of the
     configuration.  A finding of growth names the largest compiles.  The rule
-    does not apply when one unit has no instruction count.  Then the host
-    gives no accurate counter, or a ccache hit keeps no count of a compile in
-    this build directory.
+    does not apply when no unit has an instruction count and a compile ran
+    with no count.  The host then gives no counter.  Each other unit with no
+    count is an error of the kind no-count.  Such a unit is a hit, and the
+    cost store does not hold the compile of its object.  Or it is a compile
+    with no count, and a different unit has a count.  The message names the
+    units and the command that compiles them again with the compiler.
     `guard write --rule instruction-total --build-dir DIR` writes the
     configuration rows and the two total rows of the configuration of the
     build again.  The write refuses a growth of more than the warning
@@ -1034,18 +1042,54 @@ def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: st
 # ── instruction-total ─────────────────────────────────────────────
 
 
-def instruction_counts(census: build_census.Census) -> tuple[int, int]:
-    """Return the user instructions of the last compile of the objects and of the fixtures that ran the compiler.
+def instruction_counts(frame: CensusFrame, census: build_census.Census) -> tuple[int, int]:
+    """Return the user instructions of the compiles that made the objects and the fixtures (THE RULE instruction-total).
 
     Raises:
-        NotApplicable: If a unit has no instruction count
+        NotApplicable: If no unit has an instruction count, and a compile ran with no count
+        CensusRefusal: If a unit has no instruction count, and the units do not show a host with no counter
     """
-    uncounted = [unit.item for unit in census.units if unit.cost.instructions is None]
-    if uncounted:
+    uncounted = [unit for unit in census.units if unit.cost.instructions is None]
+    # A unit with a CPU time and no count ran with no counter.  A unit with no CPU time has no known compile.
+    ran = [unit for unit in uncounted if unit.cost.cpu_s is not None]
+    if ran and len(uncounted) == len(census.units):
         raise meta_runner.NotApplicable(
-            f"{len(uncounted)} of the {len(census.units)} compiles have no instruction count, because the host gives "
-            f"no accurate counter, or a ccache hit keeps no count of a compile in this build directory: "
-            f"{build_census.names_text(uncounted)}.  utils/assay/core/meter.py tells when a count is there"
+            f"no compile of the {len(census.units)} units has an instruction count, and {len(ran)} of them ran with "
+            f"no count, because the host gives no exact counter, or {cost_meter.INSTRUCTIONS_ENV} is 0 "
+            f"(utils/assay/core/meter.py, THE INSTRUCTION COUNT)"
+        )
+    if uncounted:
+        stored = [unit.item for unit in uncounted if unit.kind == "object" and unit.cost.cpu_s is None]
+        bare = [unit.item for unit in ran if unit.kind == "object"]
+        fixtures = [unit.item for unit in uncounted if unit.kind == "fixture"]
+        build = frame.build_shown
+        recache = f"env CCACHE_RECACHE=1 cmake --build {build} --clean-first"
+        parts = []
+        if stored:
+            parts.append(
+                f"The objects with no known compile ({len(stored)}): {build_census.names_text(stored)}.  The cost "
+                f"store holds no cost of the compile that made such an object (utils/assay/core/cost_store.py): "
+                f"ccache stored the object before the store had its cost, or the store dropped the cost.  Compile "
+                f"each object again with the compiler: {recache}"
+            )
+        if bare:
+            parts.append(
+                f"The objects that ran with no count ({len(bare)}): {build_census.names_text(bare)}.  The host gave "
+                f"no exact count of such a compile, or the compile ran with {cost_meter.INSTRUCTIONS_ENV}=0.  Compile "
+                f"each object again: {recache}"
+            )
+        if fixtures:
+            parts.append(
+                f"The fixtures with no count ({len(fixtures)}): {build_census.names_text(fixtures)}.  Compile each "
+                f"again with no result store: env CRUCIBLE_NEG_CACHE=0 ctest --test-dir {build} -R '^neg_'"
+            )
+        raise CensusRefusal(
+            f"{len(uncounted)} of the {len(census.units)} compiles have no instruction count, so the sum is not the "
+            f"cost of the build.  " + ".  ".join(parts),
+            build,
+            0,
+            "no-count",
+            frame.name,
         )
     sums = {"object": 0, "fixture": 0}
     for unit in census.units:
@@ -1068,10 +1112,10 @@ def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
         frame = census_frame(context)
         name, total = census_total_of(frame, census_baseline(frame).totals)
         census = census_read(context, frame, False)
+        objects, fixtures = instruction_counts(frame, census)
     except CensusRefusal as refusal:
         return [refusal.finding(INSTRUCTION_RULE)]
     frame.announce()
-    objects, fixtures = instruction_counts(census)
     said = (
         f"the compiles of the build ran {instruction_text(objects + fixtures)} user instructions (objects "
         f"{instruction_text(objects)}, fixtures {instruction_text(fixtures)})"
@@ -1099,13 +1143,14 @@ def instruction_written(context: BuildContext, ledger: rule_ledger.Ledger, reaso
     The write keeps the rows of the other configurations.
 
     Raises:
-        NotApplicable: If the census does not apply to the build, or a unit has no instruction count
-        LedgerError: If an input cannot be used, or the write has no reason for a growth over the warning threshold
+        NotApplicable: If the census does not apply to the build, or the host gives no counter
+        LedgerError: If an input cannot be used, or a unit has no instruction count.  Also if the write has no
+            reason for a growth over the warning threshold
     """
     frame = census_frame(context, ledger)
     configurations = census_written_configurations(context, frame)
     totals = census_baseline(frame).totals
-    objects, fixtures = instruction_counts(census_read(context, frame, False))
+    objects, fixtures = instruction_counts(frame, census_read(context, frame, False))
     old = totals.get(frame.name)
     census_refused(frame, old, objects + fixtures, reason, instruction_text)
     entries = census_total_entries({**totals, frame.name: census_new_total(old, objects, fixtures, reason)})

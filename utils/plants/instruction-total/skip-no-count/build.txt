@@ -1,0 +1,15 @@
+# No compile has an instruction count: the host gives no exact counter.  The sum is not
+# known, and the rule does not apply.
+format 1
+kind x86_64-debug-asan
+file include/Base.h size=1000
+file src/a.cpp size=100
+file src/b.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile CMakeFiles/a.o src/a.cpp cpu=1
+compile CMakeFiles/b.o src/b.cpp cpu=1
+deps CMakeFiles/a.o | src/a.cpp include/Base.h
+deps CMakeFiles/b.o | src/b.cpp include/Base.h
+fixture neg_one neg/neg_one.cpp | neg/neg_one.cpp include/Base.h
+fixture neg_two neg/neg_two.cpp | neg/neg_two.cpp include/Base.h

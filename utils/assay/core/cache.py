@@ -3,7 +3,8 @@
 THE ROOT
     Each cache is a subdirectory of one root.  The root is $CRUCIBLE_CACHE_DIR
     when it is set, else $XDG_CACHE_HOME/crucible, else ~/.cache/crucible.
-    The value "off" turns every cache off.  The root is outside each checkout
+    The value "off" turns every cache off.  assay.core.cache_root holds this
+    rule, and it imports only os, for a step meter.  The root is outside each checkout
     and each build directory, so every guard, every build directory and every
     work tree uses what one of them calculated.  The result store of the
     negative fixtures, in utils/assay/loop/fixture/store.py, is the cache
@@ -70,7 +71,8 @@ THE ENTRIES
 
 THE BOUND
     The mtime of an entry is the time of its last use.  A run that uses an
-    entry touches it when the mtime is older than TOUCH_INTERVAL, so a warm run
+    entry touches it when the mtime is older than TOUCH_INTERVAL
+    (assay.core.cache_root), so a warm run
     writes almost nothing.  An entry with no use for its age limit goes first.
     Then the entries with the oldest use go until the cache is under EVICT_TO
     of its size limit.  A temporary file or an empty directory with no change
@@ -112,10 +114,9 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-# The environment variable that moves the root, or turns each cache off with "off".
-ROOT_VARIABLE = "CRUCIBLE_CACHE_DIR"
-# A run touches an entry that it uses when the last touch is older than this.
-TOUCH_INTERVAL = 3600.0
+# The name root_rule keeps the module apart from the function cache_root() of this module.
+from assay.core import cache_root as root_rule
+
 # The time between two evictions of a cache whose sample stays under its limit.
 EVICT_INTERVAL = 86400.0
 # The time between two samples of the size of one cache.
@@ -149,6 +150,10 @@ LIMITS: dict[str, int] = {
     "mypy": 128 << 20,
     # The compiled modules of the package (THE COMPILED MODULES): about 6 MB for each checkout or work tree.
     "pycache": 256 << 20,
+    # The cost blocks of the compiles through ccache (utils/assay/core/cost_store.py), one file of one 4 KB block for
+    # each object and command.  A cold Debug build of all wrote 1054 entries, 4.1 MB, on 2026-10-10.  The limit holds
+    # approximately 250 such builds.
+    "compile-cost": 1 << 30,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = "pycache"
@@ -171,19 +176,17 @@ class Entry:
 
 
 def user_cache_home() -> Path:
-    """Return the directory of the caches of the user: $XDG_CACHE_HOME, else ~/.cache.  It makes no directory."""
-    home = os.environ.get("XDG_CACHE_HOME", "")
-    return Path(home) if home else Path.home() / ".cache"
+    """Return the directory of the caches of the user, from assay.core.cache_root.  It makes no directory."""
+    return Path(root_rule.user_cache_home())
 
 
 def base_root() -> Path | None:
-    """Return the root of the caches, or None when $CRUCIBLE_CACHE_DIR is "off".  The function makes no directory."""
-    chosen = os.environ.get(ROOT_VARIABLE, "")
-    if chosen == "off":
-        return None
-    if chosen:
-        return Path(chosen)
-    return user_cache_home() / "crucible"
+    """Return the root of the caches, from assay.core.cache_root, or None when the caches are off.
+
+    The function makes no directory.
+    """
+    chosen = root_rule.base_root()
+    return None if chosen is None else Path(chosen)
 
 
 def tools_root() -> Path:
@@ -230,16 +233,16 @@ def scratch_root() -> Iterator[Path]:
     """
     import tempfile
 
-    saved = os.environ.get(ROOT_VARIABLE)
+    saved = os.environ.get(root_rule.ROOT_VARIABLE)
     with tempfile.TemporaryDirectory(prefix="crucible-cache-") as scratch:
-        os.environ[ROOT_VARIABLE] = scratch
+        os.environ[root_rule.ROOT_VARIABLE] = scratch
         try:
             yield Path(scratch)
         finally:
             if saved is None:
-                os.environ.pop(ROOT_VARIABLE, None)
+                os.environ.pop(root_rule.ROOT_VARIABLE, None)
             else:
-                os.environ[ROOT_VARIABLE] = saved
+                os.environ[root_rule.ROOT_VARIABLE] = saved
 
 
 def write_atomic(target: Path, data: bytes) -> None:
@@ -268,7 +271,7 @@ def write_atomic(target: Path, data: bytes) -> None:
 
 
 def mark_used(path: Path, used: float, now: float | None = None) -> bool:
-    """Touch an entry that a run used, when its last touch is older than TOUCH_INTERVAL.
+    """Touch an entry that a run used, when its last touch is older than TOUCH_INTERVAL of assay.core.cache_root.
 
     Args:
         path: The entry
@@ -279,7 +282,7 @@ def mark_used(path: Path, used: float, now: float | None = None) -> bool:
         Whether the function touched the entry
     """
     moment = time.time() if now is None else now
-    if moment - used <= TOUCH_INTERVAL:
+    if moment - used <= root_rule.TOUCH_INTERVAL:
         return False
     try:
         os.utime(path, (moment, moment))
@@ -754,8 +757,8 @@ def self_test() -> int:
             and (tool / "CACHEDIR.TAG").exists(),
         )
     expect("each row of LIMITS is a positive size", all(limit > 0 for limit in LIMITS.values()))
-    saved = os.environ.get(ROOT_VARIABLE)
-    os.environ[ROOT_VARIABLE] = "off"
+    saved = os.environ.get(root_rule.ROOT_VARIABLE)
+    os.environ[root_rule.ROOT_VARIABLE] = root_rule.OFF
     try:
         expect("with the caches off, no root and no cache", base_root() is None and cache_root("x") is None)
         expect("with the caches off, no bound of the compiled modules", not hold_compiled_bound())
@@ -763,7 +766,7 @@ def self_test() -> int:
             "with the caches off, the work root stays in the caches of the user",
             work_root() == user_cache_home() / "crucible-work",
         )
-        os.environ[ROOT_VARIABLE] = str(user_cache_home() / "crucible" / "elsewhere")
+        os.environ[root_rule.ROOT_VARIABLE] = str(user_cache_home() / "crucible" / "elsewhere")
         root_of_caches = base_root()
         expect(
             "the work root is not in the root of the caches, which CRUCIBLE_CACHE_DIR moves",
@@ -773,9 +776,9 @@ def self_test() -> int:
         )
     finally:
         if saved is None:
-            os.environ.pop(ROOT_VARIABLE, None)
+            os.environ.pop(root_rule.ROOT_VARIABLE, None)
         else:
-            os.environ[ROOT_VARIABLE] = saved
+            os.environ[root_rule.ROOT_VARIABLE] = saved
     if failures:
         print(f"cache --self-test: FAILED, {len(failures)} case(s) did not hold")
         return 2

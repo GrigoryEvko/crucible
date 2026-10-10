@@ -128,7 +128,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from assay.core import cache as cache_dir
-from assay.core import proc
+from assay.core import cache_root, proc
 from assay.core.paths import REPO_ROOT
 
 # One output line for one node.  The type is non-greedy so that a `MISSING ";"`
@@ -4155,10 +4155,10 @@ def _self_test_cache(check: Callable[..., None], work: Path) -> None:
     texts = [(f"cache{index}.cpp", f"namespace n{index} {{ int cached_{index} = {index}; }}\n")
              for index in range(_PARALLEL_MISSES + 3)]
     texts.append(("broken.cpp", "void f() { g(1) { } }\n"))
-    saved = os.environ.get(cache_dir.ROOT_VARIABLE)
+    saved = os.environ.get(cache_root.ROOT_VARIABLE)
     _parse_cli = counted
     try:
-        os.environ[cache_dir.ROOT_VARIABLE] = "off"
+        os.environ[cache_root.ROOT_VARIABLE] = "off"
         reference = [shape(tree) for tree in parse_texts(texts)]
         with cache_dir.scratch_root() as root:
             cold = [shape(tree) for tree in parse_texts(texts)]
@@ -4248,15 +4248,15 @@ def _self_test_cache(check: Callable[..., None], work: Path) -> None:
                   [tree.path for tree in labelled] == [Path("b.cpp"), Path("a.h")]
                   and labelled[0].source == sources["b.cpp"].encode() and not calls)
         with cache_dir.scratch_root() as root:
-            os.environ[cache_dir.ROOT_VARIABLE] = "off"
+            os.environ[cache_root.ROOT_VARIABLE] = "off"
             list(parse_texts(texts[:2]))
             check("with the caches off, a parse writes no entry", not any(root.iterdir()))
     finally:
         _parse_cli = real_cli
         if saved is None:
-            os.environ.pop(cache_dir.ROOT_VARIABLE, None)
+            os.environ.pop(cache_root.ROOT_VARIABLE, None)
         else:
-            os.environ[cache_dir.ROOT_VARIABLE] = saved
+            os.environ[cache_root.ROOT_VARIABLE] = saved
 
 
 def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str], Tree]) -> None:

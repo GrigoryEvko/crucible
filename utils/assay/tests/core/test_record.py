@@ -19,15 +19,23 @@ def run_of(cpu: float, instructions: int | None = None) -> cost_meter.Measuremen
     return cost_meter.Measurement(0, cpu, 0.0, cpu, cost_meter.KB_PER_GB, 1.0, 1.0, None, instructions)
 
 
-def write(output: Path, step: cost_record.Step, result: str, cpu: float, instructions: int | None = None) -> None:
-    """Write the record of one step as `loop step` writes it."""
+def write(
+    output: Path,
+    step: cost_record.Step,
+    result: str,
+    cpu: float,
+    instructions: int | None = None,
+    last_cost: cost_record.Cost | None = None,
+) -> None:
+    """Write the record of one step as `loop step` writes it, with the last cost that the cost store gives a hit."""
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(b"object")
     run = run_of(cpu, instructions)
     counts = step_meter.compile_counts(run, False, None) if step == cost_record.COMPILE else ()
     source = str(output.with_suffix(".cpp")) if step == cost_record.COMPILE else None
     cost_record.write(
-        cost_record.record_file(output), step_meter.step_record(step, str(output), source, run, result, counts)
+        cost_record.record_file(output),
+        step_meter.step_record(step, str(output), source, run, result, counts, last_cost),
     )
 
 
@@ -63,17 +71,21 @@ def build_cases(expect: testing.Expect) -> None:
             "record_file() is the output with the suffix of the records, in the directory of the output",
             cost_record.record_file(unit) == build / f"unit.cpp.o{cost_record.SUFFIX}",
         )
-        write(unit, cost_record.COMPILE, cost_record.HIT, 0.1)
+        write(unit, cost_record.COMPILE, cost_record.HIT, 0.1, last_cost=record.cost)
         hit = cost_record.read_of(unit)
         expect(
-            "a ccache hit has no cost block, and it keeps the last real cost of the earlier record",
-            hit.is_hit and hit.cost is None and hit.last_cost == record.cost,
+            "a ccache hit has no cost block, and it keeps the last cost that the cost store gives it, which is its "
+            "real cost",
+            hit.is_hit and hit.cost is None and hit.last_cost == record.cost and hit.real_cost == record.cost,
         )
         write(unit, cost_record.COMPILE, cost_record.HIT, 0.1)
         expect(
-            "a second hit keeps the same last cost, and the real cost of a hit is the last real cost",
-            cost_record.read_of(unit).last_cost == record.cost and hit.real_cost == record.cost,
+            "a hit with no last cost from the cost store keeps no cost of the earlier record of the output",
+            cost_record.read_of(unit).last_cost is None and cost_record.read_of(unit).real_cost is None,
         )
+        write(unit, cost_record.COMPILE, "built", 2.5, 7_000_000_000, last_cost=record.cost)
+        expect("a compile that is not a hit keeps no last cost", cost_record.read_of(unit).last_cost is None)
+        block_cases(expect, record)
         program = build / "bin" / "tool"
         write(program, cost_record.LINK, "built", 0.75)
         link = cost_record.read_of(program)
@@ -84,6 +96,35 @@ def build_cases(expect: testing.Expect) -> None:
             and link.cost is not None
             and link.cost.compiler_instructions is None,
         )
+
+
+def block_cases(expect: testing.Expect, record: cost_record.CostRecord) -> None:
+    """Read a cost block back from the text of cost_text(), as `loop step` reads a block of the cost store."""
+    if record.cost is None:
+        expect("the record of the compile has a cost block", False)
+        return
+    text = cost_record.cost_text(record.cost)
+    read_back = cost_record.cost_from_text(text)
+    expect(
+        "cost_from_text() reads back the cost block that cost_text() writes, with its instruction count",
+        read_back == record.cost and read_back is not None and cost_record.cost_text(read_back) == text,
+    )
+    uncounted = cost_record.measured(run_of(1.5))
+    expect(
+        "cost_from_text() reads back a cost block with no instruction count",
+        cost_record.cost_from_text(cost_record.cost_text(uncounted)) == uncounted,
+    )
+    refused = {
+        "a text that is no object": text[1:],
+        "a key that a cost block does not hold": text.replace('"load"', '"lode"'),
+        "a missing time": text.replace(', "end": 1.000', ""),
+        "a time that is not finite": text.replace('"cpu_s": 2.500', '"cpu_s": nan'),
+        "a negative count": text.replace(": 7000000000", ": -7"),
+        "a count that is no integer": text.replace(": 7000000000", ": 7.5"),
+        "a JSON text with other spaces": text.replace(", ", ","),
+    }
+    for label, damaged in refused.items():
+        expect(f"cost_from_text() refuses {label}", damaged != text and cost_record.cost_from_text(damaged) is None)
 
 
 def test_and_fixture_cases(expect: testing.Expect) -> None:

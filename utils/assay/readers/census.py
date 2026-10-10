@@ -21,9 +21,11 @@ THE FILES OF A UNIT
 THE COST OF A UNIT
     The cost of an object comes from the record OUTPUT.cost of `loop step`:
     the cost block of a compile, or the last cost that the record of a ccache
-    hit keeps.  The cost of a fixture comes from its record.  So the cost of a
-    unit is the cost of its last real compile, and a sum over the units is the
-    cost of a cold build.  The instructions of a unit are those of its
+    hit keeps.  That last cost is the cost of the compile that made the object
+    of the hit, from the cost store (assay.core.cost_store).  The cost of a
+    fixture comes from its record.  So the cost of a unit is the cost of the
+    real compile of its output, and a sum over the units is the cost of a cold
+    build.  The instructions of a unit are those of its
     compiler run: the record of an object gives them also for a ccache miss
     (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE), and the fixture
     driver runs the compiler directly.
@@ -68,7 +70,7 @@ class CensusError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Cost:
-    """The CPU time and the user instructions of the compiler run of the last real compile of a unit, each None when
+    """The CPU time and the user instructions of the compiler run of the real compile of a unit, each None when
     unknown."""
 
     cpu_s: float | None = None
@@ -198,7 +200,7 @@ def read_dependencies(build_dir: Path, keys: list[str]) -> dict[str, tuple[str, 
 
 
 def object_cost(path: Path) -> Cost:
-    """Return the cost of the last real compile of one object, from its record (assay.core.record).
+    """Return the cost of the real compile of one object, from its record (assay.core.record).
 
     An object with no record, or with a record that cannot be read, has an unknown cost.
     """

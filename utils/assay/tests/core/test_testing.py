@@ -6,6 +6,7 @@ line.  Exit 0 when each case holds, else 1.
 
 import contextlib
 import io
+import os
 from collections.abc import Sequence
 
 from assay.core import report as check_report
@@ -92,6 +93,32 @@ def compiler_cases(expect: testing.Expect) -> None:
     expect("no variable gives an empty text", testing.patched_compiler({}) == "")
 
 
+def environment_cases(expect: testing.Expect) -> None:
+    """Check that environment_variable() sets or removes a variable for its block only (THE ENVIRONMENT OF A CASE)."""
+    name = "ASSAY_TEST_PLANTED_VARIABLE"
+    with testing.environment_variable(name, "outer"):
+        with testing.environment_variable(name, "inner"):
+            inner = os.environ.get(name)
+        after_inner = os.environ.get(name)
+        with testing.environment_variable(name, None):
+            removed = name not in os.environ
+        after_removal = os.environ.get(name)
+        try:
+            with testing.environment_variable(name, "raised"):
+                raise KeyError(name)
+        except KeyError:
+            pass
+        after_exception = os.environ.get(name)
+    expect(
+        "environment_variable() sets a value and removes a variable for its block, and puts back the earlier value "
+        "after the block and after an exception",
+        (inner, after_inner, removed, after_removal, after_exception) == ("inner", "outer", True, "outer", "outer"),
+    )
+    expect("a variable that was not set is not set after the block", name not in os.environ)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (run_cases, output_cases, compiler_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (run_cases, output_cases, compiler_cases, environment_cases)
+    )

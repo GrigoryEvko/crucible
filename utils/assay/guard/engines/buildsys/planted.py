@@ -41,7 +41,7 @@ THE FILE
       * peak: the peak memory in GB
       * instructions: the instruction count in G
       * last-cpu and last-instructions: the cost that a record of a hit keeps
-        from the last compile that ran the compiler
+        from the cost store, the cost of the compile that made the object
       * record: yes, no, stale or format
       * functions: NAME:BYTES,...
       * text: the bytes of one more executable section with no symbol
@@ -290,13 +290,24 @@ def functions_of(text: str, row: rows_grammar.Row) -> list[tuple[str, int]]:
 
 
 def write_record(
-    step: cost_record.Step, output: Path, source: Path | None, run: cost_meter.Measurement, result: str
+    step: cost_record.Step,
+    output: Path,
+    source: Path | None,
+    run: cost_meter.Measurement,
+    result: str,
+    last: cost_meter.Measurement | None = None,
 ) -> None:
-    """Write the record of one step as `loop step` writes it."""
+    """Write the record of one step as `loop step` writes it.
+
+    `last` is the measurement of the compile that made the object of a hit, which the cost store gives its record.
+    """
     from assay.loop import step as step_meter
 
     counts = step_meter.compile_counts(run, False, None) if step == cost_record.COMPILE else ()
-    record = step_meter.step_record(step, str(output), None if source is None else str(source), run, result, counts)
+    last_cost = None if last is None else cost_record.measured(last, step_meter.compile_counts(last, False, None))
+    record = step_meter.step_record(
+        step, str(output), None if source is None else str(source), run, result, counts, last_cost
+    )
     cost_record.write(cost_record.record_file(output), record)
 
 
@@ -337,16 +348,11 @@ def plant_compile(planted: Planted, row: rows_grammar.Row, root: Path, build: Pa
     run = measurement(
         cpu, number(fields, "wall", row, cpu), number(fields, "peak", row, 0.1), count_of(fields, "instructions", row)
     )
+    last = None
     if result == "hit" and ("last-cpu" in fields or "last-instructions" in fields):
         last_cpu = number(fields, "last-cpu", row, 1.0)
-        write_record(
-            cost_record.COMPILE,
-            output,
-            source,
-            measurement(last_cpu, last_cpu, 0.1, count_of(fields, "last-instructions", row)),
-            "built",
-        )
-    write_record(cost_record.COMPILE, output, source, run, result)
+        last = measurement(last_cpu, last_cpu, 0.1, count_of(fields, "last-instructions", row))
+    write_record(cost_record.COMPILE, output, source, run, result, last)
     spoil_record(output, record)
 
 

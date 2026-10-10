@@ -281,7 +281,6 @@ utils/assay/core/target.py | refused-word | 1 | print_rows: so | A text of today
 utils/assay/core/target.py | refused-word | 1 | print_rows: still | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/check.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/check.py | long-sentence | 1 | main | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/check.py | refused-word | 1 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/history.py | long-sentence | 8 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/history.py | long-sentence | 1 | ledger_rises | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/history.py | long-sentence | 1 | quarantine_findings | A text of today.  The change that writes the text again in STE lowers the count
@@ -1066,7 +1065,6 @@ utils/assay/loop/step.py | refused-word | 1 | <module>: never | A text of today.
 utils/assay/loop/step.py | refused-word | 2 | <module>: past | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/step.py | refused-word | 1 | <module>: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/step.py | refused-word | 1 | <module>: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/step.py | refused-word | 1 | <module>: real | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/step.py | refused-word | 1 | <module>: rest | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/step.py | refused-word | 3 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/step.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count

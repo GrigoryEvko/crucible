@@ -695,7 +695,7 @@ def sentinel_time(context: BuildContext, output: Output) -> str:
     if not found.is_hit and found.cost is not None:
         return f"its sentinel took {found.cost.cpu_s:.1f} s CPU{scope}"
     if found.last_cost is not None:
-        return f"its sentinel was a ccache hit, and the last real compile took {found.last_cost.cpu_s:.1f} s CPU{scope}"
+        return f"its sentinel was a ccache hit, and the compile of its object took {found.last_cost.cpu_s:.1f} s CPU{scope}"
     return "its sentinel was a ccache hit, and its record keeps no time"
 
 
@@ -1038,7 +1038,8 @@ def compile_first_count(object_path: Path) -> int | None:
     """Return the user instructions of the compiler run of one object, or None when its record holds no count.
 
     A built object gives the count of its cost block.  A ccache hit gives the
-    count of the last compile that ran the compiler.
+    count of the compile that made its object, from the cost store
+    (assay.core.cost_store).
     """
     try:
         found = cost_record.read_of(object_path)

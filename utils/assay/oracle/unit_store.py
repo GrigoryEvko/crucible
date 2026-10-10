@@ -32,7 +32,7 @@ THE SOURCES
     first.  A lookup and a store make sure that the directory holds only the
     sources and temporary files.  The name of a temporary file starts with a
     dot, and no include names it.  A run gives each directory that it uses a
-    new time when the last one is older than cache_dir.TOUCH_INTERVAL.  The
+    new time when the last one is older than cache_root.TOUCH_INTERVAL.  The
     directories have the age limit cache_dir.MAX_AGE and the byte limit
     SOURCES_LIMIT_BYTES (UnitStore.sweep_sources()).  The byte limit keeps
     each directory with a use in the last SOURCES_IN_USE_S, because a unit
@@ -130,8 +130,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import cache as cache_dir
+from assay.core import cache_root, proc
 from assay.core import paths as tree_paths
-from assay.core import proc
 from assay.loop.fixture import store as compile_store
 from assay.readers import elf
 
@@ -145,7 +145,7 @@ LIMIT_BYTES = 256 << 20
 # 2026-10-09.  The limit then holds approximately eight versions of them.
 SOURCES_LIMIT_BYTES = 256 << 20
 # A source directory with a use in this period can be in use by a unit of a run.  The byte limit keeps it.
-SOURCES_IN_USE_S = 2 * cache_dir.TOUCH_INTERVAL
+SOURCES_IN_USE_S = 2 * cache_root.TOUCH_INTERVAL
 # The file name of the digest memo of one caller, in the memo directory of the store.
 DIGEST_MEMO_NAME = "units-{}.digests"
 # The time limit of the run of a program, in seconds.

@@ -1,5 +1,6 @@
-# The compile of b.o has no instruction count.  The sum of the instructions is not
-# known, and the rule does not apply.
+# b.o is a ccache hit, and the cost store held no cost of the compile that made it, so
+# its record keeps no last cost.  The other compiles have a count, and the rule gives an
+# error of the kind no-count.
 format 1
 kind x86_64-debug-asan
 file include/Base.h size=1000
@@ -8,7 +9,7 @@ file src/b.cpp size=100
 file neg/neg_one.cpp size=50
 file neg/neg_two.cpp size=50
 compile CMakeFiles/a.o src/a.cpp instructions=2
-compile CMakeFiles/b.o src/b.cpp cpu=1
+compile CMakeFiles/b.o src/b.cpp result=hit
 deps CMakeFiles/a.o | src/a.cpp include/Base.h
 deps CMakeFiles/b.o | src/b.cpp include/Base.h
 fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h

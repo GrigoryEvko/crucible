@@ -1,0 +1,15 @@
+# b.o is a ccache hit, and its record keeps the count of the compile that made it, 2 G,
+# from the cost store.  The sum is the 14 G of the baseline: the rule gives no finding.
+format 1
+kind x86_64-debug-asan
+file include/Base.h size=1000
+file src/a.cpp size=100
+file src/b.cpp size=100
+file neg/neg_one.cpp size=50
+file neg/neg_two.cpp size=50
+compile CMakeFiles/a.o src/a.cpp instructions=2
+compile CMakeFiles/b.o src/b.cpp result=hit last-cpu=1 last-instructions=2
+deps CMakeFiles/a.o | src/a.cpp include/Base.h
+deps CMakeFiles/b.o | src/b.cpp include/Base.h
+fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h
+fixture neg_two neg/neg_two.cpp instructions=5 | neg/neg_two.cpp include/Base.h

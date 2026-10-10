@@ -18,6 +18,11 @@ THE OUTPUT OF A CASE
     and the text that the action writes.  The text holds the writes to the
     standard output and to the standard error, in their sequence.
 
+THE ENVIRONMENT OF A CASE
+    environment_variable() sets one variable of the environment of this
+    process for a block, or removes it for the block.  After the block, also
+    after an exception, the variable gets its earlier value again.
+
 THE COMPILER
     A test module with compile cases gets the patched compiler from
     patched_compiler().  The variable ASSAY_TEST_CXX names the compiler, and
@@ -32,7 +37,7 @@ THE COMPILER
 import contextlib
 import io
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 from assay.core import report as check_report
@@ -51,6 +56,23 @@ def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
         return named
     prefix = environment.get(COMPILER_PREFIX, "")
     return str(Path(prefix) / "usr" / "bin" / "g++-16p") if prefix else ""
+
+
+@contextlib.contextmanager
+def environment_variable(name: str, value: str | None) -> Iterator[None]:
+    """Set one variable of the environment for the block, or remove it when `value` is None (THE ENVIRONMENT OF A CASE)."""
+    saved = os.environ.get(name)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = saved
 
 
 def captured[Result](action: Callable[[], Result]) -> tuple[Result, str]:

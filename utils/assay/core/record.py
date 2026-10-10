@@ -32,9 +32,10 @@ THE FORMAT
       command       the program of a test
       exit          the status of the command, or minus the signal number
       cost          the cost block.  A hit has no cost block
-      last_cost     for "hit": the cost block of the earlier record of the
-                    output, when it had one.  A hit then keeps the last
-                    measured cost
+      last_cost     for "hit": the cost block of the compile that made the
+                    object, when the cost store holds it
+                    (assay.core.cost_store).  The compile ran the compiler,
+                    in this build directory or in a different one
       version       for a test: the version of the test that ran the runs of
                     the key walls, in hexadecimal digits (assay.loop.teststep,
                     THE VERSION).  A record with no such key has no version
@@ -77,17 +78,17 @@ THE WRITE
     a record with no JSON module, and quote() escapes each character that is
     not printable ASCII.  write() writes a scratch file and renames it.  A
     reader then sees the full record or the earlier record.  The write makes
-    the directory of the record only when it finds no directory.  A record of
-    a hit with no last cost takes the cost block of the earlier record of its
-    output, as text.
+    the directory of the record only when it finds no directory.
 
 THE READ
     A reader imports json.  read() raises MissingRecord when the output has
     no record.  Each reader raises RecordError when the record cannot be read,
-    or when it does not have the shape of a record of its step.  The one read
-    of a step meter is recent_window().  `loop test-step` reads the version and
-    the wall times of the earlier record of a test.  It reads them from the
-    text of the keys version and walls, with no JSON module.
+    or when it does not have the shape of a record of its step.  A step meter
+    reads with no JSON module.  `loop test-step` reads the version and the
+    wall times of the earlier record of a test with recent_window(), from the
+    text of the keys version and walls.  `loop step` reads a cost block of
+    the cost store with cost_from_text(), which accepts only the text that
+    cost_text() writes.
 
 `guard selftest tests.core.test_record` does a test of the module.
 """
@@ -117,8 +118,9 @@ FIXTURE_SUFFIX = ".inputs"
 COMPILER_COUNT_KEY = "compiler_instructions"
 CCACHE_COUNT_KEY = "ccache_instructions"
 COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY)
-# The keys of a cost block in the text of a record, for the last cost of a hit (THE WRITE).
-CARRIED_KEYS = ('"cost": ', '"last_cost": ')
+# The keys of the times of a cost block, with the load and the end, in the sequence of cost_text() (THE READ).
+TIME_KEYS = ("cpu_s", "user_s", "system_s", "wall_s", "load", "end")
+PEAK_KEY = "peak_rss_kb"
 # The keys of the version and of the recent wall times of a test, and their starts of a line in a record (THE READ).
 VERSION_FIELD = "version"
 VERSION_KEY = f'"{VERSION_FIELD}": '
@@ -221,7 +223,7 @@ class CostRecord(Value):
 
     @property
     def real_cost(self) -> Cost | None:
-        """The cost of the last compile that ran the compiler: the cost block, or the last cost of a hit."""
+        """The cost of the compile that made the output: the cost block, or for a hit the last cost of the cost store."""
         return self.last_cost if self.is_hit else self.cost
 
 
@@ -377,20 +379,33 @@ def cost_text(cost: Cost) -> str:
     )
 
 
-def carried_text(path: str) -> str | None:
-    """Return the cost block of the earlier record at a path, as its JSON text, or None (THE WRITE).
+def cost_from_text(text: str) -> Cost | None:
+    """Return the cost block of a text that cost_text() wrote, or None for each other text (THE READ).
 
-    The function reads the text, with no JSON module.  A block is on one line, after the key cost or last_cost.
+    The function reads the text with no JSON module.  It refuses a key that a
+    cost block does not hold, a missing time, a time that is not finite, and a
+    negative count.  Complexity: linear in the length of the text.
     """
-    try:
-        with open(path, encoding="utf-8") as handle:
-            for line in handle:
-                for key in CARRIED_KEYS:
-                    if line.startswith(key):
-                        return line[len(key) :].rstrip().rstrip(",")
-    except OSError, UnicodeDecodeError:
+    body = text.strip()
+    if not (body.startswith("{") and body.endswith("}")):
         return None
-    return None
+    values: dict[str, str] = {}
+    for part in body[1:-1].split(", "):
+        quoted, separator, value = part.partition(": ")
+        if not separator or len(quoted) < 2 or quoted[0] != '"' or quoted[-1] != '"':
+            return None
+        values[quoted[1:-1]] = value
+    if not set(values) <= {*TIME_KEYS, PEAK_KEY, *COUNT_KEYS}:
+        return None
+    try:
+        times = [float(values[key]) for key in TIME_KEYS]
+        peak = int(values[PEAK_KEY])
+        counts = tuple((key, int(values[key])) for key in COUNT_KEYS if key in values)
+    except KeyError, ValueError:
+        return None
+    if not all(abs(value) < float("inf") for value in times) or any(count < 0 for _, count in counts):
+        return None
+    return Cost(times[0], times[1], times[2], times[3], peak, times[4], times[5], counts)
 
 
 def recent_window(path: str) -> tuple[str, tuple[float, ...]]:
@@ -432,7 +447,7 @@ def object_text(fields: Sequence[tuple[str, str]]) -> str:
     return "{\n" + ",\n".join(f"{quote(key)}: {value}" for key, value in fields) + "\n}\n"
 
 
-def build_text(path: str, record: CostRecord) -> str:
+def build_text(record: CostRecord) -> str:
     """Return the text of the record of a compile or a link (THE FORMAT)."""
     fields = [("format", str(FORMAT)), ("step", quote(record.step)), ("result", quote(record.result))]
     if record.source is not None:
@@ -445,11 +460,8 @@ def build_text(path: str, record: CostRecord) -> str:
         fields.append(("exit", str(record.exit)))
     if record.cost is not None:
         fields.append(("cost", cost_text(record.cost)))
-    last = cost_text(record.last_cost) if record.last_cost is not None else None
-    if last is None and record.is_hit:
-        last = carried_text(path)
-    if last is not None:
-        fields.append(("last_cost", last))
+    if record.last_cost is not None:
+        fields.append(("last_cost", cost_text(record.last_cost)))
     return object_text(fields)
 
 
@@ -507,7 +519,7 @@ def write(path: str | os.PathLike[str], record: CostRecord | TestRecord | Fixtur
     """
     target = os.fspath(path)
     if isinstance(record, CostRecord):
-        text = build_text(target, record)
+        text = build_text(record)
     elif isinstance(record, TestRecord):
         text = test_text(record)
     else:

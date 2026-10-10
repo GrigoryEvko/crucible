@@ -33,16 +33,14 @@ THE PARTS
 `guard selftest tests.oracle.test_unit_store [--part K/N]` runs the test alone.
 """
 
-import contextlib
 import os
 import stat
 import tempfile
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
-from assay.core import cache as cache_dir
-from assay.core import paths, proc, testing
+from assay.core import cache_root, paths, proc, testing
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard import selftest
@@ -55,20 +53,6 @@ PARTED = True
 
 # The wait after the setup.  Each file of the setup is then older than the settle period of the store.
 SETTLED_S = compile_store._SETTLE_NS / 1e9 + 0.2
-
-
-@contextlib.contextmanager
-def environment_variable(name: str, value: str) -> Iterator[None]:
-    """Set one environment variable for the block."""
-    saved = os.environ.get(name)
-    os.environ[name] = value
-    try:
-        yield
-    finally:
-        if saved is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = saved
 
 
 def counting_compiler(cxx: str, directory: Path) -> tuple[str, Path]:
@@ -179,7 +163,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
     )
     # An empty element of LD_LIBRARY_PATH names the working directory of the loader (THE RUN ENVIRONMENT of the
     # store).  The first build of a new program then also stores its result.
-    with environment_variable("LD_LIBRARY_PATH", f"{early_library}{os.pathsep}"):
+    with testing.environment_variable("LD_LIBRARY_PATH", f"{early_library}{os.pathsep}"):
         new_program = [("new_main.cpp", program[0][1])]
         written_ns = unit_store().sources(new_program)[0].stat().st_ctime_ns
         new_first = unit_store(latest_start_ns=written_ns + compile_store._SETTLE_NS).program(new_program)
@@ -268,7 +252,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
         not probed.is_stored and probed.stdout == "value 12\n",
     )
 
-    with environment_variable(cache_dir.ROOT_VARIABLE, "off"):
+    with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
         disabled = UnitStore(cxx, flags, link_flags, scratch)
         result = disabled.static(static)
     expect(
@@ -353,7 +337,7 @@ def sweep_cases(expect: testing.Expect) -> None:
             "a second sweep in the same day is not due when a recent sample is under the limit",
             store.sweep_sources(max_bytes=90 << 10) == 0,
         )
-        with environment_variable(cache_dir.ROOT_VARIABLE, "off"):
+        with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
             expect(
                 "with the caches off there is no store, and the sweep removes nothing",
                 UnitStore("c++", (), (), root / "scratch").sweep_sources() == 0,

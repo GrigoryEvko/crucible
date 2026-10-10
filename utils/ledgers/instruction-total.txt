@@ -41,5 +41,85 @@ configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
 configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
-- | x86_64-debug-asan | 9072540991702 | fixtures | The compile of each negative fixture keeps the quarantine plugin for the census of the fixture: on 2026-10-09 the fixtures ran 9072.5 G user instructions with the plugin, against 8688.6 G with no plugin
-- | x86_64-debug-asan | 9712100762942 | objects | The compile of each negative fixture keeps the quarantine plugin for the census of the fixture: on 2026-10-09 the fixtures ran 9072.5 G user instructions with the plugin, against 8688.6 G with no plugin
+configuration x86_64-release kind x86_64-release
+configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release CMAKE_BUILD_TYPE Release
+configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
+configuration x86_64-release CRUCIBLE_SANITIZE on
+configuration x86_64-release CRUCIBLE_TSAN off
+configuration x86_64-release CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-release CRUCIBLE_ANALYZER off
+configuration x86_64-release CRUCIBLE_VERIFY off
+configuration x86_64-release CRUCIBLE_PGO off
+configuration x86_64-release CRUCIBLE_BENCH off
+configuration x86_64-release CRUCIBLE_FUZZ off
+configuration x86_64-release CRUCIBLE_EXAMPLES on
+configuration x86_64-release CRUCIBLE_HAVE_BPF on
+configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-release TORCH_DIR unset
+configuration x86_64-release CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-tsan kind x86_64-debug-tsan
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
+configuration x86_64-debug-tsan CRUCIBLE_TSAN on
+configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
+configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
+configuration x86_64-debug-tsan CRUCIBLE_PGO off
+configuration x86_64-debug-tsan CRUCIBLE_BENCH off
+configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
+configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-tsan TORCH_DIR unset
+configuration x86_64-debug-tsan CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
+configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-ubsan-strict CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-ubsan-strict CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SANITIZE off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_TSAN off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_UBSAN_STRICT on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_ANALYZER off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_VERIFY off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_PGO off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_BENCH off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_FUZZ off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-ubsan-strict CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-ubsan-strict TORCH_DIR unset
+configuration x86_64-debug-ubsan-strict CRUCIBLE_SYNTAX_ONLY off
+configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
+configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
+configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
+configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SYNTAX_ONLY off
+- | x86_64-debug-asan | 9073785138986 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-asan | 9705371661033 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-asan-bench-fuzz | 9073785138986 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-asan-bench-fuzz | 14335357260672 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-tsan | 9056505457557 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-tsan | 7661989588897 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-ubsan-strict | 9218020075613 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-ubsan-strict | 8162505925256 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-release | 9037279319888 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-release | 8841000389379 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler

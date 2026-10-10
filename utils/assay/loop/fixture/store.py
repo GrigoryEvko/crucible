@@ -2378,11 +2378,12 @@ def open_store() -> tuple[ResultStore | None, str]:
     if os.environ.get("CRUCIBLE_NEG_CACHE") == "0":
         return None, "the store is off"
     from assay.core import cache as cache_dir
+    from assay.core import cache_root
 
     try:
         root = cache_dir.cache_root("neg")
         if root is None:
-            return None, f"{cache_dir.ROOT_VARIABLE} turns every cache off"
+            return None, f"{cache_root.ROOT_VARIABLE} turns every cache off"
         (root / "entries").mkdir(parents=True, exist_ok=True)
         (root / "memo").mkdir(parents=True, exist_ok=True)
     except OSError as error:
