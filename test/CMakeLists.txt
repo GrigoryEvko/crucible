@@ -5101,7 +5101,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_decide_cite_ratio
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
-        loop.derive.test_mint_inventory loop.test_inputs loop.test_syntax)
+        loop.derive.test_mint_inventory loop.test_inputs loop.test_syntax loop.test_land loop.test_heavy)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

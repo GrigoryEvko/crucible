@@ -55,6 +55,8 @@ SUBCOMMANDS = {
     "syntax": ("assay.loop.syntax", "parse each unit of a parse build with the plugin: loop syntax BUILD_DIR"),
     "bench": ("assay.loop.bench", "build and run benches on an isolated core: loop bench [TARGET]... [-- ARG...]"),
     "fuzz": ("assay.loop.fuzz", "run an AFL++ campaign: loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS"),
+    "land": ("assay.loop.land", "land a change on main by compare-and-swap: loop land -m TEXT --patch FILE --"),
+    "heavy": ("assay.loop.heavy", "run one command under the lock of the heavy steps: loop heavy -- COMMAND..."),
     "step": ("assay.loop.step", None),
     "meter-compiler": ("assay.loop.meter_compiler", None),
     "test-step": ("assay.loop.teststep", None),

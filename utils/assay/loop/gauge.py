@@ -138,7 +138,7 @@ from assay.core import meter as cost_meter
 from assay.core import proc
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.loop import gauge_cold, gauge_sample
+from assay.loop import gauge_cold, gauge_sample, heavy
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
@@ -682,18 +682,6 @@ def judged_record(record: GaugeRecord, budgets: dict[str, check_report.Budget],
     return findings + judge_others(list(record.steps), budgets, position), notes
 
 
-def available_gb() -> float | None:
-    """Return the available memory of the host in GB, from /proc/meminfo, or None when it cannot be read."""
-    try:
-        with open("/proc/meminfo", encoding="ascii") as handle:
-            for line in handle:
-                if line.startswith("MemAvailable:"):
-                    return int(line.split()[1]) / (1024 * 1024)
-    except (OSError, ValueError, IndexError):
-        return None
-    return None
-
-
 def table(results: list[StepResult], medians: dict[str, Median]) -> str:
     """Return the measures of each step and the medians as a table."""
     rows = [("step", "status", "wall s", "CPU s", "system s", "others %", "G instr")]
@@ -1212,7 +1200,7 @@ def main(argv: list[str]) -> int:
     if options.jobs < 1 or options.runs < 1 or options.timeout < 1:
         print("loop gauge: --jobs, --runs and --timeout take a positive number.", file=sys.stderr)
         return 2
-    free = available_gb()
+    free = heavy.available_gb()
     if free is not None and free < options.min_free_gb:
         print(f"edit-loop-gauge: the host has {free:.0f} GB of available memory, less than --min-free-gb "
               f"{options.min_free_gb:g}.  Wait until other work ends, or give a smaller --jobs and --min-free-gb.",
