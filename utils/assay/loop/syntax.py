@@ -38,7 +38,25 @@ THE RUN
        each unit that does not parse.  It also prints the wall time and the
        CPU time of the parses, and the time of step 1.
     Then `guard check --rule quarantine --build-dir BUILD_DIR` reads the
-    reports (assay.guard.engines.plugin.runner, THE SECTIONS).
+    reports (assay.guard.engines.plugin.runner, THE SECTIONS).  One run of
+    a parse build holds the lock LOCK_FILE of the build, and a second run
+    or a check waits for it.  Two runs of `loop test` in two build
+    directories can start a parse of one parse build at the same time.  The
+    lock keeps the two parses apart.
+
+THE CHECK
+    plan_of() does step 1 of THE RUN, and it finds the units that keep their
+    reports (THE KEPT REPORTS).  It parses nothing.  locked_plan() calls it
+    with the lock of the build.  The rules parse-x86-64-v3 and parse-aarch64
+    call it, and they refuse a parse build with a unit that has no current
+    report (assay.guard.engines.buildsys.parse_builds).
+
+    The parse of the 1019 units of the tree is a build.  On 2026-10-11 it
+    took 62.0 s of wall time and 964 s of CPU time with 16 jobs.  The parse
+    of the 954 units of the aarch64 parse build took 64.1 s and 995 s.  The
+    test of a rule has an error threshold of 30 s (the rule test-time).  For
+    that reason, `loop test` runs the parse after its build, and the test of
+    the rule only reads the reports.
 
 THE KEPT REPORTS
     The key of a parse is the hash of the words of the parse and of the
@@ -72,8 +90,9 @@ THE CHANGE OF AN ARM
 
     A change of an arm makes each parse build of PARSE_PRESETS necessary,
     because the arms of one conditional go to the builds of different
-    targets.  The rules parse-x86-64-v3 and parse-aarch64 run the parse
-    builds of such a change (assay.guard.engines.buildsys.parse_builds).
+    targets.  `loop test` runs the parse builds of such a change after its
+    build (assay.loop.affected), and the rules parse-x86-64-v3 and
+    parse-aarch64 judge their reports (THE CHECK).
     `loop syntax --changed` prints each preset that the change of ROOT makes
     necessary, one on each line.  build_directory() gives the build
     directory of a preset from the presets files of a tree.
@@ -83,10 +102,13 @@ fails, 2 on a usage error.  `guard selftest tests.loop.test_syntax` does a test
 of the module.
 """
 
+import contextlib
+import fcntl
 import os
 import shutil
 import tempfile
 import time
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -122,8 +144,10 @@ PARSE_TIMEOUT_S = 900.0
 INPUT_TIMEOUT_S = 1800.0
 # The lines of the errors of a unit that the run prints.
 SHOWN_ERROR_LINES = 12
-# The parses at one time: the default of -j, and the PROCESSORS of the test of a rule that runs a parse build.
+# The parses at one time, the default of -j.  Step 1 of THE RUN builds with this job count in the check too.
 JOBS = proc.DEFAULT_JOBS
+# The lock of the runs and the checks of one parse build, below the build directory (THE RUN).
+LOCK_FILE = Path("quarantine") / "syntax.lock"
 # The presets of the parse builds that a change of an arm makes necessary (THE CHANGE OF AN ARM).
 PARSE_PRESETS = ("syntax-x86-64-v3", "syntax-aarch64")
 # The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
@@ -208,6 +232,29 @@ class Parsed:
     cpu_s: float
     errors: str
     is_kept: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Planned:
+    """One unit that a run parses: the unit, the words of its parse and the key of the parse (THE KEPT REPORTS)."""
+
+    unit: Unit
+    words: tuple[str, ...]
+    key: str
+
+
+@dataclass(frozen=True, slots=True)
+class Plan:
+    """The decision of THE KEPT REPORTS for each unit of a parse build (THE CHECK).
+
+    `kept` holds each unit that keeps its report, and `planned` holds each other unit.  `report_dirs` gives the
+    report directory of each unit, and `input_s` the wall time of step 1 of THE RUN.
+    """
+
+    kept: tuple[Unit, ...]
+    planned: tuple[Planned, ...]
+    report_dirs: Mapping[Unit, Path]
+    input_s: float
 
 
 def refuses_native(compiler: str) -> bool:
@@ -425,6 +472,66 @@ def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
         shutil.rmtree(directory, ignore_errors=True)
 
 
+def partition(
+    units: Sequence[Unit], report_dirs: Mapping[Unit, Path], native_refusers: frozenset[str], enforce: str
+) -> tuple[tuple[Unit, ...], tuple[Planned, ...]]:
+    """Return the units that keep their reports, and the parse of each other unit (THE KEPT REPORTS).
+
+    `native_refusers` holds each compiler that refuses -march=native, and `enforce` is the hash of the enforce rows of
+    the build.  Complexity: linear in the units and their dependencies, one stat of each different dependency.
+    """
+    kept: list[Unit] = []
+    planned: list[Planned] = []
+    changed_ns: dict[str, int | None] = {}
+    for unit in units:
+        words = parse_words(unit.words, report_dirs[unit], bool(unit.words) and unit.words[0] in native_refusers)
+        key = words_key(words, enforce)
+        if is_kept(unit, report_dirs[unit], key, changed_ns):
+            kept.append(unit)
+        else:
+            planned.append(Planned(unit, tuple(words), key))
+    return tuple(kept), tuple(planned)
+
+
+@contextlib.contextmanager
+def locked(build_dir: Path) -> Iterator[None]:
+    """Hold the lock LOCK_FILE of a parse build for the block, and wait while a different process holds it (THE RUN)."""
+    path = build_dir / LOCK_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def plan_of(build_dir: Path, root: Path, jobs: int) -> Plan:
+    """Do step 1 of THE RUN, and find the units of a parse build that keep their reports (THE CHECK).
+
+    The caller holds the lock of the build (locked()).  Complexity: one build of the input targets, one compile of a
+    probe for each compiler, and partition().
+
+    Raises:
+        ParseError: If the build is no parse build, step 1 fails, or the units of the build cannot be read
+    """
+    input_s = build_input_targets(build_dir, jobs)
+    units = units_of(build_dir, root)
+    report_dirs = {unit: quarantine_sections.report_directory(build_dir, unit.object_path) for unit in units}
+    compilers = sorted({unit.words[0] for unit in units if unit.words})
+    native_refusers = frozenset(compiler for compiler in compilers if refuses_native(compiler))
+    kept, planned = partition(units, report_dirs, native_refusers, enforce_hash(build_dir))
+    return Plan(kept, planned, report_dirs, input_s)
+
+
+def locked_plan(build_dir: Path, root: Path, jobs: int) -> Plan:
+    """Return the plan of a parse build, with the lock of the build (THE CHECK).  The call parses nothing.
+
+    Raises:
+        ParseError: If the build is no parse build, step 1 fails, or the units of the build cannot be read
+    """
+    require_parse_build(build_dir)
+    with locked(build_dir):
+        return plan_of(build_dir, root, jobs)
+
+
 def run(build_dir: Path, root: Path, jobs: int) -> int:
     """Do the run of a parse build (THE RUN), and print what it did.
 
@@ -435,30 +542,25 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
 
     try:
         require_parse_build(build_dir)
-        input_s = build_input_targets(build_dir, jobs)
-        units = units_of(build_dir, root)
     except ParseError as problem:
         check_report.write_line(f"loop syntax: {problem}", is_error=True)
         return 1
-    report_dirs = {unit: quarantine_sections.report_directory(build_dir, unit.object_path) for unit in units}
-    prune_reports(build_dir, set(report_dirs.values()))
-    compilers = sorted({unit.words[0] for unit in units if unit.words})
-    native_refusers = frozenset(compiler for compiler in compilers if refuses_native(compiler))
-    enforce = enforce_hash(build_dir)
-    start = time.monotonic()
-    planned: list[tuple[Unit, list[str], str]] = []
-    results: list[Parsed] = []
-    changed_ns: dict[str, int | None] = {}
-    for unit in units:
-        words = parse_words(unit.words, report_dirs[unit], bool(unit.words) and unit.words[0] in native_refusers)
-        key = words_key(words, enforce)
-        if is_kept(unit, report_dirs[unit], key, changed_ns):
-            results.append(Parsed(unit, 0, 0.0, "", True))
-        else:
-            planned.append((unit, words, key))
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        results += pool.map(lambda item: parse_unit(item[0], item[1], item[2], report_dirs[item[0]]), planned)
-    wall_s = time.monotonic() - start
+    with locked(build_dir):
+        try:
+            plan = plan_of(build_dir, root, jobs)
+        except ParseError as problem:
+            check_report.write_line(f"loop syntax: {problem}", is_error=True)
+            return 1
+        prune_reports(build_dir, set(plan.report_dirs.values()))
+        start = time.monotonic()
+        results = [Parsed(unit, 0, 0.0, "", True) for unit in plan.kept]
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results += pool.map(
+                lambda item: parse_unit(item.unit, list(item.words), item.key, plan.report_dirs[item.unit]),
+                plan.planned,
+            )
+        wall_s = time.monotonic() - start
+        input_s = plan.input_s
     failed = [result for result in results if result.exit != 0]
     for result in failed:
         lines = [line for line in result.errors.splitlines() if line.strip()][:SHOWN_ERROR_LINES]

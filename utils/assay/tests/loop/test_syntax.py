@@ -4,8 +4,9 @@
 line.  Exit 0 when each case holds, else 1.
 
 The cases hold the words of a parse and the native flags of a cross compiler.
-They also hold the refusal of a build that is no parse build.  The last case
-parses one unit with a planted compiler that writes a report.
+They also hold the refusal of a build that is no parse build.  Other cases
+parse one unit with a planted compiler that writes a report, and hold the
+check of a planted parse build, which parses nothing.
 """
 
 import contextlib
@@ -171,36 +172,78 @@ print(build / "t.dir" / "a.cpp.o")
 """
 
 
+def planted_build(scratch: Path) -> tuple[Path, str]:
+    """Plant a parse build of one unit a.cpp in a scratch directory, and return the build and the object of the unit.
+
+    The cmake of the build writes a new stamp into the compile database at its first build of the input targets.  A
+    configure after a change of the plugin does the same.
+    """
+    build = scratch / "build"
+    build.mkdir()
+    compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
+    cmake.cache_file(build).write_text("")
+    cmake.plant(
+        build,
+        cache={
+            build_config.SYNTAX_OPTION: ("BOOL", "ON"),
+            "CMAKE_GENERATOR": "Ninja",
+            "CMAKE_MAKE_PROGRAM": planted_compiler(scratch, "ninja", INPUTS_NINJA),
+            "CMAKE_COMMAND": planted_compiler(scratch, "cmake", RECONFIGURE_CMAKE),
+        },
+    )
+    output = str(build / "t.dir" / "a.cpp.o")
+    arguments = [compiler, f"{plugin_runner.PLUGIN_ARGUMENT}stamp=0ld0ld", "-c", "a.cpp", "-o", output]
+    compdb.plant(
+        build,
+        [{"directory": str(scratch), "file": str(scratch / "a.cpp"), "arguments": arguments, "output": output}],
+    )
+    ninja.plant_graph(build, f"rule phony_rule\n  command = true\nbuild {syntax.INPUT_PREFIX}t: phony_rule\n")
+    return build, output
+
+
 def stamp_cases(expect: testing.Expect) -> None:
     """Hold the stamp of a run after a change of the plugin: the run reads the compile commands after step 1."""
     with tempfile.TemporaryDirectory(prefix="syntax-stamp-") as scratch_text:
         scratch = Path(scratch_text)
-        build = scratch / "build"
-        build.mkdir()
-        compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
-        cmake.cache_file(build).write_text("")
-        cmake.plant(
-            build,
-            cache={
-                build_config.SYNTAX_OPTION: ("BOOL", "ON"),
-                "CMAKE_GENERATOR": "Ninja",
-                "CMAKE_MAKE_PROGRAM": planted_compiler(scratch, "ninja", INPUTS_NINJA),
-                "CMAKE_COMMAND": planted_compiler(scratch, "cmake", RECONFIGURE_CMAKE),
-            },
-        )
-        output = str(build / "t.dir" / "a.cpp.o")
-        arguments = [compiler, f"{plugin_runner.PLUGIN_ARGUMENT}stamp=0ld0ld", "-c", "a.cpp", "-o", output]
-        compdb.plant(
-            build,
-            [{"directory": str(scratch), "file": str(scratch / "a.cpp"), "arguments": arguments, "output": output}],
-        )
-        ninja.plant_graph(build, f"rule phony_rule\n  command = true\nbuild {syntax.INPUT_PREFIX}t: phony_rule\n")
+        build, output = planted_build(scratch)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
             status = syntax.run(build, scratch, 2)
         section = sections.read_report(sections.report_directory(build, output))
         expect(
             "a run after a change of the plugin writes the stamp that the input targets gave the compile database",
             status == 0 and section is not None and section.stamp == "fe5hfe5h" and not errors.getvalue(),
+        )
+
+
+def check_cases(expect: testing.Expect) -> None:
+    """Hold the check of a parse build: it parses nothing, and only a current report keeps its unit (THE CHECK)."""
+    import os
+
+    with tempfile.TemporaryDirectory(prefix="syntax-check-") as scratch_text:
+        scratch = Path(scratch_text)
+        build, output = planted_build(scratch)
+        source = scratch / "a.cpp"
+        source.write_text("int a;\n", encoding="utf-8")
+        os.utime(source, ns=(1, 1))
+        before = syntax.locked_plan(build, scratch, 2)
+        expect(
+            "the check of a parse build with no report plans the parse of its unit, and writes no report",
+            [item.unit.object_path for item in before.planned] == [Path(output)]
+            and not before.kept
+            and not sections.report_directory(build, output).exists(),
+        )
+        expect("the check holds the lock file of the build", (build / syntax.LOCK_FILE).is_file())
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            status = syntax.run(build, scratch, 2)
+        after = syntax.locked_plan(build, scratch, 2)
+        expect(
+            "after a run, the check keeps the unit with its current report",
+            status == 0 and not after.planned and [unit.object_path for unit in after.kept] == [Path(output)],
+        )
+        os.utime(source)
+        expect(
+            "a dependency that changed after the run makes the check plan the parse again",
+            len(syntax.locked_plan(build, scratch, 2).planned) == 1,
         )
 
 
@@ -289,5 +332,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (word_cases, native_cases, build_cases, unit_cases, stamp_cases, macro_cases, change_cases),
+        (word_cases, native_cases, build_cases, unit_cases, stamp_cases, check_cases, macro_cases, change_cases),
     )

@@ -74,6 +74,16 @@ THE TESTS THAT ALWAYS RUN
       the source tree that is not a file.
     - A test whose ELF file the script cannot read as an ELF64 file.
 
+THE PARSE BUILDS
+    After the build, the script runs `loop syntax` on each configured parse
+    build that the change of the tree makes necessary (assay.loop.syntax, THE
+    CHANGE OF AN ARM).  The parse of a parse build is a build, and its time
+    goes into the build time of THE LOOP HISTORY.  The tests
+    guard_parse_x86_64_v3 and guard_parse_aarch64 then only judge the
+    reports.  A unit that does not parse stops the call before the tests, as
+    a build with an error does.  For a parse build that is not configured, the script
+    prints the command that configures it.
+
 THE LOOP HISTORY
     After each call that builds or runs tests, the script appends one line to
     BUILD_DIR/loop-history/history.jsonl: the commit, the job count, the host
@@ -124,8 +134,10 @@ self-test.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
@@ -758,6 +770,42 @@ def build(build_dir: Path, jobs: int) -> int:
     return run_inherited([build_program(build_dir, "cmake"), "--build", str(build_dir), f"-j{jobs}"])
 
 
+def parse_arms(source_root: Path, jobs: int) -> int:
+    """Run `loop syntax` on each configured parse build that the change of the tree makes necessary (THE PARSE BUILDS).
+
+    Complexity: one read of the change, and one run of `loop syntax` for each configured parse build of a change of
+    an arm.
+
+    Returns:
+        0 when each parse build that runs parses each unit, else 1
+    """
+    from assay.core import configuration as build_config
+    from assay.loop import syntax
+
+    try:
+        arms = syntax.arm_files(source_root)
+    except syntax.ParseError as problem:
+        check_report.write_line(f"loop test: {problem}.  The script runs no parse build")
+        return 0
+    status = 0
+    for preset in syntax.PARSE_PRESETS if arms else ():
+        try:
+            parse_build = syntax.build_directory(source_root, preset)
+        except syntax.ParseError as problem:
+            check_report.write_line(f"loop test: {problem}")
+            continue
+        if not build_config.is_parse_build(parse_build):
+            check_report.write_line(
+                f"loop test: the change holds an arm, and the parse build {parse_build} is not configured.  Configure "
+                f"it with `cmake --preset {preset}`"
+            )
+            continue
+        check_report.write_line(f"loop test: the change holds an arm, so the script parses {parse_build}")
+        if syntax.run(parse_build, source_root, jobs) != 0:
+            status = 1
+    return status
+
+
 def update_state(state: dict[str, object], planner: Planner, decisions: list[Decision],
                  statuses: dict[str, ctest_reader.TestStatus], tests: tuple[ctest_reader.TestEntry, ...]) -> None:
     """Record the fingerprint of each test of FINGERPRINTED that passed with unchanged inputs, and drop the rest."""
@@ -817,9 +865,16 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if should_build and not plan_only:
             with recorder.start_build():
                 status = build(build_dir, jobs)
-            recorder.finish_build(status)
+                parse_status = parse_arms(Path(trees.source_root), jobs) if status == 0 else 0
+            recorder.finish_build(status or parse_status)
             if status != 0:
                 print(f"loop test: the build failed with exit code {status}.  No test ran.")
+                save_history(recorder, build_dir)
+                return 1
+            if parse_status != 0:
+                check_report.write_line(
+                    "loop test: a unit of a parse build does not parse (the lines above).  No test ran."
+                )
                 save_history(recorder, build_dir)
                 return 1
         elif not should_build:
@@ -1104,6 +1159,43 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
                ran == {"guard_alpha", "guard_alpha_witness", "guard_gamma"}, output)
 
 
+# The presets of the fake tree of the parse cases: one binaryDir for each parse build, and no build is configured.
+PARSE_PRESETS_TEXT = (
+    '{"version": 6, "configurePresets": ['
+    '{"name": "syntax-x86-64-v3", "binaryDir": "${sourceDir}/build-syntax-x86-64-v3"}, '
+    '{"name": "syntax-aarch64", "binaryDir": "${sourceDir}/build-syntax-aarch64"}]}\n'
+)
+PLAIN_UNIT = "int lanes() { return 1; }\n"
+ARM_UNIT = "int lanes() {\n#if defined(__AVX2__)\n    return 16;\n#else\n    return 1;\n#endif\n}\n"
+
+
+def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
+    """Check parse_arms (THE PARSE BUILDS) on a fake git work tree with no configured parse build."""
+    with tempfile.TemporaryDirectory(prefix="affected-parse-") as directory:
+        source_root = Path(directory)
+        (source_root / "CMakePresets.json").write_text(PARSE_PRESETS_TEXT)
+        unit = source_root / "src" / "lanes.cpp"
+        unit.parent.mkdir()
+        unit.write_text(PLAIN_UNIT)
+        git.init(source_root)
+        git.commit_all(source_root, "a planted tree")
+        for text, label, should_name in (
+            (PLAIN_UNIT, "a tree with no change", False),
+            (ARM_UNIT, "a change of an arm", True),
+        ):
+            unit.write_text(text)
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                status = parse_arms(source_root, 4)
+            output = captured.getvalue()
+            names = all(f"cmake --preset {preset}" in output for preset in ("syntax-x86-64-v3", "syntax-aarch64"))
+            expect(
+                f"parse_arms parses nothing for {label}, and names each parse build only for an arm",
+                status == 0 and names == should_name,
+                output,
+            )
+
+
 def self_test(ctest: str) -> int:
     """Run each plant with `ctest` as the ctest of the fake build tree, and return 0 when each one holds."""
     failures: list[str] = []
@@ -1259,6 +1351,7 @@ def self_test(ctest: str) -> int:
                                            timeout_s=proc.TOOL_S)).exit, ""
     expect("a missing build directory gives exit code 2", status == 2, output)
     guard_cases(ctest, expect)
+    parse_cases(expect)
 
     for failure in failures:
         print(f"loop test --self-test: FAILED: {failure}")

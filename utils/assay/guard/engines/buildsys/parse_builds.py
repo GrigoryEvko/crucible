@@ -1,4 +1,4 @@
-"""parse-x86-64-v3 and parse-aarch64 — a change of an arm runs its parse build, and the counted rules judge the parse.
+"""parse-x86-64-v3 and parse-aarch64 — the parse build of a change of an arm is current, and the counted rules judge it.
 
 THE RULES
     Each rule has one preset of PARSE_PRESETS of assay.loop.syntax (RULES).
@@ -8,8 +8,12 @@ THE RULES
       1. A build directory with no CMake cache, or with a cache that does
          not set CRUCIBLE_SYNTAX_ONLY, gives the error not-configured.  Its
          message gives the command that configures the build directory.
-      2. `loop syntax` parses each unit of the build (assay.loop.syntax.run).
-         A unit that does not parse gives the error parse.
+      2. The rule builds the input targets of the parse build, and it finds
+         the units that keep their reports (assay.loop.syntax, THE CHECK).  A
+         step that fails gives the error parse.  A unit with no current
+         report gives the error stale, and its message gives the command
+         `loop syntax BUILD_DIR`, which parses the unit.  The rule parses
+         nothing.
       3. The rules quarantine, heavy-include, syscall-capability and
          door-unit judge the reports of the parse
          (assay.guard.engines.plugin.runner).  Each
@@ -17,8 +21,10 @@ THE RULES
          gives the error counted.
     A change with no arm gives no finding, and the rule reads no parse
     build.  The rule reads the change of the tree, and not the build of
-    --build-dir.  Each parse runs with JOBS of assay.loop.syntax, the
-    PROCESSORS of the test of the rule (test/CMakeLists.txt).
+    --build-dir.  `loop test` runs `loop syntax` on each configured parse
+    build of a change of an arm, after its build and before the tests
+    (assay.loop.affected).  Then the test of the rule finds each report
+    current.
 
 THE PLANTS
     A plant holds the directory parent/ and the directory tree/.
@@ -28,7 +34,8 @@ THE PLANTS
     change with no arm gives no finding.
 
 Complexity: one read of the change and one parse tree of each changed C++ file.  A change of an arm adds one
-parse of the build of the preset.
+build of the input targets of the parse build.  It also adds one stat of each dependency of its units and one
+read of each report.
 """
 
 import shutil
@@ -47,6 +54,8 @@ PARENT = "parent"
 TREE = "tree"
 # The rules that judge a parse build (THE RULES, step 3).
 COUNTED_RULES = ("quarantine", "heavy-include", "syscall-capability", "door-unit")
+# The units with no current report that the message of the error stale names (THE RULES, step 2).
+SHOWN_STALE_UNITS = 3
 
 
 def error(rule_id: str, path: str, message: str, kind: str, entity: str) -> check_report.Finding:
@@ -85,12 +94,19 @@ def judged_parse(context: BuildContext, rule_id: str, preset: str) -> list[check
             f"{context.root}, and run the test again"
         )
         return [error(rule_id, first, message, "not-configured", preset)]
-    if syntax.run(build, context.root, syntax.JOBS) != 0:
-        message = (
-            f"a unit of the parse build {shown_build} does not parse, or a step of `loop syntax` fails (the lines "
-            f"above).  Correct the change"
-        )
+    try:
+        plan = syntax.locked_plan(build, context.root, syntax.JOBS)
+    except syntax.ParseError as problem:
+        message = f"the reports of the parse build {shown_build} cannot be judged: {problem}.  Correct the build"
         return [error(rule_id, first, message, "parse", preset)]
+    if plan.planned:
+        shown_units = ", ".join(context.shown(item.unit.object_path) for item in plan.planned[:SHOWN_STALE_UNITS])
+        message = (
+            f"{len(plan.planned)} of {len(plan.kept) + len(plan.planned)} units of the parse build {shown_build} have "
+            f"no current report, such as {shown_units}.  Parse them with `python3 utils/bin/loop syntax "
+            f"{shown_build}`, and run the test again.  `python3 utils/bin/loop test` runs that parse after its build"
+        )
+        return [error(rule_id, first, message, "stale", preset)]
     from assay.guard.engines.plugin import runner as plugin_runner
 
     registry = context.registry if context.registry is not None else rule_registry.load()
