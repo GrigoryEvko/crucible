@@ -335,7 +335,7 @@ quarantine utils/tools/
 quarantine vessel/
 
 host utils/tools/quarantine/ | The GCC plugin of the rule quarantine.  It links the tree API of GCC, which no base type replaces, and the host compiler builds it at configure time with no plugin
-kernel include/crucible/canopy/bpf/ include/crucible/cntp/_wip/bpf/ include/crucible/cntp/bpf/ include/crucible/cntp/dataplane/bpf/ include/crucible/cog/bpf/ include/crucible/observe/bpf/ include/crucible/perf/bpf/ include/crucible/topology/bpf/ include/crucible/warden/bpf/ | The BPF programs and their headers: kernel C that Clang compiles for the BPF target.  No C++ unit includes these files, so the C++ base and the plugin do not reach them
+kernel include/crucible/perf/bpf/ | The BPF programs and their headers: kernel C that Clang compiles for the BPF target.  No C++ unit includes these files, so the C++ base and the plugin do not reach them
 
 enforce @build/ report
 enforce bench/ report

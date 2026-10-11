@@ -89,9 +89,8 @@ struct TcFlowClass {
     TcAction action = TcAction::Ok;
 };
 
-// The bytes of one flow class as the kernel map stores them.  The layout is
-// struct crucible_tc_flow_class of bpf/dp_tc_egress_classify.bpf.c.  A
-// kernel map copies bytes, so the record holds no refined field.
+// The bytes of one flow class as a kernel map stores them.  A kernel map
+// copies bytes, so the record holds no refined field.
 struct TcFlowClassRecord {
     std::uint32_t classid = 0;
     std::uint8_t dscp = 0;

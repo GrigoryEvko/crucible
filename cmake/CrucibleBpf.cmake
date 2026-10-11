@@ -182,8 +182,8 @@ function(crucible_bpf_program name source)
   # because the CO-RE field relocations read the BTF debug information.
   # -fdebug-prefix-map removes the absolute build path from .debug_str.  The
   # same command gives the same object in each checkout.  A different command
-  # can give a different object: for sched_tp_btf and cntp_dp_fq_budget,
-  # another flag list or another output path changes the .BTF section.
+  # can give a different object: for sched_tp_btf, another flag list or
+  # another output path changes the .BTF section.
   #
   # -MD -MF writes the depfile of the compile, and DEPFILE gives that file to
   # the generator.  The depfile names each header that the compile reads,
