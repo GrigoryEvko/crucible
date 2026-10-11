@@ -713,6 +713,21 @@ In a header of `include/`, the rule `heavy-include` also refuses the include, be
 10. OS code outside fixy/os. Unit 2b resolves it.
 11. Thread start in foundation. Unit 2c resolves it.
 
+**The split of the layer F1 (owner, 2026-10-11).** The layer F1 algebra becomes six ordered layers. From the lowest rank to the highest, they are:
+- algebra: `foundation/algebra/`, without `lattices/`
+- lattices: `foundation/algebra/lattices/`
+- diag: the files of `foundation/diag/` that are not in F0 core
+- effects: `foundation/effects/`
+- permissions: `foundation/permissions/`
+- rest: each other file of `foundation/` and `src/foundation/`.
+
+The split lands in the same commit as items 2 to 4. On the tree of 2026-10-11, the split refuses exactly 5 include edges, and items 2 to 4 remove these 5 edges:
+- Item 2: `diag/RowHash.h` includes `effects/Effect.h` and `effects/Row.h`.
+- Item 3: `effects/Computation.h` includes `permissions/Fwd.h`.
+- Item 4: `lattices/HappensBefore.h` and `lattices/StrongCounterLattice.h` include `effects/Ctx.h`.
+
+The present layers already refuse the edges of items 1 and 5, because the source of each edge is in a layer of F0. F1 algebra has rank 5, the only number between F0 doors (rank 4) and X1 wrappers (rank 6). The six layers then take the ranks 5 to 10, and the layers X1 to X5 move to the ranks 11 to 15. When the split lands with items 2 to 4, or after them, it adds no ledger row. The layer rows are an input of each compile. Each configuration then needs one full rebuild after the split lands.
+
 **2e, the header splits.** One unit for each group. Each split keeps each closed rule set in one header, so no answer depends on which headers a file included.
 
 | Header | Split |
@@ -960,7 +975,12 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | F0 os | `foundation/os/Syscall.h`, `foundation/os/KernelFloor.h`, `foundation/os/OpenFlags.h`, `foundation/os/FutexWords.h`, `src/foundation/os/Syscall.cpp`, `src/foundation/os/Intercepted.h`, `src/foundation/os/Intercepted.cpp` (D16, unit 2b) | the base allowance, plus each system header that the floor uses, through its one door. The rank is below F0 primitives, so that the families and each higher layer can use the syscall primitive |
 | F0 primitives | `foundation/core/` and `src/foundation/core/` (the families), `foundation/Simd.h`, `foundation/Saturate.h`, `foundation/AlignedBuffer.h`, `foundation/SwissTableBuffer.h`, `foundation/ThreadLocalRef.h`, `foundation/ChannelBinding.h` | the base allowance. No system header in a header. Cold code goes to `src/foundation/` |
 | F0 doors | the other files of `foundation/os/` and `src/foundation/os/` | the base allowance, plus each system header through its one door. The rank is above F0 primitives, so that a door can return a `Result` of the families |
-| F1 algebra | `foundation/algebra/`, `foundation/effects/`, `foundation/diag/` (other files), `foundation/permissions/` | the base allowance. Runtime std names only in `consteval` context |
+| F1 algebra | `foundation/algebra/`, without `lattices/` | the base allowance. Runtime std names only in `consteval` context |
+| F1 lattices | `foundation/algebra/lattices/` | the base allowance. Runtime std names only in `consteval` context |
+| F1 diag | `foundation/diag/` (other files) | the base allowance. Runtime std names only in `consteval` context |
+| F1 effects | `foundation/effects/` | the base allowance. Runtime std names only in `consteval` context |
+| F1 permissions | `foundation/permissions/` | the base allowance. Runtime std names only in `consteval` context |
+| F1 rest | the other files of `foundation/` and `src/foundation/` | the base allowance. Runtime std names only in `consteval` context |
 | X1 wrappers | `fixy/` top-level wrapper headers, `fixy/fp/`, `src/fixy/` | the base allowance |
 | X2 binding | `fixy/Fn.h`, `fixy/Axis.h`, `fixy/Atom.h`, `fixy/atoms/`, Collision, Corpus, Reject, Insights, Role, Throws, Federation | the base allowance |
 | X3 os | `fixy/os/`, `src/fixy/os/` | the base allowance, plus each system header through its one door |
@@ -969,6 +989,8 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | X6 channels | `fixy/channels/` | the base allowance |
 
 A layer can include a lower layer and itself. It cannot include a higher layer.
+
+The six F1 layers come from the split of unit 2d (owner, 2026-10-11), and they land with items 2 to 4 of that unit. Before that commit, the rule table has one layer F1 algebra for the six rows.
 
 **Headers that no layer includes:** `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>`, any third-party header.
 
