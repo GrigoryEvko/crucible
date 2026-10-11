@@ -150,6 +150,25 @@ def edit_cases(expect: testing.Expect) -> None:
     expect("apply_edit replaces the one copy of the text", land.apply_edit("alpha beta", edit, "f") == "alpha gamma")
 
 
+def parse_cases(expect: testing.Expect) -> None:
+    """Hold the configure and the parse of each parse build of a change of an arm."""
+    build = paths.REPO_ROOT / "change-build"
+    steps = land.parse_steps(paths.REPO_ROOT, build, ["syntax-x86-64-v3"], 3)
+    loop = str(paths.REPO_ROOT / "utils" / "bin" / "loop")
+    parse_build = str(paths.REPO_ROOT / "build-syntax-x86-64-v3")
+    expect(
+        "a parse preset gives its configure, and then its parse with `loop syntax` in the build directory of the "
+        "preset, so that the tests guard_parse_* read a report of the change",
+        [words for words, _log in steps]
+        == [["cmake", "--preset", "syntax-x86-64-v3"], [sys.executable, loop, "syntax", parse_build, "-j", "3"]],
+    )
+    try:
+        land.parse_steps(paths.REPO_ROOT, build, ["no-such-preset"], 3)
+        expect("a parse preset with no build directory is refused", False)
+    except land.LandError:
+        expect("a parse preset with no build directory is refused", True)
+
+
 def compose_cases(expect: testing.Expect) -> None:
     """Hold the composition, the exports of a guard run and the rule history on each export."""
     with tempfile.TemporaryDirectory(prefix="land-compose-") as work_text:
@@ -302,5 +321,7 @@ def lock_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (word_cases, edit_cases, compose_cases, landing_cases, lock_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (word_cases, edit_cases, parse_cases, compose_cases, landing_cases, lock_cases),
     )

@@ -69,7 +69,8 @@ THE GUARD RUN
     Debug build of the export with the toolchain of the export.  It builds
     each target of GUARD_TARGETS that the export has.  When the change holds
     an arm of an architecture, the export also configures each parse build
-    that `loop syntax --changed` names.  Then the step runs `ctest -L
+    that `loop syntax --changed` names, and it parses each one with `loop
+    syntax` (parse_steps()).  Then the step runs `ctest -L
     ci_guard` and the tests of ROSTER_TESTS.  It writes the name of each test
     with the status fail or notrun to SIDE.txt.  The compare step exits 0
     when no test is red only with the change.
@@ -107,7 +108,7 @@ from pathlib import Path
 from assay.core import cache, git, proc
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
-from assay.loop import heavy
+from assay.loop import heavy, syntax
 from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
@@ -653,6 +654,28 @@ def run_logged(command: list[str], cwd: Path, log: Path, timeout_s: float) -> in
         return problem.completed.exit if problem.completed is not None else ExitCode.TOOL_FAILED
 
 
+def parse_steps(export: Path, build: Path, presets: Sequence[str], jobs: int) -> list[tuple[list[str], Path]]:
+    """Return the configure and the parse of each parse preset of an export, each with its log (THE GUARD RUN).
+
+    The tests guard_parse_* read the reports of a parse, and they refuse a unit with a report that is earlier than
+    its inputs.  The parse of each parse build then runs before the tests.
+
+    Raises:
+        LandError: If the presets of the export give no build directory for a preset
+    """
+    steps: list[tuple[list[str], Path]] = []
+    loop = str(export / "utils" / "bin" / "loop")
+    for preset in presets:
+        try:
+            parse_build = syntax.build_directory(export, preset)
+        except syntax.ParseError as problem:
+            raise LandError(f"the parse preset {preset} of {export} gives no build directory: {problem}") from None
+        steps.append((["cmake", "--preset", preset], Path(f"{build}.{preset}.configure.log")))
+        parse = [sys.executable, loop, "syntax", str(parse_build), "-j", str(jobs)]
+        steps.append((parse, Path(f"{build}.{preset}.syntax.log")))
+    return steps
+
+
 def prepare(export: Path, build: Path, jobs: int) -> None:
     """Configure the Debug build of an export, build the guard targets, and configure the parse builds of an arm.
 
@@ -692,10 +715,9 @@ def prepare(export: Path, build: Path, jobs: int) -> None:
         raise LandError(f"the parse presets of the change of {export} cannot be read: {problem}") from None
     if presets.exit not in (ExitCode.OK, ExitCode.USAGE):
         raise LandError(f"the parse presets of the change of {export} cannot be read: {presets.err.strip()}")
-    for preset in presets.out.split() if presets.exit == ExitCode.OK else ():
-        log = Path(f"{build}.{preset}.configure.log")
-        if run_logged(["cmake", "--preset", preset], export, log, proc.BUILD_S) != 0:
-            raise LandError(f"the configure of the parse build {preset} of {export} failed, see {log}")
+    for words, log in parse_steps(export, build, presets.out.split() if presets.exit == ExitCode.OK else (), jobs):
+        if run_logged(words, export, log, proc.BUILD_S) != 0:
+            raise LandError(f"a step of a parse build of {export} failed, see {log}")
 
 
 def red_tests(build: Path, report: Path, jobs: int) -> list[str]:
