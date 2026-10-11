@@ -596,21 +596,29 @@ class Code:
         return "\n".join(parts) if parts else "  (no code)"
 
 
-def function_name(symbol: str) -> tuple[str, bool]:
-    """Return the name of a probe function from its demangled symbol, and True when the symbol is a cold part."""
+def function_name(symbol: str, keeps_arguments: bool = False) -> tuple[str, bool]:
+    """Return the name of a function from its demangled symbol, and True when the symbol is a cold part.
+
+    The name has no unnamed namespace.  It has the parameter list only when `keeps_arguments` is True.
+    """
     is_cold = symbol.endswith(COLD_SUFFIX)
-    name = strip_arguments(symbol.removesuffix(COLD_SUFFIX) if is_cold else symbol)
+    name = symbol.removesuffix(COLD_SUFFIX) if is_cold else symbol
+    if not keeps_arguments:
+        name = strip_arguments(name)
     return name.removeprefix(ANONYMOUS), is_cold
 
 
-def codes_of(functions: Sequence[objdump.Function]) -> dict[str, Code]:
-    """Return the code of each function of a disassembly, by its name with no unnamed namespace and no parameters.
+def codes_of(functions: Sequence[objdump.Function], keeps_arguments: bool = False) -> dict[str, Code]:
+    """Return the code of each function of a disassembly, by its name of function_name().
+
+    The probe functions have no overloads, and the rule keys them by the name with no parameters.  A key with the
+    parameter list (`keeps_arguments`) keeps two overloads apart.
 
     Complexity: linear in the instructions of the disassembly.
     """
     parts: dict[str, dict[bool, Part]] = {}
     for function in functions:
-        name, is_cold = function_name(function.name)
+        name, is_cold = function_name(function.name, keeps_arguments)
         instructions = tuple(
             Instruction(
                 item.offset,
@@ -1176,8 +1184,8 @@ def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool) 
     return words
 
 
-def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool) -> dict[str, Code]:
-    """Compile the unit of a row of the compile database into a scratch object, and return the code of each function.
+def compiled_functions(entry: compdb.CompileEntry, with_sanitizers: bool) -> tuple[objdump.Function, ...]:
+    """Compile the unit of a row of the compile database into a scratch object, and return each of its functions.
 
     The quarantine plugin writes only the section of the object, because the command gives it no report directory.
 
@@ -1190,7 +1198,16 @@ def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool) -> dict[st
         result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory)))
         if result.exit != 0:
             raise CompileFailed(f"the compile of {entry.file} fails:\n{result.err[-2000:]}")
-        return codes_of(disassembled(obj))
+        return disassembled(obj)
+
+
+def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool) -> dict[str, Code]:
+    """Compile the unit of a row of the compile database, and return the code of each function (compiled_functions()).
+
+    Raises:
+        CompileFailed: If the compile or the disassembly fails
+    """
+    return codes_of(compiled_functions(entry, with_sanitizers))
 
 
 def disassembled(obj: Path) -> tuple[objdump.Function, ...]:

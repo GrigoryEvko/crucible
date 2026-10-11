@@ -344,17 +344,9 @@ def sweep_cases(expect: testing.Expect) -> None:
             )
 
 
-def compiler_of(expect: testing.Expect) -> str | None:
-    """Return the patched compiler of the cases, or None after a case that does not hold when no variable names it."""
-    cxx = testing.patched_compiler()
-    is_there = bool(cxx) and Path(cxx).is_file()
-    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", is_there)
-    return cxx if is_there else None
-
-
 def store_group(expect: testing.Expect) -> None:
     """Run the cases of the store in a scratch directory of their own."""
-    cxx = compiler_of(expect)
+    cxx = testing.held_compiler(expect)
     if cxx is not None:
         with tempfile.TemporaryDirectory(prefix="unit_store_test_") as scratch:
             store_cases(expect, cxx, Path(scratch))
@@ -362,7 +354,7 @@ def store_group(expect: testing.Expect) -> None:
 
 def spelled_root_group(expect: testing.Expect) -> None:
     """Run the cases of the spelled roots in a scratch directory of their own."""
-    cxx = compiler_of(expect)
+    cxx = testing.held_compiler(expect)
     if cxx is not None:
         with tempfile.TemporaryDirectory(prefix="unit_store_spelled_") as scratch:
             spelled_root_cases(expect, cxx, Path(scratch))

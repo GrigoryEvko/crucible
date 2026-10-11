@@ -29,7 +29,8 @@ THE COMPILER
     the registration of the test in CMake gives it.  With no such variable,
     the compiler is g++-16p in usr/bin of the prefix that
     CRUCIBLE_GCC16_PREFIX names.  When the two variables are empty, the
-    text is empty.
+    text is empty.  held_compiler() also holds the case that a variable
+    names a compiler file.
 
 `guard selftest tests.core.test_testing` does a test of the module.
 """
@@ -56,6 +57,17 @@ def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
         return named
     prefix = environment.get(COMPILER_PREFIX, "")
     return str(Path(prefix) / "usr" / "bin" / "g++-16p") if prefix else ""
+
+
+def held_compiler(expect: Expect) -> str | None:
+    """Return the patched compiler of the compile cases, or None after a case that does not hold (THE COMPILER).
+
+    The case holds when a variable names a compiler file.
+    """
+    compiler = patched_compiler()
+    is_named = bool(compiler) and Path(compiler).is_file()
+    expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", is_named)
+    return compiler if is_named else None
 
 
 @contextlib.contextmanager

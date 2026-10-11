@@ -3246,6 +3246,8 @@ The rule reads the instructions on the paths that return, and it normalizes them
 
 A declared difference is a cost on the hot path. When the family side of such a pair is longer, each run gives a warning with the counts of the pair. In the Release build of 2026-10-11, those pairs were `box_get`, `option_expect`, `option_expect_niche`, `switch_unreachable` and `view_append`.
 
+The command `python3 utils/bin/guard asm-compare` (`utils/assay/guard/asm_compare.py`) compares the code of each function of a list in two objects, two builds, or a git revision and the tree. It prints the instructions that only one side holds, and it normalizes them as the rule `codegen-shapes` does.
+
 The rule also refuses a branch, a call, a division and an indexed load in the compiled primitives of `fixy::ct`. The proof of a safe access comes from a type, such as an index type, a fixed extent or a memory order in the operation name. It does not come from a branch at each access. Rules 1 to 5 of §XV "Compile time" are R13 to R17.
 
 ### Static TLS (R19)

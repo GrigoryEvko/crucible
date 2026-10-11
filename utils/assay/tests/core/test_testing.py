@@ -91,6 +91,22 @@ def compiler_cases(expect: testing.Expect) -> None:
         testing.patched_compiler({"CRUCIBLE_GCC16_PREFIX": "/gcc"}) == "/gcc/usr/bin/g++-16p",
     )
     expect("no variable gives an empty text", testing.patched_compiler({}) == "")
+    expect(
+        "held_compiler() of a compiler file gives the file and a case that holds",
+        held_of(__file__) == (__file__, [True]),
+    )
+    expect(
+        "held_compiler() of a missing file gives None and a case that does not hold",
+        held_of("/no/cxx") == (None, [False]),
+    )
+
+
+def held_of(named: str) -> tuple[str | None, list[bool]]:
+    """Return the result of held_compiler() when ASSAY_TEST_CXX names a file, and the result of each case that it held."""
+    held: list[bool] = []
+    with testing.environment_variable("ASSAY_TEST_CXX", named):
+        compiler = testing.held_compiler(lambda _name, is_held: held.append(is_held))
+    return compiler, held
 
 
 def environment_cases(expect: testing.Expect) -> None:
