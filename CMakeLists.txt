@@ -364,7 +364,6 @@ add_library(crucible STATIC
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
   src/observe/SyntheticProbe.cpp
-  src/cntp/dataplane/TcEbpf.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Discovery.cpp
   src/topology/Pingmesh.cpp

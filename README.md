@@ -75,7 +75,7 @@ include/crucible/                Layer 3, namespace crucible: the runtime.  Aren
                                  Serialize, ReplayEngine, PoolAllocator, Vigil, RecipeRegistry
 include/crucible/canopy/         Mesh membership and gossip: SWIM, HyParView, Plumtree, CRDTs
 include/crucible/cipher/         The computation cache and its federation protocol
-include/crucible/cntp/           The CNTP network transport: congestion control, pacing, FEC, AF_XDP
+include/crucible/cntp/           The CNTP network transport: congestion control, pacing, FEC
 include/crucible/cog/            Hardware identity: NIC setup and audit, TargetCaps, latency tables
 include/crucible/forge/          IR001 operation kinds and the network recipe table
 include/crucible/ledger/         The hardware-capability ledger and its probes

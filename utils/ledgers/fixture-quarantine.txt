@@ -118,10 +118,6 @@ test/cipher_neg/neg_federation_deserialize_wrong_org_permission.cpp | std-object
 test/cipher_neg/neg_opaque_lifetime_per_program_at_per_fleet_fence.cpp | std-entity | 1 | std::filesystem::path | -
 test/cipher_neg/neg_opaque_lifetime_per_request_at_per_fleet_fence.cpp | std-entity | 1 | std::filesystem::path | -
 test/cipher_neg/neg_opaque_lifetime_per_request_at_per_program_fence.cpp | std-entity | 1 | std::filesystem::path | -
-test/cntp_neg/neg_af_xdp_config_raw_frame_size.cpp | std-object | 5 | std::expected | -
-test/cntp_neg/neg_af_xdp_config_weaker_refinement.cpp | std-object | 5 | std::expected | -
-test/cntp_neg/neg_af_xdp_cross_source_packet.cpp | c-array-object | 1 | - | -
-test/cntp_neg/neg_af_xdp_unsanitized_rx.cpp | c-array-object | 1 | - | -
 test/cntp_neg/neg_backpressure_controller_hot_accept.cpp | std-entity | 1 | std::expected::value | -
 test/cntp_neg/neg_backpressure_controller_hot_accept.cpp | std-entity | 1 | std::span | -
 test/cntp_neg/neg_backpressure_hot_ctx_credit.cpp | std-entity | 2 | std::expected::value | -
@@ -138,9 +134,6 @@ test/cntp_neg/neg_connection_pool_lease_rewrite.cpp | std-entity | 4 | std::expe
 test/cntp_neg/neg_connection_pool_lease_rewrite.cpp | std-object | 2 | std::expected | -
 test/cntp_neg/neg_fec_encode_non_contiguous_owned.cpp | std-object | 1 | std::array | -
 test/cntp_neg/neg_fountain_raw_seed.cpp | std-object | 1 | std::array | -
-test/cntp_neg/neg_gossip_multicast_mint_bg_ctx.cpp | std-entity | 2 | std::expected::value | -
-test/cntp_neg/neg_gossip_multicast_raw_topic.cpp | std-entity | 2 | std::expected::value | -
-test/cntp_neg/neg_gossip_multicast_zero_neighbors.cpp | std-entity | 2 | std::expected::value | -
 test/cntp_neg/neg_gpu_direct_raw_plan_register.cpp | std-entity | 2 | std::expected::operator* | -
 test/cntp_neg/neg_incast_credit_fg_ctx.cpp | std-entity | 2 | std::expected::operator* | -
 test/cntp_neg/neg_incast_credit_fg_ctx.cpp | std-object | 3 | std::expected | -
@@ -217,16 +210,6 @@ test/dag_neg/neg_transaction_region_loaded_cross_tag.cpp | raw-pointer-object | 
 test/dag_neg/neg_transaction_region_loaded_cross_tag.cpp | std-entity | 1 | std::span | -
 test/dag_neg/neg_transaction_region_loaded_cross_tag.cpp | std-object | 1 | std::optional | -
 test/dag_neg/neg_transaction_region_raw_pointer.cpp | raw-pointer-object | 2 | - | -
-test/dataplane_neg/neg_tc_ebpf_flow_class_raw_classid.cpp | std-entity | 2 | std::expected::value | -
-test/dataplane_neg/neg_tc_ebpf_flow_class_raw_dscp.cpp | std-entity | 2 | std::expected::value | -
-test/dataplane_neg/neg_tc_ebpf_mint_bg_ctx.cpp | std-entity | 1 | std::expected::value | -
-test/dataplane_neg/neg_tc_ebpf_raw_flow_class.cpp | std-entity | 1 | std::expected::value | -
-test/dataplane_neg/neg_xdp_map_non_pod_value.cpp | std-entity | 1 | std::basic_string | -
-test/dataplane_neg/neg_xdp_map_non_pod_value.cpp | std-entity | 1 | std::expected::value | -
-test/dataplane_neg/neg_xdp_map_oversized_value.cpp | std-entity | 1 | std::expected::value | -
-test/dataplane_neg/neg_xdp_map_oversized_value.cpp | std-object | 1 | std::array | -
-test/dataplane_neg/neg_xdp_mint_bg_ctx.cpp | std-entity | 2 | std::expected::value | -
-test/dataplane_neg/neg_xdp_mint_not_exec_ctx.cpp | std-entity | 2 | std::expected::value | -
 test/fixy/neg/neg_atom_ladder_enumerator_claimed_twice.cpp | detail-use | 1 | main(): fixy::atom::detail | the fixture calls a private check directly, and its probe shows that the check refuses its input
 test/fixy/neg/neg_atom_ladder_enumerator_claimed_twice.cpp | std-entity | 1 | std::tuple | -
 test/fixy/neg/neg_atom_refined_with_vacuous_predicate.cpp | raw-pointer-object | 1 | - | -

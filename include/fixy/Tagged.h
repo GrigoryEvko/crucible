@@ -27,9 +27,7 @@
 // let an array of slots start empty before any of them is filled.  A
 // default-constructed Tagged holds T{} under its tag; the tag is then
 // a claim about nothing.  One production site needs it: the slot
-// array `OpsPtr ops_[CAP]{}` of RegionCache.  Two more spell it
-// without exercising it, the NSDMIs `topic{}` and `spec_{}` of
-// GossipMulticast, which every construction overrides.  The remaining
+// array `OpsPtr ops_[CAP]{}` of RegionCache.  The remaining
 // members declared without an initializer (CallSiteTable::Entry, the
 // connection classes of cntp) are always initialized by their aggregate
 // or constructor.  The door stays for the slot array.

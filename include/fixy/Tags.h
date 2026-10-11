@@ -150,23 +150,6 @@ struct TcpInfo {};
 // statistics, qdisc backlog, sysctl snapshots, hwmon temperatures.
 // Raw text cannot drive capacity, health, or routing decisions.
 struct KernelTelemetry {};
-// AF_XDP socket and UMEM configuration. Raw ring sizes, frame sizes,
-// queue identifiers, and interface names cannot mint a zero-copy
-// transport surface.
-struct AfXdp {};
-// Dataplane BPF and XDP plans. Raw program descriptors and map
-// dimensions cannot attach a NIC dataplane program or allocate a
-// userspace-visible map.
-struct Xdp {};
-struct BpfMap {};
-// Multicast plans driven from the transmit path. Raw topic hashes,
-// neighbor arrays, and descriptors cannot drive kernel-side gossip
-// replication.
-struct GossipMulticast {};
-// Traffic-control direct-action eBPF plans. Raw action descriptors,
-// DSCP values, and map specifications cannot attach an egress or
-// ingress dataplane program.
-struct TcEbpf {};
 // Application-layer multicast plans. Raw identities and unbounded
 // stripe or tree plans cannot drive cross-peer fanout.
 struct OverlayMulticast {};
@@ -204,8 +187,8 @@ struct ForgePhase {
 };
 
 // Marks a payload that has actually transited a transport of the
-// named posture. Distinct from CcAlgorithm, QdiscConfig, Mtls and
-// AfXdp, which admit raw transport configuration: this one travels
+// named posture. Distinct from CcAlgorithm, QdiscConfig and Mtls,
+// which admit raw transport configuration: this one travels
 // with the value, so a sink demanding one posture rejects a payload
 // carrying another.
 enum class TransportPostureTag : unsigned char {

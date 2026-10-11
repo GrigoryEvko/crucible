@@ -15,13 +15,13 @@ rule contract-cites
 - | - | 143 | crucible_post | -
 - | - | 0 | crucible_post_fast | -
 - | - | 0 | crucible_post_msg | -
-- | - | 269 | crucible_pre | -
+- | - | 268 | crucible_pre | -
 - | - | 0 | crucible_pre_fast | -
 - | - | 0 | crucible_pre_msg | -
 - | - | 118 | decide_total | -
-- | - | 432 | total_contract_cites | -
+- | - | 431 | total_contract_cites | -
 - | - | 143 | total_post_cites | -
-- | - | 269 | total_pre_cites | -
+- | - | 268 | total_pre_cites | -
 - | decide_per_procedure | 5 | implies | -
 - | decide_per_procedure | 30 | in_range | -
 - | decide_per_procedure | 2 | intervals_pairwise_disjoint | -

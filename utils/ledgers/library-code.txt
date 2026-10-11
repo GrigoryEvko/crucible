@@ -121,7 +121,7 @@ include/fixy/Borrowed.h | inlined | 1 | std::span::empty | -
 include/fixy/Borrowed.h | inlined | 1 | std::span::front | -
 include/fixy/Borrowed.h | inlined | 1 | std::span::operator[] | -
 include/fixy/Borrowed.h | inlined | 4 | std::span::size | -
-include/fixy/Borrowed.h | inlined | 3 | std::span::span | -
+include/fixy/Borrowed.h | inlined | 2 | std::span::span | -
 include/fixy/Borrowed.h | inlined | 1 | std::span::subspan | -
 include/fixy/Budgeted.h | call | 1 | std::basic_string::basic_string | -
 include/fixy/Budgeted.h | inlined | 2 | std::basic_string::~basic_string | -
@@ -808,7 +808,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::front | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::operator[] | -
 @x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -4 | std::span::size | -
-@x86_64-debug-tsan | include/fixy/Borrowed.h | inlined | -1 | std::span::span | -
 @x86_64-debug-tsan | include/fixy/Budgeted.h | call | -1 | std::basic_string::basic_string | -
 @x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | +1 | std::basic_string::basic_string | -
 @x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | -1 | std::destroy_at | -
@@ -1106,12 +1105,11 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | __errno_location | -
 @x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | write | -
 @x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | inlined | +1 | read | -
-@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | call | +1 | std::span::front | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::size | -
-@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::span::span | -
+@x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -1 | std::span::span | -
 @x86_64-debug-ubsan-strict | include/fixy/Budgeted.h | inlined | -1 | std::vector::~vector | -
 @x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
@@ -1222,7 +1220,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::front | -
 @x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::operator[] | -
 @x86_64-release | include/fixy/Borrowed.h | inlined | -4 | std::span::size | -
-@x86_64-release | include/fixy/Borrowed.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/fixy/Borrowed.h | inlined | -1 | std::span::span | -
 @x86_64-release | include/fixy/Budgeted.h | call | -1 | std::basic_string::basic_string | -
 @x86_64-release | include/fixy/Budgeted.h | inlined | +1 | std::basic_string::basic_string | -
 @x86_64-release | include/fixy/Budgeted.h | inlined | -1 | std::destroy_at | -

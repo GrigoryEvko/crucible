@@ -82,10 +82,7 @@ does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_admission_controller` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_admission_decision` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | · | token | · | HS14: 0 ⚠ |
-| `mint_af_xdp_config` | `include/crucible/cntp/AfXdp.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
-| `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
@@ -94,7 +91,6 @@ does not apply to the row.
 | `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | HS14: 1 ⚠ |
@@ -109,10 +105,7 @@ does not apply to the row.
 | `mint_roce_config` | `include/crucible/cntp/RoceConfig.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
-| `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_xdp_program` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/cog/
 
@@ -350,5 +343,5 @@ does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 89 | 48 | 32 | 9 | 0 | 10 |
+| crucible (`include/crucible/`) | 82 | 44 | 29 | 9 | 0 | 10 |
 | substrate (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | 4 |

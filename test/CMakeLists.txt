@@ -212,7 +212,6 @@ crucible_test(test_lifeguard)
 crucible_test(test_plumtree)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
-crucible_test(test_cntp_af_xdp)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
@@ -227,7 +226,6 @@ crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
 crucible_test(test_cntp_overlay_multicast)
-crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -573,8 +571,6 @@ crucible_test(test_warden_policy)
 # bench_harness.h.
 crucible_test(test_pin_event_door)
 target_include_directories(test_pin_event_door PRIVATE ${CMAKE_SOURCE_DIR}/bench)
-crucible_test(test_cntp_dataplane_tc_ebpf)
-crucible_test(test_cntp_dataplane_xdp)
 
 # crucible::perf::SenseHub sentinel TU.
 # Verifies the observability substrate compiles + links
@@ -1305,67 +1301,6 @@ crucible_neg_compile_test(neg_hot_region_registry_mint_not_exec_ctx
 crucible_neg_compile_test(neg_deadline_watchdog_mint_not_exec_ctx
     "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
-
-# ─── cntp/dataplane/Xdp.h soundness gates ─────────────────────────
-#
-#   * neg_xdp_raw_program_spec — NIC admission requires source::Xdp
-#     provenance, not a raw descriptor.
-#   * neg_xdp_mint_bg_ctx — only Init-row contexts mint attach plans.
-#   * neg_xdp_mint_not_exec_ctx — a bare struct is not a context.
-#   * neg_xdp_map_non_pod_value — BPF map values must be verifier-safe POD.
-#   * neg_xdp_map_oversized_value — a map element must fit the 16-bit
-#     length field.
-#   * neg_xdp_map_key_without_equality — in-process map images require typed
-#     key equality, not bytewise accidental comparison.
-crucible_neg_compile_test(neg_xdp_raw_program_spec
-    "could not convert .raw. from .crucible::cntp::dataplane::XdpProgramSpec. to .crucible::cntp::dataplane::DeclaredXdpProgram."
-    "fixy::Tagged<crucible::cntp::dataplane::XdpProgramSpec, fixy::tags::source::Xdp>")
-crucible_neg_compile_test(neg_xdp_mint_bg_ctx
-    "no matching function for call to .mint_xdp_program\\(fixy::BgDrainCtx&"
-    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>.")
-crucible_neg_compile_test(neg_xdp_mint_not_exec_ctx
-    "no matching function for call to .mint_xdp_program\\(NotAnExecCtx"
-    "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
-crucible_neg_compile_test(neg_xdp_map_non_pod_value
-    "no matching function for call to .mint_bpf_map_spec<Key, std::string>"
-    "required for the satisfaction of .BpfScalar<T>. .with T = std::__cxx11::basic_string<char")
-crucible_neg_compile_test(neg_xdp_map_oversized_value
-    "no matching function for call to .mint_bpf_map_spec<Key, WideValue>"
-    "requires \\(BpfMapElement<Key>\\) && \\(BpfMapElement<Value>\\)")
-crucible_neg_compile_test(neg_xdp_map_key_without_equality
-    "template constraint failure for .template<class Key, class Value, unsigned int MaxEntries, crucible::cntp::dataplane::BpfMapKind Kind>"
-    "required for the satisfaction of .BpfKey<Key>. .with Key = Key.")
-
-# ─── cntp/dataplane/TcEbpf.h soundness gates ─────────────
-#
-#   * neg_tc_ebpf_raw_program_spec — NIC admission takes a declared plan.
-#   * neg_tc_ebpf_mint_bg_ctx — only an Init-row context mints a plan.
-#   * neg_tc_ebpf_mint_raw_ifindex — a plan takes an admitted index.
-#   * neg_tc_ebpf_raw_flow_class — a map value is a declared flow class.
-#   * neg_tc_ebpf_flow_class_raw_dscp / neg_tc_ebpf_flow_class_raw_classid
-#     — a flow class takes admitted fields.
-#   * neg_tc_ebpf_zero_flow_map — a map holds at least one flow.
-crucible_neg_compile_test(neg_tc_ebpf_raw_program_spec
-    "could not convert .raw. from .crucible::cntp::dataplane::TcProgramSpec."
-    "to .crucible::cntp::dataplane::DeclaredTcProgram. \\{aka .fixy::Tagged<crucible::cntp::dataplane::TcProgramSpec, fixy::tags::source::TcEbpf>.\\}")
-crucible_neg_compile_test(neg_tc_ebpf_mint_bg_ctx
-    "no matching function for call to .mint_tc_program\\(fixy::BgDrainCtx&, "
-    "required for the satisfaction of .CtxFitsTcMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
-crucible_neg_compile_test(neg_tc_ebpf_mint_raw_ifindex
-    "no matching function for call to .mint_tc_program\\(fixy::ColdInitCtx&, crucible::cntp::NicInterfaceName&, uint32_t, "
-    "cannot convert .11. \\(type .uint32_t. \\{aka .unsigned int.\\}\\) to type .crucible::cntp::dataplane::TcIfIndex.")
-crucible_neg_compile_test(neg_tc_ebpf_raw_flow_class
-    "cannot convert .crucible::cntp::dataplane::TcFlowClass. to .crucible::cntp::dataplane::DeclaredTcFlowClass."
-    "initializing argument 2 of .constexpr std::expected<void, crucible::cntp::dataplane::XdpError> crucible::cntp::dataplane::TcFlowClassMap<MaxFlows>::update\\(")
-crucible_neg_compile_test(neg_tc_ebpf_flow_class_raw_dscp
-    "could not convert .46. from .uint8_t. \\{aka .unsigned char.\\} to .crucible::cntp::dataplane::TcDscp."
-    "fixy::Refinement<fixy::InRange<0, 63>\\(\\), unsigned char, false>")
-crucible_neg_compile_test(neg_tc_ebpf_flow_class_raw_classid
-    "could not convert .65537. from .uint32_t. \\{aka .unsigned int.\\} to .crucible::cntp::dataplane::TcClassId."
-    "fixy::Refinement<fixy::IsPositive\\(\\), unsigned int, false>")
-crucible_neg_compile_test(neg_tc_ebpf_zero_flow_map
-    "template constraint failure for .template<unsigned int MaxFlows>  requires  MaxFlows > 0 class crucible::cntp::dataplane::TcFlowClassMap."
-    "In substitution of .template<unsigned int MaxFlows>  requires  MaxFlows > 0 class crucible::cntp::dataplane::TcFlowClassMap .with unsigned int MaxFlows = 0..")
 
 # mimic::CogMimic comes only from mint_cog_mimic.  Each fixture reaches
 # one gate:
@@ -3185,33 +3120,6 @@ crucible_neg_compile_test(neg_backpressure_controller_hot_accept
   "no matching function for call to .crucible::cntp::AdmissionController<2, 2>::try_accept_connection\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
   "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# cntp/AfXdp.h.  Each fixture names the call that fails and the reason, so
-# a fixture that fails for another reason does not pass.
-#   * neg_af_xdp_raw_config: a socket mint takes only a config from the door.
-#   * neg_af_xdp_non_power_of_two_frame: the static shape refuses 1500 bytes.
-#   * neg_af_xdp_cross_source_packet: TX takes only a view of this socket.
-#   * neg_af_xdp_unsanitized_rx: an External frame is not a Sanitized one.
-#   * neg_af_xdp_config_raw_frame_size: the config door takes refined shapes.
-#   * neg_af_xdp_config_weaker_refinement: a bare power of two is too weak.
-crucible_neg_compile_test(neg_af_xdp_raw_config
-  "no matching function for call to .mint_af_xdp_socket<131072, 2048"
-  "cannot convert .raw. .type .crucible::cntp::AfXdpConfig.. to type .crucible::cntp::DeclaredAfXdpConfig.")
-crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
-  "no matching function for call to .mint_af_xdp_socket<131072, 1500"
-  "template constraint failure for .template<.*requires  AfXdpStaticShape<UmemBytes, FrameSize")
-crucible_neg_compile_test(neg_af_xdp_cross_source_packet
-  "cannot convert .Borrowed<.*,OtherOwner,.*>. to .Borrowed<.*,crucible::cntp::AfXdpSocket<131072, 2048"
-  "initializing argument 1 of .*enqueue_tx.packet_view.")
-crucible_neg_compile_test(neg_af_xdp_unsanitized_rx
-  "could not convert .untrusted. from .Tagged<.*,fixy::tags::source::External>."
-  "to .Tagged<.*,fixy::tags::source::Sanitized>.")
-crucible_neg_compile_test(neg_af_xdp_config_raw_frame_size
-  "could not convert .2048. from .uint32_t."
-  "to .crucible::cntp::AfXdpFrameSize.")
-crucible_neg_compile_test(neg_af_xdp_config_weaker_refinement
-  "could not convert .tiny. from .Refinement<fixy::IsPowerOfTwo..,"
-  "to .Refinement<fixy::refined_algebra::AllOf<fixy::IsPowerOfTwo.., fixy::InRange<1024, 16384>..>..,")
-
 # cntp/ConnectionPool.h and cntp/ConnectionPoolRuntime.h: the pool of
 # established connections.
 #   * neg_connection_pool_raw_event: a pool event carries the ConnectionPool tag.
@@ -3268,27 +3176,6 @@ crucible_neg_compile_test(neg_integrity_raw_hash_field
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
   "no matching function for call to .wrap\\(NotWireBytes\\)."
   "required for the satisfaction of .HasContiguousPayloadData<Payload>. .with Payload = NotWireBytes.")
-
-# cntp/GossipMulticast.h XDP_TX multicast plan substrate.
-#   * neg_gossip_multicast_mint_bg_ctx: only Init-row contexts mint plans.
-#   * neg_gossip_multicast_raw_plan: XDP program extraction requires
-#     source::GossipMulticast provenance.
-#   * neg_gossip_multicast_raw_topic: raw topic keys cannot register
-#     neighbors; callers must pass DeclaredGossipTopic.
-#   * neg_gossip_multicast_zero_neighbors: zero-neighbor plans are rejected
-#     at the shape concept.
-crucible_neg_compile_test(neg_gossip_multicast_mint_bg_ctx
-  "no matching function for call to .mint_gossip_multicast_plan<4, 4>\\(fixy::BgDrainCtx&"
-  "required for the satisfaction of .CtxFitsGossipMulticastMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_test(neg_gossip_multicast_raw_plan
-  "could not convert .raw. from .crucible::cntp::GossipMulticastSpec. to .crucible::cntp::DeclaredGossipMulticastPlan."
-  "fixy::Tagged<crucible::cntp::GossipMulticastSpec, fixy::tags::source::GossipMulticast>")
-crucible_neg_compile_test(neg_gossip_multicast_raw_topic
-  "cannot convert .crucible::cntp::GossipTopicKey. to .crucible::cntp::DeclaredGossipTopic."
-  "fixy::Tagged<crucible::cntp::GossipTopicKey, fixy::tags::source::GossipMulticast>")
-crucible_neg_compile_test(neg_gossip_multicast_zero_neighbors
-  "no matching function for call to .mint_gossip_multicast_plan<4, 0>"
-  "required for the satisfaction of .GossipNeighborShape<MaxNeighbors>. .with MaxNeighbors = 0.")
 
 # cntp/OverlayMulticast.h application-layer route substrate.
 #   * neg_overlay_multicast_mint_bg_ctx: only Init-row contexts mint plans.
