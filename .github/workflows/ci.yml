@@ -6,7 +6,8 @@
 # block), so history stays observable and bisectable.
 #
 # Tiers:
-#   * guards  — bash/ripgrep discipline suite. ubuntu-latest, no compiler.
+#   * guards  — the rules of the engines tsast and meta of utils/bin/guard,
+#               with their witnesses. ubuntu-latest, no compiler.
 #   * patched-gcc — builds the patched GCC for each arch with
 #               `setup gcc` (utils/assay/setup/gcc.py), and caches the install
 #               (.github/workflows/patched-gcc.yml).
@@ -75,8 +76,10 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Toolchain-FREE discipline guards. Stock ubuntu-latest, no compiler, no
-  # CMake configure — pure source-tree scans.
+  # Toolchain-FREE discipline guards. Stock ubuntu-latest, no compiler, and no
+  # configure of the tree.  The rules read the source tree, the plants and the
+  # git history.  The plants of the rule test-registration configure a
+  # scratch project with the pinned CMake.
   # ---------------------------------------------------------------------------
   guards:
     name: discipline guards (toolchain-free)
@@ -199,7 +202,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over
   # (arch × preset) in a fedora:44 container with the patched GCC 16.2.1. BPF
-  # substrate ENABLED — the perf/network BPF programs + crucible_vessel all
+  # substrate ENABLED — the perf BPF programs + crucible_vessel all
   # compile. fail-fast:false: an aarch64-specific issue (e.g. BTF availability)
   # never cancels the x86_64 legs.
   # ---------------------------------------------------------------------------
@@ -272,7 +275,8 @@ jobs:
       # MPFR and MPC libraries that the patched GCC runs on, and isl is the
       # last library it needs.  The patched GCC carries its own sanitizer
       # runtimes and libstdc++.  gmp-devel gives gmp.h, which the GCC plugin
-      # headers include when the configure step builds the contract plugin.
+      # headers include when the configure step builds the quarantine plugin
+      # (utils/tools/quarantine/Quarantine.cmake).
       # `setup install` downloads each pinned tool with Python, checks its
       # SHA256 and unpacks it, so the job needs no download tool.  CMake comes
       # from the pin, not dnf.  pip installs the pinned mypy and ruff.
@@ -327,8 +331,8 @@ jobs:
       - name: Mark the checkout as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # ctest runs the script-backed guards under the ci_guard label, and the
-      # AST guards among them parse C++ with the pinned kit.  Install it before
+      # ctest runs the tests of the master guard under the ci_guard label, and
+      # the rules of the engine tsast among them parse C++ with the pinned kit.  Install it before
       # the compile rather than before the test step, so a kit failure costs one
       # download instead of a full build.  The pin covers both matrix arches.
       - name: Install the pinned tree-sitter C++ kit
@@ -416,15 +420,17 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
-      # Two ledgers depend on the build kind and the target tier
-      # (utils/assay/core/target.py).  The rule quarantine counts its findings
-      # of each file, kind and entity.  The rule artifact-symbols holds the
-      # libstdc++ symbols of the libraries.  For a build that a ledger does not
-      # hold, each rule prints one line with its tier and the tiers of the
-      # ledger, for example on a runner of a different native tier.  The rule
-      # quarantine then exits 77.  The rule artifact-symbols then judges only
-      # the throws and the classes of the libraries.  Each rule then prints the
-      # rows of the build, and it prints them after a failure too.  Only CI
+      # Two ledgers hold rows for each configuration of a build: its build
+      # kind, its target tier (utils/assay/core/target.py) and its cache
+      # variables.  The rule quarantine counts its findings of each file, kind
+      # and entity.  The rule artifact-symbols holds the imports of each static
+      # library.  The rows of the configuration of the build judge it.  For a
+      # configuration that a ledger does not hold, the largest count of each
+      # key over the configurations judges the build (THE POLICY of
+      # utils/assay/core/configuration.py), for example on a runner of a
+      # different native tier.  A rule that does not apply to the build exits
+      # 77.  Each rule prints the rows of a build of a configuration that the
+      # ledger does not hold, and it prints them after a failure too.  Only CI
       # builds aarch64.  `guard write --rule RULE --import LOG` puts the rows
       # of an aarch64 leg into the ledger of each rule.  ctest shows no output
       # of a test that passes or that it skips.  This step runs the two rules

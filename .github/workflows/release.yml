@@ -4,11 +4,15 @@
 # each arch it builds the standalone tools FULLY STATIC and attaches them, with
 # SHA-256 sums, to the matching Release.
 #
-# WHY STATIC: the codebase only builds on GCC 16 (rawhide). A dynamically-linked
-# binary would pull that tree's libstdc++.so.6, which is NEWER than any stock
-# distro ships — so it would not run anywhere else. The fix is `-static`
-# (glibc-static + libstdc++-static): a single self-contained ELF, "not a dynamic
-# executable", runnable on any Linux >= 3.2 regardless of toolchain. Built BPF-off
+# WHY STATIC: the codebase builds only with the patched GCC 16 of `setup gcc`
+# (utils/assay/setup/gcc.py). A dynamically-linked binary would pull that
+# tree's libstdc++.so.6, which is NEWER than any stock distro ships — so it
+# would not run anywhere else. The fix is `-static` (glibc-static +
+# libstdc++-static): a single self-contained ELF, "not a dynamic executable".
+# It runs on each kernel that the static glibc accepts: Linux 3.2 or a
+# subsequent version on x86_64, and 3.7 or a subsequent version on aarch64.
+# The start-up check of foundation::os::minimum_kernel() asks for no newer
+# kernel. Built BPF-off
 # so there is no libbpf/libelf/libz dependency to defeat the static link, at a
 # conservative ISA tier (x86-64-v3 = the documented AVX2+FMA+BMI2 baseline;
 # armv8.2-a = Graviton2+/Apple-M1+). The eBPF observability substrate is a
