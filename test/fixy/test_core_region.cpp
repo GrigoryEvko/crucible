@@ -46,6 +46,19 @@ struct Record {
     std::uint64_t extra = 0;
 };
 
+enum class Shade : std::uint8_t {
+    dark,
+    light,
+    bright
+};
+
+// A record of one byte.
+struct Tint {
+    std::uint8_t level = 0;
+
+    [[nodiscard]] friend bool operator==(Tint, Tint) noexcept = default;
+};
+
 template <class Owner>
 [[nodiscard]] auto map_region(IoBlockCtx const& ctx, Owner const& owner, std::size_t bytes) {
     auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, bytes);
@@ -192,6 +205,64 @@ void test_copy() {
     CRUCIBLE_FATAL_INVARIANT(hold_same_values<std::uint64_t>(fixed_target, fixed_source));
 }
 
+// The fill runs in a function that the optimizer does not see through.  A
+// call with an empty View then gives memset a null pointer at run time.
+template <class T>
+[[gnu::noipa]] void fill_opaque(fixy::View<T> run, T value) {
+    fixy::fill(run, value);
+}
+
+// fill writes the value into each element of a window and into no other
+// element.  The run is a fresh page of zero bytes.
+template <class T>
+void expect_fill_of_window(fixy::View<T> run, T background, T value) {
+    fill_opaque(run, background);
+    fill_opaque(run.window(10, 20).expect("the window fits in the page"), value);
+    std::size_t position = 0;
+    for (T const& element : run) {
+        bool const is_in_window = position >= 10 && position < 30;
+        CRUCIBLE_FATAL_INVARIANT(element == (is_in_window ? value : background));
+        ++position;
+    }
+    CRUCIBLE_FATAL_INVARIANT(position == run.size());
+}
+
+// The fill of elements of one byte and of a wider element.  A byte, a
+// record of one byte, a bool and an enumeration of one byte take the
+// memset.  Each element type gets a fresh page, so no element starts its
+// lifetime over the bytes of a different type.
+void test_fill() {
+    IoBlockCtx const ctx{eff::testing::test()};
+    auto const owner = perm::mint_permission_root<ScratchRegion>();
+    auto byte_region = map_region(ctx, owner, page_bytes);
+    expect_fill_of_window<std::uint8_t>(byte_region.view<std::uint8_t>().expect("a page holds whole bytes"),
+                                        std::uint8_t{0x11}, std::uint8_t{0xA5});
+    auto tint_region = map_region(ctx, owner, page_bytes);
+    expect_fill_of_window<Tint>(tint_region.view<Tint>().expect("a page holds whole records"), Tint{3}, Tint{200});
+    auto flag_region = map_region(ctx, owner, page_bytes);
+    fixy::View<bool> flags = flag_region.view<bool>().expect("a page holds whole bools");
+    expect_fill_of_window<bool>(flags, false, true);
+    expect_fill_of_window<bool>(flags, true, false);
+    auto shade_region = map_region(ctx, owner, page_bytes);
+    expect_fill_of_window<Shade>(shade_region.view<Shade>().expect("a page holds whole shades"), Shade::light,
+                                 Shade::bright);
+    auto word_region = map_region(ctx, owner, page_bytes);
+    expect_fill_of_window<std::uint32_t>(word_region.view<std::uint32_t>().expect("a page holds whole words"),
+                                         std::uint32_t{0x01020304}, std::uint32_t{0xDEADBEEF});
+}
+
+// The fill of an empty View writes nothing.  The View holds a null pointer
+// and the count 0.
+void test_fill_of_an_empty_view() {
+    fill_opaque(fixy::View<std::uint8_t>{}, std::uint8_t{0x5A});
+    fill_opaque(fixy::View<bool>{}, true);
+    fill_opaque(fixy::View<std::uint32_t>{}, std::uint32_t{0x5A});
+    EmptyMapping empty_region{};
+    fixy::View<std::uint8_t> bytes = empty_region.view<std::uint8_t>().expect("an empty mapping gives an empty View");
+    CRUCIBLE_FATAL_INVARIANT(bytes.size() == 0);
+    fill_opaque(bytes, std::uint8_t{0x5A});
+}
+
 // A copy between two Views of different counts gives LengthMismatch and
 // writes nothing.
 void test_copy_of_unequal_counts_is_an_error() {
@@ -273,6 +344,8 @@ int main() {
     test_view_of_an_empty_mapping();
     test_windows();
     test_copy();
+    test_fill();
+    test_fill_of_an_empty_view();
     test_copy_of_unequal_counts_is_an_error();
     test_cursor_at_the_end_aborts();
     test_agrees_with_plain_model();

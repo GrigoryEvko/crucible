@@ -423,18 +423,16 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "view_append",
         "the append path is the bounds compare of the window and one memmove.  The copy into the window does no test "
-        "of the lengths, and the family code has more register moves.  At -O1, the loop over the Option of the window "
-        "keeps the test of its niche",
+        "of the lengths.  In a Release build, the family side has two more register moves than the raw side.  The "
+        "memmove takes the place of the memcpy of the raw form, and on x86_64 glibc resolves the two to one function.  "
+        "At -O1, the loop over the Option of the window keeps the test of its niche",
         branches=True,
         calls=("memmove",),
     ),
     Probe(
         "view_fill",
-        "fill of bytes first tests for an empty View and returns, because a View can be empty with no buffer, and "
-        "memset of a null pointer is undefined.  At -O1, GCC does not change the loop of the fill into memset.  "
-        f"{HARDENED_BUILDS}.  These flags add a copy of the count.  On each of the two edges of the test for an empty "
-        "View, they add a second test of the copy with a branch to a trap",
-        branches=True,
+        "fill of bytes is the memset of the raw form.  The memset builtin accepts the null pointer of an empty View "
+        "with the count 0, so the fill does no test for an empty View",
     ),
     Probe(
         "box_get",

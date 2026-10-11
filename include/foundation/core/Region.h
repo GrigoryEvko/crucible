@@ -21,7 +21,8 @@
 //                     fixed extent cannot fail.  Two Views of a dynamic
 //                     extent give a Result, with LengthMismatch when their
 //                     counts differ
-//   fill(dst, value)  value into each element of dst
+//   fill(dst, value)  value into each element of dst.  An element of one
+//                     byte takes one memset, the code of the raw form
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -36,9 +37,11 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Scalar.h>
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace foundation::core {
@@ -290,8 +293,10 @@ struct LengthMismatch final {};
 
 // Copies the elements of src into dst, two Views of one fixed extent.  The
 // type gives the two the same count, so the copy cannot fail.  The copy is
-// a memmove, so two views of one run can overlap.  The cost is the memmove
-// of the raw form.
+// a memmove, so two views of one run can overlap.  A View<T> converts to a
+// View<T const> of the same run, so no type proves that the two do not
+// overlap.  On x86_64, glibc resolves memcpy and memmove to one function,
+// so the memmove runs the code of the memcpy of the raw form.
 template <class T, std::size_t Extent>
     requires RegionCopyElement<T> && (Extent != dynamic_extent)
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
@@ -310,10 +315,35 @@ template <class T>
     return Unit{};
 }
 
-// Writes value into each element of dst.
+namespace detail {
+
+// An element that fill() writes with one memset: an element of one byte
+// that decode reads as one byte.  decode refuses a padding bit and a
+// bit-field.  An empty class has one byte of padding and no value, so the
+// guard also refuses it by name.
+template <class T>
+concept ByteFillElement = sizeof(T) == 1 && !std::is_empty_v<T> && DecodableFrom<std::uint8_t, T>;
+
+}  // namespace detail
+
+// Writes value into each element of dst.  For an element of one byte, the
+// fill is one memset of the byte of value.  GCC gives the memset builtin
+// the rule nonnull-if-nonzero, so an empty View with a null pointer needs
+// no test.  A constant evaluation and each other element keep the loop.
+// The element is trivially copyable, and its byte is a value of the
+// element, so the write of the byte is an assignment.  -Wclass-memaccess
+// refuses a memset through a pointer to a class with a member initializer,
+// so the call gives the builtin a void*.
 template <class T, std::size_t Extent>
     requires RegionCopyElement<T>
 constexpr void fill(View<T, Extent> dst, std::type_identity_t<T> const& value) noexcept {
+    if constexpr (detail::ByteFillElement<T>) {
+        if !consteval {
+            std::uint8_t const byte = decode<std::uint8_t>(value).expect("decode gives a byte for each value");
+            __builtin_memset(static_cast<void*>(detail::first_of_(dst)), byte, dst.size());
+            return;
+        }
+    }
     for (T& element : dst) {
         element = value;
     }

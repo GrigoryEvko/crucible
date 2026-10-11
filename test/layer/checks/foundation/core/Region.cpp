@@ -2,6 +2,7 @@
 
 #include <foundation/core/Region.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -20,6 +21,25 @@ struct NotCopyable {
     NotCopyable(NotCopyable const&) = delete;
     NotCopyable& operator=(NotCopyable const&) = delete;
 };
+
+enum class Shade : std::uint8_t {
+    dark,
+    light,
+    bright
+};
+
+// A record of one byte.
+struct Tint {
+    std::uint8_t level = 0;
+};
+
+// One byte of two bit-fields.
+struct Halves {
+    std::uint8_t low : 4;
+    std::uint8_t high : 4;
+};
+
+struct Empty {};
 
 // A pointer and a count, or a pointer alone for a fixed extent.
 static_assert(sizeof(View<int>) == 2 * sizeof(void*));
@@ -92,6 +112,14 @@ static_assert(!copy_accepts<View<int, 4>, View<int>>);
 static_assert(!copy_accepts<View<int const>, View<int const>>);
 static_assert(!copy_accepts<View<int>, View<long>>);
 
+// fill writes an element of one byte with one memset when decode reads the
+// byte as the whole value.  A wider element, a bit-field and an empty class
+// keep the loop.
+static_assert(detail::ByteFillElement<std::uint8_t> && detail::ByteFillElement<char> && detail::ByteFillElement<bool>);
+static_assert(detail::ByteFillElement<Shade> && detail::ByteFillElement<std::byte> && detail::ByteFillElement<Tint>);
+static_assert(!detail::ByteFillElement<std::uint16_t> && !detail::ByteFillElement<Record>);
+static_assert(!detail::ByteFillElement<Halves> && !detail::ByteFillElement<Empty>);
+
 // The windows in a constant evaluation, over one constant object, which is
 // a run of one element.  The object has internal linkage, so a constant
 // evaluation can compare its address with null.
@@ -119,6 +147,40 @@ static_assert(single_view().window<1>(0).is_some());
 static_assert(single_view().window<1>(1).is_none());
 static_assert(sum_of(single_view().window<1>(0).expect("the fixed window fits")) == 7);
 static_assert(sum_of(View<int const>{}) == 0);
+
+// fill in a constant evaluation keeps the loop.  Each case fills a run of
+// one element, through a View of a dynamic extent and of the fixed extent 1.
+template <class T>
+[[nodiscard]] consteval T filled(T initial, T value) noexcept {
+    T element = initial;
+    fill(detail::view_over_(&element, 1), value);
+    return element;
+}
+
+template <class T>
+[[nodiscard]] consteval T filled_fixed(T initial, T value) noexcept {
+    T element = initial;
+    fill(detail::view_over_<1>(&element), value);
+    return element;
+}
+
+static_assert(filled<std::uint8_t>(0x11, 0xA5) == 0xA5);
+static_assert(filled<Tint>(Tint{3}, Tint{200}).level == 200);
+static_assert(filled<bool>(false, true) && !filled<bool>(true, false));
+static_assert(filled<Shade>(Shade::dark, Shade::bright) == Shade::bright);
+static_assert(filled<std::uint64_t>(1, 0x0123456789ABCDEFu) == 0x0123456789ABCDEFu);
+static_assert(filled_fixed<std::uint8_t>(1, 2) == 2);
+static_assert(filled_fixed<bool>(true, false) == false);
+static_assert(filled_fixed<Shade>(Shade::bright, Shade::light) == Shade::light);
+
+// The empty View has no buffer, and its fill writes nothing.
+[[nodiscard]] consteval bool fills_empty_views() noexcept {
+    fill(View<std::uint8_t>{}, std::uint8_t{7});
+    fill(View<bool>{}, true);
+    fill(View<std::uint64_t>{}, std::uint64_t{7});
+    return true;
+}
+static_assert(fills_empty_views());
 
 // A cursor never leaves its View: a read at the end and a step past the
 // end call the fatal exit, which is not a constant expression.
