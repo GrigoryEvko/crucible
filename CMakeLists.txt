@@ -284,6 +284,12 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   endif()
 endif()
 
+# The Ninja pools of the compiles and the links, with the depths of the rules
+# compile-jobs and link-jobs of utils/registry.txt.  A target reads the pool of
+# its compiles and of its link when it is created, so the file comes before the
+# first target.
+include(cmake/JobPools.cmake)
+
 # The test launcher records the cost of each test and holds its budget, and
 # crucible_script_test() registers a script test behind it.  It also names
 # the warnings directory of the checks.  It comes before the first target and

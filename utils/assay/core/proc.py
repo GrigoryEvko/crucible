@@ -93,11 +93,16 @@ THE TWO STARTS OUTSIDE THIS MODULE
 THE JOB COUNT
     DEFAULT_JOBS is the one default count of the parallel work of the package.
     That work is a build, a test run, a parse build and the compiles of a
-    measure.  The build presets and the test presets of CMakePresets.json give
-    the same count.  The count is low, because large virtual machines share the
-    build host with the tree.  On 2026-10-09 the host held 22 GB of available memory with no
-    build, and a compile of the tree can take 1.3 GB.  Give -j N or --jobs N
-    for a larger count when the host has the memory.
+    measure.  The error threshold of the rule compile-jobs of
+    utils/registry.txt is the count of compile jobs at one time.  That rule
+    holds DEFAULT_JOBS, and the jobs of each build preset and each test preset
+    of CMakePresets.json, equal to it.  This module does not read the
+    registry, because each run of `loop fixture` imports it.  The count is low,
+    because large virtual machines share the build host with the tree.  On
+    2026-10-09 the host held 22 GB of available memory with no build, and a
+    compile of the tree can take 1.3 GB.  A build runs no more compiles than
+    the depth of the Ninja pool compile (cmake/JobPools.cmake), also with a
+    larger -j N.
 
 WHY THE MODULE IMPORTS LITTLE
     loop fixture runs for each negative fixture of each test run, and it
@@ -117,7 +122,8 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     import subprocess
 
-# The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).
+# The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).  The rule compile-jobs holds
+# it equal to the error threshold of its row in utils/registry.txt.
 DEFAULT_JOBS = 16
 # The time limits of three classes of work, in seconds (THE TIME LIMIT).
 QUICK_S = 120.0

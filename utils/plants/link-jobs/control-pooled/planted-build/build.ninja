@@ -1,0 +1,12 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = compile
+build liblib.a: CXX_STATIC_LIBRARY_LINKER__lib_Debug a.o
+  pool = link
+build libshared.so: CXX_SHARED_LIBRARY_LINKER__shared_Debug a.o
+  pool = link
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug a.o || liblib.a
+  pool = link
+build all: phony liblib.a libshared.so tool
+default all

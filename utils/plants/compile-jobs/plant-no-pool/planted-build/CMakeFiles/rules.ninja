@@ -1,0 +1,2 @@
+rule CXX_COMPILER__lib_unscanned_Debug
+  command = g++ -c $in -o $out

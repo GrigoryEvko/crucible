@@ -1,0 +1,5 @@
+pool compile
+  depth = 4
+
+pool link
+  depth = 8

@@ -2296,7 +2296,7 @@ The owner approved each decision of this table on 2026-10-03 (D15). The first co
 | a wave of heavy units | 1 at a time, under one shared lock | 16 jobs, for builds and for ctest (the owner set 16 as the default on 2026-10-09, because large virtual machines now share the host; the default was 96 from 2026-10-02) |
 | a wave with read-only units | the heavy limit plus any number of read-only units | read-only units run no build |
 
-`DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` hold the default. Before each heavy command, run `free -g`. Wait while the "available" column is below 16 GB.
+The error thresholds of the rules `compile-jobs` and `link-jobs` of `utils/registry.txt` hold the default: 16 compile jobs and 8 link jobs. `cmake/JobPools.cmake` gives each build a Ninja pool of each depth, and Ninja runs no more edges of a pool at one time, also with a larger `-j`. The rule `compile-jobs` holds `DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` equal to its count. Before each heavy command, run `free -g`. Wait while the "available" column is below 16 GB.
 
 ### 20.3 What can run together
 

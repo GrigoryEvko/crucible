@@ -1,0 +1,3 @@
+# The link of tool and the link of libshared.so are in no pool.  The rule gives one error outside-pool for the kind
+# link.
+format 1

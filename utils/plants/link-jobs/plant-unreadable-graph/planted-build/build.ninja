@@ -1,0 +1,6 @@
+include CMakeFiles/missing.ninja
+
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug a.o
+  pool = link
+build all: phony tool
+default all

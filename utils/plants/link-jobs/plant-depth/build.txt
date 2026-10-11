@@ -1,0 +1,3 @@
+# The pool link has the depth 8, and the planted registry gives 2 jobs, as a build does with -DCRUCIBLE_LINK_JOBS=8.
+# The rule gives the error pool-depth.
+format 1

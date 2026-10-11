@@ -1738,7 +1738,7 @@ def witness(
     cxx: str | None = None,
     plugin: Path | None = None,
     build_dir: Path | None = None,
-    jobs: int = 16,
+    jobs: int = proc.DEFAULT_JOBS,
 ) -> int:
     """Run each plant and each control of a rule of the engine plugin, and print each verdict (THE STATUS).
 

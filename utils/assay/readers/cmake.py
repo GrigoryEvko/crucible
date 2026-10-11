@@ -13,7 +13,8 @@ THE INPUTS
     call writes its query with request() before its configure.
 
     CMakePresets.json and CMakeUserPresets.json of a source tree give the
-    configure presets.  The reader reads them with json.
+    configure presets, and the job count of each build preset and each test
+    preset.  The reader reads them with json.
 
 WHAT THE READER GIVES
     is_configured(build_dir) and cache_file(build_dir): the cache file of a
@@ -25,7 +26,9 @@ WHAT THE READER GIVES
     codemodel(build_dir): each target of the build, with its type, its
     artifacts, its sources, its precompiled headers and its link fragments.
     Each target also gives the position of the CMake command that makes it.
-    presets(root): the configure presets of each presets file of a tree.
+    presets(root): the configure presets of each presets file of a tree, and
+    the job count of each build preset and each test preset.  A build preset
+    gives its field jobs, and a test preset the field jobs of execution.
     request(build_dir) and plant(build_dir, ...): the query of a scratch
     project, and a planted reply for a test.
 
@@ -273,16 +276,42 @@ class Preset:
         return f"Preset({self.name!r})"
 
 
+class PresetJobs:
+    """The job count of one build preset or one test preset: its kind, its name and its jobs.
+
+    `kind` is "build" or "test".  `jobs` is the integer of the preset, or
+    None when the preset gives no integer there.
+    """
+
+    __slots__ = ("jobs", "kind", "name")
+
+    def __init__(self, kind: str, name: str, jobs: int | None) -> None:
+        """Hold the parts of one job count."""
+        self.kind = kind
+        self.name = name
+        self.jobs = jobs
+
+    def __repr__(self) -> str:
+        """Return the job count for a message."""
+        return f"PresetJobs({self.kind!r}, {self.name!r}, {self.jobs!r})"
+
+
 class PresetFile:
-    """One presets file of a tree: its path, its configure presets, and the problem that stops its read, or None."""
+    """One presets file of a tree: its path, its configure presets, its job counts, and the problem that stops its read.
 
-    __slots__ = ("configure", "path", "problem")
+    `problem` is None for a file that reads.
+    """
 
-    def __init__(self, path: Path, configure: tuple[Preset, ...], problem: str | None) -> None:
+    __slots__ = ("configure", "jobs", "path", "problem")
+
+    def __init__(
+        self, path: Path, configure: tuple[Preset, ...], problem: str | None, jobs: tuple[PresetJobs, ...] = ()
+    ) -> None:
         """Hold the parts of one presets file."""
         self.path = path
         self.configure = configure
         self.problem = problem
+        self.jobs = jobs
 
     def __repr__(self) -> str:
         """Return the file for a message."""
@@ -649,12 +678,35 @@ def _preset_values(value: object) -> dict[str, str | None]:
     return found
 
 
+def _preset_jobs(document: Mapping[str, object]) -> tuple[PresetJobs, ...] | str:
+    """Return the job count of each build preset and each test preset with a name, or the problem of a list.
+
+    A job count is an integer that is not a boolean.  Complexity: linear in
+    the build presets and the test presets.
+    """
+    found: list[PresetJobs] = []
+    for kind, key in (("build", "buildPresets"), ("test", "testPresets")):
+        items = document.get(key, [])
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+            return f"{key} is not a list of objects"
+        for item in items:
+            name = item.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            execution = item.get("execution") if kind == "test" else item
+            value = execution.get("jobs") if isinstance(execution, dict) else None
+            found.append(PresetJobs(kind, name, value if type(value) is int else None))
+    return tuple(found)
+
+
 def _preset_file(path: Path) -> PresetFile:
-    """Return the configure presets of one presets file.  A missing file has no preset and no problem.
+    """Return the configure presets and the job counts of one presets file.  A missing file has none and no problem.
 
     CMake refuses a configure preset with no name.  A preset with a name that
     is not a text, or that is empty, is a problem of the file.  The problem
-    names the position of the preset, and the file then gives no preset.
+    names the position of the preset, and the file then gives no preset.  A
+    list of build presets or test presets that is not a list of objects is a
+    problem of the file too.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -685,7 +737,10 @@ def _preset_file(path: Path) -> PresetFile:
                 binary_dir if isinstance(binary_dir, str) else None,
             )
         )
-    return PresetFile(path, tuple(found), None)
+    jobs = _preset_jobs(document)
+    if isinstance(jobs, str):
+        return PresetFile(path, (), jobs)
+    return PresetFile(path, tuple(found), None, jobs)
 
 
 def presets(root: Path) -> tuple[PresetFile, ...]:
@@ -694,7 +749,9 @@ def presets(root: Path) -> tuple[PresetFile, ...]:
     The reader does not follow the field include, because no presets file of the tree uses it.
     """
     files = (_preset_file(root / name) for name in PRESET_FILES)
-    return tuple(found for found in files if found.configure or found.problem is not None or found.path.is_file())
+    return tuple(
+        found for found in files if found.configure or found.jobs or found.problem is not None or found.path.is_file()
+    )
 
 
 # ── Plants for the tests ───────────────────────────────────────────────────

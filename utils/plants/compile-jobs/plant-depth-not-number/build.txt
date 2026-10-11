@@ -1,0 +1,2 @@
+# The pool compile has a depth that is no whole number.  The rule gives the error pool-depth.
+format 1

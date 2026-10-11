@@ -1,0 +1,3 @@
+# proc.py gives DEFAULT_JOBS from an expression, and the rule cannot read a whole number.  The rule gives the error
+# input.
+format 1

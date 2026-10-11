@@ -1,0 +1,3 @@
+# The compile b.o is in no pool, as the compile of a target that the build creates before cmake/JobPools.cmake.  The
+# rule gives the error outside-pool.
+format 1

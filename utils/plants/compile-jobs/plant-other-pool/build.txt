@@ -1,0 +1,2 @@
+# The compile a.o is in the pool console and not in the pool compile.  The rule gives the error outside-pool.
+format 1

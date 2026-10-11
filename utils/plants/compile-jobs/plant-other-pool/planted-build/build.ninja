@@ -1,0 +1,8 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = console
+build b.o: CXX_COMPILER__lib_unscanned_Debug b.cpp
+  pool = compile
+build all: phony a.o b.o
+default all

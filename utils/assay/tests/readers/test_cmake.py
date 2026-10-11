@@ -228,6 +228,30 @@ def preset_cases(expect: testing.Expect) -> None:
                 unnamed.configure == ()
                 and unnamed.problem == f"the item {position} of configurePresets has no name, and CMake refuses it",
             )
+        (root / "CMakeUserPresets.json").write_text(
+            '{"buildPresets": [{"name": "b", "jobs": 16}, {"name": "flag", "jobs": true}, {"jobs": 4}], '
+            '"testPresets": [{"name": "t", "execution": {"jobs": 8}}, {"name": "none"}, {"name": "x", "jobs": 3}]}',
+            encoding="utf-8",
+        )
+        counted = cmake.presets(root)[1]
+        expect(
+            "a build preset gives its jobs, a test preset gives the jobs of execution, and a count that is not an "
+            "integer or no field gives None",
+            counted.problem is None
+            and [(item.kind, item.name, item.jobs) for item in counted.jobs]
+            == [
+                ("build", "b", 16),
+                ("build", "flag", None),
+                ("test", "t", 8),
+                ("test", "none", None),
+                ("test", "x", None),
+            ],
+        )
+        (root / "CMakeUserPresets.json").write_text('{"testPresets": {}}', encoding="utf-8")
+        expect(
+            "testPresets that is not a list gives a problem",
+            cmake.presets(root)[1].problem == "testPresets is not a list of objects",
+        )
 
 
 def programs() -> tuple[str, str, str]:

@@ -1,0 +1,3 @@
+# build.ninja includes the file of the pools two times, and that file includes itself.  The reader reads each file one
+# time, and the rule gives no error.
+format 1

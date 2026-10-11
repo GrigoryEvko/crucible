@@ -157,7 +157,8 @@ INDENT_WIDTH = 4
 QUIET_OTHERS_PCT = 10.0
 # The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.  The default
 # job count is lower (THE JOB COUNT of assay.core.proc).  A default run judges the instructions and the CPU time,
-# and it gives the wall times with no finding.  Give --jobs 192 for the wall gate.
+# and it gives the wall times with no finding.  Give --jobs 192 for the wall gate.  Also at this job count, the copy runs
+# no more compiles at one time than the depth of its pool compile (cmake/JobPools.cmake).
 WALL_JOBS = 192
 DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_RUNS = 3

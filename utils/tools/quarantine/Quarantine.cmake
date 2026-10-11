@@ -113,6 +113,8 @@ foreach(_crucible_quarantine_header IN LISTS _crucible_quarantine_headers)
   list(APPEND CRUCIBLE_QUARANTINE_SOURCES "${CMAKE_CURRENT_LIST_DIR}/${_crucible_quarantine_header}")
 endforeach()
 cmake_path(SET _crucible_quarantine_utils NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../..")
+# The compile jobs at one time, CRUCIBLE_COMPILE_POOL_DEPTH, for the plugin build and the plugin witness.
+include("${_crucible_quarantine_utils}/../cmake/JobPools.cmake")
 set(CRUCIBLE_GUARD "${_crucible_quarantine_utils}/bin/guard")
 set(CRUCIBLE_LOOP "${_crucible_quarantine_utils}/bin/loop")
 if(NOT DEFINED CRUCIBLE_RULE_TABLE)
@@ -198,9 +200,10 @@ endif()
 # path of the work tree, and two work trees build the same bytes.  The result
 # store of the negative fixtures keys these bytes (utils/assay/loop/fixture/store.py).
 # The key names the map with no path, so the key and the stamp stay the same
-# in each work tree.  The units compile at the same time: execute_process runs
-# its commands as one pipeline, and no compiler reads its input or writes its
-# output.
+# in each work tree.  The units compile at the same time, at most
+# CRUCIBLE_COMPILE_POOL_DEPTH units in one batch: execute_process runs the
+# commands of one batch as one pipeline, and no compiler reads its input or
+# writes its output.
 set(_crucible_quarantine_key "")
 foreach(_crucible_quarantine_source IN LISTS CRUCIBLE_QUARANTINE_SOURCES)
   file(SHA256 "${_crucible_quarantine_source}" _crucible_quarantine_source_hash)
@@ -220,25 +223,31 @@ if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_record
   set(_crucible_quarantine_objects_dir "${_crucible_quarantine_out}/plugin-objects")
   file(REMOVE_RECURSE "${_crucible_quarantine_objects_dir}")
   file(MAKE_DIRECTORY "${_crucible_quarantine_objects_dir}")
-  set(_crucible_quarantine_compiles "")
   set(_crucible_quarantine_objects "")
-  foreach(_crucible_quarantine_unit IN LISTS _crucible_quarantine_units)
-    set(_crucible_quarantine_object "${_crucible_quarantine_objects_dir}/${_crucible_quarantine_unit}.o")
-    list(APPEND _crucible_quarantine_objects "${_crucible_quarantine_object}")
-    list(APPEND _crucible_quarantine_compiles
-      COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" ${CRUCIBLE_QUARANTINE_COMPILE_FLAGS}
-              "-ffile-prefix-map=${CMAKE_CURRENT_LIST_DIR}=." -c -o "${_crucible_quarantine_object}"
-              "${CMAKE_CURRENT_LIST_DIR}/${_crucible_quarantine_unit}.cpp")
-  endforeach()
-  execute_process(${_crucible_quarantine_compiles}
-    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-    RESULTS_VARIABLE _crucible_quarantine_results
-    ERROR_VARIABLE _crucible_quarantine_error)
-  foreach(_crucible_quarantine_result IN LISTS _crucible_quarantine_results)
-    if(NOT _crucible_quarantine_result EQUAL 0)
-      message(FATAL_ERROR "The quarantine plugin did not build:\n${_crucible_quarantine_error}")
-    endif()
-  endforeach()
+  set(_crucible_quarantine_pending "${_crucible_quarantine_units}")
+  while(_crucible_quarantine_pending)
+    set(_crucible_quarantine_compiles "")
+    set(_crucible_quarantine_batch 0)
+    while(_crucible_quarantine_pending AND _crucible_quarantine_batch LESS CRUCIBLE_COMPILE_POOL_DEPTH)
+      list(POP_FRONT _crucible_quarantine_pending _crucible_quarantine_unit)
+      math(EXPR _crucible_quarantine_batch "${_crucible_quarantine_batch} + 1")
+      set(_crucible_quarantine_object "${_crucible_quarantine_objects_dir}/${_crucible_quarantine_unit}.o")
+      list(APPEND _crucible_quarantine_objects "${_crucible_quarantine_object}")
+      list(APPEND _crucible_quarantine_compiles
+        COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" ${CRUCIBLE_QUARANTINE_COMPILE_FLAGS}
+                "-ffile-prefix-map=${CMAKE_CURRENT_LIST_DIR}=." -c -o "${_crucible_quarantine_object}"
+                "${CMAKE_CURRENT_LIST_DIR}/${_crucible_quarantine_unit}.cpp")
+    endwhile()
+    execute_process(${_crucible_quarantine_compiles}
+      WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+      RESULTS_VARIABLE _crucible_quarantine_results
+      ERROR_VARIABLE _crucible_quarantine_error)
+    foreach(_crucible_quarantine_result IN LISTS _crucible_quarantine_results)
+      if(NOT _crucible_quarantine_result EQUAL 0)
+        message(FATAL_ERROR "The quarantine plugin did not build:\n${_crucible_quarantine_error}")
+      endif()
+    endforeach()
+  endwhile()
   execute_process(
     COMMAND "${CRUCIBLE_PLUGIN_BUILD_CXX}" ${CRUCIBLE_QUARANTINE_LINK_FLAGS} -o "${CRUCIBLE_QUARANTINE_PLUGIN}"
             ${_crucible_quarantine_objects}
@@ -275,16 +284,14 @@ endif()
 
 # The witness of the plugin: it compiles each plant and each control of the
 # rules of the engine plugin with the plugin that this configure builds
-# (utils/plants/RULE/ of each such rule).  At most
-# _crucible_quarantine_test_jobs compilers of the test run at one time, and the
-# test asks ctest for the same number of processors.  So ctest -j counts each
-# compiler of the test.
-set(_crucible_quarantine_test_jobs 16)
+# (utils/plants/RULE/ of each such rule).  At most CRUCIBLE_COMPILE_POOL_DEPTH
+# compilers of the test run at one time, and the test asks ctest for the same
+# number of processors.  So ctest -j counts each compiler of the test.
 crucible_script_test(NAME guard_plugin_witness
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" witness --engine plugin
           --cxx "${CRUCIBLE_PLUGIN_CXX}" --plugin "${CRUCIBLE_QUARANTINE_PLUGIN}"
-          --build-dir "${CMAKE_BINARY_DIR}" --jobs ${_crucible_quarantine_test_jobs})
-set_tests_properties(guard_plugin_witness PROPERTIES LABELS "ci_guard" PROCESSORS ${_crucible_quarantine_test_jobs})
+          --build-dir "${CMAKE_BINARY_DIR}" --jobs ${CRUCIBLE_COMPILE_POOL_DEPTH})
+set_tests_properties(guard_plugin_witness PROPERTIES LABELS "ci_guard" PROCESSORS ${CRUCIBLE_COMPILE_POOL_DEPTH})
 
 # The facts, the enforce rows and the mode stamps of the rule table.
 execute_process(

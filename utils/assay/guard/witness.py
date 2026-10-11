@@ -13,7 +13,8 @@ quarantine plugin (assay.guard.engines.plugin.witness).  It reads four options:
   --cxx         the compiler
   --plugin      the plugin that the configure built
   --build-dir   a build directory with a compile database
-  --jobs        the most compiler processes at one time.
+  --jobs        the most compiler processes at one time, DEFAULT_JOBS of
+                assay.core.proc when not given.
 That witness does not use the runner of the engine, and the command selects
 its rules itself.  It selects each rule of the engine plugin that the call
 names.  With --engine plugin, it also selects each rule of the engine with a
@@ -31,6 +32,7 @@ cannot run, and else 0.
 import sys
 from pathlib import Path
 
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
@@ -120,7 +122,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--jobs",
         type=int,
-        default=16,
+        default=proc.DEFAULT_JOBS,
         metavar="N",
         help="the most compiler processes at one time, for the engine plugin",
     )

@@ -29,6 +29,9 @@
 # The module compiles N programs into the production crucible library,
 # so Vigil, Cipher and runtime observation can consume them.
 
+# The pool of each BPF compile.
+include("${CMAKE_CURRENT_LIST_DIR}/JobPools.cmake")
+
 option(CRUCIBLE_HAVE_BPF
   "Compile + embed eBPF programs into the crucible static library" ON)
 
@@ -198,6 +201,10 @@ function(crucible_bpf_program name source)
   # -Wno-microsoft-anon-tag stops the warning that the flag itself gives.
   # -Werror makes each other warning stop the build.
   #
+  # The compile is in the Ninja pool of the compiles (cmake/JobPools.cmake).
+  # The rule compile-jobs refuses a custom command that compiles an object and
+  # is not in that pool.
+  #
   # The two commands read no file that a target of the build writes.  The
   # compile reads its source and the headers that its depfile names, and the
   # embed reads the object.  So each command takes DEPENDS_EXPLICIT_ONLY.
@@ -224,6 +231,7 @@ function(crucible_bpf_program name source)
     DEPENDS ${_BPF_SRC}
     DEPENDS_EXPLICIT_ONLY
     DEPFILE ${_BPF_DEPFILE}
+    JOB_POOL ${CRUCIBLE_COMPILE_POOL}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Compiling BPF ${source} → ${name}.bpf.o")

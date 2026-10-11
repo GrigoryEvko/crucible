@@ -1,0 +1,4 @@
+# The tree of each plant of the rule: each compile and the custom command that compiles an object are in the pool
+# compile of the depth 4, the setting of the planted registry.  proc.py and the presets give 4 jobs.  A custom command
+# that writes a header and a link are in no pool, and the rule does not read them.  The rule gives no error.
+format 1

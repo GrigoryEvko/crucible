@@ -1,0 +1,3 @@
+# The custom command that compiles probe.bpf.o is in no pool, as a BPF compile with no JOB_POOL.  The rule gives the
+# error outside-pool.
+format 1

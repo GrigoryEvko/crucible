@@ -144,6 +144,38 @@ def graph_cases(expect: testing.Expect) -> None:
             "graph removes the escapes of a space and a colon",
             second.outputs == ("one two.o", "c:d.o") and second.inputs == ("a b",),
         )
+        (build / "rules").mkdir()
+        (build / "rules" / "pools.ninja").write_text(
+            "rule CXX_COMPILER__a_Debug\n  command = g++ $in\n\npool link\n  depth = 2\ninclude rules/more.ninja\n",
+            encoding="utf-8",
+        )
+        (build / "rules" / "more.ninja").write_text("pool archive\n  depth = 1\n", encoding="utf-8")
+        ninja.plant_graph(
+            build,
+            "pool compile\n  depth = 4\npool broken\n  depth = many\n\ninclude rules/pools.ninja\n"
+            "build a.o: CXX_COMPILER__a_Debug a.cpp\n  pool = compile\n",
+        )
+        pooled = ninja.graph(build)
+        expect(
+            "graph reads each pool statement of build.ninja and of each included file, with its file, its line and "
+            "its depth, and the variable pool of an edge",
+            pooled.pools
+            == {
+                "compile": ninja.Pool(ninja.GRAPH_NAME, 1, 4),
+                "broken": ninja.Pool(ninja.GRAPH_NAME, 3, None),
+                "link": ninja.Pool("rules/pools.ninja", 4, 2),
+                "archive": ninja.Pool("rules/more.ninja", 1, 1),
+            }
+            and pooled.variables.get(0) == {"pool": "compile"}
+            and len(pooled.edges) == 1
+            and not graph.pools,
+        )
+        (build / "rules" / "more.ninja").unlink()
+        expect(
+            "graph refuses an included file that is missing, and names it",
+            "more.ninja is missing" in refused(lambda: ninja.graph(build), ninja.NinjaError)
+            and not refused(lambda: ninja.graph(build), ninja.NotNinja),
+        )
         ninja.plant_graph(build, "build a.o: phony\nbuild no colon here\n")
         expect(
             "graph refuses a build statement with no ':', with the file and the line",

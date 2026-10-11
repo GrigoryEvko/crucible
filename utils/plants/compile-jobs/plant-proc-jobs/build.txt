@@ -1,0 +1,2 @@
+# DEFAULT_JOBS of proc.py is 16, and the planted registry gives 4 jobs.  The rule gives the error program-jobs.
+format 1

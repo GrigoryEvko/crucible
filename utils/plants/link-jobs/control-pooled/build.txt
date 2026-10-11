@@ -1,0 +1,4 @@
+# The tree of each plant of the rule: each link and each archive are in the pool link of the depth 2, the setting of
+# the planted registry.  The compiles are in the pool compile, and the rule does not read them.  The rule gives no
+# error.
+format 1

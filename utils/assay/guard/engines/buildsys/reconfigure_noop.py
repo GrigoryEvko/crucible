@@ -58,7 +58,9 @@ THE RULE
 THE JOBS
     `cmake --build` gets no --parallel.  CMake then uses
     CMAKE_BUILD_PARALLEL_LEVEL of the environment, or else the default of
-    Ninja: the number of CPUs and two.
+    Ninja: the number of CPUs and two.  The Ninja pools of the build
+    (cmake/JobPools.cmake) hold the compiles and the links to the counts of
+    the rules compile-jobs and link-jobs.
 
 THE TEST
     The rule configures a build again and builds it, and a ctest test cannot

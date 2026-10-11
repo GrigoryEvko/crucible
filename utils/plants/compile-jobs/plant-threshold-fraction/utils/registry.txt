@@ -1,0 +1,4 @@
+# A planted registry: the threshold of the rule compile-jobs is no whole number.
+format 1
+rule compile-jobs engine=build scope=builddir ledger=none warn=2.5 error=2.5 unit=jobs doc=XV.14 | the planted setting | put the edge into the pool
+rule link-jobs engine=build scope=builddir ledger=none warn=2 error=2 unit=jobs doc=XV.14 | the planted setting | put the edge into the pool

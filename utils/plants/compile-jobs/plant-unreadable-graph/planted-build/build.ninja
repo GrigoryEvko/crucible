@@ -1,0 +1,3 @@
+include CMakeFiles/rules.ninja
+
+build a.o CXX_COMPILER__lib_unscanned_Debug a.cpp

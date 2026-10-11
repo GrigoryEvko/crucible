@@ -1,0 +1,7 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = compile
+build probe.bpf.o: CUSTOM_COMMAND probe.bpf.c
+build all: phony a.o probe.bpf.o
+default all

@@ -1,0 +1,3 @@
+# The test preset gives 8 jobs, and the build preset gives no jobs.  The planted registry gives 4 jobs.  The rule gives
+# the error program-jobs for each preset.
+format 1

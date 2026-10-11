@@ -1,0 +1,5 @@
+"""A planted proc.py: the default job count comes from an expression."""
+
+import os
+
+DEFAULT_JOBS = os.cpu_count() or 1

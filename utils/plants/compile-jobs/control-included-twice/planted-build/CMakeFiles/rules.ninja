@@ -1,0 +1,7 @@
+pool compile
+  depth = 4
+
+pool link
+  depth = 2
+
+include CMakeFiles/rules.ninja

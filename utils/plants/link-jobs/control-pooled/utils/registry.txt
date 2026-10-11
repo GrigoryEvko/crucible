@@ -1,0 +1,4 @@
+# A planted registry: the setting of the rule compile-jobs is 4 jobs, and of the rule link-jobs 2 jobs.
+format 1
+rule compile-jobs engine=build scope=builddir ledger=none warn=4 error=4 unit=jobs doc=XV.14 | the planted setting | put the edge into the pool
+rule link-jobs engine=build scope=builddir ledger=none warn=2 error=2 unit=jobs doc=XV.14 | the planted setting | put the edge into the pool

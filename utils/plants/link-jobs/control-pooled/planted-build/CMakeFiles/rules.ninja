@@ -1,0 +1,8 @@
+rule CXX_EXECUTABLE_LINKER__tool_Debug
+  command = g++ $in -o $out
+
+pool compile
+  depth = 4
+
+pool link
+  depth = 2

@@ -1,0 +1,13 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = compile
+build b.o: CXX_COMPILER__lib_unscanned_Debug b.cpp
+  pool = compile
+build probe.bpf.o: CUSTOM_COMMAND probe.bpf.c
+  pool = compile
+build gen.h: CUSTOM_COMMAND gen.in
+build liblib.a: CXX_STATIC_LIBRARY_LINKER__lib_Debug a.o b.o
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug b.o
+build all: phony liblib.a tool probe.bpf.o gen.h
+default all

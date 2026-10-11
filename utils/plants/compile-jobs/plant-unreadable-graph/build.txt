@@ -1,0 +1,2 @@
+# build.ninja holds a build statement with no ':'.  The rule gives the error input.
+format 1

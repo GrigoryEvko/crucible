@@ -1,0 +1,2 @@
+# The archive liblib.a is in no pool.  The rule gives the error outside-pool for the kind archive.
+format 1

@@ -1,0 +1,8 @@
+rule CXX_COMPILER__lib_unscanned_Debug
+  command = g++ -c $in -o $out
+
+pool compile
+  depth = 4
+
+pool link
+  depth = 2

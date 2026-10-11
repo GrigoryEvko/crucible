@@ -1,0 +1,2 @@
+# The included file of the graph has the pool compile and no pool link.  The rule gives the error no-pool.
+format 1

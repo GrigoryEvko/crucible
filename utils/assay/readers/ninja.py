@@ -2,12 +2,17 @@
 
 THE BUILD GRAPH
     graph(build_dir) reads BUILD_DIR/build.ninja through the lexical syntax
-    of the Ninja manual: the build statements, their variables and the
-    default targets.  A line that ends with an unescaped '$' continues on the
-    next line.  An indented line after a build statement is a variable of
-    that statement, `name = value`, until a line that is empty or not
-    indented.  The reader does not read an included file, because CMake
-    writes only rules there, and it does not expand a variable.
+    of the Ninja manual: the build statements, their variables, the default
+    targets and the pools.  A line that ends with an unescaped '$' continues
+    on the next line.  An indented line after a build statement is a variable
+    of that statement, `name = value`, until a line that is empty or not
+    indented.  A pool statement `pool NAME` has the indented variable
+    `depth = N`, the most edges of the pool that Ninja runs at one time.  The
+    variable `pool` of an edge names its pool.  CMake writes its pools into
+    CMakeFiles/rules.ninja, which build.ninja includes.  The reader reads
+    only the pool statements and the include statements of an included file,
+    because CMake writes only rules and pools there.  It does not expand a
+    variable.
 
     edge_kind() gives the kind of an edge from its rule.  A compile has a
     rule with the prefix CXX_COMPILER__ or C_COMPILER__.  A link or an
@@ -73,7 +78,7 @@ THE COST
 import enum
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -135,16 +140,27 @@ class Edge:
 
 
 @dataclass(frozen=True, slots=True)
-class Graph:
-    """The edges of build.ninja, the edge that writes each output, the default targets, and the variables of each edge.
+class Pool:
+    """One pool statement: its file relative to the build directory, its line, and its depth, or None for no integer."""
 
-    `variables` holds the variables of each edge that has one, by the index of the edge.
+    file: str
+    line: int
+    depth: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class Graph:
+    """The edges of build.ninja, the edge that writes each output, the default targets, the variables and the pools.
+
+    `variables` holds the variables of each edge that has one, by the index of
+    the edge.  `pools` holds each pool statement by its name.
     """
 
     edges: tuple[Edge, ...]
     producer: Mapping[str, int]
     defaults: tuple[str, ...]
     variables: Mapping[int, Mapping[str, str]]
+    pools: Mapping[str, Pool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,31 +261,18 @@ def _parse_build_line(path: str, line: int, body: str) -> Edge:
     return Edge(line, parts[0], tuple(_split_paths(outputs_text)), inputs, tuple(_split_paths(order_only_text)))
 
 
-def graph(build_dir: Path) -> Graph:
-    """Return the build statements, their variables and the default targets of build.ninja (THE BUILD GRAPH).
+def pool_depth(text: str) -> int | None:
+    """Return the depth of a pool statement from the value of its variable `depth`, or None when it is no integer."""
+    return int(text) if text.isascii() and text.isdigit() else None
 
-    Complexity: linear in the length of the file.
 
-    Raises:
-        NotNinja: If the build directory has no build.ninja
-        NinjaError: If the file cannot be read, or a build statement has no ':' or no rule
+def _statements(text: str) -> Iterator[tuple[int, str]]:
+    """Give each statement of a Ninja file with its first line: a line, and each line that a '$' at its end continues.
+
+    Complexity: linear in the length of the text.
     """
-    path = graph_file(build_dir)
-    try:
-        text = path.read_text(encoding="utf-8", errors="surrogateescape")
-    except FileNotFoundError:
-        raise NotNinja(
-            f"{path} is missing: a generator other than Ninja made the build, or no configure ran.  {GRAPH_WRITER}"
-        ) from None
-    except OSError as problem:
-        raise NinjaError(f"{path} cannot be read: {problem}") from None
-    edges: list[Edge] = []
-    producer: dict[str, int] = {}
-    defaults: list[str] = []
-    variables: dict[int, dict[str, str]] = {}
     pending = ""
     pending_line = 0
-    variable_edge: int | None = None
     for number, raw in enumerate(text.split("\n"), start=1):
         if not pending:
             pending_line = number
@@ -277,23 +280,115 @@ def graph(build_dir: Path) -> Graph:
         if trailing % 2 == 1:
             pending += raw[:-1]
             continue
-        statement = pending + raw
+        yield pending_line, pending + raw
         pending = ""
-        if statement[:1] in (" ", "\t") and statement.strip():
+
+
+def _is_variable(statement: str) -> bool:
+    """Tell if a statement is an indented variable line of the statement before it."""
+    return statement[:1] in (" ", "\t") and bool(statement.strip())
+
+
+class _PoolStatements:
+    """The pool statements and the include statements of one Ninja file, read one statement at a time."""
+
+    __slots__ = ("current", "file", "includes", "pools")
+
+    def __init__(self, file: str, pools: dict[str, Pool], includes: list[str]) -> None:
+        """Keep the name of the file, and the pools and the include paths that the reads add to."""
+        self.file = file
+        self.pools = pools
+        self.includes = includes
+        self.current: str | None = None
+
+    def read(self, line: int, statement: str) -> bool:
+        """Read one statement, and return True when it is a pool, the depth of a pool or an include."""
+        if _is_variable(statement):
             name, separator, value = statement.partition("=")
-            if variable_edge is not None and separator:
+            if self.current is None or not separator:
+                return False
+            if name.strip() == "depth":
+                known = self.pools[self.current]
+                self.pools[self.current] = Pool(known.file, known.line, pool_depth(value.strip()))
+            return True
+        self.current = None
+        if statement.startswith("pool "):
+            self.current = statement[len("pool ") :].strip()
+            self.pools[self.current] = Pool(self.file, line, None)
+            return True
+        if statement.startswith("include "):
+            self.includes.append(statement[len("include ") :].strip())
+            return True
+        return False
+
+
+def _ninja_text(path: Path, missing: str) -> str:
+    """Return the text of one Ninja file.
+
+    Raises:
+        NotNinja: If the file is build.ninja and it is missing
+        NinjaError: If the file cannot be read, or an included file is missing
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="surrogateescape")
+    except FileNotFoundError:
+        error = NotNinja if path.name == GRAPH_NAME else NinjaError
+        raise error(f"{path} is missing: {missing}.  {GRAPH_WRITER}") from None
+    except OSError as problem:
+        raise NinjaError(f"{path} cannot be read: {problem}") from None
+
+
+def graph(build_dir: Path) -> Graph:
+    """Return the build statements, their variables, the default targets and the pools of build.ninja (THE BUILD GRAPH).
+
+    CMake writes its pools into CMakeFiles/rules.ninja.  The reader then reads
+    the pool statements of build.ninja and of each file that an include
+    statement names, at each depth.  Complexity: linear in the length of the
+    files.
+
+    Raises:
+        NotNinja: If the build directory has no build.ninja
+        NinjaError: If a file cannot be read, or an included file is missing.  Also if a build statement has no ':'
+            or no rule
+    """
+    path = graph_file(build_dir)
+    text = _ninja_text(path, "a generator other than Ninja made the build, or no configure ran")
+    edges: list[Edge] = []
+    producer: dict[str, int] = {}
+    defaults: list[str] = []
+    variables: dict[int, dict[str, str]] = {}
+    pools: dict[str, Pool] = {}
+    includes: list[str] = []
+    pool_statements = _PoolStatements(GRAPH_NAME, pools, includes)
+    variable_edge: int | None = None
+    for line, statement in _statements(text):
+        if _is_variable(statement) and variable_edge is not None:
+            name, separator, value = statement.partition("=")
+            if separator:
                 variables.setdefault(variable_edge, {})[name.strip()] = value.strip()
+            continue
+        if pool_statements.read(line, statement) or _is_variable(statement):
+            variable_edge = None
             continue
         variable_edge = None
         if statement.startswith("default "):
             defaults.extend(_split_paths(statement[len("default ") :]))
         elif statement.startswith("build "):
-            edge = _parse_build_line(str(path), pending_line, statement[len("build ") :])
+            edge = _parse_build_line(str(path), line, statement[len("build ") :])
             variable_edge = len(edges)
             for output in edge.outputs:
                 producer[output] = len(edges)
             edges.append(edge)
-    return Graph(tuple(edges), producer, tuple(defaults), variables)
+    seen: set[str] = set()
+    while includes:
+        included = includes.pop(0)
+        if included in seen:
+            continue
+        seen.add(included)
+        reader = _PoolStatements(included, pools, includes)
+        for line, statement in _statements(_ninja_text(build_dir / included, f"{GRAPH_NAME} includes it")):
+            reader.read(line, statement)
+    return Graph(tuple(edges), producer, tuple(defaults), variables, pools)
 
 
 def edge_kind(rule: str) -> str:

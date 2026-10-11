@@ -2603,7 +2603,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="loop derive session-oracle", description=__doc__.split("\n\n")[0])
     parser.add_argument("mode", choices=("regenerate", "derive", "emit"))
     parser.add_argument("--cxx", help="the project compiler (regenerate, and derive for the semantics rows)")
-    parser.add_argument("--jobs", type=int, default=32, help="parallel compiles of the probes (regenerate, derive)")
+    parser.add_argument("--jobs", type=int, default=proc.DEFAULT_JOBS,
+                        help="parallel compiles of the probes (regenerate, derive)")
     parser.add_argument("--no-shrink", action="store_true",
                         help="regenerate without the minimal corpus, for a quick look")
     parser.add_argument("--at", metavar="REV",
