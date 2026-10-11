@@ -52,6 +52,14 @@ THE CONFIGURATION
     A write of a build with a configuration that the ledger does not hold
     writes nothing and fails, unless it gives --add-configuration.
 
+THE HEAD COMMENT
+    The module owns the head comment of the ledger of each rule:
+    PARSE_LEDGER_COMMENT, FANOUT_LEDGER_COMMENT and
+    INSTRUCTION_LEDGER_COMMENT.  Each write gives the ledger the comment of
+    its rule, and a different head comment of the file goes
+    (assay.core.ledger, THE HEAD COMMENT).  A change of the rule then
+    changes the comment in the same commit.
+
     A rule does not apply to a call with no build directory.  It also does
     not apply to a build that the census does not read:
       * a build of a generator that is not Ninja
@@ -197,6 +205,82 @@ FANOUT_TOP = 10
 FANOUT_KEPT = 30
 INSTRUCTION_RULE = "instruction-total"
 INSTRUCTION_GIGA = 10**9
+# The head comment of the ledger of each rule, which each write gives the ledger (THE HEAD COMMENT).
+CENSUS_FACTS_COMMENT = (
+    "# The facts of a configuration:\n"
+    "#   configuration NAME KEY VALUE\n"
+    "#   The build kind, the target tier and each cache variable that changes the objects of all, as the\n"
+    "#   configuration rows of utils/ledgers/quarantine.txt.  The rows of the configuration of a build judge it.\n"
+    "#   THE POLICY of utils/assay/core/configuration.py judges a build of a configuration that this ledger\n"
+    "#   does not hold, and a write from such a build needs --add-configuration.\n"
+    "#   The KIND cell of each row that follows holds the NAME of a configuration.\n"
+)
+PARSE_LEDGER_COMMENT = (
+    "# The ledger of the rule parse-total: the baseline of the bytes that the compiles of one build read.\n"
+    "# `python3 utils/bin/guard explain parse-total` tells the rule, and\n"
+    "# `python3 utils/bin/guard write --rule parse-total --build-dir BUILD` writes the rows of one configuration\n"
+    "# again.\n"
+    "#\n"
+    f"{CENSUS_FACTS_COMMENT}"
+    "#\n"
+    "# The two total rows of a configuration:\n"
+    "#   - | KIND | BYTES | objects | REASON\n"
+    "#   - | KIND | BYTES | fixtures | REASON\n"
+    "#   The sum, over each object of the target all and over each negative fixture, of the bytes of each file\n"
+    "#   that its compile reads, at the last write.  The reason tells why the baseline has its value.\n"
+    "#\n"
+    "# A file row:\n"
+    "#   PATH | KIND | BYTES/READERS | - | -       for a file of the tree, or @build/PATH of the build directory\n"
+    "#   - | KIND | BYTES/READERS | NAME | -       for another file, with the name <system>/PATH\n"
+    "#   The size of one file and the number of compiles that read it, for each file whose product was at least\n"
+    "#   0.05 % of the total.  The rows tell which files a change of the total comes from.\n"
+    "#\n"
+    "# A growth over the baseline gives a warning, and over the error threshold of the measured rule\n"
+    "# parse-total of utils/registry.txt an error.  A fall of more than the warning threshold is an error\n"
+    "# too.  To accept a growth, raise the baseline in the same commit with a reason:\n"
+    "#   python3 utils/bin/guard write --rule parse-total --build-dir build --reason TEXT\n"
+)
+FANOUT_LEDGER_COMMENT = (
+    "# The ledger of the rule header-fanout: the headers of include/ whose bytes alone times readers were the\n"
+    "# largest at the last write.  `python3 utils/bin/guard explain header-fanout` tells the rule, and\n"
+    "# `python3 utils/bin/guard write --rule header-fanout --build-dir BUILD` writes the rows of one\n"
+    "# configuration again.\n"
+    "#\n"
+    f"{CENSUS_FACTS_COMMENT}"
+    "#\n"
+    "# A row:  HEADER | KIND | ALONE BYTES/READERS | - | -\n"
+    "#   ALONE BYTES  the bytes that the sentinel of the header in test/layer includes after its source\n"
+    "#   READERS      the objects of the target all and the negative fixtures that read the header\n"
+    "#\n"
+    "# A header that enters the ten largest products, and a header whose product changes by more than the\n"
+    "# threshold of the measured rule header-fanout of utils/registry.txt, give a warning.  To accept the cost,\n"
+    "# write the rows again:\n"
+    "#   python3 utils/bin/guard write --rule header-fanout --build-dir build\n"
+)
+INSTRUCTION_LEDGER_COMMENT = (
+    "# The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of one\n"
+    "# build.  `python3 utils/bin/guard explain instruction-total` tells the rule, and\n"
+    "# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the rows of one\n"
+    "# configuration again.\n"
+    "#\n"
+    f"{CENSUS_FACTS_COMMENT}"
+    "#\n"
+    "# The two rows of a configuration:\n"
+    "#   - | KIND | INSTRUCTIONS | objects | REASON\n"
+    "#   - | KIND | INSTRUCTIONS | fixtures | REASON\n"
+    "#   The sum, over each object of the target all and over each negative fixture, of the user instructions\n"
+    "#   of the compile that made it, at the last write.  The record of a ccache hit keeps the count of the\n"
+    "#   compile that made its object, from the cost store of utils/assay/core/cost_store.py.  A result of the\n"
+    "#   store of the fixture driver keeps the count of the compile that made it.  A direct compile and a\n"
+    "#   ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).\n"
+    "#\n"
+    "# A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives\n"
+    "# a warning, and over its error threshold an error.  A fall of more than the warning threshold is an error\n"
+    "# too.  The count covers the template instantiation and the constant evaluation that the bytes of\n"
+    "# utils/ledgers/parse-total.txt do not see.  To accept a growth, raise the baseline in the same commit\n"
+    "# with a reason:\n"
+    "#   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT\n"
+)
 
 
 class CensusRefusal(rule_ledger.LedgerError):
@@ -803,7 +887,12 @@ def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
         for configuration in totals
         for name, (size, readers) in files.get(configuration, {}).items()
     ]
-    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
+    return replace(
+        ledger,
+        comment=PARSE_LEDGER_COMMENT,
+        configurations=configurations,
+        base={entry.key: entry for entry in entries},
+    )
 
 
 # ── header-fanout ─────────────────────────────────────────────────
@@ -1036,7 +1125,12 @@ def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: st
         for configuration, named in rows.items()
         for name, row in named.items()
     ]
-    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
+    return replace(
+        ledger,
+        comment=FANOUT_LEDGER_COMMENT,
+        configurations=configurations,
+        base={entry.key: entry for entry in entries},
+    )
 
 
 # ── instruction-total ─────────────────────────────────────────────
@@ -1154,7 +1248,12 @@ def instruction_written(context: BuildContext, ledger: rule_ledger.Ledger, reaso
     old = totals.get(frame.name)
     census_refused(frame, old, objects + fixtures, reason, instruction_text)
     entries = census_total_entries({**totals, frame.name: census_new_total(old, objects, fixtures, reason)})
-    return replace(ledger, configurations=configurations, base={entry.key: entry for entry in entries})
+    return replace(
+        ledger,
+        comment=INSTRUCTION_LEDGER_COMMENT,
+        configurations=configurations,
+        base={entry.key: entry for entry in entries},
+    )
 
 
 # The keys are text, because assay.guard.engines.meta.runner reads the keys of the table with no import.

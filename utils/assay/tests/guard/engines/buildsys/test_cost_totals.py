@@ -9,7 +9,8 @@ holds the refusals of a ledger.  This test holds what a plant cannot hold:
   * a build of a held name with a different fact
   * the configuration of a build that is not planted
   * the configuration rows of a write, and the write of a configuration that
-    the ledger does not hold.
+    the ledger does not hold
+  * the head comment of a write (THE HEAD COMMENT).
 Exit 0 when each case holds, else 1.
 """
 
@@ -66,6 +67,8 @@ configuration {KIND} kind {KIND}
 include/Base.h | {KIND} | 1000/4 | - | -
 """,
 }
+# A head comment that a different writer wrote, with an incorrect fact.
+STALE_HEAD = "# The rows count the last real compile of each unit.\n"
 # The output of -Q --help=target of a planted compiler: x86-64 with no flag, and znver5 with -march=native.
 COMPILER_HELP = "The following options are target specific:\n  -march=   \t\tx86-64\n  -mtune=   \t\tgeneric\n"
 # The rows of a build that a planted compiler compiles, with one object of all that takes -march=native.
@@ -235,6 +238,26 @@ def write_cases(expect: testing.Expect) -> None:
             )
 
 
+def head_cases(expect: testing.Expect) -> None:
+    """A write gives the ledger the head comment that the module owns, and a different head goes (THE HEAD COMMENT)."""
+    owned = {
+        "parse-total": cost_totals.PARSE_LEDGER_COMMENT,
+        "instruction-total": cost_totals.INSTRUCTION_LEDGER_COMMENT,
+        "header-fanout": cost_totals.FANOUT_LEDGER_COMMENT,
+    }
+    for rule_id in RULES:
+        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+            root = Path(scratch)
+            plant(root, BUILD_ROWS, rule_id, LEDGER_ROWS[rule_id])
+            path = rule_ledger.ledger_path(rule_id, root)
+            path.write_text(f"{STALE_HEAD}{path.read_text(encoding='utf-8')}", encoding="utf-8")
+            text = written_text(rule_id, root, planted_configuration())
+            expect(
+                f"{rule_id}: a write replaces a head comment that a different writer wrote with the head of the rule",
+                text.startswith(owned[rule_id]) and STALE_HEAD not in text,
+            )
+
+
 def add_refused(rule_id: str, root: Path, configuration: build_config.BuildConfiguration) -> str:
     """Return the refusal of a write of a configuration with --add-configuration, or an empty text."""
     try:
@@ -278,4 +301,4 @@ def real_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (policy_cases, write_cases, real_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (policy_cases, write_cases, head_cases, real_cases))

@@ -75,7 +75,7 @@ BASE_LIBRARIES = frozenset({"foundation", "fixy"})
 BASE_SCOPES = frozenset({"foundation", "fixy"})
 # The library that the root must make.  Without it, the rule reads no member of the base.
 REQUIRED_LIBRARY = "foundation"
-# The head comment of a new ledger.
+# The head comment that each write gives the ledger (assay.core.ledger, THE HEAD COMMENT).
 LEDGER_COMMENT = (
     "# The ledger of the rule static-tls of utils/registry.txt: the members of the static libraries with base\n"
     "# thread-local variables that can be more than the error threshold, one row for each member and build kind.\n"
@@ -312,12 +312,11 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     except (runner.BuildError, rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
         return 1
-    if not rule_ledger.ledger_path(RULE, request.root).is_file():
-        if not new.base:
-            told = f"no member of {kind} is over the error threshold, and {RULE} has no rows"
-            check_report.write_line(f"guard write: {told}")
-            return 0
-        new = replace(new, comment=LEDGER_COMMENT)
+    if not new.base and not rule_ledger.ledger_path(RULE, request.root).is_file():
+        told = f"no member of {kind} is over the error threshold, and {RULE} has no rows"
+        check_report.write_line(f"guard write: {told}")
+        return 0
+    new = replace(new, comment=LEDGER_COMMENT)
     changed = rule_ledger.store(new, request.root)
     told = "" if changed else ", with no change"
     check_report.write_line(f"guard write: {rule_ledger.shown_path(RULE)} holds {len(new.base)} rows{told}")

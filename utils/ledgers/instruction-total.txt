@@ -6,15 +6,19 @@
 # The facts of a configuration:
 #   configuration NAME KEY VALUE
 #   The build kind, the target tier and each cache variable that changes the objects of all, as the
-#   configuration rows of utils/ledgers/quarantine.txt.  A build with other facts has no baseline here.
+#   configuration rows of utils/ledgers/quarantine.txt.  The rows of the configuration of a build judge it.
+#   THE POLICY of utils/assay/core/configuration.py judges a build of a configuration that this ledger
+#   does not hold, and a write from such a build needs --add-configuration.
 #   The KIND cell of each row that follows holds the NAME of a configuration.
 #
 # The two rows of a configuration:
 #   - | KIND | INSTRUCTIONS | objects | REASON
 #   - | KIND | INSTRUCTIONS | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the user instructions
-#   of the compiler run of its last real compile, at the last write.  A direct compile and a ccache miss
-#   give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
+#   of the compile that made it, at the last write.  The record of a ccache hit keeps the count of the
+#   compile that made its object, from the cost store of utils/assay/core/cost_store.py.  A result of the
+#   store of the fixture driver keeps the count of the compile that made it.  A direct compile and a
+#   ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
 #
 # A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives
 # a warning, and over its error threshold an error.  A fall of more than the warning threshold is an error
@@ -113,8 +117,8 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SYNTAX_ONLY off
-- | x86_64-debug-asan | 9073785138986 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-asan | 9705371661033 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
+- | x86_64-debug-asan | 9072469793734 | fixtures | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
+- | x86_64-debug-asan | 9702967994701 | objects | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
 - | x86_64-debug-asan-bench-fuzz | 9073785138986 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
 - | x86_64-debug-asan-bench-fuzz | 14335357260672 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
 - | x86_64-debug-tsan | 9056505457557 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler

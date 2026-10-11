@@ -3,7 +3,7 @@
 THE FILE
     A ledger obeys the rows grammar of assay.core.rows:
 
-        # The head comment.  The module keeps it on each write.
+        # The head comment (THE HEAD COMMENT).
         format 1
         rule RULE
         configuration NAME KEY VALUE
@@ -21,6 +21,16 @@ THE FILE
     is "" for such a row, in a base row and in a difference row.  A head
     @NAME with no "/" starts a difference row, so the head of a base row of a
     file of the build directory, @build/PATH, is never a difference row.
+
+THE HEAD COMMENT
+    The writer of a ledger owns its head comment.  A writer with a head
+    text of its own gives the ledger that text on each write, with
+    replace(ledger, comment=TEXT).  A head with an incorrect fact then
+    goes at the next write.  Each other write keeps the head of
+    the file, and a new ledger gets NEW_COMMENT.  Examples of a writer with
+    a head text are the writers of the measured rules
+    (assay.guard.engines.buildsys.cost_budgets) and of the census totals
+    (assay.guard.engines.buildsys.cost_totals).
 
 THE POLICIES
     count     VALUE is a positive count.  A key with more findings than its

@@ -96,7 +96,8 @@ THE LEDGERS
     with a row over the warning threshold.  It removes each row of an item at
     or below that threshold.  It keeps the rows of the other names and the
     rows of a ccache hit.  It keeps the reason of each item that keeps its
-    row, and the head comment.  An item over the error threshold with no row
+    row.  It gives the ledger the head comment LEDGER_COMMENT
+    (assay.core.ledger, THE HEAD COMMENT).  An item over the error threshold with no row
     gets a new row with the reason of --reason.  An item over the warning
     threshold only gets a keep row by hand, with its reason, and the next
     write gives it its value.  A row of the build kind keeps an item of a
@@ -213,7 +214,7 @@ HEADER_ALONE_LAYERS = {
 HEADER_ALONE_SENTINEL = "/layer_sentinel_"
 HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
-# The head comment of a ledger that the member function written makes.  ROW is the row of the item of the rule.
+# The head comment that the member function written gives each ledger.  ROW is the row of the item of the rule.
 LEDGER_COMMENT = (
     "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the warning threshold\n"
     "# of the rule, one row for each item and build kind or configuration.  A row is '{row}'.\n"
@@ -242,7 +243,7 @@ BASELINE_TOTALS = ("total-fixture-cpu", "total-test-cpu", "link-count", "total-l
 # The entity of the baseline row of a total, and the reason of a new row when the write gives none.
 TOTAL_ENTITY = "total"
 TOTAL_DEFAULT_REASON = "the measure of the build at the last write of the ledger"
-# The head comment of a new ledger of a total.
+# The head comment that each write gives the ledger of a total.
 TOTAL_LEDGER_COMMENT = (
     "# The ledger of the rule {rule}: the baseline of the total of each configuration of a build.\n"
     "# `python3 utils/bin/guard explain {rule}` tells the rule, and `python3 utils/bin/guard write --rule {rule}\n"
@@ -935,10 +936,9 @@ def budget_written(
             f"these items are more than the error threshold and have no row.  Give the reason of their rows with "
             f"--reason: {', '.join(unexplained)}"
         )
-    is_new = not rule_ledger.ledger_path(rule_id, context.root).is_file()
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, row=cost_meter.ITEM_ROWS[shape], unit=units)
-    return replace(ledger, base=base, comment=comment if is_new else ledger.comment)
+    return replace(ledger, base=base, comment=comment)
 
 
 def compile_first_target_of(object_path: Path) -> str | None:
@@ -1743,7 +1743,7 @@ def total_measure_of(context: BuildContext, rule_id: str) -> TotalMeasure:
 def total_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Write the configuration rows and the baseline row of the configuration of the build again (THE TOTALS).
 
-    The write keeps the rows of the other configurations.  A new ledger gets the head comment of a total.
+    The write keeps the rows of the other configurations, and it gives the ledger the head comment of a total.
 
     Raises:
         rule_ledger.LedgerError: If the rule has no baseline, an input cannot be used, or the build gives no total.
@@ -1786,8 +1786,7 @@ def total_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
     )
     base = {key: item for key, item in ledger.base.items() if key.kind != configuration.name}
     base[entry.key] = entry
-    is_new = not ledger.configurations and not ledger.base
-    comment = TOTAL_LEDGER_COMMENT.format(rule=rule_id) if is_new else ledger.comment
+    comment = TOTAL_LEDGER_COMMENT.format(rule=rule_id)
     return replace(ledger, comment=comment, configurations=configurations, base=base)
 
 

@@ -726,15 +726,15 @@ def write_kind_rows(rule_id: str, form: str, path: str, rows: dict[tuple[str, st
                     comment: str) -> None:
     """Write the ledger of a measured rule of the policy max with these rows, sorted by their keys.
 
-    The ledger keeps its head comment, and a new ledger takes `comment`.  A
-    ledger with no row has no file.
+    The ledger takes `comment` as its head comment on each write
+    (assay.core.ledger, THE HEAD COMMENT).  A ledger with no row has no file.
 
     Args:
         rule_id: The ID of the measured rule
         form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
         path: The ledger, from ledger_file()
         rows: The value and the reason of each kind and item
-        comment: The head comment of a new ledger, with its line breaks
+        comment: The head comment of the ledger, with its line breaks
 
     Raises:
         OSError: If the ledger or the registry cannot be read, or the ledger cannot be written
@@ -746,9 +746,7 @@ def write_kind_rows(rule_id: str, form: str, path: str, rows: dict[tuple[str, st
     from assay.core import ledger as rule_ledger
 
     file = Path(path)
-    ledger = rule_ledger.read(rule_ledger.rule_of(rule_id), file=file)
-    if not file.is_file():
-        ledger = replace(ledger, comment=comment)
+    ledger = replace(rule_ledger.read(rule_ledger.rule_of(rule_id), file=file), comment=comment)
     base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
     for (kind, item), (value, reason) in rows.items():
         item_path, entity = item_cells(item, form)
