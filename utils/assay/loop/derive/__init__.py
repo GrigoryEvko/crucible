@@ -15,10 +15,10 @@ THE REFRESH
         The rule derived-files compares each file that a target writes with
         the bytes that its target gives.
     `loop derive` writes each generated file of REFRESH, and then it runs
-    each check of CHECKS.  The mint inventory reads the build directory
-    REPO_ROOT/build.  Run it before `git commit`.  It names each file
-    that the writes changed, and those files belong in the same commit.  A
-    change of the tree from before the run is not named.  A check that is
+    each check of CHECKS.  The mint inventory and the row-hash golden read
+    the build directory REPO_ROOT/build.  Run it before `git commit`.  It
+    names each file that the writes changed, and those files belong in the
+    same commit.  A change of the tree from before the run is not named.  A check that is
     still red after the writes reads a list that a person keeps, so it needs
     an edit and not a second run.
 
@@ -30,6 +30,8 @@ THE TARGETS
 
     mint-inventory    misc/mint-inventory.md, from the mint records of a build (--write, --check, --stdout,
                       --build-dir DIR)
+    row-hashes        utils/tools/row_hash_golden.txt, the output of the program dump_row_hashes of a build
+                      (--write, --check, --stdout, --build-dir DIR)
     witness-fixtures  the negative fixtures of the witness rows of utils/rule-table.txt (--write, --check)
     walk-units        test/layer/walk-checks.txt (--write, --check, --measure BUILD_DIR, --explain CHECK_FILE)
     header-costs      the heavy and light rows of utils/rule-table.txt (--write, --check, --measure BUILD_DIR
@@ -77,6 +79,7 @@ class Target:
 
 TARGETS = {
     "mint-inventory": Target("assay.loop.derive.mint_inventory", (), ("--write",), ("--check",)),
+    "row-hashes": Target("assay.loop.derive.row_hashes", (), ("--write",), ("--check",)),
     "witness-fixtures": Target("assay.loop.derive.witness_fixtures", (), ("--write",), ("--check",)),
     "walk-units": Target("assay.loop.derive.walk_units", (), ("--write",), ("--check",)),
     "header-costs": Target("assay.loop.derive.header_costs", (), ("--write",), ("--check",)),
@@ -84,8 +87,8 @@ TARGETS = {
     "session-oracle": Target("assay.oracle.runner"),
 }
 # The targets that the refresh writes, in this order.
-REFRESH = ("mint-inventory", "witness-fixtures", "walk-units", "header-costs")
-# The build directory of the mint inventory in the refresh.
+REFRESH = ("mint-inventory", "row-hashes", "witness-fixtures", "walk-units", "header-costs")
+# The build directory of the mint inventory and of the row-hash golden in the refresh.
 BUILD = REPO_ROOT / "build"
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
 CHECKS = (

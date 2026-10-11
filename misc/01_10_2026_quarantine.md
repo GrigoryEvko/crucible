@@ -2108,7 +2108,7 @@ The files of `utils/tools/`, `utils/toolchain/`, `test/` and `bench/` that table
 | `utils/tools/quarantine/test/check_plugin.py` | The plugin test (19 parts) | `assay/guard/engines/plugin/witness.py` |
 | The 62 C++ files and the 3 tables of `utils/tools/quarantine/test/` | The fixtures of the plugin test, with a planted tree of `include/` and `src/` | `utils/plants/quarantine/`, and the plants directory of each other plugin rule |
 | The 6 files of `crucible_hwprobe*` and `dump_row_hashes.cpp` in `utils/tools/` | C++ tools | They stay |
-| `utils/tools/row_hash_golden.txt` | The golden of `dump_row_hashes`, which the test `row_hash_golden_diff` compares | It stays |
+| `utils/tools/row_hash_golden.txt` | The golden of `dump_row_hashes`, which `loop derive row-hashes` writes and the rule `derived-files` compares | It stays |
 | The 2 files of `utils/tools/lsp_code_action_plugin/` | A C++ tool | They stay |
 | `utils/tools/mutation/gates.py`, `run.py` | The gate mutants | `assay/mutation/gates.py` and `assay/mutation/run.py`, behind the build rule `gate-mutants` |
 | `utils/tools/mutation/invalid-exemptions.txt` | The admitted invalid mutants | `utils/ledgers/gate-mutants.txt` |

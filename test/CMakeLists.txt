@@ -454,32 +454,9 @@ endforeach()
 # --write` writes, and the rule mint-floor of the engine plugin (the test
 # guard_plugin) holds the HS14 floor.  The test of the module,
 # assay_loop_derive_test_mint_inventory, plants a census and a fixture
-# directory.
-# The cross-build row_hash determinism witness.  The test runs
-# dump_row_hashes and diffs its output against the committed golden.  A
-# mismatch says either that the fold changed on purpose, and the golden
-# moves in the same commit, or that a TU-context-fragility regression in
-# display_string_of moved stable_type_id<T> for some wrapper, which is a
-# latent federation-cache bug.
-#
-# The fold is one fold over the graded shape, and the lattice identity is
-# one of its three inputs, so every graded wrapper folds a reflected name.
-# The multi-axis binding in fixy/Fn.h folds such an identity for every
-# axis but two.
-#
-# Gated on x86_64: the payload lines fold display_string_of, so the
-# absolute matrix is bit-stable only within one (arch, compiler, stdlib)
-# tuple. The golden's own header prints the toolchain tag, so a diff says
-# which of the two it was. The arch-independent invariants (distinctness
-# and nesting-order sensitivity) run on every arch in their own tests.
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-  crucible_script_test(NAME row_hash_golden_diff
-    COMMAND bash -c
-      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/utils/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-  set_tests_properties(row_hash_golden_diff PROPERTIES
-      LABELS "ci_guard")
-endif()
+# directory.  The same rule compares utils/tools/row_hash_golden.txt, the
+# cross-build witness of the row-hash fold, with the output of the program
+# dump_row_hashes of this build on x86_64 (`loop derive row-hashes`).
 crucible_test(test_calibrate)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
@@ -5066,7 +5043,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # mypy and ruff, the package scope, the STE table, the import closure of the
 # rule test-registration, the counted rules of the
 # engine plugin, the writer of the walk list, the writer of the header
-# costs and the driver of a parse build plant their input in throwaway trees.  The tests of the reader of
+# costs, the writer of the row-hash golden and the driver of a parse build
+# plant their input in throwaway trees.  The tests of the reader of
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
 # of the import closure imports the module of each hidden subcommand of the
 # masters in a new interpreter.
@@ -5101,7 +5079,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_decide_cite_ratio
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
-        loop.derive.test_mint_inventory loop.test_inputs loop.test_syntax loop.test_land loop.test_heavy)
+        loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
+        loop.test_land loop.test_heavy)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
