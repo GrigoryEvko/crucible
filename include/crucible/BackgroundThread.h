@@ -277,9 +277,9 @@ public:
 
     // Own cache line: the background writes it, the foreground reads it for
     // diagnostics.  Sharing a line with the vectors above would invalidate
-    // the foreground's copy on every push_back.
-    alignas(64)::fixy::Monotonic<uint32_t> iterations_completed = ::fixy::mint_monotonic<uint32_t>(0);
-    uint32_t last_iteration_length = 0;
+    // the foreground's copy on every push_back.  The foreground reads it
+    // while the detect stage writes it, so the counter is atomic.
+    alignas(64)::fixy::AtomicMonotonic<uint32_t> iterations_completed = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
 private:
     // Each acquisition mints a token of this tag, so the token witnesses

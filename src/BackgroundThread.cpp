@@ -231,8 +231,7 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     total = ::foundation::sat::sub_sat(total, warmup);
 
     const uint32_t completed_len = ::foundation::sat::sub_sat(total, IterationDetector::K);
-    last_iteration_length = completed_len;
-    iterations_completed.bump();
+    (void)iterations_completed.bump();
 
     BgBuildWork* work = nullptr;
     if (meta_log && completed_len > 0) {

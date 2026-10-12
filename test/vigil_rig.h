@@ -67,6 +67,7 @@ void test_divergence_drops_a_half_finished_alignment();
 // The producer role and its surface (test_vigil_producer.cpp).
 void test_record_op_claims_the_producer_role();
 void test_producer_surface_takes_the_claim_context();
+void test_foreground_reads_the_iteration_count();
 
 // A region keeps the tensor metadata that the foreground recorded, after the
 // foreground writes over the metadata log (test_vigil_metadata.cpp).

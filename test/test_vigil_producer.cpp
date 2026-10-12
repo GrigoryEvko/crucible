@@ -55,4 +55,29 @@ void test_producer_surface_takes_the_claim_context() {
     crucible::test::pass("  test_producer_surface_takes_the_claim_context: PASSED\n");
 }
 
+// The foreground reads the count of iterations while the detect stage writes
+// it.  After the flush, the test records two more regions and reads the count
+// until it moves, with no other synchronization with the pipeline.  A count
+// that is not atomic gives a data race here, and ThreadSanitizer reports it.
+void test_foreground_reads_the_iteration_count() {
+    crucible::Vigil vigil;
+    divrig::feed_one_region(vigil, 0);
+    vigil.flush();
+    const uint32_t after_flush = vigil.bg_iterations_completed();
+    assert(after_flush > 0 && "one region needs at least one iteration");
+
+    divrig::feed_one_region(vigil, 4);
+    divrig::feed_one_region(vigil, 8);
+    while (vigil.bg_iterations_completed() <= after_flush) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+
+    vigil.flush();
+    const uint32_t after_all = vigil.bg_iterations_completed();
+    assert(after_all > after_flush && "the two regions after the flush add iterations");
+
+    crucible::test::pass("  test_foreground_reads_the_iteration_count: PASSED (after the flush {}, at the end {})\n",
+                         after_flush, after_all);
+}
+
 }  // namespace test_vigil

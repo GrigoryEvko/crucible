@@ -499,7 +499,6 @@ public:
     [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
 
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
-    [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
     [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
     [[nodiscard]] bool bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
