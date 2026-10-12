@@ -11,7 +11,7 @@
 # A reviewer writes each reason.  `python3 utils/bin/guard explain detail-namespace` tells the rule.
 format 1
 rule detail-namespace
-@build/test/fixy/armed_roster/witness_roster.h | detail-use | 20 | namespace-scope: fixy::concurrent::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brands and the stage functions of the witnesses of the channels, the stages and the endpoints are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 17 | namespace-scope: fixy::concurrent::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brands and the stage functions of the witnesses of the channels, the stages and the endpoints are in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 8 | namespace-scope: fixy::concurrent::swmr_session::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags and the brands of the witnesses of the single-writer session are in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::detail | the generated roster of the witness rows names each witness type of the rule table, and the probe region of the witness of the NUMA placement is in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::session::detail | the generated roster of the witness rows names each witness type of the rule table, and the handle core of the session layer is in this namespace
@@ -21,7 +21,7 @@ rule detail-namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: foundation::permissions::detail | the generated roster of the witness rows names each witness type of the rule table, and the row cell of the permissions is in this namespace
 test/fixy/rejections_generated.h | detail-use | 1 | namespace-scope: fixy::atom::detail | reads the atom roster that the generated rejections cover
 test/fixy/rejections_generated.h | detail-use | 2 | namespace-scope: fixy::detail | reads the refusal tier of each generated rejection
-test/fixy/row_hash_census.h | detail-use | 7 | namespace-scope: fixy::concurrent::detail | hashes the row of the stage fakes
+test/fixy/row_hash_census.h | detail-use | 4 | namespace-scope: fixy::concurrent::detail | hashes the row of the stage fakes
 test/fixy/row_hash_census.h | detail-use | 3 | namespace-scope: fixy::detail | hashes the row of the mapping and view probes
 test/fixy/session_crash_attack.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/session_global_attack.h | detail-use | 1 | test_session_global_attack::check_generated(test_session_global_attack::FamilyCounts&, std::string_view, uint64_t): fixy::session::detail | reads the projection check of each role

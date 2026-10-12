@@ -3686,6 +3686,19 @@ fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_arity_mismatch
 fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_lvalue_endpoint
   "no matching function for call to .mint_mpmc_stage_from_endpoints<mpmc_lvalue_fixture::fan_in>"
   "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>.")
+
+# The mint of a stage with more than one input or output takes the handles
+# themselves.  A handle of a different channel does not name its parameter,
+# and a payload row that the context does not admit is refused, as for
+# mint_stage.
+fixy_neg_compile_test(neg_mpmc_stage_mint_handle_type_mismatch
+  "no matching function for call to .mint_mpmc_stage<mpmc_mismatch_fixture::fan_in>"
+  "required for the satisfaction of .VariadicStageHandlesMatch<FnPtr, Handles \\.\\.\\.>."
+  "mpmc_mismatch_fixture::OtherTag, mpmc_mismatch_fixture::FixtureBrand>::ConsumerHandle")
+fixy_neg_compile_test(neg_mpmc_stage_mint_row_not_admitted
+  "no matching function for call to .mint_mpmc_stage<mpmc_row_fixture::fan_in>"
+  "required for the satisfaction of .CtxFitsVariadicStage<FnPtr, Ctx>."
+  "variadic_stage_rows_admitted<FnPtr, Ctx>")
 fixy_neg_compile_test(neg_swmr_stage_non_writer
   "no matching function for call to .mint_swmr_stage<swmr_writer_fixture::body>"
   "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")

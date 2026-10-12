@@ -220,6 +220,7 @@ does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
+| `mint_mpmc_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
@@ -343,4 +344,4 @@ does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 43 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 114 | 54 | 57 | 3 | 0 | 4 |

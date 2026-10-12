@@ -98,16 +98,22 @@ static_assert(VariadicPipelineStage<&stage_fan_in_two>);
 static_assert(!PipelineStage<&stage_fan_in_two>);
 static_assert(CtxFitsVariadicStage<&stage_fan_in_two, HotFgCtx>);
 static_assert(!CtxFitsVariadicStage<&stage_wrong_arity, HotFgCtx>);
-static_assert(VariadicStageHandlesMatch<&stage_fan_in_two, std::tuple<FakeConsumer<int>, FakeConsumer<int>>,
-                                        std::tuple<FakeProducer<int>>>);
-static_assert(
-    !VariadicStageHandlesMatch<&stage_fan_in_two, std::tuple<FakeConsumer<int>>, std::tuple<FakeProducer<int>>>);
-static_assert(!VariadicStageHandlesMatch<&stage_fan_in_two, std::tuple<FakeConsumer<int>, FakeConsumer<float>>,
-                                         std::tuple<FakeProducer<int>>>);
+static_assert(VariadicStageHandlesMatch<&stage_fan_in_two, FakeConsumer<int>, FakeConsumer<int>, FakeProducer<int>>);
+static_assert(!VariadicStageHandlesMatch<&stage_fan_in_two, FakeConsumer<int>, FakeProducer<int>>);
+static_assert(!VariadicStageHandlesMatch<&stage_fan_in_two, FakeConsumer<int>, FakeConsumer<float>, FakeProducer<int>>);
+static_assert(!VariadicStageHandlesMatch<&stage_fan_in_two, FakeConsumer<int>, FakeProducer<int>, FakeConsumer<int>>);
 
-using M1 = MpmcStage<&stage_fan_in_two, HotFgCtx, std::tuple<FakeConsumer<int>, FakeConsumer<int>>,
-                     std::tuple<FakeProducer<int>>>;
+// The mint takes each handle by move, with the exact type of its parameter.
+static_assert(CtxFitsMpmcStage<&stage_fan_in_two, HotFgCtx, FakeConsumer<int>, FakeConsumer<int>, FakeProducer<int>>);
+static_assert(!CtxFitsMpmcStage<&stage_fan_in_two, HotFgCtx, FakeConsumer<int>&, FakeConsumer<int>, FakeProducer<int>>);
+static_assert(
+    !CtxFitsMpmcStage<&stage_fan_in_two, HotFgCtx, FakeConsumer<int> const, FakeConsumer<int>, FakeProducer<int>>);
+static_assert(!CtxFitsMpmcStage<&stage_fan_in_two, int, FakeConsumer<int>, FakeConsumer<int>, FakeProducer<int>>);
+
+using M1 = MpmcStage<&stage_fan_in_two, HotFgCtx>;
 static_assert(M1::input_count == 2);
+static_assert(std::is_same_v<typename M1::template input_handle_type<1>, FakeConsumer<int>>);
+static_assert(std::is_same_v<typename M1::template output_handle_type<0>, FakeProducer<int>>);
 static_assert(M1::output_count == 1);
 static_assert(std::is_same_v<typename M1::template input_value_type<1>, int>);
 static_assert(std::is_same_v<typename M1::template output_value_type<0>, int>);

@@ -707,8 +707,7 @@ test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | c-librar
 test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_endpointdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | detail-use | 7 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
-test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | std-object | 1 | std::tuple | -
+test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | detail-use | 4 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction.cpp | c-library-call | 2 | abort | -

@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx, std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>, std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>> in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx, std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>, std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>> attests to a fact that it cannot see.  The expression below is
+// fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -25,6 +25,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx, std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>, std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>>{forge::lvalue<fixy::HotFgCtx>(), forge::rvalue<std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>>(), forge::rvalue<std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx>{forge::lvalue<fixy::HotFgCtx>(), forge::rvalue<fixy::concurrent::detail::stage_witness::FakeConsumer<int>>(), forge::rvalue<fixy::concurrent::detail::stage_witness::FakeConsumer<int>>(), forge::rvalue<fixy::concurrent::detail::stage_witness::FakeProducer<int>>()};
     return 0;
 }

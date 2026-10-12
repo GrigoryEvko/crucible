@@ -85,8 +85,8 @@ struct is_stage : std::false_type {};
 template <auto FnPtr, class Ctx>
 struct is_stage<Stage<FnPtr, Ctx>> : std::true_type {};
 
-template <auto FnPtr, class Ctx, class Inputs, class Outputs>
-struct is_stage<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> : std::true_type {};
+template <auto FnPtr, class Ctx>
+struct is_stage<MpmcStage<FnPtr, Ctx>> : std::true_type {};
 
 template <auto FnPtr, class Ctx>
 struct is_stage<SwmrStage<FnPtr, Ctx>> : std::true_type {};
@@ -129,9 +129,9 @@ struct stage_ports<Stage<FnPtr, Ctx>> {
     }
 };
 
-template <auto FnPtr, class Ctx, class Inputs, class Outputs>
-struct stage_ports<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> {
-    using stage_type = MpmcStage<FnPtr, Ctx, Inputs, Outputs>;
+template <auto FnPtr, class Ctx>
+struct stage_ports<MpmcStage<FnPtr, Ctx>> {
+    using stage_type = MpmcStage<FnPtr, Ctx>;
     static constexpr std::size_t input_count = stage_type::input_count;
     static constexpr std::size_t output_count = stage_type::output_count;
 

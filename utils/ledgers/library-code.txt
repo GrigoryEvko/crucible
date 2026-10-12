@@ -279,10 +279,8 @@ include/fixy/concurrent/SpscRing.h | inlined | 1 | std::optional::optional | -
 include/fixy/concurrent/SpscRing.h | inlined | 3 | std::span::data | -
 include/fixy/concurrent/SpscRing.h | inlined | 1 | std::span::empty | -
 include/fixy/concurrent/SpscRing.h | inlined | 2 | std::span::size | -
-include/fixy/concurrent/Stage.h | inlined | 2 | std::tuple::tuple | -
+include/fixy/concurrent/Stage.h | inlined | 1 | std::tuple::tuple | -
 include/fixy/concurrent/Stage.h | inlined | 1 | std::tuple::~tuple | -
-include/fixy/concurrent/StageEndpointBridge.h | inlined | 3 | std::tuple::tuple | -
-include/fixy/concurrent/StageEndpointBridge.h | inlined | 2 | std::tuple::~tuple | -
 include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator (conversion) | -
 include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator* | -
 include/fixy/concurrent/SwmrSession.h | inlined | 1 | std::optional::optional | -
@@ -880,9 +878,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -3 | std::span::data | -
 @x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
 @x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
-@x86_64-debug-tsan | include/fixy/concurrent/Stage.h | inlined | -2 | std::tuple::tuple | -
-@x86_64-debug-tsan | include/fixy/concurrent/StageEndpointBridge.h | inlined | -3 | std::tuple::tuple | -
-@x86_64-debug-tsan | include/fixy/concurrent/StageEndpointBridge.h | inlined | -2 | std::tuple::~tuple | -
+@x86_64-debug-tsan | include/fixy/concurrent/Stage.h | inlined | -1 | std::tuple::tuple | -
 @x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -
@@ -1116,8 +1112,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::push_back | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::operator= | -
-@x86_64-debug-ubsan-strict | include/fixy/concurrent/StageEndpointBridge.h | inlined | -1 | std::tuple::tuple | -
-@x86_64-debug-ubsan-strict | include/fixy/concurrent/StageEndpointBridge.h | inlined | -2 | std::tuple::~tuple | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/handle/OneShotFlag.h | inlined | -1 | std::atomic::load | -
 @x86_64-debug-ubsan-strict | include/fixy/handle/PublishOnce.h | inlined | -2 | std::atomic::load | -
@@ -1309,8 +1303,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
 @x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
 @x86_64-release | include/fixy/concurrent/Stage.h | inlined | -1 | std::tuple::tuple | -
-@x86_64-release | include/fixy/concurrent/StageEndpointBridge.h | inlined | -3 | std::tuple::tuple | -
-@x86_64-release | include/fixy/concurrent/StageEndpointBridge.h | inlined | -1 | std::tuple::~tuple | -
 @x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
 @x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
 @x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -

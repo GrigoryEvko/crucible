@@ -217,7 +217,6 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/syscall_latency_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/syscall_tp_btf_bpf_bytecode.c | c-array-object | 1 | - | -
 @build/test/fixy/armed_roster/witness_roster.h | c-array-object | 1 | - | -
-@build/test/fixy/armed_roster/witness_roster.h | std-entity | 2 | std::tuple | -
 bench/bench_harness.h | c-array-object | 16 | - | -
 bench/bench_harness.h | c-library-call | 1 | abort | -
 bench/bench_harness.h | c-library-call | 4 | fclose | -
@@ -2323,18 +2322,14 @@ include/fixy/concurrent/SpscRing.h | layer-header | 1 | <bit> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <cstring> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/SpscRing.h | layer-header | 1 | <span> | -
-include/fixy/concurrent/Stage.h | base-std-entity | 4 | std::get | -
-include/fixy/concurrent/Stage.h | base-std-entity | 5 | std::tuple | -
-include/fixy/concurrent/Stage.h | base-std-entity | 2 | std::tuple_element | -
+include/fixy/concurrent/Stage.h | base-std-entity | 3 | std::get | -
+include/fixy/concurrent/Stage.h | base-std-entity | 1 | std::tuple | -
 include/fixy/concurrent/Stage.h | base-std-object | 1 | std::optional | -
-include/fixy/concurrent/Stage.h | base-std-object | 10 | std::tuple | -
 include/fixy/concurrent/Stage.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/Stage.h | layer-header | 1 | <tuple> | -
-include/fixy/concurrent/StageEndpointBridge.h | base-std-entity | 2 | std::get | -
-include/fixy/concurrent/StageEndpointBridge.h | base-std-entity | 9 | std::tuple | -
+include/fixy/concurrent/StageEndpointBridge.h | base-std-entity | 7 | std::tuple | -
 include/fixy/concurrent/StageEndpointBridge.h | base-std-entity | 2 | std::tuple_element | -
 include/fixy/concurrent/StageEndpointBridge.h | base-std-entity | 4 | std::tuple_element_t | -
-include/fixy/concurrent/StageEndpointBridge.h | base-std-object | 2 | std::tuple | -
 include/fixy/concurrent/StageEndpointBridge.h | layer-header | 1 | <tuple> | -
 include/fixy/concurrent/StageShape.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/SubstrateSessionBridge.h | upward-include | 1 | include/fixy/session/Entry.h | -
@@ -4353,7 +4348,6 @@ test/fixy/row_hash_census.h | std-entity | 2 | std::basic_string_view::ends_with
 test/fixy/row_hash_census.h | std-entity | 1 | std::initializer_list | -
 test/fixy/row_hash_census.h | std-entity | 1 | std::operator== | -
 test/fixy/row_hash_census.h | std-entity | 2 | std::size | -
-test/fixy/row_hash_census.h | std-entity | 2 | std::tuple | -
 test/fixy/row_hash_census.h | std-entity | 10 | std::vector::data | -
 test/fixy/row_hash_census.h | std-entity | 3 | std::vector::push_back | -
 test/fixy/row_hash_census.h | std-entity | 18 | std::vector::size | -
@@ -4441,7 +4435,7 @@ test/fixy/test_armed_roster.cpp | std-entity | 1 | std::basic_string_view::empty
 test/fixy/test_armed_roster.cpp | std-entity | 1 | std::nullopt | -
 test/fixy/test_armed_roster.cpp | std-entity | 2 | std::optional | -
 test/fixy/test_armed_roster.cpp | std-entity | 6 | std::pair | -
-test/fixy/test_armed_roster.cpp | std-entity | 32 | std::tuple | -
+test/fixy/test_armed_roster.cpp | std-entity | 24 | std::tuple | -
 test/fixy/test_armed_roster.cpp | std-entity | 4 | std::unique_ptr | -
 test/fixy/test_armed_roster.cpp | std-entity | 3 | std::vector | -
 test/fixy/test_armed_roster.cpp | std-entity | 4 | std::vector::begin | -
@@ -4726,7 +4720,6 @@ test/fixy/test_endpoint.cpp | std-entity | 20 | std::optional::operator* | -
 test/fixy/test_endpoint.cpp | std-entity | 13 | std::pair | -
 test/fixy/test_endpoint.cpp | std-object | 17 | std::optional | -
 test/fixy/test_endpoint.cpp | std-object | 14 | std::pair | -
-test/fixy/test_endpoint.cpp | std-object | 1 | std::tuple | -
 test/fixy/test_federation.cpp | std-entity | 3 | std::array | -
 test/fixy/test_federation.cpp | std-entity | 2 | std::array::begin | -
 test/fixy/test_federation.cpp | std-entity | 2 | std::array::end | -
@@ -5189,7 +5182,6 @@ test/fixy/test_pipeline_dag.cpp | raw-pointer-object | 1 | - | -
 test/fixy/test_pipeline_dag.cpp | std-entity | 1 | std::__atomic_base::fetch_add | -
 test/fixy/test_pipeline_dag.cpp | std-entity | 1 | std::__atomic_base::load | -
 test/fixy/test_pipeline_dag.cpp | std-entity | 1 | std::__atomic_base::store | -
-test/fixy/test_pipeline_dag.cpp | std-entity | 2 | std::tuple | -
 test/fixy/test_pipeline_dag.cpp | std-object | 1 | std::atomic | -
 test/fixy/test_pipeline_dag.cpp | std-object | 1 | std::optional | -
 test/fixy/test_pipeline_dispatch.cpp | c-library-call | 1 | abort | -
@@ -7006,8 +6998,6 @@ test/layer/checks/fixy/concurrent/HandleTraits.cpp | std-object | 8 | std::optio
 test/layer/checks/fixy/concurrent/ParallelismRule.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/layer/checks/fixy/concurrent/PayloadRow.cpp | c-array-object | 3 | - | -
 test/layer/checks/fixy/concurrent/PayloadRow.cpp | raw-pointer-object | 2 | - | -
-test/layer/checks/fixy/concurrent/Pipeline.cpp | std-entity | 1 | std::tuple | -
-test/layer/checks/fixy/concurrent/Stage.cpp | std-entity | 6 | std::tuple | -
 test/layer/checks/fixy/concurrent/StageShape.cpp | std-object | 1 | std::optional | -
 test/layer/checks/fixy/fp/Canonicalize.cpp | replace-pending:<limits> | 2 | std::numeric_limits::denorm_min | -
 test/layer/checks/fixy/fp/Canonicalize.cpp | replace-pending:<limits> | 4 | std::numeric_limits::infinity | -

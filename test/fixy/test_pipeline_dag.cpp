@@ -63,8 +63,7 @@ using PlainStage = cc::Stage<&one_to_one_body, fixy::HotFgCtx>;
 // leaves.  An edge from a port that the stage does not have joins nothing.
 static void fan_out_body(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept {}
 
-using FanOutStage = cc::MpmcStage<&fan_out_body, fixy::HotFgCtx, std::tuple<FakeConsumer<int>>,
-                                  std::tuple<FakeProducer<int>, FakeProducer<int>>>;
+using FanOutStage = cc::MpmcStage<&fan_out_body, fixy::HotFgCtx>;
 template <std::size_t SecondPort>
 using FanOutGraph = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage>,
                                    cc::EdgePack<cc::StageEdge<0, 1, 0>, cc::StageEdge<0, 2, SecondPort>>>;

@@ -800,17 +800,15 @@ namespace stage_fakes = ::fixy::concurrent::detail::stage_witness;
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_variadic_stage_take_handles> {
     using accepts = witnesses<::fixy::concurrent::detail::can_variadic_stage_take_handles<
-        &stage_fakes::stage_fan_in_two, std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
-        std::tuple<stage_fakes::FakeProducer<int>>>>;
+        &stage_fakes::stage_fan_in_two, stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>,
+        stage_fakes::FakeProducer<int>>>;
     using refuses = witnesses<
-        ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two,
-                                                                    std::tuple<stage_fakes::FakeConsumer<int>>,
-                                                                    std::tuple<stage_fakes::FakeProducer<int>>>,
         ::fixy::concurrent::detail::can_variadic_stage_take_handles<
-            &stage_fakes::stage_fan_in_two,
-            std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<float>>,
-            std::tuple<stage_fakes::FakeProducer<int>>>,
-        ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two, int, int>>;
+            &stage_fakes::stage_fan_in_two, stage_fakes::FakeConsumer<int>, stage_fakes::FakeProducer<int>>,
+        ::fixy::concurrent::detail::can_variadic_stage_take_handles<
+            &stage_fakes::stage_fan_in_two, stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<float>,
+            stage_fakes::FakeProducer<int>>,
+        ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two, int, int, int>>;
 };
 
 // The spawn fit needs a context that owns Bg, a declared split, and one

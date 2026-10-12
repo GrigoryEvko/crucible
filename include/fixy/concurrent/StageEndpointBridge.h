@@ -7,12 +7,13 @@
 // Design notes:
 //   - Each mint takes its endpoints by move and refuses an lvalue, so no
 //     endpoint is consumed without a std::move at the call site.
-//   - MpmcStage and SwmrStage are built through StageEndpointDoor, a final
-//     class with private static members and the two mints as its friends.
-//     No other code can build them.
-//   - The two mints check the row in the requires clause alone, as
-//     mint_stage of fixy/concurrent/Stage.h does.  A refused row never
-//     arrives in the body.
+//   - SwmrStage is built through StageEndpointDoor, a final class with
+//     private static members and mint_swmr_stage as its friend.  No other
+//     code can build it.  The two other mints take the handle out of each
+//     endpoint and give the handles to mint_stage or mint_mpmc_stage of
+//     fixy/concurrent/Stage.h.
+//   - Each mint checks the row in the requires clause alone, as mint_stage
+//     does.  A refused row never arrives in the body.
 
 #include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -244,9 +245,7 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
     requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
 [[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept {
-    std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{std::move(endpoints)...};
-    return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_mpmc_<FnPtr>(ctx,
-                                                                                                    endpoint_tuple);
+    return mint_mpmc_stage<FnPtr>(ctx, std::move(endpoints).into_handle()...);
 }
 
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
@@ -256,44 +255,17 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
         ctx, std::move(in_ep).into_handle(), std::move(writer));
 }
 
-// ── The door of the stage mints ──────────────────────────────────────
+// ── The door of the SwmrStage mint ───────────────────────────────────
 //
-// mint_mpmc_stage_from_endpoints and mint_swmr_stage get their stage
-// through this class.  Its members are private and static.  Its friends are
-// the two mints, which do the check of the body, the context and the
-// endpoints before they call a member.  Each member does its check again
-// and builds the stage.  The class is final, and no object of it exists.
+// mint_swmr_stage gets its stage through this class.  Its members are
+// private and static.  Its friend is the mint, which does the check of the
+// body, the context and the endpoint before it calls a member.  The member
+// does its check again and builds the stage.  The class is final, and no
+// object of it exists.
 class StageEndpointDoor final : ::foundation::NoObject<StageEndpointDoor> {
-    template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
-        requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
-    friend constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept;
-
     template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
         requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
     friend constexpr auto mint_swmr_stage(Ctx const& ctx, ConsumerEp&& in_ep, Writer&& writer) noexcept;
-
-    template <auto FnPtr, class Tuple, std::size_t... Is>
-    [[nodiscard]] static constexpr auto move_input_handles_(Tuple& endpoints, std::index_sequence<Is...>) noexcept {
-        return std::tuple{std::move(std::get<Is>(endpoints)).into_handle()...};
-    }
-
-    template <auto FnPtr, class Tuple, std::size_t... Is>
-    [[nodiscard]] static constexpr auto move_output_handles_(Tuple& endpoints, std::index_sequence<Is...>) noexcept {
-        constexpr std::size_t offset = StageArity<FnPtr>::input_count;
-        return std::tuple{std::move(std::get<offset + Is>(endpoints)).into_handle()...};
-    }
-
-    template <auto FnPtr, class Ctx, class... Endpoints>
-    [[nodiscard]] static constexpr auto make_mpmc_(Ctx const& ctx, std::tuple<Endpoints...>& endpoints) noexcept {
-        static_assert(CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>,
-                      "fixy::concurrent::diagnostic [StageDoor_Refused]: the stage door accepts only the body, "
-                      "context and endpoints that mint_mpmc_stage_from_endpoints accepts.");
-        using arity = StageArity<FnPtr>;
-        auto inputs = move_input_handles_<FnPtr>(endpoints, std::make_index_sequence<arity::input_count>{});
-        auto outputs = move_output_handles_<FnPtr>(endpoints, std::make_index_sequence<arity::output_count>{});
-        using stage_type = MpmcStage<FnPtr, Ctx, decltype(inputs), decltype(outputs)>;
-        return stage_type{ctx, std::move(inputs), std::move(outputs)};
-    }
 
     template <auto FnPtr, class Ctx>
     [[nodiscard]] static constexpr auto

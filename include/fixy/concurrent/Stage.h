@@ -12,9 +12,13 @@
 // the consumer handle of the next name the same channel, and at the mint
 // they bind the same channel instance.
 //
-// MpmcStage and SwmrStage have a private constructor.  Their one friend is
-// the door of fixy/concurrent/StageEndpointBridge.h, which builds each
-// stage for its mint.
+// Each stage has a private constructor.  The one friend of a Stage is
+// mint_stage, and the one friend of an MpmcStage is mint_mpmc_stage.  The
+// one friend of a SwmrStage is the door of
+// fixy/concurrent/StageEndpointBridge.h, which builds the stage for its mint.
+//
+// The body names the handles of a stage, so the type of a stage holds only
+// the body and the context.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -119,37 +123,54 @@ consteval bool variadic_stage_rows_admitted() noexcept {
     }
 }
 
-template <auto FnPtr, class Inputs, class Outputs>
-struct can_variadic_stage_take_handles : std::false_type {};
+// The handles of a variadic stage body, in the order of its parameters:
+// the tuple that holds them, the payload of the row hash, and the working
+// set of one call.
+template <auto FnPtr, class Positions>
+struct stage_handle_pack;
 
-template <auto FnPtr, class... Inputs, class... Outputs>
-struct can_variadic_stage_take_handles<FnPtr, std::tuple<Inputs...>, std::tuple<Outputs...>> {
+template <auto FnPtr, std::size_t... Is>
+struct stage_handle_pack<FnPtr, std::index_sequence<Is...>> {
+    template <std::size_t I>
+    using handle_at = std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, I>>;
+
+    using tuple_type = std::tuple<handle_at<Is>...>;
+
+    template <class Ctx>
+    using row_payload = ::foundation::diag::row_payloads<Ctx, handle_at<Is>...>;
+
+    static constexpr bool working_set_known = (HasStaticPerCallWorkingSet<handle_at<Is>> && ...);
+
+    static constexpr std::size_t per_call_working_set = [] consteval {
+        if constexpr (working_set_known) {
+            std::size_t total = 0;
+            ((total = saturating_ws_add(total, per_call_working_set_of_v<handle_at<Is>>)), ...);
+            return total;
+        } else {
+            return unknown_per_call_working_set;
+        }
+    }();
+};
+
+// The handles name the parameters of the body: the same count, and each
+// handle the type of its parameter, in the order of the parameters.
+template <auto FnPtr, class... Handles>
+struct can_variadic_stage_take_handles {
 private:
-    using extract = StageArity<FnPtr>;
-
     template <std::size_t... Is>
-    static consteval bool inputs_match(std::index_sequence<Is...>) noexcept {
-        return ((std::is_same_v<std::remove_cvref_t<Inputs>,
+    static consteval bool each_handle_matches(std::index_sequence<Is...>) noexcept {
+        return ((std::is_same_v<std::remove_cvref_t<Handles>,
                                 std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, Is>>>)
-                && ...);
-    }
-
-    template <std::size_t... Is>
-    static consteval bool outputs_match(std::index_sequence<Is...>) noexcept {
-        constexpr std::size_t offset = extract::input_count;
-        return ((std::is_same_v<std::remove_cvref_t<Outputs>,
-                                std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, offset + Is>>>)
                 && ...);
     }
 
     static consteval bool compute() noexcept {
         if constexpr (!VariadicPipelineStage<FnPtr>) {
             return false;
-        } else if constexpr (extract::input_count != sizeof...(Inputs) || extract::output_count != sizeof...(Outputs)) {
+        } else if constexpr (sizeof...(Handles) != ::foundation::reflect::arity_v<FnPtr>) {
             return false;
         } else {
-            return inputs_match(std::make_index_sequence<sizeof...(Inputs)>{})
-                && outputs_match(std::make_index_sequence<sizeof...(Outputs)>{});
+            return each_handle_matches(std::make_index_sequence<sizeof...(Handles)>{});
         }
     }
 
@@ -167,8 +188,16 @@ template <auto FnPtr, class Ctx>
 concept CtxFitsVariadicStage = VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
                             && detail::variadic_stage_rows_admitted<FnPtr, Ctx>();
 
-template <auto FnPtr, class Inputs, class Outputs>
-concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Inputs, Outputs>::value;
+template <auto FnPtr, class... Handles>
+concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Handles...>::value;
+
+// Each handle comes in by move, with the exact type of its parameter.  A
+// handle that is const or an lvalue deduces a type that the body does not
+// name, and the mint refuses it.
+template <auto FnPtr, class Ctx, class... Handles>
+concept CtxFitsMpmcStage =
+    CtxFitsVariadicStage<FnPtr, Ctx> && (std::is_same_v<Handles, std::remove_cvref_t<Handles>> && ...)
+    && VariadicStageHandlesMatch<FnPtr, Handles...>;
 
 template <auto FnPtr>
 concept SwmrPublishStageBody =
@@ -249,40 +278,37 @@ private:
     producer_handle_type out_;
 };
 
-// The door that builds MpmcStage and SwmrStage.  It is defined in
+// The door that builds SwmrStage.  It is defined in
 // fixy/concurrent/StageEndpointBridge.h.
 class StageEndpointDoor;
 
 // The body's parameters are all consumer handles first and all producer
-// handles after, and the two tuples have to match those two runs exactly.
-
-template <auto FnPtr, class Ctx, class Inputs, class Outputs>
-    requires CtxFitsVariadicStage<FnPtr, Ctx> && VariadicStageHandlesMatch<FnPtr, Inputs, Outputs>
-class MpmcStage;
-
-template <auto FnPtr, class Ctx, class... Inputs, class... Outputs>
+// handles after.  The stage holds one handle for each parameter, in the
+// order of the parameters, so an input I is handle I and an output I is
+// handle input_count + I.
+template <auto FnPtr, class Ctx>
     requires CtxFitsVariadicStage<FnPtr, Ctx>
-          && VariadicStageHandlesMatch<FnPtr, std::tuple<Inputs...>, std::tuple<Outputs...>>
-class MpmcStage<FnPtr, Ctx, std::tuple<Inputs...>, std::tuple<Outputs...>> {
+class MpmcStage {
+    using handle_pack =
+        detail::stage_handle_pack<FnPtr, std::make_index_sequence<::foundation::reflect::arity_v<FnPtr>>>;
+
 public:
     using ctx_type = Ctx;
-    using input_tuple_type = std::tuple<Inputs...>;
-    using output_tuple_type = std::tuple<Outputs...>;
     using row_discipline = ::fixy::row_discipline::mpmc_stage;
-    using row_payload = ::foundation::diag::row_payloads<Ctx, Inputs..., Outputs...>;
+    using row_payload = typename handle_pack::template row_payload<Ctx>;
 
-    static constexpr std::size_t input_count = sizeof...(Inputs);
-    static constexpr std::size_t output_count = sizeof...(Outputs);
+    static constexpr std::size_t input_count = StageArity<FnPtr>::input_count;
+    static constexpr std::size_t output_count = StageArity<FnPtr>::output_count;
     static constexpr bool is_value_preserving = false;
     [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
 
     template <std::size_t I>
         requires(I < input_count)
-    using input_handle_type = std::tuple_element_t<I, input_tuple_type>;
+    using input_handle_type = typename handle_pack::template handle_at<I>;
 
     template <std::size_t I>
         requires(I < output_count)
-    using output_handle_type = std::tuple_element_t<I, output_tuple_type>;
+    using output_handle_type = typename handle_pack::template handle_at<input_count + I>;
 
     template <std::size_t I>
         requires(I < input_count)
@@ -292,61 +318,53 @@ public:
         requires(I < output_count)
     using output_value_type = pipeline_stage_output_value_at_t<FnPtr, I>;
 
-    static constexpr bool aggregate_working_set_known =
-        ((HasStaticPerCallWorkingSet<Inputs>) && ...) && ((HasStaticPerCallWorkingSet<Outputs>) && ...);
+    static constexpr bool aggregate_working_set_known = handle_pack::working_set_known;
 
-    static constexpr std::size_t aggregate_per_call_working_set = [] consteval {
-        if constexpr (aggregate_working_set_known) {
-            std::size_t total = 0;
-            ((total = saturating_ws_add(total, per_call_working_set_of_v<Inputs>)), ...);
-            ((total = saturating_ws_add(total, per_call_working_set_of_v<Outputs>)), ...);
-            return total;
-        } else {
-            return unknown_per_call_working_set;
-        }
-    }();
+    static constexpr std::size_t aggregate_per_call_working_set = handle_pack::per_call_working_set;
 
     MpmcStage(MpmcStage const&) = delete("MpmcStage holds linear or fractional endpoint handles");
     MpmcStage& operator=(MpmcStage const&) = delete("MpmcStage holds linear or fractional endpoint handles");
     MpmcStage(MpmcStage&&) noexcept = default;
     MpmcStage& operator=(MpmcStage&&) noexcept = default;
 
-    void run() && noexcept {
-        std::move(*this).run_impl_(std::make_index_sequence<input_count>{}, std::make_index_sequence<output_count>{});
-    }
+    void run() && noexcept { std::move(*this).run_impl_(std::make_index_sequence<input_count + output_count>{}); }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 
     template <std::size_t I>
         requires(I < input_count)
     [[nodiscard]] constexpr auto& input() & noexcept {
-        return std::get<I>(inputs_);
+        return std::get<I>(handles_);
     }
 
     template <std::size_t I>
         requires(I < output_count)
     [[nodiscard]] constexpr auto& output() & noexcept {
-        return std::get<I>(outputs_);
+        return std::get<input_count + I>(handles_);
     }
 
 private:
     // Private because direct construction would skip the row admission and
     // produce a stage whose payload effects were never weighed against the
     // context it runs in.
-    [[nodiscard]] explicit constexpr MpmcStage(Ctx const& ctx, input_tuple_type&& inputs,
-                                               output_tuple_type&& outputs) noexcept
-        : ctx_{ctx}, inputs_{std::move(inputs)}, outputs_{std::move(outputs)} {}
+    template <class... Handles>
+        requires VariadicStageHandlesMatch<FnPtr, Handles...>
+    [[nodiscard]] explicit constexpr MpmcStage(Ctx const& ctx, Handles&&... handles) noexcept
+        : ctx_{ctx}, handles_{std::forward<Handles>(handles)...} {}
 
-    friend class StageEndpointDoor;
+    // The constraint here has to be the factory's constraint written out
+    // identically, as for mint_stage above.
+    template <auto MintFnPtr, ::foundation::effects::IsExecCtx MintCtx, class... MintHandles>
+        requires CtxFitsMpmcStage<MintFnPtr, MintCtx, MintHandles...>
+    friend constexpr auto mint_mpmc_stage(MintCtx const&, MintHandles&&...) noexcept;
 
-    template <std::size_t... Is, std::size_t... Os>
-    void run_impl_(std::index_sequence<Is...>, std::index_sequence<Os...>) && noexcept {
-        FnPtr(std::move(std::get<Is>(inputs_))..., std::move(std::get<Os>(outputs_))...);
+    template <std::size_t... Is>
+    void run_impl_(std::index_sequence<Is...>) && noexcept {
+        FnPtr(std::move(std::get<Is>(handles_))...);
     }
 
     [[no_unique_address]] Ctx ctx_;
-    input_tuple_type inputs_;
-    output_tuple_type outputs_;
+    typename handle_pack::tuple_type handles_;
 };
 
 template <auto FnPtr, class Ctx>
@@ -424,8 +442,20 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_
     return Stage<FnPtr, Ctx>{ctx, std::move(in), std::move(out)};
 }
 
+// The stage of a body with more than one input or output, such as a
+// fan-out that gives each value to two channels, or a fan-in that joins
+// two channels.  The handles come in the order of the parameters of the
+// body.
+template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Handles>
+    requires CtxFitsMpmcStage<FnPtr, Ctx, Handles...>
+[[nodiscard]] constexpr auto mint_mpmc_stage(Ctx const& ctx, Handles&&... handles) noexcept {
+    // As for mint_stage, the requires clause checks the rows and the
+    // handles, and a refused call never reaches this body.
+    return MpmcStage<FnPtr, Ctx>{ctx, std::forward<Handles>(handles)...};
+}
+
 // The fake handles and the stage bodies that only checks name.  MpmcStage
-// and SwmrStage have a private door, so the witness roster
+// and SwmrStage have a private constructor, so the witness roster
 // (the witness rows of utils/rule-table.txt) forges each stage through these
 // names.  The check files of this header and of
 // fixy/concurrent/Pipeline.h, test/fixy/test_armed_roster.cpp and

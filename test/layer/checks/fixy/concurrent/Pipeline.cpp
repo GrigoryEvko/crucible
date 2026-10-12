@@ -27,8 +27,7 @@ static_assert(!IsStage<HotFgCtx>);
 
 // The other two stage shapes read through the same ports.  These are the
 // witnesses for them.
-using M1 = MpmcStage<&stage_fan_in_two, HotFgCtx, std::tuple<FakeConsumer<int>, FakeConsumer<int>>,
-                     std::tuple<FakeProducer<int>>>;
+using M1 = MpmcStage<&stage_fan_in_two, HotFgCtx>;
 using W1 = SwmrStage<&stage_swmr_publish, HotFgCtx>;
 static_assert(IsStage<M1>);
 static_assert(IsStage<W1>);

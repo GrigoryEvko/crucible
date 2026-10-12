@@ -1013,7 +1013,7 @@
       "header": "fixy/concurrent/Stage.h"
     },
     {
-      "type": "fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx, std::tuple<fixy::concurrent::detail::stage_witness::FakeConsumer<int>, fixy::concurrent::detail::stage_witness::FakeConsumer<int>>, std::tuple<fixy::concurrent::detail::stage_witness::FakeProducer<int>>>",
+      "type": "fixy::concurrent::MpmcStage<&fixy::concurrent::detail::stage_witness::stage_fan_in_two, fixy::HotFgCtx>",
       "header": "fixy/concurrent/Stage.h"
     },
     {

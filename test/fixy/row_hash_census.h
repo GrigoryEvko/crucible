@@ -675,10 +675,7 @@ using CheckpointAtEnd = ::fixy::session::CheckpointHandle<
 // no stage, so no handle and no channel is made here.
 namespace stage_fakes = ::fixy::concurrent::detail::stage_witness;
 using StageWitness = ::fixy::concurrent::Stage<&stage_fakes::stage_pass_through, ::fixy::HotFgCtx>;
-using MpmcStageWitness =
-    ::fixy::concurrent::MpmcStage<&stage_fakes::stage_fan_in_two, ::fixy::HotFgCtx,
-                                  std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
-                                  std::tuple<stage_fakes::FakeProducer<int>>>;
+using MpmcStageWitness = ::fixy::concurrent::MpmcStage<&stage_fakes::stage_fan_in_two, ::fixy::HotFgCtx>;
 using SwmrStageWitness = ::fixy::concurrent::SwmrStage<&stage_fakes::stage_swmr_publish, ::fixy::HotFgCtx>;
 using PipelineWitness = ::fixy::concurrent::Pipeline<StageWitness>;
 using PipelineDagWitness = ::fixy::concurrent::PipelineDag<
