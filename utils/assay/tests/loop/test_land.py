@@ -337,6 +337,36 @@ def grow_cases(expect: testing.Expect) -> None:
             expect("a grow row of a ledger that the change does not change is refused", True)
 
 
+def falls_cases(expect: testing.Expect) -> None:
+    """Hold a verdict with the falls of the gate: the branch moves to the commit of the gate, with the ledger."""
+    with tempfile.TemporaryDirectory(prefix="land-falls-") as work_text:
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        (root / "own.txt").write_text(WORKING_OWN, encoding="utf-8")
+        fallen = b"format 1\nrule demo\na.cpp | kind | 1 | entity | -\n"
+
+        def folding(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            final = git.replaced_commit(root, candidate.commit, {"utils/ledgers/demo.txt": fallen})
+            return gate.Verdict(("debug", "debug"), (), 1.0, (), final, ("utils/ledgers/demo.txt",))
+
+        request = request_of(("Remove a finding",), own=("own.txt",))
+        outcome, printed = testing.captured(lambda: land.land(root, request, options(), folding))
+        expect(
+            "the branch moves to the commit of the gate, which holds the change and the written ledger, with the "
+            "message of the change on the earlier HEAD",
+            outcome.status == 0
+            and git.parent(root, "HEAD") == head
+            and git.show(root, "HEAD", "own.txt") == WORKING_OWN.encode()
+            and git.show(root, "HEAD", "utils/ledgers/demo.txt") == fallen
+            and git.commit_subject(root, "HEAD") == "Remove a finding"
+            and "with the falls of utils/ledgers/demo.txt that the gate wrote" in printed,
+        )
+        expect(
+            "after the landing, the index and the working tree hold the written ledger",
+            git.is_index_clean(root, "HEAD") and (root / "utils/ledgers/demo.txt").read_bytes() == fallen,
+        )
+
+
 def record_cases(expect: testing.Expect) -> None:
     """Hold the record of a run of the gate, and the driver of a tree with no copy of the module."""
     with tempfile.TemporaryDirectory(prefix="land-record-") as work_text:
@@ -372,5 +402,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (word_cases, edit_cases, compose_cases, landing_cases, grow_cases, record_cases),
+        (word_cases, edit_cases, compose_cases, landing_cases, grow_cases, falls_cases, record_cases),
     )

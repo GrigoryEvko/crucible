@@ -624,6 +624,15 @@ def other_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rul
         and {key.path: int(entry.value) for key, entry in later.deltas["arm"].items()} == {"c.py": -2}
         and later.base == lowered.base,
     )
+    arm_found = [finding("a.py", entity="same"), finding("b.py", entity="partial")]
+    base_first = rule_ledger.write(count, rule_ledger.write(count, ledger, found, "base"), arm_found, "arm")
+    arm_first = rule_ledger.write(count, rule_ledger.write(count, ledger, arm_found, "arm"), found, "base")
+    expect(
+        "the writes of the two configurations give one ledger in each sequence: the base first, or the other first",
+        rule_ledger.render(base_first) == rule_ledger.render(arm_first)
+        and base_first.expected() == {key: 1 for key in map(rule_ledger.key_of, found)}
+        and base_first.expected("arm") == {key: 1 for key in map(rule_ledger.key_of, arm_found)},
+    )
     moved = rule_ledger.write(
         count, ledger, [finding("new/a.py", entity="same")] * 3, "base", moved={"new/a.py": "a.py"}
     )

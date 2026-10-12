@@ -54,6 +54,9 @@ if mode == "build":
 statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
+if mode == "falls":
+    ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
+    statuses["test_ledger"] = "fail" if "| 2 |" in ledger else "run"
 cases = "".join(f'<testcase name="{name}" status="{status}"/>' for name, status in statuses.items())
 cases += '<testcase name="test_skips" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>'
 report = build / "affected-tests" / "junit.xml"
@@ -62,7 +65,7 @@ report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</test
 sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 """
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
-# apply.
+# apply.  `write` lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.
 GUARD_MASTER = """import os
 import pathlib
 import sys
@@ -71,18 +74,24 @@ words = sys.argv[1:]
 if words[0] == "check":
     with open(pathlib.Path(words[4]) / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
+if words[0] == "write":
+    ledger = pathlib.Path("utils/ledgers/door-unit.txt")
+    ledger.write_text(ledger.read_text().replace("| 2 |", "| 1 |"))
+    with open(pathlib.Path(words[4]) / "writes.txt", "a", encoding="utf-8") as handle:
+        handle.write(f"{words[2]}\\n")
+    sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
-# The planted ctest: a test that runs alone is green, unless it is test_broken.
+# The planted ctest: a test that runs alone is green, unless it is test_broken, or test_ledger before the write.
 CTEST = """import pathlib
 import sys
 
 words = sys.argv[1:]
 names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
 report = pathlib.Path(words[words.index("--output-junit") + 1])
-cases = "".join(
-    f'<testcase name="{name}" status="{"fail" if name == "test_broken" else "run"}"/>' for name in names
-)
+ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
+red = {"test_broken"} | ({"test_ledger"} if "| 2 |" in ledger else set())
+cases = "".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
 report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</testsuite>')
 """
 PLANTED = {
@@ -159,6 +168,22 @@ def select_cases(expect: testing.Expect) -> None:
         == names_of(gate.select(["utils/rule-table.txt"], [], [], False))
         == names_of(gate.select(["notes.txt"], [], [], True))
         == every,
+    )
+    counted = {
+        "quarantine": ("x86_64-debug-asan", "x86_64-debug-asan-bench-fuzz", "aarch64-debug-asan-syntax"),
+        "artifact-links": ("x86_64-debug-asan", "x86_64-release", "aarch64-debug-asan"),
+    }
+    test_change = ["test/test_arena.cpp"]
+    expect(
+        "a change of a C++ file gives the ledger check to each other configuration of a counted ledger that the host "
+        "builds",
+        names_of(gate.ledger_checks(test_change, counted, gate.select(test_change, [], [], False)))
+        == ["syntax-aarch64", "bench-fuzz"],
+    )
+    text_change = ["notes.txt", "utils/plants/rule/plant.txt"]
+    expect(
+        "a change with no C++ file and no build file gives no ledger check",
+        not gate.ledger_checks(text_change, counted, gate.select(text_change, [], [], False)),
     )
 
 
@@ -341,6 +366,46 @@ def run_cases(expect: testing.Expect) -> None:
         )
 
 
+def falls_cases(expect: testing.Expect) -> None:
+    """Hold THE FALLS: a fall of a count in the base lands in a new commit of the gate, with no manual write."""
+    with tempfile.TemporaryDirectory(prefix="gate-falls-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        ledger = "utils/ledgers/door-unit.txt"
+        counted_ledger = (
+            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
+            "src/door.cpp | header-door | 2 | door.h | -\n"
+        )
+        head = commit_change(root, ledger, counted_ledger, "Count two doors")
+        commit = commit_change(root, "notes.txt", "a change that removes one door\n", "Remove a door\n\nThe body.")
+        candidate = gate.Candidate(head, commit, ("notes.txt",))
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "falls")
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        expect(
+            "the gate accepts a commit whose suite is red only on a fall of a counted ledger",
+            verdict.is_accepted and verdict.configurations == ("debug", "debug"),
+        )
+        expect(
+            "the counted rule writes its fall, the gate folds the ledger into a new commit with the parents and the "
+            "message of the commit, and the warm tree holds that commit",
+            verdict.final not in ("", commit)
+            and verdict.ledgers == (ledger,)
+            and git.show(root, verdict.final, ledger) == counted_ledger.replace("| 2 |", "| 1 |").encode()
+            and git.show(root, verdict.final, "notes.txt") == b"a change that removes one door\n"
+            and git.parent(root, verdict.final) == head
+            and git.message_of(root, verdict.final) == git.message_of(root, commit)
+            and git.head(tree) == verdict.final
+            and (tree / "build" / "writes.txt").read_text(encoding="utf-8") == "door-unit\n",
+        )
+        expect(
+            "after the fold, the suite runs again on the new commit",
+            "folded into the commit" in printed and "each suite runs again" in printed,
+        )
+
+
 def lock_cases(expect: testing.Expect) -> None:
     """Hold the lock of the warm tree: a second session waits for the first."""
     with tempfile.TemporaryDirectory(prefix="gate-lock-") as work_text:
@@ -359,5 +424,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (select_cases, table_cases, tree_cases, rules_cases, run_cases, lock_cases),
+        (select_cases, table_cases, tree_cases, rules_cases, run_cases, falls_cases, lock_cases),
     )

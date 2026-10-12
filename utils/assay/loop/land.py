@@ -35,15 +35,11 @@ THE TREE
     or a shared file.  Else the command stops.
 
 THE COMPOSITION
-    The command composes the tree in the index of a scratch repository.  The
-    object directory of the scratch repository is a link to the object
-    directory of the repository.  Each blob, tree and commit that the
-    composition writes is then in the repository.  The command cannot give git an
-    index file in the environment, because assay.core.proc gives no child a
-    repository variable.  The scratch repository reads the own paths from
-    the work tree of the repository through --work-tree.  It gets a copy of
-    the file `info/exclude` of the repository, and it runs no garbage
-    collection.
+    The command composes the tree in the index of a scratch repository.  That
+    repository writes into the object directory of the repository (THE
+    BORROWED INDEX of assay.core.git).  Each blob, tree and commit that the composition
+    writes is then in the repository.  The scratch repository reads the own
+    paths from the work tree of the repository through --work-tree.
 
 THE GROWTH
     A row `utils/ledgers/RULE.txt | grow | admit | COMMIT | REASON` of the
@@ -60,7 +56,11 @@ THE GATE
     Before the compare-and-swap, the gate builds and tests the commit in the
     warm tree of each configuration that the change selects (assay.loop.gate).
     A commit that the gate rejects does not land.  The gate has no base
-    side.  A test that is red alone on HEAD then rejects each landing.
+    side.  A test that is red alone on HEAD then rejects each landing.  The
+    gate writes the falls of the counted ledgers into a new commit (THE FALLS
+    of assay.loop.gate).  That commit has the parents and the message of the
+    commit.  The verdict gives it, and the compare-and-swap moves the branch
+    to it.
 
 THE COMPARE-AND-SWAP
     The branch of HEAD moves to the commit only when the branch holds the
@@ -76,7 +76,8 @@ THE INDEX AND THE WORKING TREE
     After the commit, the index of the repository gets the entry of the
     commit for each changed path, and the working tree does not change.
     Then each patch goes to the working tree with git apply, unless the
-    working tree holds it.  The rows of THE GROWTH go there in the same way.  Each
+    working tree holds it.  The rows of THE GROWTH and the ledgers of THE
+    FALLS go there in the same way.  Each
     edit goes to the working-tree copy of its file, unless the copy holds it.
     When a hunk does not apply, the command writes a warning.  The owner of
     the hunk must then apply it by hand before the next commit of that file,
@@ -85,7 +86,8 @@ THE INDEX AND THE WORKING TREE
 THE RECORD
     Each run of the gate adds one line of JSON to the file RECORDS of the
     work directory.  The line holds the time, the subject, the commits, the
-    count of compositions, the configurations and the problems.  It also
+    count of compositions, the configurations and the problems.  It holds
+    the commit that the gate judged last and the ledgers that it wrote.  It also
     holds the wall time, the time of each configuration in its heavy step,
     and the result.  The work directory is the directory land of the work
     root of assay.core.cache.
@@ -112,14 +114,11 @@ Usage
 `guard selftest tests.loop.test_land` does a test of the module on a planted repository.
 """
 
-import contextlib
 import json
 import random
-import shutil
 import sys
-import tempfile
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -156,8 +155,6 @@ USAGE = (
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
-# The file of the shared git directory that the scratch repository copies (THE COMPOSITION).
-EXCLUDE_FILE = Path("info/exclude")
 # The ledger of the rule history, and the kind and the hash length of its row of THE GROWTH.
 HISTORY_RULE = "history"
 HISTORY_LEDGER = f"{rule_ledger.LEDGER_DIRECTORY}/{HISTORY_RULE}.txt"
@@ -420,26 +417,6 @@ def edited_paths(request: Request) -> list[str]:
 # ── The composition ────────────────────────────────────────────────────────
 
 
-@contextlib.contextmanager
-def scratch_repository(root: Path) -> Iterator[Path]:
-    """Make a scratch repository with a link to the object directory of the repository (THE COMPOSITION).
-
-    The block gets the scratch repository.  The command removes it after the block.
-    """
-    shared = git.common_dir(root)
-    with tempfile.TemporaryDirectory(prefix="loop-land-") as work:
-        scratch = Path(work)
-        git.init(scratch)
-        git.run(scratch, "config", "gc.auto", "0")
-        objects = scratch / ".git" / "objects"
-        shutil.rmtree(objects)
-        objects.symlink_to(shared / "objects", target_is_directory=True)
-        exclude = shared / EXCLUDE_FILE
-        if exclude.is_file():
-            shutil.copyfile(exclude, scratch / ".git" / EXCLUDE_FILE)
-        yield scratch
-
-
 def compose(root: Path, request: Request, head: str, with_diff: bool = False) -> Composed:
     """Compose the tree of a request on a commit (THE TREE, THE COMPOSITION).
 
@@ -454,7 +431,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False) ->
         git.GitError: If a git command fails
     """
     own = {path.rstrip("/") for path in request.paths}
-    with scratch_repository(root) as scratch:
+    with git.borrowing_repository(root) as scratch:
         git.run(scratch, "read-tree", head)
         if request.paths:
             git.run(scratch, "--work-tree", str(root), "add", "-A", "--", *request.paths)
@@ -516,7 +493,7 @@ def grow_commit(root: Path, first: str, grows: Sequence[Grow], changed: Sequence
     entry = git.tree_entry(root, first, HISTORY_LEDGER)
     if entry is None:
         raise LandError(f"the commit {first[:SHORT_HASH]} holds no {HISTORY_LEDGER}, and --grow writes its rows there")
-    with scratch_repository(root) as scratch:
+    with git.borrowing_repository(root) as scratch:
         git.run(scratch, "read-tree", first)
         git.set_index_entry(scratch, replace(entry, name=blob), HISTORY_LEDGER)
         tree = git.write_tree(scratch)
@@ -575,18 +552,30 @@ def apply_patch(root: Path, patch: bytes, shown: str) -> None:
         )
 
 
-def update_working_tree(root: Path, request: Request, grown: tuple[str, str] | None) -> None:
-    """Give the working tree each patch, each edit and the rows of THE GROWTH that it does not hold.
+def update_working_tree(
+    root: Path,
+    request: Request,
+    grown: tuple[str, str] | None,
+    folded: tuple[str, str, tuple[str, ...]] | None = None,
+) -> None:
+    """Give the working tree each patch, each edit, the rows of THE GROWTH and the ledgers of THE FALLS.
+
+    The working tree gets only what it does not hold.
 
     Args:
         root: The top of the work tree of the repository
         request: The request
         grown: The first and the second commit of a growth, or None (THE GROWTH)
+        folded: The commit that the gate started from, the commit that landed, and the ledgers of THE FALLS of
+            assay.loop.gate.  None when the gate wrote no ledger
     """
     for patch in request.patches:
         apply_patch(root, patch.read_bytes(), str(patch))
     if grown is not None:
         apply_patch(root, git.patch(root, grown, [HISTORY_LEDGER]), HISTORY_LEDGER)
+    if folded is not None:
+        before, after, ledgers = folded
+        apply_patch(root, git.patch(root, (before, after), ledgers), " ".join(ledgers))
     for path in edited_paths(request):
         file = root / path
         content = file.read_text(encoding="utf-8")
@@ -666,16 +655,24 @@ def land(
             for problem in verdict.problems:
                 check_report.write_line(f"loop land: REJECTED, {problem}", is_error=True)
             return Outcome(ExitCode.FINDINGS, candidate, composition, verdict, False)
+        final = verdict.final or candidate.commit
+        folded = f", with the falls of {' '.join(verdict.ledgers)} that the gate wrote" if verdict.ledgers else ""
         if options.is_check:
-            check_report.write_line(f"loop land: the gate accepts the commit {candidate.commit[:SHORT_HASH]}")
+            check_report.write_line(f"loop land: the gate accepts the commit {final[:SHORT_HASH]}{folded}")
             return Outcome(ExitCode.OK, candidate, composition, verdict, False)
-        if swap(root, branch, candidate.commit, head, request.subject):
-            check_report.write_line(f"loop land: committed {candidate.commit[:8]} on {head[:8]}:")
-            for path in candidate.changed:
+        if swap(root, branch, final, head, request.subject):
+            changed = tuple(sorted({*candidate.changed, *verdict.ledgers}))
+            check_report.write_line(f"loop land: committed {final[:8]} on {head[:8]}{folded}:")
+            for path in changed:
                 check_report.write_line(f"  {path}")
-            sync_index(root, candidate.commit, candidate.changed)
-            first = git.parent(root, candidate.commit) if request.grows else ""
-            update_working_tree(root, request, (first, candidate.commit) if request.grows else None)
+            sync_index(root, final, changed)
+            first = git.parent(root, final) if request.grows else ""
+            update_working_tree(
+                root,
+                request,
+                (first, final) if request.grows else None,
+                (candidate.commit, final, verdict.ledgers) if verdict.ledgers else None,
+            )
             return Outcome(ExitCode.OK, candidate, composition, verdict, True)
         check_report.write_line(
             f"loop land: HEAD moved, and the command composes the commit again (composition {composition + 1})",

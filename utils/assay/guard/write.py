@@ -7,6 +7,9 @@ usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [-
        guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations, or a
                                            rule of the engine build with a module that writes its ledger
        guard write --rule ID [ARG]...      a rule with a legacy module
+       guard write --all-configurations [--rule ID]... [--root DIR] [--jobs N] [--no-build]
+                                           each counted rule, or each rule of --rule, in the build of each
+                                           configuration of its ledger (assay.guard.write_configurations)
 
 A rule with a module of its own: the command runs the rule and writes its
 ledger in the mode of the call (assay.core.ledger, THE WRITE).  The default
@@ -81,6 +84,8 @@ PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
 OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
 # The policies of a rule that judges its ledger itself.  The module of such a rule writes the ledger.
 JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
+# The word that writes each configuration of the counted ledgers (assay.guard.write_configurations).
+CONFIGURATIONS_FLAG = "--all-configurations"
 
 
 def main(argv: list[str]) -> int:
@@ -89,6 +94,10 @@ def main(argv: list[str]) -> int:
     Returns:
         0 when the ledger is written, 1 when the mode refuses a finding, 2 on a usage error
     """
+    if CONFIGURATIONS_FLAG in argv:
+        from assay.guard import write_configurations
+
+        return write_configurations.main(argv)
     registry = check.load_registry()
     if registry is None:
         return 2

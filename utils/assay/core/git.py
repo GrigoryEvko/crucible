@@ -65,11 +65,23 @@ THE CHANGE
         as in a clone at the commit of a change.  A merge commit at HEAD is
         judged against its first parent.
     A root commit with no change in the working tree has no base.
+
+THE BORROWED INDEX
+    borrowing_repository() makes a scratch repository.  Its object directory
+    is a link to the object directory of a repository.  A tree that its index
+    composes, and each blob, tree and commit that it writes, are then in that
+    repository.  This module cannot give git an index file in the
+    environment, because assay.core.proc gives no child a repository
+    variable.  The scratch repository gets a copy of the file `info/exclude`
+    of the repository, and it runs no garbage collection.
+    replaced_commit() writes a commit with the parents and the message of a
+    commit, and its tree with some files replaced, through such an index.
 """
 
 import contextlib
 import datetime
 import os
+import shutil
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -98,6 +110,10 @@ NEW_FILE_MARK = "+++ "
 NO_FILE = "/dev/null"
 # The options of `git ls-files` that list each file that is not in the index and that .gitignore does not match.
 NEW_FILE_OPTIONS = ("--others", "--exclude-standard")
+# The file of the shared git directory that a borrowing repository copies, and the mode of a new file of a tree (THE
+# BORROWED INDEX).
+EXCLUDE_FILE = Path("info/exclude")
+PLAIN_FILE_MODE = "100644"
 # The head line of `git status --porcelain=v2 --branch` that names the commit, and its word for no commit.
 BRANCH_OID = "# branch.oid "
 INITIAL_COMMIT = "(initial)"
@@ -768,6 +784,15 @@ def index_changes(root: Path, base: str) -> tuple[str, ...]:
     return null_separated(run(root, "diff", "--cached", "-z", "--name-only", "--no-renames", base))
 
 
+def work_changes(root: Path, base: str, paths: Sequence[str]) -> tuple[str, ...]:
+    """Return each file of the working tree in the paths that is not as in a commit, with no search for renames.
+
+    Raises:
+        GitError: If git fails
+    """
+    return null_separated(run(root, "diff", "-z", "--name-only", "--no-renames", base, "--", *paths))
+
+
 def index_patch(root: Path, base: str) -> str:
     """Return the patch from a commit to the index of a repository, as text to show.
 
@@ -870,6 +895,66 @@ def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:
     stamp = {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date} if date else {}
     run(root, "commit", "-q", "--allow-empty", *message, extra={**SCRATCH_IDENTITY, **stamp})
     return run(root, "rev-parse", "HEAD").decode().strip()
+
+
+@contextlib.contextmanager
+def borrowing_repository(root: Path) -> Iterator[Path]:
+    """Make a scratch repository that writes into the object directory of the repository of a tree (THE BORROWED INDEX).
+
+    The block gets the scratch repository, and this function removes it after the block.
+
+    Raises:
+        GitError: If git fails
+    """
+    shared = common_dir(root)
+    with tempfile.TemporaryDirectory(prefix="assay-borrow-") as work:
+        scratch = Path(work)
+        init(scratch)
+        run(scratch, "config", "gc.auto", "0")
+        objects = scratch / ".git" / "objects"
+        shutil.rmtree(objects)
+        objects.symlink_to(shared / "objects", target_is_directory=True)
+        exclude = shared / EXCLUDE_FILE
+        if exclude.is_file():
+            shutil.copyfile(exclude, scratch / ".git" / EXCLUDE_FILE)
+        yield scratch
+
+
+def replaced_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) -> str:
+    """Write a commit with the parents and the message of a commit, and its tree with some files replaced.
+
+    Each path of `files` gets its bytes.  For None, the tree does not hold the path.  A replaced file keeps its mode,
+    and a new file gets the mode of a plain file.  The objects go into the repository of root (THE BORROWED INDEX).
+    Complexity: two git commands for each file, and a constant number of other git commands.
+
+    Raises:
+        GitError: If git fails, for example for a commit that the repository does not hold
+    """
+    parents = run(root, "rev-list", "--parents", "-n", "1", commit).decode().split()[1:]
+    entries: list[tuple[TreeEntry | None, str]] = []
+    for path, data in sorted(files.items()):
+        if data is None:
+            entries.append((None, path))
+            continue
+        kept = tree_entry(root, commit, path)
+        mode = kept.mode if kept is not None else PLAIN_FILE_MODE
+        entries.append((TreeEntry(mode, "blob", hash_object(root, data)), path))
+    with borrowing_repository(root) as scratch:
+        run(scratch, "read-tree", commit)
+        if not set_index_entries(scratch, entries):
+            raise GitError(f"git cannot give the index of a scratch repository the files of the commit {commit}")
+        tree = write_tree(scratch)
+    return commit_tree(root, tree, parents, message_of(root, commit))
+
+
+def message_of(root: Path, commit: str) -> str:
+    """Return the message of a commit as the commit holds it, with no line that git adds.
+
+    Raises:
+        GitError: If git fails, for example for a commit that the repository does not hold
+    """
+    # The raw object holds the header lines, one empty line, and then the message.
+    return run(root, "cat-file", "commit", commit).partition(b"\n\n")[2].decode("utf-8")
 
 
 @contextlib.contextmanager

@@ -259,6 +259,40 @@ def file_change_cases(expect: Callable[[str, bool], None]) -> None:
         )
 
 
+def replaced_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check replaced_commit() and message_of(): the parents, the message, and each replaced, new or removed file."""
+    with git.scratch_repository({"a.txt": b"one\n", "tool.sh": b"echo\n", "gone.txt": b"x\n"}) as root:
+        (root / "tool.sh").chmod(0o755)
+        first = git.commit_all(root, "The first commit")
+        (root / "a.txt").write_text("two\n")
+        second = git.commit_all(root, "The second commit", "With a body.")
+        replaced = git.replaced_commit(
+            root, second, {"a.txt": b"three\n", "tool.sh": b"echo 2\n", "new/b.txt": b"new\n", "gone.txt": None}
+        )
+        entries = [git.tree_entry(root, replaced, path) for path in ("tool.sh", "new/b.txt")]
+        modes = [entry.mode if entry is not None else "" for entry in entries]
+        expect(
+            "replaced_commit keeps the parents and the message, and replaces, adds and removes the files",
+            replaced != second
+            and git.parent(root, replaced) == first
+            and git.message_of(root, replaced) == git.message_of(root, second) == "The second commit\n\nWith a body.\n"
+            and git.show(root, replaced, "a.txt") == b"three\n"
+            and git.show(root, replaced, "new/b.txt") == b"new\n"
+            and git.show(root, replaced, "gone.txt") is None,
+        )
+        expect(
+            "a replaced file keeps its mode, and a new file gets the mode of a plain file",
+            modes == ["100755", git.PLAIN_FILE_MODE],
+        )
+        expect("replaced_commit does not move HEAD", git.head(root) == second)
+        (root / "a.txt").write_text("four\n")
+        (root / "untracked.txt").write_text("new\n")
+        expect(
+            "work_changes gives each changed file of the working tree under the paths, and no untracked file",
+            git.work_changes(root, "HEAD", ["a.txt", "tool.sh", "untracked.txt"]) == ("a.txt",),
+        )
+
+
 def isolation_cases(expect: Callable[[str, bool], None]) -> None:
     """Check that a repository variable of this process does not reach a git command."""
     with git.scratch_repository({"own.txt": b"own\n"}) as own, git.scratch_repository({"other.txt": b"x\n"}) as other:
@@ -309,6 +343,7 @@ def main(argv: list[str]) -> int:
     move_cases(expect)
     change_base_cases(expect)
     file_change_cases(expect)
+    replaced_cases(expect)
     isolation_cases(expect)
     if failures:
         print(f"tests.core.test_git: FAILED, {len(failures)} case(s) did not hold")
