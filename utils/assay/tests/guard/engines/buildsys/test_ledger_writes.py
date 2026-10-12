@@ -1,4 +1,4 @@
-"""The test of the writes of the rules test-time, test-memory, fixture-cpu and header-constexpr-ops (`guard write`).
+"""The test of the writes of the rules of the test launcher, fixture-cpu and header-constexpr-ops (`guard write`).
 
 `guard selftest tests.guard.engines.buildsys.test_ledger_writes` runs the
 test.  Each case makes a planted build with assay.guard.engines.buildsys.planted
@@ -28,9 +28,13 @@ kind {KIND}
 test slow_test | {{build}}/test/slow_test
 test big_test | {{build}}/test/big_test
 test fast_test | {{build}}/test/fast_test
+test counted_slow_test | {{build}}/test/counted_slow_test
+test heavy_test | {{build}}/test/heavy_test
 test-record slow_test wall=40 cpu=1 peak=0.1
 test-record big_test wall=1 cpu=1 peak=2
-test-record fast_test wall=1 cpu=1 peak=0.1
+test-record fast_test wall=1 cpu=1 peak=0.1 instructions=1
+test-record counted_slow_test wall=40 cpu=1 peak=0.1 instructions=1
+test-record heavy_test wall=1 cpu=1 peak=0.1 instructions=600
 test-record gone_test wall=50 cpu=1 peak=3
 """
 # A ledger of test-memory with a row of a different kind, which each write keeps.
@@ -67,7 +71,7 @@ def raised(action: object) -> str:
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Write the ledgers of test-time and test-memory from the records of a planted build (THE WRITE of test_time)."""
+    """Write the ledgers of the launcher rules from the records of a planted build (THE WRITE of test_time)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), RECORD_ROWS)
         ledgers = rule_ledger.ledger_path("test-memory", context.root).parent
@@ -88,8 +92,17 @@ def record_cases(expect: testing.Expect) -> None:
         status, _ = run_write(context, "test-time", "a planted reason")
         expect(
             "guard write writes the ledger of test-time with the wall time of each registered test over the error "
-            "threshold, and no row of a test that the build does not register",
+            "threshold, and no row of a test that the build does not register, or of a test whose record holds an "
+            "instruction count",
             status == 0 and ledger_values(context, "test-time") == {(KIND, "slow_test"): (40.0, "a planted reason")},
+        )
+        status, said = run_write(context, "test-instructions", "a planted reason")
+        expect(
+            "guard write writes the ledger of the held rule test-instructions: a row with the count in G of each "
+            "registered test over the error threshold, and no row of a test whose record holds no count",
+            status == 0
+            and ledger_values(context, "test-instructions") == {(KIND, "heavy_test"): (600.0, "a planted reason")}
+            and "test-instructions.txt holds 1 rows" in said,
         )
         run_write(context, "test-memory", "a different reason")
         expect(
@@ -99,7 +112,7 @@ def record_cases(expect: testing.Expect) -> None:
         registry = rule_registry.load()
         other = rule_ledger.empty(registry.rules["compile-cpu"])
         expect(
-            "written() of test_time refuses the ledger of a rule other than test-time and test-memory",
+            "written() of test_time refuses the ledger of a rule other than the rules of the test launcher",
             "is not a ledger of" in raised(lambda: test_time.written(context, other, None)),
         )
         fixture_cpu = registry.rules["fixture-cpu"]

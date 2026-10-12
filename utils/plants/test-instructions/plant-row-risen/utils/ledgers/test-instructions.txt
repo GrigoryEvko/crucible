@@ -1,0 +1,4 @@
+# A planted ledger of the rule test-instructions: a kept value under the measure of the test.
+format 1
+rule test-instructions
+- | x86_64-debug-asan | 520 | test_grown | a planted reason

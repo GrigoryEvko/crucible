@@ -1,0 +1,6 @@
+# The record of one test of the build gives 600 G user instructions.  A ledger row keeps the test up to 520 G, and
+# 530.4 G with the noise of the unit G.  The test is over that value and over the error threshold 500 G, so judge() of
+# `loop test-step` gives one error.
+format 1
+kind x86_64-debug-asan
+test-record test_grown wall=1 instructions=600

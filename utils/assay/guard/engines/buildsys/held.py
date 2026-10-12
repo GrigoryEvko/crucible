@@ -47,9 +47,10 @@ THE RECORDS OF A FIXTURE
 THE WRITE
     A held rule of the policy max has no module of its own.  `guard write`
     then calls written() of this module.  WRITERS gives the function that writes
-    the ledger of each such rule.  The function of test-memory is written()
-    of assay.guard.engines.buildsys.test_time, which writes the ledgers of
-    test-time and test-memory from the records of the tests.  The function of
+    the ledger of each such rule.  The function of test-memory and
+    test-instructions is written() of assay.guard.engines.buildsys.test_time.
+    That function writes the ledgers of the rules of the test launcher from
+    the records of the tests.  The function of
     fixture-cpu and fixture-instructions is fixture_written(), which writes
     their ledgers from the records of the fixtures of the build.  A fixture
     gets a row when the rule judges its measure at the error level and the
@@ -185,7 +186,15 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     for name, record in sorted(records.items()):
         cost = record.cost
         run = cost_meter.Measurement(
-            record.exit, cost.user_s, cost.system_s, cost.wall_s, cost.peak_rss_kb, cost.load, cost.end, None
+            record.exit,
+            cost.user_s,
+            cost.system_s,
+            cost.wall_s,
+            cost.peak_rss_kb,
+            cost.load,
+            cost.end,
+            None,
+            cost.test_instructions,
         )
         place = context.shown(cost_record.test_record_file(build, name))
         for level, row, message in teststep.judge(name, run, budget, kind, ledgers, configuration, walls=record.walls):
@@ -384,6 +393,7 @@ type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledg
 # The function that writes the ledger of each held rule of the policy max or baseline (THE WRITE).
 WRITERS: dict[str, Writer] = {
     "test-memory": test_time.written,
+    "test-instructions": test_time.written,
     FIXTURE_CPU: fixture_written,
     FIXTURE_INSTRUCTIONS: fixture_written,
     **dict.fromkeys(cost_budgets.BASELINE_TOTALS, cost_budgets.total_written),

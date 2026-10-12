@@ -35,7 +35,7 @@ deps test/unit.cpp.o | test/unit.cpp include/one.h
 deps test/hit.cpp.o state=MISSING
 fixture neg_planted test/neg/planted.cpp instructions=2 | test/neg/planted.cpp include/one.h
 test exe_planted labels=ci_guard,meta | {build}/test/exe_planted
-test-record exe_planted wall=4.5 cpu=4 peak=0.75
+test-record exe_planted wall=4.5 cpu=4 peak=0.75 instructions=3
 file include/one.h size=100
 cache-file neg/aa/entry size=64
 limit neg 4096
@@ -117,8 +117,10 @@ def build_cases(expect: testing.Expect) -> None:
         )
         records = ctest.costs(build)
         expect(
-            "a test-record row writes the record of `loop test-step`",
-            records["exe_planted"].cost.wall_s == 4.5 and records["exe_planted"].cost.cpu_s == 4.0,
+            "a test-record row writes the record of `loop test-step`, with its instruction count",
+            records["exe_planted"].cost.wall_s == 4.5
+            and records["exe_planted"].cost.cpu_s == 4.0
+            and records["exe_planted"].cost.test_instructions == 3 * planted.GIGA,
         )
         expect("a file row writes a file of the tree", (context.root / "include" / "one.h").stat().st_size == 100)
         expect(

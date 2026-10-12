@@ -5,8 +5,12 @@ THE JUDGE
     driver `loop fixture` judge each test while it runs.  They compare the
     wall time of the test with the measured rule test-time of
     utils/registry.txt.  They compare the peak memory of its largest process
-    with the measured rule test-memory.  A test over an error threshold that
-    no ledger row keeps fails (assay.core.budget, THE VERDICT).  Each run
+    with the measured rule test-memory, and its user instructions with the
+    measured rule test-instructions.  With an accurate count, test-instructions
+    holds the error level, and test-time gives a warning only
+    (assay.loop.teststep, THE MEASURED RULES).  A test over an error
+    threshold that no ledger row keeps fails (assay.core.budget, THE
+    VERDICT).  Each run
     writes the record of the test,
     BUILD_DIR/test-records/NAME.test.cost (assay.core.record, THE RECORDS).
     Each test writes its warnings to the file RULE.NAME.txt of the warnings
@@ -18,8 +22,9 @@ THE RULE
     A test cannot see a test that runs with no judge, or a ledger row that
     names a test of no build.  The rule reads the tests that the build
     registers and the records of their last runs (assay.readers.ctest).  It
-    also reads the rows of the ledgers of test-time and test-memory that
-    judge the build (assay.core.budget, THE ROWS).  It refuses:
+    also reads the rows of the ledgers of test-time, test-memory and
+    test-instructions that judge the build (assay.core.budget, THE ROWS).  It
+    refuses:
       unjudged  a test with no test launcher and no fixture driver in its
                 command.  Its time and its memory have no judge.  CMake gives
                 the launcher to a test of an executable target, and
@@ -43,15 +48,19 @@ THE WRITE
     build directory.  A row of a test with a last record over the warning
     threshold of test-time gets a new value.  The value is the smallest wall
     time of the window of the record, which the judge of the test reads.  A
-    row of a test at or below that threshold goes.  A registered test with a last record over the error
-    threshold and no row gets a new row.  A test with no record keeps its row.
-    `guard write --rule test-memory` writes the ledger of test-memory in the
-    same way, with the peak memory of each record in GB.  test-memory has a
-    holder and no module of its own.  The write then calls written() through
-    assay.guard.engines.buildsys.held (THE WRITE of that module).  A row keeps
-    its reason, and a new row takes the reason of --reason, or
-    DEFAULT_REASON.  A row of a different name stays, and a row of the build
-    kind keeps a test of a build with options.
+    row of a test at or below that threshold goes.  A registered test with a
+    last record over the error threshold, no row and no instruction count gets
+    a new row.  With a count, the wall time gives a warning only, and no row
+    is necessary.  A test with no record keeps its row.  `guard write --rule
+    test-memory` writes the ledger of test-memory in the same way, with the
+    peak memory of each record in GB.  `guard write --rule test-instructions`
+    writes the ledger of test-instructions with the instruction count of each
+    record in G.  A test with no count in its record keeps its row.  The
+    two rules have a holder and no module of their own.  The write then calls
+    written() through assay.guard.engines.buildsys.held (THE WRITE of that
+    module).  A row keeps its reason, and a new row takes the reason of
+    --reason, or DEFAULT_REASON.  A row of a different name stays, and a row
+    of the build kind keeps a test of a build with options.
 
 Complexity: linear in the words of the registered tests, the records and the ledger rows.
 """
@@ -72,8 +81,10 @@ from assay.readers import ctest as ctest_reader
 
 RULE = "test-time"
 MEMORY_RULE = "test-memory"
-# The two rules with ledgers that name a test (THE RULE).
-LEDGER_RULES = (RULE, MEMORY_RULE)
+INSTRUCTIONS_RULE = "test-instructions"
+# The rules with ledgers that name a test (THE RULE).
+LEDGER_RULES = (RULE, MEMORY_RULE, INSTRUCTIONS_RULE)
+GIGA = 1e9
 # The file name of the master loop, and the subcommands of the judge: the test launcher and the fixture driver.
 MASTER = "loop"
 JUDGES = frozenset({"test-step", "fixture"})
@@ -177,17 +188,23 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
     return found
 
 
-def measure_of(rule_id: str, record: cost_record.TestRecord) -> float:
-    """Return the measure of a record in the unit of the rule, as the judge of the test reads it.
+def measure_of(rule_id: str, record: cost_record.TestRecord) -> float | None:
+    """Return the measure of a record in the unit of the rule, as the judge of the test reads it, or None.
 
     test-time reads the smallest wall time of the window of the test (assay.loop.teststep, THE MEASURED RULES).
-    test-memory reads the peak memory of the last run in GB.
+    test-memory reads the peak memory of the last run in GB.  test-instructions reads the instruction count of the
+    last run in G, and a record with no count gives None.
     """
-    return record.least_wall_s if rule_id == RULE else record.cost.peak_rss_kb / cost_meter.KB_PER_GB
+    if rule_id == RULE:
+        return record.least_wall_s
+    if rule_id == INSTRUCTIONS_RULE:
+        count = record.cost.test_instructions
+        return None if count is None else count / GIGA
+    return record.cost.peak_rss_kb / cost_meter.KB_PER_GB
 
 
 def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of test-time or test-memory with the rows of the configuration written again (THE WRITE).
+    """Return the ledger of a rule of LEDGER_RULES with the rows of the configuration written again (THE WRITE).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the build has no kind
@@ -207,18 +224,24 @@ def written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | Non
         records = ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
         raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
+    # A record with no measure of the rule, such as a run with no instruction count, keeps the row of its test.
+    measures = {test_name: measure_of(ledger.rule, record) for test_name, record in records.items()}
     base = {
         key: entry
         for key, entry in ledger.base.items()
-        if key.kind != name or (key.entity in registered and key.entity not in records)
+        if key.kind != name or (key.entity in registered and measures.get(key.entity) is None)
     }
     for test_name, record in sorted(records.items()):
-        measure = measure_of(ledger.rule, record)
+        measure = measures[test_name]
+        if measure is None:
+            continue
         key = rule_ledger.Key("", name, test_name)
         earlier = ledger.base.get(key)
         level = check_report.classify(measure, budget)
         has_kind_row = name != kind and rule_ledger.Key("", kind, test_name) in ledger.base
-        if test_name not in registered or level is None or (earlier is None and (level != "error" or has_kind_row)):
+        # With an instruction count, a wall time over the error threshold gives a warning only (THE WRITE).
+        is_error = level == "error" and not (ledger.rule == RULE and record.cost.test_instructions is not None)
+        if test_name not in registered or level is None or (earlier is None and (not is_error or has_kind_row)):
             continue
         kept = earlier.reason if earlier is not None else reason or DEFAULT_REASON
         base[key] = rule_ledger.Entry(key, cost_budget.kept_value(measure), kept)

@@ -1,0 +1,4 @@
+# A planted ledger of the rule test-instructions: a keep row of a test over the warning threshold only.
+format 1
+rule test-instructions
+- | x86_64-debug-asan | 100 | test_kept | a planted reason

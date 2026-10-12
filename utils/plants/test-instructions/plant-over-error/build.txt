@@ -1,0 +1,5 @@
+# The record of one test of the build gives 600 G user instructions, over the error threshold 500 G of
+# test-instructions.  judge() of `loop test-step` gives one error.
+format 1
+kind x86_64-debug-asan
+test-record test_heavy wall=1 instructions=600

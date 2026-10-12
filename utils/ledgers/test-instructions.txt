@@ -1,0 +1,25 @@
+# The ledger of the rule test-instructions.  `python3 utils/bin/guard explain test-instructions` tells the rule and
+# its policy, and `python3 utils/bin/guard write --rule test-instructions` writes this file.
+format 1
+rule test-instructions
+- | x86_64-debug-asan | 116.1 | assay_loop_derive_test_header_costs | The test runs planted compilers on planted headers, and it counts their instructions with the hardware counter
+- | x86_64-debug-asan | 323.775 | ccache_wrapper_self_test | The test configures a planted project and compiles it through ccache, cold and warm, and the configure builds the quarantine plugin
+- | x86_64-debug-asan | 133.585 | guard_codegen_shapes_witness | The witness compiles each plant and each control of the rule with the patched compiler, and it reads the machine code of each pair
+- | x86_64-debug-asan | 111.424 | guard_history | The rule reads each committed version of each ledger and of utils/registry.txt from git, and its count increases with the history
+- | x86_64-debug-asan | 335.418 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler
+- | x86_64-debug-tsan | 110.681 | assay_loop_derive_test_header_costs | The test runs planted compilers on planted headers, and it counts their instructions with the hardware counter
+- | x86_64-debug-tsan | 323.885 | ccache_wrapper_self_test | The test configures a planted project and compiles it through ccache, cold and warm, and the configure builds the quarantine plugin
+- | x86_64-debug-tsan | 133.585 | guard_codegen_shapes_witness | The witness compiles each plant and each control of the rule with the patched compiler, and it reads the machine code of each pair
+- | x86_64-debug-tsan | 111.42 | guard_history | The rule reads each committed version of each ledger and of utils/registry.txt from git, and its count increases with the history
+- | x86_64-debug-tsan | 335.4 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler
+- | x86_64-debug-tsan | 127.88 | test_vigil_unrepeated_prefix | ThreadSanitizer checks each memory access of the test
+- | x86_64-debug-ubsan-strict | 114.612 | assay_loop_derive_test_header_costs | The test runs planted compilers on planted headers, and it counts their instructions with the hardware counter
+- | x86_64-debug-ubsan-strict | 323.857 | ccache_wrapper_self_test | The test configures a planted project and compiles it through ccache, cold and warm, and the configure builds the quarantine plugin
+- | x86_64-debug-ubsan-strict | 133.589 | guard_codegen_shapes_witness | The witness compiles each plant and each control of the rule with the patched compiler, and it reads the machine code of each pair
+- | x86_64-debug-ubsan-strict | 111.502 | guard_history | The rule reads each committed version of each ledger and of utils/registry.txt from git, and its count increases with the history
+- | x86_64-debug-ubsan-strict | 335.333 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler
+- | x86_64-release | 118.333 | assay_loop_derive_test_header_costs | The test runs planted compilers on planted headers, and it counts their instructions with the hardware counter
+- | x86_64-release | 323.864 | ccache_wrapper_self_test | The test configures a planted project and compiles it through ccache, cold and warm, and the configure builds the quarantine plugin
+- | x86_64-release | 133.583 | guard_codegen_shapes_witness | The witness compiles each plant and each control of the rule with the patched compiler, and it reads the machine code of each pair
+- | x86_64-release | 111.512 | guard_history | The rule reads each committed version of each ledger and of utils/registry.txt from git, and its count increases with the history
+- | x86_64-release | 335.947 | guard_plugin_witness | The witness compiles each plant and each control of the quarantine plugin with the patched compiler

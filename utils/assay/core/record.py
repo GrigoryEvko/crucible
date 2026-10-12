@@ -66,9 +66,13 @@ THE COST BLOCK
     instructions of the compiler run, when the host gives the count
     (assay.core.meter, A COMPILE THROUGH CCACHE).  A ccache miss also holds
     ccache_instructions, the instructions of the remaining part of the step:
-    the preprocessor run, ccache and the meter.  A block of an earlier format
-    holds the key instructions, the count of the full step, and the reader
-    takes no count from it.
+    the preprocessor run, ccache and the meter.  A test holds
+    test_instructions, the user instructions of the test and of each process
+    that it starts.  The key is there only when the host gives an accurate
+    count (assay.loop.teststep, THE MEASURED RULES).  A block of an earlier
+    format holds the key
+    instructions, the count of the full step, and the reader takes no count
+    from it.
 
 THE WRITE
     The step meters write the records, and each import of this module is a
@@ -117,7 +121,8 @@ FIXTURE_SUFFIX = ".inputs"
 # The keys of the instruction counts of a cost block (THE COST BLOCK).
 COMPILER_COUNT_KEY = "compiler_instructions"
 CCACHE_COUNT_KEY = "ccache_instructions"
-COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY)
+TEST_COUNT_KEY = "test_instructions"
+COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY, TEST_COUNT_KEY)
 # The keys of the times of a cost block, with the load and the end, in the sequence of cost_text() (THE READ).
 TIME_KEYS = ("cpu_s", "user_s", "system_s", "wall_s", "load", "end")
 PEAK_KEY = "peak_rss_kb"
@@ -187,6 +192,11 @@ class Cost(Value):
     def compiler_instructions(self) -> int | None:
         """The user instructions of the compiler run of a compile, or None when the block holds no count."""
         return self.count(COMPILER_COUNT_KEY)
+
+    @property
+    def test_instructions(self) -> int | None:
+        """The user instructions of a test and of each process that it starts, or None when the block holds no count."""
+        return self.count(TEST_COUNT_KEY)
 
 
 class CostRecord(Value):

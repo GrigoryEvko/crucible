@@ -51,7 +51,7 @@ from assay.readers import ctest as ctest_reader
 USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
 PREFIX = cost_budgets.TOTAL_PREFIX
 # The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
-TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "fixture-cpu", "fixture-instructions"})
+TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "test-instructions", "fixture-cpu", "fixture-instructions"})
 
 
 def test_keyed_files(warnings_dir: Path) -> list[tuple[str, str]]:

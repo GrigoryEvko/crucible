@@ -48,16 +48,23 @@ class Planted:
         path.chmod(0o755)
         return path
 
-    def budget(self, time_rule: tuple[float, float], memory_rule: tuple[float, float]) -> None:
-        """Write the planted registry with the warning and the error thresholds of the two rules."""
-        self.table.write_text(
-            rule_registry.planted(
-                [
-                    rule_registry.measured_rule("test-time", *time_rule, "s", "the wall time"),
-                    rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory"),
-                ]
-            )
-        )
+    def budget(
+        self,
+        time_rule: tuple[float, float],
+        memory_rule: tuple[float, float],
+        instruction_rule: tuple[float, float] | None = None,
+    ) -> None:
+        """Write the planted registry with the warning and the error thresholds of the rules.
+
+        With no `instruction_rule`, the registry has no rule test-instructions, and a count holds no error level.
+        """
+        rules = [
+            rule_registry.measured_rule("test-time", *time_rule, "s", "the wall time"),
+            rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory"),
+        ]
+        if instruction_rule is not None:
+            rules.append(rule_registry.measured_rule("test-instructions", *instruction_rule, "G", "the instructions"))
+        self.table.write_text(rule_registry.planted(rules))
 
     def ledger(self, row: str, text: str) -> None:
         """Write the planted ledger of one rule, or remove it for an empty text."""
@@ -313,6 +320,85 @@ class Planted:
         status, said = self.launch(program)
         expect("a passed test over the memory error threshold fails", status == 1 and ": error: [test-memory] " in said)
 
+    def _count_of(self, name: str) -> object:
+        """Return the instruction count of the record of one test, or None when the record holds no count."""
+        cost = self._record_of(name).get("cost")
+        return cost.get(cost_record.TEST_COUNT_KEY) if isinstance(cost, dict) else None
+
+    def count_cases(self, expect: testing.Expect) -> None:
+        """Check test-instructions, and the warning of test-time for a run with an accurate count (THE MEASURED RULES).
+
+        A planted test that sleeps over the time error threshold gives a warning, because its count holds the error
+        level.  A planted test that does more work than its row keeps fails.  A host with no accurate counter gives no
+        count, and test-time then keeps its error.
+        """
+        self.ledger("test-time", "")
+        self.ledger("test-memory", "")
+        self.ledger("test-instructions", "")
+        host_counts = cost_meter.host_gives_counter()
+        on_host = f"(this host: {'a counter' if host_counts else 'no counter'})"
+        sleeper = self.plant_test("test_sleeping", "#!/bin/sh\nsleep 0.3\n")
+        self.budget((0.1, 0.2), (1000, 2000), (1000, 2000))
+        status, said = self.launch(sleeper)
+        count = self._count_of("test_sleeping")
+        if host_counts:
+            expect(
+                f"a test that sleeps over the time error threshold with a small count passes, with a warning of "
+                f"test-time that names test-instructions, and its record keeps the count {on_host}",
+                status == 0
+                and ": warning: [test-time] " in said
+                and "test-instructions holds the error level" in said
+                and ": error: " not in said
+                and isinstance(count, int)
+                and count > 0,
+            )
+        else:
+            expect(
+                f"with no count, a test that sleeps over the time error threshold fails {on_host}",
+                status == 1 and ": error: [test-time] " in said and count is None,
+            )
+        status, said = self.launch(sleeper, **{cost_meter.INSTRUCTIONS_ENV: "0"})
+        expect(
+            f"a run with {cost_meter.INSTRUCTIONS_ENV}=0 has no count, and test-time keeps its error",
+            status == 1 and ": error: [test-time] " in said and self._count_of("test_sleeping") is None,
+        )
+        self.budget((0.1, 0.2), (1000, 2000))
+        status, said = self.launch(sleeper)
+        expect(
+            "a registry with no rule test-instructions gives a count no error level, and test-time keeps its error",
+            status == 1 and ": error: [test-time] " in said,
+        )
+        if not host_counts:
+            expect(f"skip the cases of test-instructions {on_host}", True)
+            return
+        worker = self.plant_test(
+            "test_working", f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n"
+        )
+        self.budget((1000, 2000), (1000, 2000), (0.0001, 0.0002))
+        status, said = self.launch(worker)
+        measured = self._count_of("test_working")
+        expect(
+            "a passed test over the error threshold of test-instructions fails, with an error line that gives its count",
+            status == 1 and ": error: [test-instructions] " in said and " G user instructions" in said,
+        )
+        if not isinstance(measured, int):
+            expect("the record of a counted test keeps its count", False)
+            return
+        giga = measured / test_launcher.GIGA
+        self.ledger("test-instructions", f"- | x86_64-debug-asan | {giga * 2:.6f} | test_working | a planted reason\n")
+        status, said = self.launch(worker)
+        expect(
+            "a ledger row keeps a test up to its kept value, with a warning",
+            status == 0 and ": warning: [test-instructions] " in said and "a planted reason" in said,
+        )
+        self.ledger("test-instructions", f"- | x86_64-debug-asan | {giga / 2:.6f} | test_working | a planted reason\n")
+        status, said = self.launch(worker)
+        expect(
+            "a test that does more work than its row keeps fails again",
+            status == 1 and ": error: [test-instructions] " in said and "more than the row" in said,
+        )
+        self.ledger("test-instructions", "")
+
     def ledger_cases(self, expect: testing.Expect) -> None:
         """Check the rows of a ledger, and a test that cannot start."""
         program = self.program
@@ -449,6 +535,7 @@ def unmeasured_cases(expect: testing.Expect) -> None:
 def window_cases(expect: testing.Expect) -> None:
     """Check that the warning of test-time reads the smallest wall time of the window, and its error each run."""
     budget = {"test-time": (5.0, 30.0)}
+    counted_budget = {"test-time": (5.0, 30.0), "test-instructions": (1000.0, 2000.0)}
     with tempfile.TemporaryDirectory(prefix="test-step-window-") as directory:
         build = Path(directory) / "build"
         build.mkdir()
@@ -456,12 +543,25 @@ def window_cases(expect: testing.Expect) -> None:
         warnings = build / "check-warnings"
 
         def run(
-            name: str, wall: float, exit_code: int = 0, is_measured: bool = True, version: str = "0123456789abcdef"
+            name: str,
+            wall: float,
+            exit_code: int = 0,
+            is_measured: bool = True,
+            version: str = "0123456789abcdef",
+            instructions: int | None = None,
         ) -> tuple[int, bool]:
             """Judge and record one planted run of a test.  Return its status, and True when it gives a warning."""
-            measured = cost_meter.Measurement(exit_code, 0.1, 0.0, wall, 1024, 1.0, 0.0, None)
+            measured = cost_meter.Measurement(exit_code, 0.1, 0.0, wall, 1024, 1.0, 0.0, None, instructions)
             status = test_launcher.judge_and_record(
-                name, "/b/test", "/b/test", str(build), measured, str(warnings), budget, is_measured, version
+                name,
+                "/b/test",
+                "/b/test",
+                str(build),
+                measured,
+                str(warnings),
+                budget if instructions is None else counted_budget,
+                is_measured,
+                version,
             )
             return status, (warnings / f"test-time.{name}.txt").is_file()
 
@@ -492,6 +592,18 @@ def window_cases(expect: testing.Expect) -> None:
         run("test_stalled", 4.0)
         status, _ = run("test_stalled", 31.0)
         expect("one run over the error threshold of test-time fails at once, also after a faster run", status == 1)
+        run("test_reclaimed", 4.0, instructions=10**9)
+        status, warns = run("test_reclaimed", 91.0, instructions=10**9)
+        expect(
+            "a run with an instruction count over the error threshold of test-time, after a faster run, passes with no "
+            "finding, because test-instructions holds the error level and the window reads the faster run",
+            status == 0 and not warns,
+        )
+        status, warns = run("test_reclaimed_alone", 91.0, instructions=10**9)
+        expect(
+            "the first run with an instruction count over the error threshold of test-time passes with a warning",
+            status == 0 and warns,
+        )
         run("test_failing", 6.0)
         status, warns = run("test_failing", 1.0, exit_code=1)
         expect(
@@ -602,6 +714,7 @@ def main(argv: list[str]) -> int:
                 planted.status_cases,
                 planted.script_cases,
                 planted.threshold_cases,
+                planted.count_cases,
                 planted.ledger_cases,
                 planted.core_cases,
                 planted.version_cases,

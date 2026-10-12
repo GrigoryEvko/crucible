@@ -1,0 +1,9 @@
+# The record of one test of the build gives 10 G user instructions, under the warning threshold 60 G of
+# test-instructions.  A second test sleeps for 40 s with the same count, and only the rule test-time judges its wall
+# time.  A third test has no count, as on a host with no counter.  judge() of `loop test-step` gives no finding of
+# test-instructions.
+format 1
+kind x86_64-debug-asan
+test-record test_small wall=1 instructions=10
+test-record test_sleeping wall=40 instructions=10
+test-record test_uncounted wall=1

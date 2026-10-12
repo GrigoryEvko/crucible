@@ -54,7 +54,7 @@ THE FILE
     instructions and record (yes, no or blind).  A blind record does not know
     the files of the compile.  The fields of a test: line (of its
     registration in test/CMakeLists.txt) and labels.  The fields of a record
-    of a test: result, cpu, wall, peak and program.
+    of a test: result, cpu, wall, peak, instructions (in G) and program.
 
     A configure row writes build.ninja after each other file of the build.
     It also writes the file configure-time.txt of a configure of SECONDS
@@ -130,7 +130,7 @@ TARGET_FIELDS = frozenset({"type", "pch", "file", "line", "pch-line", "backtrace
 DEPS_FIELDS = frozenset({"state"})
 FIXTURE_FIELDS = frozenset({"user", "system", "instructions", "record"})
 TEST_FIELDS = frozenset({"line", "labels"})
-RECORD_FIELDS = frozenset({"result", "cpu", "wall", "peak", "program"})
+RECORD_FIELDS = frozenset({"result", "cpu", "wall", "peak", "instructions", "program"})
 SIZE_FIELDS = frozenset({"size"})
 CACHE_FIELDS = frozenset({"type"})
 CONFIGURE_FIELDS = frozenset({"seconds", "plugin"})
@@ -532,7 +532,9 @@ def plant_test_record(row: rows_grammar.Row, root: Path, build: Path) -> None:
     run = measurement(number(fields, "cpu", row, wall), wall, number(fields, "peak", row, 0.1))
     program = expanded(fields.get("program", f"{build}/test/{row.words[1]}"), root, build)
     result = choice(fields, "result", ("passed", "failed", "rejected"), row)
-    record = cost_record.TestRecord(row.words[1], result, program, run.exit_code, cost_record.measured(run))
+    count = count_of(fields, "instructions", row)
+    counts = () if count is None else ((cost_record.TEST_COUNT_KEY, count),)
+    record = cost_record.TestRecord(row.words[1], result, program, run.exit_code, cost_record.measured(run, counts))
     cost_record.write(cost_record.test_record_file(build, row.words[1]), record)
 
 

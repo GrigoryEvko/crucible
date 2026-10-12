@@ -236,15 +236,6 @@ class Verdicts:
             self.failures.append(name)
 
 
-def host_gives_counter() -> bool:
-    """Return True when this host gives an exact instruction counter (utils/assay/core/meter.py)."""
-    probe = cost_meter.open_instruction_counter()
-    if probe is None:
-        return False
-    os.close(probe)
-    return True
-
-
 def last_finding(stderr: bytes) -> check_report.Finding | None:
     """Return the finding of the last line of standard error, or None."""
     lines = stderr.decode().splitlines()
@@ -263,7 +254,7 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            and first.get("output_bytes") == bench.object.stat().st_size
            and float(first["cost"]["cpu_s"]) > 0 and first.get("source") == str(bench.source))
     expect("the stats log of the call is removed", not Path(f"{bench.object}.ccache-stats").exists())
-    host_counts = host_gives_counter()
+    host_counts = cost_meter.host_gives_counter()
     counted = first["cost"].get(cost_record.COMPILER_COUNT_KEY)
     expect(f"a compile record holds the user instructions of the compiler run exactly when the host gives a counter, "
            f"and a compile with no ccache holds no ccache part "
@@ -560,7 +551,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         expect("the real ccache: a cold cache gives a built record, and a warm cache a hit",
                cold_run.exit == 0 and warm_run.exit == 0 and cold.get("result") == "built"
                and warm.get("result") == "hit" and warm.get("last_cost") == cold.get("cost"))
-        if host_gives_counter():
+        if cost_meter.host_gives_counter():
             counts = [record.get("cost", {}).get(cost_record.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
             rest = cold.get("cost", {}).get(cost_record.CCACHE_COUNT_KEY)
             agree = (all(isinstance(count, int) and count > 0 for count in counts)

@@ -138,7 +138,21 @@ def test_and_fixture_cases(expect: testing.Expect) -> None:
         expect(
             "the record of a test is BUILD_DIR/test-records/NAME.test.cost, and it reads back equal",
             path == build / cost_record.TEST_DIRECTORY / f"run.sh{cost_record.TEST_SUFFIX}"
-            and cost_record.read_test(path) == written,
+            and cost_record.read_test(path) == written
+            and written.cost.test_instructions is None,
+        )
+        test_with_count = cost_record.TestRecord(
+            "run.sh",
+            "passed",
+            "/b/test/run.sh",
+            0,
+            cost_record.measured(run_of(1.25), ((cost_record.TEST_COUNT_KEY, 7_000_000_000),)),
+        )
+        cost_record.write(path, test_with_count)
+        expect(
+            "the record of a test keeps the instruction count of the test, and it reads back equal",
+            cost_record.read_test(path) == test_with_count
+            and cost_record.read_test(path).cost.test_instructions == 7_000_000_000,
         )
         inputs = ("/s/neg/neg_a.cpp", "/s/include/a.h")
         fixture = cost_record.FixtureRecord("neg_a", "stored", 0.5, 0.125, 3_000_000_000, inputs)

@@ -1,0 +1,6 @@
+# The record of one test of the build gives 100 G user instructions, over the warning threshold 60 G of
+# test-instructions only.  A ledger row keeps the test up to 100 G with the noise of the unit G.  judge() of `loop
+# test-step` gives one warning, and no error.
+format 1
+kind x86_64-debug-asan
+test-record test_kept wall=1 instructions=100

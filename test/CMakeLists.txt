@@ -4668,11 +4668,11 @@ set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
     LABELS "ci_guard")
 
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test
-# except a negative fixture, and it holds the rules test-time and test-memory
-# of utils/registry.txt while the test runs.  The fixture driver holds them for
-# a fixture.  The rule test-time (test guard_test_time) refuses a test that the
-# two do not run, and a ledger row of the two rules that names a test that
-# this build does not register.
+# except a negative fixture, and it holds the rules test-time, test-memory and
+# test-instructions of utils/registry.txt while the test runs.  The fixture
+# driver holds them for a fixture.  The rule test-time (test guard_test_time)
+# refuses a test that the two do not run, and a ledger row of the three rules
+# that names a test that this build does not register.
 crucible_script_test(NAME test_launcher_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
 set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")

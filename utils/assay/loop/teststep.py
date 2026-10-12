@@ -19,7 +19,9 @@ Python.
 
 WHAT THE SUBCOMMAND DOES
     It runs the command through utils/assay/core/meter.py, with the same
-    standard streams.  The environment of the command gets
+    standard streams.  It counts the user instructions of the command and of
+    each process that the command starts (meter.py, THE INSTRUCTION COUNT).
+    The environment of the command gets
     CRUCIBLE_TEST_LAUNCHED with the name of the test.  A fixture driver in the
     command then gives the record and the judge to this subcommand.  It
     writes the record BUILD/test-records/NAME.test.cost (assay.core.record,
@@ -51,9 +53,28 @@ CORE DUMPS
         itself has no use.
 
 THE MEASURED RULES
+    The launcher judges three measured rules of utils/registry.txt.
     test-time is the wall time of the test, and test-memory is the peak
-    resident memory of its largest process (the measured rules of
-    utils/registry.txt).
+    resident memory of its largest process.  test-instructions is the user
+    instructions of the test and of each process that it starts.
+      * The wall time increases with the load of the host.  When the host is
+        short of memory, or when each core is in use, a run takes more time
+        and more system time.  The user instructions do not change with the
+        load (utils/assay/core/meter.py, THE INSTRUCTION COUNT).
+        ccache_wrapper_self_test ran 43.4 s of user time in 7.4 s of wall
+        time on a quiet host.  On 2026-10-12, the same test took 56 s to 166 s
+        of wall time, when the host was short of memory.
+      * When the run holds an accurate count, test-instructions holds the
+        error level of the test, and test-time gives a warning only.  The
+        record keeps the count (key test_instructions, assay.core.record).  A
+        run with no count keeps the error level of test-time.  A host with no
+        accurate counter gives no count.  test-instructions reads the run
+        alone, because its count is almost the same on each run.
+      * A test that waits for a different thread in a loop runs more
+        instructions when the host is in use.  On 2026-10-12, with two tests
+        for each CPU, the counts of such tests increased up to 21 times, to
+        at most 12.1 G.  That count is less than the warning threshold of
+        test-instructions, and such a test has no row.
       * The load of the host only makes a run slower.  The warnings of
         test-time then read the smallest wall time of the window of the test.
         The window is the last RECENT_RUNS runs with the status 0 that did the
@@ -65,8 +86,9 @@ THE MEASURED RULES
         run that did not do the measured work, is judged alone.  Such a run
         does not go into the window.
       * The errors of test-time read the run alone.  An error then comes from
-        the first run over the error threshold.  test-memory reads the run
-        alone, because the memory is almost the same on each run.
+        the first run with no count over the error threshold.  test-memory
+        reads the run alone, because the memory is almost the same on each
+        run.
       * Over the warning threshold of a rule, the subcommand prints a warning
         line in the format of utils/assay/core/report.py and writes it to
         DIR/RULE.NAME.txt, so the tests that run at the same time do not write
@@ -86,10 +108,11 @@ THE MEASURED RULES
         warning threshold is an error, so that the row goes.  A ledger that
         does not exist has no row, and the subcommand then imports no ledger
         module.
-    Memory is almost the same on each run, so its error threshold sits above
-    the largest measure.  Wall time depends on the load of the host, so its
-    error threshold sits above the noise that the commit of the threshold
-    states, and the timeout of the test preset is the hard stop.  In a build of a
+    Memory and the instruction count are almost the same on each run, so
+    their error thresholds sit above the largest measure.  Wall time depends
+    on the load of the host, so its error threshold sits above the noise that
+    the commit of the threshold states, and the timeout of the test preset is
+    the hard stop.  In a build of a
     kind with tsan, a wall time over the error threshold gives a warning
     only: ThreadSanitizer serializes the threads of a test, and one test took
     15 s in one run and 91 s in the next on the shared host.  On a GitHub
@@ -138,7 +161,10 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-ROWS = ("test-time", "test-memory")
+ROWS = ("test-time", "test-memory", "test-instructions")
+# The rule that holds the error level of a run with an accurate instruction count, and the instructions in one G.
+COUNT_ROW = "test-instructions"
+GIGA = 1e9
 # The number of runs in the window of a test.  The warnings of test-time read the smallest wall time of the window
 # (THE MEASURED RULES).
 RECENT_RUNS = 5
@@ -210,7 +236,7 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
     """Return the place, the reason and the kept value of the ledger row that names a test for the build.
 
     Args:
-        row: test-time or test-memory
+        row: A rule of ROWS
         name: The name of the test
         kind: The kind of the build, or None when it is not known
         ledgers: The directory of the ledgers, or None for the directory of CRUCIBLE_TEST_LEDGERS, else of the tree
@@ -239,7 +265,7 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
 
     Args:
         name: The name of the test
-        run: The measurement of the command
+        run: The measurement of the command, with its accurate instruction count or None
         budget: The thresholds of the measured rules that the registry gives
         kind: The kind of the build, or None
         ledgers: The directory of the ledgers (ledger_row()), or None
@@ -258,19 +284,30 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         shown_level, shown_message = cost_meter.ci_verdict(level, row, message)
         findings.append((shown_level, row, shown_message))
 
-    for row, measure, unit, text in (("test-time", run.wall_s, "s", f"{run.wall_s:.2f} s of wall time"),
-                                     ("test-memory", run.peak_gb, "GB", f"{run.peak_gb:.3f} GB of peak memory")):
+    measures = [("test-time", run.wall_s, "s", f"took {run.wall_s:.2f} s of wall time"),
+                ("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
+    if run.instructions is not None:
+        giga = run.instructions / GIGA
+        measures.append((COUNT_ROW, giga, "G", f"ran {giga:.2f} G user instructions"))
+    # With an accurate count, test-instructions holds the error level, and the wall time gives a warning only.
+    count_note = (f"The run holds an instruction count, so the measured rule {COUNT_ROW} holds the error level of the "
+                  f"test, and the wall time, which rises with the load of the host, gives a warning only")
+    for row, measure, unit, text in measures:
         if row not in budget:
             continue
         warn, error = budget[row]
         admitted = ledger_row(row, name, kind, ledgers, configuration)
         kept = None if admitted is None else admitted[2]
-        said = f"the test {name} took {text}"
+        said = f"the test {name} {text}"
         noise = cost_budget.noise_of(unit)
         found = cost_budget.verdict(measure, warn, error, kept, noise)
-        is_run_error = found == cost_budget.ERROR or (found == cost_budget.RISEN and measure > error)
+        is_time = row == "test-time"
+        is_count_held = is_time and run.instructions is not None and COUNT_ROW in budget
+        is_tsan_time = is_time and kind is not None and "-tsan" in kind
+        is_run_error = not is_count_held and (found == cost_budget.ERROR
+                                              or (found == cost_budget.RISEN and measure > error))
         value = measure
-        if row == "test-time" and len(walls) > 1 and not is_run_error:
+        if is_time and len(walls) > 1 and not is_run_error:
             value = min(walls)
             said += f", and at least {value:.2f} s in each of the last {len(walls)} runs of its window"
             found = cost_budget.verdict(value, warn, error, kept, noise)
@@ -284,12 +321,14 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
             add("warning", row, f"{said}, {over} {unit}, and the row {admitted[0]} keeps it up to {admitted[2]:g} "
                                 f"{unit} with the noise {noise:.0%}: {admitted[1]}")
         elif admitted is not None and found == cost_budget.RISEN:
-            is_tsan_time = row == "test-time" and kind is not None and "-tsan" in kind
-            level = "warning" if is_tsan_time else cost_budget.risen_level(value, error)
+            level = "warning" if is_tsan_time or is_count_held else cost_budget.risen_level(value, error)
+            note = f".  {count_note}" if is_count_held and value > error else ""
             add(level, row, f"{said}, {over} {unit}, and more than the row {admitted[0]} keeps: {admitted[2]:g} "
                             f"{unit} with the noise {noise:.0%}.  Make the test smaller.  When the growth is "
-                            f"wanted, write the measured value into the row")
-        elif found == cost_budget.ERROR and row == "test-time" and kind is not None and "-tsan" in kind:
+                            f"wanted, write the measured value into the row{note}")
+        elif found == cost_budget.ERROR and is_count_held:
+            add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  {count_note}")
+        elif found == cost_budget.ERROR and is_tsan_time:
             add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  The build kind {kind} "
                                 f"budgets no wall time, so the timeout of the test preset is the hard stop")
         elif found == cost_budget.ERROR:
@@ -513,7 +552,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
     if record_path is not None:
-        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run),
+        counts = () if run.instructions is None else ((cost_record.TEST_COUNT_KEY, run.instructions),)
+        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run, counts),
                                         walls if is_counted else earlier_walls,
                                         version if is_counted else earlier_version)
         safely(lambda: cost_record.write(record_path, record), None)
@@ -556,7 +596,7 @@ def main(argv: list[str]) -> int:
     # child costs more.
     os.environ[LAUNCHED_ENV] = name
     try:
-        run = cost_meter.measure(command)
+        run = cost_meter.measure(command, count_instructions=True)
     except OSError as error:
         print(f"loop test-step: the test {command[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)

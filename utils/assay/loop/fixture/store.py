@@ -370,12 +370,16 @@ The test record
 CMake gives a fixture no test launcher.  The driver judges its own run as the
 launcher judges a test, with the same function
 (assay.loop.teststep.judge_and_record).  A second start of Python for each
-fixture costs more than the judge.  The measure holds three values.  The
+fixture costs more than the judge.  The measure holds four values.  The
 first is the wall time from the start of main().  The second is the CPU time
 of this process and of each process that it waited for.  The third is the
-peak memory of the largest of these processes.
+peak memory of the largest of these processes.  The fourth is the user
+instructions of this process from the start of main() and of each process
+that it started.  A host with no accurate count gives no count
+(assay.core.meter, THE OWN RUN).
 
-The judge holds the measured rules test-time and test-memory, with the
+The judge holds the measured rules test-time, test-memory and
+test-instructions, with the
 thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
 ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over an
 error threshold that no ledger row keeps.  A run that takes its result from
@@ -414,6 +418,11 @@ from assay.core import budget as cost_budget
 from assay.core import record as cost_record
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.readers import compdb, sarif
+
+# The name OwnStart is only for the types, and a fixture does not pay the import of assay.core.meter before its start.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from assay.core.meter import OwnStart
 
 # A fixture name is a key of a warnings file, so it obeys WRITER_KEY of
 # utils/assay/core/report.py.  The test of the driver holds the two
@@ -3135,7 +3144,11 @@ def main(argv: list[str]) -> int:
         return 2
     warnings_dir, arguments = parsed
 
-    start = _cost_meter_module().start_self()
+    from assay.loop import teststep as test_launcher
+
+    # In a run of the test launcher, the launcher counts the instructions of the driver and judges the test (The test
+    # record).
+    start = _cost_meter_module().start_self(count_instructions=not os.environ.get(test_launcher.LAUNCHED_ENV))
     build_dir = Path(arguments[0]).resolve()
     source = Path(arguments[1]).resolve()
     fixture_name = arguments[2]
@@ -3203,7 +3216,7 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     return verdict or own_reason or over_budget, budget, is_stored, version
 
 
-def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: tuple[float, float],
+def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: OwnStart,
                budget: CostBudget | None, warnings_dir: Path | None, is_stored: bool = False, version: str = "") -> int:
     """Judge the run of the fixture as a test, and write its record, as the test launcher does (The test record).
 

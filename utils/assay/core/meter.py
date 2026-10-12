@@ -41,7 +41,12 @@ THE OWN RUN
     gave 29.0 ms at p50, 4.3 ms less (3.7 ms to 6.3 ms).  The remaining time
     is the spawn in the parent and the exit after the record.  With the
     clock alone, the record gave 10.0 ms, 22.6 ms less.  A host with no
-    schedstat file gives the clock alone.
+    schedstat file gives the clock alone.  With count_instructions,
+    start_self() opens a counter of the user instructions
+    (open_instruction_counter() with own).  The counter counts this process
+    from the call on, and each process that it starts after the call.
+    measure_self() reads it.  The count does not hold the start of the
+    interpreter and the imports before the call.
 
 THE INSTRUCTION COUNT
     The CPU time of one compile rises with the load of the host, because two
@@ -172,6 +177,9 @@ PERF_COUNT_HW_INSTRUCTIONS = 1
 PERF_READ_TIMES = 0x1 | 0x2
 # disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec.
 PERF_ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
+# inherit, exclude_kernel, exclude_hv: a counter of this process from the open on, and of its new processes (THE OWN
+# RUN).
+PERF_OWN_FLAGS = (1 << 1) | (1 << 5) | (1 << 6)
 PERF_FLAG_FD_CLOEXEC = 8
 # The variable that names the file of the counts of the compiler runs of one ccache call, the suffix of that file
 # beside the object, and the line of a run whose count is not exact (A COMPILE THROUGH CCACHE).
@@ -296,11 +304,15 @@ def limit_cpu(seconds: float) -> int | None:
     return limit
 
 
-def open_instruction_counter() -> int | None:
+def open_instruction_counter(own: bool = False) -> int | None:
     """Open a counter of the user instructions of each process that this process starts after the call.
 
-    THE INSTRUCTION COUNT in the module docstring gives the rules.  Close the
-    counter with read_instruction_counter().
+    THE INSTRUCTION COUNT in the module docstring gives the rules.  With
+    `own`, the counter also counts this process from the call on (THE OWN
+    RUN).  Close the counter with read_instruction_counter().
+
+    Args:
+        own: Count this process too, from the call on
 
     Returns:
         The file descriptor of the counter, or None when the host gives no counter
@@ -324,7 +336,7 @@ def open_instruction_counter() -> int | None:
         _handle = _ctypes.dlopen(None, os.RTLD_NOW)
 
     fields = ((PERF_TYPE_HARDWARE, 4), (PERF_ATTR_SIZE, 4), (PERF_COUNT_HW_INSTRUCTIONS, 8), (0, 8), (0, 8),
-              (PERF_READ_TIMES, 8), (PERF_ATTR_FLAGS, 8))
+              (PERF_READ_TIMES, 8), (PERF_OWN_FLAGS if own else PERF_ATTR_FLAGS, 8))
     attr = b"".join(value.to_bytes(width, "little") for value, width in fields)
     attr += bytes(PERF_ATTR_SIZE - len(attr))
     try:
@@ -335,6 +347,18 @@ def open_instruction_counter() -> int | None:
     # ctypes gives a C long result as an int, because CLong derives directly from _SimpleCData.
     descriptor = result if isinstance(result, int) else result.value
     return descriptor if descriptor >= 0 else None
+
+
+def host_gives_counter() -> bool:
+    """Return True when this host gives an accurate instruction counter (THE INSTRUCTION COUNT).
+
+    A test of a meter reads it, and the test then knows if a record of the host can hold a count.
+    """
+    probe = open_instruction_counter()
+    if probe is None:
+        return False
+    os.close(probe)
+    return True
 
 
 def read_instruction_counter(descriptor: int) -> int | None:
@@ -425,45 +449,68 @@ def process_lead_s() -> float:
     return (int(fields[0]) + int(fields[1])) / 1e9
 
 
-def start_self() -> tuple[float, float]:
-    """Return the start of a measure of this process: the monotonic clock at its start, and the one-minute load average.
+class OwnStart:
+    """The start of a measure of this process (THE OWN RUN).
+
+    `clock_s` is the monotonic clock at the start of the process, `load` the
+    one-minute load average, and `counter` the file descriptor of the counter
+    of its user instructions, or None.
+    """
+
+    __slots__ = ("clock_s", "counter", "load")
+
+    def __init__(self, clock_s: float, load: float, counter: int | None) -> None:
+        """Hold the clock, the load and the counter of the start."""
+        self.clock_s = clock_s
+        self.load = load
+        self.counter = counter
+
+
+def start_self(count_instructions: bool = False) -> OwnStart:
+    """Return the start of a measure of this process, which measure_self() reads (THE OWN RUN).
 
     A process that is a test itself, such as the fixture driver, measures its
     own run with measure_self().  The start is the monotonic clock less
     process_lead_s().  The wall time of measure_self() then holds the start
-    of the interpreter and the imports before the call (THE OWN RUN).
+    of the interpreter and the imports before the call.
+
+    Args:
+        count_instructions: Open a counter of the user instructions of this process from the call on
     """
     now = time.perf_counter()
     try:
         load = os.getloadavg()[0]
     except OSError:
         load = -1.0
-    return now - process_lead_s(), load
+    counter = open_instruction_counter(own=True) if count_instructions else None
+    return OwnStart(now - process_lead_s(), load, counter)
 
 
-def measure_self(exit_code: int, start: tuple[float, float]) -> Measurement:
+def measure_self(exit_code: int, start: OwnStart) -> Measurement:
     """Return the measurement of this process from `start` on, as measure() gives it for a command.
 
     The CPU time holds this process and each process that it waited for, and
     the peak memory is that of the largest of them.  The CPU time and the
     peak memory start with the process.  The wall time starts at the start
     that start_self() gives, which holds the start of the interpreter (THE
-    OWN RUN).
+    OWN RUN).  The call reads and closes the counter of the start.
 
     Args:
         exit_code: The status that the process ends with
         start: The value of start_self() at the start of the measure
 
     Returns:
-        The measurement, with no CPU limit and no instruction count
+        The measurement, with no CPU limit.  It holds the instruction count only when the start has a counter and the
+        count is accurate
     """
     import resource
 
     own = resource.getrusage(resource.RUSAGE_SELF)
     children = resource.getrusage(resource.RUSAGE_CHILDREN)
-    started, load = start
+    instructions = read_instruction_counter(start.counter) if start.counter is not None else None
     return Measurement(exit_code, own.ru_utime + children.ru_utime, own.ru_stime + children.ru_stime,
-                       time.perf_counter() - started, max(own.ru_maxrss, children.ru_maxrss), load, time.time(), None)
+                       time.perf_counter() - start.clock_s, max(own.ru_maxrss, children.ru_maxrss), start.load,
+                       time.time(), None, instructions)
 
 
 def compiler_meter_environment(environment: dict[str, str], count_path: str) -> dict[str, str] | None:
