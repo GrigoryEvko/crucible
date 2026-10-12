@@ -3910,7 +3910,7 @@ fixy_neg_compile_test(neg_stage_run_on_an_lvalue
   "as .this. argument discards qualifiers"
   "in call to .void fixy::concurrent::Stage<FnPtr, Ctx>::run\\(\\) &&")
 
-# The fourteen refusals of the pipeline, its graph and its two mints.
+# The refusals of the pipeline, its graph and its two mints.
 # The chain gate has three cells that fail through the same concept and
 # are separated by what the fold answered false about: an element that
 # is not a stage at all, two stages whose payloads do not meet, and an
@@ -4011,23 +4011,46 @@ fixy_neg_compile_test(neg_pipeline_inline_claim_without_opt_in
   "P::will_run_inline_v<32 \\* <unnamed>::KiB, 1 \\* <unnamed>::MiB>"
   "&tiny\\(<unnamed>::TinyConsumer<128>&&")
 
-# The graph's well-formedness refusals.  The first two are separated by
-# the edge each one declares: an edge running backwards is a cycle
-# witness, and a graph of three stages with one edge leaves the third
-# with no edge in either direction.
+# The graph's well-formedness refusals.  The record of the check is the
+# argument of a concept, so each refusal prints the fault, the position of
+# the stage or the edge, the port and its count of edges, and the last
+# regex of each fixture pins that record.  An edge running backwards is a
+# cycle witness.  A graph of three stages with one edge leaves the output
+# of the second stage with no edge, and the third stage with none.
 fixy_neg_compile_test(neg_pipeline_dag_cyclic_graph
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
-  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<1, 0, 0, 0> >")
+  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<1, 0, 0, 0> >"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeRunsBackward, 0, 0, 0\\}")
 fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
-  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<0, 1, 0, 0> >")
+  "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<0, 1, 0, 0> >"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::OutputPortEdgeCount, 1, 0, 0\\}")
 # The third refusal: the one edge agrees in payload and joins channel A
-# to channel B.  The graph is connected and the edge runs forward, so only
-# the channel check can refuse it.
+# to channel B.  The edge runs forward, so only the channel check can
+# refuse it.
 fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
+
+# The port check.  The first stage and the last stage are the ends of the
+# graph, and each other port has exactly one edge.  The four fixtures are
+# the four cells: an input or an output, with no edge or with two edges.
+# A fan-out stage sends a value to two stages, and a fan-in stage reads
+# two channels.
+fixy_neg_compile_test(neg_pipeline_dag_input_port_without_edge
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::InputPortEdgeCount, 1, 1, 0\\}")
+fixy_neg_compile_test(neg_pipeline_dag_input_port_with_two_edges
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::InputPortEdgeCount, 1, 0, 2\\}")
+fixy_neg_compile_test(neg_pipeline_dag_output_port_without_edge
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::OutputPortEdgeCount, 0, 1, 0\\}")
+fixy_neg_compile_test(neg_pipeline_dag_output_port_with_two_edges
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::OutputPortEdgeCount, 0, 0, 2\\}")
 
 # The dag mint's two clauses, in order: the graph is a graph at all, and
 # the supplied pack is the graph's own stage pack.  The second fixture's

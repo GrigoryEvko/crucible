@@ -1,21 +1,20 @@
-// The diamond graph, run for real: four stages over a StageGraph whose
-// edges fan out from one source and back into one sink, each stage body
-// counted exactly once.  Static assertions check the ports of a fan-out
-// stage and the row of a pipeline.
+// The diamond graph, run for real: a fan-out stage gives each value to
+// two stages, a fan-in stage reads the two, and each stage body runs one
+// time.  Static assertions check the ports of the diamond and the row of a
+// pipeline.
 //
 // test/fixy/test_endpoint.cpp runs a fan-in stage that it builds from
 // channel endpoints.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <foundation/effects/Row.h>
 
-#include <atomic>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include "../test_assert.h"
@@ -42,9 +41,8 @@ struct FakeProducer {
     [[nodiscard]] bool try_push(T const&) noexcept { return true; }
 };
 
-std::atomic<int> dag_calls{0};
-
-static void reset() noexcept { dag_calls.store(0, std::memory_order_relaxed); }
+// The count of the stage bodies that ran.
+fixy::Tally dag_calls;
 
 static void require(bool condition, const char* message) {
     if (!condition) {
@@ -53,24 +51,32 @@ static void require(bool condition, const char* message) {
     }
 }
 
-static void one_to_one_body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {
-    dag_calls.fetch_add(1, std::memory_order_relaxed);
-}
+static void one_to_one_body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept { dag_calls.add(1); }
+
+// A fan-out stage has two output ports, and a fan-in stage has two input
+// ports.  Each edge names the port that it leaves and the port that it
+// enters.
+static void fan_out_body(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept { dag_calls.add(1); }
+static void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept { dag_calls.add(1); }
 
 using PlainStage = cc::Stage<&one_to_one_body, fixy::HotFgCtx>;
-
-// A fan-out stage has two output ports, and each edge names the port it
-// leaves.  An edge from a port that the stage does not have joins nothing.
-static void fan_out_body(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept {}
-
 using FanOutStage = cc::MpmcStage<&fan_out_body, fixy::HotFgCtx>;
-template <std::size_t SecondPort>
-using FanOutGraph = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage>,
-                                   cc::EdgePack<cc::StageEdge<0, 1, 0>, cc::StageEdge<0, 2, SecondPort>>>;
+using FanInStage = cc::MpmcStage<&fan_in_body, fixy::HotFgCtx>;
 
 static_assert(cc::stage_input_count_v<FanOutStage> == 1 && cc::stage_output_count_v<FanOutStage> == 2);
-static_assert(cc::StageGraphWellFormed<FanOutGraph<1>>);
-static_assert(!cc::StageGraphWellFormed<FanOutGraph<2>>);
+static_assert(cc::stage_input_count_v<FanInStage> == 2 && cc::stage_output_count_v<FanInStage> == 1);
+
+// The diamond.  Each port of the fan-out and the fan-in has one edge.  An
+// edge from port 0 takes the port of the first edge, and port 2 is a port
+// that the fan-out does not have.
+template <std::size_t SecondPort>
+using Diamond = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage, FanInStage>,
+                               cc::EdgePack<cc::StageEdge<0, 1, 0, 0>, cc::StageEdge<0, 2, SecondPort, 0>,
+                                            cc::StageEdge<1, 3, 0, 0>, cc::StageEdge<2, 3, 0, 1>>>;
+
+static_assert(cc::StageGraphWellFormed<Diamond<1>>);
+static_assert(!cc::StageGraphWellFormed<Diamond<0>>);
+static_assert(!cc::StageGraphWellFormed<Diamond<2>>);
 
 // The coordinating context must admit the row of every stage, so the row
 // of a pipeline is the union of the stage rows, and no effect more.
@@ -84,31 +90,23 @@ static_assert(std::is_same_v<cc::pipeline_row_union_t<PlainStage, PlainStage>, e
 static_assert(eff::Subrow<MixedRow, BgAndInitRow> && eff::Subrow<BgAndInitRow, MixedRow>);
 
 static void test_diamond_dag_runtime() {
-    reset();
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
 
-    auto s0 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto s1 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto s2 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto s3 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto fan_out =
+        cc::mint_mpmc_stage<&fan_out_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{}, FakeProducer<int>{});
+    auto left = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto right = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto fan_in = cc::mint_mpmc_stage<&fan_in_body>(ctx, FakeConsumer<int>{}, FakeConsumer<int>{}, FakeProducer<int>{});
 
-    using Graph = cc::StageGraph<
-        cc::StagePack<PlainStage, PlainStage, PlainStage, PlainStage>,
-        cc::EdgePack<cc::StageEdge<0, 1>, cc::StageEdge<0, 2>, cc::StageEdge<1, 3>, cc::StageEdge<2, 3>>>;
     using Cycle = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<1, 0>>>;
-    using Unreachable =
-        cc::StageGraph<cc::StagePack<PlainStage, PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
-
-    static_assert(cc::StageGraphWellFormed<Graph>);
     static_assert(!cc::StageGraphWellFormed<Cycle>);
-    static_assert(!cc::StageGraphWellFormed<Unreachable>);
 
     const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
-    auto pipeline =
-        cc::mint_pipeline_dag(coordinator, Graph{}, std::move(s0), std::move(s1), std::move(s2), std::move(s3));
+    auto pipeline = cc::mint_pipeline_dag(coordinator, Diamond<1>{}, std::move(fan_out), std::move(left),
+                                          std::move(right), std::move(fan_in));
     std::move(pipeline).run(coordinator);
 
-    require(dag_calls.load(std::memory_order_relaxed) == 4, "diamond DAG did not run all four stages");
+    require(dag_calls.read() == 4, "the diamond did not run each of its four stages one time");
 }
 
 }  // namespace pipeline_dag_test

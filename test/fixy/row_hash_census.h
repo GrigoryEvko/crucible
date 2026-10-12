@@ -1136,6 +1136,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::EdgePack, kGraphShape},
     {^^::fixy::concurrent::StageEdge, kGraphShape},
     {^^::fixy::concurrent::StageGraph, kGraphShape},
+    {^^::fixy::concurrent::StageGraphCheck,
+     "the record of the check of a stage graph: a constant evaluation computes it, it is the argument of the concept "
+     "that a refusal prints, and it is never a value in a signature"},
     {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
     {^^::fixy::concurrent::handle_for, kMetafunction},
     {^^::fixy::concurrent::default_proto_for, kMetafunction},

@@ -127,29 +127,80 @@ static_assert(CtxStartsStageThreads<BgDrainCtx> && CtxStartsStageThreads<ColdIni
 // The coordinating context admits fewer effects than the stage needs.
 static_assert(!CtxFitsPipeline<ColdInitCtx, S_bg_int_to_int>);
 
-using FanOutGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
-                               EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<0, 3>>>;
-using DiamondGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
-                                EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<1, 3>, StageEdge<2, 3>>>;
+// A fan-out body with one consumer handle and two producer handles.  With
+// the fan-in stage M1, it makes the two branches of a diamond.
+inline void stage_fan_out_two(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept {}
+using O1 = MpmcStage<&stage_fan_out_two, HotFgCtx>;
+
+// The first stage and the last stage are the ends of a graph, and each
+// other port has exactly one edge.  A chain of plain stages and a diamond
+// through a fan-out and a fan-in hold that.
+using OneStageGraph = StageGraph<StagePack<S_int_to_int>, EdgePack<>>;
+using ChainGraph =
+    StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1>, StageEdge<1, 2>>>;
+using DiamondGraph =
+    StageGraph<StagePack<O1, S_int_to_int, S_int_to_int, M1>,
+               EdgePack<StageEdge<0, 1, 0, 0>, StageEdge<0, 2, 1, 0>, StageEdge<1, 3, 0, 0>, StageEdge<2, 3, 0, 1>>>;
+
+// The diamond through one port at each end: the output of stage 0 has two
+// edges, and the input of stage 3 has two edges.
+using SharedPortGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
+                                   EdgePack<StageEdge<0, 1>, StageEdge<0, 2>, StageEdge<1, 3>, StageEdge<2, 3>>>;
+using InputWithoutEdgeGraph = StageGraph<StagePack<S_int_to_int, M1>, EdgePack<StageEdge<0, 1, 0, 0>>>;
+using InputWithTwoEdgesGraph =
+    StageGraph<StagePack<O1, S_int_to_int>, EdgePack<StageEdge<0, 1, 0, 0>, StageEdge<0, 1, 1, 0>>>;
+using OutputWithoutEdgeGraph = StageGraph<StagePack<O1, S_int_to_int>, EdgePack<StageEdge<0, 1, 0, 0>>>;
 using CycleGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<StageEdge<1, 0>>>;
 using UnreachableGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
 using DisconnectedGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
                                      EdgePack<StageEdge<0, 1>, StageEdge<2, 3>>>;
 // One edge, which agrees in payload and joins two channels.
 using CrossedGraph = StageGraph<StagePack<S_into_other, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
+using StageOutOfRangeGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 2>>>;
+using PortOutOfRangeGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1, 1, 0>>>;
+using NotAnEdgeGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1>, int>>;
+using NotAStageGraph = StageGraph<StagePack<S_int_to_int, int>, EdgePack<StageEdge<0, 1>>>;
+using EmptyGraph = StageGraph<StagePack<>, EdgePack<>>;
 
-static_assert(StageGraphWellFormed<FanOutGraph>);
+static_assert(StageGraphWellFormed<OneStageGraph>);
+static_assert(StageGraphWellFormed<ChainGraph>);
 static_assert(StageGraphWellFormed<DiamondGraph>);
+static_assert(!StageGraphWellFormed<SharedPortGraph>);
 static_assert(!StageGraphWellFormed<CycleGraph>);
 static_assert(!StageGraphWellFormed<UnreachableGraph>);
 static_assert(!StageGraphWellFormed<DisconnectedGraph>);
 static_assert(!StageGraphWellFormed<CrossedGraph>);
-static_assert(CtxFitsPipelineDag<BgDrainCtx, FanOutGraph>);
+
+// The record of each refusal: the fault, the stage or the edge, the port,
+// and the count of edges of the port.
+static_assert(detail::stage_graph_check<DiamondGraph>() == StageGraphCheck{});
+static_assert(detail::stage_graph_check<SharedPortGraph>()
+              == StageGraphCheck{StageGraphFault::OutputPortEdgeCount, 0, 0, 2});
+static_assert(detail::stage_graph_check<InputWithoutEdgeGraph>()
+              == StageGraphCheck{StageGraphFault::InputPortEdgeCount, 1, 1, 0});
+static_assert(detail::stage_graph_check<InputWithTwoEdgesGraph>()
+              == StageGraphCheck{StageGraphFault::InputPortEdgeCount, 1, 0, 2});
+static_assert(detail::stage_graph_check<OutputWithoutEdgeGraph>()
+              == StageGraphCheck{StageGraphFault::OutputPortEdgeCount, 0, 1, 0});
+static_assert(detail::stage_graph_check<UnreachableGraph>()
+              == StageGraphCheck{StageGraphFault::OutputPortEdgeCount, 1, 0, 0});
+static_assert(detail::stage_graph_check<DisconnectedGraph>()
+              == StageGraphCheck{StageGraphFault::OutputPortEdgeCount, 1, 0, 0});
+static_assert(detail::stage_graph_check<CycleGraph>() == StageGraphCheck{StageGraphFault::EdgeRunsBackward, 0});
+static_assert(detail::stage_graph_check<CrossedGraph>() == StageGraphCheck{StageGraphFault::EdgeAcrossChannels, 0});
+static_assert(detail::stage_graph_check<StageOutOfRangeGraph>() == StageGraphCheck{StageGraphFault::EdgeOutOfRange, 0});
+static_assert(detail::stage_graph_check<PortOutOfRangeGraph>() == StageGraphCheck{StageGraphFault::EdgeOutOfRange, 0});
+static_assert(detail::stage_graph_check<NotAnEdgeGraph>() == StageGraphCheck{StageGraphFault::NotAnEdge, 1});
+static_assert(detail::stage_graph_check<NotAStageGraph>() == StageGraphCheck{StageGraphFault::NotAStage, 1});
+static_assert(detail::stage_graph_check<EmptyGraph>() == StageGraphCheck{StageGraphFault::NoStage});
+
+static_assert(CtxFitsPipelineDag<BgDrainCtx, ChainGraph>);
 static_assert(CtxFitsPipelineDag<BgDrainCtx, DiamondGraph>);
 static_assert(!CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);
+static_assert(!CtxFitsPipelineDag<BgDrainCtx, SharedPortGraph>);
 static_assert(!CtxFitsPipelineDag<BgDrainCtx, CycleGraph>);
 static_assert(!CtxFitsPipelineDag<BgDrainCtx, UnreachableGraph>);
-static_assert(eff::Subrow<stage_graph_row_union_t<FanOutGraph>, eff::Row<>>);
+static_assert(eff::Subrow<stage_graph_row_union_t<DiamondGraph>, eff::Row<>>);
 
 using P1 = Pipeline<S_int_to_int>;
 using P2 = Pipeline<S_int_to_int, S_int_to_int>;

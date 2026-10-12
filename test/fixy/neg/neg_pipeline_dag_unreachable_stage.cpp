@@ -1,8 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// A three-stage graph with one edge: the third stage has no edge in
-// either direction, so nothing in the graph produces for it and it feeds
-// nothing.  The connectivity walk refuses it.
+// A three-stage graph with one edge, from the first stage to the second.
+// The output of the second stage has no edge, and the third stage has no
+// edge at all.  The second stage is not the last stage, so the port check
+// refuses its output first.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -14,7 +15,7 @@ namespace {
 namespace cc = fixy::concurrent;
 
 // The one edge joins two handles on one channel, so the edge is valid and
-// only the walk can refuse.
+// only the port check can refuse.
 template <typename T>
 struct FakeChannel {};
 

@@ -316,6 +316,45 @@ struct StageEdge {
 template <class Stages, class Edges>
 struct StageGraph {};
 
+// The first fault that the check of a stage graph finds.  The checks run in
+// the order of the enumerators, and each check reads only what the checks
+// before it showed.
+//
+// The first stage and the last stage are the two ends of a graph.  An edge
+// runs from a stage to a later stage, so no edge ends at the first stage
+// and no edge starts at the last stage.  The inputs of the first stage are
+// the inputs of the graph, and the outputs of the last stage are its
+// outputs.  Each other port has exactly one edge, because a port is one end
+// of one channel.  A fan-out stage sends a value to two stages, and a fan-in
+// stage reads two channels.
+//
+// Each stage has at least one input and one output.  So when each port has
+// its edge, a path of edges connects each stage to the first stage.
+enum class StageGraphFault : std::uint8_t {
+    None,
+    NoStage,
+    NotAStage,
+    NotAnEdge,
+    EdgeOutOfRange,
+    EdgeRunsBackward,
+    EdgeAcrossChannels,
+    InputPortEdgeCount,
+    OutputPortEdgeCount,
+};
+
+// The result of the check of a stage graph.  For a stage fault, index is
+// the position of the stage in the stage pack.  For an edge fault, index is
+// the position of the edge in the edge pack.  For a port fault, index and
+// port name the port, and edges is its count of edges.
+struct StageGraphCheck {
+    StageGraphFault fault = StageGraphFault::None;
+    std::size_t index = 0;
+    std::size_t port = 0;
+    std::size_t edges = 0;
+
+    constexpr bool operator==(StageGraphCheck const&) const noexcept = default;
+};
+
 namespace detail {
 
 template <class T>
@@ -337,101 +376,127 @@ template <class... Stages, class... Edges>
 struct stage_graph_traits<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
     using stage_pack_type = StagePack<Stages...>;
     using edge_pack_type = EdgePack<Edges...>;
-    using stage_tuple = std::tuple<Stages...>;
-    using edge_tuple = std::tuple<Edges...>;
-    static constexpr std::size_t stage_count = sizeof...(Stages);
-    static constexpr std::size_t edge_count = sizeof...(Edges);
 };
 
-template <class Graph, class Edge>
-consteval bool stage_graph_edge_valid() noexcept {
-    using traits = stage_graph_traits<Graph>;
-    constexpr std::size_t n = traits::stage_count;
-    if constexpr (!is_stage_edge<Edge>::value) {
-        return false;
-    } else if constexpr (Edge::from >= n || Edge::to >= n) {
-        return false;
+// The fault of one edge, in a graph whose stages are each a stage.
+template <class Edge, class... Stages>
+consteval StageGraphFault stage_graph_edge_fault() noexcept {
+    if constexpr (Edge::from >= sizeof...(Stages) || Edge::to >= sizeof...(Stages)) {
+        return StageGraphFault::EdgeOutOfRange;
     } else if constexpr (Edge::from >= Edge::to) {
-        return false;
+        return StageGraphFault::EdgeRunsBackward;
+    } else if constexpr (Edge::from_output >= stage_output_count_v<Stages...[Edge::from]>
+                         || Edge::to_input >= stage_input_count_v<Stages...[Edge::to]>) {
+        return StageGraphFault::EdgeOutOfRange;
+    } else if constexpr (!stage_port_feeds<Stages...[Edge::from], Edge::from_output, Stages...[Edge::to],
+                                           Edge::to_input>) {
+        return StageGraphFault::EdgeAcrossChannels;
     } else {
-        using from_stage = std::tuple_element_t<Edge::from, typename traits::stage_tuple>;
-        using to_stage = std::tuple_element_t<Edge::to, typename traits::stage_tuple>;
-
-        if constexpr (Edge::from_output >= stage_output_count_v<from_stage>
-                      || Edge::to_input >= stage_input_count_v<to_stage>) {
-            return false;
-        } else {
-            return stage_port_feeds<from_stage, Edge::from_output, to_stage, Edge::to_input>;
-        }
+        return StageGraphFault::None;
     }
 }
 
-template <class Graph, class... Edges>
-consteval bool stage_graph_connected_impl(EdgePack<Edges...>) noexcept {
-    using traits = stage_graph_traits<Graph>;
-    constexpr std::size_t n = traits::stage_count;
-    if constexpr (n <= 1) {
-        return true;
+// The first edge with a fault.  Linear in the edges.
+template <class... Stages, class... Edges>
+consteval StageGraphCheck stage_graph_edge_check(StagePack<Stages...>, EdgePack<Edges...>) noexcept {
+    if constexpr (sizeof...(Edges) == 0) {
+        return {};
     } else {
-        std::array<bool, n> reached{};
-        reached[0] = true;
-
-        bool changed = true;
-        while (changed) {
-            changed = false;
-            auto propagate = [&]<class Edge>() consteval {
-                if (reached[Edge::from] && !reached[Edge::to]) {
-                    reached[Edge::to] = true;
-                    changed = true;
-                }
-                if (reached[Edge::to] && !reached[Edge::from]) {
-                    reached[Edge::from] = true;
-                    changed = true;
-                }
-            };
-            (propagate.template operator()<Edges>(), ...);
+        constexpr StageGraphFault faults[] = {stage_graph_edge_fault<Edges, Stages...>()...};
+        for (std::size_t index = 0; index < sizeof...(Edges); ++index) {
+            if (faults[index] != StageGraphFault::None) return {faults[index], index};
         }
-
-        for (bool seen : reached) {
-            if (!seen) return false;
-        }
-        return true;
+        return {};
     }
 }
 
+// The first input of one stage whose count of edges is not one.  Linear in
+// the inputs times the edges.
+template <class... Edges>
+consteval StageGraphCheck stage_input_fault(std::size_t stage, std::size_t input_count) noexcept {
+    for (std::size_t port = 0; port < input_count; ++port) {
+        const std::size_t edges =
+            ((Edges::to == stage && Edges::to_input == port ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0});
+        if (edges != 1) return {StageGraphFault::InputPortEdgeCount, stage, port, edges};
+    }
+    return {};
+}
+
+// The first output of one stage whose count of edges is not one.  Linear in
+// the outputs times the edges.
+template <class... Edges>
+consteval StageGraphCheck stage_output_fault(std::size_t stage, std::size_t output_count) noexcept {
+    for (std::size_t port = 0; port < output_count; ++port) {
+        const std::size_t edges =
+            ((Edges::from == stage && Edges::from_output == port ? std::size_t{1} : std::size_t{0}) + ...
+             + std::size_t{0});
+        if (edges != 1) return {StageGraphFault::OutputPortEdgeCount, stage, port, edges};
+    }
+    return {};
+}
+
+// The first port whose count of edges is not one, in the order of the
+// stages and with the inputs of a stage before its outputs.  The inputs of
+// the first stage and the outputs of the last stage are the ends of the
+// graph.  Linear in the ports times the edges.
+template <class... Stages, class... Edges>
+consteval StageGraphCheck stage_graph_port_check(StagePack<Stages...>, EdgePack<Edges...>) noexcept {
+    constexpr std::size_t input_counts[] = {stage_input_count_v<Stages>...};
+    constexpr std::size_t output_counts[] = {stage_output_count_v<Stages>...};
+    constexpr std::size_t last = sizeof...(Stages) - 1;
+    for (std::size_t stage = 0; stage <= last; ++stage) {
+        const StageGraphCheck input =
+            stage == 0 ? StageGraphCheck{} : stage_input_fault<Edges...>(stage, input_counts[stage]);
+        if (input.fault != StageGraphFault::None) return input;
+        const StageGraphCheck output =
+            stage == last ? StageGraphCheck{} : stage_output_fault<Edges...>(stage, output_counts[stage]);
+        if (output.fault != StageGraphFault::None) return output;
+    }
+    return {};
+}
+
+// The position of the first false entry of a list that holds a false
+// entry.  Linear in the list.
+template <std::size_t Count>
+consteval std::size_t first_false_entry(bool const (&entries)[Count]) noexcept {
+    std::size_t index = 0;
+    while (entries[index])
+        ++index;
+    return index;
+}
+
+// The check of a graph.  The first three checks read the types, so each
+// check after them reads only stages and edges.  The edge check comes
+// before the port check, so the port check counts only edges between ports
+// that the graph has.
+template <class... Stages, class... Edges>
+consteval StageGraphCheck stage_graph_check_of(StagePack<Stages...> stages, EdgePack<Edges...> edges) noexcept {
+    if constexpr (sizeof...(Stages) == 0) {
+        return {StageGraphFault::NoStage};
+    } else if constexpr (!(IsStage<Stages> && ...)) {
+        constexpr bool is_stage_at[] = {IsStage<Stages>...};
+        return {StageGraphFault::NotAStage, first_false_entry(is_stage_at)};
+    } else if constexpr (!(is_stage_edge<Edges>::value && ...)) {
+        constexpr bool is_edge_at[] = {is_stage_edge<Edges>::value...};
+        return {StageGraphFault::NotAnEdge, first_false_entry(is_edge_at)};
+    } else {
+        const StageGraphCheck edge_check = stage_graph_edge_check(stages, edges);
+        if (edge_check.fault != StageGraphFault::None) return edge_check;
+        return stage_graph_port_check(stages, edges);
+    }
+}
+
+// The check of a stage graph.  The gate reads it only after IsStageGraph
+// holds.
 template <class Graph>
-consteval bool stage_graph_connected() noexcept {
+consteval StageGraphCheck stage_graph_check() noexcept {
     using traits = stage_graph_traits<Graph>;
-    return stage_graph_connected_impl<Graph>(typename traits::edge_pack_type{});
+    return stage_graph_check_of(typename traits::stage_pack_type{}, typename traits::edge_pack_type{});
 }
 
-template <class Graph, std::size_t... Is>
-consteval bool stage_graph_all_stages(std::index_sequence<Is...>) noexcept {
-    using traits = stage_graph_traits<Graph>;
-    return ((IsStage<std::tuple_element_t<Is, typename traits::stage_tuple>>) && ...);
-}
-
-template <class Graph, class... Edges>
-consteval bool stage_graph_all_edges_valid(EdgePack<Edges...>) noexcept {
-    return (stage_graph_edge_valid<Graph, Edges>() && ...);
-}
-
-template <class Graph>
-consteval bool stage_graph_well_formed() noexcept {
-    if constexpr (!is_stage_graph<Graph>::value) {
-        return false;
-    } else {
-        using traits = stage_graph_traits<Graph>;
-        if constexpr (traits::stage_count == 0) {
-            return false;
-        } else if constexpr (!stage_graph_all_stages<Graph>(std::make_index_sequence<traits::stage_count>{})) {
-            return false;
-        } else if constexpr (!stage_graph_all_edges_valid<Graph>(typename traits::edge_pack_type{})) {
-            return false;
-        } else {
-            return stage_graph_connected<Graph>();
-        }
-    }
+// A function that is not a template, so no unit can specialize the answer.
+[[nodiscard]] consteval bool stage_graph_check_holds(StageGraphCheck check) noexcept {
+    return check.fault == StageGraphFault::None;
 }
 
 template <class Graph>
@@ -450,8 +515,15 @@ concept IsStageEdge = detail::is_stage_edge<std::remove_cvref_t<T>>::value;
 template <class T>
 concept IsStageGraph = detail::is_stage_graph<std::remove_cvref_t<T>>::value;
 
+// The record of the check is the argument of this concept, so a refusal
+// prints the fault, the position of the stage or the edge, the port and its
+// count of edges.
+template <StageGraphCheck Check>
+concept StageGraphCheckHolds = detail::stage_graph_check_holds(Check);
+
 template <class Graph>
-concept StageGraphWellFormed = IsStageGraph<Graph> && detail::stage_graph_well_formed<std::remove_cvref_t<Graph>>();
+concept StageGraphWellFormed =
+    IsStageGraph<Graph> && StageGraphCheckHolds<detail::stage_graph_check<std::remove_cvref_t<Graph>>()>;
 
 template <class Graph>
     requires StageGraphWellFormed<Graph>
