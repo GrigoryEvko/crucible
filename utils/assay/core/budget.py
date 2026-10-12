@@ -39,7 +39,11 @@ THE NOISE
       G    0.02  An instruction count changes by less than 0.1 % between two
                  compiles of one unit
     Each other unit has no noise.  The bytes of machine code and the bytes of
-    a header are the same in two builds of one tree.
+    a header are the same in two builds of one tree.  A message gives a unit
+    with its display text, such as "G instructions" for G (UNIT_TEXTS, and
+    unit_text() of assay.core.report).  noise_of() reads the unit or its
+    display text.  A judge of a check_report.Budget then gets the noise of its
+    unit too.
 
 THE JUDGE
     judge() gives the finding of one verdict for a check of the engines.  On a
@@ -94,6 +98,8 @@ RISEN = "risen"
 UNNEEDED = "unneeded"
 # The noise of each unit of a measured rule, as a part of the kept value of a row (THE NOISE).
 NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02}
+# The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
+UNIT_TEXTS = {"G": "G instructions"}
 
 
 class Measure(Value):
@@ -162,8 +168,9 @@ class Rows(Value):
 
 
 def noise_of(unit: str) -> float:
-    """Return the noise of a unit, as a part of the kept value of a row (THE NOISE)."""
-    return NOISE.get(unit, 0.0)
+    """Return the noise of a unit or of its display text, as a part of the kept value of a row (THE NOISE)."""
+    shown = {text: name for name, text in UNIT_TEXTS.items()}
+    return NOISE.get(shown.get(unit, unit), 0.0)
 
 
 def kept_value(value: float) -> float:

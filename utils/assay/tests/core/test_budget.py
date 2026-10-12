@@ -10,6 +10,7 @@ from pathlib import Path
 
 from assay.core import budget as cost_budget
 from assay.core import meter as cost_meter
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import testing
 
@@ -71,6 +72,28 @@ def verdict_cases(expect: testing.Expect) -> None:
     expect(
         "the noise of a time, a memory and an instruction count is that of NOISE, and another unit has none",
         [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB")] == [1.0, 0.1, 0.02, 0.0],
+    )
+    with tempfile.TemporaryDirectory(prefix="test-budget-noise-") as scratch:
+        table = Path(scratch) / "registry.txt"
+        table.write_text(
+            rule_registry.planted([rule_registry.measured_rule("compile-instructions", 55, 110, "G", "a count")]),
+            encoding="utf-8",
+        )
+        counted = check_report.read_budgets(table)["compile-instructions"]
+    count_rows = cost_budget.Rows(
+        "utils/ledgers/compile-instructions.txt", "k", {"u": cost_budget.Admission(3, 165.712, "r")}
+    )
+    grown, drifted = (
+        cost_budget.judge("compile-instructions", counted, cost_budget.Measure("u", "u", value, "said"), count_rows)
+        for value in (165.8, 170.0)
+    )
+    expect(
+        "a rule with the unit G that read_budgets() gives has the noise of an instruction count.  A count 0.05 % over "
+        "its row is admitted, and a count 2.6 % over it is an error",
+        counted.unit == cost_budget.UNIT_TEXTS["G"]
+        and cost_budget.noise_of(counted.unit) == cost_budget.NOISE["G"]
+        and level_of(grown) == "warning"
+        and level_of(drifted) == "error",
     )
     budget = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
     expect(

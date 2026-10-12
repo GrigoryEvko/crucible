@@ -224,8 +224,8 @@ def parse_line(text: str) -> Finding | None:
 
 
 def unit_text(unit: str) -> str:
-    """Return the display text of the unit of a measured rule: G is 10^9 instructions, and each other unit is itself."""
-    return "G instructions" if unit == "G" else unit
+    """Return the display text of the unit of a measured rule (UNIT_TEXTS of assay.core.budget), or the unit itself."""
+    return cost_budget.UNIT_TEXTS.get(unit, unit)
 
 
 def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
