@@ -36,8 +36,9 @@ THE WRITE
       * The refusals of the rule (WritePolicy.refusals) are rows that only
         --raise writes.  A configuration that the write adds is compared with
         the largest count of each key over the configurations.
-      * The write keeps each row of a different configuration, and each
-        admit row that admits a finding of the build.
+      * The write keeps the count of each key of a different configuration
+        (THE WRITE of assay.core.ledger).  It also keeps each admit row that
+        admits a finding of the build.
     writer() gives the function write(rule, request) of a rule module from
     the function examine() and the WritePolicy of the module.
 
@@ -232,7 +233,6 @@ def write_inspection(
         rule_ledger.WriteMode.RAISE,
         request.reason,
         git.moves(request.root),
-        keep_others=True,
     )
     rule_ledger.store(written, request.root)
     check_report.write_line(

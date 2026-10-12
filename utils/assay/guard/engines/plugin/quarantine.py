@@ -85,8 +85,10 @@ THE LEDGER
 
     The first configuration of the ledger is the base (assay.core.configuration,
     THE POLICY).  The count of a different configuration is the base count
-    plus its difference.  A change that lowers a count in each configuration
-    then writes only the base rows.  The run, the write and the import are
+    plus its difference.  A write changes only the counts of the
+    configuration of its build.  A change that lowers a count in each
+    configuration then writes the rows of each configuration in its build.
+    The run, the write and the import are
     those of assay.guard.engines.plugin.counted, which the rule heavy-include
     also uses.
 
@@ -115,7 +117,7 @@ WRITE THE LEDGER
     configuration of the build.  For the base, it writes the counts.  For a
     different configuration, it writes the differences from the base rows.
     Write the base rows first.  The write keeps the head comment, the other
-    configurations and their rows.  It refuses a count more than its row:
+    configurations and their counts.  It refuses a count more than its row:
     remove the new finding.
     * --raise writes such a count too.  Use it only when the plugin or the
       rule table changed what the plugin reports.  Give the reason in the

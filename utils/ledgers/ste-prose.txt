@@ -86,14 +86,14 @@ utils/assay/core/git.py | refused-word | 1 | run: past | A text of today.  The c
 utils/assay/core/git.py | refused-word | 1 | run_any_exit: past | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | scratch_repository: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | tracked_files: track | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/ledger.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/core/ledger.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | long-sentence | 1 | Ledger.line_of | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | long-sentence | 1 | parse | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | long-sentence | 1 | write_counts | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | <module>: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | <module>: slack | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/ledger.py | refused-word | 7 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/core/ledger.py | refused-word | 6 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | Ledger.line_of: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ledger.py | refused-word | 1 | compare: pass | A text of today.  The change that writes the text again in STE lowers the count

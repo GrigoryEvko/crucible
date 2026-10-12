@@ -510,7 +510,7 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def no_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the rows with the value admit of a count ledger, the clamp of a write of the base, and keep_others."""
+    """Check the rows with the value admit of a count ledger, and a write of the base with a second configuration."""
     count = table["count-rule"]
     text = (
         "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
@@ -578,28 +578,59 @@ def no_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule])
         rule_registry.Policy.COUNT,
     )
     kept = rule_ledger.write(
-        count,
-        two,
-        [finding("d.py"), finding("b.py", entity="name")],
-        "base",
-        mode=rule_ledger.WriteMode.RAISE,
-        keep_others=True,
-    )
-    expect(
-        "a write of the base with keep_others keeps the count of each key of the other configuration",
-        kept.expected("arm") == two.expected("arm") and kept.expected() == {rule_ledger.Key("d.py", "kind", ""): 1},
-    )
-    moved_deltas = rule_ledger.write(
         count, two, [finding("d.py"), finding("b.py", entity="name")], "base", mode=rule_ledger.WriteMode.RAISE
     )
     expect(
-        "a write of the base with no keep_others keeps the difference rows of the other configuration",
-        moved_deltas.deltas["arm"] == two.deltas["arm"],
+        "a write of the base that raises a base count keeps the count of each key of the other configuration",
+        kept.expected("arm") == two.expected("arm") and kept.expected() == {rule_ledger.Key("d.py", "kind", ""): 1},
     )
     lines = rule_ledger.rows_of_configuration(ledger, "arm", [("machine", "aarch64")], [finding("b.py", entity="name")])
     expect(
         "the rows of a configuration hold no row of a key with the value admit",
         not any("b.py" in line for line in lines) and any("a.py | kind | -1" in line for line in lines),
+    )
+
+
+def other_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check that a write of the base changes no count of a different configuration (THE WRITE of assay.core.ledger)."""
+    count = table["count-rule"]
+    text = (
+        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
+        "a.py | kind | 3 | same | -\nb.py | kind | 3 | partial | -\nc.py | kind | 3 | none | -\n"
+        "d.py | kind | 1 | gone | -\n@arm | b.py | kind | -1 | partial | -\n@arm | c.py | kind | -3 | none | -\n"
+    )
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    found = [finding(path, entity=entity) for path, entity in (("a.py", "same"), ("b.py", "partial"), ("c.py", "none"))]
+    lowered = rule_ledger.write(count, ledger, found * 2, "base")
+    expect(
+        "a write of the base that lowers base counts keeps the count of each key of the other configuration",
+        lowered.expected() == {key: 2 for key in map(rule_ledger.key_of, found)}
+        and lowered.expected("arm") == ledger.expected("arm"),
+    )
+    expect(
+        "the difference of a key in the other configuration changes by the opposite of the change of its base count",
+        {key.path: int(entry.value) for key, entry in lowered.deltas["arm"].items()}
+        == {"a.py": 1, "c.py": -2, "d.py": 1},
+    )
+    again = rule_ledger.parse(rule_ledger.render(lowered), "again.txt", "count-rule", rule_registry.Policy.COUNT)
+    expect(
+        "the written ledger reads again with the same counts in each configuration",
+        again.expected() == lowered.expected() and again.expected("arm") == ledger.expected("arm"),
+    )
+    later = rule_ledger.write(count, lowered, found[:2] * 2, "arm")
+    expect(
+        "a write of the other configuration then records its own fall, with no --raise",
+        later.expected("arm") == {key: 2 for key in map(rule_ledger.key_of, found[:2])}
+        and {key.path: int(entry.value) for key, entry in later.deltas["arm"].items()} == {"c.py": -2}
+        and later.base == lowered.base,
+    )
+    moved = rule_ledger.write(
+        count, ledger, [finding("new/a.py", entity="same")] * 3, "base", moved={"new/a.py": "a.py"}
+    )
+    expect(
+        "a write of the base after a move gives the count of the old path to the new path in the other configuration",
+        moved.expected("arm").get(rule_ledger.Key("new/a.py", "kind", "same")) == 3
+        and rule_ledger.Key("a.py", "kind", "same") not in moved.expected("arm"),
     )
 
 
@@ -652,6 +683,7 @@ def main(argv: list[str]) -> int:
     prefix_cases(expect, table)
     write_cases(expect, table)
     no_configuration_cases(expect, table)
+    other_configuration_cases(expect, table)
     history_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")

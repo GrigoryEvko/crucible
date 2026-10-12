@@ -952,11 +952,12 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add("a", [line for line in scratch.objects["a"][0] if "memcpy" not in line])
     status, _ = scratch.write()
     lowered = scratch.deltas(RELEASE_NAME)
+    memcpy = ("test/fixy/test_a.cpp", "c-library-call", "memcpy")
     expect(
-        "a change that lowers a count in each configuration writes only the base rows",
+        "a write of the base keeps the count of each key of the second configuration",
         status == 0
         and {key: delta for key, delta in lowered.items() if key[0] in SOURCES}
-        == {key: delta for key, delta in release.items() if key[0] in SOURCES},
+        == {**{key: delta for key, delta in release.items() if key[0] in SOURCES}, memcpy: 1},
     )
     expect(
         "a write of the base removes the difference row of a source file that the tree does not hold",
@@ -968,7 +969,16 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     scratch.add("e", lines_e)
-    expect("the second configuration still gives no error after the base rows fell", scratch.run()[0] == 0)
+    fallen = f"{memcpy[0]} has 0 findings of the kind c-library-call and the entity memcpy, and the ledger holds 1"
+    expect(
+        "a count that fell in the second configuration too is an error there, until its own write",
+        scratch.errors() == [fallen],
+    )
+    status, _ = scratch.write()
+    expect(
+        "a write of the second configuration records its fall with no --raise, and the build then gives no error",
+        status == 0 and memcpy not in scratch.deltas(RELEASE_NAME) and scratch.run()[0] == 0,
+    )
     scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
     status, _, text = scratch.run()
     expect(

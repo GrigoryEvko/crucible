@@ -82,10 +82,11 @@ THE CONFIGURATIONS
     A rule whose findings change with the build has configuration rows.  The
     first configuration is the base.  A row that starts with @NAME holds the
     difference of the configuration NAME from the base count, for the policy
-    count.  So a change that lowers a count in each configuration writes only
-    the base rows.  write() writes the rows of one configuration, and
-    import_rows() puts the rows of a configuration that only a CI leg builds
-    into the ledger, from the lines that rows_of_configuration() gives.
+    count.  A key with the same count in the base and in a configuration has
+    no difference row in it.  write() writes the counts of one configuration
+    (THE WRITE).  import_rows() puts the rows of a configuration that only a
+    CI leg builds into the ledger, from the lines that
+    rows_of_configuration() gives.
 
 THE MAXIMUM
     MAXIMUM names the rows that judge a build of a configuration that the
@@ -117,11 +118,15 @@ THE WRITE
     A file that git reports as moved (assay.core.git.moves) keeps the rows of
     its old path.
 
-    A write of the base keeps the difference rows of each other
-    configuration.  Each count of such a configuration then follows the
-    change of its base count, and no count goes below 0.  With keep_others,
-    each count of each other configuration stays the same, and the write
-    calculates its difference rows again.
+    A write changes only the counts of the configuration of its build.  Each
+    configuration writes its counts in its own build.  A write of the base
+    can change the base count of a key by N.  The difference of the key in
+    each other configuration then changes by -N, and the count of that
+    configuration stays the same.  A change that lowers a count in each
+    configuration then writes the rows of each configuration.  Until then,
+    the run of a configuration that the write did not cover gives the error
+    of a count below its row.  Its own write in the mode lower records the
+    fall.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
@@ -935,7 +940,6 @@ def write(
     mode: WriteMode = WriteMode.LOWER,
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
-    keep_others: bool = False,
 ) -> Ledger:
     """Return the ledger that admits the error findings of a rule (THE WRITE).
 
@@ -947,7 +951,6 @@ def write(
         mode: The mode of the write
         reason: The reason of each new row and each raised count, necessary in the mode admit
         moved: The old path of each file that git reports as moved
-        keep_others: When a write of the base keeps the count of each key of each other configuration
 
     Raises:
         LedgerError: If the mode refuses a finding, the policy has no write here, or a necessary reason is missing
@@ -955,7 +958,7 @@ def write(
     Complexity: O(f log f + r) for f findings and r rows.
     """
     counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
-    return write_counts(rule, ledger, counts, configuration, mode, reason, moved, keep_others)
+    return write_counts(rule, ledger, counts, configuration, mode, reason, moved)
 
 
 def write_counts(
@@ -966,7 +969,6 @@ def write_counts(
     mode: WriteMode = WriteMode.LOWER,
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
-    keep_others: bool = False,
 ) -> Ledger:
     """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
 
@@ -1016,11 +1018,7 @@ def write_counts(
             key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in counts.items()
         }
         return needed_reasons(
-            replace(
-                ledger,
-                base={**new_base, **kept_admits},
-                deltas=other_deltas(ledger, deltas, counts, moved, keep_others),
-            )
+            replace(ledger, base={**new_base, **kept_admits}, deltas=other_deltas(ledger, base, deltas, counts))
         )
     # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
     # of the base moves them.
@@ -1042,32 +1040,21 @@ def base_counts_rows(base: Mapping[Key, Entry]) -> dict[Key, Entry]:
 
 
 def other_deltas(
-    ledger: Ledger,
-    deltas: Mapping[str, Mapping[Key, Entry]],
-    counts: Mapping[Key, int],
-    moved: Mapping[str, str],
-    keep_others: bool,
+    ledger: Ledger, base: Mapping[Key, Entry], deltas: Mapping[str, Mapping[Key, Entry]], counts: Mapping[Key, int]
 ) -> dict[str, dict[Key, Entry]]:
     """Return the difference rows of each other configuration after a write of the base counts `counts` (THE WRITE).
 
-    With keep_others, each other configuration keeps its count of each key.
-    Without keep_others, each other configuration keeps its difference rows.
-    When a row gives a count below 0, the key gets the count 0 in that
-    configuration.  Complexity: linear in the rows.
+    `base` and `deltas` are the rows of the ledger with each moved file at
+    its new path.  Each other configuration keeps its count of each key, and
+    its difference rows hold that count against the new base count.  A row
+    keeps its reason.  Complexity: linear in the rows times the
+    configurations.
     """
-    result: dict[str, dict[Key, Entry]] = {}
-    for item in ledger.configurations[1:]:
-        old = deltas.get(item.name, {})
-        if keep_others:
-            result[item.name] = difference_table(moved_counts(ledger.expected(item.name), moved), counts, old)
-            continue
-        table: dict[Key, Entry] = {}
-        for key, entry in old.items():
-            delta = max(int(entry.value), -counts.get(key, 0))
-            if delta != 0:
-                table[key] = replace(entry, value=delta)
-        result[item.name] = table
-    return result
+    moved = replace(ledger, base=base, deltas=deltas)
+    return {
+        item.name: difference_table(moved.expected(item.name), counts, deltas.get(item.name, {}))
+        for item in ledger.configurations[1:]
+    }
 
 
 def rows_of_configuration(

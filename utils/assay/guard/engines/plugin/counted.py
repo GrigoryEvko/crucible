@@ -19,8 +19,10 @@ THE COUNTED RULES
                                                base count: +N or -N
 
     The first configuration of the ledger is the base.  The count of a
-    different configuration is the base count plus its difference.  A change
-    that lowers a count in each configuration then writes only the base rows.
+    different configuration is the base count plus its difference.  A write
+    changes only the counts of the configuration of its build (THE WRITE of
+    assay.core.ledger).  A change that lowers a count in each configuration
+    then writes the rows of each configuration in its build.
     A CountedRule gives the findings, the inputs, the verdict and the summary
     of one rule.  This module gives the run, the write and the import that
     the rules share.
@@ -47,7 +49,7 @@ THE WRITE
     configuration of the build, where THE POLICY permits a write.  For the
     base, it writes the counts.  For a different configuration, it writes the
     differences from the base rows.  The write keeps the head comment, the
-    other configurations and their rows.  It refuses a count more than its
+    other configurations and their counts.  It refuses a count more than its
     row, with two exceptions.  --raise permits each such count, and --admit
     permits a count of an admitted kind of the rule.  A file that git reports
     as moved takes the rows of its earlier path.
@@ -223,8 +225,9 @@ def run[Inputs](
 def drop_gone_files(ledger: rule_ledger.Ledger, root: Path, counts: Mapping[Key, int]) -> rule_ledger.Ledger:
     """Remove the difference rows of each source file that the tree does not hold.
 
-    The write of the base before this step keeps each count of each other configuration at 0 or above
-    (assay.core.ledger, THE WRITE).  A file of the build directory (ruletable.BUILD_PREFIX) is in no source tree.  A
+    The write of the base before this step keeps each count of each other configuration (assay.core.ledger, THE
+    WRITE).  A source file that the tree does not hold has no finding in the build of a configuration.  Its rows then
+    go.  A file of the build directory (ruletable.BUILD_PREFIX) is in no source tree.  A
     write of the base cannot know if a build of a different configuration writes the file.  The rows of the file
     stay, and the run of that configuration compares them as it compares each other row.  When a build of the
     configuration does not write the file, its run fails on the row until its own write removes the row.
