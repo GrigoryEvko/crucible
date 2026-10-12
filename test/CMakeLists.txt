@@ -229,6 +229,15 @@ crucible_test(test_iteration_detector)
 crucible_test(test_iteration_detector_window)
 crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_arena)
+crucible_test(test_arena_epoch)
+# The read after the end of an epoch ends the process only in a build with
+# AddressSanitizer, so the program is a test only there.  The test passes on
+# the text of the report, and the exit status does not decide it.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
+  crucible_test(test_arena_epoch_poison)
+  set_tests_properties(test_arena_epoch_poison PROPERTIES
+    PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
+endif()
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
 crucible_test(test_memory_plan)

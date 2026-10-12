@@ -672,24 +672,23 @@ private:
     return node;
 }
 
-// For a caller that has already folded the hash while streaming the ops.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops, ContentHash precomputed_hash) noexcept {
+// For a caller that has already folded the hash while streaming the ops, and
+// that owns the storage of the node.  The node must be default-constructed.
+inline void init_region_node(RegionNode& node, TraceEntry* ops, uint32_t num_ops,
+                             ContentHash precomputed_hash) noexcept {
     CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0);
-    auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
-    node->kind = TraceNodeKind::REGION;
-    node->ops = ops;
-    node->num_ops = num_ops;
-    contract_assert(node->content_hash.raw() == 0);
-    node->content_hash = precomputed_hash;
-    node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    CRUCIBLE_POST(node, node != nullptr);
-    CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
-    CRUCIBLE_POST(node, node->ops == ops);
-    CRUCIBLE_POST(node, node->num_ops == num_ops);
-    CRUCIBLE_POST(node, node->content_hash == precomputed_hash);
-    return node;
+    // A non-zero hash here means a second construction over a live node.
+    contract_assert(node.content_hash.raw() == 0);
+    node.kind = TraceNodeKind::REGION;
+    node.ops = ops;
+    node.num_ops = num_ops;
+    node.content_hash = precomputed_hash;
+    node.first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+    CRUCIBLE_POST(0, node.kind == TraceNodeKind::REGION);
+    CRUCIBLE_POST(0, node.ops == ops);
+    CRUCIBLE_POST(0, node.num_ops == num_ops);
+    CRUCIBLE_POST(0, node.content_hash == precomputed_hash);
 }
 
 // The recipe is borrowed, and the node does not keep it: it participates in

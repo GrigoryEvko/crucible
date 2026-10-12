@@ -395,7 +395,9 @@ static void test_integration_with_sweep_line() {
                 .slot_id = SlotId{3},
                 .pad2 = {}};
 
-    auto* plan = bt.compute_memory_plan(test.alloc, slots, N);
+    crucible::MemoryPlan plan_storage{};
+    crucible::Arena sweep_arena{size_t{1} << 16};
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, N);
     assert(plan != nullptr);
     assert(plan->pool_bytes > 0);
 

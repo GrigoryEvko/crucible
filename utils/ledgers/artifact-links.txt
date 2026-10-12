@@ -306,6 +306,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_option_detect_stack_use_after_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | import | 1 | __asan_poison_memory_region | The arena poisons the bytes of an ended epoch under AddressSanitizer through the door foundation/os/Poison.h, and the vessel links the arena
 @build/vessel | import | 1 | __asan_poison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_register_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_report_load1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -335,6 +336,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | __asan_stack_malloc_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_stack_malloc_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_stack_malloc_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | import | 1 | __asan_unpoison_memory_region | The arena poisons the bytes of an ended epoch under AddressSanitizer through the door foundation/os/Poison.h, and the vessel links the arena
 @build/vessel | import | 1 | __asan_unpoison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_unregister_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __asan_version_mismatch_check_v8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -624,6 +626,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_option_detect_stack_use_after_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-tsan | @build/vessel | import | -1 | __asan_poison_memory_region | -
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_poison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_register_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_report_load1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -653,6 +656,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_stack_malloc_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_stack_malloc_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_stack_malloc_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-tsan | @build/vessel | import | -1 | __asan_unpoison_memory_region | -
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_unpoison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_unregister_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_version_mismatch_check_v8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -668,7 +672,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_acquire | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_compare_exchange_strong | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_compare_exchange_weak | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_exchange | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_fetch_add | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_fetch_sub | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | __tsan_atomic32_load | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -759,6 +762,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_option_detect_stack_use_after_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_poison_memory_region | -
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_poison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_register_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_report_load1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -788,6 +792,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_stack_malloc_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_stack_malloc_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_stack_malloc_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_unpoison_memory_region | -
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_unpoison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_unregister_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | __asan_version_mismatch_check_v8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -917,6 +922,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-release | @build/vessel | import | -1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_option_detect_stack_use_after_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-release | @build/vessel | import | -1 | __asan_poison_memory_region | -
 @x86_64-release | @build/vessel | import | -1 | __asan_poison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_register_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_report_load1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -946,6 +952,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-release | @build/vessel | import | -1 | __asan_unpoison_memory_region | -
 @x86_64-release | @build/vessel | import | -1 | __asan_unpoison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_unregister_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | __asan_version_mismatch_check_v8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

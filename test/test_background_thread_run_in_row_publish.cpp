@@ -29,24 +29,16 @@ namespace eff = ::foundation::effects;
 // cannot leave the callback until the test lets it, which pins the pipeline
 // at a known point and turns two races into an ordered sequence.
 //
-// The cost is that the block has to be safe.  A callback that blocked while
-// holding the arena gate would deadlock the build stage behind it, so the
-// rig is also a live check that the publish path holds nothing the rest of
-// the pipeline needs.
+// The cost is that the block has to be safe.  The build stage and the publish
+// stage share no lock, so the build stage goes on while the callback blocks.
 namespace publish_rig {
 
 struct Gate {
-    BackgroundThread* owner = nullptr;
-
     // Raised by the publish stage when it enters the callback, lowered by
     // the test when it wants the stage to continue.
     std::atomic<bool> in_callback{false};
     std::atomic<bool> release{false};
     std::atomic<bool> hold_next{true};
-
-    // The arena-gate probe, run on the first callback only.
-    std::atomic<bool> probe_done{false};
-    std::atomic<bool> gate_was_free{false};
 
     // Set by the test once it has watched the detect stage consume the
     // reset.  Every publish after that point is a post-reset publish.
@@ -64,7 +56,7 @@ struct Gate {
     static constexpr uint64_t FAMILY_MASK = 0x00FF0000ULL;
 };
 
-static void on_region_ready(void* ctx, eff::Bg const& bg, crucible::BackgroundThread::PublishStage,
+static void on_region_ready(void* ctx, eff::Bg const&, crucible::BackgroundThread::PublishStage,
                             crucible::RegionNode* region) noexcept {
     auto* gate = static_cast<Gate*>(ctx);
 
@@ -75,22 +67,6 @@ static void on_region_ready(void* ctx, eff::Bg const& bg, crucible::BackgroundTh
     const crucible::ContentHash canonical =
         crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region->ops, region->num_ops});
     if (canonical != region->content_hash) gate->hash_mismatches.fetch_add(1, std::memory_order_relaxed);
-
-    // The callback must not run inside the arena gate.  The gate is not
-    // recursive, so a stage that still held it across this call could never
-    // take it here no matter how long it waited: a successful acquire is
-    // proof the publish path let go before calling out.  The deadline
-    // absorbs the build stage legitimately holding the gate mid-allocation.
-    if (gate->owner != nullptr && !gate->probe_done.exchange(true, std::memory_order_acq_rel)) {
-        const ::fixy::BgLoadCtx probe_ctx{bg};
-        const auto probe_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        bool took = false;
-        while (!(took = gate->owner->try_probe_arena_alloc_gate(probe_ctx))
-               && std::chrono::steady_clock::now() < probe_deadline) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-        gate->gate_was_free.store(took, std::memory_order_release);
-    }
 
     const bool after_reset = gate->reset_observed.load(std::memory_order_acquire);
     const uint64_t family = region->ops[0].schema_hash.raw() & Gate::FAMILY_MASK;
@@ -156,7 +132,6 @@ void test_reset_drops_inflight_regions() {
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
     Gate gate;
-    gate.owner = &bt;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(ring.get(), metalog.get());
@@ -230,24 +205,17 @@ void test_reset_drops_inflight_regions() {
                    gate.published.load(), gate.published_after_reset.load(), stale, bt.iterations_completed.get());
 }
 
-// The region-ready callback must not run inside the arena gate.  The
-// callback commits a transaction, flips the mode cell and reads sampled
-// counters, and inside the gate the build stage would sleep for all of it.
-//
-// The probe inside the callback is what decides it, and the deadline there
-// is what makes the verdict unambiguous: the gate is not recursive, so a
-// publish stage still holding it could not take it again however long it
-// waited.
-void test_callback_runs_outside_arena_gate() {
+// Each region that the pipeline publishes carries the content hash of the
+// canonical span fold, and the uncompiled queue keeps at most its bound.
+void test_published_regions_keep_their_hashes() {
     using namespace publish_rig;
 
     BackgroundThread bt;
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
     Gate gate;
-    gate.owner = &bt;
-    // Nothing is parked here.  Holding the callback would only keep the
-    // pipeline waiting on a verdict the first callback already reached.
+    // Nothing is parked here.  The test reads each callback, and holding one
+    // would only keep the pipeline waiting.
     gate.hold_next.store(false, std::memory_order_release);
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
@@ -266,8 +234,7 @@ void test_callback_runs_outside_arena_gate() {
 
     bt.stop();
 
-    assert(gate.probe_done.load() && "no region published, so the gate was never probed");
-    assert(gate.gate_was_free.load() && "the region-ready callback ran while the arena gate was held");
+    assert(bt.uncompiled_regions.total() > 0 && "no region published");
     assert(gate.hash_mismatches.load() == 0);
 
     // The queue is bounded.  This run is shorter than the bound, so the
@@ -277,9 +244,44 @@ void test_callback_runs_outside_arena_gate() {
     assert(bt.uncompiled_regions.size()
            == std::min<uint64_t>(bt.uncompiled_regions.total(), BackgroundThread::UncompiledRegionQueue::CAP));
 
-    crucible::test::pass("  callback_outside_arena_gate:               "
-                         "PASSED (gate free in callback, retained={} of {})\n",
+    crucible::test::pass("  published_regions_keep_their_hashes:       "
+                         "PASSED (retained={} of {})\n",
                          bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
+}
+
+// A long run keeps the bytes of its scratch arenas.  The build stage ends an
+// epoch of its scratch arena after each work item, and the publish stage ends
+// an epoch of its own after each memory plan.  Each arena then holds the
+// blocks of its largest epoch, and no more blocks for each region.
+void test_long_run_keeps_its_scratch() {
+    using namespace publish_rig;
+    constexpr uint32_t LONG_RUN_ITERS = 10000;
+
+    auto test = ::foundation::effects::testing::test();
+    BackgroundThread bt;
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    const size_t scratch_before = bt.scratch_retained_bytes();
+
+    bt.start(&*ring, &*metalog);
+    for (uint32_t iter = 0; iter < LONG_RUN_ITERS; ++iter)
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+            push(*ring, Gate::FAMILY_A, op);
+
+    const uint64_t target = ring->total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    bt.stop();
+
+    const uint64_t published = bt.uncompiled_regions.total();
+    assert(published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
+    assert(bt.scratch_retained_bytes() == scratch_before && "a scratch arena kept more blocks after its epochs");
+
+    crucible::test::pass("  long_run_keeps_its_scratch:                "
+                         "PASSED (regions={}, scratch={} bytes)\n",
+                         static_cast<unsigned long long>(published),
+                         static_cast<unsigned long long>(bt.scratch_retained_bytes()));
 }
 
 }  // namespace test_background_thread_run_in_row

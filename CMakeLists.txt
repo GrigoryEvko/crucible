@@ -409,8 +409,9 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # sink, the abort of a saturated permission pool and the formatter of the
 # Report family.  It also holds the door directory of the base floor,
 # src/foundation/os: the raw system call primitive with its start-up check of
-# the kernel, the sink write of the Report family, the file door and the
-# directory door.  foundation starts no thread.  `fixy` is a static library
+# the kernel, the sink write of the Report family, the file door, the
+# directory door and the door of AddressSanitizer.  foundation starts no
+# thread.  `fixy` is a static library
 # for the same reason: it holds the cold bodies of fixy headers, the probe of
 # the machine topology, the door that starts and joins each thread of the base
 # and the futex door.
@@ -424,6 +425,7 @@ add_library(foundation STATIC
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp
   src/foundation/os/Intercepted.cpp
+  src/foundation/os/Poison.cpp
   src/foundation/os/ReportSink.cpp
   src/foundation/os/Syscall.cpp
 )

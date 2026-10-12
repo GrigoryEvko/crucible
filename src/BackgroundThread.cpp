@@ -149,14 +149,14 @@ struct BackgroundThread::Pipeline {
     // body takes the background context of that thread from the door.
     static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
 
-    // The publish stage publishes each graph whose reset epoch is current,
-    // releases each stale one, advances total_processed at each commit
+    // The publish stage publishes each region whose reset epoch is current,
+    // discards each stale one, advances total_processed at each commit
     // marker, and applies each release.  It is the one writer of the tail
     // of the metadata log.
     //
     // The channel is SPSC FIFO, so a commit marker can only arrive here
     // after every region produced from its batch and from preceding batches
-    // has gone through publish_trace_graph.  A completed flush therefore
+    // has gone through publish_region.  A completed flush therefore
     // implies every region is published.
     //
     // This stage owns the state the region callback writes.  It builds a
@@ -255,9 +255,8 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     return work;
 }
 
-void BackgroundThread::discard_trace_graph(PublishStage const& stage, TraceGraph* graph) {
-    if (!graph) return;
-    release_meta_log(stage, graph->max_meta_end.get_assuming_set());
+void BackgroundThread::discard_region(PublishStage const& stage, BuiltRegion parts) {
+    release_meta_log(stage, parts.max_meta_end);
 }
 
 // The precondition of the release is the contract of the tail: meta_end is
@@ -269,39 +268,38 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_end) 
     }
 }
 
-void BackgroundThread::publish_trace_graph(::foundation::effects::Bg const& bg, PublishStage const& stage,
-                                           TraceGraph* graph) {
-    if (!graph) return;
+// The node and the plan go into buffers of the region, and the arrays of the
+// sweep into the scratch of the publish stage, whose epoch ends in this call.
+// The memory goes to the region store before the region becomes visible, so
+// each region that a holder can name has an owner.  A move of a buffer keeps
+// the address of its storage, so the node and the ops keep their addresses
+// in the store.
+void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage,
+                                      BuiltRegion parts) {
+    RegionMemory memory{.parts = std::move(parts),
+                        .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
+                        .plan = {}};
+    RegionNode& region = memory.node[0];
+    init_region_node(region, memory.parts.ops.data(), static_cast<uint32_t>(memory.parts.ops.size()),
+                     memory.parts.content_hash);
+    const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
+    if (num_slots > 0) {
+        memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
+        ArenaEpoch sweep = publish_scratch_.open_epoch();
+        region.plan =
+            compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.data(), num_slots);
+        std::move(sweep).end();
+    }
 
-    const uint32_t num_ops = graph->num_ops.get_assuming_set();
-    const uint32_t num_slots = graph->num_slots.get_assuming_set();
-    const uint64_t max_meta_end = graph->max_meta_end.get_assuming_set();
+    release_meta_log(stage, memory.parts.max_meta_end);
+    recompute_merkle(&region);
+    const ::fixy::WeakRef<RegionNode> published{region};
+    region_store_.append(std::move(memory));
 
-    // The gate covers the arena bump cursor and nothing else.  The
-    // region-ready callback stays outside it: that callback commits a
-    // transaction, flips the mode cell and reads sampled counters, and
-    // inside the gate the build stage would sleep for all of it.
-    //
-    // Nothing after this scope touches the arena.  recompute_merkle
-    // walks nodes that already exist, release_meta_log moves a counter in
-    // the metadata log, and the queue below is heap storage the publish
-    // stage owns alone.
-    RegionNode* region = nullptr;
-    with_arena_alloc_gate_(::fixy::BgLoadCtx{bg}, [&]() noexcept {
-        region = make_region(bg.alloc, arena, graph->ops, num_ops, graph->content_hash);
-        if (graph->slots && num_slots > 0) {
-            region->plan = compute_memory_plan(bg.alloc, graph->slots, num_slots);
-        }
-    });
-
-    release_meta_log(stage, max_meta_end);
-
-    recompute_merkle(region);
-    uncompiled_regions.push(region);
-
-    active_region.store(region, std::memory_order_release);
+    uncompiled_regions.push(&published.get());
+    active_region.store(&published.get(), std::memory_order_release);
     if (region_ready_cb) {
-        region_ready_cb(bg, stage, region);
+        region_ready_cb(bg, stage, &published.get());
     }
 }
 
@@ -429,8 +427,8 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         }
 
         // A stale work item is deliberately still built here rather
-        // than dropped on the spot.  Dropping it would save the arena
-        // bump, but the metadata entries it covers still have to be
+        // than dropped on the spot.  Dropping it would save the build,
+        // but the metadata entries it covers still have to be
         // released or the log fills for good, and the only thing that
         // knows that range is the scan inside build_trace_from.  Doing
         // it here instead would put a second copy of "where does this
@@ -438,25 +436,28 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // duplicate that drifts.
         //
         // So the stale check sits one stage on, at the publish, where
-        // the graph carries its own max_meta_end.  The cost is one
-        // wasted graph per in-flight region per divergence, on a path
+        // the region carries its own max_meta_end.  The cost is one
+        // wasted build per in-flight region per divergence, on a path
         // that only runs when replay has already failed.
+        //
+        // One epoch of the build scratch covers this work item.  The graph
+        // and its CSR arrays die at its end.  The region does not point
+        // into the scratch, so its parts go on alone.
+        ArenaEpoch epoch = owner->build_scratch_.open_epoch();
+        TraceBuild built =
+            owner->build_trace_from(ctx.cap().alloc, owner->build_scratch_, work->completed_len, work->trace.data(),
+                                    work->meta_starts.data(), work->scope_hashes.data(), work->callsite_hashes.data());
 
-        TraceBuild built{nullptr};
-        owner->with_arena_alloc_gate_(ctx, [&]() noexcept {
-            built = owner->build_trace_from(ctx.cap().alloc, work->completed_len, work->trace.data(),
-                                            work->meta_starts.data(), work->scope_hashes.data(),
-                                            work->callsite_hashes.data());
-        });
-
-        // A work that met the overflow sends its release, and no graph.  The
+        // A work that met the overflow sends its release, and no region.  The
         // publish stage applies the release after each region of an earlier
         // work, so the tail of the metadata log only moves forward.
-        if (!built) {
-            if (built.error().meta_end > 0) {
+        if (built.is_err()) {
+            std::move(epoch).end();
+            const MetaLogOverflow overflow = built.err().expect("the build stopped at an overflow");
+            if (overflow.meta_end > 0) {
                 auto release = std::make_unique<BgGraphPublish>();
                 release->kind = BgGraphPublish::Kind::Release;
-                release->meta_end = built.error().meta_end;
+                release->meta_end = overflow.meta_end;
                 release->epoch = work->epoch;
                 push_pipeline(out, release.get());
                 release.release();
@@ -464,10 +465,11 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             continue;
         }
 
-        auto publish = std::make_unique<BgGraphPublish>();
-        publish->kind = BgGraphPublish::Kind::Region;
-        publish->graph = *built;
-        publish->epoch = work->epoch;
+        BuiltRegion region = std::move(built).expect("the build made a graph").region;
+        std::move(epoch).end();
+
+        auto publish = std::make_unique<BgGraphPublish>(
+            BgGraphPublish{.kind = BgGraphPublish::Kind::Region, .region = std::move(region), .epoch = work->epoch});
         push_pipeline(out, publish.get());
         publish.release();
     }
@@ -521,21 +523,22 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         // foreground that has already fallen back to recording.
         //
         // This is the only stale check, and it sits here rather than at
-        // the build stage so that the graph's own max_meta_end is the
+        // the build stage so that the region's own max_meta_end is the
         // one thing that decides which metadata range to release.  It
         // also catches a reset that landed while the build stage was
         // mid-graph.
         //
-        // The graph itself is arena storage and stays where it is.  Only
-        // the metadata log needs the hand-off: the entries this graph
-        // read are dead either way, and the foreground has to be able to
-        // reuse that space.
+        // The discard frees the memory of the region.  The metadata log
+        // needs the hand-off too: the entries this build read are dead
+        // either way, and the foreground has to be able to reuse that
+        // space.
+        BuiltRegion region = std::move(publish->region);
         if (publish->epoch != owner->reset_epoch.get()) {
-            owner->discard_trace_graph(PublishStage{}, publish->graph);
+            owner->discard_region(PublishStage{}, std::move(region));
             continue;
         }
 
-        owner->publish_trace_graph(bg, PublishStage{}, publish->graph);
+        owner->publish_region(bg, PublishStage{}, std::move(region));
     }
 }
 
@@ -661,8 +664,8 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
     }
 }
 
-BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a, uint32_t count,
-                                                                const TraceRing::Entry* trace_data,
+BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a, Arena& scratch,
+                                                                uint32_t count, const TraceRing::Entry* trace_data,
                                                                 const MetaIndex* meta_data, const ScopeHash* scope_data,
                                                                 const CallsiteHash* callsite_data) {
     CRUCIBLE_PRE(::foundation::decide::valid_span(count, trace_data));
@@ -684,7 +687,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
             // Overflow on an op that did have tensors.  The publish stage
             // releases the metadata that the scan read, in the order of the
             // works.
-            return std::unexpected(MetaLogOverflow{.meta_end = max_meta_end});
+            return ::fixy::err(MetaLogOverflow{.meta_end = max_meta_end});
         }
         if (ms.is_valid()) {
             if (!first_meta.is_valid()) first_meta = ms;
@@ -698,27 +701,23 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
 
     ensure_scratch_buffers(total_inputs, total_outputs);
 
-    auto* ops = arena.alloc_array<TraceEntry>(a, count);
-
-    // The ops keep their tensor metadata in the arena, beside their other
-    // arrays.  A published region lives as long as the arena.  Activation,
-    // the region cache and the store read its ops after the publish stage
-    // releases this run of the metadata log.  The foreground then writes new
-    // records over the run.  The build copies the run, and no op points into
-    // the log.  Each read below reads the copy.
+    // The ops keep their tensor metadata in a buffer of the region, beside
+    // their other arrays.  A published region lives as long as its memory.
+    // Activation, the region cache and the store read its ops after the
+    // publish stage releases this run of the metadata log.  The foreground
+    // then writes new records over the run.  The build copies the run, and
+    // no op points into the log.  Each read below reads the copy.
     //
     // The tail stays at or before the first record of a work until the
     // release of that work.  The log held each record of the run at one
     // time, and the run is at most CAPACITY records.  The check is armed in
     // a release build too: the count of the copy has 32 bits, and a longer
     // run loses its high bits there.
-    TensorMeta* meta_base = nullptr;
+    uint32_t total_metas = 0;
     if (first_meta.is_valid()) {
         const uint64_t run_length = max_meta_end - first_meta.raw();
         CRUCIBLE_FATAL_INVARIANT(run_length <= MetaLog::CAPACITY);
-        const uint32_t total_metas = static_cast<uint32_t>(run_length);
-        meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
-        meta_log.get()->copy_run(first_meta.raw(), total_metas, meta_base);
+        total_metas = static_cast<uint32_t>(run_length);
     }
 
     // One auxiliary block holds scalars, trace indices and slot ids.
@@ -730,11 +729,21 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     size_t aux_bytes =
         static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
         + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-    char* aux_cursor =
-        (aux_bytes > 0)
-            ? static_cast<char*>(arena.alloc(a, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
-                                             ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
-            : nullptr;
+
+    ::foundation::AlignedBuffer<TraceEntry> op_buffer =
+        ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
+    auto* ops = op_buffer.data();
+
+    ::foundation::AlignedBuffer<TensorMeta> meta_buffer =
+        ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
+    TensorMeta* meta_base = meta_buffer.data();
+    if (first_meta.is_valid()) {
+        meta_log.get()->copy_run(first_meta.raw(), total_metas, meta_base);
+    }
+
+    ::foundation::AlignedBuffer<std::byte, alignof(int64_t)> side_buffer =
+        ::foundation::AlignedBuffer<std::byte, alignof(int64_t)>::allocate(aux_bytes);
+    char* aux_cursor = static_cast<char*>(static_cast<void*>(side_buffer.data()));
 
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
@@ -752,9 +761,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     // read.
     uint32_t num_edges = 0;
 
-    // Hoisted into locals because the compiler cannot prove the arena
-    // writes below do not alias *this, and would otherwise reload each
-    // member on every access.
+    // Hoisted into locals because the compiler cannot prove the writes
+    // below into the buffers of the region do not alias *this, and would
+    // otherwise reload each member on every access.
     PtrSlot* const local_map = scratch_map_.data();
     SlotInfo* const local_slots = scratch_slots_.data();
     Edge* const local_edges = scratch_edges_.data();
@@ -980,9 +989,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     }
 
     uint32_t num_slots = std::min(next_slot_raw, slot_cap);
-    TensorSlot* slots = nullptr;
+    ::foundation::AlignedBuffer<TensorSlot> slots =
+        ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
     if (num_slots > 0) {
-        slots = arena.alloc_array<TensorSlot>(a, num_slots);
         static_assert(sizeof(SlotInfo) == 24);
         static_assert(offsetof(TensorSlot, nbytes) == 8);
         static_assert(offsetof(SlotInfo, nbytes) == 0);
@@ -995,23 +1004,28 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         }
     }
 
-    auto* graph = alloc_trace_graph(a, arena);
+    auto* graph = alloc_trace_graph(a, scratch);
     graph->ops = ops;
-    graph->slots = slots;
+    graph->slots = slots.data();
     graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
     graph->max_meta_end.set(max_meta_end);
-    build_csr(a, arena, graph, local_edges, num_edges, count);
+    build_csr(a, scratch, graph, local_edges, num_edges, count);
 
-    CRUCIBLE_POST(graph, graph != nullptr);
-    return graph;
+    return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
+                      .region = BuiltRegion{.ops = std::move(op_buffer),
+                                            .metas = std::move(meta_buffer),
+                                            .side_arrays = std::move(side_buffer),
+                                            .slots = std::move(slots),
+                                            .content_hash = graph->content_hash,
+                                            .max_meta_end = max_meta_end}};
 }
 
-MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, TensorSlot* slots,
-                                                  uint32_t num_slots) {
+MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
+                                                  Arena& scratch, TensorSlot* slots, uint32_t num_slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
-    auto* plan = arena.alloc_obj<MemoryPlan>(a);
+    auto* plan = &plan_storage;
     plan->slots = slots;
     plan->num_slots = num_slots;
     plan->num_external = 0;
@@ -1056,8 +1070,8 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
     // so num_ops and num_ops + 1 are positive and do not wrap.
     uint32_t num_ops = max_op + 1;
-    auto* birth_count = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
-    auto* death_count = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* birth_count = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* death_count = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
     std::memset(birth_count, 0, num_ops * sizeof(uint32_t));
     std::memset(death_count, 0, num_ops * sizeof(uint32_t));
 
@@ -1068,8 +1082,8 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         if (free_at < num_ops) death_count[free_at]++;
     }
 
-    auto* birth_off = arena.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
-    auto* death_off = arena.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
+    auto* birth_off = scratch.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
+    auto* death_off = scratch.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
     birth_off[0] = 0;
     death_off[0] = 0;
     for (uint32_t o = 0; o < num_ops; o++) {
@@ -1077,11 +1091,11 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         death_off[o + 1] = death_off[o] + death_count[o];
     }
 
-    auto* born_slots = arena.alloc_array_nonzero<uint32_t>(a, num_internal);
-    auto* dead_slots = arena.alloc_array_nonzero<uint32_t>(a, num_internal);
+    auto* born_slots = scratch.alloc_array_nonzero<uint32_t>(a, num_internal);
+    auto* dead_slots = scratch.alloc_array_nonzero<uint32_t>(a, num_internal);
     // Cursors start as copies of the offsets and advance during scatter.
-    auto* birth_cur = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
-    auto* death_cur = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* birth_cur = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* death_cur = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
     std::memcpy(birth_cur, birth_off, num_ops * sizeof(uint32_t));
     std::memcpy(death_cur, death_off, num_ops * sizeof(uint32_t));
 

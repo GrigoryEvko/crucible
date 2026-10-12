@@ -68,7 +68,9 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     slots[1].birth_op = crucible::OpIndex{birth_op};
     slots[1].death_op = crucible::OpIndex{death_op};
     slots[1].slot_id = crucible::SlotId{1};
-    auto* plan = bt.compute_memory_plan(test.alloc, slots, 2);
+    crucible::MemoryPlan plan_storage{};
+    crucible::Arena sweep_arena{size_t{1} << 16};
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, 2);
     ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
                    static_cast<unsigned long long>(plan->pool_bytes));
 }
@@ -178,7 +180,9 @@ int main() {
                 .slot_id = SlotId{3},
                 .pad2 = {}};
 
-    auto* plan = bt.compute_memory_plan(test.alloc, slots, N);
+    crucible::MemoryPlan plan_storage{};
+    crucible::Arena sweep_arena{size_t{1} << 16};
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, N);
     assert(plan != nullptr);
     assert(plan->num_slots == N);
     assert(plan->num_external == 1);

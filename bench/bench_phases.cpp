@@ -100,12 +100,13 @@ void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, 
 // ── Top-level Report via bench::run ──────────────────────────────────
 //
 // The full build_trace pipeline on a real recorded trace. The body
-// resets the arena and MetaLog from scratch every call, then runs
-// build_trace. Scope / callsite / meta cursors are restored to their
-// recorded values each sample so every sample is independent and
-// measures the same work.
+// opens an epoch of the scratch arena and refills the MetaLog every call,
+// then runs build_trace, then ends the epoch. Scope / callsite / meta
+// cursors are restored to their recorded values each sample so every
+// sample is independent and measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+    Arena scratch{arena_bytes};
 
     char label[64];
     std::snprintf(label, sizeof(label), "build_trace (full pipeline, %u ops)", trace.num_ops);
@@ -117,11 +118,11 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto built = bg.build_trace(A, trace.num_ops);
+        auto built = bg.build_trace(A, scratch, trace.num_ops);
         bench::do_not_optimize(built);
+        std::move(epoch).end();
     });
 }
 
@@ -137,6 +138,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
+    Arena scratch{arena_bytes};
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
@@ -144,11 +146,11 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto built = bg.build_trace(A, trace.num_ops);
+        auto built = bg.build_trace(A, scratch, trace.num_ops);
         bench::do_not_optimize(built);
+        std::move(epoch).end();
     }
 
     // Measurement: run build_trace N times, accumulate.
@@ -160,15 +162,15 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
 
         const uint64_t t0 = bench::rdtsc_start();
-        auto built = bg.build_trace(A, trace.num_ops);
+        auto built = bg.build_trace(A, scratch, trace.num_ops);
         const uint64_t t1 = bench::rdtsc_end();
 
         bench::do_not_optimize(built);
+        std::move(epoch).end();
         const double ns = static_cast<double>(t1 - t0) * nspc;
         total_ns += ns;
         samples[iter] = ns;
@@ -187,10 +189,9 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch ref_epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto* ref = *bg.build_trace(A, trace.num_ops);
+        auto [ref, ref_region] = bg.build_trace(A, scratch, trace.num_ops).expect("the recorded trace builds");
 
         const uint32_t num_ops = ref->num_ops.get_assuming_set();
         const uint32_t num_slots = ref->num_slots.get_assuming_set();
@@ -204,6 +205,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
 
         std::vector<TensorSlot> saved_slots(ref->slots, ref->slots + num_slots);
+        std::move(ref_epoch).end();
 
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
@@ -221,16 +223,17 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         // compute_memory_plan
         for (uint32_t iter = 0; iter < iters; iter++) {
-            bg.arena.~Arena();
-            new(&bg.arena) Arena{arena_bytes};
-            auto* s = bg.arena.alloc_array<TensorSlot>(A, num_slots);
+            ArenaEpoch plan_epoch = scratch.open_epoch();
+            auto* s = scratch.alloc_array<TensorSlot>(A, num_slots);
             std::memcpy(s, saved_slots.data(), num_slots * sizeof(TensorSlot));
 
+            MemoryPlan plan_storage{};
             const uint64_t t0 = bench::rdtsc_start();
-            auto* plan = bg.compute_memory_plan(A, s, num_slots);
+            auto* plan = bg.compute_memory_plan(A, plan_storage, scratch, s, num_slots);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(plan);
+            std::move(plan_epoch).end();
             ns_memplan += static_cast<double>(t1 - t0) * nspc;
         }
 
@@ -251,6 +254,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
+    Arena scratch{arena_bytes};
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
     for (uint32_t i = 0; i < count; i++) {
@@ -265,11 +269,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
     bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
     bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-    bg.arena.~Arena();
-    new(&bg.arena) Arena{arena_bytes};
-    bench::refill_meta_log(meta_log, trace);
-    auto ref = bg.build_trace(A, count);
-    (void)ref;
+    {
+        ArenaEpoch prime_epoch = scratch.open_epoch();
+        bench::refill_meta_log(meta_log, trace);
+        auto ref = bg.build_trace(A, scratch, count);
+        bench::do_not_optimize(ref);
+        std::move(prime_epoch).end();
+    }
 
     // ── P0: Pre-scan ──────────────────────────────────────────────
     double ns_p0 = 0;
@@ -310,8 +316,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P1: Alloc + PtrMap gen + memset ───────────────────────────
     double ns_p1 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch epoch = scratch.open_epoch();
 
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
@@ -322,11 +327,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
+        auto* ops = scratch.alloc_array<TraceEntry>(A, count);
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux = (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(
+        char* aux = (aux_bytes > 0) ? static_cast<char*>(scratch.alloc(
                                           A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
                                           ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
                                     : nullptr;
@@ -339,13 +344,14 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         bench::do_not_optimize(ops);
         bench::do_not_optimize(aux);
+        std::move(epoch).end();
         ns_p1 += static_cast<double>(t1 - t0) * nspc;
     }
 
     // ── P1b: Copy the run of the metadata log into the arena ──────
-    // The arena is new in each iteration.  The arena of a running pipeline
-    // also gives each region memory that no region used before.  The time
-    // holds the first touch of each page of the copy.
+    // The copy goes into a new arena in each iteration.  A running pipeline
+    // also gives each region a memory of its own.  The time holds the first
+    // touch of each page of the copy.
     double ns_p1b = 0;
     {
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
@@ -364,11 +370,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            bg.arena.~Arena();
-            new(&bg.arena) Arena{arena_bytes};
+            Arena region_memory{arena_bytes};
 
             const uint64_t t0 = bench::rdtsc_start();
-            TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
+            TensorMeta* meta_base = region_memory.alloc_array<TensorMeta>(A, total_metas);
             meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
             const uint64_t t1 = bench::rdtsc_end();
 
@@ -384,8 +389,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
 
         const TraceRing::Entry* trace_data = bg.current_trace.data();
@@ -409,15 +413,15 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             total_scalars += std::min(re.num_scalar_args, uint16_t(5));
         }
 
-        auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
+        auto* ops = scratch.alloc_array<TraceEntry>(A, count);
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        TensorMeta* meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
+        TensorMeta* meta_base = scratch.alloc_array<TensorMeta>(A, total_metas);
         meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux_cursor = (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(
+        char* aux_cursor = (aux_bytes > 0) ? static_cast<char*>(scratch.alloc(
                                                  A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
                                                  ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
                                            : nullptr;
@@ -479,6 +483,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bench::do_not_optimize(ops);
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
         check_ops_without_metas(ops, meta_data, count);
+        std::move(epoch).end();
     }
 
     // ── P2b: Content hash only ────────────────────────────────────
@@ -488,11 +493,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch ref_epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto* ref_graph = *bg.build_trace(A, count);
+        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
         TraceEntry* ref_ops = ref_graph->ops;
+        std::move(ref_epoch).end();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
@@ -535,11 +540,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch ref_epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto* ref_graph = *bg.build_trace(A, count);
+        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
         TraceEntry* ref_ops = ref_graph->ops;
+        std::move(ref_epoch).end();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
@@ -586,11 +591,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch ref_epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto* ref_graph = *bg.build_trace(A, count);
+        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
         TraceEntry* ref_ops = ref_graph->ops;
+        std::move(ref_epoch).end();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
@@ -629,23 +634,22 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        bg.arena.~Arena();
-        new(&bg.arena) Arena{arena_bytes};
+        ArenaEpoch ref_epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
-        auto* ref_graph = *bg.build_trace(A, count);
+        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
         const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
+        std::move(ref_epoch).end();
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),
                                                             bg.scratch_slots_.data() + num_slots);
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             std::memcpy(bg.scratch_slots_.data(), saved_slots.data(), num_slots * sizeof(BackgroundThread::SlotInfo));
-            bg.arena.~Arena();
-            new(&bg.arena) Arena{arena_bytes};
+            ArenaEpoch epoch = scratch.open_epoch();
 
             const uint64_t t0 = bench::rdtsc_start();
 
-            auto* slots = bg.arena.alloc_array<TensorSlot>(A, num_slots);
+            auto* slots = scratch.alloc_array<TensorSlot>(A, num_slots);
             for (uint32_t s = 0; s < num_slots; s++) {
                 slots[s].offset_bytes = 0;
                 std::memcpy(&slots[s].nbytes, &bg.scratch_slots_[s], sizeof(BackgroundThread::SlotInfo));
@@ -655,6 +659,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
             const uint64_t t1 = bench::rdtsc_end();
             bench::do_not_optimize(slots);
+            std::move(epoch).end();
             ns_p3 += static_cast<double>(t1 - t0) * nspc;
         }
     }

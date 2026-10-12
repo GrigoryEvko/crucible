@@ -385,7 +385,9 @@ static void test_integration_with_pool() {
                 .slot_id = SlotId{2},
                 .pad2 = {}};
 
-    auto* plan = bt.compute_memory_plan(test.alloc, slots, NSLOTS);
+    crucible::MemoryPlan plan_storage{};
+    crucible::Arena sweep_arena{size_t{1} << 16};
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, NSLOTS);
     assert(plan != nullptr);
 
     PoolAllocator pool;

@@ -181,7 +181,8 @@ int main() {
     // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
     test_reset_drops_inflight_regions();
-    test_callback_runs_outside_arena_gate();
+    test_published_regions_keep_their_hashes();
+    test_long_run_keeps_its_scratch();
     test_overflow_build_leaves_tail();
     test_publish_stage_releases_in_order();
     test_pipeline_releases_after_overflow();

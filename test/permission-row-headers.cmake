@@ -5,7 +5,6 @@
 # A header joins when it declares an alias permission_row or parent_type, or when it opens the
 # namespace permission_rows.
 set(CRUCIBLE_PERMISSION_ROW_HEADERS
-    crucible/BackgroundThread.h
     crucible/KernelCache.h
     crucible/PermissionedMetaLog.h
     crucible/cntp/BackpressureRuntime.h

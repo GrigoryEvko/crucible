@@ -168,7 +168,9 @@ int main() {
                     .pad2 = {}};
 
     BackgroundThread bt;
-    auto* plan = bt.compute_memory_plan(test.alloc, slots, N_SLOTS);
+    crucible::MemoryPlan plan_storage{};
+    crucible::Arena sweep_arena{size_t{1} << 16};
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, N_SLOTS);
     assert(plan != nullptr);
 
     std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan->pool_bytes),

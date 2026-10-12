@@ -199,7 +199,8 @@ struct Built {
 
     TensorSlot slots[kNumSlots]{};
     build_slots(slots);
-    head->plan = bt.compute_memory_plan(ctx.alloc, slots, kNumSlots);
+    crucible::MemoryPlan plan_storage{};
+    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, arena, slots, kNumSlots);
     crucible::recompute_merkle(head);
 
     Built out;

@@ -157,7 +157,9 @@ int main(int argc, char** argv) {
 
             auto test = ::foundation::effects::testing::test();
             BackgroundThread bt1;
-            auto* plan1 = bt1.compute_memory_plan(test.alloc, slots1, num_slots);
+            crucible::MemoryPlan plan_storage1{};
+            crucible::Arena sweep_arena1{size_t{1} << 16};
+            auto* plan1 = bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, slots1, num_slots);
 
             // (A) Structural fidelity.
             if (plan1 == nullptr) return false;
@@ -196,7 +198,9 @@ int main(int argc, char** argv) {
             TensorSlot slots2[kMaxSlots]{};
             (void)materialize(set, slots2);
             BackgroundThread bt2;
-            auto* plan2 = bt2.compute_memory_plan(test.alloc, slots2, num_slots);
+            crucible::MemoryPlan plan_storage2{};
+            crucible::Arena sweep_arena2{size_t{1} << 16};
+            auto* plan2 = bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, slots2, num_slots);
             if (plan2 == nullptr) return false;
             if (plan2->pool_bytes != plan1->pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {

@@ -143,7 +143,7 @@ PyTorch's CUDACachingAllocator: freelist search, splitting, coalescing, mutex co
 
 `PoolAllocator` makes one aligned host allocation of `pool_bytes` when a region becomes active. Every "allocation" = `base_ptr + offset`: no mutex, no fragmentation, no contention. Plan is read-only at runtime. The PyTorch Vessel puts no tensor there at this time, because COMPILED mode still does each operation eagerly (refer to L4). The device pool, one `cudaMalloc(pool_bytes)` for each plan, is planned.
 
-**Deterministic:** same DFG → same plan → same addresses. When compiled kernels use the plan (planned), this removes the history-dependent allocator non-determinism of PyTorch. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc, bulk reset. **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
+**Deterministic:** same DFG → same plan → same addresses. When compiled kernels use the plan (planned), this removes the history-dependent allocator non-determinism of PyTorch. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc. An `ArenaEpoch` ends all bytes of an arena at one time, and the arena keeps its blocks for the next epoch (`include/crucible/Arena.h`). **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
 
 **Automatic activation checkpointing** (planned) from measured data:
 ```
@@ -735,7 +735,7 @@ void process(const TraceEntry* entry) {
 **Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. No code of the tree throws through `__cxa_throw`. A container or a view of the standard library can throw inside libstdc++, and §XII tells how the rule `artifact-symbols` holds each such path on the artifact.
 
 **Discipline:**
-- All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
+- Graph and DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF) or in the buffers of a region. Only `std::move(epoch).end()` of an `ArenaEpoch` ends the bytes of an arena before the arena ends (`include/crucible/Arena.h`).
 - No `new` / `delete`. No `malloc` / `free` on hot path.
 - No `std::shared_ptr`. No `std::unique_ptr` on hot path (only for top-level ring/MetaLog buffers).
 - `= delete("reason")` on copy and move of non-value types. WITH a reason string.
@@ -1554,7 +1554,7 @@ Background (warm):  one pipeline thread, which starts four stage threads and joi
   publish   makes the RegionNode and its memory plan, and activates the region
 ```
 
-`BackgroundThread::start` (`include/crucible/BackgroundThread.h`, with its body in `src/BackgroundThread.cpp`) starts the pipeline thread. The pipeline gives each stage a thread of its own, and SPSC channels connect the stages. Each stage spins on its input channel. The build stage and the publish stage also share `arena_alloc_gate_`, a blocking lock around the bump cursor of the arena. A waiter on that lock sleeps in the kernel, through the futex door of `fixy/os/Futex.h`. `bench/baselines/record_leaf.json` holds the measured cost of a foreground record. The Vigil starts no other thread. The ledger refresh daemon and its cache-tier probe in `include/crucible/ledger/` have threads of their own, and only their tests start them at this time. Apart from these, only the OS and OS-adjacent code (systemd, signal handlers) add threads. Background workers for parallel kernel compilation inside Mimic are planned.
+`BackgroundThread::start` (`include/crucible/BackgroundThread.h`, with its body in `src/BackgroundThread.cpp`) starts the pipeline thread. The pipeline gives each stage a thread of its own, and SPSC channels connect the stages. Each stage spins on its input channel. The build stage and the publish stage share no lock. Each one has a scratch arena of its own, and a message moves the parts of each region to the publish stage. `bench/baselines/record_leaf.json` holds the measured cost of a foreground record. The Vigil starts no other thread. The ledger refresh daemon and its cache-tier probe in `include/crucible/ledger/` have threads of their own, and only their tests start them at this time. Apart from these, only the OS and OS-adjacent code (systemd, signal handlers) add threads. Background workers for parallel kernel compilation inside Mimic are planned.
 
 ### SPSC ring pattern
 

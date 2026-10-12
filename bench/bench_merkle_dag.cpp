@@ -259,13 +259,15 @@ int main(int argc, char* argv[]) {
             CRUCIBLE_BENCH_CHECK(slots[s].offset_bytes == 0);
         }
         BackgroundThread bg;
+        Arena scratch{1 << 20};
         return bench::run("compute_memory_plan (300 slots)", [&] {
-            bg.arena.~Arena();
-            new(&bg.arena) Arena{1 << 20};
-            auto* s = bg.arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
+            ArenaEpoch epoch = scratch.open_epoch();
+            auto* s = scratch.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
             std::memcpy(s, slots, NUM_SLOTS * sizeof(TensorSlot));
-            auto* plan = bg.compute_memory_plan(test.alloc, s, NUM_SLOTS);
+            MemoryPlan plan_storage{};
+            auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, scratch, s, NUM_SLOTS);
             bench::do_not_optimize(plan);
+            std::move(epoch).end();
         });
     }());
 
@@ -349,17 +351,18 @@ int main(int argc, char* argv[]) {
             }
         };
 
+        Arena scratch{1 << 20};
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             bg.current_trace = saved_trace;
             bg.current_meta_starts = saved_meta;
             bg.current_scope_hashes = saved_scope;
             bg.current_callsite_hashes = saved_callsite;
-            bg.arena.~Arena();
-            new(&bg.arena) Arena{1 << 20};
+            ArenaEpoch epoch = scratch.open_epoch();
             repopulate_meta_log();
 
-            auto built = bg.build_trace(test.alloc, N);
+            auto built = bg.build_trace(test.alloc, scratch, N);
             bench::do_not_optimize(built);
+            std::move(epoch).end();
         });
     }());
 
@@ -380,6 +383,7 @@ int main(int argc, char* argv[]) {
             BackgroundThread bg;
             bg.meta_log.set(&meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace->num_ops) * 256);
+            Arena scratch{arena_bytes};
 
             char label[128];
             std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace->num_ops, path);
@@ -388,11 +392,11 @@ int main(int argc, char* argv[]) {
                 bg.current_meta_starts.assign(trace->meta_starts.begin(), trace->meta_starts.end());
                 bg.current_scope_hashes.assign(trace->scope_hashes.begin(), trace->scope_hashes.end());
                 bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
-                bg.arena.~Arena();
-                new(&bg.arena) Arena{arena_bytes};
+                ArenaEpoch epoch = scratch.open_epoch();
                 bench::refill_meta_log(meta_log, *trace);
-                auto built = bg.build_trace(test.alloc, trace->num_ops);
+                auto built = bg.build_trace(test.alloc, scratch, trace->num_ops);
                 bench::do_not_optimize(built);
+                std::move(epoch).end();
             });
         }());
     }

@@ -120,11 +120,12 @@ void test_overflow_build_leaves_tail() {
     const uint64_t read_end = overflowing.push_op_with_meta(*metalog, 1);
     overflowing.push_op_without_meta(2);
 
+    crucible::Arena scratch{size_t{1} << 16};
     const BackgroundThread::TraceBuild built =
-        bt.build_trace_from(test.alloc, overflowing.count, overflowing.trace, overflowing.meta_starts,
+        bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
                             overflowing.scope_hashes, overflowing.callsite_hashes);
-    assert(!built.has_value());
-    assert(built.error().meta_end == read_end);
+    assert(built.is_err());
+    assert(built.err().expect("the build stops at the op with no metadata").meta_end == read_end);
     assert(metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata, so the release is
@@ -133,10 +134,10 @@ void test_overflow_build_leaves_tail() {
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(*metalog, 4);
     const BackgroundThread::TraceBuild built_at_start = bt.build_trace_from(
-        test.alloc, overflowing_at_start.count, overflowing_at_start.trace, overflowing_at_start.meta_starts,
+        test.alloc, scratch, overflowing_at_start.count, overflowing_at_start.trace, overflowing_at_start.meta_starts,
         overflowing_at_start.scope_hashes, overflowing_at_start.callsite_hashes);
-    assert(!built_at_start.has_value());
-    assert(built_at_start.error().meta_end == 0u);
+    assert(built_at_start.is_err());
+    assert(built_at_start.err().expect("the build stops at the first op").meta_end == 0u);
     assert(metalog->tail.get() == 0u);
 
     crucible::test::pass("  overflow_build_leaves_tail:                PASSED\n");
@@ -166,19 +167,20 @@ void test_publish_stage_releases_in_order() {
     const uint64_t overflow_end = overflowing.push_op_with_meta(*metalog, 4);
     overflowing.push_op_without_meta(5);
 
-    const BackgroundThread::TraceBuild built = bt.build_trace_from(
-        test.alloc, first.count, first.trace, first.meta_starts, first.scope_hashes, first.callsite_hashes);
-    assert(built.has_value() && *built != nullptr);
+    crucible::Arena scratch{size_t{1} << 16};
+    BackgroundThread::TraceBuild built = bt.build_trace_from(
+        test.alloc, scratch, first.count, first.trace, first.meta_starts, first.scope_hashes, first.callsite_hashes);
+    assert(built.is_ok());
     const BackgroundThread::TraceBuild overflowed =
-        bt.build_trace_from(test.alloc, overflowing.count, overflowing.trace, overflowing.meta_starts,
+        bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
                             overflowing.scope_hashes, overflowing.callsite_hashes);
-    assert(!overflowed.has_value());
+    assert(overflowed.is_err());
     assert(metalog->tail.get() == 0u);
 
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_trace_graph(bg, stage, *built);
+        bt.publish_region(bg, stage, std::move(built).expect("the first work builds").region);
         assert(metalog->tail.get() == first_end);
-        bt.release_meta_log(stage, overflowed.error().meta_end);
+        bt.release_meta_log(stage, overflowed.err().expect("the second work overflows").meta_end);
     });
     assert(metalog->tail.get() == overflow_end);
 
@@ -266,15 +268,16 @@ void test_built_graph_owns_its_metadata() {
     for (uint32_t op = 0; op < OPS; ++op)
         (void)work.push_op_with_meta(*metalog, op);
 
-    const BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts,
-                                                                   work.scope_hashes, work.callsite_hashes);
-    assert(built.has_value() && *built != nullptr);
+    crucible::Arena scratch{size_t{1} << 16};
+    BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
+                                                             work.meta_starts, work.scope_hashes, work.callsite_hashes);
+    auto [graph, parts] = std::move(built).expect("the work builds a graph");
 
     const std::less<const crucible::TensorMeta*> before{};
     const crucible::TensorMeta* const log_begin = metalog->entries;
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
-        const crucible::TensorMeta* const metas = (*built)->ops[op].output_metas;
+        const crucible::TensorMeta* const metas = graph->ops[op].output_metas;
         assert(metas != nullptr);
         assert((before(metas, log_begin) || !before(metas, log_end))
                && "an op of the graph points into the buffer of the metadata log");
@@ -285,9 +288,9 @@ void test_built_graph_owns_its_metadata() {
     // The region of the publish holds the same ops, and the release moves
     // the tail past the run.
     bt.run_on_publish_stage(
-        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_trace_graph(bg, stage, *built); });
+        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_region(bg, stage, std::move(parts)); });
     const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
-    assert(region != nullptr && region->ops == (*built)->ops);
+    assert(region != nullptr && region->ops == graph->ops);
     assert(metalog->tail.get() == OPS);
 
     crucible::test::pass("  built_graph_owns_its_metadata:             PASSED\n");
@@ -319,17 +322,18 @@ void test_build_and_release_pass_two_to_the_32() {
         run_end = work.push_op_with_meta(*metalog, op);
     assert(run_end == uint64_t{BELOW_WRAP} + OPS);
 
-    const BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, work.count, work.trace, work.meta_starts,
-                                                                   work.scope_hashes, work.callsite_hashes);
-    assert(built.has_value() && *built != nullptr);
+    crucible::Arena scratch{size_t{1} << 16};
+    BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
+                                                             work.meta_starts, work.scope_hashes, work.callsite_hashes);
+    auto [graph, parts] = std::move(built).expect("the work builds a graph");
     for (uint32_t op = 0; op < OPS; ++op) {
-        const crucible::TensorMeta* const metas = (*built)->ops[op].output_metas;
+        const crucible::TensorMeta* const metas = graph->ops[op].output_metas;
         assert(metas != nullptr);
         assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
     }
 
     bt.run_on_publish_stage(
-        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_trace_graph(bg, stage, *built); });
+        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_region(bg, stage, std::move(parts)); });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
     crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");

@@ -26,7 +26,8 @@ void test_rearm_cycle();
 // The divergence reset and the publish stage
 // (test_background_thread_run_in_row_publish.cpp).
 void test_reset_drops_inflight_regions();
-void test_callback_runs_outside_arena_gate();
+void test_published_regions_keep_their_hashes();
+void test_long_run_keeps_its_scratch();
 
 // The release of the metadata log, and the copy of its records that a built
 // graph holds (test_background_thread_run_in_row_meta.cpp).

@@ -13,30 +13,30 @@
 #include <atomic>
 #include <bit>
 #include <cstdint>
-#include <expected>
 #include <memory>
 #include <type_traits>
 #include <vector>
 
+#include <crucible/Arena.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/TraceGraph.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/PublishCommit.h>
-#include <fixy/os/SpinLock.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/permissions/Permission.h>
 
 namespace crucible {
 
@@ -281,31 +281,60 @@ public:
     // while the detect stage writes it, so the counter is atomic.
     alignas(64)::fixy::AtomicMonotonic<uint32_t> iterations_completed = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
-private:
-    // Each acquisition mints a token of this tag, so the token witnesses
-    // that the acquisition comes from inside this class.  The tag and the
-    // gate below are both private.  Code outside the class cannot name the
-    // tag, and it cannot reach the gate to deduce the tag from its type.
-    struct ArenaAllocGateTag {
-        using permission_row = ::foundation::effects::Row<>;
+public:
+    // The parts of one built region, each in a buffer of the exact count.
+    // The build stage makes them, a message moves them to the publish stage,
+    // and the publish stage gives them to the region store, or frees them
+    // when it discards the region.  The payload walk of the pipeline channels
+    // reads each member (fixy/concurrent/PayloadRow.h).
+    struct BuiltRegion {
+        ::foundation::AlignedBuffer<TraceEntry> ops;
+        // The tensor metadata of the ops.  An op points into this buffer.
+        ::foundation::AlignedBuffer<TensorMeta> metas;
+        // The scalars, the trace indices and the slot ids of the ops.  An op
+        // points into this buffer.
+        ::foundation::AlignedBuffer<std::byte, alignof(int64_t)> side_arrays;
+        // The slots of the memory plan.
+        ::foundation::AlignedBuffer<TensorSlot> slots;
+        ContentHash content_hash;
+        // The end of the run of the metadata log that the build read, as a
+        // count of records (MetaLog::head).  The publish stage releases the
+        // run.
+        uint64_t max_meta_end = 0;
     };
 
-    // The build stage and the publish stage are separate pipeline threads.
-    // Arena storage is append-only, so pointers already handed out stay
-    // valid, but the bump cursor is shared mutable state.  This gate
-    // serializes the two allocation windows against each other without
-    // weakening the permissioned SPSC stage topology.
-    //
-    // Both stages run under a background context, so the gate is the
-    // blocking one: a waiter sleeps in the kernel until the holder releases.
-    // The windows it covers are kept to the arena bumps themselves, because
-    // every extra statement inside the gate is more time the other stage
-    // sleeps.
-    alignas(64)::fixy::spin::BlockingLock<ArenaAllocGateTag> arena_alloc_gate_;
+    // A build: the trace graph, in the scratch arena that the caller gave,
+    // and the parts of its region.  The graph dies with the epoch of the
+    // scratch arena.  The region does not depend on the graph.
+    struct BuiltTrace {
+        ::fixy::WeakRef<TraceGraph> graph;
+        BuiltRegion region;
+    };
+
+private:
+    // The memory of one published region: its parts, its RegionNode and its
+    // MemoryPlan.  The publish stage makes the node, and the plan when the
+    // region has slots.
+    struct RegionMemory {
+        BuiltRegion parts;
+        ::foundation::AlignedBuffer<RegionNode> node;
+        ::foundation::AlignedBuffer<MemoryPlan> plan;
+    };
+
+    // The arena of the trace graph and its CSR arrays.  Only the build stage
+    // uses it, and an epoch covers one work item: the build stage ends it
+    // after it moves the parts of the region into the message.
+    Arena build_scratch_{size_t{1} << 20};
+
+    // The arena of the sweep of each memory plan.  Only the publish stage
+    // uses it, and an epoch covers one publish.
+    Arena publish_scratch_{size_t{1} << 20};
+
+    // The memory of each published region.  Only the publish stage writes
+    // it.  Each region stays until this object ends.
+    ::fixy::AppendOnly<RegionMemory> region_store_ = ::fixy::mint_append_only<RegionMemory>();
 
 public:
-    Arena arena{1 << 20};
-
     // Regions that have been published but not compiled.  This is the
     // hand-off point a compiler backend attaches to, and until one exists
     // nothing reads it.
@@ -538,13 +567,14 @@ public:
     struct BgPipelineStart {};
 
     // Lifetime: the producing stage owns it until it is pushed, after which
-    // the consuming stage owns it and deletes it once it is handled.  The
-    // graph itself is arena-allocated and outlives this wrapper.
+    // the consuming stage owns it and deletes it once it is handled.  A
+    // region message owns the parts of its region, so the region memory
+    // moves with it.
     //
     // Three shapes flow through the channel, and kind names each one:
-    //   Region   graph is non-null: an iteration region to publish.
-    //   Commit   graph is null: a marker that carries the entry count.
-    //   Release  graph is null: the end of the metadata that a build read
+    //   Region   region holds a value: an iteration region to publish.
+    //   Commit   region is empty: a marker that carries the entry count.
+    //   Release  region is empty: the end of the metadata that a build read
     //            before it met an op with tensors and no metadata index.
     //
     // The marker has to travel through the publish stage so that
@@ -567,7 +597,8 @@ public:
             Release
         };
         Kind kind = Kind::Commit;
-        TraceGraph* graph = nullptr;
+        // The parts of the region.  Only a region message holds them.
+        BuiltRegion region{};
         uint32_t commit_count = 0;
         // The new tail of the metadata log.  Only a release sets it.
         uint64_t meta_end = 0;
@@ -593,11 +624,11 @@ public:
     // can hold them.
     void drop_unclaimable_ops_() noexcept;
 
-    // Releases a graph the publish stage will not publish.  The arena holds
-    // the graph itself and never gives storage back, but the metadata log is
-    // a ring the foreground keeps writing into, so its tail has to advance
-    // past the entries this graph read or the log fills for good.
-    void discard_trace_graph(PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY;
+    // Discards a region that the publish stage will not publish.  Its memory
+    // frees when the parts end.  The metadata log is a ring the foreground
+    // keeps writing into, so its tail has to advance past the entries this
+    // build read or the log fills for good.
+    void discard_region(PublishStage const& stage, BuiltRegion parts) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Moves the tail of the metadata log to meta_end, which gives the entries
     // before it back to the foreground.  Zero releases nothing.  The publish
@@ -606,37 +637,11 @@ public:
     // fails the contract of the tail.
     void release_meta_log(PublishStage const& stage, uint64_t meta_end) CRUCIBLE_NO_THREAD_SAFETY;
 
-private:
-    // Takes the gate under the context of the calling stage.
-    //
-    // A root mint at each acquisition is sound here.  The tag and the gate
-    // are private, so only this class can mint a token of the tag.  The
-    // token is a compile-time witness: the gate reads its type and no
-    // state, and the token dies when the guard releases the gate.  The
-    // mutual exclusion comes from the gate, not from the token.
-    template <class Ctx, class Body>
-        requires ::fixy::spin::CtxMayBlock<Ctx> && std::is_nothrow_invocable_v<Body&>
-    void with_arena_alloc_gate_(Ctx const& ctx, Body&& body) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<ArenaAllocGateTag>();
-        ::fixy::spin::GateGuard guard{ctx, arena_alloc_gate_, proof};
-        body();
-    }
-
-public:
-    // Takes the arena gate once, without a wait, and releases it at once.
-    // True when no stage held the gate.  A test uses it to show that the
-    // region callback runs outside the gate.
-    template <class Ctx>
-        requires ::fixy::spin::CtxMayBlock<Ctx>
-    [[nodiscard]] bool try_probe_arena_alloc_gate(Ctx const& ctx) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<ArenaAllocGateTag>();
-        ::fixy::spin::GateGuard guard{std::try_to_lock, ctx, arena_alloc_gate_, proof};
-        return guard.was_acquired();
-    }
-
-    // The background context of the publish stage allocates the region and
-    // is handed to the region callback, which runs on the same thread.
-    void publish_trace_graph(::foundation::effects::Bg const& bg, PublishStage const& stage, TraceGraph* graph)
+    // Makes the RegionNode and the memory plan of the region, publishes the
+    // region and gives its memory to the region store.  The background
+    // context of the publish stage allocates the node and the plan, and is
+    // handed to the region callback, which runs on the same thread.
+    void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts)
         CRUCIBLE_NO_THREAD_SAFETY;
 
     // The only legal caller of bump_by on total_processed.  Any other call
@@ -679,6 +684,13 @@ public:
 
     void set_region_ready_callback(void* ctx, RegionReadyCallback::Fn fn) noexcept {
         region_ready_cb = RegionReadyCallback{.ctx = ctx, .fn = fn};
+    }
+
+    // The bytes of blocks that the two scratch arenas hold.  The build stage
+    // and the publish stage write the arenas, so read the value only when no
+    // pipeline thread runs: before start() or after stop().
+    [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
+        return ::foundation::sat::add_sat(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
     }
 
 #ifdef CRUCIBLE_BENCH
@@ -812,11 +824,12 @@ private:
     }
 
 public:
-    // The drain loop runs in the background context, arena-allocates regions
-    // and grows the trace vectors, fires the region callback as its only
-    // externally observable side effect, and sleeps on the arena gate.
-    // Those are the four atoms below.  The caller hands a context whose row
-    // admits all four, and a context that admits fewer is a compile error.
+    // The drain loop runs in the background context, allocates region
+    // memory and grows the trace buffers, and fires the region callback as
+    // its only externally observable side effect.  The callback can do I/O
+    // and can block, so the row keeps those two atoms.  The caller hands a
+    // context whose row admits all four, and a context that admits fewer is
+    // a compile error.
     using run_required_row =
         ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
                                    ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
@@ -866,22 +879,26 @@ public:
         uint64_t meta_end = 0;
     };
 
-    // A non-null graph, or the overflow that stopped the build.
-    using TraceBuild = std::expected<TraceGraph*, MetaLogOverflow>;
+    // A graph and the parts of its region, or the overflow that stopped the
+    // build.
+    using TraceBuild = ::fixy::Result<BuiltTrace, MetaLogOverflow>;
 
-    // Turns ring entries plus tensor metadata into a CSR property graph.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a, uint32_t count)
-        CRUCIBLE_NO_THREAD_SAFETY {
-        return build_trace_from(a, count, current_trace.data(), current_meta_starts.data(), current_scope_hashes.data(),
-                                current_callsite_hashes.data());
+    // Turns ring entries plus tensor metadata into a CSR property graph in
+    // scratch, and the parts of its region.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a, Arena& scratch,
+                                                                      uint32_t count) CRUCIBLE_NO_THREAD_SAFETY {
+        return build_trace_from(a, scratch, count, current_trace.data(), current_meta_starts.data(),
+                                current_scope_hashes.data(), current_callsite_hashes.data());
     }
 
     // build_trace over caller-owned arrays: count entries of trace_data,
     // with meta_data, scope_data and callsite_data in parallel.  The build
     // stage calls it on each work item.  It reads the metadata log and never
-    // writes its tail.
+    // writes its tail.  The graph and its CSR arrays go into scratch.  The
+    // ops, their tensor metadata, their side arrays and their slots go into
+    // the parts of the region, which own their memory.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
-    build_trace_from(::foundation::effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data,
+    build_trace_from(::foundation::effects::Alloc a, Arena& scratch, uint32_t count, const TraceRing::Entry* trace_data,
                      const MetaIndex* meta_data, const ScopeHash* scope_data, const CallsiteHash* callsite_data)
         CRUCIBLE_NO_THREAD_SAFETY;
 
@@ -890,8 +907,11 @@ public:
     // needs for coalesced access.  The birth_op of each internal slot is at
     // most its death_op, and the death_op is at most UINT32_MAX - 3.  The
     // function stops the process when a slot breaks this rule, because the
-    // sweep would index past its arrays.
+    // sweep would index past its arrays.  The plan goes into plan_storage,
+    // the arrays of the sweep go into scratch, and the result is the address
+    // of plan_storage.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a,
+                                                                               MemoryPlan& plan_storage, Arena& scratch,
                                                                                TensorSlot* slots, uint32_t num_slots)
         CRUCIBLE_NO_THREAD_SAFETY;
 };
