@@ -17,6 +17,7 @@
 # row that admits no finding is an error.  `python3 utils/bin/guard explain history` tells the rule.
 format 1
 rule history
+utils/ledgers/artifact-links.txt | grow | admit | 8e7d59277 | The arena poisons the bytes of an ended epoch under AddressSanitizer through foundation/os/Poison.h, so the vessel library imports the two poison functions
 utils/ledgers/artifact-links.txt | rebase | admit | b453058c4 | The ledger holds the configuration x86_64-debug-asan-bench-fuzz. The commit added its rows of the link facts of the build directory, and the ledger grew from 892 to 994 rows
 utils/ledgers/artifact-links.txt | rebase | admit | d6e758e2e | Each executable is a position-independent executable with relative relocations in .relr.dyn. The commit added the link facts .relr.dyn and GLIBC_ABI_DT_RELR, and the ledger grew from 990 to 993 rows
 utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows

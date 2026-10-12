@@ -345,34 +345,24 @@ examples/fn/example_custom_optimizer.cpp | std-entity | 2 | std::pow | -
 examples/fn/example_custom_optimizer.cpp | std-entity | 1 | std::sqrt | -
 examples/fn/example_forge_phase.cpp | c-library-call | 2 | printf | -
 examples/fn/example_mimic_backend_hook.cpp | c-library-call | 2 | printf | -
-include/crucible/Arena.h | c-library-call | 1 | abort | -
 include/crucible/Arena.h | c-library-call | 1 | free | -
 include/crucible/Arena.h | c-library-call | 1 | malloc | -
 include/crucible/Arena.h | c-library-call | 1 | memcpy | -
 include/crucible/Arena.h | c-library-call | 1 | strlen | -
-include/crucible/Arena.h | raw-pointer-object | 20 | - | -
+include/crucible/Arena.h | raw-pointer-object | 18 | - | -
 include/crucible/Arena.h | replace-pending:std::bit_cast | 2 | std::bit_cast | -
-include/crucible/Arena.h | std-entity | 1 | __gnu_cxx::__normal_iterator | -
-include/crucible/Arena.h | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
-include/crucible/Arena.h | std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
-include/crucible/Arena.h | std-entity | 1 | __gnu_cxx::operator== | -
 include/crucible/Arena.h | std-entity | 1 | std::has_single_bit | -
-include/crucible/Arena.h | std-entity | 1 | std::span | -
-include/crucible/Arena.h | std-object | 1 | std::array | -
 include/crucible/BackgroundThread.h | c-array-object | 7 | - | -
 include/crucible/BackgroundThread.h | raw-function-pointer | 3 | - | -
-include/crucible/BackgroundThread.h | raw-pointer-object | 33 | - | -
+include/crucible/BackgroundThread.h | raw-pointer-object | 30 | - | -
 include/crucible/BackgroundThread.h | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 include/crucible/BackgroundThread.h | std-entity | 1 | std::addressof | -
 include/crucible/BackgroundThread.h | std-entity | 3 | std::atomic::compare_exchange_weak | -
 include/crucible/BackgroundThread.h | std-entity | 1 | std::atomic::exchange | -
 include/crucible/BackgroundThread.h | std-entity | 3 | std::atomic::load | -
 include/crucible/BackgroundThread.h | std-entity | 4 | std::atomic::store | -
-include/crucible/BackgroundThread.h | std-entity | 1 | std::expected | -
-include/crucible/BackgroundThread.h | std-entity | 1 | std::try_to_lock | -
 include/crucible/BackgroundThread.h | std-entity | 4 | std::vector::data | -
 include/crucible/BackgroundThread.h | std-object | 3 | std::atomic | -
-include/crucible/BackgroundThread.h | std-object | 2 | std::expected | -
 include/crucible/BackgroundThread.h | std-object | 1 | std::unique_ptr | -
 include/crucible/BackgroundThread.h | std-object | 4 | std::vector | -
 include/crucible/CKernel.h | c-array-object | 1 | - | -
@@ -508,8 +498,8 @@ include/crucible/MerkleDag.h | c-array-object | 6 | - | -
 include/crucible/MerkleDag.h | c-library-call | 1 | isinf (__builtin_isinf) | -
 include/crucible/MerkleDag.h | c-library-call | 1 | memcmp | -
 include/crucible/MerkleDag.h | compiler-builtin | 1 | __builtin_isfinite | -
-include/crucible/MerkleDag.h | raw-new-delete | 5 | placement new | -
-include/crucible/MerkleDag.h | raw-pointer-object | 66 | - | -
+include/crucible/MerkleDag.h | raw-new-delete | 4 | placement new | -
+include/crucible/MerkleDag.h | raw-pointer-object | 64 | - | -
 include/crucible/MerkleDag.h | replace-pending:std::bit_cast | 2 | std::bit_cast | -
 include/crucible/MerkleDag.h | std-entity | 2 | __gnu_cxx::__normal_iterator | -
 include/crucible/MerkleDag.h | std-entity | 2 | __gnu_cxx::__normal_iterator::operator* | -
@@ -3626,12 +3616,9 @@ src/BackgroundThread.cpp | c-library-call | 4 | memset | -
 src/BackgroundThread.cpp | compiler-builtin | 2 | __builtin_prefetch | -
 src/BackgroundThread.cpp | raw-new-delete | 1 | delete | -
 src/BackgroundThread.cpp | raw-new-delete | 2 | new | -
-src/BackgroundThread.cpp | raw-pointer-object | 43 | - | -
+src/BackgroundThread.cpp | raw-pointer-object | 39 | - | -
 src/BackgroundThread.cpp | std-entity | 1 | std::atomic::store | -
 src/BackgroundThread.cpp | std-entity | 1 | std::bit_ceil | -
-src/BackgroundThread.cpp | std-entity | 1 | std::expected | -
-src/BackgroundThread.cpp | std-entity | 2 | std::expected::error | -
-src/BackgroundThread.cpp | std-entity | 1 | std::expected::operator* | -
 src/BackgroundThread.cpp | std-entity | 2 | std::fill_n | -
 src/BackgroundThread.cpp | std-entity | 8 | std::get | -
 src/BackgroundThread.cpp | std-entity | 1 | std::jthread | -
@@ -3644,14 +3631,11 @@ src/BackgroundThread.cpp | std-entity | 4 | std::min | -
 src/BackgroundThread.cpp | std-entity | 3 | std::optional::operator* | -
 src/BackgroundThread.cpp | std-entity | 4 | std::pair | -
 src/BackgroundThread.cpp | std-entity | 4 | std::span::data | -
-src/BackgroundThread.cpp | std-entity | 1 | std::unexpected | -
-src/BackgroundThread.cpp | std-entity | 1 | std::unique_ptr | -
 src/BackgroundThread.cpp | std-entity | 8 | std::unique_ptr::get | -
 src/BackgroundThread.cpp | std-entity | 1 | std::unique_ptr::operator* | -
-src/BackgroundThread.cpp | std-entity | 45 | std::unique_ptr::operator-> | -
+src/BackgroundThread.cpp | std-entity | 41 | std::unique_ptr::operator-> | -
 src/BackgroundThread.cpp | std-entity | 2 | std::unique_ptr::operator= | -
 src/BackgroundThread.cpp | std-entity | 8 | std::unique_ptr::release | -
-src/BackgroundThread.cpp | std-object | 2 | std::expected | -
 src/BackgroundThread.cpp | std-object | 1 | std::jthread | -
 src/BackgroundThread.cpp | std-object | 3 | std::optional | -
 src/BackgroundThread.cpp | std-object | 4 | std::pair | -
@@ -7463,10 +7447,6 @@ test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::operator+ | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::chrono::operator<=> | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 2 | std::chrono::steady_clock::now | -
-test/test_background_thread_run_in_row_meta.cpp | std-entity | 3 | std::expected | -
-test/test_background_thread_run_in_row_meta.cpp | std-entity | 3 | std::expected::error | -
-test/test_background_thread_run_in_row_meta.cpp | std-entity | 6 | std::expected::has_value | -
-test/test_background_thread_run_in_row_meta.cpp | std-entity | 9 | std::expected::operator* | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 2 | std::less::operator() | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 6 | std::make_unique | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 1 | std::operator< | -
@@ -7475,30 +7455,28 @@ test/test_background_thread_run_in_row_meta.cpp | std-entity | 6 | std::unique_p
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 10 | std::unique_ptr::operator* | -
 test/test_background_thread_run_in_row_meta.cpp | std-entity | 16 | std::unique_ptr::operator-> | -
 test/test_background_thread_run_in_row_meta.cpp | std-object | 1 | std::chrono::time_point | -
-test/test_background_thread_run_in_row_meta.cpp | std-object | 6 | std::expected | -
 test/test_background_thread_run_in_row_meta.cpp | std-object | 1 | std::less | -
 test/test_background_thread_run_in_row_meta.cpp | std-object | 6 | std::unique_ptr | -
 test/test_background_thread_run_in_row_publish.cpp | c-library-call | 1 | fprintf | -
 test/test_background_thread_run_in_row_publish.cpp | c-library-call | 1 | stderr | -
-test/test_background_thread_run_in_row_publish.cpp | raw-pointer-object | 4 | - | -
+test/test_background_thread_run_in_row_publish.cpp | raw-pointer-object | 3 | - | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::__atomic_base::fetch_add | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 8 | std::__atomic_base::load | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 1 | std::atomic::exchange | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 7 | std::atomic::load | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 6 | std::atomic::store | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::duration | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::operator+ | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::chrono::operator<=> | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 10 | std::chrono::steady_clock::now | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::atomic::load | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::atomic::store | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::chrono::duration | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::chrono::operator+ | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::chrono::operator<=> | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 8 | std::chrono::steady_clock::now | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::make_unique | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 1 | std::min | -
-test/test_background_thread_run_in_row_publish.cpp | std-entity | 5 | std::operator< | -
+test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::operator< | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 1 | std::span | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 4 | std::unique_ptr::get | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 3 | std::unique_ptr::operator* | -
 test/test_background_thread_run_in_row_publish.cpp | std-entity | 2 | std::unique_ptr::operator-> | -
-test/test_background_thread_run_in_row_publish.cpp | std-object | 10 | std::atomic | -
-test/test_background_thread_run_in_row_publish.cpp | std-object | 3 | std::chrono::time_point | -
+test/test_background_thread_run_in_row_publish.cpp | std-object | 8 | std::atomic | -
+test/test_background_thread_run_in_row_publish.cpp | std-object | 2 | std::chrono::time_point | -
 test/test_background_thread_run_in_row_publish.cpp | std-object | 4 | std::unique_ptr | -
 test/test_bench_check.cpp | c-array-object | 2 | - | -
 test/test_bench_check.cpp | c-library-call | 2 | _Exit | -
@@ -10038,7 +10016,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | c-library-call | +3 | stderr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | c-library-call | +7 | stdout | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | inline-asm | +1 | asm | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | raw-new-delete | +3 | placement new | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | raw-pointer-object | +12 | - | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | replace-pending:std::bit_cast | +4 | std::bit_cast | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-entity | +4 | __gnu_cxx::__normal_iterator::operator+ | -
@@ -10060,7 +10037,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-entity | +4 | std::vector::operator= | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-entity | +6 | std::vector::operator[] | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-entity | +9 | std::vector::push_back | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-object | +2 | std::expected | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-object | +2 | std::unique_ptr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_merkle_dag.cpp | std-object | +9 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_meta_log.cpp | c-array-object | +6 | - | -
@@ -10245,9 +10221,7 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | c-library-call | +1 | snprintf | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | c-library-call | +3 | stderr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | c-library-call | +5 | stdout | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | raw-new-delete | +14 | placement new | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | raw-pointer-object | +36 | - | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +5 | std::expected::operator* | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | raw-pointer-object | +31 | - | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +3 | std::fill_n | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +4 | std::max | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +6 | std::min | -
@@ -10264,7 +10238,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +11 | std::vector::operator[] | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +1 | std::vector::push_back | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-entity | +2 | std::vector::size | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-object | +4 | std::expected | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-object | +1 | std::unique_ptr | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_phases.cpp | std-object | +5 | std::vector | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_philox.cpp | c-array-object | +2 | - | -
