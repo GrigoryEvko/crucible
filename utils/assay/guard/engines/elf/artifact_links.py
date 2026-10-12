@@ -129,7 +129,6 @@ SHARED = "shared"
 TOOLCHAIN_WORD = "{toolchain}"
 BUILD_WORD = "{build}"
 MAP_SUFFIX = ".map"
-COMMENT_SECTION = ".comment"
 FACTS_ROW = "facts"
 VERSION_MARK = "@"
 RAISE_REASONS = (
@@ -253,9 +252,7 @@ def member_facts(
         (IFUNC, symbol.name) for symbol in member.symbols() if symbol.is_defined and symbol.kind == elf.STT_GNU_IFUNC
     }
     found |= {(SECTION, section.name) for section in member.sections() if section.name}
-    for section in member.named(COMMENT_SECTION):
-        texts = member.data(section).decode("utf-8", "replace").split("\0")
-        found |= {(COMMENT, text.strip()) for text in texts if text.strip()}
+    found |= {(COMMENT, text) for text in member.comments()}
     if is_vessel:
         found |= {
             (IMPORT, f"{symbol.name}{VERSION_MARK}{symbol.version}" if symbol.version else symbol.name)

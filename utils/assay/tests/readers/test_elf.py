@@ -79,6 +79,11 @@ def section_cases(expect: testing.Expect) -> None:
         and [section.name for section in member.sections() if section.is_data] == [".data"],
     )
     expect("data() gives the bytes of a section", member.data(member.named(".data")[0]) == b"D")
+    texts = elf.Member(elf.make_file([elf.Planted(elf.COMMENT, b"GCC: (GNU) 16.2.1\0  \0 GNU ld 2.45 \0")]), "x")
+    expect(
+        "comments() gives each text of .comment with no white space at its ends, and no empty text",
+        texts.comments() == ("GCC: (GNU) 16.2.1", "GNU ld 2.45") and member.comments() == ("C",),
+    )
     expect("a section with no bytes in the file has an empty span", member.data(member.named(".bss")[0]) == b"")
     extended = elf.Member(elf.make_file(planted_sections(), extended=True), "x").sections()
     expect(

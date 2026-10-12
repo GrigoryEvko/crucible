@@ -240,6 +240,8 @@ NOTE_LAYOUT = struct.Struct("<III")
 PROPERTY_LAYOUT = struct.Struct("<II")
 # The flag word of a group section that makes the group a COMDAT group (THE GROUPS).
 GRP_COMDAT = 0x1
+# The section of the texts of the tools that made a file, each with a NUL after it (Member.comments()).
+COMMENT = ".comment"
 # The tags of the dynamic section (THE DYNAMIC SECTION).  The value of a string tag is an offset in the strings of the
 # dynamic section.
 DT_NULL = 0
@@ -1035,6 +1037,23 @@ class Member:
             raise ElfError(f"{self.where}: the segment of the interpreter is not fully in the file")
         begin = self.start + segment.offset
         return os.fsdecode(bytes(self.buffer[begin : begin + segment.file_size]).rstrip(b"\0"))
+
+    def comments(self) -> tuple[str, ...]:
+        """Return each text of the sections .comment, in sequence.
+
+        A compiler and a linker each put one text, such as "GCC: (GNU) 16.2.1", into the section, with a NUL after
+        it.  The reader gives each text with no white space at its two ends, and no empty text.  Complexity: linear in
+        the bytes of the sections.
+
+        Raises:
+            ElfError: If a section .comment is not fully in the file
+        """
+        texts = (
+            text.strip()
+            for section in self.named(COMMENT)
+            for text in self.data(section).decode("utf-8", "replace").split("\0")
+        )
+        return tuple(text for text in texts if text)
 
     def properties(self) -> tuple[Property, ...]:
         """Return each program property of the segment PT_GNU_PROPERTY, or none for a file with no such segment.
