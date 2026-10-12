@@ -39,7 +39,6 @@ utils/assay/oracle/keskin.py | no-test | 1 | assay.oracle.keskin | A module of t
 utils/assay/oracle/labelled.py | no-test | 1 | assay.oracle.labelled | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/model.py | no-test | 1 | assay.oracle.model | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/mpstk.py | no-test | 1 | assay.oracle.mpstk | A module of today with no test module.  The change that writes the test module removes the row
-utils/assay/oracle/probe.py | no-test | 1 | assay.oracle.probe | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/rocq.py | no-test | 1 | assay.oracle.rocq | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/semantics.py | no-test | 1 | assay.oracle.semantics | A module of today with no test module.  The change that writes the test module removes the row
 utils/assay/oracle/sprout.py | no-test | 1 | assay.oracle.sprout | A module of today with no test module.  The change that writes the test module removes the row

@@ -4,7 +4,9 @@ A probe declares ``session_oracle_show<T> probe;`` for each value it
 measures.  The template has no definition, so the compiler reports the
 declaration as an error and spells T in full.  The spelling is the
 measurement.  A relation that fails with a hard error is measured as a
-rejection with its bracketed diagnostic tag.
+rejection with its bracketed diagnostic tag.  The probe reads the
+messages from the SARIF log of its compile (assay.readers.sarif), and
+not from the text output of the compiler.
 
 Probes run only when the golden file is regenerated.  The check that CI
 runs compiles the emitted tests and never probes.
@@ -24,6 +26,7 @@ from pathlib import Path
 from assay.core import proc
 from assay.core import report as check_report
 from assay.oracle.model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
+from assay.readers import sarif
 
 LOG = logging.getLogger("session_oracle.probe")
 
@@ -34,6 +37,11 @@ FIXY_NS = "fixy::session"
 # pattern accepts the two styles.
 _SHOW = re.compile(r"['‘]session_oracle_show_(\w+)<(.*?)> session_oracle_probe_\1['’]")
 _TAG = re.compile(r"\[([A-Za-z_]+)\]")
+# The kinds of a diagnostic that the text output of GCC prints with the word "error:" in its head.  The first such
+# diagnostic that gives no show value gives the field `rejection` of a probe.
+_REJECTION_KINDS = frozenset({sarif.Kind.ERROR, sarif.Kind.FATAL, sarif.Kind.ICE, sarif.Kind.PERMERROR})
+# The texts of the message of a show value.  A message that holds one of them gives no `rejection`.
+_SHOW_MARKS = ("session_oracle_show", "incomplete type")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +54,7 @@ class Measured:
 
 def canonical(spelling: str) -> str:
     """Remove the whitespace that the compiler puts between tokens."""
-    return re.sub(r"\s+", "", spelling)
+    return "".join(spelling.split())
 
 
 # Each probe starts with one of these heads.  pch_heads compiles them once
@@ -85,21 +93,37 @@ def pch_heads(cxx: str, include: Path) -> Iterator[Path]:
 
 
 def run_probe(cxx: str, include: Path, source: str, heads: Path) -> Measured:
-    """Compile ``source`` with -fsyntax-only and collect its show values."""
+    """Compile ``source`` with -fsyntax-only, and collect its show values and its `rejection` from the SARIF log.
+
+    Each record of the log is a diagnostic or a context line, in the sequence of the text output.  _SHOW reads the
+    show values from the message of each record.  The field `rejection` comes from the first record of
+    _REJECTION_KINDS with a message that gives no show value.  It is the bracketed tag of the message, or the first
+    120 characters of the message.  The option of the record follows the message in brackets, as in the text output
+    of GCC.
+
+    Raises:
+        RuntimeError: If the compiler cannot start, or the log cannot be read
+    """
     with tempfile.TemporaryDirectory(prefix="session_oracle_") as tmp:
         path = Path(tmp) / "probe.cpp"
+        log_path = Path(tmp) / "probe.sarif"
         path.write_text(source, encoding="utf-8")
-        completed = proc.run(proc.Command(
-            [cxx, *_FLAGS, f"-I{heads}", f"-I{include}", "-Winvalid-pch",
-             "-fsyntax-only", "-fmax-errors=0", str(path)],
-            timeout_s=proc.TOOL_S, env=proc.environment({"LC_ALL": "C"})))
-    out = completed.out + completed.err
-    values = {m.group(1): canonical(m.group(2)) for m in _SHOW.finditer(out)}
+        try:
+            proc.run(proc.Command(
+                [cxx, *_FLAGS, f"-I{heads}", f"-I{include}", "-Winvalid-pch",
+                 "-fsyntax-only", "-fmax-errors=0", f"{sarif.SARIF_FLAG}{log_path}", str(path)],
+                timeout_s=proc.TOOL_S, env=proc.environment({"LC_ALL": "C"}),
+                stdout=proc.Output.DISCARD, stderr=proc.Output.DISCARD))
+            records = sarif.records(sarif.read(log_path))
+        except (proc.ToolFailed, OSError, sarif.SarifError) as problem:
+            raise RuntimeError(f"a probe gives no SARIF log that the reader can read: {problem}") from None
+    values = {m.group(1): canonical(m.group(2)) for record in records for m in _SHOW.finditer(record.message)}
     rejection = None
-    for line in out.splitlines():
-        if "error:" in line and "session_oracle_show" not in line and "incomplete type" not in line:
-            tag = _TAG.search(line)
-            rejection = tag.group(1) if tag else line.split("error:", 1)[1].strip()[:120]
+    for record in records:
+        if record.kind in _REJECTION_KINDS and not any(mark in record.message for mark in _SHOW_MARKS):
+            tag = _TAG.search(record.message)
+            text = f"{record.message} [{record.option}]" if record.option else record.message
+            rejection = tag.group(1) if tag else text.strip()[:120]
             break
     return Measured(values, rejection)
 
