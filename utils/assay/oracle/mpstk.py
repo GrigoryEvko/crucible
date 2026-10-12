@@ -162,7 +162,7 @@ def _verify_batch(classpath: str, texts: list[str]) -> list[dict[str, bool]]:
     return results
 
 
-def verify(texts: list[str], workers: int = 16) -> list[dict[str, bool]]:
+def verify(texts: list[str], workers: int = proc.DEFAULT_JOBS) -> list[dict[str, bool]]:
     """Verify each context text.  Return, for each, the verdict of each of PROPERTIES.
 
     A verdict is kept in a cache whose file name carries the commit, under

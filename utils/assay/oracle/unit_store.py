@@ -107,6 +107,19 @@ WHAT THE STORE DOES NOT STORE
       result that the caller calls unstable.  The run of a program can
       change with the time, and the caller knows which outcome does.
 
+THE COMPILE SLOTS
+    The units of a run use one store from many threads.  The test runs its
+    units in a pool, and a program compiles its sources in a pool of its own.
+    Each compile of a unit, with its dependency runs, holds one slot of the
+    store.  Each link also holds one slot.  The store has proc.DEFAULT_JOBS
+    slots by default.  A run then starts at most that many compilers at one
+    time, also with the two pools.  THE WORKER POOLS of
+    assay.guard.engines.buildsys.job_pools gives the bound of a pool.
+
+    On 2026-10-12, a cold run of the 49 units of the test with no slots took
+    34.3 s.  It had up to 86 compilers and 16.2 GB at one time.  With 16
+    slots, it took 22.2 s, with 16 compilers and 5.8 GB.
+
 `guard selftest tests.oracle.test_unit_store` does a test of the module.
 Complexity: a lookup hashes each dependency one time, O(bytes of the
 dependencies).  A unit that misses adds one search query and one key
@@ -373,6 +386,7 @@ class UnitStore:
         store_root: Path | None = None,
         caller: str | None = None,
         latest_start_ns: int | None = None,
+        compile_slots: int = proc.DEFAULT_JOBS,
     ) -> None:
         """Use the compiler ``cxx`` with the compile flags ``flags`` and the link flags ``link_flags``.
 
@@ -382,8 +396,14 @@ class UnitStore:
         save_memo writes it.  Without it, the lookups use no memo.
         ``latest_start_ns`` is the latest start time of a build, in
         nanoseconds since the epoch.  A build takes the earlier of that time
-        and the clock (THE STORE).
+        and the clock (THE STORE).  ``compile_slots`` is the count of compiles
+        and links at one time (THE COMPILE SLOTS).
+
+        Raises:
+            ValueError: If ``compile_slots`` is less than 1, because no compile could then start
         """
+        if compile_slots < 1:
+            raise ValueError(f"a unit store takes at least 1 compile slot, and the call gave {compile_slots}")
         self.cxx = shutil.which(cxx) or cxx
         self.flags = list(flags)
         self.link_flags = list(link_flags)
@@ -408,6 +428,7 @@ class UnitStore:
         self.roots = compile_store.Roots(None, None)
         self.digests = compile_store.DigestMemo(memo_path, self.roots)
         self._lock = threading.Lock()
+        self._slots = threading.BoundedSemaphore(compile_slots)
         self._program_paths: dict[str, str | None] = {}
 
     def save_memo(self) -> None:
@@ -567,12 +588,19 @@ class UnitStore:
     def _compile(
         self, argv: list[str], directory: Path, source: Path, work: Path
     ) -> tuple[proc.Completed, _Inputs | None]:
+        """Run one compile in one slot of the store (THE COMPILE SLOTS), and return what _compile_in_slot() returns."""
+        with self._slots:
+            return self._compile_in_slot(argv, directory, source, work)
+
+    def _compile_in_slot(
+        self, argv: list[str], directory: Path, source: Path, work: Path
+    ) -> tuple[proc.Completed, _Inputs | None]:
         """Run one compile, and return its result and its inputs, or None when the inputs are not known.
 
         ``argv`` ends with -MF and the dependency file.  ``work`` is a
-        directory of this compile alone.  After a fatal error, GCC writes no
-        dependency file, and a preprocess with -M -MG gives the dependencies
-        and the missing headers.
+        directory of this compile alone.  After an error that stops the
+        compile, GCC writes no dependency file, and a preprocess with -M -MG
+        gives the dependencies and the missing headers.
         """
         depfile = Path(argv[-1])
         depfile.unlink(missing_ok=True)
@@ -760,7 +788,7 @@ class UnitStore:
         scratches = [work / f"compile_{index}" for index in range(len(compiles))]
         for scratch in scratches:
             scratch.mkdir()
-        with ThreadPoolExecutor(max_workers=len(compiles)) as pool:
+        with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(compiles))) as pool:
             built = list(
                 pool.map(
                     lambda job: self._compile(job[0], directory, job[1], job[2]),
@@ -777,7 +805,8 @@ class UnitStore:
         if failed is not None:
             is_storable = all(completed.exit in (0, 1) for completed, _ in built)
             return UnitResult(failed.exit, _kept(failed.stdout), _kept(failed.stderr)), inputs, is_storable
-        linked = proc.run(proc.Command(link, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
+        with self._slots:
+            linked = proc.run(proc.Command(link, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
         if inputs is not None:
             inputs.add(parse_link_report(_kept(linked.stdout), directory, work))
         if linked.exit != 0:

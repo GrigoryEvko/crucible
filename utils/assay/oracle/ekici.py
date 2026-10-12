@@ -316,7 +316,7 @@ def _cache_key(t: Local, u: Local) -> str:
     return hashlib.sha256((_HEAD + certificate("C", t, u)[0]).encode()).hexdigest()
 
 
-def decide(pairs: list[tuple[Local, Local]], workers: int = 16) -> list[tuple[bool | None, str]]:
+def decide(pairs: list[tuple[Local, Local]], workers: int = proc.DEFAULT_JOBS) -> list[tuple[bool | None, str]]:
     """Return, for each pair (T, U), the verdict that coqc checked and a note.
 
     A verdict is True (subtypeC T U proved), False (its negation proved) or

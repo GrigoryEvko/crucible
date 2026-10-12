@@ -1,0 +1,10 @@
+"""A planted module: a pool with the count of an attribute."""
+
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+
+
+def compile_all(units: list[str], options: SimpleNamespace) -> list[str]:
+    """Return the units after a compile of each one."""
+    with ThreadPoolExecutor(max_workers=options.workers) as pool:
+        return list(pool.map(str, units))

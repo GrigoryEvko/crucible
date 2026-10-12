@@ -25,7 +25,8 @@ THE SPELLED ROOTS
 THE PARTS
     With `--part K/N`, the part of STORE_PART runs the cases of the store.
     The part of ROOTS_PART runs the cases of the spelled roots (THE PARTS of
-    assay.tests.oracle).  Part N - 1 runs the cases of sweep_sources().
+    assay.tests.oracle).  Part N - 1 runs the cases of sweep_sources() and
+    of the compile slots.
     Each of the first two groups waits one time for the settle period of the
     store.  The two waits then go to two parts of the group oracle, and with
     more than FIRST_UNIT_PART parts, no unit of test_runner goes to them.
@@ -53,6 +54,10 @@ PARTED = True
 
 # The wait after the setup.  Each file of the setup is then older than the settle period of the store.
 SETTLED_S = compile_store._SETTLE_NS / 1e9 + 0.2
+# The slots of the store of the slot cases, the units that threads build at one time, and the wait of each compile.
+SLOTS = 2
+SLOT_UNITS = 6
+SLOT_WAIT_S = 0.3
 
 
 def counting_compiler(cxx: str, directory: Path) -> tuple[str, Path]:
@@ -207,8 +212,9 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
     expect("a new compile flag gives a new key", not unit_store([*flags, "-DEXTRA_FLAG=1"]).static(static).is_stored)
     from concurrent.futures import ThreadPoolExecutor
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        parallel = list(pool.map(lambda files: unit_store().static(files), [static, static, planted, planted]))
+    sources = [static, static, planted, planted]
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(sources))) as pool:
+        parallel = list(pool.map(lambda files: unit_store().static(files), sources))
     expect(
         "units in many threads give the stored results",
         [(result.returncode, result.is_stored) for result in parallel] == [(0, True), (0, True), (1, True), (1, True)],
@@ -344,6 +350,58 @@ def sweep_cases(expect: testing.Expect) -> None:
             )
 
 
+def slot_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
+    """Hold the compiles of many threads to the slots of one store (THE COMPILE SLOTS of assay.oracle.unit_store).
+
+    A wrapper of the compiler marks each compile while it runs, and it logs the count of marks at its start.  Each
+    compile waits SLOT_WAIT_S.  The compiles of the threads then overlap when no slot holds them.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    active, log, wrapper, scratch = root / "active", root / "running.log", root / "slotted-cxx", root / "scratch"
+    active.mkdir()
+    scratch.mkdir()
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f'case " $* " in *" -MF "*) ;; *) exec "{cxx}" "$@" ;; esac\n'
+        f'marker="{active}/$$"\n'
+        ': > "$marker"\n'
+        f'ls "{active}" | wc -l >> "{log}"\n'
+        f"sleep {SLOT_WAIT_S}\n"
+        f'"{cxx}" "$@"\n'
+        "status=$?\n"
+        'rm -f "$marker"\n'
+        'exit "$status"\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+    store = UnitStore(str(wrapper), ["-std=c++20"], [], scratch, root / "store", compile_slots=SLOTS)
+    sources = [[(f"slot{index}.cpp", f"int slot_{index};\n")] for index in range(SLOT_UNITS)]
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(sources))) as pool:
+        results = list(pool.map(store.static, sources))
+    running = [int(word) for word in log.read_text(encoding="utf-8").split()]
+    expect(
+        f"the compiles of {SLOT_UNITS} threads run at most {SLOTS} at one time in a store of {SLOTS} slots",
+        [result.returncode for result in results] == [0] * SLOT_UNITS
+        and len(running) == SLOT_UNITS
+        and max(running) <= SLOTS,
+    )
+    try:
+        UnitStore(cxx, (), (), scratch, root / "store", compile_slots=0)
+        is_refused = False
+    except ValueError:
+        is_refused = True
+    expect("a store with no compile slot is refused, because no compile could start", is_refused)
+
+
+def slot_group(expect: testing.Expect) -> None:
+    """Run the cases of the compile slots in a scratch directory of their own."""
+    cxx = testing.held_compiler(expect)
+    if cxx is not None:
+        with tempfile.TemporaryDirectory(prefix="unit_store_slots_") as scratch:
+            slot_cases(expect, cxx, Path(scratch))
+
+
 def store_group(expect: testing.Expect) -> None:
     """Run the cases of the store in a scratch directory of their own."""
     cxx = testing.held_compiler(expect)
@@ -374,5 +432,5 @@ def main(argv: list[str]) -> int:
     if index == oracle_parts.role_part(oracle_parts.ROOTS_PART, count):
         groups.append(spelled_root_group)
     if index == count - 1:
-        groups.append(sweep_cases)
+        groups.extend((sweep_cases, slot_group))
     return testing.run(module, [], groups)

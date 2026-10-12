@@ -78,7 +78,8 @@ TIMEOUT = Timeout()
 CHUNK = 8
 CHUNK_TIMEOUT = 240
 QUERY_TIMEOUT = 90
-WORKERS = 16
+# The coqc processes at the same time: the job count of the package.
+WORKERS = proc.DEFAULT_JOBS
 
 
 def cache_root() -> Path:

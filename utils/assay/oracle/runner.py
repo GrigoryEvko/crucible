@@ -1497,7 +1497,7 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
             outcomes[label] = outcome
         return outcomes
 
-    with ThreadPoolExecutor(max_workers=env.workers) as pool:
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, env.workers)) as pool:
         measured = list(pool.map(measure, work))
     out: dict[str, list[Row]] = {}
     for (c, roles), outcomes in zip(work, measured, strict=True):

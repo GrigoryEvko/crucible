@@ -33,8 +33,8 @@ import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from assay.core import proc, testing
 from assay.core import report as check_report
-from assay.core import testing
 from assay.core.exit import ExitCode
 from assay.guard import selftest
 from assay.oracle import runner
@@ -57,10 +57,13 @@ PARTED = True
 # The test is a program that fails when a row is different.  Each other
 # emitted test fails to compile.
 RUNTIME_TESTS: dict[str, tuple[str, ...]] = {"fixy_wire": WIRE_FAMILIES}
-# The units of one part at one time.  A program compiles its shards at the
-# same time.  Each compile parses its headers, and the longest compile sets
-# the wall time of a part.  One compile holds at most about 1 GB of memory.
-JOBS = 64
+# The units of one part at one time: the job count of the package (THE WORKER
+# POOLS of assay.guard.engines.buildsys.job_pools).  A program compiles its
+# shards in a pool of its own.  The compile slots of the store hold the
+# compiles of all units to the same count (THE COMPILE SLOTS of
+# assay.oracle.unit_store).  Each compile parses its headers, and the longest
+# compile sets the wall time of a part.
+JOBS = proc.DEFAULT_JOBS
 # The measured rows of one program of a runtime test.  A program holds full
 # cases, links its shards and runs its rows.  Each program is one unit, and
 # the programs of one test can go to different parts.

@@ -961,8 +961,9 @@ _BATCH = 64
 # A text of this size or more parses in a task of its own, so two slow
 # texts never wait for each other in one worker.
 _BATCH_BYTES = 64 << 10
-# The host is shared, so a call starts at most this many workers.
-_MAX_WORKERS = 16
+# The host is shared, so a call starts at most the job count of the package (THE WORKER POOLS of
+# assay.guard.engines.buildsys.job_pools).
+_MAX_WORKERS = proc.DEFAULT_JOBS
 _TREE_IDENTITY: bytes | None = None
 
 
@@ -4264,8 +4265,10 @@ def _self_test_cache(check: Callable[..., None], work: Path) -> None:
                 (planted / name).write_text(text, encoding="utf-8")
             (planted / "notes.txt").write_text("int not_cpp;\n", encoding="utf-8")
             names = sorted(sources)
-            first_parts = [fill_trees(planted, names[part::2], 2) for part in range(2)]
-            second_parts = [fill_trees(planted, names[part::2], 2) for part in range(2)]
+            # Two workers take the path of the pool, and the job count of the package is their limit.
+            workers = min(proc.DEFAULT_JOBS, 2)
+            first_parts = [fill_trees(planted, names[part::2], workers) for part in range(2)]
+            second_parts = [fill_trees(planted, names[part::2], workers) for part in range(2)]
             calls.clear()
             filled = list(parse(sorted(planted / name for name in sources)))
             bodies = macro_bodies(filled)

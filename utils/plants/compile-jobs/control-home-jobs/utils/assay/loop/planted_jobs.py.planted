@@ -26,3 +26,67 @@ def caller_command(jobs: int) -> tuple[str, ...]:
 def environment_jobs() -> str:
     """Return the job count of the environment, with the default of assay.core.proc."""
     return os.environ.get("CRUCIBLE_PLANTED_JOBS", str(proc.DEFAULT_JOBS))
+
+
+def pooled_compiles(units: list[str], workers: int, half: int = HOME_JOBS // 2) -> list[str]:
+    """Return the units after the compiles of six pools, each with a count that is at most the job count."""
+    from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=proc.DEFAULT_JOBS) as pool:
+        units = list(pool.map(str, units))
+    with ThreadPoolExecutor(min(proc.DEFAULT_JOBS, len(units))) as pool:
+        units = list(pool.map(str, units))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        units = list(pool.map(str, units))
+    with ThreadPoolExecutor(max_workers=max(1, min(HOME_JOBS, len(units)))) as pool:
+        units = list(pool.map(str, units))
+    with ProcessPoolExecutor(max_workers=half) as pool:
+        units = list(pool.map(str, units))
+    with ProcessPoolExecutor(max_workers=HOME_JOBS // 4) as pool:
+        return list(pool.map(str, units))
+
+
+def compile_units(units: list[str], jobs: int) -> list[str]:
+    """Return the units after the compiles of a pool with the count that each call of the module gives."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        return list(pool.map(str, units))
+
+
+def compile_home(units: list[str], helpers: object) -> list[str]:
+    """Return the units after the compiles of the job count, through a positional and a keyword argument.
+
+    The call of helpers calls a function of a different module, and its count is not the count of compile_units.
+    """
+    units = compile_units(units, proc.DEFAULT_JOBS)
+    units = compile_units(units, jobs=min(HOME_JOBS, 4))
+    return helpers.compile_units(units, 64)
+
+
+class HomeCompiler:
+    """A planted compiler: a call through self gives its method the job count."""
+
+    def compile_all(self, units: list[str], workers: int) -> list[str]:
+        """Return the units after the compiles of a pool with the count of the caller."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(str, units))
+
+    def compile_home(self, units: list[str]) -> list[str]:
+        """Return the units after the compiles of the job count of assay.core.proc."""
+        return self.compile_all(units, proc.DEFAULT_JOBS)
+
+
+def parsed_compiles(argv: list[str]) -> list[str]:
+    """Return the units of the command line after the compiles of a pool with the count of --jobs."""
+    import argparse
+    from concurrent.futures import ThreadPoolExecutor
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--jobs", type=int, default=HOME_JOBS)
+    parser.add_argument("units", nargs="*")
+    options = parser.parse_args(argv)
+    with ThreadPoolExecutor(max_workers=options.jobs) as pool:
+        return list(pool.map(str, options.units))

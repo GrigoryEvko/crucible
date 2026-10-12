@@ -1,0 +1,17 @@
+"""A planted module: a pool with the count that a caller gives, and a caller that gives at most 64."""
+
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+JOBS = 64
+
+
+def run_part(units: list[str], jobs: int) -> list[str]:
+    """Return the units after a compile of each one, with the count of workers of the caller."""
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        return list(pool.map(str, units))
+
+
+def run_all(units: list[str]) -> list[str]:
+    """Return the units after the compiles of at most 64 workers."""
+    return run_part(units, min(JOBS, os.cpu_count() or 1))

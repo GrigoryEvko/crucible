@@ -1873,7 +1873,6 @@ utils/assay/oracle/unit_store.py | refused-word | 1 | UnitResult: whether | A te
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore.__init__: place | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore.__init__: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._build_program: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._compile: fatal | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._loaded: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._loaded: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._program_path: depend | A text of today.  The change that writes the text again in STE lowers the count

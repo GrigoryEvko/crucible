@@ -1,0 +1,9 @@
+"""A planted module: a pool of processes with no count of workers."""
+
+from concurrent.futures import ProcessPoolExecutor
+
+
+def compile_all(units: list[str]) -> list[str]:
+    """Return the units after a compile of each one."""
+    with ProcessPoolExecutor() as pool:
+        return list(pool.map(str, units))

@@ -1684,7 +1684,7 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
             return [f"a link cannot be made: {problem}"], 0, False
         compiles = list(manifest.compiles.values())
         tables = [*manifest.tables, *(case for verdict in manifest.white_space for case in white_space_cases(verdict))]
-        with ThreadPoolExecutor(max_workers=max(1, len(compiles) + len(tables))) as pool:
+        with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, max(1, len(compiles) + len(tables)))) as pool:
             outcomes = [pool.submit(compiler.compile, item, work) for item in compiles]
             table_results = [pool.submit(table_failures, compiler, work, manifest.table_unit, case) for case in tables]
             for item, future in zip(compiles, outcomes, strict=True):
@@ -1760,7 +1760,10 @@ def witness(
         check_report.write_line(f"{rule_id}: no plant in {meta_runner.PLANTS}/{rule_id}/", is_error=True)
         return ExitCode.FINDINGS
     compiler = Compiler(program, plugin.resolve(), root.resolve(), build_dir, max(1, jobs))
-    with meta_runner.planted_environment(()), ThreadPoolExecutor(max_workers=len(plants)) as pool:
+    with (
+        meta_runner.planted_environment(()),
+        ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(plants))) as pool,
+    ):
         results = list(pool.map(lambda plant: run_plant(compiler, plant, rule_id), plants))
     failures: list[str] = []
     for plant, (found, cases, skipped) in zip(plants, results, strict=True):

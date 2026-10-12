@@ -1,0 +1,4 @@
+# A function of a module of the package starts a pool with the count of its parameter jobs.  A call of the function in
+# the same module gives its arguments through **, so the rule cannot read the count.  The rule gives the error
+# pool-workers.
+format 1

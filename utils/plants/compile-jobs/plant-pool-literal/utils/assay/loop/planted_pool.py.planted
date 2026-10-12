@@ -1,0 +1,9 @@
+"""A planted module: a pool with a literal count of workers."""
+
+from concurrent.futures import ThreadPoolExecutor
+
+
+def compile_all(units: list[str]) -> list[str]:
+    """Return the units after a compile of each one."""
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return list(pool.map(str, units))

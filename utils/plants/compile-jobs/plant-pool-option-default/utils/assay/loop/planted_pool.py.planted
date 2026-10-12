@@ -1,0 +1,14 @@
+"""A planted module: a pool with the count of an option whose default is 8."""
+
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+
+
+def main(argv: list[str]) -> list[str]:
+    """Return the units of the command line after the compiles of a pool with the count of --jobs."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--jobs", type=int, default=8)
+    parser.add_argument("units", nargs="*")
+    options = parser.parse_args(argv)
+    with ThreadPoolExecutor(max_workers=options.jobs) as pool:
+        return list(pool.map(str, options.units))

@@ -1,3 +1,13 @@
-"""A planted test: it gives the -j option of a parser the word 0, to check the refusal."""
+"""A planted test: it gives the -j option of a parser the word 0, to check the refusal, and it compiles in a pool."""
+
+from concurrent.futures import ThreadPoolExecutor
+
+from assay.core import proc
 
 REFUSED = ["test", "build", "-j", "0"]
+
+
+def parallel_units(sources: list[str]) -> list[str]:
+    """Return the sources after a compile of each one, with at most the job count of assay.core.proc at one time."""
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(sources))) as pool:
+        return list(pool.map(str, sources))

@@ -79,7 +79,8 @@ NETWORKS = ("p2pbox", "mailbox", "bag")
 MODES = ("opt", "naive")
 QUERY_TIMEOUT = 60
 RUN_TIMEOUT = 3600
-WORKERS = 24
+# The checks at the same time: the job count of the package.
+WORKERS = proc.DEFAULT_JOBS
 VERDICTS = ("implementable", "non-implementable", "inconclusive", "gclts-ineligible")
 _RESULT = re.compile(r"^Total verification time: [0-9.]+s, (.+)$", re.MULTILINE)
 _VALID = re.compile(r"^\| (\S+\.hes)\s+\| [0-9.]+\s+\| valid\s+\|$", re.MULTILINE)
@@ -234,7 +235,7 @@ def _check_controls(exe: Path) -> None:
     """Refuse every verdict unless each control gets its expected verdict on each network in each mode."""
     jobs = [(name, text, network, mode, want) for name, text, wants in CONTROLS for network, want in wants.items()
             for mode in MODES]
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(jobs))) as pool:
         got = list(pool.map(lambda j: _run(exe, protocol_text(read_global(j[1])), j[2], j[3])["verdict"], jobs))
     wrong = [f"{name} on {network} in mode {mode}: {verdict}, not {want}"
              for (name, _, network, mode, want), verdict in zip(jobs, got, strict=True) if verdict != want]

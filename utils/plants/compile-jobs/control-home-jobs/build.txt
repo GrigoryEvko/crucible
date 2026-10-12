@@ -1,4 +1,7 @@
 # A module of the package gives each build the job count of assay.core.proc, or a parameter with no literal default.
 # A parameter jobs hides the name jobs that the module binds to 8.  A test gives the -j option of a parser the
-# word 0, and the rule does not read the tests.  The rule gives no error.
+# word 0, and the rule does not read the -j words of the tests.  Each pool of the module and of the test has a count
+# that the rule bounds by DEFAULT_JOBS: also through a positional and a keyword argument of a call, a call of a method
+# through self, and an option of add_argument() with the default HOME_JOBS.  The call helpers.compile_units(units, 64)
+# calls a function of a different module.  The rule gives no error.
 format 1

@@ -1532,7 +1532,7 @@ def wrapper_results(plan: Plan, source: Path, expected: Mapping[str, bool], incl
             for problem in wrapper_problems(name, functions[name], takes_pointers)
         ]
 
-    with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(targets))) as pool:
         return [problem for found in pool.map(one_target, range(len(targets))) for problem in found]
 
 

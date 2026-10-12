@@ -659,7 +659,7 @@ def coq_version() -> str:
     return out.strip().splitlines()[0]
 
 
-def decide(instances: list[Instance], workers: int = 8) -> list[tuple[bool, str]]:
+def decide(instances: list[Instance], workers: int = proc.DEFAULT_JOBS) -> list[tuple[bool, str]]:
     """Return, for each instance, whether coqc checks its certificate, and the reason when not.
 
     A checked verdict is kept in a cache whose file name carries the

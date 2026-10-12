@@ -1,0 +1,3 @@
+# A module of the package starts a pool with one worker for each unit, len(units), which the rule cannot bound.  The
+# rule gives the error pool-workers.
+format 1

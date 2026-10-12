@@ -1,0 +1,16 @@
+"""A planted module: a method with a pool, and a call through self that gives the pool 32 workers."""
+
+from concurrent.futures import ThreadPoolExecutor
+
+
+class Compiler:
+    """A planted compiler of units."""
+
+    def compile_all(self, units: list[str], workers: int) -> list[str]:
+        """Return the units after a compile of each one, with the count of workers of the caller."""
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(str, units))
+
+    def compile_wide(self, units: list[str]) -> list[str]:
+        """Return the units after the compiles of 32 workers."""
+        return self.compile_all(units, 32)

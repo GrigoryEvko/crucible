@@ -573,7 +573,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
             [compiler, *flags, *position, "-c", str(tree / unit), "-o", str(object_of(build, unit, is_shared))], build
         )
 
-    with ThreadPoolExecutor(max_workers=max(1, len(units))) as pool:
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, max(1, len(units)))) as pool:
         list(pool.map(compile_unit, units))
     archives: dict[str, Path] = {}
     links: list[str] = []

@@ -42,6 +42,38 @@ THE LITERAL JOB COUNTS
     only a module with one of JOB_MARKS in its text.  On 2026-10-12, 20
     modules held one, and the rule took 0.15 s more than with no such scan.
 
+THE WORKER POOLS
+    A pool of threads or processes that starts compilers or other heavy
+    processes is a second home of the count too.  The rule reads each call
+    of ThreadPoolExecutor or ProcessPoolExecutor in each module of utils/assay
+    of the tree, also in the tests.  The count of workers is the keyword
+    max_workers, or the first argument.  The count is bounded when the rule
+    can prove that it is at most DEFAULT_JOBS:
+      * proc.DEFAULT_JOBS, or a name that only bounded values give
+      * A parameter, when its default, each value that its function gives
+        it, and each argument that a call of the module gives it are bounded
+      * An attribute that names an option of add_argument() in the module,
+        such as options.jobs for --jobs, when the default of the option is
+        bounded.  A larger count on the command line is the decision of a
+        person
+      * min() with one bounded argument
+      * max() with bounded arguments and integers of at most 1
+      * A bounded count // a positive integer.
+    A literal, the length of a list and each other attribute are not bounded.
+    A call with no count gets the default of Python, which is more than
+    DEFAULT_JOBS on this host.  Give such a count min(proc.DEFAULT_JOBS,
+    COUNT).
+
+    The rule follows a parameter to each call of its function in the same
+    module.  A plain call f(X) calls a function, and self.f(X) or cls.f(X) a
+    method.  A call through a different attribute, such as proc.run(X), calls
+    a function of a different module.  A call that gives the arguments through
+    * or ** is not bounded.  A function with no call in the module gets the
+    count from a caller in a different module.  The rule then takes the
+    parameter as bounded.  The rule follows at most NAME_DEPTH names and
+    calls.  It parses only a module with POOL_MARK in its text.  On
+    2026-10-12, the rule took 1.22 s, and 1.02 s with no walk of the calls.
+
 THE RULE compile-jobs
     The rule reads build.ninja and each file that it includes, through
     assay.readers.ninja.  It gives:
@@ -59,6 +91,8 @@ THE RULE compile-jobs
                       not the count of the rule
       `literal-jobs`  a module of the package gives a build or a test run a
                       literal job count (THE LITERAL JOB COUNTS)
+      `pool-workers`  a pool of a module of the package or of its tests has a
+                      count of workers that is not bounded (THE WORKER POOLS)
       `input`         the rule cannot read a file of the graph, proc.py, a
                       module of the package or CMakePresets.json.  Or the
                       threshold of the rule is not an integer above 0
@@ -89,6 +123,8 @@ Complexity: one read of the graph and its included files, linear in their length
 """
 
 import ast
+import enum
+import operator
 import shutil
 from collections import defaultdict
 from collections.abc import Sequence
@@ -125,8 +161,26 @@ JOB_VARIABLE_SUFFIX = "_JOBS"
 JOB_MARKS = ('"-j', "'-j", '_JOBS"', "_JOBS'", '"--jobs"', "'--jobs'", '"--parallel"', "'--parallel'")
 # The calls that keep a literal: str(X) and int(X).
 CONVERSIONS = frozenset({"str", "int"})
-# The largest chain of names that the rule follows to a literal.
+# The largest chain of names that the rule follows to a literal or to a bounded count.
 NAME_DEPTH = 8
+# The classes of a pool of workers, the keyword of its count, and the text of a module that can start one (THE WORKER
+# POOLS).
+POOL_CLASSES = frozenset({"ThreadPoolExecutor", "ProcessPoolExecutor"})
+WORKERS_KEYWORD = "max_workers"
+POOL_MARK = "PoolExecutor"
+# The calls that bound a count: min() with one bounded argument, and max() with only bounded arguments and small
+# integers.  The largest integer that max() can take with a bounded count.
+LOWEST_OF = "min"
+HIGHEST_OF = "max"
+SMALL_INTEGER = 1
+# The first parameter of a method.  A call through it, such as self.run(X), does not give it.
+BOUND_RECEIVERS = frozenset({"self", "cls"})
+# The call of argparse that gives an option, and its keywords of the attribute name and of the default.
+OPTION_CALL = "add_argument"
+OPTION_DEST = "dest"
+OPTION_DEFAULT = "default"
+# The prefix of a long option word.
+LONG_OPTION = "--"
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,9 +341,30 @@ def default_jobs(root: Path) -> tuple[int, int] | str:
     return f"{PROC_MODULE} has no assignment of an integer to {PROC_CONSTANT} at the top level"
 
 
-ScopeNode = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda
+FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
+ScopeNode = FunctionNode | ast.Lambda
 # The values that a scope gives each name.  An empty list is a name with no value that the rule can read.
 Bindings = dict[str, list[ast.expr]]
+
+
+def parameters_of(node: ScopeNode) -> dict[str, ast.expr | None]:
+    """Return each parameter of a function with its default, or None for a parameter with no default.
+
+    The names of *args and **kwargs have no default.
+    """
+    arguments = node.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    found: dict[str, ast.expr | None] = {item.arg: None for item in positional}
+    found.update(
+        zip(
+            (item.arg for item in positional[len(positional) - len(arguments.defaults) :]),
+            arguments.defaults,
+            strict=True,
+        )
+    )
+    found.update((item.arg, default) for item, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True))
+    found.update((item.arg, None) for item in (arguments.vararg, arguments.kwarg) if item)
+    return found
 
 
 def scope_bindings(body: Sequence[ast.AST]) -> Bindings:
@@ -318,35 +393,64 @@ def function_bindings(node: ScopeNode) -> Bindings:
 
     A parameter with no default has no value.  The name then does not get a value of the module.
     """
-    arguments = node.args
-    positional = [*arguments.posonlyargs, *arguments.args]
-    defaults: dict[str, ast.expr] = dict(
-        zip(
-            (item.arg for item in positional[len(positional) - len(arguments.defaults) :]),
-            arguments.defaults,
-            strict=True,
-        )
-    )
-    defaults.update(
-        (item.arg, default)
-        for item, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True)
-        if default is not None
-    )
-    names = [*positional, *arguments.kwonlyargs, *(item for item in (arguments.vararg, arguments.kwarg) if item)]
-    bound: Bindings = {item.arg: [defaults[item.arg]] if item.arg in defaults else [] for item in names}
+    bound: Bindings = {name: [] if default is None else [default] for name, default in parameters_of(node).items()}
     body = node.body if isinstance(node.body, list) else [node.body]
     for name, values in scope_bindings(body).items():
         bound.setdefault(name, []).extend(values)
     return bound
 
 
-class LiteralJobs(ast.NodeVisitor):
-    """The literal job counts of one module, each with its line and its text (THE LITERAL JOB COUNTS)."""
+class ScopedVisitor(ast.NodeVisitor):
+    """A visitor of one module that knows the values that each scope gives each name, and keeps its findings.
+
+    `owners` holds the function of each scope of `scopes`, and None for the module.
+    """
 
     def __init__(self, tree: ast.Module) -> None:
         """Read the values of the names of the module."""
         self.scopes: list[Bindings] = [scope_bindings(tree.body)]
+        self.owners: list[ScopeNode | None] = [None]
         self.found: list[tuple[int, str]] = []
+
+    def scope_of(self, name: str) -> int | None:
+        """Return the index of the innermost scope that gives the name values, or None when no scope gives it values."""
+        return next((index for index in range(len(self.scopes) - 1, -1, -1) if name in self.scopes[index]), None)
+
+    def values_of(self, name: str) -> list[ast.expr] | None:
+        """Return the values that the innermost scope with the name gives it, or None when no scope gives it values.
+
+        A parameter with no default has an empty list.
+        """
+        index = self.scope_of(name)
+        return None if index is None else self.scopes[index][name]
+
+    def record(self, node: ast.expr) -> None:
+        """Keep one finding of the expression."""
+        self.found.append((node.lineno, ast.unparse(node)))
+
+    def visit_scope(self, node: ScopeNode) -> None:
+        """Visit a function with its own bindings."""
+        self.scopes.append(function_bindings(node))
+        self.owners.append(node)
+        self.generic_visit(node)
+        self.scopes.pop()
+        self.owners.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Visit a function with its own bindings."""
+        self.visit_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Visit a function with its own bindings."""
+        self.visit_scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Visit a lambda with its own bindings."""
+        self.visit_scope(node)
+
+
+class LiteralJobs(ScopedVisitor):
+    """The literal job counts of one module, each with its line and its text (THE LITERAL JOB COUNTS)."""
 
     def is_literal(self, node: ast.expr, depth: int = 0) -> bool:
         """Return if an expression is a literal job count, through at most NAME_DEPTH names.
@@ -359,8 +463,8 @@ class LiteralJobs(ast.NodeVisitor):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CONVERSIONS:
             return len(node.args) == 1 and not node.keywords and self.is_literal(node.args[0], depth)
         if isinstance(node, ast.Name) and depth < NAME_DEPTH:
-            scope = next((item for item in reversed(self.scopes) if node.id in item), None)
-            return scope is not None and any(self.is_literal(value, depth + 1) for value in scope[node.id])
+            values = self.values_of(node.id)
+            return values is not None and any(self.is_literal(value, depth + 1) for value in values)
         return False
 
     def is_joined_literal(self, node: ast.JoinedStr) -> bool:
@@ -375,10 +479,6 @@ class LiteralJobs(ast.NodeVisitor):
             and formatted.format_spec is None
             and self.is_literal(formatted.value)
         )
-
-    def record(self, node: ast.expr) -> None:
-        """Keep one literal job count."""
-        self.found.append((node.lineno, ast.unparse(node)))
 
     def is_literal_word(self, word: ast.expr) -> bool:
         """Return if one word holds a literal job count: -jN, or the f-string -j{X} with a literal X."""
@@ -395,24 +495,6 @@ class LiteralJobs(ast.NodeVisitor):
                     self.record(words[index + 1])
             elif self.is_literal_word(word):
                 self.record(word)
-
-    def visit_scope(self, node: ScopeNode) -> None:
-        """Visit a function with its own bindings."""
-        self.scopes.append(function_bindings(node))
-        self.generic_visit(node)
-        self.scopes.pop()
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Visit a function with its own bindings."""
-        self.visit_scope(node)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        """Visit a function with its own bindings."""
-        self.visit_scope(node)
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        """Visit a lambda with its own bindings."""
-        self.visit_scope(node)
 
     def visit_List(self, node: ast.List) -> None:
         """Keep each literal job count of a list."""
@@ -438,32 +520,277 @@ class LiteralJobs(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def literal_job_findings(root: Path, rule: PoolRule, count: int) -> list[check_report.Finding]:
-    """Give one error for each literal job count of a module of the package of a tree (THE LITERAL JOB COUNTS).
+class Absent(enum.Enum):
+    """Why a call gives a parameter no argument that the rule can read.  The value completes a sentence."""
 
-    Complexity: one read of each module, and one parse of each module that holds a mark of JOB_MARKS.
+    OMITTED = "gives the parameter no argument"
+    SPREAD = "gives its arguments through * or **"
+
+
+@dataclass(frozen=True, slots=True)
+class CallSite:
+    """One call of a function of a module, with the scopes and the functions around the call (THE WORKER POOLS)."""
+
+    call: ast.Call
+    scopes: tuple[Bindings, ...]
+    owners: tuple[ScopeNode | None, ...]
+
+
+def called_name(call: ast.Call) -> str:
+    """Return the name of the function of a call: f in f(X) and in X.f(Y), or an empty text for other calls."""
+    function = call.func
+    if isinstance(function, ast.Name):
+        return function.id
+    if isinstance(function, ast.Attribute):
+        return function.attr
+    return ""
+
+
+def is_method(owner: FunctionNode) -> bool:
+    """Return if a function takes self or cls as its first parameter."""
+    positional = [*owner.args.posonlyargs, *owner.args.args]
+    return bool(positional) and positional[0].arg in BOUND_RECEIVERS
+
+
+def is_receiver_call(call: ast.Call) -> bool:
+    """Return if a call goes through self or cls, such as self.run(X)."""
+    function = call.func
+    return (
+        isinstance(function, ast.Attribute)
+        and isinstance(function.value, ast.Name)
+        and function.value.id in BOUND_RECEIVERS
+    )
+
+
+def local_callee(call: ast.Call) -> str:
+    """Return the name of the function of the module that a call can call, or an empty text.
+
+    A plain call f(X) can call a function of the module, and self.f(X) or cls.f(X) a method.  A call through a
+    different attribute, such as proc.run(X), calls a function of a different module.
+    """
+    function = call.func
+    if isinstance(function, ast.Name):
+        return function.id
+    if is_receiver_call(call) and isinstance(function, ast.Attribute):
+        return function.attr
+    return ""
+
+
+def option_dest(call: ast.Call) -> str:
+    """Return the name of the attribute that a call of add_argument() gives its option, or an empty text.
+
+    The keyword dest gives it.  Else the first option word with two hyphens gives it, with each hyphen after them as an
+    underscore, as argparse does.
+    """
+    for keyword in call.keywords:
+        if keyword.arg == OPTION_DEST and isinstance(keyword.value, ast.Constant):
+            return str(keyword.value.value)
+    for argument in call.args:
+        word = argument.value if isinstance(argument, ast.Constant) and isinstance(argument.value, str) else ""
+        if word.startswith(LONG_OPTION) and len(word) > len(LONG_OPTION):
+            return word[len(LONG_OPTION) :].replace("-", "_")
+    return ""
+
+
+def given_argument(call: ast.Call, owner: FunctionNode, parameter: str) -> ast.expr | Absent:
+    """Return the argument that a call gives a parameter of its function, or why the rule cannot read one.
+
+    A call through self or cls does not give the first parameter of a method.
+    """
+    for keyword in call.keywords:
+        if keyword.arg == parameter:
+            return keyword.value
+    is_spread = any(isinstance(item, ast.Starred) for item in call.args) or any(
+        item.arg is None for item in call.keywords
+    )
+    positional = [item.arg for item in (*owner.args.posonlyargs, *owner.args.args)]
+    collectors = [item.arg for item in (owner.args.vararg, owner.args.kwarg) if item]
+    if is_spread or parameter in collectors:
+        return Absent.SPREAD
+    if parameter not in positional:
+        return Absent.OMITTED
+    index = positional.index(parameter) - (1 if is_receiver_call(call) else 0)
+    return call.args[index] if 0 <= index < len(call.args) else Absent.OMITTED
+
+
+class CallSites(ScopedVisitor):
+    """The calls of each function of one module, and the options of add_argument(), with their scopes.
+
+    `sites` holds the calls of each name that local_callee() gives.  `options` holds the calls of add_argument() for
+    each name that option_dest() gives (THE WORKER POOLS).
+    """
+
+    def __init__(self, tree: ast.Module) -> None:
+        """Read the values of the names of the module, and start with no call."""
+        super().__init__(tree)
+        self.sites: defaultdict[str, list[CallSite]] = defaultdict(list)
+        self.options: defaultdict[str, list[CallSite]] = defaultdict(list)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Keep the call with the name of the function of the module that it calls, or with the name of its option."""
+        site = CallSite(node, tuple(self.scopes), tuple(self.owners))
+        callee = local_callee(node)
+        if callee:
+            self.sites[callee].append(site)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == OPTION_CALL:
+            dest = option_dest(node)
+            if dest:
+                self.options[dest].append(site)
+        self.generic_visit(node)
+
+
+class PoolWorkers(ScopedVisitor):
+    """The pools of one module with a count of workers that is not bounded, each with its line (THE WORKER POOLS).
+
+    `blame` names the first call that gives a parameter a count that is not bounded, in the check of one pool.
+    """
+
+    def __init__(self, tree: ast.Module) -> None:
+        """Read the values of the names, the calls of each function and the options of the module."""
+        super().__init__(tree)
+        sites = CallSites(tree)
+        sites.visit(tree)
+        self.sites = sites.sites
+        self.options = sites.options
+        self.blame: str | None = None
+
+    def is_bounded_at(self, site: CallSite, node: ast.expr, depth: int) -> bool:
+        """Return if an expression of a call is bounded, with the names of the scopes around that call."""
+        saved = self.scopes, self.owners
+        self.scopes, self.owners = list(site.scopes), list(site.owners)
+        try:
+            return self.is_bounded(node, depth)
+        finally:
+            self.scopes, self.owners = saved
+
+    def is_given_bounded(self, owner: FunctionNode, parameter: str, depth: int) -> bool:
+        """Return if each call of the function in the module gives the parameter a bounded count.
+
+        A plain call can call a function, and a call through self or cls a method.  A call that gives no argument
+        keeps the default, and the bindings of the function hold the default.  Complexity: linear in the calls of the
+        function, through at most NAME_DEPTH names and calls.
+        """
+        has_default = parameters_of(owner)[parameter] is not None
+        for site in self.sites.get(owner.name, []):
+            if is_receiver_call(site.call) != is_method(owner):
+                continue
+            given = given_argument(site.call, owner, parameter)
+            if given is Absent.OMITTED and has_default:
+                continue
+            where = f"the call of {owner.name} at line {site.call.lineno}"
+            if isinstance(given, Absent):
+                self.blame = self.blame or f"{where} {given.value}"
+                return False
+            if not self.is_bounded_at(site, given, depth):
+                self.blame = self.blame or f"{where} gives {parameter} the count {ast.unparse(given)}"
+                return False
+        return True
+
+    def is_option_bounded(self, node: ast.Attribute, depth: int) -> bool:
+        """Return if an attribute names an option of add_argument() of the module with a bounded default.
+
+        An attribute of self or cls names no option.  An option with no default has the default None, and the pool
+        then gets the default count of Python.
+        """
+        receiver = node.value
+        if isinstance(receiver, ast.Name) and receiver.id in BOUND_RECEIVERS:
+            return False
+        sites = self.options.get(node.attr, [])
+        for site in sites:
+            default = next((item.value for item in site.call.keywords if item.arg == OPTION_DEFAULT), None)
+            where = f"the option {node.attr} of the call of {OPTION_CALL} at line {site.call.lineno}"
+            if default is None:
+                self.blame = self.blame or f"{where} has no default"
+                return False
+            if not self.is_bounded_at(site, default, depth):
+                self.blame = self.blame or f"{where} has the default {ast.unparse(default)}"
+                return False
+        return bool(sites)
+
+    def is_bounded(self, node: ast.expr, depth: int = 0) -> bool:
+        """Return if the rule can prove that a count is at most DEFAULT_JOBS, through at most NAME_DEPTH names.
+
+        Each value that the innermost scope gives a name must be bounded.  For a parameter of a function, each call of
+        the function in the module must also give a bounded argument (is_given_bounded()).  An attribute is bounded
+        when it is DEFAULT_JOBS, or an option with a bounded default (is_option_bounded()).
+        """
+        if isinstance(node, ast.Attribute):
+            return node.attr == PROC_CONSTANT or (depth < NAME_DEPTH and self.is_option_bounded(node, depth + 1))
+        if isinstance(node, ast.Name):
+            index = self.scope_of(node.id)
+            if index is None:
+                return node.id == PROC_CONSTANT
+            if depth >= NAME_DEPTH:
+                return False
+            owner = self.owners[index]
+            if (
+                isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.id in parameters_of(owner)
+                and not self.is_given_bounded(owner, node.id, depth + 1)
+            ):
+                return False
+            return all(self.is_bounded(value, depth + 1) for value in self.scopes[index][node.id])
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.FloorDiv):
+            divisor = node.right
+            is_positive = isinstance(divisor, ast.Constant) and type(divisor.value) is int and divisor.value >= 1
+            return is_positive and self.is_bounded(node.left, depth)
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.keywords or not node.args:
+            return False
+        bounded = [self.is_bounded(argument, depth) for argument in node.args]
+        if node.func.id == LOWEST_OF:
+            return any(bounded)
+        is_small = [
+            isinstance(item, ast.Constant) and type(item.value) is int and item.value <= SMALL_INTEGER
+            for item in node.args
+        ]
+        return node.func.id == HIGHEST_OF and any(bounded) and all(map(operator.or_, bounded, is_small))
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Keep a pool with a count of workers that is not bounded, or with no count."""
+        if called_name(node) in POOL_CLASSES:
+            given = [item.value for item in node.keywords if item.arg == WORKERS_KEYWORD]
+            workers = given[0] if given else node.args[0] if node.args else None
+            self.blame = None
+            if workers is None:
+                self.found.append((node.lineno, "with no count of workers, so Python gives it its default count"))
+            elif not self.is_bounded(workers):
+                cause = f", and {self.blame}" if self.blame else ""
+                self.found.append((workers.lineno, f"with the count {ast.unparse(workers)} of workers{cause}"))
+        self.generic_visit(node)
+
+
+def module_findings(root: Path, rule: PoolRule, count: int) -> list[check_report.Finding]:
+    """Give one error for each literal job count and each pool that is not bounded of a module of the package.
+
+    THE LITERAL JOB COUNTS do not read the tests, and THE WORKER POOLS read them.  Complexity: one read of each
+    module, and one parse of each module that holds a mark of JOB_MARKS or POOL_MARK.  A module with POOL_MARK gets
+    one more walk, which collects the calls of its functions.
     """
     found: list[check_report.Finding] = []
     tests = root / TESTS_DIRECTORY
     for path in sorted((root / PACKAGE_DIRECTORY).rglob("*.py")):
-        if path.is_relative_to(tests):
-            continue
         shown = path.relative_to(root).as_posix()
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as problem:
             found.append(error(rule, shown, 0, f"the rule cannot read {shown}: {problem}", "input", shown))
             continue
-        if not any(mark in text for mark in JOB_MARKS):
+        has_jobs = not path.is_relative_to(tests) and any(mark in text for mark in JOB_MARKS)
+        has_pools = POOL_MARK in text
+        if not has_jobs and not has_pools:
             continue
         try:
             source = python_reader.parse(text, shown)
         except python_reader.PythonError as problem:
             found.append(error(rule, shown, problem.line, f"the rule cannot parse {shown}: {problem}", "input", shown))
             continue
-        visitor = LiteralJobs(source.tree)
-        visitor.visit(source.tree)
-        for line, literal in visitor.found:
+        literals = LiteralJobs(source.tree)
+        if has_jobs:
+            literals.visit(source.tree)
+        pools = PoolWorkers(source.tree)
+        if has_pools:
+            pools.visit(source.tree)
+        for line, literal in literals.found:
             found.append(
                 error(
                     rule,
@@ -476,12 +803,25 @@ def literal_job_findings(root: Path, rule: PoolRule, count: int) -> list[check_r
                     f"{shown}:{line}",
                 )
             )
+        for line, described in pools.found:
+            found.append(
+                error(
+                    rule,
+                    shown,
+                    line,
+                    f"{shown} starts a pool {described}, and the rule cannot prove that the count is at most the "
+                    f"{count} jobs of the rule {rule.rule_id} of utils/registry.txt.  Give the pool "
+                    f"min(proc.DEFAULT_JOBS, COUNT), proc.DEFAULT_JOBS, or a parameter that its caller gives",
+                    "pool-workers",
+                    f"{shown}:{line}",
+                )
+            )
     return found
 
 
 def program_findings(context: BuildContext, rule: PoolRule, count: int) -> list[check_report.Finding]:
     """Give one error for DEFAULT_JOBS, a literal job count of a module and a preset when its jobs are not the count."""
-    found = literal_job_findings(context.root, rule, count)
+    found = module_findings(context.root, rule, count)
     jobs = default_jobs(context.root)
     if isinstance(jobs, str):
         found.append(error(rule, PROC_MODULE, 0, jobs, "input", PROC_CONSTANT))

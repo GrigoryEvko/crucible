@@ -372,8 +372,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
                         help="the build directory whose compile database the script reads (default: build of this "
                              "tree)")
     parser.add_argument("--runs", type=int, default=3, help="the runs of each command (default: 3)")
-    parser.add_argument("--jobs", type=int, default=8,
-                        help="the compiler runs at the same time (default: 8)")
+    parser.add_argument("--jobs", type=int, default=proc.DEFAULT_JOBS,
+                        help=f"the compiler runs at the same time (default: {proc.DEFAULT_JOBS})")
     parser.add_argument("--only", action="append", default=[], metavar="TEXT",
                         help="measure only the sample rows whose path contains TEXT (repeatable)")
     parser.add_argument("--no-sample", action="store_true",

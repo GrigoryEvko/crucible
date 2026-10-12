@@ -599,7 +599,7 @@ def main(argv: list[str]) -> int:
         for index in range(len(groups)):
             (Path(scratch) / str(index)).mkdir()
             benches.append(Bench(Path(scratch) / str(index)))
-        with ThreadPoolExecutor(max_workers=len(groups)) as pool:
+        with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(groups))) as pool:
             futures = [pool.submit(group, bench, verdict)
                        for group, bench, verdict in zip(groups, benches, verdicts, strict=True)]
             for future in futures:

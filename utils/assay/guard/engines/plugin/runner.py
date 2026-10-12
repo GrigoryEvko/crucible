@@ -61,7 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import configuration as build_config
-from assay.core import git
+from assay.core import git, proc
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -74,8 +74,9 @@ from assay.readers import sections as quarantine_sections
 
 PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 STAMP_ARGUMENT = f"{PLUGIN_ARGUMENT}stamp="
-# The threads that read the sections of the objects.
-READERS = 16
+# The threads that read the sections of the objects: the job count of the package (THE WORKER POOLS of
+# assay.guard.engines.buildsys.job_pools).
+READERS = proc.DEFAULT_JOBS
 # The rule of the region lines of a section (the head comment of utils/tools/quarantine/plugin.h).
 REGION_RULE = "quarantine"
 SKIPPED = meta_runner.SKIPPED

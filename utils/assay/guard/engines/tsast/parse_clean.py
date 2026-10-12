@@ -22,14 +22,15 @@ Complexity: one hash of each file of the part, one parse of each file and of eac
 hold, and one load of each tree of the part.
 """
 
+from assay.core import proc
 from assay.core import report as check_report
 from assay.guard.engines.tsast.runner import TsastContext
 from assay.readers import tsast
 
 RULE = "parse-clean"
 KIND = "unparseable"
-# The workers of the fill of all parts together, as tsast gives them to one call.
-FILL_WORKERS = 16
+# The workers of the fill of all parts together: the job count of the package, as tsast gives it to one call.
+FILL_WORKERS = proc.DEFAULT_JOBS
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
