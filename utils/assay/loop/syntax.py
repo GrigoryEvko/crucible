@@ -13,12 +13,16 @@ THE PARSE BUILD
     ratchet).
 
 THE RUN
-    1. Ninja builds each input target of the build, with the name
-       cmake_object_order_depends_target_*.  These targets write the inputs
-       of the compiles, and they do no compile and no link.  The rule
-       build-order holds that no such target waits for a link.  A change of
-       the plugin or of the rule table makes CMake configure the build
-       again in this step.  The compile database then holds a new stamp,
+    1. Ninja builds the target build.ninja first.  A change of a glob, a
+       CMake file, the plugin or the rule table then makes CMake configure
+       the build again.  Then the run reads the graph of the build, and
+       Ninja builds each input target of it, with the name
+       cmake_object_order_depends_target_*.  A graph that the run reads
+       before the configure can name a target that the configure removes.
+       Ninja then stops on that unknown target.  This occurs in a warm tree
+       that a different commit configured.  The input targets write the
+       inputs of the compiles, and they do no compile and no link.  The rule build-order holds that no such target waits for a
+       link.  The compile database holds the stamp of the last configure,
        and the run reads the compile commands after this step.
     2. The run removes each report directory of SYNTAX_DIRECTORY that no
        unit of the build has.  No report of an object that is not in the
@@ -125,6 +129,7 @@ if TYPE_CHECKING:
 
 # The prefix of the name of each input target (THE RUN, step 1).
 INPUT_PREFIX = "cmake_object_order_depends_target_"
+REGENERATE_TARGET = ninja.GRAPH_NAME
 # The words of a compile command that a parse drops with the word that follows each one.
 DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 # The words of a compile command that a parse drops.
@@ -393,22 +398,37 @@ def units_of(build_dir: Path, root: Path) -> list[Unit]:
 
 
 def build_input_targets(build_dir: Path, jobs: int) -> float:
-    """Build each input target of the build with Ninja (THE RUN, step 1), and return the wall time of the build.
+    """Configure the build again if it is stale, then build each input target with Ninja (THE RUN, step 1).
+
+    Return the wall time of the two builds.
 
     Raises:
-        ParseError: If the graph of the build cannot be read, or the build fails
+        ParseError: If the graph of the build cannot be read, or a build fails
     """
     from assay.setup import pins
 
     try:
-        graph = ninja.graph(build_dir)
         cmake = pins.configured_program(build_dir, "cmake")
-    except (ninja.NinjaError, pins.PinError) as problem:
+    except pins.PinError as problem:
+        raise ParseError(f"the input targets of {build_dir} cannot be read: {problem}") from None
+    start = time.monotonic()
+    _build_targets(cmake, build_dir, jobs, [REGENERATE_TARGET], "the graph")
+    try:
+        graph = ninja.graph(build_dir)
+    except ninja.NinjaError as problem:
         raise ParseError(f"the input targets of {build_dir} cannot be read: {problem}") from None
     targets = sorted({output for edge in graph.edges for output in edge.outputs if output.startswith(INPUT_PREFIX)})
-    if not targets:
-        return 0.0
-    start = time.monotonic()
+    if targets:
+        _build_targets(cmake, build_dir, jobs, targets, "the input targets")
+    return time.monotonic() - start
+
+
+def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], what: str) -> None:
+    """Build the targets with `cmake --build`, for the build of WHAT in an error.
+
+    Raises:
+        ParseError: If the build does not run or does not exit with 0
+    """
     try:
         done = proc.run(
             proc.Command(
@@ -419,10 +439,9 @@ def build_input_targets(build_dir: Path, jobs: int) -> float:
             )
         )
     except proc.ToolFailed as problem:
-        raise ParseError(f"the build of the input targets of {build_dir} does not run: {problem}") from None
+        raise ParseError(f"the build of {what} of {build_dir} does not run: {problem}") from None
     if done.exit != 0:
-        raise ParseError(f"the build of the input targets of {build_dir} exits with {done.exit}:\n{done.out[-4000:]}")
-    return time.monotonic() - start
+        raise ParseError(f"the build of {what} of {build_dir} exits with {done.exit}:\n{done.out[-4000:]}")
 
 
 def parse_unit(unit: Unit, words: list[str], key: str, report_dir: Path) -> Parsed:

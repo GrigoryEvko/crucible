@@ -35,6 +35,25 @@ sys.exit(3 if "bad.cpp" in sys.argv else 0)
 """
 
 
+# A cmake for `cmake --build`.  It writes its targets to calls.txt.  Then it configures the build again, as Ninja does
+# before each build after a change of a glob or a CMake file.  The graph then names only the new input target.  The
+# cmake refuses a target that the new graph does not name, with the error of Ninja.
+FAKE_CMAKE = """
+import pathlib, sys
+words = sys.argv[1:]
+build = pathlib.Path(words[words.index("--build") + 1])
+targets = words[words.index("--target") + 1 :]
+with (build / "calls.txt").open("a", encoding="utf-8") as calls:
+    calls.write(" ".join(targets) + "\\n")
+graph = build / "build.ninja"
+graph.write_text("build cmake_object_order_depends_target_new: phony\\n", encoding="utf-8")
+unknown = [target for target in targets if target != "build.ninja" and f"build {target}:" not in graph.read_text()]
+if unknown:
+    print(f"ninja: error: unknown target '{unknown[0]}'")
+    sys.exit(1)
+"""
+
+
 def planted_compiler(directory: Path, name: str, text: str) -> str:
     """Write an executable Python script as a compiler, and return its path."""
     path = directory / name
@@ -100,6 +119,27 @@ def build_cases(expect: testing.Expect) -> None:
             status = syntax.run(scratch, scratch, 2)
         expect(
             "the run of a build that is no parse build exits 1", status == 1 and "no parse build" in errors.getvalue()
+        )
+
+
+def stale_graph_cases(expect: testing.Expect) -> None:
+    """Hold the build of the input targets of a warm build.  Its graph names a target that a configure removes."""
+    with tempfile.TemporaryDirectory(prefix="syntax-stale-") as scratch_text:
+        scratch = Path(scratch_text)
+        cmake.plant(scratch, cache={"CMAKE_COMMAND": planted_compiler(scratch, "cmake", FAKE_CMAKE)})
+        (scratch / ninja.GRAPH_NAME).write_text(
+            "build cmake_object_order_depends_target_old: phony\n", encoding="utf-8"
+        )
+        try:
+            syntax.build_input_targets(scratch, 1)
+            problem_text = ""
+        except syntax.ParseError as problem:
+            problem_text = str(problem)
+        expect("the build of the input targets of a stale graph succeeds", problem_text == "")
+        calls = (scratch / "calls.txt").read_text(encoding="utf-8").splitlines()
+        expect(
+            "the run builds build.ninja first, and then only the input target of the new graph",
+            calls == [syntax.REGENERATE_TARGET, "cmake_object_order_depends_target_new"],
         )
 
 
@@ -332,5 +372,15 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (word_cases, native_cases, build_cases, unit_cases, stamp_cases, check_cases, macro_cases, change_cases),
+        (
+            word_cases,
+            native_cases,
+            build_cases,
+            stale_graph_cases,
+            unit_cases,
+            stamp_cases,
+            check_cases,
+            macro_cases,
+            change_cases,
+        ),
     )
