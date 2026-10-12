@@ -204,10 +204,17 @@ void test_stress_multithread() {
         });
     }
 
-    constexpr std::uint64_t kMinStressLoads = 200000;
-    const auto stress_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
-    while (total_loads.load(std::memory_order_acquire) < kMinStressLoads
-           && std::chrono::steady_clock::now() < stress_deadline) {
+    // The main thread stops the readers after kStressLoads attempts.  A slow
+    // build, such as a build with ThreadSanitizer, can stop after the soft
+    // deadline, but only after kFloorLoads attempts.  No check reads the
+    // clock.  If the readers make no progress, the test does not stop, and the
+    // timeout of the test preset reports it.
+    constexpr std::uint64_t kStressLoads = 200000;
+    constexpr std::uint64_t kFloorLoads = 10000;
+    const auto soft_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    for (std::uint64_t made_loads = 0;
+         made_loads < kStressLoads && (made_loads < kFloorLoads || std::chrono::steady_clock::now() < soft_deadline);
+         made_loads = total_loads.load(std::memory_order_acquire)) {
         CRUCIBLE_SPIN_PAUSE;
     }
     stop.store(true, std::memory_order_release);
@@ -219,7 +226,7 @@ void test_stress_multithread() {
     CRUCIBLE_REQUIRE(torn_reads.load(std::memory_order_acquire) == 0);
     CRUCIBLE_REQUIRE(stale_reads.load(std::memory_order_acquire) == 0);
     CRUCIBLE_REQUIRE(snap.version() > 0);
-    CRUCIBLE_REQUIRE(total_loads.load(std::memory_order_acquire) > 1000);
+    CRUCIBLE_REQUIRE(total_loads.load(std::memory_order_acquire) >= kFloorLoads);
 }
 
 // One reader polls the non-blocking read in a tight loop while the

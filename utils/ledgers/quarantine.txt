@@ -2207,14 +2207,10 @@ include/fixy/atoms/Syscall.h | base-std-object | 2 | std::array | -
 include/fixy/atoms/Syscall.h | base-std-object | 4 | std::pair | -
 include/fixy/atoms/Syscall.h | layer-header | 1 | <array> | -
 include/fixy/atoms/Syscall.h | layer-header | 1 | <tuple> | -
-include/fixy/concurrent/AtomicSnapshot.h | base-c-library-call | 4 | memcpy | -
-include/fixy/concurrent/AtomicSnapshot.h | base-std-entity | 3 | std::atomic_thread_fence | -
 include/fixy/concurrent/AtomicSnapshot.h | base-std-entity | 2 | std::nullopt | -
 include/fixy/concurrent/AtomicSnapshot.h | base-std-object | 3 | std::array | -
 include/fixy/concurrent/AtomicSnapshot.h | base-std-object | 1 | std::optional | -
 include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <array> | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <atomic> | -
-include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <cstring> | -
 include/fixy/concurrent/AtomicSnapshot.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/ChaseLevDeque.h | base-std-entity | 4 | std::__atomic_base::load | -
 include/fixy/concurrent/ChaseLevDeque.h | base-std-entity | 5 | std::__atomic_base::store | -

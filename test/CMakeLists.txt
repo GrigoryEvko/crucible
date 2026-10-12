@@ -133,13 +133,10 @@ function(crucible_test name)
 
   add_test(NAME ${name} COMMAND ${name})
 
-  # Wire in TSan suppressions for known UB-adjacency patterns
-  # (seqlock byte-race, etc.).  See test/tsan-suppressions.txt for
-  # the curated list and rationale.
+  # A race report of ThreadSanitizer ends the test.  The tree has no
+  # suppression file: each race is a defect to repair at its cause.
   if(CRUCIBLE_TSAN)
-    set_tests_properties(${name} PROPERTIES
-      ENVIRONMENT
-        "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan-suppressions.txt:halt_on_error=1")
+    set_tests_properties(${name} PROPERTIES ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
   endif()
 
   # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).

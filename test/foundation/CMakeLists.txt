@@ -21,9 +21,7 @@ function(foundation_test name)
   add_test(NAME ${name} COMMAND ${name})
   set_tests_properties(${name} PROPERTIES LABELS "foundation")
   if(CRUCIBLE_TSAN)
-    set_tests_properties(${name} PROPERTIES
-      ENVIRONMENT
-        "TSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/test/tsan-suppressions.txt:halt_on_error=1")
+    set_tests_properties(${name} PROPERTIES ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
   endif()
 endfunction()
 

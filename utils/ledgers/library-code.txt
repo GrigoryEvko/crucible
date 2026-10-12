@@ -224,8 +224,6 @@ include/fixy/Tagged.h | inlined | 2 | std::basic_string::basic_string | -
 include/fixy/Tagged.h | inlined | 2 | std::basic_string::~basic_string | -
 include/fixy/Tagged.h | inlined | 2 | std::filesystem::path::path | -
 include/fixy/Tagged.h | inlined | 3 | std::filesystem::path::~path | -
-include/fixy/concurrent/AtomicSnapshot.h | inlined | 4 | memcpy | -
-include/fixy/concurrent/AtomicSnapshot.h | inlined | 3 | std::atomic_thread_fence | -
 include/fixy/concurrent/AtomicSnapshot.h | inlined | 1 | std::optional::optional | -
 include/fixy/concurrent/AtomicSnapshot.h | inlined | 2 | std::span::front | -
 include/fixy/concurrent/ChaseLevDeque.h | inlined | 6 | std::__atomic_base::load | -
@@ -857,7 +855,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -5 | std::span::span | -
 @x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::basic_string::basic_string | -
 @x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::filesystem::path::path | -
-@x86_64-debug-tsan | include/fixy/concurrent/AtomicSnapshot.h | inlined | +1 | std::array::data | -
 @x86_64-debug-tsan | include/fixy/concurrent/AtomicSnapshot.h | inlined | -2 | std::span::front | -
 @x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -1 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::optional::optional | -

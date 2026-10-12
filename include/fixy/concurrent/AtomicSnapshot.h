@@ -15,21 +15,16 @@
 // counter, copies the bytes, and samples again, keeping the copy only
 // when the two samples agree.
 //
-// The construction carries two separate undefined-behavior concerns,
-// and neither mitigation covers the other.
+// The payload lives in 64-bit words, and each access to a shared word
+// is an atomic operation: a release store in the writer and an acquire
+// load in the reader.  A copy that a write overlaps is then a word mix
+// of two epochs and no data race, and the retry discards it before the
+// caller can see it.  ThreadSanitizer sees the atomic operations, so it
+// needs no suppression, and it still reports a race on the value that
+// a caller gives to publish.  The two copies between a local buffer and
+// the words are plain copies of thread-private bytes.
 //
-// The first is the data race between the reader's byte copy and a
-// concurrent write.  A lifetime start does not launder this: the race
-// is in the byte reads, ahead of any type interpretation.  Four things
-// together contain it.  T is trivially copyable and trivially
-// destructible, so a torn read is at worst a byte mix of two epochs,
-// with no constructor, destructor or vtable to corrupt.  The retry
-// discards a torn read before the caller can see it.  Compilers treat
-// the copy as opaque bytes and do not speculate through it.  A stress
-// fuzzer stands as the witness, and what it would catch is a missed
-// retry rather than silent corruption.
-//
-// The second is the transition from byte buffer to T.  Reading a
+// The transition from byte buffer to T needs one more step.  Reading a
 // T-shaped value out of a byte buffer is undefined on its own, because
 // the bytes hold byte lifetime and not T lifetime.  A lifetime start on
 // the retry-success path ends the byte lifetime and starts a T lifetime
@@ -42,7 +37,7 @@
 // the sequence counter at any moment.
 //
 // SnapshotValue also requires ImplicitLifetimeThroughout, because the
-// checked lifetime start refuses any other T.  The payload bytes and the
+// checked lifetime start refuses any other T.  The payload words and the
 // read buffers are std::array, because the rule no-raw-array-member of the
 // quarantine plugin refuses a C array data member.
 
@@ -55,13 +50,12 @@
 #include <foundation/diag/Runtime.h>
 
 #include <array>
-#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 // The claim the snapshot makes that no lattice grades.
 // foundation/diag/RowHash.h folds the identity, so the carrier takes a
@@ -91,7 +85,7 @@ public:
     AtomicSnapshot() noexcept = default;
 
     explicit AtomicSnapshot(const T& initial) noexcept {
-        std::memcpy(storage_.data(), &initial, sizeof(T));
+        write_words_(initial, word_indices_{});
         // No other thread holds this address yet, so the write above
         // needs no bracketing.  A plain advance would also be accepted
         // here, but reset_under_quiescence states the no-concurrent-
@@ -101,15 +95,14 @@ public:
 
     // The caller guarantees no concurrent publish.
     //
-    // The copy must not become visible before the odd counter does, or a
-    // reader reads the in-flight bytes while the counter still reads even.
+    // A word must not become visible before the odd counter does, or a
+    // reader reads an in-flight word while the counter still reads even.
     // Both of its samples agree, so the retry never fires and the torn
-    // read is returned.  The acquire half of the increment does not order
-    // the later stores after its store half: on a weakly ordered machine
-    // the plain stores of the copy can become visible first.  The release
-    // fence after the increment orders them, and it pairs with the acquire
-    // fence of the reader (Boehm, "Can seqlocks get along with programming
-    // language memory models?", 2012).  On x86 the fence emits nothing.
+    // read is returned.  Each word store is a release store, so the
+    // increment before it becomes visible first.  The release pairs with
+    // the acquire load of the word in the reader (Boehm, "Can seqlocks get
+    // along with programming language memory models?", 2012).  On x86 a
+    // release store and an acquire load are plain moves.
     void publish(const T& value) noexcept {
         const std::uint64_t old_seq = seq_.bump_by(1);
         // The single-writer contract is checked on every build rather
@@ -125,25 +118,24 @@ public:
         if ((old_seq & 1u) != 0u) [[unlikely]] {
             two_writers_abort_();
         }
-        std::atomic_thread_fence(std::memory_order_release);
 
-        std::memcpy(storage_.data(), &value, sizeof(T));
+        write_words_(value, word_indices_{});
 
-        // Release alone would serve here, since the copy above cannot
-        // move after it.  The counter type supplies more than that, and
-        // publish is the slow side, so the difference is not worth a
-        // second counter.
+        // Release alone would serve here, since the word stores above
+        // cannot move after it.  The counter type supplies more than
+        // that, and publish is the slow side, so the difference is not
+        // worth a second counter.
         (void)seq_.bump_by(1);
     }
 
     // Spins until it observes a coherent snapshot.
     //
     // Acquire loads on the counter alone would not be enough.  Acquire
-    // is one-way downward, so nothing stops the byte copy from sinking
-    // below the second counter load.  The reader would then compare a
-    // stale pair while reading fresh and possibly torn bytes.  The
-    // acquire fence between the copy and the second load closes that
-    // direction, so the copy is bracketed on both sides.
+    // is one-way downward, so a plain copy could sink below the second
+    // counter load.  The reader would then compare a stale pair while
+    // reading fresh and possibly torn words.  Each word load is an
+    // acquire load, so the second counter load cannot move before it, and
+    // the copy is bracketed on both sides.
     [[nodiscard]] T load() const noexcept {
         alignas(T) std::array<std::byte, sizeof(T)> buf{};
 
@@ -155,9 +147,7 @@ public:
                 pre = seq_.get();
             }
 
-            std::memcpy(buf.data(), storage_.data(), sizeof(T));
-
-            std::atomic_thread_fence(std::memory_order_acquire);
+            read_words_(buf.data(), word_indices_{});
 
             const std::uint64_t post = seq_.get();
 
@@ -180,10 +170,8 @@ public:
         }
 
         alignas(T) std::array<std::byte, sizeof(T)> buf{};
-        std::memcpy(buf.data(), storage_.data(), sizeof(T));
-
-        // Brackets the copy for the same reason load does.
-        std::atomic_thread_fence(std::memory_order_acquire);
+        // The acquire word loads bracket the copy, as in load.
+        read_words_(buf.data(), word_indices_{});
 
         const std::uint64_t post = seq_.get();
         if (pre != post) {
@@ -198,6 +186,54 @@ public:
     [[nodiscard]] std::uint64_t version() const noexcept { return seq_.get() >> 1; }
 
 private:
+    static constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
+    // The words of the payload.  The last word holds the tail of T, and its other bytes stay zero.
+    static constexpr std::size_t kWords = (sizeof(T) + kWordBytes - 1) / kWordBytes;
+
+    // One index for each word.  A fold over the indices gives one access for each word with no
+    // loop.  A loop of word accesses stays a loop in a Release build, because GCC does not unroll
+    // it, and the hardening flags then add two checks to each turn.
+    using word_indices_ = std::make_index_sequence<kWords>;
+
+    // The bytes of T that one word holds: kWordBytes, or the tail in the last word.
+    [[nodiscard]] static constexpr std::size_t bytes_of_word_(std::size_t word_index) noexcept {
+        const std::size_t offset = word_index * kWordBytes;
+        return sizeof(T) - offset < kWordBytes ? sizeof(T) - offset : kWordBytes;
+    }
+
+    // Copy one word of a value into a local word, and store it with a release store.
+    CRUCIBLE_INLINE static void store_word_(const std::byte* source, std::uint64_t* words,
+                                            std::size_t word_index) noexcept {
+        std::uint64_t word = 0;
+        __builtin_memcpy(&word, source + word_index * kWordBytes, bytes_of_word_(word_index));
+        __atomic_store(words + word_index, &word, __ATOMIC_RELEASE);
+    }
+
+    // Load one word with an acquire load, and copy its bytes of T into a thread-private buffer.
+    CRUCIBLE_INLINE static void load_word_(const std::uint64_t* words, std::byte* destination,
+                                           std::size_t word_index) noexcept {
+        std::uint64_t word = 0;
+        __atomic_load(words + word_index, &word, __ATOMIC_ACQUIRE);
+        __builtin_memcpy(destination + word_index * kWordBytes, &word, bytes_of_word_(word_index));
+    }
+
+    // Store each word of a value with a release store.  The read of the value is a plain read.
+    // Complexity: one store for each word, at most 32.
+    template <std::size_t... WordIndex>
+    CRUCIBLE_INLINE void write_words_(const T& value, std::index_sequence<WordIndex...>) noexcept {
+        const auto* const source = static_cast<const std::byte*>(static_cast<const void*>(&value));
+        std::uint64_t* const words = storage_.data();
+        (store_word_(source, words, WordIndex), ...);
+    }
+
+    // Load each word with an acquire load into a thread-private buffer.
+    // Complexity: one load for each word, at most 32.
+    template <std::size_t... WordIndex>
+    CRUCIBLE_INLINE void read_words_(std::byte* destination, std::index_sequence<WordIndex...>) const noexcept {
+        const std::uint64_t* const words = storage_.data();
+        (load_word_(words, destination, WordIndex), ...);
+    }
+
     // A second writer entered publish while the first one was inside it.
     [[noreturn]] CRUCIBLE_COLD static void two_writers_abort_() noexcept {
         ::foundation::diag::report_violation_at_and_abort(
@@ -207,10 +243,12 @@ private:
 
     // Every thread reads the counter, and the writer writes both it and
     // the payload.  Each takes a cache line of its own so a publish
-    // does not invalidate the other's line.
-    alignas(64)::fixy::AtomicMonotonic<std::uint64_t> seq_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    // does not invalidate the other's line.  The payload words come
+    // first, so their address is the address of the snapshot, and the
+    // word accesses need no separate address computation.
+    alignas(64) std::array<std::uint64_t, kWords> storage_{};
 
-    alignas(64) std::array<std::byte, sizeof(T)> storage_{};
+    alignas(64)::fixy::AtomicMonotonic<std::uint64_t> seq_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 };
 
 }  // namespace fixy::concurrent
