@@ -64,8 +64,10 @@ DEFAULT_TARGETS = ("bench_trace_ring", "bench_arena", "bench_swiss_table", "benc
 ISOLATED = Path("/sys/devices/system/cpu/isolated")
 # The distance from a core to its SMT sibling on this host.
 SIBLING_DISTANCE = 192
-TARGET_PREFIX = "bench_"
-NAME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyz_")
+# The type and the FOLDER property of a bench target in the code model of CMake.  The function crucible_bench() of
+# bench/CMakeLists.txt sets the folder.
+TARGET_TYPE = "EXECUTABLE"
+BENCH_FOLDER = "crucible_bench"
 
 
 class BenchError(Exception):
@@ -132,29 +134,16 @@ def parse(argv: list[str]) -> Request:
     return Request(should_build, should_list, tuple(targets) or DEFAULT_TARGETS, bench_args)
 
 
-def bench_targets(help_text: str) -> list[str]:
-    """Return each bench target that the help output of the build names: a word bench_ of lowercase letters and '_'.
+def bench_targets(model: cmake_reader.CodeModel) -> tuple[str, ...]:
+    """Return each executable target of the code model of a build with the FOLDER property BENCH_FOLDER.
 
-    A word starts after a character that is not a letter, a digit or '_'.  Complexity: linear in the length of the text.
-
-    Args:
-        help_text: The output of `cmake --build DIR --target help`
+    `loop pgo` reads its benches with this function too.  Complexity: linear in the number of targets.
 
     Returns:
         The targets, sorted and each one time
     """
-    found: set[str] = set()
-    start = help_text.find(TARGET_PREFIX)
-    while start != -1:
-        before = help_text[start - 1] if start > 0 else " "
-        if not (before.isalnum() or before == "_"):
-            end = start + len(TARGET_PREFIX)
-            while end < len(help_text) and help_text[end] in NAME_CHARACTERS:
-                end += 1
-            if end > start + len(TARGET_PREFIX):
-                found.add(help_text[start:end])
-        start = help_text.find(TARGET_PREFIX, start + 1)
-    return sorted(found)
+    names = {target.name for target in model.targets if target.type_name == TARGET_TYPE and target.folder == BENCH_FOLDER}
+    return tuple(sorted(names))
 
 
 def pin_core(isolated_text: str | None, fallback: str) -> tuple[str, bool]:
@@ -210,9 +199,11 @@ def run(root: Path, request: Request, settings: Settings) -> int:
                          f"{settings.preset}") from None
     if request.should_list:
         log(f"buildable bench targets in {build_dir}:")
-        listed = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "--target", "help"],
-                                       timeout_s=proc.TOOL_S)).out
-        for name in bench_targets(listed):
+        try:
+            model = cmake_reader.codemodel(build_dir)
+        except cmake_reader.CmakeError as problem:
+            raise BenchError(str(problem)) from None
+        for name in bench_targets(model):
             print(name)
         return 0
     try:
@@ -279,10 +270,16 @@ def self_test() -> int:
         expect("an unknown option is refused", False)
     except BenchError:
         expect("an unknown option is refused", True)
-    help_text = ("All primary targets available:\nbench_arena: phony\nbench/bench_trace_ring: CXX_EXECUTABLE_LINKER\n"
-                 "test_bench_arena: phony\nbench_philox.o: CXX\nbench_: phony\nall: phony\nbench_arena: phony\n")
-    expect("the help output gives each bench target one time, also after a slash, and not inside another name",
-           bench_targets(help_text) == ["bench_arena", "bench_philox", "bench_trace_ring"])
+    model = cmake_reader.CodeModel("/source", "/build", (
+        cmake_reader.Target("bench_trace_ring", TARGET_TYPE, folder=BENCH_FOLDER),
+        cmake_reader.Target("bench_arena", TARGET_TYPE, folder=BENCH_FOLDER),
+        cmake_reader.Target("bench_arena", TARGET_TYPE, folder=BENCH_FOLDER),
+        cmake_reader.Target("bench_unmarked", TARGET_TYPE),
+        cmake_reader.Target("bench_harness", "STATIC_LIBRARY", folder=BENCH_FOLDER),
+        cmake_reader.Target("bench-caps", "UTILITY"),
+        cmake_reader.Target("bench_philox", TARGET_TYPE, folder=BENCH_FOLDER)))
+    expect("the code model gives each executable of the bench folder one time, and no library and no other target",
+           bench_targets(model) == ("bench_arena", "bench_philox", "bench_trace_ring"))
     expect("the first isolated core is the core of the runs",
            pin_core("90-95\n", "88") == ("90", True) and pin_core("92,94\n", "88") == ("92", True))
     expect("with no isolated core, the fallback core and a warning",

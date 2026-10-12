@@ -62,6 +62,7 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.loop import bench as loop_bench
 from assay.loop import history as loop_history
 from assay.readers import cmake as cmake_reader
 from assay.setup import pins as cmake_pin
@@ -70,7 +71,6 @@ PRESET = "pgo-generate"
 BUILD_DIR_NAME = "build-pgo-generate"
 DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_BENCH_TIMEOUT_S = 900
-BENCH_FOLDER = "crucible_bench"
 COUNTER_SUFFIX = ".gcda"
 RECORD_NAME = "COLLECTION"
 RUN_LOGS = "pgo-run"
@@ -120,18 +120,14 @@ def read_facts(build_dir: Path) -> Facts:
     """
     try:
         values = {name: entry.value for name, entry in cmake_reader.cache(build_dir).items()}
-        benches = [
-            target.name
-            for target in cmake_reader.codemodel(build_dir).targets
-            if target.type_name == "EXECUTABLE" and target.folder == BENCH_FOLDER
-        ]
+        benches = loop_bench.bench_targets(cmake_reader.codemodel(build_dir))
     except cmake_reader.CmakeError as problem:
         raise PgoError(f"the CMake file API reply in {build_dir} could not be read: {problem}") from None
     profile_dir = values.get("CRUCIBLE_PGO_PROFILE_DIR", "")
     tier = values.get("CRUCIBLE_PGO_TIER", "")
     if not profile_dir or not tier:
         raise PgoError(f"the CMake cache of {build_dir} has no CRUCIBLE_PGO_PROFILE_DIR or CRUCIBLE_PGO_TIER.")
-    return Facts(Path(profile_dir), tier, tuple(sorted(benches)))
+    return Facts(Path(profile_dir), tier, benches)
 
 
 # ── The benches ────────────────────────────────────────────────────────────
@@ -389,10 +385,10 @@ def self_test() -> int:
             build,
             {"CRUCIBLE_PGO_PROFILE_DIR": str(root / "profile"), "CRUCIBLE_PGO_TIER": "znver5"},
             {
-                "bench_b": ("EXECUTABLE", BENCH_FOLDER),
-                "bench_a": ("EXECUTABLE", BENCH_FOLDER),
+                "bench_b": ("EXECUTABLE", loop_bench.BENCH_FOLDER),
+                "bench_a": ("EXECUTABLE", loop_bench.BENCH_FOLDER),
                 "test_c": ("EXECUTABLE", ""),
-                "bench_lib": ("STATIC_LIBRARY", BENCH_FOLDER),
+                "bench_lib": ("STATIC_LIBRARY", loop_bench.BENCH_FOLDER),
             },
         )
         facts = read_facts(build)
