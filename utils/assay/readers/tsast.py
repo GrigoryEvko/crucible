@@ -385,6 +385,16 @@ class Node:
         return (self.tree.erow[self.index], self.tree.ecol[self.index])
 
     @property
+    def start_offset(self) -> int:
+        """Return the byte offset of the first byte of the node in its source (Tree.offset)."""
+        return self.tree.offset(self.start)
+
+    @property
+    def end_offset(self) -> int:
+        """Return the byte offset after the last byte of the node in its source (Tree.offset)."""
+        return self.tree.offset(self.end)
+
+    @property
     def line(self) -> int:
         """Return the one-based line of the node start, for a report."""
         return self.tree.srow[self.index] + 1
@@ -686,6 +696,21 @@ class Tree:
             self._line_starts = starts
         return self._line_starts
 
+    def offset(self, position: tuple[int, int]) -> int:
+        """Return the byte offset of a (row, byte column) position in the source.
+
+        An editor of a file reads the bytes of a node through this door, and it scans no line breaks of its own.
+
+        Args:
+            position: The zero-based position, such as the start or the end of a node
+
+        Returns:
+            The offset of the position, or the number of bytes of the source for a row after the last row
+        """
+        starts = self._starts()
+        row, column = position
+        return starts[row] + column if row < len(starts) else len(self.source)
+
     def slice(self, start: tuple[int, int], end: tuple[int, int]) -> str:
         """Return the source text between two (row, byte column) positions.
 
@@ -696,10 +721,7 @@ class Tree:
         Returns:
             The spanned text, decoded as UTF-8 with replacement on a bad byte
         """
-        starts = self._starts()
-        lo = starts[start[0]] + start[1]
-        hi = starts[end[0]] + end[1] if end[0] < len(starts) else len(self.source)
-        return self.source[lo:hi].decode("utf-8", "replace")
+        return self.source[self.offset(start):self.offset(end)].decode("utf-8", "replace")
 
     def line(self, row: int) -> str:
         """Return one source row, without its line break, for a report.
@@ -3474,6 +3496,15 @@ def _self_test() -> int:
             name is not None and name.text == "mint_thing",
         )
         check("the name reports line 3", name is not None and name.line == 3)
+        # The first row holds 18 bytes and 15 characters, and the second row 18 bytes.  The name starts at the byte
+        # column 28 of the third row.
+        check(
+            "the offsets of a node count the bytes of each row before it, after a multi-byte line",
+            name is not None and (name.start_offset, name.end_offset) == (64, 74)
+            and tree.source[name.start_offset:name.end_offset] == b"mint_thing",
+        )
+        check("a position after the last row gives the number of bytes of the source",
+              tree.offset((99, 0)) == len(tree.source))
         params = decls[0].child_by_field("parameters")
         check(
             "the parameter list is reachable by field",

@@ -224,19 +224,27 @@ class GaugeRecord:
 
 @dataclass(frozen=True, slots=True)
 class EditSite:
-    """The body of the edited function: the offsets of its first and its last character, and the indent of the line of
-    its definition."""
+    """The body of the edited function and the indent of the line of its definition.
+
+    `open_brace` and `close_brace` are the offsets of the first and the last byte of the body.  `first_statement` and
+    `last_statement` are the offsets of the start of its first child and of the end of its last child.  `is_one_line`
+    is True when the body starts and ends on one row.
+    """
 
     open_brace: int
     close_brace: int
     indent: bytes
+    first_statement: int
+    last_statement: int
+    is_one_line: bool
 
 
 def edit_site(header: Path) -> EditSite:
     """Return the body of the edited function (THE EDIT).
 
-    The parse tree finds the function definition with the name EDIT_FUNCTION in the namespace EDIT_NAMESPACE.  The
-    indent is the white space at the start of the first line of the definition.
+    The parse tree finds the function definition with the name EDIT_FUNCTION in the namespace EDIT_NAMESPACE, and
+    tsast gives the byte offset of each node.  The .clang-format of the tree indents with spaces and with no tab.
+    The indent is then one space for each byte column before the definition.
 
     Args:
         header: The header
@@ -248,30 +256,21 @@ def edit_site(header: Path) -> EditSite:
         GaugeError: If the header has no such function with a body, or the body holds no statement
     """
     tree = next(tsast.parse([header]))
-    data = header.read_bytes()
-    starts = [0]
-    starts.extend(index + 1 for index, byte in enumerate(data) if byte == 0x0A)
     name = "::".join((*EDIT_NAMESPACE, EDIT_FUNCTION))
     for node in tree.find("function_definition"):
         declarator = node.child_by_field("declarator")
         body = node.child_by_field("body")
         if declarator is None or body is None or tsast.leaf_name(declarator) != EDIT_FUNCTION:
             continue
-        if tsast.namespace_path(node) != EDIT_NAMESPACE:
-            continue
-        open_brace = starts[body.start[0]] + body.start[1]
-        close_brace = starts[body.end[0]] + body.end[1] - 1
-        if data[open_brace:open_brace + 1] != b"{" or data[close_brace:close_brace + 1] != b"}":
+        if tsast.namespace_path(node) != EDIT_NAMESPACE or body.type != "compound_statement":
             continue
         if not tsast.non_comment_children(body):
             raise GaugeError(f"the body of {name}() in {header} holds no statement.  clang-format puts a body of one "
                              f"statement on the line of its declaration, and the edit writes a body of more lines.  "
                              f"Give the function a statement, or give the gauge a different edit site")
-        line_start = starts[node.start[0]]
-        indent_end = line_start
-        while data[indent_end:indent_end + 1] in (b" ", b"\t"):
-            indent_end += 1
-        return EditSite(open_brace, close_brace, data[line_start:indent_end])
+        children = body.children
+        return EditSite(body.start_offset, body.end_offset - 1, b" " * node.start[1], children[0].start_offset,
+                        children[-1].end_offset, body.start[0] == body.end[0])
     raise GaugeError(f"{header} holds no definition of {name}() with a body.  Give EDIT_HEADER, EDIT_NAMESPACE and "
                      f"EDIT_FUNCTION of utils/assay/loop/gauge.py a function of a base header that each translation "
                      f"unit includes")
@@ -295,10 +294,10 @@ def edited_text(original: bytes, site: EditSite, mark: int) -> bytes:
     inner = site.indent + b" " * INDENT_WIDTH
     statement = b"\n" + inner + f"static_cast<void>({mark}LL);".encode()
     after_open = site.open_brace + 1
-    body = original[after_open:site.close_brace]
-    if b"\n" in body:
+    if not site.is_one_line:
         return original[:after_open] + statement + original[after_open:]
-    return (original[:after_open] + statement + b"\n" + inner + body.strip() + b"\n" + site.indent
+    statements = original[site.first_statement:site.last_statement]
+    return (original[:after_open] + statement + b"\n" + inner + statements + b"\n" + site.indent
             + original[site.close_brace:])
 
 

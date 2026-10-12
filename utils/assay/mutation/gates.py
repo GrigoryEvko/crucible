@@ -72,17 +72,9 @@ class Gate:
         return f"{self.header}:{self.line}:{self.kind}:{self.start}"
 
 
-def _line_starts(source: bytes) -> list[int]:
-    """The byte offset of the first byte of each line."""
-    starts = [0]
-    starts.extend(i + 1 for i, byte in enumerate(source) if byte == 0x0A)
-    return starts
-
-
-def _span(node: tsast.Node, starts: list[int]) -> tuple[int, int]:
-    """The byte span of a node in the file."""
-    (row0, col0), (row1, col1) = node.start, node.end
-    return starts[row0] + col0, starts[row1] + col1
+def _span(node: tsast.Node) -> tuple[int, int]:
+    """The byte span of a node in the file, from the offsets of tsast."""
+    return node.start_offset, node.end_offset
 
 
 def _entity(node: tsast.Node) -> str:
@@ -162,7 +154,7 @@ def _is_primary_template(struct: tsast.Node) -> bool:
         "template_declaration") is not None
 
 
-def _declaration_span(clause: tsast.Node, starts: list[int]) -> tuple[int, int, tsast.Node] | None:
+def _declaration_span(clause: tsast.Node) -> tuple[int, int, tsast.Node] | None:
     """The span of the whole declaration that a `= delete` clause ends."""
     decl = clause.ancestor_of_type("function_definition", "field_declaration", "declaration")
     if decl is None:
@@ -170,7 +162,7 @@ def _declaration_span(clause: tsast.Node, starts: list[int]) -> tuple[int, int, 
     outer = decl.parent
     if outer is not None and outer.type == "template_declaration":
         decl = outer
-    start, end = _span(decl, starts)
+    start, end = _span(decl)
     return start, end, decl
 
 
@@ -181,11 +173,10 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
     rel = str(path.resolve().relative_to(repo_root.resolve())) if path.is_absolute() else str(path)
     tree = next(tsast.parse([path], strict=False))
     source = tree.source
-    starts = _line_starts(source)
     gates: list[Gate] = []
 
     def add(kind: str, node: tsast.Node, replacement: str, span: tuple[int, int] | None = None) -> None:
-        start, end = span if span is not None else _span(node, starts)
+        start, end = span if span is not None else _span(node)
         gates.append(Gate(rel, kind, node.line, start, end, _bounded(source, start, end, replacement), _entity(node),
                           source[start:end].decode("utf-8", errors="replace"), _words(node), _owner(node)))
 
@@ -210,7 +201,7 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
             add("static_assert", condition, "true")
 
     for clause in tree.find("delete_method_clause"):
-        found = _declaration_span(clause, starts)
+        found = _declaration_span(clause)
         if found is not None:
             start, end, _ = found
             add("delete", clause, "", (start, end))
