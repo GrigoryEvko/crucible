@@ -567,8 +567,8 @@ include/crucible/Reflect.h | std-entity | 4 | std::vector::operator[] | -
 include/crucible/Reflect.h | std-entity | 1 | std::vector::size | -
 include/crucible/Reflect.h | std-object | 2 | std::basic_string_view | -
 include/crucible/RegionCache.h | raw-pointer-object | 6 | - | -
-include/crucible/RegionCache.h | std-entity | 10 | std::array::operator[] | -
-include/crucible/RegionCache.h | std-object | 4 | std::array | -
+include/crucible/RegionCache.h | std-entity | 7 | std::array::operator[] | -
+include/crucible/RegionCache.h | std-object | 3 | std::array | -
 include/crucible/RegistrationSeal.h | std-entity | 2 | std::atomic::compare_exchange_weak | -
 include/crucible/RegistrationSeal.h | std-entity | 1 | std::atomic::load | -
 include/crucible/RegistrationSeal.h | std-entity | 2 | std::atomic::store | -
