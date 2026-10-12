@@ -1,0 +1,19 @@
+// The door of <stdlib.h> in this control.  libstdc++ wraps <stdlib.h>: the
+// directive enters the stdlib.h of libstdc++, and that header enters the
+// stdlib.h of the C library through <cstdlib>.  atexit and at_quick_exit are
+// declared in the stdlib.h of the C library, and the door admits each one.
+
+#include <stdlib.h>
+
+namespace probe {
+
+void on_exit_hook() noexcept {}
+
+int register_exit_hooks() {
+    if (::atexit(&on_exit_hook) != 0) {
+        return -1;
+    }
+    return ::at_quick_exit(&on_exit_hook);
+}
+
+}  // namespace probe

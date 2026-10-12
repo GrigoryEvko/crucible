@@ -396,7 +396,12 @@
 //     door_closure).  The closure follows only the directives of the headers
 //     of the C library, so the closure of a door header of libstdc++, such as
 //     <contracts> of src/foundation/ContractHandler.cpp, is that header
-//     alone.  A header that a different door row names is not in
+//     alone.  libstdc++ wraps some headers of the C library, such as
+//     <stdlib.h>: the directive enters the wrapper, and the wrapper enters
+//     the header of the C library through <cstdlib>.  So the closure also
+//     starts at the header of the C library that a door row of the file
+//     names, when the unit entered it.  A header that a different door row
+//     names is not in
 //     the closure, and the closure does not go through it: SIGSTKSZ of
 //     <signal.h> calls sysconf of <unistd.h>, and that call stays a
 //     finding.  The plugin reads the file of the first declaration of a

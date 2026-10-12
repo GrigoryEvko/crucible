@@ -2,8 +2,12 @@
 # its own door header, so it has no finding in the mode error (THE DOOR
 # ADMISSION of utils/tools/quarantine/plugin.h).  Two headers of libstdc++
 # enter <signal.h> and the header of sigset_t before the door file includes
-# <signal.h>, and the door still admits each declaration.  The plant
-# plant-door-admission shows the findings that stay.
+# <signal.h>, and the door still admits each declaration.  The door of
+# <stdlib.h> includes a header that libstdc++ wraps, and the closure starts at
+# the stdlib.h of the C library, so the door admits atexit and at_quick_exit.
+# The plant plant-door-admission shows the findings that stay.
 
 compile door src/fixy/SignalDoor.cpp mode=error out=no
 exit door pass
+compile exit-door src/fixy/ExitDoor.cpp mode=error out=no
+exit exit-door pass

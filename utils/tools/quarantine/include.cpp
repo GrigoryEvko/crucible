@@ -536,9 +536,14 @@ bool is_header_of_other_door(const FileEntry& file, const FileEntry& door_file) 
 // ADMISSION of plugin.h): each header, and each file that a directive of a
 // file of the closure names.  The walk resolves a directive as libcpp does,
 // also a directive that an include guard stopped, and it does not go into a
-// header of a different door.  The closure keeps the count of the directives
-// that it read, and a new directive builds it again.  Complexity: O(the
-// directives of the closure times the search chain), one time for each count.
+// header of a different door.  libstdc++ wraps some headers of the C
+// library, such as <stdlib.h>: the directive of the door file enters the
+// wrapper, and the wrapper enters the header of the C library through a
+// header of libstdc++.  So the closure also starts at the header of the C
+// library that each door row of DOOR_FILE names, when the unit entered it.
+// The closure keeps the count of the directives that it read, and a new
+// directive builds it again.  Complexity: O(the directives of the closure
+// times the search chain), one time for each count.
 const std::unordered_set<const FileEntry*>& door_closure(const FileEntry& door_file,
                                                          const std::vector<const FileEntry*>& entries) {
     DoorClosure& closure = state.door_closures[&door_file];
@@ -550,6 +555,16 @@ const std::unordered_set<const FileEntry*>& door_closure(const FileEntry& door_f
     for (const FileEntry* entry : entries) {
         if (closure.files.insert(entry).second) {
             frontier.push_back(entry);
+        }
+    }
+    const std::string& library = c_library_directory();
+    for (const DoorRow& door : state.table.doors) {
+        if (library.empty() || door.owner != door_file.relative) {
+            continue;
+        }
+        auto wrapped = state.entries.find(library + "/" + door.header);
+        if (wrapped != state.entries.end() && closure.files.insert(&wrapped->second).second) {
+            frontier.push_back(&wrapped->second);
         }
     }
     while (!frontier.empty()) {
