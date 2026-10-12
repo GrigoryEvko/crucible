@@ -5,15 +5,19 @@
 # and the configure must stop.  A ccache link must resolve to the compiler
 # that ccache runs.
 #
-# The compiler of the build must pass every probe.  Eight stub compilers in
+# The compiler of the build must pass every probe.  Ten stub compilers in
 # WORK must each get the result that their behaviour calls for:
 #   - A stub that accepts every file stands for a compiler without the
 #     contract fix.  The probes must refuse it.
 #   - A stub that refuses every file with a different error stands for a
 #     broken compiler.  The probes must refuse it.
-#   - A stub that prints the contract diagnostic of the patched compiler but
-#     gives the exit status 0 must be refused, because a warning is not a
-#     refusal.
+#   - A stub that writes the contract error of the patched compiler to its
+#     SARIF log but gives the exit status 0 must be refused, because a
+#     warning is not a refusal.
+#   - A stub with the contract diagnostic as a note in its log, and a stub
+#     that prints the contract error and writes no log, must be refused.  The
+#     contract probe reads the kind and the message of a result of the log,
+#     and no text output.
 #   - A stub that has the contract fix but refuses the memchr probe stands
 #     for a compiler without the memchr fix.  The probes must refuse it.
 #   - A stub that writes a SARIF log without the constraint line stands for
@@ -36,6 +40,13 @@ file(MAKE_DIRECTORY "${WORK}")
 
 set(contract_error
   "contract_cache.cpp:6:22: error: call to consteval function 'held_value(42)' is not a constant expression")
+# The SARIF log of the contract probe.  The JSON escape ' is a quote,
+# because the shell of a stub writes the log inside single quotes.
+set(contract_log
+  "{\"runs\": [{\"results\": [{\"ruleId\": \"error\", \"message\": {\"text\": \"call to consteval function \\u0027held_value(42)\\u0027 is not a constant expression\"}}]}]}")
+# The log of a compiler that gives the error only as a note.
+set(contract_note_log
+  "{\"runs\": [{\"results\": [{\"ruleId\": \"note\", \"message\": {\"text\": \"call to consteval function \\u0027held_value(42)\\u0027 is not a constant expression\"}}]}]}")
 set(memchr_error "memchr_offset.cpp:19:37: error: static assertion failed")
 set(sarif_error "sarif_context.cpp:16:19: error: no matching function for call to 'use(int)'")
 set(events_error "plugin_events.cpp:23:22: error: 'PLUGIN_EXPLICIT_INSTANTIATION_text' was not declared in this scope")
@@ -66,20 +77,31 @@ endfunction()
 sarif_case(patched_sarif_case "${sarif_with_context}")
 sarif_case(unpatched_sarif_case "${sarif_without_context}")
 
+# The line of a stub that refuses the contract probe, writes the log LOG and
+# gives the exit status STATUS.
+function(contract_case out_var log status)
+  set(${out_var}
+      "*contract_cache.cpp) echo \"${contract_error}\" >&2; printf '%s\\n' '${log}' > \"$sarif\"; exit ${status} ;;\n"
+      PARENT_SCOPE)
+endfunction()
+contract_case(patched_contract_case "${contract_log}" 1)
+contract_case(warned_contract_case "${contract_log}" 0)
+contract_case(noted_contract_case "${contract_note_log}" 1)
+
 write_stub(accepts_all "exit 0\n")
 write_stub(refuses_all "echo 'probe.cpp:1:1: error: unrelated' >&2\nexit 1\n")
-write_stub(warns_only
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2 ;;\n${patched_sarif_case}esac\nexit 0\n")
-write_stub(lacks_memchr_fix
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*memchr_offset.cpp) echo \"${memchr_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
-write_stub(lacks_sarif_fix
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${unpatched_sarif_case}esac\nexit 0\n")
-write_stub(lacks_plugin_events
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*plugin_events.cpp) echo \"${events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
-write_stub(lacks_direct_events
-  "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n*plugin_events.cpp) echo \"${slots_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
-write_stub(acts_patched
+write_stub(warns_only "case \"$probe\" in\n${warned_contract_case}${patched_sarif_case}esac\nexit 0\n")
+write_stub(notes_only "case \"$probe\" in\n${noted_contract_case}${patched_sarif_case}esac\nexit 0\n")
+write_stub(prints_only
   "case \"$probe\" in\n*contract_cache.cpp) echo \"${contract_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_memchr_fix
+  "case \"$probe\" in\n${patched_contract_case}*memchr_offset.cpp) echo \"${memchr_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_sarif_fix "case \"$probe\" in\n${patched_contract_case}${unpatched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_plugin_events
+  "case \"$probe\" in\n${patched_contract_case}*plugin_events.cpp) echo \"${events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_direct_events
+  "case \"$probe\" in\n${patched_contract_case}*plugin_events.cpp) echo \"${slots_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(acts_patched "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}esac\nexit 0\n")
 
 function(expect_pass cxx label)
   crucible_patched_gcc_problem("${cxx}" problem)
@@ -129,6 +151,8 @@ expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${memchr_
 expect_refusal("${WORK}/accepts_all" "a stub that accepts every file" "${sarif_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${sarif_reason}")
 expect_refusal("${WORK}/warns_only" "a stub that only warns" "${contract_reason}")
+expect_refusal("${WORK}/notes_only" "a stub that gives the contract error only as a note" "${contract_reason}")
+expect_refusal("${WORK}/prints_only" "a stub that prints the contract error and writes no log" "${contract_reason}")
 expect_refusal("${WORK}/lacks_memchr_fix" "a stub without the memchr fix" "${memchr_reason}")
 expect_refusal("${WORK}/lacks_sarif_fix" "a stub without the SARIF fix" "${sarif_reason}")
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${events_reason}")

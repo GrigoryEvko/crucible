@@ -94,23 +94,61 @@ function(crucible_sarif_has_constraint_context sarif out_var)
   endforeach()
 endfunction()
 
+# Set OUT_VAR to TRUE if the file SARIF holds a SARIF log with a result of the
+# kind error and a message that the regular expression PATTERN matches.  Set
+# it to FALSE if the file is missing, is not JSON, or has no such result.  The
+# walk is O(results) of the log of one probe.
+function(crucible_sarif_has_error sarif pattern out_var)
+  set(${out_var} FALSE PARENT_SCOPE)
+  if(NOT EXISTS "${sarif}")
+    return()
+  endif()
+  file(READ "${sarif}" log)
+  string(JSON result_count ERROR_VARIABLE problem LENGTH "${log}" runs 0 results)
+  if(problem OR result_count EQUAL 0)
+    return()
+  endif()
+  math(EXPR last_result "${result_count} - 1")
+  foreach(result RANGE ${last_result})
+    string(JSON rule ERROR_VARIABLE problem GET "${log}" runs 0 results ${result} ruleId)
+    if(problem OR NOT rule STREQUAL "error")
+      continue()
+    endif()
+    string(JSON text ERROR_VARIABLE problem GET "${log}" runs 0 results ${result} message text)
+    if(NOT problem AND text MATCHES "${pattern}")
+      set(${out_var} TRUE PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+endfunction()
+
 # Set OUT_VAR to an empty string if CXX passes every probe.  Otherwise set it to
 # a message that names each missing fix and tells how to build the compiler.
 function(crucible_patched_gcc_problem cxx out_var)
   set(problems "")
+  # A probe that reads a diagnostic reads the SARIF log of its compile, and
+  # not the text output.  The logs go in a directory of the build tree that
+  # the function removes after the checks.
+  set(sarif_directory "${CMAKE_BINARY_DIR}/CMakeFiles/crucible-sarif-probe")
+  file(REMOVE_RECURSE "${sarif_directory}")
+  file(MAKE_DIRECTORY "${sarif_directory}")
 
   # The patched compiler refuses the second call of a consteval function
   # whose precondition fails.  The stock compiler accepts the file.
-  crucible_run_gcc_probe("${cxx}" contract_cache.cpp exit_code probe_output)
-  set(expected "call to consteval function .held_value\\(42\\). is not a constant expression")
-  if(exit_code EQUAL 0 OR NOT probe_output MATCHES "${expected}")
+  set(sarif "${sarif_directory}/contract_cache.sarif")
+  crucible_run_gcc_probe("${cxx}" contract_cache.cpp exit_code probe_output
+                         "-fdiagnostics-add-output=sarif:file=${sarif}")
+  crucible_sarif_has_error("${sarif}" "^call to consteval function .held_value\\(42\\). is not a constant expression$"
+                           has_contract_error)
+  if(exit_code EQUAL 0 OR NOT has_contract_error)
     string(APPEND problems "\n- The fix for the constexpr cache of contracts")
     string(APPEND problems " (utils/toolchain/gcc/patches/0001-*.patch) is missing.")
     string(APPEND problems "  That compiler can keep the result of a constexpr call that")
     string(APPEND problems " violates a contract, and the pre() and post() clauses of the call")
     string(APPEND problems " then have no effect in a constant evaluation.")
     string(APPEND problems "  The probe cmake/probes/contract_cache.cpp gave the exit status")
-    string(APPEND problems " '${exit_code}' and this output:\n${probe_output}")
+    string(APPEND problems " '${exit_code}', and its SARIF log has no error for the call held_value(42).")
+    string(APPEND problems "  The output:\n${probe_output}")
   endif()
 
   # The patched compiler accepts four static_asserts on a string search from
@@ -128,11 +166,7 @@ function(crucible_patched_gcc_problem cxx out_var)
 
   # The patched compiler refuses the probe, and its SARIF log holds the
   # constraint chain of the error.  The stock compiler writes that chain only
-  # to its text output.  The log goes in a directory of the build tree that
-  # the function removes after the check.
-  set(sarif_directory "${CMAKE_BINARY_DIR}/CMakeFiles/crucible-sarif-probe")
-  file(REMOVE_RECURSE "${sarif_directory}")
-  file(MAKE_DIRECTORY "${sarif_directory}")
+  # to its text output.
   set(sarif "${sarif_directory}/sarif_context.sarif")
   crucible_run_gcc_probe("${cxx}" sarif_context.cpp exit_code probe_output
                          "-fdiagnostics-add-output=sarif:file=${sarif}")
