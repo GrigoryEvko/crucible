@@ -200,7 +200,6 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fe::Computation,
     ^^fe::detail::AtomField,
     ^^fe::detail::conveys_authority,
-    ^^fe::detail::conveys_authority_directly,
     ^^fe::detail::conveys_authority_listed,
     ^^fe::detail::effect_row_to_at,
     ^^fe::detail::extract_admits_payload,

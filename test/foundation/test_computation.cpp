@@ -196,11 +196,10 @@ void computation_runs_at_run_time() {
 
 // The authority relation, read over complete types.
 //
-// The check file of Computation.h pins the same property against forward
-// declarations, which is all a partial specialization needs to match.  Here every
-// named type is complete, so a declaration that drifted away from its
-// definition would show up as a mismatch rather than as a silent
-// non-match that admits the payload.
+// The check file of Computation.h pins the kinds that the header names.
+// A permission token conveys an authority by its annotation, and the gate
+// reads an annotation only on a complete class, so the cells of the two
+// tokens are here, where Permission.h defines them.
 namespace authority_relation {
 
 namespace fp = ::foundation::permissions;

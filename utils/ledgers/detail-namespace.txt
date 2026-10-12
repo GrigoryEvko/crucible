@@ -33,7 +33,7 @@ test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail
 test/fixy/test_armed_roster.cpp | detail-use | 6 | namespace-scope: fixy::mach::detail | names each armed predicate of the machine transitions
 test/fixy/test_armed_roster.cpp | detail-use | 10 | namespace-scope: fixy::session::detail | names each armed predicate of the session core and the crash walk
 test/fixy/test_armed_roster.cpp | detail-use | 24 | namespace-scope: fixy::session::global::detail | names each armed predicate of the global types, the live en-route walk too
-test/fixy/test_armed_roster.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | names each armed predicate of the effects layer
+test/fixy/test_armed_roster.cpp | detail-use | 4 | namespace-scope: foundation::effects::detail | names each armed predicate of the effects layer
 test/fixy/test_armed_roster.cpp | detail-use | 8 | namespace-scope: foundation::permissions::detail | names each armed predicate of the permissions layer
 test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_axis_has_a_name(): fixy::atom::detail | tests the roster and lift helpers of the atoms
 test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_axis_is_an_enumerator(): fixy::atom::detail | tests the roster and lift helpers of the atoms
@@ -43,7 +43,7 @@ test/fixy/test_atom.cpp | detail-use | 59 | namespace-scope: fixy::atom::detail 
 test/fixy/test_collision.cpp | detail-use | 15 | namespace-scope: fixy::collision::detail | tests each collision predicate on its own
 test/fixy/test_contexts.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | pins each context witness to the context it stands for
 test/fixy/test_forgeable_proofs.cpp | detail-use | 1 | main(): foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
-test/fixy/test_forgeable_proofs.cpp | detail-use | 24 | namespace-scope: foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp | detail-use | 23 | namespace-scope: foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
 test/fixy/test_fp_polynomial.cpp | detail-use | 1 | (anonymous namespace)::box_muller_pair_matches_the_pin(): fixy::fp::detail | reads the pinned Box-Muller pair of the polynomial header
 test/fixy/test_os_numa_placement.cpp | detail-use | 1 | (anonymous namespace)::policy_at(void*): fixy::detail | sizes a probe mask with the node-mask constants of the layer
 test/fixy/test_os_numa_placement.cpp | detail-use | 2 | namespace-scope: fixy::detail | sizes a probe mask with the node-mask constants of the layer

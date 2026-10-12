@@ -48,6 +48,8 @@ namespace armed_roster_witness {
 struct RegionTag {
     using permission_row = Row<>;
 };
+struct RegionBrand {};
+using RegionToken = fp::Permission<RegionTag, RegionBrand>;
 struct GlobalTag {};
 struct Plain {
     int value = 0;
@@ -55,9 +57,7 @@ struct Plain {
 struct HoldsCapability {
     fe::Capability<Effect::IO, fe::Bg> held;
 };
-struct DeclaresAuthority {
-    static constexpr bool conveys_authority = true;
-};
+struct[[= ::foundation::linear::authority{}]] DeclaresAuthority {};
 struct Pusher {
     bool try_push(int) noexcept { return true; }
 };
@@ -199,20 +199,14 @@ struct foundation::contracts::armed_cell<fe::detail::is_computation> {
 
 template <>
 struct foundation::contracts::armed_cell<fe::detail::conveys_authority_listed> {
-    using accepts = witnesses<fe::Capability<Effect::IO, fe::Bg>, fp::Permission<w::RegionTag>, w::BgCtx,
-                              fe::Computation<Row<Effect::Bg>, int>>;
-    using refuses = witnesses<int, fe::Computation<Row<>, int>, w::DeclaresAuthority>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<fe::detail::conveys_authority_directly> {
-    using accepts = witnesses<fe::Capability<Effect::IO, fe::Bg>, w::DeclaresAuthority>;
-    using refuses = witnesses<int, w::Plain, w::HoldsCapability>;
+    using accepts = witnesses<fe::Capability<Effect::IO, fe::Bg>, w::BgCtx, fe::Computation<Row<Effect::Bg>, int>>;
+    using refuses = witnesses<int, fe::Computation<Row<>, int>, w::DeclaresAuthority, w::RegionToken>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<fe::detail::conveys_authority> {
-    using accepts = witnesses<w::HoldsCapability, std::tuple<int, fe::Capability<Effect::IO, fe::Bg>>>;
+    using accepts = witnesses<w::HoldsCapability, std::tuple<int, fe::Capability<Effect::IO, fe::Bg>>,
+                              w::DeclaresAuthority, w::RegionToken>;
     using refuses = witnesses<int, w::Plain, std::tuple<int, double>>;
 };
 

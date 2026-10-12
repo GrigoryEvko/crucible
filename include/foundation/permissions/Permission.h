@@ -47,6 +47,7 @@
 // fixy/Federation.h defines.
 
 #include <foundation/Brand.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -861,8 +862,10 @@ private:
 // defeats forward-declare-and-specialize as a way of avoiding this
 // header.
 
+// The annotation authority tells the gate of foundation/effects/Computation.h
+// that a token is the authority to touch a region.
 template <typename Tag, typename Brand>
-class [[nodiscard]] Permission {
+class [[nodiscard]][[= ::foundation::linear::authority{}]] Permission {
     static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
                                       "(see PermissionTag concept above).  Pointers, references, "
                                       "primitives, enums, unions, and stateful classes are rejected. "
@@ -1212,8 +1215,10 @@ template <typename... Args>
                                          detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>
 mint_permission_share(Args&&...) noexcept;
 
+// A share is the authority to read a region, so it carries the annotation
+// authority too.
 template <typename Tag, typename Brand>
-class [[nodiscard]] SharedPermission {
+class [[nodiscard]][[= ::foundation::linear::authority{}]] SharedPermission {
     static_assert(::foundation::brand::IsBrand<Brand>, "SharedPermission<Tag, Brand>: Brand must be an empty class "
                                                        "type: the closure of a mint's fresh lambda, or DefaultBrand.");
 

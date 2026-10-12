@@ -174,7 +174,7 @@ include/foundation/permissions/PermissionFork.h | open-read | 1 | foundation::pe
 include/foundation/permissions/PermissionFork.h | open-read | 1 | foundation::permissions::has_split_pack_authoring_witness_v | the witness of a split manifest, an extension point by design, and the rule splits-orphan admits each specialization only beside the tags that it names
 include/foundation/permissions/ReadView.h | open-read | 1 | foundation::reflect::any_component_satisfies | -
 test/fixy/test_armed_roster.cpp | outside-home | 1 | fixy::concurrent::is_stage_inline_safe | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
-test/fixy/test_armed_roster.cpp | outside-home | 69 | foundation::contracts::armed_cell | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
+test/fixy/test_armed_roster.cpp | outside-home | 68 | foundation::contracts::armed_cell | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_armed_roster.cpp | outside-home | 17 | foundation::contracts::armed_instances | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_atom.cpp | outside-home | 1 | fixy::atom::stdio::write | the attack test specializes an atom for a private stream, to prove that the binding refuses a specialized atom
 test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_band_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery

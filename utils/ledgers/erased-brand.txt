@@ -76,7 +76,7 @@ test/fixy/row_hash_census.h | erased-brand | 1 | foundation::permissions::ReadVi
 test/fixy/row_hash_census.h | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/fixy/row_hash_census.h | erased-brand | 1 | foundation::permissions::SharedPermissionGuard | -
 test/fixy/row_hash_census.h | erased-brand | 1 | foundation::permissions::SharedPermissionPool | -
-test/fixy/test_armed_roster.cpp | erased-brand | 3 | foundation::permissions::Permission | -
+test/fixy/test_armed_roster.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/fixy/test_armed_roster.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/fixy/test_armed_roster.cpp | erased-brand | 2 | foundation::permissions::SharedPermission | -
 test/fixy/test_borrowed.cpp | erased-brand | 6 | fixy::Borrowed | -
@@ -157,8 +157,6 @@ test/layer/checks/fixy/ScopedView.cpp | erased-brand | 6 | fixy::ScopedView | -
 test/layer/checks/fixy/SharedRegion.cpp | erased-brand | 1 | fixy::SharedRead | -
 test/layer/checks/fixy/os/Mmap.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPlacement | -
-test/layer/checks/foundation/effects/Computation.cpp | erased-brand | 2 | foundation::permissions::Permission | -
-test/layer/checks/foundation/effects/Computation.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 32 | foundation::permissions::Permission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 13 | foundation::permissions::SharedPermission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 5 | foundation::permissions::SharedPermissionGuard | -

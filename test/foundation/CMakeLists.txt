@@ -589,6 +589,13 @@ foundation_neg_compile_test(neg_computation_extract_permission_payload
   "constraints not satisfied"
   "extract_admits_payload_v<T> .with T = foundation::permissions::Permission")
 
+# The gate reads the annotation authority on a complete class.  A unit
+# that only declares Permission cannot answer, so the gate stops the build.
+foundation_neg_compile_test(neg_computation_extract_declared_specialization
+  "uncaught exception of type .std::meta::exception."
+  "the payload names a specialization with no definition"
+  "Phantom<foundation::permissions::Permission<")
+
 # Two more, for a carrier that no list names.  The first holds a
 # capability in a member of a plain class, which the walk over
 # components reads.  The second is a lambda with a capture, which the

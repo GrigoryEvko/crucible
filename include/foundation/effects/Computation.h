@@ -25,15 +25,12 @@
 // built only by the witnessed mint, which reads the row of a context, or
 // by a member that keeps or widens a row the value already had.
 
+#include <foundation/Linear.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-// Forward declarations only, for the authority relation below. Permission
-// carries a defaulted Brand parameter, so it has to be named through the
-// header that declares it rather than redeclared here.
-#include <foundation/permissions/Fwd.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
@@ -107,16 +104,17 @@ struct is_computation : std::false_type {};
 // admitted extract and handed out an IO capability.  The mechanism
 // checked one thing and the sentence generalised it to every payload.
 //
-// So the relation is stated positively, and the set is enumerated here
-// in one place rather than assumed empty.  Three kinds convey authority:
+// So the relation is stated positively, and it has two sources.  This
+// header enumerates the kinds of this layer:
 //
 //   * a capability, which IS the authority to perform an effect;
-//   * a permission token, exclusive or shared, which is the authority to
-//     touch a region;
 //   * an execution context, which holds a capability member and would
-//     hand that capability out with itself.
+//     hand that capability out with itself;
+//   * a nested Computation, when its own row is engaged.
 //
-// A nested Computation conveys authority when its own row is engaged.
+// Each other kind carries the annotation authority of
+// foundation/Linear.h, as the exclusive and the shared permission token
+// do.  So this header names no kind of a higher layer.
 //
 // Those are the kinds that convey authority by themselves.  A payload
 // conveys authority when one of them is a component of it, read by the
@@ -134,36 +132,32 @@ struct is_computation : std::false_type {};
 // captures a capability would otherwise leave through extract as a
 // plain value.
 //
-// A type outside the list says so itself by carrying
-// `static constexpr bool conveys_authority = true;`, the same opt-in
-// shape GradedTrait.h uses for value_type_decoupled.
+// The annotation is a fact of a complete class.  The walk reaches some
+// classes through a pointer, a reference or a template argument, and it
+// reads no member of them.  The gate instantiates such a specialization
+// first, so that it can read the annotation.  A specialization with no
+// definition stops the build, because the gate cannot say what it
+// conveys, and two units must not give two answers.  A class that is not
+// a specialization and that the unit only declares conveys nothing, so a
+// tag that no unit defines stays admitted.
 //
 // The residual, stated rather than papered over.  The walk does not see
 // a value behind type erasure, as in std::function or std::any, or a
 // member of a specialization that it reaches only through a pointer or a
-// template argument.  TypeComponents.h states both.  Inert payloads are
+// template argument.  TypeComponents.h states both.  The gate also does
+// not see the annotation of a class that is not a specialization and that
+// the unit only declares.  Inert payloads are
 // the common case, and a refusal of each unknown type would make extract
 // unusable rather than safe, so a type the walk reads in full and finds
 // no authority in is admitted.
 
-template <typename T>
-concept DeclaresConveysAuthority = requires {
-    { T::conveys_authority } -> std::convertible_to<const bool&>;
-} && T::conveys_authority;
-
-// The enumerated kinds alone, without the opt-in member.  The walk asks
-// this of a node whose members it may not read.
+// The enumerated kinds.  They match by partial specialization, which
+// instantiates nothing.
 template <typename T>
 struct conveys_authority_listed : std::false_type {};
 
 template <Effect Cap, class Source>
 struct conveys_authority_listed<Capability<Cap, Source>> : std::true_type {};
-
-template <typename Tag, typename Brand>
-struct conveys_authority_listed<::foundation::permissions::Permission<Tag, Brand>> : std::true_type {};
-
-template <typename Tag, typename Brand>
-struct conveys_authority_listed<::foundation::permissions::SharedPermission<Tag, Brand>> : std::true_type {};
 
 template <class Cap, class R>
 struct conveys_authority_listed<ExecCtx<Cap, R>> : std::true_type {};
@@ -171,28 +165,49 @@ struct conveys_authority_listed<ExecCtx<Cap, R>> : std::true_type {};
 template <typename T>
 inline constexpr bool conveys_authority_listed_v = conveys_authority_listed<T>::value;
 
-// The enumerated kinds and the opt-in member together.
-template <typename T>
-struct conveys_authority_directly : std::bool_constant<conveys_authority_listed_v<T> || DeclaresConveysAuthority<T>> {};
-
-template <typename T>
-inline constexpr bool conveys_authority_directly_v = conveys_authority_directly<T>::value;
-
-// The opt-in member is read only where the walk may read members.  A
-// read elsewhere would instantiate a specialization that the walk
-// reached through an argument or a pointer, and TypeComponents.h
-// promises no such instantiation.  The enumerated kinds match by
-// partial specialization, which instantiates nothing.
-[[nodiscard]] consteval bool node_conveys_authority(::foundation::reflect::TypeNode node) {
+// True when the node is an enumerated kind, or a class whose state the
+// walk cannot read.  The query instantiates nothing.
+[[nodiscard]] consteval bool node_is_listed_authority(::foundation::reflect::TypeNode node) {
     if (::foundation::reflect::holds_unreadable_state(node)) return true;
-    const std::meta::info trait = node.may_read_members ? ^^conveys_authority_directly_v : ^^conveys_authority_listed_v;
-    return std::meta::extract<bool>(std::meta::substitute(trait, {node.type}));
+    return std::meta::extract<bool>(std::meta::substitute(^^conveys_authority_listed_v, {node.type}));
 }
 
+// True when the node is a class that carries the annotation authority.
+// The query instantiates a class template specialization.
+[[nodiscard]] consteval bool node_carries_authority(::foundation::reflect::TypeNode node) {
+    const std::meta::info type = node.type;
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    if (!node.may_read_members) {
+        // A class that is not a specialization and that this unit does not
+        // define is a tag in most payloads, and it conveys nothing here.
+        if (!std::meta::has_template_arguments(type)) {
+            if (!std::meta::is_complete_type(type)) return false;
+        } else if (!std::meta::is_complete_type(type)) {
+            // The completeness query instantiates the specialization, and
+            // it answers false for a template with no definition here.
+            throw std::meta::exception(u8"Computation: the payload names a specialization with no definition, so "
+                                       u8"the gate cannot read whether it conveys an authority.  Include the header "
+                                       u8"that defines its template.",
+                                       type);
+        }
+    }
+    return ::foundation::linear::carries_annotation(type, ^^::foundation::linear::authority);
+}
+
+// Two walks.  The first reads the enumerated kinds and instantiates
+// nothing.  The second reads the annotation, and it instantiates each
+// specialization that it reaches.  The first walk answers for a payload
+// that names an enumerated kind, so the second walk does not instantiate
+// a carrier of a class that the unit only declares.
 template <typename T>
 struct conveys_authority
-    : std::bool_constant<::foundation::reflect::any_component_satisfies<
-          [](::foundation::reflect::TypeNode node) consteval { return node_conveys_authority(node); }>(^^T)> {};
+    : std::bool_constant<
+          ::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+              return node_is_listed_authority(node);
+          }>(^^T)
+          || ::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+                 return node_carries_authority(node);
+             }>(^^T)> {};
 
 template <typename T>
 inline constexpr bool conveys_authority_v = conveys_authority<std::remove_cvref_t<T>>::value;
@@ -421,12 +436,6 @@ struct is_computation<Computation<R, T>> : std::true_type {};
 // reads it, which is what keeps a stack of carriers from laundering one.
 template <typename R, typename U>
 struct conveys_authority_listed<Computation<R, U>> : std::bool_constant<(::foundation::effects::row_size(^^R) != 0)> {};
-
-// A Computation declares no opt-in member, so its answer is the row
-// alone.  This keeps the walk from a member lookup that instantiates
-// the carrier.
-template <typename R, typename U>
-struct conveys_authority_directly<Computation<R, U>> : conveys_authority_listed<Computation<R, U>> {};
 }  // namespace detail
 
 #define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)                                                   \

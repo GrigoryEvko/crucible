@@ -271,16 +271,13 @@ static_assert(
 
 static_assert(detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<>, Computation<Row<>, int>>>>);
 
-// The three authority kinds the relation enumerates.  Each reaches the
+// The two authority kinds that this header enumerates.  Each reaches the
 // relation through its own specialization, so each needs its own cell.
-// A repair that covered only the capability would satisfy the first
-// line and leave the other two open.
-
-struct AuthorityProbeTag {};
+// A permission token conveys an authority by its annotation, and the
+// cells of the two tokens are in test/foundation/test_computation.cpp,
+// where the tokens are complete.
 
 static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg>>);
-static_assert(!detail::extract_admits_payload_v<::foundation::permissions::Permission<AuthorityProbeTag>>);
-static_assert(!detail::extract_admits_payload_v<::foundation::permissions::SharedPermission<AuthorityProbeTag>>);
 static_assert(!detail::extract_admits_payload_v<ExecCtx<Bg, Row<Effect::Bg>>>);
 
 // And each one through a pure carrier.  The row is empty and the
@@ -288,8 +285,6 @@ static_assert(!detail::extract_admits_payload_v<ExecCtx<Bg, Row<Effect::Bg>>>);
 // it.
 
 static_assert(!detail::extract_admits_payload_v<Computation<Row<>, Capability<Effect::IO, Bg>>>);
-static_assert(
-    !detail::extract_admits_payload_v<Computation<Row<>, ::foundation::permissions::Permission<AuthorityProbeTag>>>);
 static_assert(!detail::extract_admits_payload_v<Computation<Row<>, ExecCtx<Bg, Row<Effect::Bg>>>>);
 
 // A carrier the list does not name conveys what it holds.  The walk
@@ -324,21 +319,28 @@ inline constexpr auto captures_nothing = [] { return 7; };
 static_assert(!detail::extract_admits_payload_v<decltype(captures_an_int)>);
 static_assert(detail::extract_admits_payload_v<decltype(captures_nothing)>);
 
-// The opt-in escape, for a type that conveys authority without being
-// nameable here.  Declaring the member false is not a way out of the
-// enumerated list, and declaring nothing is the admitting default the
-// residual comment above describes.
+// A type of a different layer conveys an authority by the annotation
+// authority of foundation/Linear.h.  A class with no annotation is the
+// admitting default that the residual comment of the header describes.
 
-struct DeclaredAuthority {
-    static constexpr bool conveys_authority = true;
-};
+struct[[= ::foundation::linear::authority{}]] DeclaredAuthority {};
 static_assert(!detail::extract_admits_payload_v<DeclaredAuthority>);
 static_assert(!detail::extract_admits_payload_v<Computation<Row<>, DeclaredAuthority>>);
 
 struct DeclaresNoAuthority {
-    static constexpr bool conveys_authority = false;
+    int count = 0;
 };
 static_assert(detail::extract_admits_payload_v<DeclaresNoAuthority>);
+
+// The walk reaches a specialization through a pointer and reads none of
+// its members.  The gate completes the specialization, so the annotation
+// of a class that the payload names only through a pointer still counts.
+template <class T>
+struct[[= ::foundation::linear::authority{}]] AuthorityTemplate {
+    T held{};
+};
+static_assert(!detail::extract_admits_payload_v<AuthorityTemplate<int>*>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<>, AuthorityTemplate<int> const*>>);
 
 // Only the admitting direction is witnessed through a requires
 // expression.  GCC 16 turns a failed constraint inside the body of a

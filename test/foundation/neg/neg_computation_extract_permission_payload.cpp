@@ -4,8 +4,9 @@
 // foundation/effects/Computation.h.
 //
 // Fixture 1 covers a capability.  This one covers the second authority
-// kind, a permission token, which reaches the relation through its own
-// specialization.  The two fixtures are separate because a relation that
+// kind, a permission token, which reaches the relation through the
+// annotation authority of foundation/Linear.h.  The two fixtures are
+// separate because a relation that
 // enumerated only capabilities would satisfy fixture 1 and leave this
 // shape open: a pure-typed carrier would still hand out the authority to
 // touch a region.
