@@ -9,7 +9,8 @@
 # compile budgets then see the unit.
 #
 # The object takes the flags of the foundation library in each build: it
-# links crucible_dialect and it is position-independent, as foundation is.
+# links crucible_dialect, and the root CMakeLists.txt makes each library of
+# the tree position-independent.
 # Each preset then compiles the two functions of a pair with its own level,
 # target, sanitizer, hardening flags and contract semantic, and the rule
 # compares the pair with the flags of that build.  The rule refuses a probe
@@ -26,4 +27,3 @@ endif()
 add_library(core_shape_probes OBJECT core_shapes.cpp)
 target_include_directories(core_shape_probes PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(core_shape_probes PRIVATE crucible_dialect)
-set_target_properties(core_shape_probes PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -72,7 +72,7 @@ def build_cases(expect: testing.Expect) -> None:
             headings_of(lines) == list(HEADINGS) and not any("cannot be read" in line for line in lines),
         )
     # A build of only some targets holds only some linked files.
-    made = next((path for _, path in context.linked_artifacts() if path.is_file()), None)
+    made = next((item.path for item in context.linked_artifacts() if item.path.is_file()), None)
     program = bom.resolve(context, str(made)) if made is not None else None
     if program is not None:
         lines = bom.bill(context, program, 3)

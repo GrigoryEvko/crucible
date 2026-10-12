@@ -20,8 +20,9 @@ THE BUILD
       * The linked artifacts of the target all: each executable, shared
         library and module with its file in the inputs of all.  The code
         model gives each one, and `ninja -t inputs all` gives the inputs.
-        Each one comes with the first directory of its source directory, or
-        an empty text for the source root
+        Each one comes as a LinkedArtifact with the type of its target.  It
+        also holds the first directory of its source directory, or an empty
+        text for the source root
       * The objects of a target, from `ninja -t inputs TARGET`
       * The compile database (assay.readers.compdb)
       * A variable of the CMake cache.
@@ -58,16 +59,24 @@ THE PLANTS
                                        source directory is DIRECTORY.  The
                                        words of the cell go at the end of the
                                        link line
+        module DIRECTORY NAME UNIT... [| WORD...]
+                                       compile each unit with -fPIC, and link
+                                       the shared library DIRECTORY/NAME of
+                                       the target all with -shared and its
+                                       map, as a program row does
         unit TARGET UNIT | WORD...     a row of the compile database: the
                                        unit, an object of the target TARGET,
                                        with the compiler and the words
         cache NAME VALUE               a variable of the CMake cache
 
-    UNIT is a path relative to the tree.  A word {root} of a unit row or of a
-    program row is the root of the copy.  A row with a different head word is
-    a row of the module of the rule, which reads it from the PlantedBuild.  A
-    plant that the rule refuses must give an error, and a control must give
-    none.
+    UNIT is a path relative to the tree.  A word {root} of a unit row, a
+    program row or a module row is the root of the copy.  A word {cfi} of a
+    flags row is the flag of the control-flow protection of the host
+    (CFI_FLAGS): -fcf-protection=full on x86_64, and
+    -mbranch-protection=standard on aarch64.  A row with a different head
+    word is a row of the module of the rule, which reads it from the
+    PlantedBuild.  A plant that the rule refuses must give an error, and a
+    control must give none.
 
 THE RUN
     A module that judges its findings itself gives judge(rule, context),
@@ -82,6 +91,7 @@ THE RUN
 """
 
 import os
+import platform
 import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -99,7 +109,9 @@ from assay.readers import cmake, compdb, ninja
 
 STATIC_LIBRARY = "STATIC_LIBRARY"
 # The targets with a link line, and the role of a library fragment of that line.
-LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
+EXECUTABLE = "EXECUTABLE"
+MODULE_LIBRARY = "MODULE_LIBRARY"
+LINKED_TYPES = frozenset({EXECUTABLE, "SHARED_LIBRARY", MODULE_LIBRARY})
 LIBRARY_ROLE = "libraries"
 LIBRARY_FLAG = "-l"
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
@@ -109,9 +121,14 @@ PLANTED = "planted"
 # its own, as each build of the tree does.
 FLAGS = ("-std=c++17", "-O1", "-ffunction-sections")
 ROOT_WORD = "{root}"
-# The rows of plant.txt that compile units into a library, and the row of a program (THE PLANTS).
+# The word of a flags row for the control-flow protection, and the flag of each machine of the host (THE PLANTS).
+CFI_WORD = "{cfi}"
+CFI_FLAGS = {"x86_64": "-fcf-protection=full", "aarch64": "-mbranch-protection=standard"}
+# The rows of plant.txt that compile units into a library, and the rows of a linked artifact of all (THE PLANTS).
 LIBRARY_ROWS = frozenset({"library", "archive", "shared"})
 PROGRAM_ROW = "program"
+MODULE_ROW = "module"
+LINKED_ROWS = frozenset({PROGRAM_ROW, MODULE_ROW})
 SKIPPED = meta_runner.SKIPPED
 NotApplicable = meta_runner.NotApplicable
 
@@ -127,13 +144,32 @@ def toolchain_prefix(compiler: str) -> Path:
 
 
 @dataclass(frozen=True, slots=True)
+class LinkedArtifact:
+    """One linked artifact of the target all (THE BUILD).
+
+    `directory` is the first directory of the source directory of its target, or an empty text for the source root.
+    `path` is its file, and `target_type` is the type of its target in the code model: EXECUTABLE, SHARED_LIBRARY or
+    MODULE_LIBRARY.
+    """
+
+    directory: str
+    path: Path
+    target_type: str
+
+    @property
+    def is_executable(self) -> bool:
+        """True for the artifact of a target of the type EXECUTABLE."""
+        return self.target_type == EXECUTABLE
+
+
+@dataclass(frozen=True, slots=True)
 class PlantedBuild:
     """The facts of a build that a test or a plant gives (THE BUILD).
 
     `libraries` gives the archive of each static library of the root by its target name, `targets` gives the objects
     of each target, and `rows` holds each row of plant.txt for the module of the rule.  `link_libraries` gives each
     library of a link line that is not a file of the build directory, and `linked` each linked artifact of the target
-    all with the first directory of its source directory.
+    all.
     """
 
     kind: str = PLANTED
@@ -145,7 +181,7 @@ class PlantedBuild:
     cache: Mapping[str, str] = field(default_factory=dict)
     rows: tuple[rows_grammar.Row, ...] = ()
     link_libraries: tuple[str, ...] = ()
-    linked: tuple[tuple[str, Path], ...] = ()
+    linked: tuple[LinkedArtifact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +235,7 @@ class ElfContext:
         self._tier: str | None = None if planted is None else planted.tier
         self._libraries: dict[str, Path] | None = None if planted is None else dict(planted.libraries)
         self._links: tuple[str, ...] | None = None if planted is None else planted.link_libraries
-        self._linked: tuple[tuple[str, Path], ...] | None = None if planted is None else planted.linked
+        self._linked: tuple[LinkedArtifact, ...] | None = None if planted is None else planted.linked
         self._entries: tuple[compdb.CompileEntry, ...] | None = None if planted is None else planted.entries
         self._objects: dict[str, frozenset[str]] = {} if planted is None else dict(planted.targets)
         self._cache: dict[str, str] | None = None if planted is None else dict(planted.cache)
@@ -341,8 +377,8 @@ class ElfContext:
             self._links = tuple(found)
         return self._links
 
-    def linked_artifacts(self) -> tuple[tuple[str, Path], ...]:
-        """Return each linked artifact of the target all, with the first directory of its source directory (THE BUILD).
+    def linked_artifacts(self) -> tuple[LinkedArtifact, ...]:
+        """Return each linked artifact of the target all (THE BUILD).
 
         The items come in the sequence of their paths.  Complexity: one run of
         `ninja -t inputs all`, and linear in the targets of the code model.
@@ -362,7 +398,7 @@ class ElfContext:
                 raise BuildError(f"ninja does not give the inputs of the target all: {problem}") from None
             model = self.code_model()
             source = Path(model.source).resolve()
-            found: list[tuple[str, Path]] = []
+            found: list[LinkedArtifact] = []
             for target in model.targets:
                 if target.type_name not in LINKED_TYPES or not target.artifacts:
                     continue
@@ -372,8 +408,8 @@ class ElfContext:
                 if not source_dir.is_relative_to(source):
                     raise BuildError(f"the target {target.name} has the source directory {source_dir}, not in {source}")
                 parts = source_dir.relative_to(source).parts
-                found.append((parts[0] if parts else "", Path(target.artifacts[0])))
-            self._linked = tuple(sorted(found, key=lambda item: item[1]))
+                found.append(LinkedArtifact(parts[0] if parts else "", Path(target.artifacts[0]), target.type_name))
+            self._linked = tuple(sorted(found, key=lambda item: item.path))
         return self._linked
 
     def entries(self) -> tuple[compdb.CompileEntry, ...]:
@@ -458,12 +494,40 @@ def manifest_rows(tree: Path) -> tuple[rows_grammar.Row, ...]:
         raise BuildError(f"the plant has no readable {MANIFEST}: {problem}") from None
 
 
+def host_flags(words: Sequence[str]) -> list[str]:
+    """Return the words of a flags row with the flag of CFI_FLAGS for the machine of the host in place of {cfi}.
+
+    Raises:
+        BuildError: If a word is {cfi} and CFI_FLAGS has no flag for the machine of the host
+    """
+    machine = platform.machine()
+    if CFI_WORD in words and machine not in CFI_FLAGS:
+        raise BuildError(f"the plant gives {CFI_WORD}, and the runner has no control-flow flag for {machine}")
+    return [CFI_FLAGS[machine] if word == CFI_WORD else word for word in words]
+
+
+def linked_artifact(row: rows_grammar.Row, tree: Path, build: Path, compiler: str) -> LinkedArtifact:
+    """Link the program or the shared library of a program row or a module row of plant.txt, with its map.
+
+    Raises:
+        BuildError: If the link fails
+    """
+    is_module = row.words[0] == MODULE_ROW
+    artifact = build / row.words[1] / row.words[2]
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    objects = [str(object_of(build, unit, is_module)) for unit in row.words[3:]]
+    words = [word.replace(ROOT_WORD, str(tree)) for cell in row.cells for word in rows_grammar.head_words(cell)]
+    shared = ["-shared"] if is_module else []
+    compiled([compiler, *shared, *objects, "-o", str(artifact), f"-Wl,-Map={artifact}.map", *words], build)
+    return LinkedArtifact(row.words[1], artifact, MODULE_LIBRARY if is_module else EXECUTABLE)
+
+
 def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
     """Build the plant of a copied tree in a scratch build directory, and give its facts (THE PLANTS).
 
     The compiles of the units run at the same time.  Complexity: one compile
-    of each unit, and one run of ar or of the link for each library and each
-    program.
+    of each unit, and one run of ar or of the link for each library, each
+    program and each module.
 
     Raises:
         BuildError: If plant.txt does not obey its schema, or a unit does not compile or link
@@ -480,6 +544,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
         "archive": ("archive NAME UNIT...", 3, (0,)),
         "shared": ("shared NAME UNIT...", 3, (0,)),
         PROGRAM_ROW: ("program DIRECTORY NAME UNIT... [| WORD...]", 4, (0, 1)),
+        MODULE_ROW: ("module DIRECTORY NAME UNIT... [| WORD...]", 4, (0, 1)),
         "unit": ("unit TARGET UNIT | WORD...", 3, (1,)),
     }
     for row in rows:
@@ -487,17 +552,17 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
         if shape is not None and (
             len(row.words) < shape[1]
             or len(row.cells) not in shape[2]
-            or (row.words[0] not in (*LIBRARY_ROWS, PROGRAM_ROW) and len(row.words) != shape[1])
+            or (row.words[0] not in (*LIBRARY_ROWS, *LINKED_ROWS) and len(row.words) != shape[1])
         ):
             raise refused(row, shape[0])
     facts = {row.words[0]: row.words[1] for row in rows if row.words[0] in ("kind", "tier")}
-    flags = next((row.words[1:] for row in rows if row.words[0] == "flags"), FLAGS)
+    flags = host_flags(next((row.words[1:] for row in rows if row.words[0] == "flags"), FLAGS))
     built = [row for row in rows if row.words[0] in LIBRARY_ROWS]
-    programs = [row for row in rows if row.words[0] == PROGRAM_ROW]
+    artifacts = [row for row in rows if row.words[0] in LINKED_ROWS]
     build.mkdir(parents=True, exist_ok=True)
     units = sorted(
         {(unit, row.words[0] == "shared") for row in built for unit in row.words[2:]}
-        | {(unit, False) for row in programs for unit in row.words[3:]}
+        | {(unit, row.words[0] == MODULE_ROW) for row in artifacts for unit in row.words[3:]}
     )
 
     def compile_unit(item: tuple[str, bool]) -> None:
@@ -527,14 +592,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
             archives[name] = library
         else:
             links.append(str(library))
-    linked: list[tuple[str, Path]] = []
-    for row in programs:
-        program = build / row.words[1] / row.words[2]
-        program.parent.mkdir(parents=True, exist_ok=True)
-        objects = [str(object_of(build, unit)) for unit in row.words[3:]]
-        words = [word.replace(ROOT_WORD, str(tree)) for cell in row.cells for word in rows_grammar.head_words(cell)]
-        compiled([compiler, *objects, "-o", str(program), f"-Wl,-Map={program}.map", *words], build)
-        linked.append((row.words[1], program))
+    linked = [linked_artifact(row, tree, build, compiler) for row in artifacts]
     entries: list[compdb.CompileEntry] = []
     targets: dict[str, set[str]] = {}
     for row in (item for item in rows if item.words[0] == "unit"):

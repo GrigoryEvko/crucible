@@ -67,6 +67,7 @@ prop_checked_arith
 prop_expr_pool_intern
 rejections_generated
 test_armed_roster
+test_atom
 test_bench_harness
 test_checked
 test_cipher

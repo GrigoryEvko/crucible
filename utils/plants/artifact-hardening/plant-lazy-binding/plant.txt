@@ -1,0 +1,5 @@
+# A module that the link makes with -z lazy, so the loader binds each symbol at its first call.  The rule reads
+# only the kind bind-now, also for a shared library.
+properties bind-now
+flags -std=c++17 -O1 {cfi}
+module test libplanted.so main.cpp | -Wl,-z,relro -Wl,-z,lazy -Wl,-z,noexecstack

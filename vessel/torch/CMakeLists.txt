@@ -12,7 +12,6 @@ target_link_libraries(crucible_vessel PRIVATE crucible)
 # libstdc++ 16 from the toolchain file, so they agree by construction.
 
 set_target_properties(crucible_vessel PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )
 
@@ -91,7 +90,6 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     endif()
 
     set_target_properties(crucible_dispatch PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
     )
 

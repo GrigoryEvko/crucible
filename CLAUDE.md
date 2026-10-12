@@ -1031,6 +1031,25 @@ Each build type other than Debug also takes `-fharden-compares` and
 injection, and they find no defect in a test. On a heavy translation unit, they
 cost 20% to 46% of the back end.
 
+Each executable of the tree is a position-independent executable (PIE). The
+root `CMakeLists.txt` sets `CMAKE_POSITION_INDEPENDENT_CODE`, so each
+executable compiles with `-fPIE` and links with `-pie`, and each library
+compiles with `-fPIC`. The patched GCC has no `--enable-default-pie`, so the
+configure stops when `check_pie_supported()` cannot link a PIE. Each link takes
+`-z relro`, `-z now` and `-z noexecstack` from `add_link_options()`, also the
+link of a target that does not link `crucible_dialect`. libstdc++ stays a
+shared library with the run path of the toolchain (§XVI).
+
+The rule `artifact-hardening` (`utils/assay/guard/engines/elf/artifact_hardening.py`,
+the test `guard_artifact_hardening`) reads each executable, shared library and
+module of `all`. An executable must be a PIE: the type `ET_DYN` with the bit
+`DF_1_PIE`. Each artifact must have a segment `PT_GNU_RELRO`, immediate binding
+and a segment `PT_GNU_STACK` with no execute bit. On x86_64, it must have the
+bits IBT and SHSTK of the x86 feature property, and on aarch64 the bits BTI and
+PAC. The link removes such a bit when one input object does not have it, and
+the error names each such input from the map of the link. No ledger row admits
+a missing property.
+
 `cmake/CodeFlags.cmake` holds the one definition of each flag of the dialect
 that changes the machine code, and `crucible_dialect` applies its lists. The
 constant-time taint tests and the timing harness of `test/ct` take the same
@@ -2499,6 +2518,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `fixture-quarantine` | The distinct findings of the quarantine plugin in the source of each negative fixture, kind and entity, from the census in the record of its run (§XXII "The ratchet") | Each directory of fixtures with a row of `utils/ledgers/fixture-quarantine.txt` | A count above or below its ledger row, a fixture with a finding and no row, a fixture with the plugin and no census of its run, and a file of the tree that only the compiles of fixtures read | The test `guard_fixture_quarantine` | Test run, after the fixtures |
 | `artifact-symbols` | The imports of each static library of the root, with the provider and the version of each import, for each build kind of `utils/ledgers/artifact-symbols.txt` (§XXII "The doors (R4, R5)"), and the references of each library outside the base to each throw helper of libstdc++ (§XII) | Each library of the ledger | An import with no row, with no provider or with no record that explains it, a row whose import goes, and a count of a throw helper above or below its row | The test `guard_artifact_symbols` | Test run |
 | `artifact-links` | The link facts of each executable, shared library and module of `all`, for each group and each build kind of `utils/ledgers/artifact-links.txt` (§XXII "The doors (R4, R5)") | None | A fact with no row, a row whose fact goes, and a run path directory that the host does not give, which no row admits | The test `guard_artifact_links` | Test run |
+| `artifact-hardening` | The hardening properties of each executable, shared library and module of `all`: PIE, RELRO, immediate binding, a stack that the processor cannot execute and the control-flow protection (§V) | None | Each missing property | The test `guard_artifact_hardening` | Test run |
 | `library-bytes` | The bytes of library code in each static library of the root, from DWARF, against the row of the archive in the configuration of the build (§XXII "The doors (R4, R5)") | A growth over 2 % | A growth over 5 %, or a fall over 2 % | The test `guard_library_bytes` | Test run |
 | `library-code` | The records of library code of each base file, kind and name, from the RTL pass of the quarantine plugin (§XXII "The doors (R4, R5)") | Each directory of the base with rows | A count above or below its row, and a record in a base file that the ledger does not hold | The test `guard_plugin` | Test run |
 | `static-tls` | The bytes of the base thread-local variables of one member of a static library of the root (§XXII "Static TLS (R19)") | 64 bytes | 256 bytes | The test `guard_static_tls` | Test run |

@@ -1,0 +1,5 @@
+# A program that the link makes with -z norelro, so the link writes no segment PT_GNU_RELRO.  The rule reads only
+# the kind relro.
+properties relro
+flags -std=c++17 -O1 -fPIE {cfi}
+program examples planted_tool main.cpp | -pie -Wl,-z,norelro -Wl,-z,now -Wl,-z,noexecstack

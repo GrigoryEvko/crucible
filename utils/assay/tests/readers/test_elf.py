@@ -4,9 +4,10 @@
 line.  Exit 0 when each case holds, else 1.
 
 The planted cases write files with the writer of the module.  The files hold
-sections, symbol tables, relocation tables, version tables, a dynamic section,
-group sections, a segment of the interpreter and archives.  The compile cases use the compiler
-that ASSAY_TEST_CXX names, and the registration of the test in
+sections, symbol tables, relocation tables, version tables and a dynamic
+section.  They also hold group sections, a segment of the interpreter, a
+segment of program properties and archives.  The compile cases use the
+compiler that ASSAY_TEST_CXX names, and the registration of the test in
 test/CMakeLists.txt gives the compiler of the build.  They compile small units,
 link a shared library, and read the files that the compiler gives.
 """
@@ -500,6 +501,36 @@ def file_cases(expect: testing.Expect) -> None:
     expect("the program of this process has an interpreter that exists", found is not None and os.path.isfile(found))
 
 
+def property_cases(expect: testing.Expect) -> None:
+    """Read the program properties of a planted segment PT_GNU_PROPERTY, and refuse a note that is cut (THE PROPERTIES)."""
+    note = elf.property_note([(0xC0000002, struct.pack("<I", 3)), (0xC0010001, struct.pack("<I", 9))])
+    stack = elf.PlantedSegment(elf.PT_GNU_STACK, 6)
+    data = elf.make_file(planted_sections(), segments=[elf.PlantedSegment(elf.PT_GNU_PROPERTY, 4, note), stack])
+    member = elf.Member(data, "planted")
+    found = member.properties()
+    expect(
+        "properties gives each property of the note in its sequence, and word gives its first four bytes",
+        [(item.kind, item.word) for item in found] == [(0xC0000002, 3), (0xC0010001, 9)],
+    )
+    expect(
+        "segments gives each planted segment with its type and its flags",
+        [(item.kind, item.flags) for item in member.segments()] == [(elf.PT_GNU_PROPERTY, 4), (elf.PT_GNU_STACK, 6)],
+    )
+    # A note of the type 0 with no name and no descriptor: its header and the padding to the next multiple of 8.
+    other = elf.make_file(planted_sections(), segments=[elf.PlantedSegment(elf.PT_GNU_PROPERTY, 4, b"\0" * 16)])
+    expect(
+        "a note of a different type gives no property",
+        elf.Member(other, "other").properties() == () and elf.Member(elf.make_file([]), "bare").properties() == (),
+    )
+    expect("a property with fewer than four bytes has the word 0", elf.Property(1, b"\x01").word == 0)
+    cut = elf.make_file(planted_sections(), segments=[elf.PlantedSegment(elf.PT_GNU_PROPERTY, 4, note[:-4])])
+    expect("a note that is cut is refused", refuses(elf.Member(cut, "cut").properties))
+    head = note[: elf.NOTE_LAYOUT.size + len(elf.GNU_NOTE_NAME)]
+    damaged = head[:4] + struct.pack("<I", 16) + head[8:] + struct.pack("<II", 0xC0000002, 64) + bytes(8)
+    torn = elf.make_file(planted_sections(), segments=[elf.PlantedSegment(elf.PT_GNU_PROPERTY, 4, damaged)])
+    expect("a property that is longer than its note is refused", refuses(elf.Member(torn, "torn").properties))
+
+
 def demangle_cases(expect: testing.Expect) -> None:
     """Check demangle(): a mangled name, a plain name, a clone, a standard abbreviation and no name."""
     names = ("_ZN3foo3barEi", "plain_name", "_ZN12_GLOBAL__N_14nameEv.cold", "_ZNKSs4sizeEv", ".text.unlikely._Z1fv")
@@ -650,6 +681,7 @@ def main(argv: list[str]) -> int:
         group_cases,
         archive_cases,
         file_cases,
+        property_cases,
         demangle_cases,
         scope_cases,
         compile_cases,

@@ -348,7 +348,7 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
     linked = context.linked_artifacts()
     if not linked:
         raise runner.NotApplicable("the build has no linked artifact in the target all")
-    unmade = sorted(build_census.shown(path, context.root) for _, path in linked if not path.is_file())
+    unmade = sorted(build_census.shown(item.path, context.root) for item in linked if not item.path.is_file())
     if unmade:
         raise runner.NotApplicable(f"the build has not made {len(unmade)} artifacts, such as {unmade[0]}")
     words = path_words(context.compiler(), build_dir)
@@ -356,8 +356,8 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
     first: dict[tuple[str, str, str], str] = {}
     counts: dict[str, int] = {}
     missing: dict[tuple[str, str, str], tuple[str, int]] = {}
-    for directory, path in linked:
-        group = group_of(directory)
+    for artifact in linked:
+        group, path = group_of(artifact.directory), artifact.path
         counts[group] = counts.get(group, 0) + 1
         try:
             with elf.mapped(path) as member:

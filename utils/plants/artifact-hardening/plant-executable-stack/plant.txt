@@ -1,0 +1,5 @@
+# A program that the link makes with -z execstack, so its segment PT_GNU_STACK has the bit PF_X.  The rule reads
+# only the kind stack.
+properties stack
+flags -std=c++17 -O1 -fPIE {cfi}
+program examples planted_tool main.cpp | -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,execstack

@@ -3,13 +3,16 @@
 THE MAP
     GNU ld writes the map of a link when the link gives -Map=FILE.  The map
     has parts, and a heading of HEADINGS starts each part.  The reader reads
-    four parts, and it ignores each other part:
+    five parts, and it ignores each other part:
       * The archive members ("Archive member included to satisfy reference
         by file (symbol)").  Each item names a member of an archive, and the
         file and the symbol that made the link take the member.
       * The shared libraries of `--as-needed` ("As-needed library included to
         satisfy reference by file (symbol)").  Each item names a library, and
         the file and the symbol that made the link keep the library.
+      * The merges of the program properties ("Merging program properties").
+        Each line tells how the link merged one property of two input files
+        (THE MERGES).
       * The discarded sections ("Discarded input sections").  Each item names
         an input section that the link removed: a section that --gc-sections
         removed, or the second copy of a COMDAT group.
@@ -35,6 +38,24 @@ THE LINES OF AN ITEM
     script.  A line with only white space before its address gives a symbol
     or an assignment.  The reader keeps none of these lines.
 
+THE MERGES
+    ld keeps the program properties of the first input file with
+    properties, and it merges the properties of each next input file into
+    them.  A line of the part tells each merge that changed a property.  The
+    lines have these shapes:
+      * Removed property TYPE to merge FIRST (VALUE) and SECOND (not found)
+      * Removed property TYPE to merge FIRST (not found) and SECOND (VALUE)
+      * Removed property TYPE to merge FIRST (VALUE) and SECOND (VALUE)
+      * Removed property TYPE to merge FIRST and SECOND
+      * Updated property TYPE (VALUE) to merge FIRST (VALUE) and SECOND (VALUE).
+    FIRST names the file that holds the merged properties, with their value
+    before the merge.  SECOND names the next input file, with its value.
+    TYPE and each VALUE are numbers in hexadecimal with the prefix 0x.  The
+    value "(not found)" tells that the file has no such property, and a
+    file with no value has no such property too.  The value after the TYPE of an
+    update is the merged value.  An empty line has no merge, and each other
+    line of the part is an error.
+
 THE FILE OF AN ITEM
     A file is a path, or ARCHIVE(MEMBER) for a member of an archive.
     split_member() gives the archive and the member, and it gives an empty
@@ -50,8 +71,9 @@ THE NAMES
 
 THE USERS
     The rule artifact-links reads the archive members of the map of each
-    link with read_members().  cmake/LinkMap.cmake makes GNU ld write those
-    maps.
+    link with read_members().  The rule artifact-hardening reads the merges
+    of the map of a link with read_merges().  cmake/LinkMap.cmake makes GNU
+    ld write those maps.
 
 `guard selftest tests.readers.test_linkmap` does the test of the module.
 """
@@ -61,24 +83,31 @@ from pathlib import Path
 
 INCLUDED = "Archive member included to satisfy reference by file (symbol)"
 AS_NEEDED = "As-needed library included to satisfy reference by file (symbol)"
+PROPERTIES = "Merging program properties"
 DISCARDED = "Discarded input sections"
 SCRIPT = "Linker script and memory map"
 CROSS_REFERENCES = "Cross Reference Table"
-# Each heading that ld writes at the column 0 (THE MAP).  The reader reads the parts of the first four headings.
+# Each heading that ld writes at the column 0 (THE MAP).  The reader reads the parts of the first five headings.
 HEADINGS = frozenset(
     {
         INCLUDED,
         AS_NEEDED,
+        PROPERTIES,
         DISCARDED,
         SCRIPT,
         CROSS_REFERENCES,
         "Allocating common symbols",
         "Memory Configuration",
-        "Merging program properties",
         "Merging object attributes",
         "Linker stubs",
     }
 )
+# The two actions of a line of the merges, and the words that follow the type and the files (THE MERGES).
+MERGE_ACTIONS = frozenset({"Removed", "Updated"})
+PROPERTY_WORD = "property"
+MERGE_WORDS = ("to", "merge")
+AND_WORD = "and"
+NOT_FOUND = ("(not", "found)")
 LOAD = "LOAD"
 # The script lines at the column 0 that name no output section.
 SCRIPT_MARKS = frozenset({"START GROUP", "END GROUP"})
@@ -122,6 +151,24 @@ class InputSection:
 
 
 @dataclass(frozen=True, slots=True)
+class PropertyMerge:
+    """One line of the merges of the program properties (THE MERGES).
+
+    `action` is Removed or Updated, and `kind` is the type of the property.  `value` is the merged value of an update,
+    else None.  `first` and `second` are the two files of the merge, each with its value before the merge, or None
+    when the file has no such property.
+    """
+
+    action: str
+    kind: int
+    value: int | None
+    first: str
+    first_value: int | None
+    second: str
+    second_value: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class LinkMap:
     """The parts of one map that the module reads (THE MAP), each in the sequence of the map."""
 
@@ -130,6 +177,7 @@ class LinkMap:
     discarded: tuple[InputSection, ...]
     loads: tuple[str, ...]
     sections: tuple[InputSection, ...]
+    merges: tuple[PropertyMerge, ...] = ()
 
 
 def split_member(text: str) -> tuple[str, str]:
@@ -157,6 +205,45 @@ def reference_of(text: str, where: str, line: int) -> tuple[str, str]:
     return referrer, rest[:-1]
 
 
+def merge_value(words: list[str], index: int) -> tuple[int | None, int]:
+    """Return the value of a file of a merge at a word, and the index of the next word (THE MERGES).
+
+    A word "(0xHEX)" gives its number, the two words "(not found)" give None, and each other word gives None with no
+    word read.
+    """
+    word = words[index] if index < len(words) else ""
+    if word.startswith("(") and word.endswith(")") and is_hex(word[1:-1]):
+        return int(word[1:-1], 16), index + 1
+    if tuple(words[index : index + len(NOT_FOUND)]) == NOT_FOUND:
+        return None, index + len(NOT_FOUND)
+    return None, index
+
+
+def merge_of(text: str, where: str, line: int) -> PropertyMerge:
+    """Return the merge of one line of the part of the program properties (THE MERGES).
+
+    Raises:
+        LinkMapError: If the line does not have a shape of THE MERGES
+    """
+    words = text.split()
+    shape = f"{where}:{line}: the line {text.strip()!r} does not have a shape of a merge of a program property"
+    if len(words) < 3 or words[0] not in MERGE_ACTIONS or words[1] != PROPERTY_WORD or not is_hex(words[2]):
+        raise LinkMapError(shape)
+    value, index = merge_value(words, 3)
+    if tuple(words[index : index + len(MERGE_WORDS)]) != MERGE_WORDS or index + len(MERGE_WORDS) >= len(words):
+        raise LinkMapError(shape)
+    index += len(MERGE_WORDS)
+    first = words[index]
+    first_value, index = merge_value(words, index + 1)
+    if index + 1 >= len(words) or words[index] != AND_WORD:
+        raise LinkMapError(shape)
+    second = words[index + 1]
+    second_value, index = merge_value(words, index + 2)
+    if index != len(words):
+        raise LinkMapError(shape)
+    return PropertyMerge(words[0], int(words[2], 16), value, first, first_value, second, second_value)
+
+
 def section_of(output: str, name: str, words: list[str], where: str, line: int) -> InputSection:
     """Return the input section of a name and the words "ADDRESS LENGTH FILE" after it.
 
@@ -175,7 +262,18 @@ class Reader:
     address and its file (THE LINES OF AN ITEM).
     """
 
-    __slots__ = ("discarded", "libraries", "loads", "members", "output", "part", "sections", "waiting", "where")
+    __slots__ = (
+        "discarded",
+        "libraries",
+        "loads",
+        "members",
+        "merges",
+        "output",
+        "part",
+        "sections",
+        "waiting",
+        "where",
+    )
 
     def __init__(self, where: str) -> None:
         """Start a read with no part."""
@@ -185,6 +283,7 @@ class Reader:
         self.waiting = ""
         self.members: list[Inclusion] = []
         self.libraries: list[Inclusion] = []
+        self.merges: list[PropertyMerge] = []
         self.discarded: list[InputSection] = []
         self.loads: list[str] = []
         self.sections: list[InputSection] = []
@@ -263,6 +362,9 @@ class Reader:
             return heading != CROSS_REFERENCES
         if self.part in (INCLUDED, AS_NEEDED):
             self.read_inclusion(text, line)
+        elif self.part == PROPERTIES:
+            if text.strip():
+                self.merges.append(merge_of(text, self.where, line))
         elif self.part == DISCARDED:
             section = self.read_section(text, line, "")
             if section is not None:
@@ -280,7 +382,12 @@ class Reader:
         if self.waiting:
             raise LinkMapError(f"{self.where}: the item {self.waiting} at the end of the map has no next line")
         return LinkMap(
-            tuple(self.members), tuple(self.libraries), tuple(self.discarded), tuple(self.loads), tuple(self.sections)
+            tuple(self.members),
+            tuple(self.libraries),
+            tuple(self.discarded),
+            tuple(self.loads),
+            tuple(self.sections),
+            tuple(self.merges),
         )
 
 
@@ -337,3 +444,30 @@ def read_members(path: Path) -> tuple[Inclusion, ...]:
     if reader.waiting:
         raise LinkMapError(f"{path}: the item {reader.waiting} of the archive members has no next line")
     return tuple(reader.members)
+
+
+def read_merges(path: Path) -> tuple[PropertyMerge, ...]:
+    """Read only the merges of the program properties of the map file of a link (THE MERGES).
+
+    The read stops at the first heading after the merges, or at the memory map when the map has no merges.  The
+    merges come near the start of a map, and the read of the memory map costs nothing.  Complexity: linear in the
+    lines before that heading.
+
+    Raises:
+        LinkMapError: If a line of the merges does not have its shape, or the file has no heading of THE MAP
+        OSError: If the file cannot be read
+    """
+    merges: list[PropertyMerge] = []
+    part = ""
+    with path.open(encoding="utf-8", errors="surrogateescape") as handle:
+        for line, row in enumerate(handle, start=1):
+            heading = row.rstrip()
+            if heading in HEADINGS:
+                if part == PROPERTIES or heading == SCRIPT:
+                    return tuple(merges)
+                part = heading
+            elif part == PROPERTIES and row.strip():
+                merges.append(merge_of(row.rstrip("\n"), str(path), line))
+    if not part:
+        raise LinkMapError(f"{path}: the file has no heading of a map that GNU ld writes")
+    return tuple(merges)

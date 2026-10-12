@@ -322,6 +322,26 @@ if(DEFINED CRUCIBLE_TOOLCHAIN_RUN_PATH)
   add_link_options("LINKER:-rpath,${CRUCIBLE_TOOLCHAIN_RUN_PATH}")
 endif()
 
+# Each executable of the tree is a position-independent executable (PIE), so
+# the loader puts it at a random address on each start.
+# CMAKE_POSITION_INDEPENDENT_CODE gives each executable -fPIE and each library
+# -fPIC.  CMake gives an executable -pie at its link only when
+# check_pie_supported() finds that the link works, so a configure that cannot
+# link a PIE stops here.  The variable applies to each target after this line.
+include(CheckPIESupported)
+check_pie_supported(OUTPUT_VARIABLE _crucible_pie_output LANGUAGES CXX)
+if(NOT CMAKE_CXX_LINK_PIE_SUPPORTED)
+  message(FATAL_ERROR "The C++ compiler cannot link a position-independent executable, and each executable of the "
+                      "tree must be one.  The output of the check:\n${_crucible_pie_output}")
+endif()
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Each link of the tree gets full RELRO, immediate binding and a stack that
+# the processor cannot execute, also a target that does not link
+# crucible_dialect, such as a test of test/ct.  The option applies to each
+# target after this line.
+add_link_options("LINKER:-z,relro" "LINKER:-z,now" "LINKER:-z,noexecstack")
+
 # Ninja starts the compiles of the targets in cmake/compile-first.txt before
 # the other compiles of the tests.  The file defers its work to the end
 # of this directory, when each target exists.
@@ -371,7 +391,6 @@ add_library(crucible STATIC
   src/topology/Telemetry.cpp
 )
 target_include_directories(crucible PUBLIC include/)
-set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible PUBLIC crucible_dialect)
 
 # ── The sibling substrate: foundation/ and fixy/ ───────────────────
@@ -410,7 +429,6 @@ add_library(foundation STATIC
 )
 target_include_directories(foundation PUBLIC include/)
 target_link_libraries(foundation PUBLIC crucible_dialect)
-set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # crucible owns no contract handler of its own.  Every crucible header that
 # uses CRUCIBLE_PRE expands to the foundation failure arm, so crucible links
@@ -428,7 +446,6 @@ add_library(fixy STATIC
 )
 target_include_directories(fixy PUBLIC include/)
 target_link_libraries(fixy PUBLIC foundation)
-set_target_properties(fixy PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # The crucible headers call the topology probe of fixy, so crucible links
 # fixy, and libfixy.a follows libcrucible.a on a consumer's link line.
@@ -706,7 +723,6 @@ if (CRUCIBLE_HAVE_BPF)
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
   endif()
-  set_target_properties(crucible_perf PROPERTIES POSITION_INDEPENDENT_CODE ON)
   # PUBLIC link so symbols transit to the final binary; consumers
   # that include <crucible/perf/SenseHub.h> get the loader symbols
   # at link time without an extra `target_link_libraries` call.
@@ -759,7 +775,6 @@ target_link_libraries(crucible_vigil PUBLIC fixy)
 if (CRUCIBLE_HAVE_BPF)
   target_link_libraries(crucible_vigil PUBLIC crucible_perf)
 endif()
-set_target_properties(crucible_vigil PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible PUBLIC crucible_vigil)
 
 # ── The Cipher store: src/Cipher.cpp ──
@@ -778,7 +793,6 @@ add_library(crucible_cipher STATIC src/Cipher.cpp)
 target_include_directories(crucible_cipher PUBLIC include/)
 target_compile_definitions(crucible_cipher PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
 target_link_libraries(crucible_cipher PUBLIC foundation)
-set_target_properties(crucible_cipher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible_vigil PUBLIC crucible_cipher)
 target_link_libraries(crucible PUBLIC crucible_cipher)
 
@@ -1440,13 +1454,11 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 # SECTION 7: Linker hardening — both compilers
 #
-# Full RELRO, immediate binding, no-exec stack, separate code,
-# build-id for debuginfo, and more.
+# Separate code, build-id for debuginfo, and more.  Each link of the
+# tree gets full RELRO, immediate binding and a no-exec stack from the
+# add_link_options() call before the first target.
 # ═══════════════════════════════════════════════════════════════
 target_link_options(crucible_dialect INTERFACE
-  "LINKER:-z,relro"                     # 232  read-only relocations
-  "LINKER:-z,now"                       # 233  immediate symbol binding
-  "LINKER:-z,noexecstack"              # 234  non-executable stack
   "LINKER:-z,separate-code"            # 235  separate code from data
   "LINKER:--as-needed"                 # 236  only link needed libs
   "LINKER:--no-copy-dt-needed-entries" # 237  no transitive deps

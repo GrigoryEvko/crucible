@@ -804,6 +804,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/Budgeted.h | inlined | -1 | std::vector::~vector | -
 @x86_64-debug-tsan | include/fixy/Checked.h | inlined | -7 | std::optional::optional | -
 @x86_64-debug-tsan | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
+@x86_64-debug-tsan | include/fixy/ConstantTime.h | inlined | -2 | std::span::operator[] | -
 @x86_64-debug-tsan | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
 @x86_64-debug-tsan | include/fixy/EpochVersioned.h | call | -1 | std::basic_string::basic_string | -
 @x86_64-debug-tsan | include/fixy/EpochVersioned.h | call | -3 | std::expected::expected | -
@@ -957,7 +958,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator* | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::~expected | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -2 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -3 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -5 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::error | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -2 | std::expected::expected | -
@@ -1017,10 +1018,11 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::optional | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -1 | std::pair::~pair | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | call | -1 | std::array::operator[] | -
-@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -4 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -5 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::basic_string_view | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::data | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -2 | std::basic_string_view::size | -
+@x86_64-debug-tsan | include/fixy/session/Watch.h | reference | -4 | stderr | -
 @x86_64-debug-tsan | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
 @x86_64-debug-tsan | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::span | -
 @x86_64-debug-tsan | include/foundation/ChannelBinding.h | inlined | -1 | std::exchange | -

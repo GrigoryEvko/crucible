@@ -3,14 +3,16 @@
 `guard selftest tests.readers.test_linkmap` runs the test.  Each case writes
 one line.  Exit 0 when each case holds, else 1.
 
-The planted cases read texts with each shape of THE LINES OF AN ITEM.  The
-link case links a small program with the compiler that ASSAY_TEST_CXX names,
-with -Wl,-Map, and reads the map that GNU ld writes.  The registration of the
-test in test/CMakeLists.txt gives the compiler of the build.
+The planted cases read texts with each shape of THE LINES OF AN ITEM and of
+THE MERGES.  The link case links a small program with the compiler that
+ASSAY_TEST_CXX names, with -Wl,-Map, and reads the map that GNU ld writes.
+The registration of the test in test/CMakeLists.txt gives the compiler of the
+build.
 """
 
 import tempfile
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from assay.core import proc, testing
@@ -33,6 +35,9 @@ libbpf.so.1                   perf.o (bpf_object__open)
 Merging program properties
 
 Removed property 0xc0000002 to merge crt1.o (0x3) and unit.o (not found)
+Removed property 0xc0000002 to merge crt1.o (not found) and {ARCHIVE}(cpuinfo.o) (0x3)
+Updated property 0xc0010001 (0x9) to merge crt1.o (0x1) and unit.o (0x9)
+Removed property 0xc0008002 to merge crt1.o and unit.o
 
 Discarded input sections
 
@@ -136,6 +141,39 @@ def planted_cases(expect: testing.Expect) -> None:
         ),
     )
     expect(
+        "each merge of a program property has its action, its type, the merged value of an update, and the two files "
+        "with their values, or None for (not found) and for no value",
+        found.merges
+        == (
+            linkmap.PropertyMerge("Removed", 0xC0000002, None, "crt1.o", 3, "unit.o", None),
+            linkmap.PropertyMerge("Removed", 0xC0000002, None, "crt1.o", None, f"{ARCHIVE}(cpuinfo.o)", 3),
+            linkmap.PropertyMerge("Updated", 0xC0010001, 9, "crt1.o", 1, "unit.o", 9),
+            linkmap.PropertyMerge("Removed", 0xC0008002, None, "crt1.o", None, "unit.o", None),
+        ),
+    )
+    with tempfile.TemporaryDirectory(prefix="linkmap-merges-") as scratch_text:
+        planted_map = Path(scratch_text) / "planted.map"
+        planted_map.write_text(PLANTED, encoding="utf-8")
+        merges = linkmap.read_merges(planted_map)
+        no_part = Path(scratch_text) / "no-part.map"
+        no_part.write_text(PLANTED.replace(linkmap.PROPERTIES, "Merging object attributes"), encoding="utf-8")
+        no_merges = linkmap.read_merges(no_part)
+        (Path(scratch_text) / "empty.map").write_text("no heading\n", encoding="utf-8")
+        refused_empty = refuses(lambda: linkmap.read_merges(Path(scratch_text) / "empty.map"))
+    expect("read_merges gives the merges of parse", merges == found.merges)
+    expect("read_merges gives no merge for a map with no part of the merges", no_merges == ())
+    expect("read_merges refuses a file with no heading of a map", refused_empty)
+    for wrong in (
+        "Removed thing 0xc0000002 to merge a.o and b.o",
+        "Removed property 0xc0000002 to merge a.o (0x3) or b.o",
+        "Removed property 0xc0000002 to merge a.o (0x3) and b.o (0x3) more",
+        "Removed property 0xc0000002 to merge",
+        "Moved property 0xc0000002 to merge a.o and b.o",
+        "a note of the linker",
+    ):
+        text = PLANTED.replace("Updated property 0xc0010001 (0x9) to merge crt1.o (0x1) and unit.o (0x9)", wrong)
+        expect(f"the line {wrong!r} of the merges is refused", refuses(partial(linkmap.parse, text, "merge")))
+    expect(
         "split_member gives the archive and the member, and an empty archive for a plain path",
         linkmap.split_member("/lib/libx.a(y.o)") == ("/lib/libx.a", "y.o")
         and linkmap.split_member("z.o") == ("", "z.o"),
@@ -174,10 +212,17 @@ def link_cases(expect: testing.Expect) -> None:
         proc.require(proc.run(proc.Command(argv, timeout_s=proc.QUICK_S, cwd=scratch)))
         found = linkmap.read(scratch / "program.map")
         head = linkmap.read_members(scratch / "program.map")
+        merges = linkmap.read_merges(scratch / "program.map")
         (scratch / "empty.map").write_text("no heading\n", encoding="utf-8")
         refused_empty = refuses(lambda: linkmap.read_members(scratch / "empty.map"))
     expect("read_members gives the archive members of read, and stops after them", head == found.members)
     expect("read_members refuses a file with no heading of a map", refused_empty)
+    expect(
+        "the unit has no control-flow flag, so the link removes the feature property of the processor, and "
+        "read_merges gives the merges of read",
+        merges == found.merges
+        and any(item.action == "Removed" and item.kind in (0xC0000002, 0xC0000000) for item in merges),
+    )
     members = {(Path(item.archive).name, item.member, item.symbol) for item in found.members}
     expect("the map names cpuinfo.o of libgcc.a for __cpu_model", ("libgcc.a", "cpuinfo.o", "__cpu_model") in members)
     loaded = [Path(item).name for item in found.loads]

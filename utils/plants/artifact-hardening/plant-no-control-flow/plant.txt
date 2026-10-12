@@ -1,0 +1,6 @@
+# A program of a unit that the compile gives no flag of the control-flow protection.  The unit has no feature
+# property, so the link removes the property of the start files from the program.  The rule reads only the kind
+# control-flow.
+properties control-flow
+flags -std=c++17 -O1 -fPIE
+program examples planted_tool main.cpp | -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack

@@ -32,7 +32,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tests | elf-type | 1 | executable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tests | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | init | 1 | _GLOBAL__sub_I__ZN14test_mlp_trace8build_opEjj | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | init | 1 | _GLOBAL__sub_I__ZN22pipeline_dispatch_test11main_threadE | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -82,7 +82,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | section | 1 | .gnu.version | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .gnu.version_r | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .got | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tests | section | 1 | .got.plt | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .init_array | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | section | 1 | .interp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -159,7 +158,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | elf-type | 1 | executable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tools | init | 1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | init | 1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | init | 1 | __cpu_indicator_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -211,6 +210,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tools | section | 1 | .preinit_array | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .rela.dyn | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .rela.plt | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | section | 1 | .relr.dyn | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tools | section | 1 | .rodata | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .shstrtab | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | section | 1 | .strtab | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -234,6 +234,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tools | version | 1 | libc.so.6 GLIBC_2.38 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | version | 1 | libc.so.6 GLIBC_ABI_DT_RELR | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tools | version | 1 | libgcc_s.so.1 GCC_3.0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libgcc_s.so.1 GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libm.so.6 GLIBC_2.27 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -503,7 +504,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260829 | a new build kind or target
-@x86_64-debug-asan-bench-fuzz | @build/benches | elf-type | +1 | executable | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | elf-type | +1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _GLOBAL__sub_I__ZN23pipeline_dispatch_bench10small_dataE | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | __asan_init | a new build kind or target
@@ -556,6 +557,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .preinit_array | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rela.dyn | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rela.plt | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .relr.dyn | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .rodata | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .shstrtab | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | section | +1 | .strtab | a new build kind or target
@@ -585,6 +587,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.4 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.6 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_2.7 | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libc.so.6 GLIBC_ABI_DT_RELR | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libgcc_s.so.1 GCC_3.0 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libgcc_s.so.1 GCC_3.4 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | version | +1 | libm.so.6 GLIBC_2.27 | a new build kind or target

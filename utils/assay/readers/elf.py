@@ -12,6 +12,9 @@ THE READERS
         the segments and the init arrays of each linked artifact.  It also
         reads the sections, the dynamic symbols and the versions from each
         shared library.
+      * The rule artifact-hardening reads the file type, the machine, the
+        dynamic section, the segments and the program properties of each
+        linked artifact.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.dwarf reads the debug sections, their relocations and
@@ -71,6 +74,18 @@ THE SEGMENTS
     segments() gives each entry of the program header table, and
     interpreter() reads the path of the segment PT_INTERP.  An object of the
     type ET_REL has no such table, and it gives no segment.
+
+THE PROPERTIES
+    properties() gives each program property of the segment
+    PT_GNU_PROPERTY.  The loader reads the properties of a linked file from
+    that segment.  The segment holds notes.  A note has the words namesz,
+    descsz and type, then its name, then its descriptor.  The name and the
+    descriptor start at a multiple of 8 in ELF64.  The note of the type
+    NT_GNU_PROPERTY_TYPE_0 with the name "GNU" holds the properties.  A
+    property has the words pr_type and pr_datasz, then pr_datasz bytes of
+    data, and the next property starts at the next multiple of 8.  A file
+    with no such segment gives no property.  A segment, a note or a
+    property that is not fully in the file is an ElfError.
 
 THE DYNAMIC SECTION
     dynamic() gives each entry of the section SHT_DYNAMIC in its sequence,
@@ -151,7 +166,8 @@ THE RECORDS
 
 THE WRITER
     make_file() and make_archive() write small files for the tests of the
-    readers.
+    readers.  property_note() writes the note of the program properties of
+    a planted segment.
 
 `guard selftest tests.readers.test_elf` does the test of the module.
 """
@@ -208,6 +224,20 @@ PT_LOAD = 1
 PT_DYNAMIC = 2
 PT_INTERP = 3
 PT_TLS = 7
+# The segments of the GNU extensions (THE PROPERTIES).  PT_GNU_STACK gives the permissions of the stack.  The loader
+# makes the part of PT_GNU_RELRO read-only after the relocations.  PT_GNU_PROPERTY holds the program properties.
+# PF_X is the bit of p_flags that makes a segment executable.
+PT_GNU_STACK = 0x6474E551
+PT_GNU_RELRO = 0x6474E552
+PT_GNU_PROPERTY = 0x6474E553
+PF_X = 0x1
+# The note of the program properties, its name, and the multiple of 8 at which each of its parts starts in ELF64
+# (THE PROPERTIES).
+NT_GNU_PROPERTY_TYPE_0 = 5
+GNU_NOTE_NAME = b"GNU\0"
+NOTE_ALIGN = 8
+NOTE_LAYOUT = struct.Struct("<III")
+PROPERTY_LAYOUT = struct.Struct("<II")
 # The flag word of a group section that makes the group a COMDAT group (THE GROUPS).
 GRP_COMDAT = 0x1
 # The tags of the dynamic section (THE DYNAMIC SECTION).  The value of a string tag is an offset in the strings of the
@@ -217,8 +247,14 @@ DT_NEEDED = 1
 DT_SONAME = 14
 DT_RPATH = 15
 DT_RUNPATH = 29
+DT_BIND_NOW = 24
+DT_FLAGS = 30
 DT_FLAGS_1 = 0x6FFFFFFB
 STRING_TAGS = frozenset({DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH})
+# The bit of DT_FLAGS and the bit of DT_FLAGS_1 that tell the loader to give each symbol its address before the
+# program starts.
+DF_BIND_NOW = 0x8
+DF_1_NOW = 0x1
 # The separator of the parts of a run path (THE DYNAMIC SECTION).  The mark of a substitution sequence, and the two
 # forms of the sequence of the directory of the object.
 RUN_PATH_SEPARATOR = ":"
@@ -541,6 +577,65 @@ class NeededVersion(Record):
         self.index = index
         self.is_weak = is_weak
         self.name = name
+
+
+class Property(Record):
+    """One program property of the segment PT_GNU_PROPERTY: its type pr_type and its data (THE PROPERTIES)."""
+
+    __slots__ = ("data", "kind")
+
+    def __init__(self, kind: int, data: bytes) -> None:
+        """Hold the parts of one program property."""
+        self.kind = kind
+        self.data = data
+
+    @property
+    def word(self) -> int:
+        """The first four bytes of the data as a number, the low byte first, or 0 for data of fewer bytes.
+
+        A property of the AND type of a processor, such as the feature bits of x86 or of aarch64, holds one word.
+        """
+        return int.from_bytes(self.data[:4], "little") if len(self.data) >= 4 else 0
+
+
+def aligned(offset: int) -> int:
+    """Return the first multiple of NOTE_ALIGN that is not less than the offset (THE PROPERTIES)."""
+    return (offset + NOTE_ALIGN - 1) & ~(NOTE_ALIGN - 1)
+
+
+def note_properties(data: bytes, where: str) -> tuple[Property, ...]:
+    """Return the program properties of the notes of a segment PT_GNU_PROPERTY (THE PROPERTIES).
+
+    A note of a different type or name gives no property.  Complexity: linear in the bytes of the segment.
+
+    Raises:
+        ElfError: If a note or a property is not fully in the bytes
+    """
+    found: list[Property] = []
+    offset = 0
+    while offset < len(data):
+        if offset + NOTE_LAYOUT.size > len(data):
+            raise ElfError(f"{where}: the header of a note of the program properties is not fully in its segment")
+        name_size, descriptor_size, kind = NOTE_LAYOUT.unpack_from(data, offset)
+        name_start = offset + NOTE_LAYOUT.size
+        descriptor_at = aligned(name_start + name_size)
+        following = aligned(descriptor_at + descriptor_size)
+        if descriptor_at + descriptor_size > len(data):
+            raise ElfError(f"{where}: a note of the program properties is not fully in its segment")
+        if kind == NT_GNU_PROPERTY_TYPE_0 and data[name_start : name_start + name_size] == GNU_NOTE_NAME:
+            descriptor = data[descriptor_at : descriptor_at + descriptor_size]
+            place = 0
+            while place < len(descriptor):
+                if place + PROPERTY_LAYOUT.size > len(descriptor):
+                    raise ElfError(f"{where}: the header of a program property is not fully in its note")
+                property_kind, size = PROPERTY_LAYOUT.unpack_from(descriptor, place)
+                start = place + PROPERTY_LAYOUT.size
+                if start + size > len(descriptor):
+                    raise ElfError(f"{where}: the program property {property_kind:#x} is not fully in its note")
+                found.append(Property(property_kind, descriptor[start : start + size]))
+                place = aligned(start + size)
+        offset = following
+    return tuple(found)
 
 
 def name_at(names: bytes, offset: int) -> str:
@@ -941,6 +1036,22 @@ class Member:
         begin = self.start + segment.offset
         return os.fsdecode(bytes(self.buffer[begin : begin + segment.file_size]).rstrip(b"\0"))
 
+    def properties(self) -> tuple[Property, ...]:
+        """Return each program property of the segment PT_GNU_PROPERTY, or none for a file with no such segment.
+
+        THE PROPERTIES tells the read.  Complexity: linear in the program headers and the bytes of the segment.
+
+        Raises:
+            ElfError: If the program header table, the segment, a note or a property is not fully in the file
+        """
+        segment = next((item for item in self.segments() if item.kind == PT_GNU_PROPERTY), None)
+        if segment is None:
+            return ()
+        if segment.offset + segment.file_size > self.size:
+            raise ElfError(f"{self.where}: the segment of the program properties is not fully in the file")
+        begin = self.start + segment.offset
+        return note_properties(bytes(self.buffer[begin : begin + segment.file_size]), self.where)
+
     def file_type(self) -> int:
         """Return e_type of the ELF header, such as ET_EXEC or ET_DYN (THE FILE TYPE)."""
         (kind,) = struct.unpack_from("<H", self.buffer, self.start + TYPE_AT)
@@ -1243,7 +1354,34 @@ class PlantedSymbol(Record):
         self.section = section
 
 
-def make_file(sections: Iterable[Planted], extended: bool = False, interpreter_path: str = "") -> bytes:
+class PlantedSegment(Record):
+    """One segment of a file that make_file writes: its type p_type, its flags p_flags and its bytes."""
+
+    __slots__ = ("data", "flags", "kind")
+
+    def __init__(self, kind: int, flags: int = 0, data: bytes = b"") -> None:
+        """Hold the parts of one planted segment."""
+        self.kind = kind
+        self.flags = flags
+        self.data = data
+
+
+def property_note(properties: Iterable[tuple[int, bytes]]) -> bytes:
+    """Return the bytes of a note NT_GNU_PROPERTY_TYPE_0 with each (pr_type, data) property (THE PROPERTIES)."""
+    descriptor = b""
+    for kind, data in properties:
+        descriptor += PROPERTY_LAYOUT.pack(kind, len(data)) + data
+        descriptor += bytes(aligned(len(descriptor)) - len(descriptor))
+    head = NOTE_LAYOUT.pack(len(GNU_NOTE_NAME), len(descriptor), NT_GNU_PROPERTY_TYPE_0) + GNU_NOTE_NAME
+    return head + bytes(aligned(len(head)) - len(head)) + descriptor
+
+
+def make_file(
+    sections: Iterable[Planted],
+    extended: bool = False,
+    interpreter_path: str = "",
+    segments: Iterable[PlantedSegment] = (),
+) -> bytes:
     """Return an ELF64 file with the low byte first and the planted sections, for the tests of the readers.
 
     Section 0 is the null section.  The planted sections follow in their
@@ -1251,7 +1389,8 @@ def make_file(sections: Iterable[Planted], extended: bool = False, interpreter_p
     With `extended`, the file uses the extended numbering of a large file:
     e_shnum and e_shstrndx are 0 and SHN_XINDEX, and section 0 holds them.
     With an `interpreter_path`, the file has one program header PT_INTERP.
-    Its segment holds the path after the sections.
+    Its segment holds the path after the sections.  Each planted segment
+    gets a program header after it, and its bytes follow the path.
     """
     planted = [Planted(""), *sections, Planted(".shstrtab", kind=SHT_STRTAB)]
     names = b"\0"
@@ -1282,12 +1421,14 @@ def make_file(sections: Iterable[Planted], extended: bool = False, interpreter_p
                 item.entry_size,
             )
         )
-    program = b""
-    if interpreter_path:
-        text = interpreter_path.encode() + b"\0"
+    headers: list[bytes] = []
+    planted_segments = [PlantedSegment(PT_INTERP, 4, interpreter_path.encode() + b"\0")] if interpreter_path else []
+    for segment in (*planted_segments, *segments):
         segment_at = HEADER_SIZE + len(body)
-        body += text
-        program = PROGRAM_LAYOUT.pack(PT_INTERP, 4, segment_at, 0, 0, len(text), len(text), 1)
+        body += segment.data
+        size = len(segment.data)
+        headers.append(PROGRAM_LAYOUT.pack(segment.kind, segment.flags, segment_at, 0, 0, size, size, 1))
+    program = b"".join(headers)
     table_at = HEADER_SIZE + len(body)
     header = bytearray(HEADER_SIZE)
     header[:7] = MAGIC + bytes([CLASS_64, DATA_LITTLE, 1])
@@ -1304,7 +1445,7 @@ def make_file(sections: Iterable[Planted], extended: bool = False, interpreter_p
         0,
         HEADER_SIZE,
         PROGRAM_HEADER_SIZE,
-        1 if program else 0,
+        len(headers),
         SECTION_HEADER_SIZE,
         0 if extended else count,
         SHN_XINDEX if extended else count - 1,

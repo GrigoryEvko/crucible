@@ -640,7 +640,6 @@ utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: exactly | A t
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: expose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 5 | <module>: generate | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: independent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: lead | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: leave | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/aten_ops.py | refused-word | 1 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count

@@ -1,0 +1,6 @@
+# A program and a module with each hardening property: position-independent code with the flag of the
+# control-flow protection of the host, a position-independent program, full RELRO, binding at the start and a
+# stack that the processor cannot execute.  The rule reads each kind.
+flags -std=c++17 -O1 -fPIE {cfi}
+program examples planted_tool main.cpp | -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
+module test libplanted.so main.cpp | -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack

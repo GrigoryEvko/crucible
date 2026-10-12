@@ -116,7 +116,7 @@ def fact_cases(expect: testing.Expect) -> None:
         ledger.write_text(f"{head}configuration planted tier planted\n{rows}", encoding="utf-8")
         judged = artifact_links.examine(rule, context).findings
         expect("a ledger with each fact gives no error", [item for item in judged if item.level == "error"] == [])
-        program = next(path for directory, path in context.linked_artifacts() if directory == "examples")
+        program = next(item.path for item in context.linked_artifacts() if item.directory == "examples")
         program.with_name(program.name + artifact_links.MAP_SUFFIX).unlink()
         try:
             artifact_links.map_facts(program, scratch / "build")

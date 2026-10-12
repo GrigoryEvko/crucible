@@ -1,0 +1,5 @@
+# A program that the link makes with -no-pie, as each program of the tree was before the tree gave -pie.  The
+# loader puts it at a fixed address.  The rule reads only the kind pie.
+properties pie
+flags -std=c++17 -O1 {cfi}
+program examples planted_tool main.cpp | -no-pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack

@@ -174,8 +174,9 @@ def directory_cases(expect: testing.Expect) -> None:
             context.libraries() == {"foundation": build / "libfoundation.a"},
         )
         expect(
-            "the linked artifacts are the linked targets of the inputs of all, with the first directory of the source",
-            context.linked_artifacts() == (("", build / "tool"),),
+            "the linked artifacts are the linked targets of the inputs of all, with the first directory of the source "
+            "and the type of the target",
+            context.linked_artifacts() == (runner.LinkedArtifact("", build / "tool", runner.EXECUTABLE),),
         )
         expect(
             "the link libraries are the words -l and the paths outside the build directory, once each, with no flag",
@@ -239,6 +240,7 @@ def manifest_cases(expect: testing.Expect) -> None:
             ("shared one", "shared NAME UNIT..."),
             ("program examples tool", "program DIRECTORY NAME UNIT... [| WORD...]"),
             ("program examples tool main.cpp | -s | -s", "program DIRECTORY NAME UNIT... [| WORD...]"),
+            ("module test libplanted.so", "module DIRECTORY NAME UNIT... [| WORD...]"),
             ("unit target u.cpp", "unit TARGET UNIT | WORD..."),
             ("kind a | b", "kind KIND"),
         )
@@ -275,6 +277,16 @@ def manifest_cases(expect: testing.Expect) -> None:
             "a plant with no kind row and no tier row has the kind and the tier planted",
             (bare.kind, bare.tier) == (runner.PLANTED, runner.PLANTED),
         )
+        machine = platform.machine()
+        if machine in runner.CFI_FLAGS:
+            expect(
+                "the word {cfi} of a flags row is the control-flow flag of the machine of the host, and each other "
+                "word stays",
+                runner.host_flags(["-O1", runner.CFI_WORD]) == ["-O1", runner.CFI_FLAGS[machine]],
+            )
+        else:
+            said = raised(partial(runner.host_flags, [runner.CFI_WORD]), runner.BuildError) or ""
+            expect("a host with no control-flow flag refuses the word {cfi}", machine in said)
 
 
 def compile_cases(expect: testing.Expect) -> None:
@@ -318,11 +330,27 @@ def compile_cases(expect: testing.Expect) -> None:
         (tree / "main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
         (tree / runner.MANIFEST).write_text("program examples tool main.cpp\n", encoding="utf-8")
         program = runner.planted_build(tree, scratch / "program", compiler)
-        placed = [(directory, path.relative_to(scratch / "program")) for directory, path in program.linked]
+        placed = [
+            (item.directory, item.path.relative_to(scratch / "program"), item.target_type) for item in program.linked
+        ]
         expect(
-            "a program row links the program in its directory, with its map adjacent to it",
-            placed == [("examples", Path("examples/tool"))]
+            "a program row links the program of the type EXECUTABLE in its directory, with its map adjacent to it",
+            placed == [("examples", Path("examples/tool"), runner.EXECUTABLE)]
             and (scratch / "program" / "examples" / "tool.map").is_file(),
+        )
+        (tree / runner.MANIFEST).write_text("module test libplanted.so a.cpp\n", encoding="utf-8")
+        module = runner.planted_build(tree, scratch / "module", compiler)
+        module_file = scratch / "module" / "test" / "libplanted.so"
+        module_type = None
+        if module_file.is_file():
+            with elf.mapped(module_file) as linked_module:
+                module_type = (linked_module.file_type(), linked_module.interpreter())
+        expect(
+            "a module row links a shared library of the type MODULE_LIBRARY with -shared, and its map adjacent to it",
+            [(item.directory, item.target_type, item.is_executable) for item in module.linked]
+            == [("test", runner.MODULE_LIBRARY, False)]
+            and module_type == (elf.ET_DYN, None)
+            and module_file.with_name("libplanted.so.map").is_file(),
         )
         (tree / runner.MANIFEST).write_text(
             "program examples tool main.cpp | -Wl,--enable-new-dtags -Wl,-rpath,{root}/lib\n", encoding="utf-8"
@@ -330,7 +358,7 @@ def compile_cases(expect: testing.Expect) -> None:
         worded = runner.planted_build(tree, scratch / "worded", compiler)
         run_paths: list[str] = []
         if worded.linked:
-            with elf.mapped(worded.linked[0][1]) as linked_program:
+            with elf.mapped(worded.linked[0].path) as linked_program:
                 run_paths = [entry.text for entry in linked_program.dynamic() if entry.tag == elf.DT_RUNPATH]
         expect(
             "the cell of a program row goes on the link line, with the root of the copy for the word {root}",

@@ -4939,7 +4939,7 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit dec
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its configured ledgers and of its
-# five rules build planted libraries, programs and probe units with the
+# six rules build planted libraries, programs, modules and probe units with the
 # compiler of this build.  The test of codegen-shapes
 # also compiles the probe unit of this build with a planted header.  The test
 # of the command guard bom reads the artifacts of this build.  The test of the
@@ -4950,8 +4950,8 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit dec
 crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES codegen-shapes)
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
         guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls guard.engines.elf.test_configured
-        guard.engines.elf.test_artifact_links guard.engines.elf.test_library_bytes guard.test_bom
-        guard.test_asm_compare)
+        guard.engines.elf.test_artifact_links guard.engines.elf.test_artifact_hardening
+        guard.engines.elf.test_library_bytes guard.test_bom guard.test_asm_compare)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
