@@ -5,8 +5,8 @@ above it.  Each module of the package gets the root from REPO_ROOT here.  The
 rule job-owners holds that no different Python file of utils/ calculates the
 root from its own position.
 
-The rule holds in each copy of the tree: a checkout, a git worktree, and the
-export of a guard run or of a self-test.  Git and the working directory of the
+The rule holds in each copy of the tree: a checkout, a git worktree, the warm
+tree of the gate, and a self-test copy.  Git and the working directory of the
 caller do not change the result.
 
 listing() gives the entries of a directory, sorted.  The file system gives

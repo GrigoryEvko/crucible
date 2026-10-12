@@ -800,6 +800,11 @@ def iso_time(epoch: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
+def iso_now() -> str:
+    """Return the time of the call as ISO 8601 text in UTC, for the record of a different module."""
+    return iso_time(time.time())
+
+
 def history_path(build: Path) -> Path:
     """Return the history file of a build directory."""
     return build / HISTORY_DIR / HISTORY_NAME

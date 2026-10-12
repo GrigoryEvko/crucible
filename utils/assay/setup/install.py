@@ -60,8 +60,8 @@ FAIL-CLOSED PINNING
 
 THE DIRECTORIES
     Each tool lives in the tools directory of assay.core.cache (tools_root()),
-    outside each checkout, so each checkout, each work tree and each export of
-    a guard run uses one install.  The name of the directory of a tool holds
+    outside each checkout, so each checkout, each work tree and the warm tree
+    of the gate use one install.  The name of the directory of a tool holds
     its pinned version, its platform and the first 16 hexadecimal digits of
     its pinned SHA-256, so two pins never share a directory.  A tool with
     more pins, such as mypy, has the digits of the SHA-256 of the name and the

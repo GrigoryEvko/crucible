@@ -52,8 +52,8 @@ THE CHANGE
         that .gitignore does not match: HEAD.  The change is then the working
         tree, as in a checkout of main before a commit.
       * Else the first parent of HEAD.  The change is then the last commit,
-        as in the export of a guard run, where HEAD is the change commit on
-        main.  A merge commit at HEAD is judged against its first parent.
+        as in a clone at the commit of a change.  A merge commit at HEAD is
+        judged against its first parent.
     A root commit with no change in the working tree has no base.
 """
 
@@ -202,6 +202,15 @@ def toplevel(root: Path) -> Path:
         GitError: If root is not in a git work tree
     """
     return Path(run(root, "rev-parse", "--show-toplevel").decode().strip())
+
+
+def common_dir(root: Path) -> Path:
+    """Return the git directory that each work tree of the repository of a tree shares, as an absolute path.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    return Path(run(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
 
 
 def head(root: Path) -> str:

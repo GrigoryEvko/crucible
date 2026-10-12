@@ -77,10 +77,9 @@ def main_work_tree(root: Path) -> Path:
     A tree that git cannot read gives the tree itself.
     """
     try:
-        shared = git.run(root, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip()
+        return git.common_dir(root).parent
     except git.GitError:
         return root
-    return Path(shared).parent
 
 
 def lock_path(root: Path) -> Path:

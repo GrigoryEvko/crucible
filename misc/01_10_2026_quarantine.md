@@ -146,7 +146,7 @@ Every unit obeys these instructions. The brief of each unit repeats them.
 ### 5.2 Worktree and landing
 
 - Create the worktree with `git worktree add .worktrees/NAME -b wt/NAME main`. Build only inside the worktree.
-- Land through `SCRATCH/commit-block.py` from the main checkout, with a patch and `--replace` pairs for shared files. Section 5.5 lists the shared files.
+- Land with `python3 utils/bin/loop land -m SUBJECT --patch FILE --`, with a patch and `--replace` pairs for shared files. The command runs the copy of the main checkout, and its gate builds and tests the commit before the swap. Section 5.5 lists the shared files.
 - Merge main before each landing. If main moved, rebuild and rerun the tests of the unit.
 - After the last landing: remove the worktree and its grun directory, delete the branch and the patch files.
 
@@ -163,7 +163,7 @@ Every unit obeys these instructions. The brief of each unit repeats them.
 1. The Debug build of `all` passes.
 2. The tests of the unit pass. For a change to a base header, the full Debug suite passes.
 3. A Release build of `all` passes, and the Release tests of the unit pass.
-4. The guard run prints "red only with the change: none". Run it in phases, one blocking call for each phase.
+4. The gate of `loop land` passes: `loop land --check` with the words of the landing. The landing runs the gate again.
 5. `loop derive --check` passes. Regenerate each derived file (mint inventory, row-hash goldens, rosters) in the same commit with `loop derive`. Before unit 1B.5 lands, the command is `refresh-derived.sh --check`.
 6. `guard check --rule clang-format` passes on the changed files. Before unit 1B.5 lands, the command is `check-clang-format.sh`.
 7. From Stage 1: the quarantine ratchet passes. No directory count rises.

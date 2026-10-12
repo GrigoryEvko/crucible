@@ -1,36 +1,34 @@
-"""The test of the landing of a change and of the steps of a guard run (assay.loop.land).
+"""The test of the landing of a change (assay.loop.land).
 
 `guard selftest tests.loop.test_land` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
 
-The cases plant a git repository with a shared file and an own file.  The
-repository also holds a file of the index that .gitignore matches, and a
-registry with one measured rule.  The working tree then holds an edit of a
+The cases plant a git repository with a shared file, an own file, a ledger
+and the ledger of the rule history.  The repository also holds a file of the
+index that .gitignore matches.  The working tree then holds an edit of a
 different writer in the shared file.  The cases compose a tree with an edit
-of the shared file and the working-tree copy of the own file.  They export
-the base and the change of a guard run, and they run the rule history on each
-export.  They land a patch by compare-and-swap, and they make sure that a
-moved HEAD refuses a swap.
+of the shared file and the working-tree copy of the own file.  They land a
+patch by compare-and-swap through a gate that each case plants.  They make
+sure that a moved HEAD refuses a swap, and that a rejected commit does not
+land.  They land added rows of a ledger as two commits with one swap.
 """
 
-import sys
+import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
-from assay.core import git, paths, proc, testing
-from assay.loop import land
+from assay.core import git, testing
+from assay.loop import gate, land
 
-# The files of the planted repository.  The registry holds one measured rule, and the rule history can then judge a
-# raise.
+# The files of the planted repository.
 PLANTED = {
     "shared.txt": "alpha\nbeta\n",
     "own.txt": "own at head\n",
     ".gitignore": "kept.txt\n",
     "kept.txt": "in the index, and .gitignore matches it\n",
-    "utils/registry.txt": (
-        "format 1\nrule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s "
-        "held-by=cmake doc=XV | a time | lower the value\n"
-    ),
+    "utils/ledgers/demo.txt": "format 1\nrule demo\n",
+    "utils/ledgers/history.txt": "# The ledger of the rule history.\nformat 1\nrule history\n",
 }
 # The edit of a different writer that is not committed, and the working-tree copy of the own file.
 WRITER_SHARED = "alpha\nbeta\nanother writer\n"
@@ -54,20 +52,32 @@ def request_of(
     edits: tuple[land.Edit, ...] = (),
     own: tuple[str, ...] = (),
     patches: tuple[Path, ...] = (),
+    grows: tuple[land.Grow, ...] = (),
 ) -> land.Request:
     """Return a request of the planted repository."""
-    return land.Request(messages, patches, edits, own)
+    return land.Request(messages, patches, edits, own, grows)
 
 
-def options(is_dry_run: bool = False, is_tree_only: bool = False) -> land.Options:
-    """Return the options of a landing with no guard run."""
-    return land.Options(is_dry_run, is_tree_only, None, None, None, 1)
+def options(is_dry_run: bool = False, is_tree_only: bool = False, is_check: bool = False) -> land.Options:
+    """Return the options of a landing."""
+    return land.Options(is_dry_run, is_tree_only, is_check, False, False, 1)
 
 
-def history_status(root: Path) -> int:
-    """Run the rule history of this tree on a planted tree, and return its exit."""
-    command = [sys.executable, str(paths.GUARD), "check", "--rule", "history", "--root", str(root)]
-    return proc.run(proc.Command(command, timeout_s=proc.TOOL_S)).exit
+def passing(seen: list[tuple[gate.Candidate, bool]], before: Callable[[], None] | None = None) -> land.Check:
+    """Return a planted gate that keeps each call, runs `before` on the first call, and accepts each commit."""
+
+    def check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        if before is not None and not seen:
+            before()
+        seen.append((candidate, is_retry))
+        return gate.Verdict(("debug",), (), 1.0)
+
+    return check
+
+
+def rejecting(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+    """A planted gate that rejects each commit."""
+    return gate.Verdict(("debug",), (f"debug: red alone too: test_planted in {candidate.commit} {is_retry}",), 2.0)
 
 
 def word_cases(expect: testing.Expect) -> None:
@@ -93,39 +103,45 @@ def word_cases(expect: testing.Expect) -> None:
         scratch = Path(scratch_text)
         (scratch / "old").write_text("beta\n", encoding="utf-8")
         (scratch / "new").write_text("gamma\n", encoding="utf-8")
-        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch"]
-        request, parsed = land.parse([*words, "--replace", "shared.txt", "old", "new", "--", "own.txt"], scratch)
+        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch", "--grow", "demo", "-- is a reason"]
+        request, parsed = land.parse(
+            [*words, "--jobs", "3", "--all-configurations", "--replace", "shared.txt", "old", "new", "--", "own.txt"],
+            scratch,
+        )
         expect(
-            "the parse keeps a message that starts with -, reads the edit files from the current directory, and "
-            "gives each patch a full path",
+            "the parse keeps a message and a reason that start with -, reads the edit files from the current "
+            "directory, and gives each patch a full path",
             request.messages == ("-x is a subject", "body")
             and request.edits == (land.Edit("shared.txt", land.REPLACE, "beta\n", "gamma\n"),)
             and request.patches == ((scratch / "change.patch").resolve(),)
             and request.paths == ("own.txt",)
+            and request.grows == (land.Grow("demo", "-- is a reason"),)
             and request.message == "-x is a subject\n\nbody\n"
-            and parsed.step is None,
+            and parsed == land.Options(False, False, False, False, True, 3),
+        )
+        check_request, check_options = land.parse(["--check", "--here", "--"], scratch)
+        expect(
+            "--check takes no message and no change, and then checks HEAD with the subject of a check",
+            check_request.is_empty
+            and check_options.is_check
+            and check_options.is_here
+            and check_request.subject == land.CHECK_SUBJECT,
         )
         for name, words in (
             ("a landing with no message", ["--patch", "p", "--"]),
             ("a request with nothing to commit", ["-m", "subject", "--"]),
-            ("a step with no name", ["--step", "change", "--patch", "p", "--"]),
-            ("a step that is not a step", ["--step", "later", "--name", "x", "--patch", "p", "--"]),
+            ("--here with no --check", ["--here", "-m", "s", "--patch", "p", "--"]),
+            ("--check with --dry-run", ["--check", "--dry-run", "-m", "s", "--patch", "p", "--"]),
             ("a word that is no option", ["--force", "-m", "s", "--patch", "p", "--"]),
+            ("--jobs that is no number above 0", ["--jobs", "0", "-m", "s", "--patch", "p", "--"]),
+            ("--grow with no rule ID", ["--grow", "Not A Rule", "why", "-m", "s", "--patch", "p", "--"]),
+            ("--grow with no change", ["--check", "--grow", "demo", "why", "--"]),
         ):
             try:
                 land.parse(words, scratch)
                 expect(f"the parse refuses {name}", False)
             except land.LandError:
                 expect(f"the parse refuses {name}", True)
-        step_words = ["--step", "base", "--name", "unit-1", "--jobs", "3", "--patch", "p", "--"]
-        step_request, step_options = land.parse(step_words, scratch)
-        expect(
-            "a step of a guard run takes no message, and its subject is the subject of a request with none",
-            step_options.step == "base"
-            and step_options.name == "unit-1"
-            and step_options.jobs == 3
-            and step_request.subject == land.DEFAULT_SUBJECT,
-        )
 
 
 def edit_cases(expect: testing.Expect) -> None:
@@ -150,30 +166,10 @@ def edit_cases(expect: testing.Expect) -> None:
     expect("apply_edit replaces the one copy of the text", land.apply_edit("alpha beta", edit, "f") == "alpha gamma")
 
 
-def parse_cases(expect: testing.Expect) -> None:
-    """Hold the configure and the parse of each parse build of a change of an arm."""
-    build = paths.REPO_ROOT / "change-build"
-    steps = land.parse_steps(paths.REPO_ROOT, build, ["syntax-x86-64-v3"], 3)
-    loop = str(paths.REPO_ROOT / "utils" / "bin" / "loop")
-    parse_build = str(paths.REPO_ROOT / "build-syntax-x86-64-v3")
-    expect(
-        "a parse preset gives its configure, and then its parse with `loop syntax` in the build directory of the "
-        "preset, so that the tests guard_parse_* read a report of the change",
-        [words for words, _log in steps]
-        == [["cmake", "--preset", "syntax-x86-64-v3"], [sys.executable, loop, "syntax", parse_build, "-j", "3"]],
-    )
-    try:
-        land.parse_steps(paths.REPO_ROOT, build, ["no-such-preset"], 3)
-        expect("a parse preset with no build directory is refused", False)
-    except land.LandError:
-        expect("a parse preset with no build directory is refused", True)
-
-
 def compose_cases(expect: testing.Expect) -> None:
-    """Hold the composition, the exports of a guard run and the rule history on each export."""
+    """Hold the composition, --tree and --dry-run."""
     with tempfile.TemporaryDirectory(prefix="land-compose-") as work_text:
-        work = Path(work_text)
-        root = work / "repo"
+        root = Path(work_text) / "repo"
         head = planted_repository(root)
         (root / "shared.txt").write_text(WRITER_SHARED, encoding="utf-8")
         (root / "own.txt").write_text(WORKING_OWN, encoding="utf-8")
@@ -187,18 +183,18 @@ def compose_cases(expect: testing.Expect) -> None:
             and git.show(root, composed.tree, "own.txt") == WORKING_OWN.encode()
             and composed.changed == ("own.txt", "shared.txt"),
         )
-        status, printed = testing.captured(lambda: land.land(root, request, options(is_tree_only=True)))
+        outcome, printed = testing.captured(lambda: land.land(root, request, options(is_tree_only=True), land.no_check))
         expect(
-            "--tree prints the tree, writes no commit and does not touch the working tree",
-            status == 0
+            "--tree prints the tree with no gate, writes no commit and does not touch the working tree",
+            outcome.status == 0
             and printed.strip() == composed.tree
             and git.head(root) == head
             and (root / "shared.txt").read_text(encoding="utf-8") == WRITER_SHARED,
         )
-        status, printed = testing.captured(lambda: land.land(root, request, options(is_dry_run=True)))
+        outcome, printed = testing.captured(lambda: land.land(root, request, options(is_dry_run=True), land.no_check))
         expect(
-            "--dry-run prints the diff of the commit and writes no commit",
-            status == 0 and "+gamma" in printed and git.head(root) == head,
+            "--dry-run prints the diff of the commit with no gate and writes no commit",
+            outcome.status == 0 and "+gamma" in printed and git.head(root) == head,
         )
         for name, broken in (
             ("an own path that is also a shared file", request_of(("s",), (edit,), ("shared.txt",))),
@@ -217,46 +213,9 @@ def compose_cases(expect: testing.Expect) -> None:
             except land.LandError:
                 expect(f"the composition refuses {name}", True)
 
-        base = work / "base"
-        land.export_tree(root, head, base)
-        land.make_repository(root, base, head, None, git.run(root, "rev-parse", f"{head}^{{tree}}").decode().strip())
-        expect(
-            "the base export is HEAD with its history, a clean status, and the file of the index that .gitignore "
-            "matches",
-            git.head(base) == head
-            and git.run(base, "status", "--porcelain") == b""
-            and git.run(base, "ls-files", "kept.txt").strip() == b"kept.txt",
-        )
-        change = work / "change"
-        land.export_tree(root, composed.tree, change)
-        land.make_repository(root, change, head, request.message, composed.tree)
-        expect(
-            "the change export is one commit on HEAD with the composed tree and the message",
-            git.run(change, "rev-parse", "HEAD^").decode().strip() == head
-            and git.run(change, "rev-parse", "HEAD^{tree}").decode().strip() == composed.tree
-            and git.run(change, "log", "-1", "--format=%B").decode().strip()
-            == "Replace a line of the shared file\n\nThe body of the landing."
-            and git.run(change, "status", "--porcelain") == b"",
-        )
-
-        raise_row = land.Edit("utils/registry.txt", land.REPLACE, "error=20 unit=s", "error=30 unit=s")
-        raised = land.compose(root, request_of(("s",), (raise_row,)), head)
-        verdicts: dict[str, int] = {"base": history_status(base)}
-        bodies = (("unmeasured", "The tests are slower."), ("measured", "The slowest job of slow-row took 26 s."))
-        for case, body in bodies:
-            export = work / case
-            land.export_tree(root, raised.tree, export)
-            land.make_repository(root, export, head, f"Raise the slow row\n\n{body}\n", raised.tree)
-            verdicts[case] = history_status(export)
-        expect(
-            f"the rule history gives 0 on the base export, 1 on a raise with no measurement and 0 on a measured "
-            f"raise, and it gives {verdicts}",
-            verdicts == {"base": 0, "unmeasured": 1, "measured": 0},
-        )
-
 
 def landing_cases(expect: testing.Expect) -> None:
-    """Hold the landing of a patch, the index and the working tree after it, and the refusal of a moved HEAD."""
+    """Hold the landing through the gate, the index and the working tree, a moved HEAD, a rejected commit and --check."""
     with tempfile.TemporaryDirectory(prefix="land-landing-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -267,13 +226,18 @@ def landing_cases(expect: testing.Expect) -> None:
         patch.write_bytes(git.run(root, "diff", "HEAD", "--", "shared.txt"))
         (root / "shared.txt").write_text(PLANTED["shared.txt"], encoding="utf-8")
         request = request_of(("Change a line",), patches=(patch,))
-        status, _ = testing.captured(lambda: land.land(root, request, options()))
+        seen: list[tuple[gate.Candidate, bool]] = []
+        outcome, _ = testing.captured(lambda: land.land(root, request, options(), passing(seen)))
         landed = git.head(root)
         expect(
-            "the landing moves the branch one commit, with the message, on the earlier HEAD",
-            status == 0
+            "the landing moves the branch one commit, with the message, on the earlier HEAD, to the commit that the "
+            "gate passed",
+            outcome.status == 0
+            and outcome.is_landed
             and git.run(root, "rev-parse", "HEAD^").decode().strip() == head
-            and git.run(root, "log", "-1", "--format=%s").decode().strip() == "Change a line",
+            and git.run(root, "log", "-1", "--format=%s").decode().strip() == "Change a line"
+            and [(candidate.head, candidate.commit, candidate.changed, retry) for candidate, retry in seen]
+            == [(head, landed, ("shared.txt",), False)],
         )
         expect(
             "after the landing, the index and the working tree hold the patch",
@@ -289,33 +253,120 @@ def landing_cases(expect: testing.Expect) -> None:
             "a swap from a HEAD that moved is refused, and the branch keeps the other landing",
             not land.swap(root, land.branch_of(root), late, landed, "Late") and git.head(root) == other,
         )
+
+        def move_head() -> None:
+            (root / "kept.txt").write_text("moved while the gate ran\n", encoding="utf-8")
+            git.commit_all(root, "A landing while the gate runs")
+
         retry = request_of(("Again",), (land.Edit("own.txt", land.REPLACE, "moved by", "moved after"),))
-        status, _ = testing.captured(lambda: land.land(root, retry, options(), pause=lambda _seconds: None))
+        seen.clear()
+        outcome, _ = testing.captured(
+            lambda: land.land(root, retry, options(), passing(seen, move_head), pause=lambda _seconds: None)
+        )
+        moved = git.run(root, "rev-parse", "HEAD^").decode().strip()
         expect(
-            "a landing after the move composes on the new HEAD and keeps the other landing",
-            status == 0
-            and git.run(root, "rev-parse", "HEAD^").decode().strip() == other
+            "a HEAD that moves while the gate runs gives a second composition on the new HEAD, which the gate checks "
+            "as a retry, and the landing keeps the other landing",
+            outcome.status == 0
+            and outcome.compositions == 2
+            and [retry_flag for _candidate, retry_flag in seen] == [False, True]
+            and seen[1][0].head == moved
+            and git.run(root, "rev-parse", f"{moved}^").decode().strip() == other
             and git.show(root, "HEAD", "own.txt") == b"own moved after another landing\n",
         )
+        before = git.head(root)
+        rejected = request_of(("Rejected",), (land.Edit("own.txt", land.REPLACE, "after", "rejected"),))
+        outcome, printed = testing.captured(lambda: land.land(root, rejected, options(), rejecting))
+        expect(
+            "a commit that the gate rejects does not land, and the command prints the problem",
+            outcome.status == 1 and not outcome.is_landed and git.head(root) == before and "REJECTED" in printed,
+        )
+        seen.clear()
+        outcome, _ = testing.captured(lambda: land.land(root, rejected, options(is_check=True), passing(seen)))
+        expect(
+            "--check runs the gate on a commit of the change and does not land it",
+            outcome.status == 0
+            and not outcome.is_landed
+            and git.head(root) == before
+            and outcome.candidate is not None
+            and git.show(root, outcome.candidate.commit, "own.txt") == b"own moved rejected another landing\n",
+        )
+        empty = request_of(())
+        outcome, _ = testing.captured(lambda: land.land(root, empty, options(is_check=True), passing(seen)))
+        expect(
+            "--check of an empty request checks HEAD itself",
+            outcome.candidate == gate.Candidate(before, before, ()),
+        )
+        testing.captured(lambda: land.land(root, rejected, options(), passing([])))
         try:
-            land.land(root, retry, options())
+            land.land(root, rejected, options(), passing([]))
             expect("a landing that changes nothing is refused", False)
         except land.LandError:
             expect("a landing that changes nothing is refused", True)
 
 
-def lock_cases(expect: testing.Expect) -> None:
-    """Hold the lock of a work directory of a guard run."""
-    with tempfile.TemporaryDirectory(prefix="land-lock-") as work_text:
-        work = Path(work_text) / "unit"
-        with land.work_lock(work):
-            try:
-                with land.work_lock(work):
-                    expect("a second run with the same name is refused while the first holds the lock", False)
-            except land.LandError:
-                expect("a second run with the same name is refused while the first holds the lock", True)
-        with land.work_lock(work):
-            expect("the lock is free after the first run", True)
+def grow_cases(expect: testing.Expect) -> None:
+    """Hold the rows that a change adds to a ledger: two commits with one swap, and a ledger that does not change."""
+    with tempfile.TemporaryDirectory(prefix="land-grow-") as work_text:
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        (root / "utils/ledgers/demo.txt").write_text("format 1\nrule demo\nsome/path | kind | 1 | entity | why\n")
+        grows = (land.Grow("demo", "A row that must stay"),)
+        request = request_of(("Add a row to the demo ledger",), own=("utils/ledgers/demo.txt",), grows=grows)
+        seen: list[tuple[gate.Candidate, bool]] = []
+        outcome, _ = testing.captured(lambda: land.land(root, request, options(), passing(seen)))
+        first = git.run(root, "rev-parse", "HEAD^").decode().strip()
+        history = (git.show(root, "HEAD", land.HISTORY_LEDGER) or b"").decode()
+        expect(
+            "a growth lands as the change on HEAD and a second commit with the grow row that names the change",
+            outcome.status == 0
+            and git.run(root, "rev-parse", f"{first}^").decode().strip() == head
+            and f"utils/ledgers/demo.txt | grow | admit | {first[:9]} | A row that must stay" in history
+            and history.startswith("# The ledger of the rule history.")
+            and seen[0][0].changed == ("utils/ledgers/demo.txt", land.HISTORY_LEDGER),
+        )
+        expect(
+            "after a growth, the index and the working tree hold the grow row",
+            git.run_any_exit(root, "diff", "--quiet", "--cached", "HEAD").exit == 0
+            and (root / land.HISTORY_LEDGER).read_text(encoding="utf-8") == history,
+        )
+        (root / "own.txt").write_text("a change with no ledger\n", encoding="utf-8")
+        wrong = request_of(("No growth",), own=("own.txt",), grows=(land.Grow("demo", "reason"),))
+        try:
+            land.land(root, wrong, options(), passing([]))
+            expect("a grow row of a ledger that the change does not change is refused", False)
+        except land.LandError:
+            expect("a grow row of a ledger that the change does not change is refused", True)
+
+
+def record_cases(expect: testing.Expect) -> None:
+    """Hold the record of a run of the gate, and the driver of a tree with no copy of the module."""
+    with tempfile.TemporaryDirectory(prefix="land-record-") as work_text:
+        work = Path(work_text)
+        candidate = gate.Candidate("a" * 40, "b" * 40, ("x.txt",))
+        outcome = land.Outcome(0, candidate, 1, gate.Verdict(("debug", "release"), (), 3.5), True)
+        land.write_record(work, request_of(("A subject",)), options(), outcome)
+        printed = land.Outcome(0, None, 1, None, False)
+        land.write_record(work, request_of(("Printed",)), options(is_dry_run=True), printed)
+        lines = (work / land.RECORDS).read_text(encoding="utf-8").splitlines()
+        record = json.loads(lines[0])
+        expect(
+            "a run of the gate gives one record with its commits, its configurations and its result, and --dry-run "
+            "gives none",
+            len(lines) == 1
+            and record["subject"] == "A subject"
+            and record["mode"] == "land"
+            and record["commit"] == "b" * 40
+            and record["configurations"] == ["debug", "release"]
+            and record["landed"] is True
+            and record["problems"] == [],
+        )
+        root = work / "repo"
+        planted_repository(root)
+        expect(
+            "a tree whose main work tree holds no copy of the module gives the main work tree to the driver",
+            land.driver_tree(root) == root.resolve() or land.driver_tree(root) == root,
+        )
 
 
 def main(argv: list[str]) -> int:
@@ -323,5 +374,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (word_cases, edit_cases, parse_cases, compose_cases, landing_cases, lock_cases),
+        (word_cases, edit_cases, compose_cases, landing_cases, grow_cases, record_cases),
     )

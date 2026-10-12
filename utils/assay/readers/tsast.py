@@ -1321,7 +1321,7 @@ def tracked_files(root: Path) -> list[str]:
     """Return the files that git tracks under a root, repo-relative and sorted.
 
     A guard reads what the commit holds.  An untracked file is out of scope:
-    the export and the build of a guard run, or the scratch file of a CMake
+    a build directory in the tree, or the scratch file of a CMake
     check, can appear under the root while a guard runs and vanish before it
     reads them.  assay.core.git lists the index, so an exported GIT_DIR does
     not change the list.  Each entry of the index is in the list, also a

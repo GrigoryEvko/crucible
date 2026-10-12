@@ -28,7 +28,7 @@ WHERE THE RULE RUNS
       * In a clean checkout of main, the change is the last commit.  A merge
         commit is judged against its first parent.
     The rule does not apply to a build that made only some targets (THE
-    STATUS of the runner).  The build of a guard run is such a build, and the
+    STATUS of the runner).  A build of named targets is such a build, and the
     full test run of the build directory applies the rule.
 
 THE FINDINGS THAT THE CHANGE TOOK AWAY
