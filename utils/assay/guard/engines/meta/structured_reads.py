@@ -7,8 +7,8 @@ THE SCOPE
     reader of assay.readers.python reads each Python file, and the reader of
     assay.readers.shell reads each shell script with the bash grammar of the
     pinned ast-grep.  A module of utils/assay/readers/ is a reader: the kinds
-    node-text, node-text-variable, source-text, regex-call and format-read do
-    not read it.
+    node-text, node-text-variable, source-text, regex-call, diagnostic-text
+    and format-read do not read it.
 
 THE KINDS
     lexer               a file named cxx_lex.py, an import of a module named cxx_lex, or a word, a string or a heredoc
@@ -50,15 +50,24 @@ THE KINDS
                         through assay.core.proc, with a time limit and with no repository variable.  A tuple of
                         program names that starts with "git", such as the tools that a check of the host looks for,
                         is not a git command
-    regex-call          a call of a function of the module re outside a reader.  A call whose subject is the result
-                        of prose_text() reads prose, and the rule admits it
+    regex-call          a call of a function of the module re outside a reader.  The import table of the module gives
+                        the target of the name of each call.  A call through an alias of re, such as `import re as
+                        rx`, is such a call, and a call of a name that `from re import` makes is one too.  A call
+                        whose subject is the result of prose_text() reads prose, and the rule admits it
+    diagnostic-text     a string method with an argument that is the head of a diagnostic of GCC, such as "error:"
+                        or "warning: ".  An `in` test with such a head on its left side, or with a list, a tuple or
+                        a set of such heads on its right side.  The kinds of assay.readers.sarif give the heads.  The
+                        text output of GCC has no format.  The SARIF log of the compile gives the kind, the message
+                        and the option of each diagnostic
     format-read         a read of a structured format in a module that is not its reader.  A string constant that
                         names a structured file: CMakeCache.txt, compile_commands.json, build.ninja, .ninja_log, the
                         ctest list --show-only=json-v1 or the section .crucible.quarantine.  A string constant that
-                        names a tool that writes a structured format as text: nm, readelf, c++filt or objdump.  A
-                        bytes constant that starts with the magic of an ELF file or of an ar archive.  A shell
-                        command that runs such a tool.  The tables FORMATS, TOOLS and MAGICS of this module name
-                        each one, and the rule does not read this module for the kind
+                        names a tool that writes a structured format as text: nm, readelf, c++filt, objdump or ldd.
+                        A bytes constant that starts with the magic of an ELF file or of an ar archive.  A shell
+                        command that runs such a tool.  A list, a tuple or a shell command that holds the words
+                        HELP_WORDS one after the other.  These words run the help output of the build tool, and the
+                        code model of assay.readers.cmake gives the targets.  The tables FORMATS, TOOLS, MAGICS and
+                        HELP_WORDS of this module name each one, and the rule does not read this module for the kind
     The ledger of the rule holds the count of each file, kind and entity of
     today: the entity of a Python finding is the function that holds it, and
     each change that moves a read into its reader lowers a count.
@@ -72,19 +81,24 @@ WHAT THE RULE CANNOT SEE
     reaches a tool through a variable set elsewhere passes.  git-command
     reads the literal word "git": a variable that holds the word, or a git
     command that is not in GIT_VERBS after a constant first word, passes.
+    diagnostic-text sees a head only as a constant of the call or of the
+    test.  A head in a variable, or a head that a call builds, gives no
+    finding.
     Review holds the rest.
 
 Complexity: linear in the size of the files of the scope.
 """
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
+from typing import TypeGuard
 
 from assay.core import proc
 from assay.core import report as check_report
 from assay.guard.engines.meta.runner import PLANTS, MetaContext, NotApplicable
 from assay.readers import python as python_reader
+from assay.readers import sarif
 from assay.readers import shell as shell_reader
 
 RULE = "structured-reads"
@@ -100,6 +114,15 @@ GIT_READERS = frozenset({GIT_IMPLEMENTATION})
 LEXER = "cxx_lex"
 RE_FUNCTIONS = frozenset({"search", "match", "fullmatch", "findall", "finditer", "sub", "subn", "split"})
 RE_CALLS = RE_FUNCTIONS | {"compile"}
+# The dotted name of each function of the module re that the kind regex-call refuses.  The import table of the module
+# gives the target of the name of a call.
+REGEX_CALLS = frozenset(f"re.{name}" for name in RE_CALLS)
+# The head of each kind of a diagnostic of GCC in its text output, with and without the space after the colon (the
+# kind diagnostic-text).
+DIAGNOSTIC_HEADS = frozenset(head for kind in sarif.Kind for head in (f"{kind.value}:", f"{kind.value}: "))
+# The words that run the help output of the build tool (the kind format-read).
+HELP_WORDS = ("--target", "help")
+HELP_READER = "assay.readers.cmake"
 STRING_METHODS = frozenset({
     "split", "rsplit", "splitlines", "partition", "rpartition", "startswith", "endswith", "find", "rfind",
     "index", "rindex", "count", "replace", "strip", "lstrip", "rstrip",
@@ -120,7 +143,7 @@ PROSE_READ = "prose_text"
 # Each tool that writes a structured format as text, and the reader of that format.  A run of the tool in a
 # different module reads the format as text.
 TOOLS = {"nm": "assay.readers.elf", "readelf": "assay.readers.elf", "c++filt": "assay.readers.elf",
-         "objdump": "assay.readers.objdump"}
+         "objdump": "assay.readers.objdump", "ldd": "assay.readers.elf"}
 # Each structured file or tool, and its reader.  Only its reader spells its name.
 FORMATS = {"CMakeCache.txt": "assay.readers.cmake", "compile_commands.json": "assay.readers.compdb",
            "build.ninja": "assay.readers.ninja", ".ninja_log": "assay.readers.ninja",
@@ -333,6 +356,11 @@ def shell_findings(path: str, script: shell_reader.ShellScript) -> Iterator[chec
                 "error", path, command.line, RULE, f"{command.name} writes a structured format as text, and a shell "
                 f"script reads it outside its reader {TOOLS[tool]}.  Read the file through its reader", "format-read",
                 tool)
+        if has_run([unquote(word) for word in command.arguments], HELP_WORDS):
+            yield check_report.Finding(
+                "error", path, command.line, RULE, f"{command.name} runs the help output of the build tool, which has "
+                f"no format.  Read the targets from the code model of {HELP_READER}", "format-read",
+                " ".join(HELP_WORDS))
         hits = reads_cpp_source(tool, command.arguments)
         if not hits and tool == "find" and any(tool_name(word) in TOOL_FAMILY for word in command.arguments):
             starts: list[str] = []
@@ -423,6 +451,28 @@ def holds_git_argv(node: ast.List | ast.Tuple) -> bool:
     if isinstance(second, ast.Constant):
         return isinstance(second.value, str) and (second.value.startswith("-") or second.value in GIT_VERBS)
     return True
+
+
+def is_diagnostic_head(node: ast.AST) -> TypeGuard[ast.Constant]:
+    """Return True for a string constant that is the head of a diagnostic of GCC (DIAGNOSTIC_HEADS)."""
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in DIAGNOSTIC_HEADS
+
+
+def holds_diagnostic_head(node: ast.AST) -> bool:
+    """Return True for a head of a diagnostic of GCC, and for a list, a tuple or a set that holds one."""
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return any(is_diagnostic_head(element) for element in node.elts)
+    return is_diagnostic_head(node)
+
+
+def has_run(values: Sequence[object], words: tuple[str, ...]) -> bool:
+    """Return True when a sequence holds `words` one after the other.  Complexity: the values times the words."""
+    return any(tuple(values[start:start + len(words)]) == words for start in range(len(values) - len(words) + 1))
+
+
+def holds_words(node: ast.List | ast.Tuple, words: tuple[str, ...]) -> bool:
+    """Return True when a list or a tuple holds string constants equal to `words`, one after the other."""
+    return has_run([element.value if isinstance(element, ast.Constant) else None for element in node.elts], words)
 
 
 def docstring_nodes(tree: ast.Module) -> set[int]:
@@ -608,14 +658,18 @@ class PythonReads(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        """Refuse a read of tsast text, a regex call outside a reader, and a use of the output of a git run."""
+        """Refuse a read of tsast text or of GCC text, a regex call outside a reader, and a use of a git output."""
         func = node.func
         arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
-        if (self.path not in GIT_READERS and id(node) not in self.discarded
-                and python_reader.dotted(func, self.bindings) in GIT_RUNS):
-            self.add(node, "git-output", f"a use of the value of {python_reader.dotted(func, self.bindings)}() "
-                     f"outside {GIT_MODULE} reads the output of git as text.  Add a function to {GIT_MODULE} that "
-                     f"runs the command and gives a typed value, and call that function")
+        dotted_name = python_reader.dotted(func, self.bindings)
+        if self.path not in GIT_READERS and id(node) not in self.discarded and dotted_name in GIT_RUNS:
+            self.add(node, "git-output", f"a use of the value of {dotted_name}() outside {GIT_MODULE} reads the "
+                     f"output of git as text.  Add a function to {GIT_MODULE} that runs the command and gives a typed "
+                     f"value, and call that function")
+        if (not self.is_reader and dotted_name in REGEX_CALLS
+                and not (len(node.args) >= 2 and is_prose_read(node.args[1]))):
+            self.add(node, "regex-call", f"a call of {dotted_name}() outside a reader.  Read the input through its "
+                     f"reader in assay/readers/, or read prose through tsast.prose_text()")
         if not self.is_reader and isinstance(func, ast.Attribute):
             method, receiver = func.attr, func.value
             if method in RE_FUNCTIONS and any(is_text_of_tsast(argument) for argument in arguments):
@@ -634,16 +688,23 @@ class PythonReads(ast.NodeVisitor):
                     method in RE_FUNCTIONS and any(self.is_source_text(argument) for argument in arguments)):
                 self.add(node, "source-text", f"a {method}() on the text of a C++ file that the module reads as text.  "
                          f"Read the file through assay.readers.tsast, and read the answer from the parse tree")
-            if (isinstance(receiver, ast.Name) and receiver.id == "re" and method in RE_CALLS
-                    and not (len(node.args) >= 2 and is_prose_read(node.args[1]))):
-                self.add(node, "regex-call", f"a call of re.{method}() outside a reader.  Read the input through its "
-                         f"reader in assay/readers/, or read prose through tsast.prose_text()")
+            heads = [argument.value for argument in node.args if is_diagnostic_head(argument)]
+            if method in STRING_METHODS and heads:
+                self.add(node, "diagnostic-text", f"a string {method}() with the head {heads[0]!r} of a diagnostic of "
+                         f"GCC reads the text output of the compiler.  Compile with {sarif.SARIF_FLAG}PATH, and read "
+                         f"the kind and the message of each record of the log with assay.readers.sarif")
         self.generic_visit(node)
 
     def visit_Compare(self, node: ast.Compare) -> None:
-        """Refuse an `in` test over tsast text."""
+        """Refuse an `in` test over tsast text or over the text of a C++ file, and an `in` test with a head of GCC."""
         if not self.is_reader:
-            for operator, right in zip(node.ops, node.comparators):
+            lefts = [node.left, *node.comparators[:-1]]
+            for left, operator, right in zip(lefts, node.ops, node.comparators):
+                if isinstance(operator, (ast.In, ast.NotIn)) and (
+                        is_diagnostic_head(left) or holds_diagnostic_head(right)):
+                    self.add(node, "diagnostic-text", "an `in` test with the head of a diagnostic of GCC reads the "
+                             f"text output of the compiler.  Compile with {sarif.SARIF_FLAG}PATH, and read the kind "
+                             "and the message of each record of the log with assay.readers.sarif")
                 if isinstance(operator, (ast.In, ast.NotIn)) and is_text_of_tsast(right):
                     self.add(node, "node-text", "an `in` test over the text of a tsast node.  Read the answer from "
                              "the children of the node")
@@ -656,10 +717,14 @@ class PythonReads(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_sequence(self, node: ast.List | ast.Tuple) -> None:
-        """Refuse the words of a git command outside assay.core.git."""
+        """Refuse the words of a git command outside assay.core.git, and the words that run the help output."""
         if self.path != GIT_IMPLEMENTATION and holds_git_argv(node):
             self.add(node, "git-command", "a git command outside assay.core.git.  Call a function of assay.core.git, "
                      "which runs git through assay.core.proc with a time limit and with no repository variable")
+        if not self.is_reader and self.path != SELF and holds_words(node, HELP_WORDS):
+            self.add(node, "format-read", f"the words {' '.join(HELP_WORDS)} run the help output of the build tool, "
+                     f"which has no format.  Read the targets from the code model of {HELP_READER}",
+                     " ".join(HELP_WORDS))
         self.generic_visit(node)
 
     visit_List = visit_sequence
