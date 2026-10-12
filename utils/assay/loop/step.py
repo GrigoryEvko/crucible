@@ -24,18 +24,27 @@ THE MEASURED RULES
     A compile reads the measured rules compile-cpu and compile-memory of
     utils/registry.txt, and a link reads the measured rules link-time and
     link-memory.
-      * The CPU time.  Each process of the step gets RLIMIT_CPU at three
-        times the error threshold of the time row.  A step that reaches the
-        limit ends on SIGKILL, and the subcommand prints an error line that
-        says so.  Below the limit, a time over the warning threshold gives a
-        warning line.  The error threshold itself is a check after the build,
-        because the CPU time of one step depends on the load of the host.
+      * The CPU time.  Each process of the step gets RLIMIT_CPU at
+        CPU_LIMIT_FACTOR times the error threshold of the time row.  That
+        limit is 600 s for a compile and 150 s for a link.  A step that
+        reaches the limit ends on SIGKILL, and the subcommand prints an error
+        line that says so.  The limit counts the user time and the system
+        time.  When the host is short of memory, a process can stay in the
+        kernel for a long time, and that time is system time.  On
+        2026-10-12, a compile of 6.6 s of CPU time used 69.2 s of system time
+        and no user time.  Then a limit of 60 s stopped it.  A link of
+        0.4 s used 16.1 s before a limit of 15 s stopped it.  The limit is only
+        for a step that does not end, and it is far above such times.  Below
+        the limit, a time over the warning threshold gives a warning line.
+        The error threshold itself is a check after the build, because the
+        CPU time of one step depends on the load of the host.
         When the record of a compile holds an instruction count, that check
         gives the error level to the count (the row compile-instructions),
         and the CPU time gives a warning only.
-        On a GitHub runner, the step gets no limit, and a step past three
-        times the error threshold gives a warning line that says that the
-        time error was demoted (utils/assay/core/meter.py, A CI RUNNER).
+        On a GitHub runner, the step gets no limit, and a step past
+        CPU_LIMIT_FACTOR times the error threshold gives a warning line that
+        says that the time error was demoted (utils/assay/core/meter.py, A CI
+        RUNNER).
         Off a CI runner, a step past that limit with no limit on it (the
         operating system refused the limit) fails after the step, as the
         limit would stop it.
@@ -93,7 +102,8 @@ from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 
 STEP_ROWS = {"compile": ("compile-cpu", "compile-memory"), "link": ("link-time", "link-memory")}
-CPU_LIMIT_FACTOR = 3
+# The CPU limit of each process of a step, as a multiple of the error threshold of its time row (THE MEASURED RULES).
+CPU_LIMIT_FACTOR = 30
 # The name of the program of a compile command that runs ccache (cmake/Ccache.cmake uses the same rule).
 CCACHE_NAME = "ccache"
 REGISTRY_ENV = "CRUCIBLE_BUILD_REGISTRY"
@@ -194,8 +204,9 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         if run.reached_cpu_limit:
             return "failed", ("error", time_row,
                               f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
-                              f"{run.cpu_limit_s} s, three times the error threshold of {budget[time_row][1]:g} s "
-                              f"(rounded up to a whole second), so the operating system stopped it")
+                              f"{run.cpu_limit_s} s, {CPU_LIMIT_FACTOR} times the error threshold of "
+                              f"{budget[time_row][1]:g} s (rounded up to a whole second), so the operating system "
+                              f"stopped it")
         return "failed", None
     if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.ERROR:
         is_admitted, words = admission(memory_row, output, run.peak_gb)
@@ -208,8 +219,8 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
     if time_row in budget and run.cpu_limit_s is None and run.cpu_s > CPU_LIMIT_FACTOR * budget[time_row][1]:
         level, message = cost_meter.ci_verdict(
             "error", time_row, f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of "
-                               f"{CPU_LIMIT_FACTOR * budget[time_row][1]:g} s, three times the error threshold of "
-                               f"{budget[time_row][1]:g} s, and no CPU limit stopped it")
+                               f"{CPU_LIMIT_FACTOR * budget[time_row][1]:g} s, {CPU_LIMIT_FACTOR} times the error "
+                               f"threshold of {budget[time_row][1]:g} s, and no CPU limit stopped it")
         if level == "error":
             return "rejected", (level, time_row, f"{message}.  The launcher removed the output")
         return "built", (level, time_row, message)

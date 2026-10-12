@@ -440,7 +440,8 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
     """A planted compile that runs away ends at the CPU limit, and on a CI runner it runs to its end."""
     expect = verdicts.expect
-    bench.table(planted_registry(("compile-cpu", 0.1, 0.3, "s"), ("compile-memory", 1000, 2000, "GB")))
+    # The error threshold of 0.03 s gives a limit of 0.9 s (CPU_LIMIT_FACTOR), and the kernel takes the next second.
+    bench.table(planted_registry(("compile-cpu", 0.01, 0.03, "s"), ("compile-memory", 1000, 2000, "GB")))
     started = time.monotonic()
     result = bench.launch(bench.tool, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
@@ -518,7 +519,7 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
                                          stderr=proc.Output.INHERIT)).exit == 0)
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
-        bench.table(planted_registry(("compile-cpu", 0.1, 0.3, "s"), ("compile-memory", 1000, 2000, "GB")))
+        bench.table(planted_registry(("compile-cpu", 0.01, 0.03, "s"), ("compile-memory", 1000, 2000, "GB")))
         started = time.monotonic()
         stopped_run = bench.launch([cxx, *SPIN_FLAGS])
         found_line = last_finding(stopped_run.stderr)

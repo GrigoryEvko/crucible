@@ -1082,9 +1082,13 @@ A step over the memory error
 threshold of the measured rule `compile-memory` or `link-memory` in
 `utils/registry.txt` fails, unless a row of the ledger of that rule
 keeps its output with a reason, up to its kept value (§XV "The budgets of
-the tree"). `RLIMIT_CPU` stops a step at three times the
+the tree"). `RLIMIT_CPU` stops a step at 30 times the
 error threshold of the rule `compile-cpu` or `link-time`, except on a GitHub
-runner (§XV "Compile time", rule 13). Its soft limit and its
+runner (§XV "Compile time", rule 13). The limit counts the user time and the
+system time. When the host is short of memory, a process can stay in the
+kernel for a long time. On 2026-10-12, a compile of 6.6 s of CPU time used
+69.2 s of system time and no user time. Then a limit of 60 s stopped it. The
+limit is only for a step that does not end. Its soft limit and its
 hard limit are equal, so the kernel sends SIGKILL and not SIGXCPU. The GCC 16
 driver crashes when SIGXCPU stops the compiler. The launcher adds
 approximately 10 ms to each step, and the compile database does not show it.
@@ -2489,12 +2493,12 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 
 | Budget | What it measures | Warning | Error | Held by | Runs in |
 |---|---|---|---|---|---|
-| `compile-cpu` | The user and system CPU time of one compile job | 10 s | 20 s. A warning only when the record holds an instruction count. The launcher stops a job at 60 s | The build launcher and the test `guard_compile_cpu` | Build, test run |
+| `compile-cpu` | The user and system CPU time of one compile job | 10 s | 20 s. A warning only when the record holds an instruction count. The launcher stops a job at 600 s | The build launcher and the test `guard_compile_cpu` | Build, test run |
 | `compile-instructions` | The user instructions of the compiler run of one compile job | 55 G | 110 G | The test `guard_compile_instructions` | Test run |
 | `compile-first` | The user instructions of the largest compile of one target, against `cmake/compile-first.txt` (`cmake/CompileFirst.cmake`) | 15 G, for a listed target at or below it | 20 G, for a target over it that the list does not name | The test `guard_compile_first` | Test run |
 | `compile-jobs` | The compile jobs at one time: the depth of the Ninja pool compile, the jobs of each preset and `DEFAULT_JOBS` (rule 14) | 16 jobs | 16 jobs. Also a compile that is not in the pool, and a literal job count that a module of the package gives a build or a test run | The test `guard_compile_jobs` | Test run |
 | `compile-memory` | The peak memory of one compile job | 2 GB | 4 GB. The launcher fails the job | The build launcher and the test `guard_compile_memory` | Build, test run |
-| `link-time` | The user and system CPU time of one link | 2 s | 5 s. The launcher stops a link at 15 s | The build launcher and the test `guard_link_time` | Build, test run |
+| `link-time` | The user and system CPU time of one link | 2 s | 5 s. The launcher stops a link at 150 s | The build launcher and the test `guard_link_time` | Build, test run |
 | `link-jobs` | The link jobs at one time: the depth of the Ninja pool link (rule 14) | 8 jobs | 8 jobs. Also a link or an archive that is not in the pool | The test `guard_link_jobs` | Test run |
 | `link-memory` | The peak memory of one link | 0.5 GB | 1 GB. The launcher fails the link | The build launcher and the test `guard_link_memory` | Build, test run |
 | `function-size` | The largest function of one object | 64 KB | 256 KB | The test `guard_function_size` | Test run |
