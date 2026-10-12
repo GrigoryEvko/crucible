@@ -78,9 +78,8 @@ class Scratch:
     def side_commit(self, subject: str) -> str:
         """Make a commit of the tree with HEAD as its parent and with no body, and return its hash.  HEAD does not move."""
         git.run(self.root, "add", "-A", "--", ".")
-        tree = git.run(self.root, "write-tree").decode().strip()
-        return git.run(self.root, "commit-tree", tree, "-p", "HEAD", "-m", subject,
-                       extra=git.SCRATCH_IDENTITY).decode().strip()
+        return git.commit_tree(self.root, git.write_tree(self.root), [git.head(self.root)], f"{subject}\n",
+                               extra=git.SCRATCH_IDENTITY)
 
     def merge(self, sha: str) -> None:
         """Merge a side commit into HEAD."""

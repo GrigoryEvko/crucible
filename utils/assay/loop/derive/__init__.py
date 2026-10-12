@@ -114,18 +114,10 @@ def tree_state(root: Path) -> set[str]:
     Returns:
         The lines
     """
-    listed = git.run(root, "ls-files", "-z", "--modified", "--deleted", "--others", "--exclude-standard")
-    paths = sorted({name.decode("utf-8", "surrogateescape") for name in listed.split(b"\0") if name})
+    paths = git.listed_paths(root, ["--modified", "--deleted", "--others", "--exclude-standard"])
     files = [path for path in paths if (root / path).is_file() and not (root / path).is_symlink()]
     lines = {f"- {path}" for path in paths if path not in set(files)}
-    if files:
-        hashes = git.run(
-            root,
-            "hash-object",
-            "--stdin-paths",
-            stdin="".join(f"{path}\n" for path in files).encode("utf-8", "surrogateescape"),
-        ).split()
-        lines |= {f"{digest.decode()} {path}" for digest, path in zip(hashes, files)}
+    lines |= {f"{digest} {path}" for digest, path in zip(git.hash_files(root, files), files, strict=True)}
     return lines
 
 

@@ -7,7 +7,16 @@ THE COMMAND
     that is not 0 raises GitError.  run_any_exit() gives the result for each
     exit, for a command whose exit is its answer.  head(), resolve(),
     is_clean() and show() give the answers that callers ask for most, so a
-    caller reads no output of git itself.
+    caller reads no output of git itself.  Each question of a caller gets a
+    function here with a typed answer.
+
+THE OBJECTS
+    write_tree(), hash_object(), commit_tree(), tree_entry(),
+    index_object(), set_index_entry(), tree_changes(), index_changes() and
+    index_patch() write the objects of a commit.  `loop land` calls them in
+    a scratch repository that shares the object store of the repository.
+    symbolic_head(), swap_ref() and set_index_entries() move a branch by
+    compare-and-swap, and they give the index the entries of the commit.
 
 THE ISOLATION
     A repository variable in the environment of the caller wins over
@@ -58,6 +67,7 @@ THE CHANGE
 """
 
 import contextlib
+import datetime
 import os
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
@@ -87,6 +97,11 @@ NEW_FILE_MARK = "+++ "
 NO_FILE = "/dev/null"
 # The options of `git ls-files` that list each file that is not in the index and that .gitignore does not match.
 NEW_FILE_OPTIONS = ("--others", "--exclude-standard")
+# The head line of `git status --porcelain=v2 --branch` that names the commit, and its word for no commit.
+BRANCH_OID = "# branch.oid "
+INITIAL_COMMIT = "(initial)"
+# The object name that removes a path from the index in `git update-index --index-info`.
+NULL_OBJECT = "0" * 40
 
 
 class NotIsolated(Exception):
@@ -139,6 +154,31 @@ class Hunk:
     def adds(self, line: int) -> bool:
         """Tell if the block adds the line LINE of the new file."""
         return self.new_start <= line < self.new_start + self.new_count
+
+
+@dataclass(frozen=True, slots=True)
+class DatedCommit:
+    """One commit: its hash and its author date."""
+
+    sha: str
+    date: datetime.date
+
+
+@dataclass(frozen=True, slots=True)
+class Status:
+    """The state of a tree: its commit, or None with no commit, and the number of index files that are not as in it."""
+
+    commit: str | None
+    changed: int
+
+
+@dataclass(frozen=True, slots=True)
+class TreeEntry:
+    """One entry of a tree object: its mode, its type and the name of its object."""
+
+    mode: str
+    kind: str
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,10 +282,19 @@ def is_clean(root: Path, pathspec: Sequence[str] = ()) -> bool:
     Raises:
         GitError: If git cannot start, or root is not in a git work tree with a commit
     """
-    completed = run_any_exit(root, "diff", "--quiet", "HEAD", "--", *pathspec)
+    return quiet_diff(root, ["HEAD", "--", *pathspec])
+
+
+def quiet_diff(root: Path, options: Sequence[str]) -> bool:
+    """Tell if `git diff --quiet` with the options finds no difference.
+
+    Raises:
+        GitError: If git cannot start, or it gives a status other than 0 and 1
+    """
+    completed = run_any_exit(root, "diff", "--quiet", *options)
     if completed.exit in (0, 1):
         return completed.exit == 0
-    raise GitError(f"`git diff --quiet HEAD` failed in {root}: {completed.err.strip()}")
+    raise GitError(f"`git diff --quiet {' '.join(options[:2])}` failed in {root}: {completed.err.strip()}")
 
 
 def show(root: Path, revision: str, path: str) -> bytes | None:
@@ -281,8 +330,8 @@ def listed_files(root: Path, options: Sequence[str], pathspec: Sequence[str] = (
     Raises:
         GitError: If root is not in a git work tree
     """
-    listed = run(root, "ls-files", "-z", *options, "--", *pathspec).decode("utf-8", "surrogateescape").split("\0")
-    return tuple(sorted({path for path in listed if path and (root / path).is_file()}))
+    listed = null_separated(run(root, "ls-files", "-z", *options, "--", *pathspec))
+    return tuple(sorted({path for path in listed if (root / path).is_file()}))
 
 
 def blobs(root: Path, names: Sequence[str]) -> list[bytes | None]:
@@ -525,9 +574,284 @@ def changed_files(root: Path, base: str) -> tuple[str, ...]:
     Raises:
         GitError: If git fails
     """
-    output = run(root, "diff", "--name-only", "--no-renames", "-z", base, "--")
-    names = {name for name in output.decode("utf-8", "surrogateescape").split("\0") if name}
+    names = set(null_separated(run(root, "diff", "--name-only", "--no-renames", "-z", base, "--")))
     return tuple(sorted(names | set(new_files(root))))
+
+
+def null_separated(output: bytes) -> tuple[str, ...]:
+    """Return the paths of the output of a git command that gives each path with a NUL after it, in sequence."""
+    return tuple(name for name in output.decode("utf-8", "surrogateescape").split("\0") if name)
+
+
+def listed_paths(root: Path, options: Sequence[str]) -> tuple[str, ...]:
+    """Return each path that `git ls-files -z` lists with the options, sorted, also a path with no file in the tree.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    return tuple(sorted(set(null_separated(run(root, "ls-files", "-z", *options)))))
+
+
+def hash_files(root: Path, paths: Sequence[str]) -> tuple[str, ...]:
+    """Return the blob name of the content of each file of a tree, in the sequence of the paths.  Write no object.
+
+    Raises:
+        GitError: If git fails
+    """
+    if not paths:
+        return ()
+    output = run(root, "hash-object", "--stdin-paths",
+                 stdin="".join(f"{path}\n" for path in paths).encode("utf-8", "surrogateescape"))
+    return tuple(name.decode() for name in output.split())
+
+
+def parent(root: Path, commit: str) -> str:
+    """Return the full hash of the first parent of a commit.
+
+    Raises:
+        GitError: If the commit has no parent, or git fails
+    """
+    return run(root, "rev-parse", f"{commit}^").decode().strip()
+
+
+def short_name(root: Path, revision: str) -> str:
+    """Return the short name of the commit of a revision, as `git rev-parse --short` gives it.
+
+    Raises:
+        GitError: If the revision names no object, or git fails
+    """
+    return run(root, "rev-parse", "--short", revision).decode().strip()
+
+
+def author_date(root: Path, revision: str) -> datetime.date:
+    """Return the author date of the commit of a revision.
+
+    Raises:
+        GitError: If the revision names no commit, or git fails
+    """
+    shown = run(root, "log", "-1", "--format=%ad", "--date=short", revision).decode().strip()
+    return datetime.date.fromisoformat(shown)
+
+
+def commit_subject(root: Path, revision: str) -> str:
+    """Return the subject of the commit of a revision.
+
+    Raises:
+        GitError: If the revision names no commit, or git fails
+    """
+    return run(root, "log", "-1", "--format=%s", revision).decode("utf-8", "replace").strip()
+
+
+def dated_commits(root: Path, paths: Sequence[str]) -> tuple[DatedCommit, ...]:
+    """Return each commit that changed one of the paths, oldest first, with its author date.
+
+    Complexity: linear in the length of the log.
+
+    Raises:
+        GitError: If git fails
+    """
+    log = run(root, "log", "--reverse", f"--format=%H{FIELD}%ad", "--date=short", "--", *paths).decode()
+    found: list[DatedCommit] = []
+    for line in log.splitlines():
+        if line:
+            sha, shown = line.split(FIELD, 1)
+            found.append(DatedCommit(sha, datetime.date.fromisoformat(shown)))
+    return tuple(found)
+
+
+def status(root: Path) -> Status:
+    """Return the commit of a tree and the number of index files that are not as in the commit.  Write nothing.
+
+    The commit is None in a repository with no commit.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    output = run(root, "status", "--porcelain=v2", "--branch", "--untracked-files=no")
+    commit: str | None = None
+    changed = 0
+    for line in proc.decoded(output).splitlines():
+        if line.startswith(BRANCH_OID):
+            shown = line.removeprefix(BRANCH_OID).strip()
+            commit = None if shown == INITIAL_COMMIT else shown
+        elif not line.startswith("#"):
+            changed += 1
+    return Status(commit, changed)
+
+
+def archive(root: Path, revision: str, paths: Sequence[str]) -> bytes:
+    """Return the tar archive of the paths at a revision.
+
+    Raises:
+        GitError: If the revision or a path names no object, or git fails
+    """
+    return run(root, "archive", revision, *paths)
+
+
+def write_tree(root: Path) -> str:
+    """Write the tree of the index of a repository, and return its name.
+
+    Raises:
+        GitError: If git fails
+    """
+    return run(root, "write-tree").decode().strip()
+
+
+def hash_object(root: Path, content: bytes) -> str:
+    """Write a blob with the content into the object store of a repository, and return its name.
+
+    Raises:
+        GitError: If git fails
+    """
+    return run(root, "hash-object", "-w", "--stdin", stdin=content).decode().strip()
+
+
+def commit_tree(root: Path, tree: str, parents: Sequence[str], message: str,
+                extra: Mapping[str, str] | None = None) -> str:
+    """Write a commit of a tree with the parents and the message, and return its name.  Move no branch.
+
+    Raises:
+        GitError: If git fails
+    """
+    options = [word for name in parents for word in ("-p", name)]
+    return run(root, "commit-tree", tree, *options, stdin=message.encode(), extra=extra).decode().strip()
+
+
+def tree_entry(root: Path, revision: str, path: str) -> TreeEntry | None:
+    """Return the entry of a path in the tree of a revision, or None when the tree holds no such path.
+
+    Raises:
+        GitError: If the revision names no tree, or git fails
+    """
+    entry = run(root, "ls-tree", "-z", revision, "--", path).decode("utf-8", "surrogateescape").rstrip("\0")
+    if not entry:
+        return None
+    meta, _ = entry.split("\t", 1)
+    mode, kind, name = meta.split(" ")
+    return TreeEntry(mode, kind, name)
+
+
+def index_object(root: Path, path: str) -> str:
+    """Return the name of the blob of a path in the index of a repository.
+
+    Raises:
+        GitError: If the index holds no such path, or git fails
+    """
+    return run(root, "rev-parse", f":{path}").decode().strip()
+
+
+def set_index_entry(root: Path, entry: TreeEntry, path: str) -> None:
+    """Give a path of the index of a repository the mode and the object of an entry.
+
+    Raises:
+        GitError: If git fails
+    """
+    run(root, "update-index", "--cacheinfo", f"{entry.mode},{entry.name},{path}")
+
+
+def tree_changes(root: Path, old: str, new: str) -> tuple[str, ...]:
+    """Return each path that is not the same in two trees, with no search for renames, in the sequence of git.
+
+    Raises:
+        GitError: If git fails
+    """
+    return null_separated(run(root, "diff-tree", "-r", "-z", "--name-only", "--no-renames", old, new))
+
+
+def index_changes(root: Path, base: str) -> tuple[str, ...]:
+    """Return each path of the index that is not as in a commit, with no search for renames, in the sequence of git.
+
+    Raises:
+        GitError: If git fails
+    """
+    return null_separated(run(root, "diff", "--cached", "-z", "--name-only", "--no-renames", base))
+
+
+def index_patch(root: Path, base: str) -> str:
+    """Return the patch from a commit to the index of a repository, as text to show.
+
+    Raises:
+        GitError: If git fails
+    """
+    return run(root, "diff", "--cached", base).decode("utf-8", "replace")
+
+
+def patch(root: Path, revisions: Sequence[str], paths: Sequence[str]) -> bytes:
+    """Return the patch of `git diff` with the revisions and the paths: one revision against the working tree, or two.
+
+    Raises:
+        GitError: If git fails
+    """
+    return run(root, "diff", *revisions, "--", *paths)
+
+
+def is_index_clean(root: Path, base: str) -> bool:
+    """Tell if the index of a repository holds the tree of a commit.
+
+    Raises:
+        GitError: If git cannot start, or it gives a status other than 0 and 1
+    """
+    return quiet_diff(root, ["--cached", base])
+
+
+def has_no_change(root: Path) -> bool:
+    """Tell if `git status --porcelain` of a tree gives no line: no change of an index file and no new file.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    return run(root, "status", "--porcelain") == b""
+
+
+def symbolic_head(root: Path) -> str | None:
+    """Return the branch of HEAD of a tree, such as refs/heads/main, or None when HEAD is on no branch.
+
+    Raises:
+        GitError: If git cannot start
+    """
+    completed = run_any_exit(root, "symbolic-ref", "-q", "HEAD")
+    return completed.out.strip() if completed.exit == 0 else None
+
+
+def swap_ref(root: Path, ref: str, new: str, old: str, message: str) -> bool:
+    """Move a ref to a new commit only when it holds the commit `old`, and tell if it moved.
+
+    Raises:
+        GitError: If git cannot start
+    """
+    return run_any_exit(root, "update-ref", "-m", message, ref, new, old).exit == 0
+
+
+def set_index_entries(root: Path, entries: Sequence[tuple[TreeEntry | None, str]]) -> bool:
+    """Give each path of the index the mode and the object of its entry, or remove a path with no entry.
+
+    Tell if git gives the index the entries.  A busy index gives False.
+
+    Raises:
+        GitError: If git cannot start
+    """
+    lines = "".join(f"{entry.mode} {entry.name}\t{path}\n" if entry is not None else f"0 {NULL_OBJECT}\t{path}\n"
+                    for entry, path in entries)
+    return run_any_exit(root, "update-index", "--index-info", stdin=lines.encode()).exit == 0
+
+
+def holds_patch(root: Path, patch_bytes: bytes) -> bool:
+    """Tell if the working tree of a repository holds a patch: the patch applies in reverse.
+
+    Raises:
+        GitError: If git cannot start
+    """
+    return run_any_exit(root, "apply", "--reverse", "--check", stdin=patch_bytes).exit == 0
+
+
+def apply_patch(root: Path, patch_bytes: bytes) -> str | None:
+    """Give the working tree of a repository a patch, and return the error of git when a hunk does not apply, or None.
+
+    Raises:
+        GitError: If git cannot start
+    """
+    applied = run_any_exit(root, "apply", stdin=patch_bytes)
+    return applied.err if applied.exit != 0 else None
 
 
 def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:

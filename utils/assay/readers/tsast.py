@@ -1340,8 +1340,7 @@ def tracked_files(root: Path) -> list[str]:
     from assay.core import git
 
     try:
-        listed = git.run(root, "ls-files", "-z", "--cached").decode("utf-8", "surrogateescape")
-        return sorted(path for path in listed.split("\0") if path)
+        return list(git.listed_paths(root, ["--cached"]))
     except git.GitError:
         found: list[str] = []
         for directory, dirs, names in os.walk(root):

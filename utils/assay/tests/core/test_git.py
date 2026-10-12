@@ -62,6 +62,86 @@ def answer_cases(expect: Callable[[str, bool], None]) -> None:
         )
 
 
+def object_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check the typed answers and the objects of a commit that a scratch repository writes (THE OBJECTS)."""
+    with git.scratch_repository({"a.txt": b"one\n", "sub/b.txt": b"two\n"}) as root:
+        first = git.commit_all(root, "The first commit", date="2025-01-02T12:00:00")
+        (root / "a.txt").write_text("one and more\n")
+        second = git.commit_all(root, "The second commit", date="2025-01-03T12:00:00")
+        expect("parent gives the first parent of a commit", git.parent(root, second) == first)
+        expect("short_name gives a prefix of the full hash", second.startswith(git.short_name(root, second)))
+        expect("author_date gives the author date", git.author_date(root, first).isoformat() == "2025-01-02")
+        expect("commit_subject gives the subject", git.commit_subject(root, second) == "The second commit")
+        expect(
+            "dated_commits gives each commit of a path with its date, oldest first",
+            [(entry.sha, entry.date.isoformat()) for entry in git.dated_commits(root, ["a.txt"])]
+            == [(first, "2025-01-02"), (second, "2025-01-03")],
+        )
+        entry = git.tree_entry(root, second, "sub/b.txt")
+        expect(
+            "tree_entry gives the mode, the type and the object of a path, and None for a missing path",
+            entry is not None
+            and (entry.mode, entry.kind) == ("100644", "blob")
+            and git.blobs(root, [entry.name]) == [b"two\n"]
+            and git.tree_entry(root, second, "none.txt") is None,
+        )
+        expect("status gives the commit and no changed file", git.status(root) == git.Status(second, 0))
+        (root / "sub" / "b.txt").write_text("changed\n")
+        (root / "new.txt").write_text("new\n")
+        expect("status counts a changed tracked file and no new file", git.status(root) == git.Status(second, 1))
+        expect(
+            "listed_paths gives each listed path, sorted",
+            git.listed_paths(root, ["--modified", "--others", "--exclude-standard"]) == ("new.txt", "sub/b.txt"),
+        )
+        blob = git.hash_object(root, b"three\n")
+        expect(
+            "hash_files gives the blob name of the content of each file, as hash_object writes it",
+            git.hash_files(root, ["sub/b.txt"]) == (git.hash_object(root, b"changed\n"),)
+            and git.blobs(root, [blob]) == [b"three\n"],
+        )
+        git.set_index_entry(root, git.TreeEntry("100644", "blob", blob), "sub/b.txt")
+        expect("index_object gives the blob of a path of the index", git.index_object(root, "sub/b.txt") == blob)
+        expect(
+            "index_changes gives each path of the index that differs", git.index_changes(root, second) == ("sub/b.txt",)
+        )
+        expect("index_patch gives the patch of the index", "+three" in git.index_patch(root, second))
+        expect("is_index_clean is false for a changed index", not git.is_index_clean(root, second))
+        tree = git.write_tree(root)
+        third = git.commit_tree(root, tree, [second], "A composed commit\n", extra=git.SCRATCH_IDENTITY)
+        expect(
+            "commit_tree writes a commit of a tree on its parent, and moves no branch",
+            git.parent(root, third) == second
+            and git.head(root) == second
+            and git.show(root, third, "sub/b.txt") == b"three\n",
+        )
+        expect(
+            "tree_changes gives each path that differs between two trees",
+            git.tree_changes(root, f"{second}^{{tree}}", tree) == ("sub/b.txt",),
+        )
+        branch = git.symbolic_head(root)
+        expect(
+            "swap_ref moves a branch only from the old commit",
+            branch is not None
+            and not git.swap_ref(root, branch, third, first, "a stale swap")
+            and git.swap_ref(root, branch, third, second, "a swap")
+            and git.head(root) == third,
+        )
+        expect(
+            "set_index_entries gives the index the entries of a commit",
+            git.set_index_entries(root, [(git.tree_entry(root, third, "sub/b.txt"), "sub/b.txt")])
+            and git.is_index_clean(root, third),
+        )
+        patch = git.patch(root, [second, third], ["sub/b.txt"])
+        (root / "sub" / "b.txt").write_text("two\n")
+        expect(
+            "apply_patch gives the working tree a patch, and holds_patch then sees it",
+            not git.holds_patch(root, patch)
+            and git.apply_patch(root, patch) is None
+            and git.holds_patch(root, patch)
+            and (root / "sub" / "b.txt").read_text() == "three\n",
+        )
+
+
 def numbered_lines(count: int, changed: frozenset[int]) -> bytes:
     """Return COUNT lines of the same length, with other text on each line of CHANGED."""
     return "".join(
@@ -225,6 +305,7 @@ def main(argv: list[str]) -> int:
 
     command_cases(expect)
     answer_cases(expect)
+    object_cases(expect)
     move_cases(expect)
     change_base_cases(expect)
     file_change_cases(expect)

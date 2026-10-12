@@ -223,7 +223,7 @@ def landing_cases(expect: testing.Expect) -> None:
         # A patch that a work tree made against HEAD.
         (root / "shared.txt").write_text("alpha\ndelta\n", encoding="utf-8")
         patch = work / "change.patch"
-        patch.write_bytes(git.run(root, "diff", "HEAD", "--", "shared.txt"))
+        patch.write_bytes(git.patch(root, ["HEAD"], ["shared.txt"]))
         (root / "shared.txt").write_text(PLANTED["shared.txt"], encoding="utf-8")
         request = request_of(("Change a line",), patches=(patch,))
         seen: list[tuple[gate.Candidate, bool]] = []
@@ -234,15 +234,14 @@ def landing_cases(expect: testing.Expect) -> None:
             "gate passed",
             outcome.status == 0
             and outcome.is_landed
-            and git.run(root, "rev-parse", "HEAD^").decode().strip() == head
-            and git.run(root, "log", "-1", "--format=%s").decode().strip() == "Change a line"
+            and git.parent(root, "HEAD") == head
+            and git.commit_subject(root, "HEAD") == "Change a line"
             and [(candidate.head, candidate.commit, candidate.changed, retry) for candidate, retry in seen]
             == [(head, landed, ("shared.txt",), False)],
         )
         expect(
             "after the landing, the index and the working tree hold the patch",
-            git.run_any_exit(root, "diff", "--quiet", "--cached", "HEAD").exit == 0
-            and (root / "shared.txt").read_text(encoding="utf-8") == "alpha\ndelta\n",
+            git.is_index_clean(root, "HEAD") and (root / "shared.txt").read_text(encoding="utf-8") == "alpha\ndelta\n",
         )
         late_edit = land.Edit("own.txt", land.REPLACE, "head", "late")
         stale = land.compose(root, request_of(("Late",), (late_edit,)), landed)
@@ -263,7 +262,7 @@ def landing_cases(expect: testing.Expect) -> None:
         outcome, _ = testing.captured(
             lambda: land.land(root, retry, options(), passing(seen, move_head), pause=lambda _seconds: None)
         )
-        moved = git.run(root, "rev-parse", "HEAD^").decode().strip()
+        moved = git.parent(root, "HEAD")
         expect(
             "a HEAD that moves while the gate runs gives a second composition on the new HEAD, which the gate checks "
             "as a retry, and the landing keeps the other landing",
@@ -271,7 +270,7 @@ def landing_cases(expect: testing.Expect) -> None:
             and outcome.compositions == 2
             and [retry_flag for _candidate, retry_flag in seen] == [False, True]
             and seen[1][0].head == moved
-            and git.run(root, "rev-parse", f"{moved}^").decode().strip() == other
+            and git.parent(root, moved) == other
             and git.show(root, "HEAD", "own.txt") == b"own moved after another landing\n",
         )
         before = git.head(root)
@@ -315,20 +314,19 @@ def grow_cases(expect: testing.Expect) -> None:
         request = request_of(("Add a row to the demo ledger",), own=("utils/ledgers/demo.txt",), grows=grows)
         seen: list[tuple[gate.Candidate, bool]] = []
         outcome, _ = testing.captured(lambda: land.land(root, request, options(), passing(seen)))
-        first = git.run(root, "rev-parse", "HEAD^").decode().strip()
+        first = git.parent(root, "HEAD")
         history = (git.show(root, "HEAD", land.HISTORY_LEDGER) or b"").decode()
         expect(
             "a growth lands as the change on HEAD and a second commit with the grow row that names the change",
             outcome.status == 0
-            and git.run(root, "rev-parse", f"{first}^").decode().strip() == head
+            and git.parent(root, first) == head
             and f"utils/ledgers/demo.txt | grow | admit | {first[:9]} | A row that must stay" in history
             and history.startswith("# The ledger of the rule history.")
             and seen[0][0].changed == ("utils/ledgers/demo.txt", land.HISTORY_LEDGER),
         )
         expect(
             "after a growth, the index and the working tree hold the grow row",
-            git.run_any_exit(root, "diff", "--quiet", "--cached", "HEAD").exit == 0
-            and (root / land.HISTORY_LEDGER).read_text(encoding="utf-8") == history,
+            git.is_index_clean(root, "HEAD") and (root / land.HISTORY_LEDGER).read_text(encoding="utf-8") == history,
         )
         (root / "own.txt").write_text("a change with no ledger\n", encoding="utf-8")
         wrong = request_of(("No growth",), own=("own.txt",), grows=(land.Grow("demo", "reason"),))

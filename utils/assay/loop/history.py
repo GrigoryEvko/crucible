@@ -697,19 +697,10 @@ def git_state(source: Path) -> dict[str, object]:
         The commit, "clean" or "dirty", and the count; each is None when git cannot read the tree
     """
     try:
-        status = git.run(source, "status", "--porcelain=v2", "--branch", "--untracked-files=no")
+        state = git.status(source)
     except git.GitError:
         return {"commit": None, "tree": None, "changed_files": None}
-    commit = None
-    changed = 0
-    for line in proc.decoded(status).splitlines():
-        if line.startswith("# branch.oid "):
-            commit = line.split()[2]
-        elif not line.startswith("#"):
-            changed += 1
-    if commit == "(initial)":
-        commit = None
-    return {"commit": commit, "tree": "clean" if changed == 0 else "dirty", "changed_files": changed}
+    return {"commit": state.commit, "tree": "clean" if state.changed == 0 else "dirty", "changed_files": state.changed}
 
 
 # ── The recorder ───────────────────────────────────────────────────────────

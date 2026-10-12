@@ -2334,8 +2334,7 @@ def measured_tree(at: str | None) -> Iterator[tuple[Path, str]]:
     if commit is None:
         raise SystemExit(f"session_oracle: {at!r} names no commit")
     with tempfile.TemporaryDirectory(prefix="session_oracle_tree_") as tmp:
-        archive = tree_git.run(REPO_ROOT, "archive", commit, "include")
-        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        with tarfile.open(fileobj=io.BytesIO(tree_git.archive(REPO_ROOT, commit, ["include"]))) as tar:
             tar.extractall(tmp, filter="data")
         yield Path(tmp) / "include", commit
 

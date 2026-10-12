@@ -310,7 +310,7 @@ def prepare_source(source: Path, pin: pin_table.Pin, applied: list[Path], enviro
     try:
         git.init(source)
         git.run(source, "fetch", "-q", "--depth", "1", pin.source, pin.commit, extra={"LC_ALL": "C"})
-        fetched = git.run(source, "rev-parse", "FETCH_HEAD").decode().strip()
+        fetched = git.resolve(source, "FETCH_HEAD")
     except (git.GitError, git.NotIsolated) as error:
         raise BuildError(str(error)) from None
     if fetched != pin.commit:

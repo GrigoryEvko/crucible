@@ -250,7 +250,7 @@ def prepare(build_dir: Path, root: Path) -> str | None:
 def short_commit(root: Path) -> str:
     """Return the short commit of the tree, or "unknown"."""
     try:
-        return git.run(root, "rev-parse", "--short", "HEAD").decode().strip()
+        return git.short_name(root, "HEAD")
     except git.GitError:
         return "unknown"
 

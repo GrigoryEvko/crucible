@@ -195,7 +195,7 @@ def tree_cases(expect: testing.Expect) -> None:
             "the warm tree holds the commit with its history and a clean status",
             git.head(tree) == head
             and (tree / "notes.txt").read_text(encoding="utf-8") == PLANTED["notes.txt"]
-            and git.run(tree, "status", "--porcelain") == b"",
+            and git.has_no_change(tree),
         )
         kept = (tree / "utils/registry.txt").stat().st_mtime_ns
         os.utime(tree / "utils/registry.txt", ns=(kept - 10**9, kept - 10**9))

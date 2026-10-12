@@ -440,11 +440,6 @@ def scratch_repository(root: Path) -> Iterator[Path]:
         yield scratch
 
 
-def names(output: bytes) -> list[str]:
-    """Return the paths of the output of a git command that gives each path with a NUL after it."""
-    return [name for name in output.decode("utf-8", "surrogateescape").split("\0") if name]
-
-
 def compose(root: Path, request: Request, head: str, with_diff: bool = False) -> Composed:
     """Compose the tree of a request on a commit (THE TREE, THE COMPOSITION).
 
@@ -463,36 +458,36 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False) ->
         git.run(scratch, "read-tree", head)
         if request.paths:
             git.run(scratch, "--work-tree", str(root), "add", "-A", "--", *request.paths)
-        before_patches = git.run(scratch, "write-tree").decode().strip()
+        before_patches = git.write_tree(scratch)
         for patch in request.patches:
             git.run(scratch, "apply", "--cached", str(patch))
-        after_patches = git.run(scratch, "write-tree").decode().strip()
-        patched = names(
-            git.run(scratch, "diff-tree", "-r", "-z", "--name-only", "--no-renames", before_patches, after_patches)
-        )
+        after_patches = git.write_tree(scratch)
+        patched = git.tree_changes(scratch, before_patches, after_patches)
         shared = list(dict.fromkeys([*edited_paths(request), *patched]))
         overlap = sorted(set(shared) & own)
         if overlap:
             raise LandError(f"{overlap} is both a shared file and an own path")
         for path in edited_paths(request):
-            listing = git.run(root, "ls-tree", head, "--", path).decode().split()
-            if not listing:
+            entry = git.tree_entry(root, head, path)
+            if entry is None:
                 raise LandError(f"the shared file {path} is not in HEAD")
-            blob = git.run(scratch, "rev-parse", f":{path}").decode().strip()
-            content = git.run(root, "cat-file", "blob", blob).decode("utf-8")
+            stored = git.blobs(root, [git.index_object(scratch, path)])[0]
+            if stored is None:
+                raise LandError(f"the index of the composition holds no blob of the shared file {path}")
+            content = stored.decode("utf-8")
             for edit in request.edits:
                 if edit.path == path:
                     content = apply_edit(content, edit, f"HEAD:{path}")
-            written = git.run(root, "hash-object", "-w", "--stdin", stdin=content.encode("utf-8")).decode().strip()
-            git.run(scratch, "update-index", "--cacheinfo", f"{listing[0]},{written},{path}")
-        changed = names(git.run(scratch, "diff", "--cached", "-z", "--name-only", "--no-renames", head))
+            written = git.hash_object(root, content.encode("utf-8"))
+            git.set_index_entry(scratch, replace(entry, name=written), path)
+        changed = git.index_changes(scratch, head)
         allowed = own | set(shared)
         for path in changed:
             if not any(path == item or path.startswith(item + "/") for item in allowed):
                 raise LandError(f"REFUSED, '{path}' changed but is not listed")
-        tree = git.run(scratch, "write-tree").decode().strip()
-        diff = git.run(scratch, "diff", "--cached", head).decode("utf-8", "replace") if with_diff else ""
-    return Composed(head, tree, tuple(changed), diff)
+        tree = git.write_tree(scratch)
+        diff = git.index_patch(scratch, head) if with_diff else ""
+    return Composed(head, tree, changed, diff)
 
 
 def grow_commit(root: Path, first: str, grows: Sequence[Grow], changed: Sequence[str]) -> str:
@@ -517,15 +512,17 @@ def grow_commit(root: Path, first: str, grows: Sequence[Grow], changed: Sequence
         key = rule_ledger.Key(f"{rule_ledger.LEDGER_DIRECTORY}/{grow.rule}.txt", GROW_KIND, first[:SHORT_HASH])
         rows[key] = rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, grow.reason)
     rendered = rule_ledger.render(replace(ledger, base={**ledger.base, **rows}))
-    blob = git.run(root, "hash-object", "-w", "--stdin", stdin=rendered.encode("utf-8")).decode().strip()
-    mode = git.run(root, "ls-tree", first, "--", HISTORY_LEDGER).decode().split()[0]
+    blob = git.hash_object(root, rendered.encode("utf-8"))
+    entry = git.tree_entry(root, first, HISTORY_LEDGER)
+    if entry is None:
+        raise LandError(f"the commit {first[:SHORT_HASH]} holds no {HISTORY_LEDGER}, and --grow writes its rows there")
     with scratch_repository(root) as scratch:
         git.run(scratch, "read-tree", first)
-        git.run(scratch, "update-index", "--cacheinfo", f"{mode},{blob},{HISTORY_LEDGER}")
-        tree = git.run(scratch, "write-tree").decode().strip()
+        git.set_index_entry(scratch, replace(entry, name=blob), HISTORY_LEDGER)
+        tree = git.write_tree(scratch)
     rules = ", ".join(grow.rule for grow in grows)
     message = f"Admit the rows that the commit {first[:SHORT_HASH]} adds to the ledgers of {rules}\n"
-    return git.run(root, "commit-tree", tree, "-p", first, stdin=message.encode()).decode().strip()
+    return git.commit_tree(root, tree, [first], message)
 
 
 # ── The landing ────────────────────────────────────────────────────────────
@@ -537,20 +534,20 @@ def branch_of(root: Path) -> str:
     Raises:
         LandError: If HEAD is not on a branch
     """
-    completed = git.run_any_exit(root, "symbolic-ref", "-q", "HEAD")
-    if completed.exit != 0:
+    branch = git.symbolic_head(root)
+    if branch is None:
         raise LandError(f"HEAD of {root} is not on a branch, and no branch can move")
-    return completed.out.strip()
+    return branch
 
 
 def commit_tree(root: Path, composed: Composed, message: str) -> str:
     """Write the commit of a composed tree on its HEAD, with the message, and return its full name."""
-    return git.run(root, "commit-tree", composed.tree, "-p", composed.head, stdin=message.encode()).decode().strip()
+    return git.commit_tree(root, composed.tree, [composed.head], message)
 
 
 def swap(root: Path, branch: str, new: str, head: str, subject: str) -> bool:
     """Move the branch to the new commit when it holds the commit head, and tell if it moved (THE COMPARE-AND-SWAP)."""
-    return git.run_any_exit(root, "update-ref", "-m", f"loop land: {subject}", branch, new, head).exit == 0
+    return git.swap_ref(root, branch, new, head, f"loop land: {subject}")
 
 
 def sync_index(root: Path, commit: str, paths: Sequence[str]) -> None:
@@ -558,16 +555,8 @@ def sync_index(root: Path, commit: str, paths: Sequence[str]) -> None:
 
     A busy index only gives a warning, because the commit is done.
     """
-    lines: list[str] = []
-    for path in paths:
-        entry = git.run(root, "ls-tree", "-z", commit, "--", path).decode("utf-8", "surrogateescape").rstrip("\0")
-        if entry:
-            meta, _ = entry.split("\t", 1)
-            mode, _kind, blob = meta.split(" ")
-            lines.append(f"{mode} {blob}\t{path}\n")
-        else:
-            lines.append(f"0 {'0' * 40}\t{path}\n")
-    if git.run_any_exit(root, "update-index", "--index-info", stdin="".join(lines).encode()).exit != 0:
+    entries = [(git.tree_entry(root, commit, path), path) for path in paths]
+    if not git.set_index_entries(root, entries):
         check_report.write_line(
             "loop land: WARNING, the index of the repository was busy and is not updated", is_error=True
         )
@@ -575,12 +564,12 @@ def sync_index(root: Path, commit: str, paths: Sequence[str]) -> None:
 
 def apply_patch(root: Path, patch: bytes, shown: str) -> None:
     """Give the working tree a patch unless it holds the patch, and write a warning when a hunk does not apply."""
-    if git.run_any_exit(root, "apply", "--reverse", "--check", stdin=patch).exit == 0:
+    if git.holds_patch(root, patch):
         return
-    applied = git.run_any_exit(root, "apply", stdin=patch)
-    if applied.exit != 0:
+    problem = git.apply_patch(root, patch)
+    if problem is not None:
         check_report.write_line(
-            f"loop land: WARNING, {shown} does not apply to the working tree:\n{applied.err}The owner must apply "
+            f"loop land: WARNING, {shown} does not apply to the working tree:\n{problem}The owner must apply "
             f"these hunks by hand before the next commit of those files, or that commit reverts them.",
             is_error=True,
         )
@@ -597,7 +586,7 @@ def update_working_tree(root: Path, request: Request, grown: tuple[str, str] | N
     for patch in request.patches:
         apply_patch(root, patch.read_bytes(), str(patch))
     if grown is not None:
-        apply_patch(root, git.run(root, "diff", grown[0], grown[1], "--", HISTORY_LEDGER), HISTORY_LEDGER)
+        apply_patch(root, git.patch(root, grown, [HISTORY_LEDGER]), HISTORY_LEDGER)
     for path in edited_paths(request):
         file = root / path
         content = file.read_text(encoding="utf-8")
@@ -685,7 +674,7 @@ def land(
             for path in candidate.changed:
                 check_report.write_line(f"  {path}")
             sync_index(root, candidate.commit, candidate.changed)
-            first = git.run(root, "rev-parse", f"{candidate.commit}^").decode().strip() if request.grows else ""
+            first = git.parent(root, candidate.commit) if request.grows else ""
             update_working_tree(root, request, (first, candidate.commit) if request.grows else None)
             return Outcome(ExitCode.OK, candidate, composition, verdict, True)
         check_report.write_line(

@@ -326,15 +326,6 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
     git.run(tree, "update-ref", "--no-deref", "HEAD", commit)
 
 
-def first_parent(tree: Path, commit: str) -> str:
-    """Return the full name of the first parent of a commit in a tree.
-
-    Raises:
-        git.GitError: If the commit has no parent
-    """
-    return git.run(tree, "rev-parse", f"{commit}^").decode().strip()
-
-
 def build_directory(tree: Path, configuration: Configuration) -> Path:
     """Return the build directory of a configuration in the warm tree."""
     return tree / configuration.build
@@ -524,7 +515,7 @@ class Gate:
         move_tree(self.root, self.tree, candidate.commit)
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
-        is_stacked = candidate.commit != candidate.head and first_parent(self.tree, candidate.commit) != candidate.head
+        is_stacked = candidate.commit != candidate.head and git.parent(self.tree, candidate.commit) != candidate.head
         rules = changed_rules(self.tree, candidate.head, candidate.changed)
         presets = self._parse_presets(based)
         names = ledger_names(self.tree, rules)

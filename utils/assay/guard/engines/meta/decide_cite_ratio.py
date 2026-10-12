@@ -85,10 +85,9 @@ def head_date(root: Path) -> datetime.date:
         NotApplicable: If the tree has no commit
     """
     try:
-        shown = git.run(root, "log", "-1", "--format=%ad", "--date=short", "HEAD").decode().strip()
+        return git.author_date(root, "HEAD")
     except git.GitError as problem:
         raise NotApplicable(f"the tree {root} has no commit, and no procedure has an age: {problem}") from None
-    return datetime.date.fromisoformat(shown)
 
 
 def definition_dates(root: Path) -> dict[str, datetime.date]:
@@ -102,22 +101,21 @@ def definition_dates(root: Path) -> dict[str, datetime.date]:
     """
     if git.is_shallow(root):
         raise NotApplicable("the history is shallow, and it does not hold the first commit of each procedure")
-    log = git.run(root, "log", "--reverse", "--format=%H %ad", "--date=short", "--", *decide_catalog.DECIDE_HEADERS)
-    entries = [line.split() for line in log.decode().splitlines() if line]
-    names = [f"{commit}:{header}" for commit, _date in entries for header in decide_catalog.DECIDE_HEADERS]
+    entries = git.dated_commits(root, decide_catalog.DECIDE_HEADERS)
+    names = [f"{entry.sha}:{header}" for entry in entries for header in decide_catalog.DECIDE_HEADERS]
     contents = iter(git.blobs(root, names))
     versions: list[tuple[str, str]] = []
     version_dates: list[datetime.date] = []
-    for commit, shown in entries:
+    for entry in entries:
         for header in decide_catalog.DECIDE_HEADERS:
             content = next(contents)
             if content is None:
                 continue
             try:
-                versions.append((f"{commit}:{header}", content.decode("utf-8")))
+                versions.append((f"{entry.sha}:{header}", content.decode("utf-8")))
             except UnicodeDecodeError:
-                raise Unreadable(f"the version {commit}:{header} is not UTF-8") from None
-            version_dates.append(datetime.date.fromisoformat(shown))
+                raise Unreadable(f"the version {entry.sha}:{header} is not UTF-8") from None
+            version_dates.append(entry.date)
     dates: dict[str, datetime.date] = {}
     try:
         for tree, date in zip(tsast.parse_texts(versions, strict=True), version_dates, strict=True):
