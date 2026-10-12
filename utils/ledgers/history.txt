@@ -18,6 +18,7 @@
 format 1
 rule history
 utils/ledgers/artifact-links.txt | rebase | admit | b453058c4 | The ledger holds the configuration x86_64-debug-asan-bench-fuzz. The commit added its rows of the link facts of the build directory, and the ledger grew from 892 to 994 rows
+utils/ledgers/artifact-links.txt | rebase | admit | d6e758e2e | Each executable is a position-independent executable with relative relocations in .relr.dyn. The commit added the link facts .relr.dyn and GLIBC_ABI_DT_RELR, and the ledger grew from 990 to 993 rows
 utils/ledgers/artifact-symbols.txt | rebase | admit | 7a593b460 | The ledger of the libstdc++ symbols began at this commit, and its rows joined the throw and vtable rows. Before this commit, the ledger held only those rows
 utils/ledgers/artifact-symbols.txt | rebase | admit | 8ba9b3078 | The ledger holds the configurations x86_64-debug-tsan and x86_64-debug-ubsan-strict. The commit added their 25 difference rows of archives that it did not change, and the ledger grew from 93 to 118 rows
 utils/ledgers/artifact-symbols.txt | rebase | admit | b957c6fd9 | The rule reads each import of each static library of the root, with its provider and its version. The commit added 370 rows of archives that it did not change, and the ledger grew from 118 to 394 rows

@@ -6,6 +6,8 @@ usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [-
                                            of the engine build with configurations
        guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations, or a
                                            rule of the engine build with a module that writes its ledger
+       guard write --rule history --growth RULE COMMIT --reason TEXT [--root DIR]
+                                           the rows that admit the growth of a ledger at a commit
        guard write --rule ID [ARG]...      a rule with a legacy module
        guard write --all-configurations [--rule ID]... [--root DIR] [--jobs N] [--no-build]
                                            each counted rule, or each rule of --rule, in the build of each
@@ -63,6 +65,12 @@ MODULES THAT JUDGE THEIR LEDGER).  --add-configuration and --import LOG apply
 to it as to a rule of the engine plugin.  The rule fixture-quarantine writes
 its ledger in this way.
 
+--growth RULE COMMIT admits the rows that COMMIT added to the ledger of
+RULE, with the reason of --reason.  The command writes a rebase row, a
+`grow` row, or the two, into the ledger of the rule history (THE GROWTH of
+assay.guard.engines.meta.history).  It refuses a commit that added no row
+to that ledger.
+
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
 does.
@@ -86,6 +94,64 @@ OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
 JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
 # The word that writes each configuration of the counted ledgers (assay.guard.write_configurations).
 CONFIGURATIONS_FLAG = "--all-configurations"
+
+
+def write_growth(
+    registry: rule_registry.Registry, rule_id: str, root: Path, grown_rule: str, revision: str, reason: str | None
+) -> int:
+    """Write the rows of the rule history that admit the growth of a ledger at a commit of the branch.
+
+    growth_kinds() of assay.guard.engines.meta.history gives the kinds of the rows: a rebase row, a `grow` row, or
+    the two.  Complexity: one read of the history of the tree.
+
+    Returns:
+        0 when the ledger is written, 1 when no row admits a growth or the ledger does not read, 2 on a usage error
+    """
+    from assay.core import git
+    from assay.guard.engines.meta import history
+    from assay.guard.engines.meta.runner import NotApplicable
+
+    rule = registry.rules.get(rule_id)
+    if rule is None or rule.id != history.RULE:
+        check_report.write_line(f"guard write: --growth applies only to the rule {history.RULE}", is_error=True)
+        return 2
+    if grown_rule not in registry.rules or reason is None or not reason.strip():
+        check_report.write_line(
+            "guard write: --growth takes the ID of a rule and a commit, and --reason takes the reason of the growth",
+            is_error=True,
+        )
+        return 2
+    try:
+        commit = git.resolve(root, revision)
+        kinds = history.growth_kinds(root, registry, grown_rule, commit) if commit is not None else ()
+    except (git.GitError, NotApplicable) as problem:
+        check_report.write_line(f"guard write: {problem}", is_error=True)
+        return 2
+    if commit is None:
+        check_report.write_line(f"guard write: {revision} names no commit of {root}", is_error=True)
+        return 2
+    path = rule_ledger.shown_path(grown_rule)
+    short = commit[: history.SHORT_HASH]
+    if not kinds:
+        check_report.write_line(
+            f"guard write: no row admits a growth of {path} at the commit {short}: the commit did "
+            f"not add rows to that ledger, or the ledger takes no such row",
+            is_error=True,
+        )
+        return 1
+    try:
+        written = history.with_admissions(
+            rule_ledger.read(rule, root), commit, {(grown_rule, kind): reason for kind in kinds}
+        )
+    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
+        check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
+        return 1
+    is_changed = rule_ledger.store(written, root)
+    check_report.write_line(
+        f"guard write: {rule_ledger.shown_path(rule.id)} holds the {' and '.join(kinds)} row of "
+        f"{path} at the commit {short}" + ("" if is_changed else ", with no change")
+    )
+    return 0
 
 
 def main(argv: list[str]) -> int:
@@ -120,7 +186,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--add-configuration", dest="add_configuration", action="store_true")
     parser.add_argument("--import", dest="import_log", type=Path, default=None, metavar="LOG")
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
+    parser.add_argument("--growth", nargs=2, default=None, metavar=("RULE", "COMMIT"))
     options = parser.parse_args(argv)
+    if options.growth is not None:
+        return write_growth(
+            registry, options.rule, options.root.resolve(), options.growth[0], options.growth[1], options.reason
+        )
     requested = registry.rules.get(options.rule)
     is_held_write = requested is not None and requested.held_by is not None and requested.policy in JUDGED_POLICIES
     chosen = [requested] if requested is not None and is_held_write else check.selected(registry, [options.rule], [])

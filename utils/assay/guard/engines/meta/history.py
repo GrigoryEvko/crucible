@@ -121,6 +121,17 @@ THE GROWTH
     row.  The rule refuses a `grow` row that changes no result, because the
     row admits nothing.
 
+    with_admissions() writes the rows of a commit, with the commit in
+    SHORT_HASH characters.  The writer of the growth of a ledger at a commit
+    of the branch is this command:
+      `guard write --rule history --growth RULE COMMIT --reason TEXT`
+    growth_kinds() gives its rows: a rebase row when the commit is a rebase
+    commit of the ledger (THE REBASE), and a `grow` row when grow_cause()
+    gives rows that a rebase row cannot hold.  The landing of a change writes
+    the `grow` rows of its first commit in a second commit, with this
+    command (assay.loop.land, THE GROWTH):
+      `loop land --grow RULE REASON`
+
 THE KEPT THRESHOLDS
     A `keep` row names a measured rule and one field of it.  REASON gives the
     measurement that keeps the threshold above its lowest committed value.
@@ -288,6 +299,8 @@ REASON_KIND = "region-reason"
 REBASE_KIND = "rebase"
 GROW_KIND = "grow"
 KEEP_KIND = "keep"
+# The length of the commit in the entity of a row of the ledger of this rule.
+SHORT_HASH = 9
 ROW_KIND = "row"
 # A commit that changes a path of the code of the guards can change the keys of a ledger (THE REBASE).
 GUARD_CODE = "utils/"
@@ -1558,7 +1571,7 @@ def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.F
     for key, entry in sorted(ledger.base.items()):
         words = key.entity.split(" ")
         commit = words[0] if words else ""
-        is_commit = len(commit) == 9 and set(commit) <= HEX_DIGITS
+        is_commit = len(commit) == SHORT_HASH and set(commit) <= HEX_DIGITS
         is_threshold = key.path == REGISTRY and key.kind in COLUMNS and len(words) == 2 and is_commit
         is_raise = (key.path == QUARANTINE_LEDGER and key.kind in (RAISE_KIND, REASON_KIND) and len(words) == 1
                     and is_commit)
@@ -1571,8 +1584,51 @@ def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.F
                 f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{REGISTRY} | {KEEP_KIND} | "
                 f"admit | RULE warn|error | REASON', '{QUARANTINE_LEDGER} | {RAISE_KIND}|{REASON_KIND} | admit | "
                 f"COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND}|{GROW_KIND} | admit | COMMIT | "
-                f"REASON', with a commit of 9 hexadecimal characters", ROW_KIND, str(entry.line)))
+                f"REASON', with a commit of {SHORT_HASH} hexadecimal characters", ROW_KIND, str(entry.line)))
     return found
+
+
+def with_admissions(ledger: rule_ledger.Ledger, commit: str,
+                    reasons: Mapping[tuple[str, str], str]) -> rule_ledger.Ledger:
+    """Return the ledger of this rule with one row at a commit for each rule and kind of `reasons`, with its reason.
+
+    A kind is REBASE_KIND or GROW_KIND.  The row names the ledger of the rule and the commit in SHORT_HASH
+    characters.  A row with the same key gets the new reason.
+    """
+    rows: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for (rule_id, kind), reason in reasons.items():
+        key = rule_ledger.Key(rule_ledger.shown_path(rule_id), kind, commit[:SHORT_HASH])
+        rows[key] = rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, reason)
+    return replace(ledger, base={**ledger.base, **rows})
+
+
+def growth_kinds(root: Path, registry: rule_registry.Registry, rule_id: str, commit: str) -> tuple[str, ...]:
+    """Return the kinds of the rows that admit the growth of the ledger of a rule at a commit (THE GROWTH).
+
+    A rebase row comes first when change_cause() gives a cause: a change of the key or the format, or a larger scope
+    (THE REBASE).  A `grow` row holds the rows that a rebase row at a larger scope cannot hold.  A ledger
+    that takes no rebase row, and a commit that did not change the ledger, give no kind.  Complexity: one read of the
+    history (read_history()), and linear in the versions of the ledger at the commit and at its parent.
+
+    Raises:
+        NotApplicable: If the tree is not the top of a git work tree, its history is shallow, or git fails
+    """
+    path = rule_ledger.shown_path(rule_id)
+    if not takes_rebase(path, registry):
+        return ()
+    history = read_history(root)
+    found = next((item for item in history.states.commits if item.sha == commit), None)
+    if found is None:
+        return ()
+    try:
+        changed = git.changed_paths(root, commit)
+    except git.GitError as problem:
+        raise NotApplicable(str(problem)) from None
+    cause = change_cause(history, found, path, changed)
+    kinds = [REBASE_KIND] if cause is not None else []
+    if (cause is None or cause.change is Change.SCOPE) and grow_cause(history, found, path, changed) is not None:
+        kinds.append(GROW_KIND)
+    return tuple(kinds)
 
 
 def kept_thresholds(ledger: rule_ledger.Ledger | None) -> frozenset[tuple[str, str]]:

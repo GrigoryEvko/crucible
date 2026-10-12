@@ -524,6 +524,54 @@ def grow_cases(expect: Expect, scratch: Path) -> None:
            status == 1 and any(item.path == ADMISSIONS and "admits no finding" in item.message for item in found))
 
 
+def writer_cases(expect: Expect, scratch: Path) -> None:
+    """Admit the growth of a ledger at a commit with `guard write --rule history --growth` (THE GROWTH)."""
+    from assay.guard import write
+
+    tree = Scratch(scratch / "writer")
+    tree.write(ADMISSIONS, admission_text([]))
+    tree.write(SLOW_LEDGER, slow_ledger("test/a"))
+    tree.commit("Admit one slow test", "The test takes 21 s.")
+    tree.write(SLOW_LEDGER, slow_ledger("test/a", "test/b"))
+    probes = tree.commit("Add a probe", "The probe takes 22 s.")
+    tree.write("utils/assay/guard/engines/buildsys/slow_row.py", "# the planted rule reads each test\n")
+    tree.write("test/d", "a new probe\n")
+    tree.write(SLOW_LEDGER, slow_ledger("test/a", "test/b", "test/c", "test/d"))
+    wider = tree.commit("Time each test, and add a probe", "The rule reads one more test, and one probe is new.")
+    tree.write("notes.txt", "a note\n")
+    note = tree.commit("Add a note", "The note changes no ledger.")
+    registry = rule_registry.load(tree.root / rule_registry.REGISTRY_PATH)
+    reason = "the planted growth is wanted"
+    kinds = (history.growth_kinds(tree.root, registry, "slow-row", probes),
+             history.growth_kinds(tree.root, registry, "slow-row", wider),
+             history.growth_kinds(tree.root, registry, "slow-row", note))
+    expect("a commit that only adds rows takes a grow row, a commit at a larger scope takes a rebase row and a grow "
+           "row, and a commit that does not change the ledger takes none",
+           kinds == ((history.GROW_KIND,), (history.REBASE_KIND, history.GROW_KIND), ()))
+    statuses = [write.write_growth(registry, history.RULE, tree.root, "slow-row", sha[:12], reason)
+                for sha in (probes, wider)]
+    _, found = tree.run()
+    text = (tree.root / ADMISSIONS).read_text(encoding="utf-8")
+    expect("the writer adds the rows of each commit that it resolves, and the growth of those commits gives no warning",
+           statuses == [0, 0]
+           and f"{grow_row(SLOW_LEDGER, probes)}\n" in text and f"{grow_row(SLOW_LEDGER, wider)}\n" in text
+           and f"{SLOW_LEDGER} | {history.REBASE_KIND} | admit | {wider[:9]} | {reason}\n" in text
+           and not any(sha[:9] in item.message.partition("Rows added:")[2] for item in grew(found)
+                       for sha in (probes, wider))
+           and not any(item.level == "error" for item in found))
+    before = (tree.root / ADMISSIONS).read_bytes()
+    refusals = (
+        write.write_growth(registry, history.RULE, tree.root, "slow-row", note, reason),
+        write.write_growth(registry, "slow-row", tree.root, "slow-row", probes, reason),
+        write.write_growth(registry, history.RULE, tree.root, "slow-row", probes, " "),
+        write.write_growth(registry, history.RULE, tree.root, "no-such-rule", probes, reason),
+        write.write_growth(registry, history.RULE, tree.root, "slow-row", "no-such-commit", reason),
+    )
+    expect("the writer refuses a commit that does not change the ledger (1), a rule other than history, an empty "
+           "reason, an unknown rule and an unknown commit (2), and writes nothing",
+           refusals == (1, 2, 2, 2, 2) and (tree.root / ADMISSIONS).read_bytes() == before)
+
+
 def keep_cases(expect: Expect, scratch: Path) -> None:
     """Keep a threshold above its lowest value with a keep row, and refuse each keep row that admits nothing (THE KEPT
     THRESHOLDS)."""
@@ -944,6 +992,7 @@ def main(argv: list[str]) -> int:
         rebase_cases(expect, scratch)
         scope_cases(expect, scratch)
         grow_cases(expect, scratch)
+        writer_cases(expect, scratch)
         keep_cases(expect, scratch)
         quarantine_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)

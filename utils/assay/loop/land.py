@@ -155,10 +155,9 @@ USAGE = (
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
-# The ledger of the rule history, and the kind and the hash length of its row of THE GROWTH.
-HISTORY_RULE = "history"
-HISTORY_LEDGER = f"{rule_ledger.LEDGER_DIRECTORY}/{HISTORY_RULE}.txt"
-GROW_KIND = "grow"
+# The ledger of the rule history, which holds the rows of THE GROWTH.
+HISTORY_LEDGER = rule_ledger.shown_path("history")
+# The length of a commit in a line of the landing.
 SHORT_HASH = 9
 # The work directory of the gate, in the work root, and the file of the records in it (THE RECORD).
 WORK_NAME = "land"
@@ -474,31 +473,32 @@ def grow_commit(root: Path, first: str, grows: Sequence[Grow], changed: Sequence
         LandError: If the change does not change the ledger of a rule, or the ledger of the rule history does not read
         git.GitError: If a git command fails
     """
+    from assay.guard.engines.meta import history
+
     for grow in grows:
-        if f"{rule_ledger.LEDGER_DIRECTORY}/{grow.rule}.txt" not in changed:
+        if rule_ledger.shown_path(grow.rule) not in changed:
             raise LandError(f"--grow {grow.rule}: the change does not change the ledger of the rule {grow.rule}")
     text = git.show(root, first, HISTORY_LEDGER)
     if text is None:
         raise LandError(f"the commit holds no {HISTORY_LEDGER}, and --grow writes its rows there")
     try:
-        ledger = rule_ledger.parse(text.decode("utf-8"), HISTORY_LEDGER, HISTORY_RULE, rule_registry.Policy.ADMIT)
+        ledger = rule_ledger.parse(text.decode("utf-8"), HISTORY_LEDGER, history.RULE, rule_registry.Policy.ADMIT)
     except ValueError as problem:
         raise LandError(f"{HISTORY_LEDGER} does not read: {problem}") from None
-    rows: dict[rule_ledger.Key, rule_ledger.Entry] = {}
-    for grow in grows:
-        key = rule_ledger.Key(f"{rule_ledger.LEDGER_DIRECTORY}/{grow.rule}.txt", GROW_KIND, first[:SHORT_HASH])
-        rows[key] = rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, grow.reason)
-    rendered = rule_ledger.render(replace(ledger, base={**ledger.base, **rows}))
+    reasons = {(grow.rule, history.GROW_KIND): grow.reason for grow in grows}
+    rendered = rule_ledger.render(history.with_admissions(ledger, first, reasons))
     blob = git.hash_object(root, rendered.encode("utf-8"))
     entry = git.tree_entry(root, first, HISTORY_LEDGER)
     if entry is None:
-        raise LandError(f"the commit {first[:SHORT_HASH]} holds no {HISTORY_LEDGER}, and --grow writes its rows there")
+        raise LandError(
+            f"the commit {first[: history.SHORT_HASH]} holds no {HISTORY_LEDGER}, and --grow writes its rows there"
+        )
     with git.borrowing_repository(root) as scratch:
         git.run(scratch, "read-tree", first)
         git.set_index_entry(scratch, replace(entry, name=blob), HISTORY_LEDGER)
         tree = git.write_tree(scratch)
     rules = ", ".join(grow.rule for grow in grows)
-    message = f"Admit the rows that the commit {first[:SHORT_HASH]} adds to the ledgers of {rules}\n"
+    message = f"Admit the rows that the commit {first[: history.SHORT_HASH]} adds to the ledgers of {rules}\n"
     return git.commit_tree(root, tree, [first], message)
 
 
