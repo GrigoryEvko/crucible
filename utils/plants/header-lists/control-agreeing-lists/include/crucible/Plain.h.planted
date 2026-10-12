@@ -1,0 +1,8 @@
+#pragma once
+
+// A tag with a permission row joins the roster list, and the namespace crucible::foundation is no layer namespace.
+namespace crucible::foundation {
+struct PlainTag {
+    using permission_row = int;
+};
+}  // namespace crucible::foundation

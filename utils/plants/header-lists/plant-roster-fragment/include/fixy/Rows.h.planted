@@ -1,0 +1,6 @@
+#pragma once
+
+// The header opens the namespace permission_rows, and the tree has no roster fragment.
+namespace foundation::permissions::permission_rows {
+struct planted_edge {};
+}  // namespace foundation::permissions::permission_rows

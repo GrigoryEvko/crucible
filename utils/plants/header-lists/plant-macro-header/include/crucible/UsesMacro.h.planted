@@ -1,0 +1,6 @@
+#pragma once
+
+#include <foundation/Gate.h>
+
+// The header opens a namespace of foundation through two macros, and the walk list does not name it.
+PLANTED_OPEN_TWICE(planted_gate)

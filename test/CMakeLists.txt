@@ -485,16 +485,13 @@ crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
 # The roster test reads each permission tag of include/ by reflection.  It
 # includes each header that declares a permission row, or a parent tag that
-# gives a row, found here, so a new header joins the walk with no hand edit.
-file(GLOB_RECURSE _permission_row_candidates CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
-     "${CMAKE_SOURCE_DIR}/include/*.h")
+# gives a row.  The rule header-lists reads the parse trees, and
+# `loop derive header-lists --write` writes these headers into the fragment
+# permission-row-headers.cmake as CRUCIBLE_PERMISSION_ROW_HEADERS.
+include("${CMAKE_CURRENT_SOURCE_DIR}/permission-row-headers.cmake")
 set(_permission_row_includes "")
-foreach(_candidate IN LISTS _permission_row_candidates)
-  file(STRINGS "${CMAKE_SOURCE_DIR}/include/${_candidate}" _row_lines
-       REGEX "using permission_row = |using parent_type = |namespace permission_rows")
-  if(_row_lines)
-    string(APPEND _permission_row_includes "#include <${_candidate}>\n")
-  endif()
+foreach(_candidate IN LISTS CRUCIBLE_PERMISSION_ROW_HEADERS)
+  string(APPEND _permission_row_includes "#include <${_candidate}>\n")
 endforeach()
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/permission_row/permission_row_headers.h"
      CONTENT "#pragma once\n@_permission_row_includes@" @ONLY)
@@ -4960,7 +4957,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_decide_cite_ratio
-        guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_costs
+        guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_lists
+        loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
         loop.test_land loop.test_heavy loop.test_gate)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")

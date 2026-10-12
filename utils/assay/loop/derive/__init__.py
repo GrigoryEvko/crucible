@@ -34,6 +34,7 @@ THE TARGETS
                       (--write, --check, --stdout, --build-dir DIR)
     witness-fixtures  the negative fixtures of the witness rows of utils/rule-table.txt (--write, --check)
     walk-units        test/layer/walk-checks.txt (--write, --check, --measure BUILD_DIR, --explain CHECK_FILE)
+    header-lists      test/layer/walk-headers.cmake and test/permission-row-headers.cmake (--write, --check)
     header-costs      the heavy and light rows of utils/rule-table.txt (--write, --check, --measure BUILD_DIR
                       [HEADER...])
     aten-ops          vessel/torch/aten_op_table.h, from the PyTorch tree of TORCH_DIR
@@ -82,12 +83,13 @@ TARGETS = {
     "row-hashes": Target("assay.loop.derive.row_hashes", (), ("--write",), ("--check",)),
     "witness-fixtures": Target("assay.loop.derive.witness_fixtures", (), ("--write",), ("--check",)),
     "walk-units": Target("assay.loop.derive.walk_units", (), ("--write",), ("--check",)),
+    "header-lists": Target("assay.loop.derive.header_lists", (), ("--write",), ("--check",)),
     "header-costs": Target("assay.loop.derive.header_costs", (), ("--write",), ("--check",)),
     "aten-ops": Target("assay.loop.derive.aten_ops"),
     "session-oracle": Target("assay.oracle.runner"),
 }
 # The targets that the refresh writes, in this order.
-REFRESH = ("mint-inventory", "row-hashes", "witness-fixtures", "walk-units", "header-costs")
+REFRESH = ("mint-inventory", "row-hashes", "witness-fixtures", "walk-units", "header-lists", "header-costs")
 # The build directory of the mint inventory and of the row-hash golden in the refresh.
 BUILD = REPO_ROOT / "build"
 # The checks of the refresh, in the order that a moved path breaks them: a label and a command.
@@ -96,6 +98,7 @@ CHECKS = (
     ("ledger paths", (sys.executable, str(GUARD), "check", "--rule", "ledger-owners")),
     ("derived files", (sys.executable, str(GUARD), "check", "--rule", "derived-files", "--build-dir", str(BUILD))),
     ("walk units", (sys.executable, str(GUARD), "check", "--rule", "walk-units")),
+    ("header lists", (sys.executable, str(GUARD), "check", "--rule", "header-lists")),
 )
 LABEL_WIDTH = 34
 

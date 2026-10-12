@@ -1,0 +1,5 @@
+#pragma once
+
+// A macro of foundation whose body opens a namespace, and a second macro that opens one through the first.
+#define PLANTED_OPEN_GATE(name) namespace foundation::gates { struct name {}; }
+#define PLANTED_OPEN_TWICE(name) PLANTED_OPEN_GATE(name)

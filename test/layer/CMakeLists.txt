@@ -164,47 +164,11 @@ endforeach()
 
 # The headers that each walk unit at the foot of this file includes: each
 # foundation and fixy header, and each crucible header that can add a
-# member to a namespace of foundation or fixy.  A header adds such a member
-# only through a definition of that namespace, which the header writes or
-# which a macro of foundation or fixy writes.  So a crucible header joins
-# the list when its text opens a namespace of foundation or fixy, or names a
-# macro whose body opens a namespace, or names such a macro.  The scan reads
-# the text without square brackets and semicolons, because CMake splits a
-# list there.  A definition runs to the first line that does not end in a
-# backslash.
-set(_define_block "#[ \t]*define[ \t]+[A-Za-z_][A-Za-z_0-9]*([^\n\\\\]|\\\\[^\n])*(\\\\\n([^\n\\\\]|\\\\[^\n])*)*")
-set(_lower_macros "")
-file(GLOB_RECURSE _lower_headers CONFIGURE_DEPENDS
-     "${_layer_include}/foundation/*.h" "${_layer_include}/fixy/*.h")
-foreach(_lower_header IN LISTS _lower_headers)
-  file(READ "${_lower_header}" _text)
-  string(REGEX REPLACE "[][;]" " " _text "${_text}")
-  string(REGEX MATCHALL "${_define_block}" _defines "${_text}")
-  foreach(_define IN LISTS _defines)
-    if(_define MATCHES "^#[ \t]*define[ \t]+([A-Za-z_][A-Za-z_0-9]*)")
-      list(APPEND _lower_macros "${CMAKE_MATCH_1}")
-      set("_macro_body_${CMAKE_MATCH_1}" "${_define}")
-    endif()
-  endforeach()
-endforeach()
-set(_namespace_macros "")
-set(_opens_namespace "[ \t\n]namespace[ \t\n]")
-set(_grew TRUE)
-while(_grew)
-  set(_grew FALSE)
-  foreach(_name IN LISTS _lower_macros)
-    if(NOT _name IN_LIST _namespace_macros AND "${_macro_body_${_name}}" MATCHES "${_opens_namespace}")
-      list(APPEND _namespace_macros "${_name}")
-      set(_grew TRUE)
-    endif()
-  endforeach()
-  list(JOIN _namespace_macros "|" _macro_names)
-  set(_opens_namespace "[ \t\n]namespace[ \t\n]|[^A-Za-z_0-9](${_macro_names})[ \t]*[(]")
-endwhile()
-set(_opens_layer_namespace "namespace[ \t\n]+(::)?(foundation|fixy)[ \t\n]*(::|[{])")
-if(_namespace_macros)
-  string(APPEND _opens_layer_namespace "|[^A-Za-z_0-9](${_macro_names})[ \t]*[(]")
-endif()
+# member to a namespace of foundation or fixy.  The rule header-lists reads
+# the parse trees, and `loop derive header-lists --write` writes the
+# crucible headers into the fragment walk-headers.cmake as
+# CRUCIBLE_WALK_HEADERS.
+include("${CMAKE_CURRENT_SOURCE_DIR}/walk-headers.cmake")
 
 # The one-line units of the headers with a check file cost about 500 s of
 # CPU and 4 s of wall time in a clean Debug build at -j128, so `all` does not
@@ -248,13 +212,7 @@ foreach(_layer foundation fixy crucible)
     if(_header IN_LIST _not_standalone)
       continue()
     endif()
-    if(_layer STREQUAL "crucible")
-      file(READ "${_layer_include}/${_header}" _text)
-      string(REGEX REPLACE "[][;]" " " _text "${_text}")
-      if(_text MATCHES "${_opens_layer_namespace}")
-        string(APPEND _walk_header_lines "#include <${_header}>\n")
-      endif()
-    else()
+    if(NOT _layer STREQUAL "crucible" OR _header IN_LIST CRUCIBLE_WALK_HEADERS)
       string(APPEND _walk_header_lines "#include <${_header}>\n")
     endif()
     string(MAKE_C_IDENTIFIER "${_header}" _stem)

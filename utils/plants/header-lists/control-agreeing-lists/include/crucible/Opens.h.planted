@@ -1,0 +1,5 @@
+#pragma once
+
+namespace foundation::planted {
+inline constexpr int value = 0;
+}  // namespace foundation::planted

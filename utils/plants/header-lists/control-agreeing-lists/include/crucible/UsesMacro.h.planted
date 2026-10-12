@@ -1,0 +1,5 @@
+#pragma once
+
+#include <foundation/Gate.h>
+
+PLANTED_OPEN_TWICE(planted_gate)
