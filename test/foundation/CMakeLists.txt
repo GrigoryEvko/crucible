@@ -1194,6 +1194,17 @@ foundation_neg_compile_test(neg_lent_permission_forged_by_start_lifetime_as
   "static assertion failed"
   "foundation::permissions::LentPermission<.*Region.*. is not an implicit-lifetime type")
 
+# The linear marker of foundation/Linear.h.  A class that carries the
+# annotation linear has the shape of a linear class, or the trait refuses
+# it.  The drop door takes only a value that the caller gives up.
+foundation_neg_compile_test(neg_linear_marked_class_without_the_shape
+  "uncaught exception of type .std::meta::exception."
+  "a class carries the annotation linear and does not have the shape of a linear class"
+  "non-constant condition for static assertion")
+foundation_neg_compile_test(neg_linear_drop_of_a_named_value
+  "use of deleted function .constexpr void foundation::linear::drop\\(T&\\)"
+  "the drop door ends a linear value that the caller gives up.  Pass it with std::move")
+
 # A token and a share guard live in a scope or a handle.  Each deletes its
 # class-scope operator new, so a new-expression and std::make_unique reach
 # a deleted function.  The second regex is the reason that the header

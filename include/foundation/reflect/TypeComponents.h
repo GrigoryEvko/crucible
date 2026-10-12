@@ -87,11 +87,14 @@
 
 namespace foundation::reflect {
 
-// One node of the walk: a type, and whether the walk may read its
-// members without an instantiation.
+// One node of the walk: a type, whether the walk may read its members
+// without an instantiation, and whether its parent holds a value of it.
+// The last fact is true only for a base and for a member that is not a
+// reference, which member_components_of gives.
 struct TypeNode {
     std::meta::info type{};
     bool may_read_members = false;
+    bool is_held_by_value = false;
 };
 
 // The nodes that one step of the walk lists, in a growable array.
@@ -302,7 +305,7 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return components;
 
     for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {
-        components.push_back(TypeNode{bare_type(std::meta::type_of(base)), true});
+        components.push_back(TypeNode{bare_type(std::meta::type_of(base)), true, true});
     }
     for (const std::meta::info member :
          std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
@@ -310,7 +313,7 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
         if (std::meta::is_reference_type(member_type)) {
             components.push_back(node_reached_indirectly(member_type, read));
         } else {
-            components.push_back(TypeNode{bare_type(member_type), true});
+            components.push_back(TypeNode{bare_type(member_type), true, true});
         }
     }
     return components;
