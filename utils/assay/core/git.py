@@ -7,8 +7,9 @@ THE COMMAND
     that is not 0 raises GitError.  run_any_exit() gives the result for each
     exit, for a command whose exit is its answer.  head(), resolve(),
     is_clean() and show() give the answers that callers ask for most, so a
-    caller reads no output of git itself.  Each question of a caller gets a
-    function here with a typed answer.
+    caller reads no output of git itself.  The rule structured-reads refuses
+    a use of the value of run() or run_any_exit() in a different module.
+    Each question of a caller then gets a function here with a typed answer.
 
 THE OBJECTS
     write_tree(), hash_object(), commit_tree(), tree_entry(),

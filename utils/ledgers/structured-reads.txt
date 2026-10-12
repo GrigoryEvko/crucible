@@ -2,26 +2,26 @@
 # and `python3 utils/bin/guard write --rule structured-reads` writes this file.
 format 1
 rule structured-reads
-test/harness/check_output.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/core/report.py | regex-call | 3 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/core/target.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/affected.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/affected.py | regex-call | 1 | name_pattern | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/affected.py | regex-call | 1 | source_paths_in | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/fixture/store.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/fixture/store.py | regex-call | 2 | evaluate | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/loop/fixture/store.py | regex-call | 1 | unmatched_errors | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/gates.py | node-text-variable | 1 | entity_users | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/gates.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/gates.py | regex-call | 1 | entity_users | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/run.py | node-text-variable | 1 | _rank | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/mutation/run.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/emit.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/keskin.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/probe.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/probe.py | regex-call | 1 | canonical | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/rocq.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/sprout.py | regex-call | 2 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/oracle/unit_store.py | regex-call | 1 | <module> | A read of today.  The change that moves the read into its reader lowers the count
-utils/assay/tests/loop/test_fixture.py | regex-call | 1 | StoreTest.entry_path | A read of today.  The change that moves the read into its reader lowers the count
+test/harness/check_output.py | regex-call | 1 | <module> | The test compares the exact text that the report sink of the base writes.  The probe gives the line of its assert in one sentence of that text, and the text is the subject of the test
+utils/assay/core/report.py | regex-call | 3 | <module> | The module is the one writer and the one reader of the finding lines.  Two patterns do a check of a check name and a writer key, and one reads the finding line that the module writes
+utils/assay/core/target.py | regex-call | 1 | <module> | The pattern reads the output of gcc -Q --help=target, which has no structured form.  A reader of that output in assay/readers/ removes the call
+utils/assay/loop/affected.py | regex-call | 1 | <module> | The patterns find paths of the source tree in the data sections of a test program and in the words of its command.  No format names the files that a program reads at run time
+utils/assay/loop/affected.py | regex-call | 1 | name_pattern | The patterns find paths of the source tree in the data sections of a test program and in the words of its command.  No format names the files that a program reads at run time
+utils/assay/loop/affected.py | regex-call | 1 | source_paths_in | The patterns find paths of the source tree in the data sections of a test program and in the words of its command.  No format names the files that a program reads at run time
+utils/assay/loop/fixture/store.py | regex-call | 2 | <module> | A negative fixture gives its expected errors as patterns, and the patterns read the messages of the SARIF rendering.  One pattern names the plugin argument that gives an output file of the plugin
+utils/assay/loop/fixture/store.py | regex-call | 2 | evaluate | A negative fixture gives its expected errors as patterns, and the patterns read the messages of the SARIF rendering.  One pattern names the plugin argument that gives an output file of the plugin
+utils/assay/loop/fixture/store.py | regex-call | 1 | unmatched_errors | A negative fixture gives its expected errors as patterns, and the patterns read the messages of the SARIF rendering.  One pattern names the plugin argument that gives an output file of the plugin
+utils/assay/mutation/run.py | regex-call | 2 | <module> | GCC gives no code for an error in its SARIF log.  The two patterns put the message of the first error of a probe in a class
+utils/assay/oracle/emit.py | regex-call | 1 | <module> | The pattern divides a C++ type that GCC prints into tokens.  No reader of the package parses a printed type.  A record of the plugin, or a tsast parse of an alias of the type, removes the call
+utils/assay/oracle/keskin.py | regex-call | 1 | <module> | The pattern reads the axioms in the output of coqc Print Assumptions.  coqc has no structured output, and no reader of the package reads it
+utils/assay/oracle/probe.py | regex-call | 2 | <module> | The probe reads the GCC error text of its compile, and assay.readers.sarif can give the messages.  The patterns of the printed types stay until a reader of a printed C++ type exists
+utils/assay/oracle/probe.py | regex-call | 1 | canonical | The probe reads the GCC error text of its compile, and assay.readers.sarif can give the messages.  The patterns of the printed types stay until a reader of a printed C++ type exists
+utils/assay/oracle/rocq.py | regex-call | 2 | <module> | The patterns read the Require lines of the Rocq sources and the output of Eval vm_compute.  The pinned Rocq gives no structured output, and no reader of the package reads it
+utils/assay/oracle/sprout.py | regex-call | 2 | <module> | The patterns read the report of the Sprout tool, which has no structured output.  No reader of the package reads it
+utils/assay/oracle/unit_store.py | regex-call | 1 | <module> | The pattern reads each attempt to open a file in the output of ld --verbose, which has no structured form.  assay.readers.linkmap reads a link map and not this trace
+utils/assay/tests/core/test_git.py | git-output | 1 | answer_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
+utils/assay/tests/core/test_git.py | git-output | 4 | command_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
+utils/assay/tests/core/test_git.py | git-output | 1 | isolation_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
+utils/assay/tests/core/test_git.py | git-output | 1 | move_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
+utils/assay/tests/loop/test_fixture.py | regex-call | 1 | StoreTest.entry_path | The test reads the name of a store entry from a note of the fixture driver, and the note is the output under test
 vessel/torch/crucible_native.py | format-read | 1 | the ELF magic | The vessel reads the dynamic symbols of its native library to find the sanitizer runtime.  The vessel is product code outside the package, so it cannot import the ELF reader

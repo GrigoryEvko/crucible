@@ -82,6 +82,8 @@ FILES = {
         '#include <c/C.h>\n#include <d/D.h>\nstatic_assert(sizeof(C) == 1, "the size of C is one");\n'
     ),
 }
+# The header include/a/A.h after an edit that keeps its length in bytes, and that makes sizeof(A) one.
+SAME_SIZE_A = "#pragma once\nstruct A { char fiel; };\n"
 DIRECTIVE = ("error: #error", "the planted rule")
 LINKED = ("static assertion failed", "the size of C is one")
 # The search list of each fixture is `-I shadow -I include`.  neg_parent also
@@ -1019,10 +1021,8 @@ class StoreTest:
             kept = {}
         self.expect(self.has(second[3], "the result comes from the store") and str(header) in kept,
                     f"a result from the store keeps the hash of each dependency: {second[3]} {sorted(kept)}")
-        text = header.read_text()
-        same_size = text.replace("int field;", "char fiel;")
-        self.expect(len(same_size) == len(text), "the edit keeps the size of the header")
-        header.write_text(same_size)
+        self.expect(len(SAME_SIZE_A) == len(FILES["include/a/A.h"]), "the edit keeps the size of the header")
+        header.write_text(SAME_SIZE_A)
         edited = self.run("neg_size", *SIZE)
         self.expect(edited[0] == 1 and "compiled successfully" in edited[2]
                     and self.has(edited[3], f"compiled (a dependency changed: {header})"),

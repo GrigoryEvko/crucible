@@ -206,13 +206,25 @@ def read_report(directory: Path) -> Section | None:
         return None
     if len(reports) > 1:
         raise SectionError(f"{directory} holds {len(reports)} report files, and a unit writes one")
-    lines = reports[0].read_text(encoding="utf-8").splitlines()
-    findings = tuple(
-        parse_line(line, f"{reports[0]}: line {number}")
+    return Section(stamp_path.read_text(encoding="utf-8").strip(), read_report_file(reports[0]))
+
+
+def read_report_file(path: Path) -> tuple[Finding, ...]:
+    """Return the findings of one report file of the plugin.  A line that starts with # is a comment.
+
+    Complexity: linear in the length of the report.
+
+    Raises:
+        SectionError: If a line does not have the format
+        OSError: If the file cannot be read
+        UnicodeDecodeError: If the file is not UTF-8
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return tuple(
+        parse_line(line, f"{path}: line {number}")
         for number, line in enumerate(lines, start=1)
         if line and not line.startswith("#")
     )
-    return Section(stamp_path.read_text(encoding="utf-8").strip(), findings)
 
 
 def print_objects(paths: list[str]) -> ExitCode:

@@ -27,7 +27,9 @@ The command refuses each such finding in each mode.
 --path names the paths that a rule of the engine build reads, such as the
 headers of gate-mutants (assay.guard.engines.buildsys.runner, THE PATHS).
 The command then writes only the rows of those paths, and it keeps each
-other row.  It applies to a rule of the policy count or admit.
+other row.  It applies to a rule of the engine build, meta or tsast with the
+policy count or admit.  With --reason and no mode, each row of those paths
+that the write keeps gets the reason.  A row that must stay then tells why.
 
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
@@ -74,8 +76,9 @@ from assay.core import rows as rows_grammar
 from assay.core.paths import REPO_ROOT
 from assay.guard import check
 
-# The policies with rows that --path can divide by their path.
+# The policies with rows that --path can divide by their path, and the engines that write the ledger in the runner.
 PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
+OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
 # The policies of a rule that judges its ledger itself.  The module of such a rule writes the ledger.
 JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
 
@@ -116,9 +119,9 @@ def main(argv: list[str]) -> int:
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
     rule = chosen[0]
-    if options.paths and (rule.engine != rule_registry.Engine.BUILD or rule.policy not in PARTIAL_POLICIES):
-        check_report.write_line("guard write: --path applies only to a rule of the engine build with the policy count "
-                                "or admit", is_error=True)
+    if options.paths and (rule.engine in OWN_WRITE_ENGINES or rule.policy not in PARTIAL_POLICIES):
+        check_report.write_line("guard write: --path applies only to a rule of the engine build, meta or tsast with "
+                                "the policy count or admit", is_error=True)
         return 2
     root = options.root.resolve()
     build_dir = options.build_dir.resolve() if options.build_dir is not None else None
@@ -201,11 +204,15 @@ def main(argv: list[str]) -> int:
             named = set(options.paths)
             judged = replace(ledger, base={key: entry for key, entry in ledger.base.items()
                                            if not named or key.path in named})
+            found = [item for item in found if not named or item.path in named]
             written = rule_ledger.write(rule, judged, found, mode=options.mode or rule_ledger.WriteMode.LOWER,
                                         reason=options.reason, moved=git.moves(root))
             if named:
                 kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
-                written = replace(written, base={**kept, **written.base})
+                own = written.base
+                if options.reason and options.mode is None:
+                    own = {key: replace(entry, reason=options.reason) for key, entry in own.items()}
+                written = replace(written, base={**kept, **own})
     except runner.NotApplicable as reason:
         print(f"guard write: the rule {rule.id} does not apply: {reason}", file=sys.stderr)
         return 2

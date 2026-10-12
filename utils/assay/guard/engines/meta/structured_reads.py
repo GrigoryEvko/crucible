@@ -4,10 +4,11 @@ THE SCOPE
     Each Python file and each shell script that git tracks, or that is new
     and that .gitignore does not match, outside utils/plants/.  A master of
     utils/bin/ has no suffix, and the rule reads it as a Python file.  The
-    Python ast module reads each Python file, and the reader of
+    reader of assay.readers.python reads each Python file, and the reader of
     assay.readers.shell reads each shell script with the bash grammar of the
     pinned ast-grep.  A module of utils/assay/readers/ is a reader: the kinds
-    node-text, node-text-variable, regex-call and format-read do not read it.
+    node-text, node-text-variable, source-text, regex-call and format-read do
+    not read it.
 
 THE KINDS
     lexer               a file named cxx_lex.py, an import of a module named cxx_lex, or a word, a string or a heredoc
@@ -15,11 +16,24 @@ THE KINDS
                         read code, and the parse replaces it
     node-text           the text of a tsast object (an attribute .text, .source or .joined, or a call .slice() or
                         spelled()) given to a regex function, to a string method (split, strip, startswith, find,
-                        replace and the others), or on the right side of `in`.  Three tsast doors are admitted:
-                        prose_text() gives the words of a comment or a string, lexeme() gives the spelling of one
-                        token, and excerpt() or Tree.line() gives a row to show in a report.  A comparison with ==
-                        reads a whole leaf and is admitted
-    node-text-variable  the same reads of a local variable of the function that holds the text of a tsast object
+                        replace and the others), or on the right side of `in`.  A slice of the text and a string
+                        method of TEXT_RESULTS on it give a text too.  str() of the text, a concatenation and an
+                        f-string with the text give a text too.  A text that a call gives to a different function is
+                        no such text, such as a key of a dict.  Three tsast doors are admitted.  prose_text() gives
+                        the words of a comment or a string, and lexeme() gives the spelling of one token.  excerpt()
+                        or Tree.line() gives a row to show in a report.  A comparison with == reads a whole leaf and
+                        is admitted
+    node-text-variable  the same reads of a local variable that holds the text of a tsast object.  A variable that a
+                        text of a second variable gives holds a text too
+    source-text         a string method, an `in` test or a regex over the text of a C++ file.  The module reads the
+                        text with read_text(), read_bytes() or open().  A path names a C++ file when it holds a
+                        string constant with a C++ suffix, such as "include/a.h" or "*.cpp".  A variable of the
+                        module, of a function or of a loop can name a C++ file.  A variable can also hold the text,
+                        a line of the text or an open C++ file.  The parse tree of assay.readers.tsast replaces the
+                        read
+    git-output          a use of the value of run() or run_any_exit() of assay.core.git in a different module.  A
+                        call that is a statement uses no value, because it runs git for its effect.  A module gets
+                        each answer of git from a function of assay.core.git that gives a typed value
     shell-cpp-read      a shell command grep, egrep, fgrep, rg, ugrep, awk, gawk, mawk, sed or perl whose file operand
                         names C++ source (a source root include, src, test, vessel, bench, utils/tools or examples, a
                         C++ suffix or a C++ file type), a find over such a root whose -exec runs such a tool, and a
@@ -50,23 +64,27 @@ THE KINDS
     each change that moves a read into its reader lowers a count.
 
 WHAT THE RULE CANNOT SEE
-    node-text-variable reads one local variable, assigned in the same
-    function.  A text that goes through a call or an attribute passes.  A
-    shell argument that reaches a tool through a variable set elsewhere
-    passes.  git-command reads the literal word "git": a variable that holds
-    the word, or a git command that is not in GIT_VERBS after a constant
-    first word, passes.  Review holds the rest.
+    node-text-variable and source-text read the local variables of one
+    function and the variables of the module.  The rule does not see a text
+    that goes through a parameter, a return value or an attribute.
+    source-text sees a C++ path only when a constant with a C++ suffix names
+    it, and not a path from a list or a parameter.  A shell argument that
+    reaches a tool through a variable set elsewhere passes.  git-command
+    reads the literal word "git": a variable that holds the word, or a git
+    command that is not in GIT_VERBS after a constant first word, passes.
+    Review holds the rest.
 
 Complexity: linear in the size of the files of the scope.
 """
 
 import ast
 from collections.abc import Iterator
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from assay.core import proc
 from assay.core import report as check_report
 from assay.guard.engines.meta.runner import PLANTS, MetaContext, NotApplicable
+from assay.readers import python as python_reader
 from assay.readers import shell as shell_reader
 
 RULE = "structured-reads"
@@ -76,6 +94,9 @@ GIT_IMPLEMENTATION = "utils/assay/core/git.py"
 # This module: its table FORMATS names each structured file, and that table is no read.
 SELF = "utils/assay/guard/engines/meta/structured_reads.py"
 GIT_MODULE = "assay.core.git"
+# The two doors of assay.core.git that give the raw output of a git command, and the one module that reads it.
+GIT_RUNS = frozenset({f"{GIT_MODULE}.run", f"{GIT_MODULE}.run_any_exit"})
+GIT_READERS = frozenset({GIT_IMPLEMENTATION})
 LEXER = "cxx_lex"
 RE_FUNCTIONS = frozenset({"search", "match", "fullmatch", "findall", "finditer", "sub", "subn", "split"})
 RE_CALLS = RE_FUNCTIONS | {"compile"}
@@ -85,7 +106,16 @@ STRING_METHODS = frozenset({
 })
 TEXT_ATTRIBUTES = frozenset({"text", "source", "joined"})
 TEXT_CALLS = frozenset({"slice", "spelled"})
+# The string methods that give a text made from the text of their receiver.
+TEXT_RESULTS = frozenset({
+    "strip", "lstrip", "rstrip", "lower", "upper", "casefold", "replace", "removeprefix", "removesuffix", "decode",
+    "encode", "expandtabs",
+})
 ADMITTED_READS = frozenset({"prose_text", "lexeme", "excerpt"})
+# The calls that read a file as text, the calls that read an open file, and the calls that give the lines of a text.
+SOURCE_READS = frozenset({"read_text", "read_bytes"})
+HANDLE_READS = frozenset({"read", "readlines"})
+LINE_SPLITS = frozenset({"splitlines", "split", "rsplit"})
 PROSE_READ = "prose_text"
 # Each tool that writes a structured format as text, and the reader of that format.  A run of the tool in a
 # different module reads the format as text.
@@ -340,25 +370,41 @@ def shell_findings(path: str, script: shell_reader.ShellScript) -> Iterator[chec
 # ── The reads of a Python file ─────────────────────────────────────
 
 
-def is_text_of_tsast(node: ast.AST) -> bool:
-    """Whether an expression is, or holds directly, the text of a tsast object, not inside a lambda or an admitted door."""
-    stack: list[ast.AST] = [node]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, ast.Attribute) and current.attr in TEXT_ATTRIBUTES:
+def is_text_of_tsast(node: ast.AST, variables: frozenset[str] = frozenset()) -> bool:
+    """Whether the value of an expression is the text of a tsast object, or a text that the expression makes from it.
+
+    These expressions give such a text: an attribute of TEXT_ATTRIBUTES, a call of TEXT_CALLS and a variable of
+    `variables`.  A slice of such a text, a string method of TEXT_RESULTS on it and str() of it give a text too.  A
+    concatenation, an f-string and a conditional expression with such a text in it give a text too.  A text that a
+    call gives to a different function is no value of the expression: `users.setdefault(node.text, [])` gives a
+    list.  An admitted door gives no such text.  Complexity: linear in the number of nodes of the expression.
+    """
+    if isinstance(node, ast.Name):
+        return node.id in variables
+    if isinstance(node, ast.Attribute):
+        return node.attr in TEXT_ATTRIBUTES
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr in TEXT_CALLS:
             return True
-        if isinstance(current, ast.Call):
-            func = current.func
-            if isinstance(func, ast.Attribute) and func.attr in TEXT_CALLS:
-                return True
-            if isinstance(func, ast.Name) and func.id == "spelled":
-                return True
-            if ((isinstance(func, ast.Attribute) and func.attr in ADMITTED_READS)
-                    or (isinstance(func, ast.Name) and func.id in ADMITTED_READS)):
-                continue
-        if isinstance(current, ast.Lambda):
-            continue
-        stack.extend(ast.iter_child_nodes(current))
+        if isinstance(func, ast.Name) and func.id == "spelled":
+            return True
+        if isinstance(func, ast.Attribute) and func.attr in TEXT_RESULTS:
+            return is_text_of_tsast(func.value, variables)
+        if isinstance(func, ast.Name) and func.id == "str":
+            return any(is_text_of_tsast(argument, variables) for argument in node.args)
+        return False
+    if isinstance(node, (ast.Subscript, ast.NamedExpr)):
+        return is_text_of_tsast(node.value, variables)
+    if isinstance(node, ast.BinOp):
+        return is_text_of_tsast(node.left, variables) or is_text_of_tsast(node.right, variables)
+    if isinstance(node, ast.IfExp):
+        return is_text_of_tsast(node.body, variables) or is_text_of_tsast(node.orelse, variables)
+    if isinstance(node, ast.BoolOp):
+        return any(is_text_of_tsast(value, variables) for value in node.values)
+    if isinstance(node, ast.JoinedStr):
+        return any(isinstance(value, ast.FormattedValue) and is_text_of_tsast(value.value, variables)
+                   for value in node.values)
     return False
 
 
@@ -393,13 +439,19 @@ def docstring_nodes(tree: ast.Module) -> set[int]:
 class PythonReads(ast.NodeVisitor):
     """Collect the findings of one Python file, with the function that holds each one."""
 
-    def __init__(self, path: str, is_reader: bool, docstrings: set[int]) -> None:
-        """Keep the place of the file and the state of the walk."""
+    def __init__(self, path: str, is_reader: bool, docstrings: set[int], bindings: python_reader.Bindings) -> None:
+        """Keep the place of the file, its import table and the state of the walk."""
         self.path = path
         self.is_reader = is_reader
         self.docstrings = docstrings
+        self.bindings = bindings
         self.scopes: list[str] = []
         self.text_variables: list[set[str]] = [set()]
+        # The variables of each scope that name a C++ file, that hold its text, and that hold an open C++ file.
+        self.cpp_paths: list[set[str]] = [set()]
+        self.source_texts: list[set[str]] = [set()]
+        self.cpp_handles: list[set[str]] = [set()]
+        self.discarded: set[int] = set()
         self.found: list[check_report.Finding] = []
 
     def where(self) -> str:
@@ -414,9 +466,11 @@ class PythonReads(ast.NodeVisitor):
     def visit_scope(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
         """Walk the body of a function or a class in its own scope."""
         self.scopes.append(node.name)
-        self.text_variables.append(set())
+        for table in (self.text_variables, self.cpp_paths, self.source_texts, self.cpp_handles):
+            table.append(set())
         self.generic_visit(node)
-        self.text_variables.pop()
+        for table in (self.text_variables, self.cpp_paths, self.source_texts, self.cpp_handles):
+            table.pop()
         self.scopes.pop()
 
     visit_FunctionDef = visit_scope
@@ -424,18 +478,113 @@ class PythonReads(ast.NodeVisitor):
     visit_ClassDef = visit_scope
 
     def is_text_variable(self, node: ast.AST) -> bool:
-        """Whether an expression is a local variable that holds the text of a tsast object."""
-        return isinstance(node, ast.Name) and node.id in self.text_variables[-1]
+        """Whether an expression gives the text of a tsast object only through a local variable that holds it."""
+        return is_text_of_tsast(node, frozenset(self.text_variables[-1])) and not is_text_of_tsast(node)
+
+    def is_cpp_name(self, name: str, table: list[set[str]]) -> bool:
+        """Tell if a variable of the scope, or of the module, is in one table of the C++ reads."""
+        return name in table[-1] or name in table[0]
+
+    def names_cpp(self, node: ast.AST) -> bool:
+        """Tell if an expression names a C++ file: a string constant with a C++ suffix, or a variable that names one."""
+        return any(
+            (isinstance(part, ast.Constant) and isinstance(part.value, str) and part.value.endswith(CPP_SUFFIXES))
+            or (isinstance(part, ast.Name) and self.is_cpp_name(part.id, self.cpp_paths))
+            for part in ast.walk(node)
+        )
+
+    def is_source_text(self, node: ast.AST) -> bool:
+        """Tell if the value of an expression is the text of a C++ file, or a text that the expression makes from it.
+
+        A read_text() or a read_bytes() of a path that names a C++ file gives that text.  A read() of an open C++
+        file and a variable that holds such a text give it too.  A slice of the text, a string method of TEXT_RESULTS
+        on it, and a concatenation or a conditional expression with it give a text too.  Complexity: linear in the
+        number of nodes.
+        """
+        if isinstance(node, ast.Name):
+            return self.is_cpp_name(node.id, self.source_texts)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            method, receiver = node.func.attr, node.func.value
+            if method in SOURCE_READS:
+                return self.names_cpp(receiver)
+            if method in HANDLE_READS:
+                return isinstance(receiver, ast.Name) and self.is_cpp_name(receiver.id, self.cpp_handles)
+            return method in TEXT_RESULTS and self.is_source_text(receiver)
+        if isinstance(node, (ast.Subscript, ast.NamedExpr)):
+            return self.is_source_text(node.value)
+        if isinstance(node, ast.BinOp):
+            return self.is_source_text(node.left) or self.is_source_text(node.right)
+        if isinstance(node, ast.IfExp):
+            return self.is_source_text(node.body) or self.is_source_text(node.orelse)
+        if isinstance(node, ast.BoolOp):
+            return any(self.is_source_text(value) for value in node.values)
+        return False
+
+    def is_source_lines(self, node: ast.AST) -> bool:
+        """Tell if an iterable gives the lines or the parts of the text of a C++ file, or that text itself."""
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in LINE_SPLITS:
+            return self.is_source_text(node.func.value)
+        return self.is_source_text(node)
+
+    def bind(self, target: ast.AST, table: list[set[str]], holds: bool) -> None:
+        """Add each name of a target to one table of the scope when `holds` is set, and remove it when it is not set."""
+        for part in ast.walk(target):
+            if isinstance(part, ast.Name):
+                if holds:
+                    table[-1].add(part.id)
+                else:
+                    table[-1].discard(part.id)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        """Record a local variable that the text of a tsast object gives, and forget one that another value gives."""
-        holds_text = is_text_of_tsast(node.value)
+        """Record a local variable that holds the text of a tsast object, a C++ path or a C++ text, and forget others."""
+        holds_text = is_text_of_tsast(node.value, frozenset(self.text_variables[-1]))
+        holds_source = self.is_source_text(node.value)
+        holds_path = not holds_source and self.names_cpp(node.value)
         for target in node.targets:
             if isinstance(target, ast.Name):
                 if holds_text:
                     self.text_variables[-1].add(target.id)
                 else:
                     self.text_variables[-1].discard(target.id)
+            self.bind(target, self.source_texts, holds_source)
+            self.bind(target, self.cpp_paths, holds_path)
+        self.generic_visit(node)
+
+    def visit_loop(self, node: ast.For | ast.comprehension) -> None:
+        """Record a loop variable that names a C++ file, or that holds a line or a part of the text of one."""
+        holds_source = self.is_source_lines(node.iter)
+        self.bind(node.target, self.source_texts, holds_source)
+        self.bind(node.target, self.cpp_paths, not holds_source and self.names_cpp(node.iter))
+        self.generic_visit(node)
+
+    visit_For = visit_loop
+    visit_comprehension = visit_loop
+
+    def visit_comprehension_scope(self, node: ast.ListComp | ast.SetComp | ast.GeneratorExp | ast.DictComp) -> None:
+        """Walk the generators of a comprehension before its element, because the generators give the names."""
+        for generator in node.generators:
+            self.visit(generator)
+        for field in ("elt", "key", "value"):
+            part = getattr(node, field, None)
+            if part is not None:
+                self.visit(part)
+
+    visit_ListComp = visit_comprehension_scope
+    visit_SetComp = visit_comprehension_scope
+    visit_GeneratorExp = visit_comprehension_scope
+    visit_DictComp = visit_comprehension_scope
+
+    def visit_With(self, node: ast.With) -> None:
+        """Record the variable of an open() of a C++ file, or of a path that names one."""
+        for item in node.items:
+            context = item.context_expr
+            opens = isinstance(context, ast.Call) and (
+                (isinstance(context.func, ast.Name) and context.func.id == "open" and bool(context.args)
+                 and self.names_cpp(context.args[0]))
+                or (isinstance(context.func, ast.Attribute) and context.func.attr == "open"
+                    and self.names_cpp(context.func.value)))
+            if item.optional_vars is not None:
+                self.bind(item.optional_vars, self.cpp_handles, opens)
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -452,10 +601,21 @@ class PythonReads(ast.NodeVisitor):
             self.add(node, "lexer", f"the file imports {LEXER}.  Read the code from tsast nodes", LEXER)
         self.generic_visit(node)
 
+    def visit_Expr(self, node: ast.Expr) -> None:
+        """Remember a call that is a statement, because the walk uses no value of it."""
+        if isinstance(node.value, ast.Call):
+            self.discarded.add(id(node.value))
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
-        """Refuse a read of tsast text, and a regex call outside a reader."""
+        """Refuse a read of tsast text, a regex call outside a reader, and a use of the output of a git run."""
         func = node.func
         arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
+        if (self.path not in GIT_READERS and id(node) not in self.discarded
+                and python_reader.dotted(func, self.bindings) in GIT_RUNS):
+            self.add(node, "git-output", f"a use of the value of {python_reader.dotted(func, self.bindings)}() "
+                     f"outside {GIT_MODULE} reads the output of git as text.  Add a function to {GIT_MODULE} that "
+                     f"runs the command and gives a typed value, and call that function")
         if not self.is_reader and isinstance(func, ast.Attribute):
             method, receiver = func.attr, func.value
             if method in RE_FUNCTIONS and any(is_text_of_tsast(argument) for argument in arguments):
@@ -470,6 +630,10 @@ class PythonReads(ast.NodeVisitor):
             elif method in STRING_METHODS and self.is_text_variable(receiver):
                 self.add(node, "node-text-variable", f"a string {method}() on a variable that holds the text of a "
                          f"tsast node.  Read the answer from the children of the node")
+            if (method in STRING_METHODS and self.is_source_text(receiver)) or (
+                    method in RE_FUNCTIONS and any(self.is_source_text(argument) for argument in arguments)):
+                self.add(node, "source-text", f"a {method}() on the text of a C++ file that the module reads as text.  "
+                         f"Read the file through assay.readers.tsast, and read the answer from the parse tree")
             if (isinstance(receiver, ast.Name) and receiver.id == "re" and method in RE_CALLS
                     and not (len(node.args) >= 2 and is_prose_read(node.args[1]))):
                 self.add(node, "regex-call", f"a call of re.{method}() outside a reader.  Read the input through its "
@@ -486,6 +650,9 @@ class PythonReads(ast.NodeVisitor):
                 elif isinstance(operator, (ast.In, ast.NotIn)) and self.is_text_variable(right):
                     self.add(node, "node-text-variable", "an `in` test over a variable that holds the text of a tsast "
                              "node.  Read the answer from the children of the node")
+                if isinstance(operator, (ast.In, ast.NotIn)) and self.is_source_text(right):
+                    self.add(node, "source-text", "an `in` test over the text of a C++ file that the module reads as "
+                             "text.  Read the file through assay.readers.tsast, and read the answer from the parse tree")
         self.generic_visit(node)
 
     def visit_sequence(self, node: ast.List | ast.Tuple) -> None:
@@ -562,14 +729,18 @@ def python_git_violation(tree: ast.Module) -> str | None:
             f"sends the write to the repository of the caller")
 
 
-def python_findings(path: str, text: str) -> list[check_report.Finding]:
-    """Give the findings of one Python file."""
+def python_findings(path: str, file: Path) -> list[check_report.Finding]:
+    """Give the findings of one Python file, which the reader of Python reads and parses."""
     try:
-        tree = ast.parse(text, path)
-    except SyntaxError as problem:
-        return [check_report.Finding("error", path, problem.lineno or 0, RULE, f"the file does not parse, so its reads "
-                                     f"are unknown: {problem.msg}", "parse", path)]
-    visitor = PythonReads(path, path.startswith(READERS), docstring_nodes(tree))
+        source = python_reader.read(file, path)
+    except python_reader.PythonError as problem:
+        return [check_report.Finding("error", path, problem.line, RULE, f"the file does not parse, and its reads are "
+                                     f"unknown: {problem}", "parse", path)]
+    except UnicodeDecodeError as problem:
+        return [check_report.Finding("error", path, 0, RULE, f"the file is not UTF-8, and its reads are unknown: "
+                                     f"{problem}", "parse", path)]
+    tree = source.tree
+    visitor = PythonReads(path, path.startswith(READERS), docstring_nodes(tree), python_reader.bindings(source))
     visitor.visit(tree)
     found = visitor.found
     if path != GIT_IMPLEMENTATION:
@@ -595,7 +766,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                                               f"regex can read code, and the parse replaces it.  Delete it", "lexer",
                                               LEXER))
         if is_python(path):
-            found += python_findings(path, (context.root / path).read_text(encoding="utf-8", errors="replace"))
+            found += python_findings(path, context.root / path)
     shells = [path for path in files if path.endswith(".sh")]
     try:
         scripts = shell_reader.read(context.root, shells)

@@ -15,7 +15,6 @@ the header with the same bytes.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,7 +46,9 @@ NAMED_DECLS = (
     "alias_declaration",
 )
 
-IDENTIFIER_BYTE = re.compile(rb"[A-Za-z0-9_]")
+# The bytes that a C++ identifier holds, as values and as one-byte strings.
+IDENTIFIER_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
+IDENTIFIER_SINGLES = frozenset(bytes([byte]) for byte in IDENTIFIER_BYTES)
 
 
 @dataclass(frozen=True)
@@ -132,10 +133,9 @@ def _bounded(source: bytes, start: int, end: int, replacement: str) -> str:
         return replacement
     original = source[start:end]
     text = "(true)" if replacement == "true" and original[:1] == b"(" and original[-1:] == b")" else replacement
-    if start > 0 and IDENTIFIER_BYTE.match(source[start - 1:start]) and IDENTIFIER_BYTE.match(text[:1].encode()):
+    if start > 0 and source[start - 1] in IDENTIFIER_BYTES and text[:1].encode() in IDENTIFIER_SINGLES:
         text = " " + text
-    if end < len(source) and IDENTIFIER_BYTE.match(source[end:end + 1]) and IDENTIFIER_BYTE.match(
-            text[-1:].encode()):
+    if end < len(source) and source[end] in IDENTIFIER_BYTES and text[-1:].encode() in IDENTIFIER_SINGLES:
         text = text + " "
     return text
 
@@ -263,8 +263,9 @@ def entity_users(path: Path) -> dict[str, list[str]]:
     for node_type in ("identifier", "type_identifier", "field_identifier"):
         for node in tree.find(node_type):
             user = _entity(node)
-            # A structured binding has no name of its own, so it names no user.
-            if re.fullmatch(r"[A-Za-z_]\w*", user) and user != node.text:
+            # leaf_name() spells an operator, a destructor and a cast in full, and none of them is one identifier.
+            # A declaration with no name gives the empty name.  None of them names a user.
+            if user.isascii() and user.isidentifier() and user != node.text:
                 named = users.setdefault(node.text, [])
                 if user not in named:
                     named.append(user)

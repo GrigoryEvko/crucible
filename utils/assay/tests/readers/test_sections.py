@@ -171,7 +171,12 @@ def report_cases(expect: testing.Expect) -> None:
         expect("a missing directory has no report", sections.read_report(directory) is None)
         directory.mkdir(parents=True)
         report_text = TEXT.decode().replace("# crucible-guard 2 stamp=00ab", "# unit a.cpp")
-        (directory / f"a.cpp.0123456789abcdef{sections.REPORT_SUFFIX}").write_text(report_text, encoding="utf-8")
+        report = directory / f"a.cpp.0123456789abcdef{sections.REPORT_SUFFIX}"
+        report.write_text(report_text, encoding="utf-8")
+        expect(
+            "read_report_file reads each finding line of one report file, and skips the comment",
+            sections.read_report_file(report) == FINDINGS,
+        )
         expect("a report with no stamp file is no report", sections.read_report(directory) is None)
         (directory / sections.STAMP_FILE).write_text("00ab\n", encoding="utf-8")
         expect(

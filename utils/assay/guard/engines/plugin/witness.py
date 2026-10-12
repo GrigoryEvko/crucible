@@ -897,11 +897,7 @@ def read_report(reports: Sequence[Path]) -> tuple[tuple[plugin_sections.Finding,
     if len(reports) != 1:
         return None, ""
     try:
-        return tuple(
-            plugin_sections.parse_line(line, str(reports[0]))
-            for line in reports[0].read_text(encoding="utf-8").splitlines()
-            if line and not line.startswith("#")
-        ), ""
+        return plugin_sections.read_report_file(reports[0]), ""
     except (OSError, UnicodeDecodeError, plugin_sections.SectionError) as problem:
         return None, f"the report cannot be read: {problem}"
 
