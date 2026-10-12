@@ -3274,9 +3274,11 @@ The rule also refuses a branch, a call, a division and an indexed load in the co
 
 ### Static TLS (R19)
 
-The base holds only small thread-local data. A shared library with a variable of the initial-exec model needs its full TLS block in the static TLS of the process. `dlopen` finds that block only in the surplus that glibc keeps, and the default tunables keep a few hundred bytes. The flag of `src/foundation/ContractHandler.cpp` has the initial-exec model, so each library that links foundation must have a small TLS block.
+The base holds only small thread-local data. A shared library with a variable of the initial-exec model needs its full TLS block in the static TLS of the process. `dlopen` finds that block only in the surplus that glibc keeps. With the default tunables, glibc 2.43 keeps 1664 bytes of that surplus free in a new process (measured on 2026-10-12). The flag of `src/foundation/ContractHandler.cpp` has the initial-exec model, so each library that links foundation must have a small TLS block.
 
 The rule `static-tls` (`utils/assay/guard/engines/elf/static_tls.py`, the test `guard_static_tls`) holds R19. It reads each member of each static library of the root, and it adds the bytes of the base thread-local variables of the member. A base variable is each variable of a member of `libfoundation.a` or `libfixy.a`, and each variable with a name in the scope `foundation` or `fixy` in a different member. A member over the error threshold fails the test, unless a row of the ledger of the rule admits it for the kind of the build. At this time no member is over the threshold, and the rule has no ledger file. A hot path takes its context as a parameter and reads no TLS.
+
+The last case of `test_process_wide_across_libraries` is the run-time witness of the rule. After the writer and the reader, it loads two libraries that `test/static_tls_block.cpp` makes. The initial-exec block of the control holds the error threshold of the rule, and the control must load. The block of the plant is 64 times that size, and `dlopen` must refuse it. The test clears `GLIBC_TUNABLES`, so a tunable cannot change the result.
 
 ---
 

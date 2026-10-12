@@ -10,7 +10,8 @@
 // libraries in the same way and checks that each process-wide object has one
 // address, that each object for a thread is one object for that thread, and
 // that each write reaches the other library.  Two objects with no marker are
-// the control: each has a copy in each library.
+// the control: each has a copy in each library.  The last case is the run-time
+// witness of the rule static-tls.
 
 #include "process_wide_libraries.h"
 #include "test_assert.h"
@@ -31,12 +32,13 @@ namespace pwl = process_wide_libraries;
 
 // One library, loaded as the vessel libraries are loaded.  The handle is
 // never closed: a library that defines a process-wide object stays loaded.
+// A load that is not required can fail, and its handle then stays null.
 struct Library {
     void* handle = nullptr;
 
-    explicit Library(const char* path) noexcept : handle{dlopen(path, RTLD_NOW | RTLD_LOCAL)} {
+    explicit Library(const char* path, bool is_required = true) noexcept : handle{dlopen(path, RTLD_NOW | RTLD_LOCAL)} {
         if (handle == nullptr) std::fprintf(stderr, "dlopen of %s failed: %s\n", path, dlerror());
-        assert(handle != nullptr);
+        assert(handle != nullptr || !is_required);
     }
 
     template <class Function>
@@ -158,6 +160,24 @@ void test_the_reader_sees_the_claim(const Library& writer, const Library& reader
     crucible::test::pass("  test_the_reader_sees_the_claim: PASSED\n");
 }
 
+// The run-time witness of the rule static-tls.  The control and the plant come
+// from one source file, and only the size of their initial-exec block is
+// different.  The block of the control holds the error threshold of the rule,
+// and it loads after the writer and the reader.  The block of the plant is
+// larger than the static TLS that glibc keeps free, and dlopen refuses it.  The
+// two sizes are the only difference, so the test does not read the text of
+// dlerror.  This case runs last, after the writer and the reader are loaded.
+void test_static_tls_holds_the_rule_threshold() {
+    const Library control{STATIC_TLS_CONTROL_PATH, false};
+    require(control.handle != nullptr,
+            "a library whose initial-exec block holds the error threshold of the rule static-tls loads after the "
+            "writer and the reader");
+    const Library plant{STATIC_TLS_PLANT_PATH, false};
+    require(plant.handle == nullptr,
+            "dlopen refuses a library whose initial-exec block is larger than the free static TLS of glibc");
+    crucible::test::pass("  test_static_tls_holds_the_rule_threshold: PASSED\n");
+}
+
 }  // namespace
 
 // With no argument, every case runs.  One argument names the one case to run,
@@ -171,6 +191,7 @@ int main(int argc, char** argv) {
     if (is_selected("threads")) test_each_thread_object_is_one_for_the_thread(writer, reader);
     if (is_selected("writes")) test_the_reader_sees_each_write(writer, reader);
     if (is_selected("claim")) test_the_reader_sees_the_claim(writer, reader);
+    if (is_selected("static_tls")) test_static_tls_holds_the_rule_threshold();
     crucible::test::pass("test_process_wide_across_libraries: all tests passed\n");
     return 0;
 }

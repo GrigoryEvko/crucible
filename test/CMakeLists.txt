@@ -272,11 +272,30 @@ foreach(_process_wide_library process_wide_writer process_wide_reader)
   add_library(test_${_process_wide_library} SHARED ${_process_wide_library}.cpp process_wide_objects.cpp)
   target_link_libraries(test_${_process_wide_library} PRIVATE crucible)
 endforeach()
+# The run-time witness of the rule static-tls.  The initial-exec block of the
+# control holds the error threshold of the rule, and the control loads after
+# the writer and the reader.  The block of the plant has 64 times that size.
+# glibc 2.43 keeps 1664 bytes of static TLS free for dlopen with the default
+# tunables, so dlopen refuses the plant.  The test clears GLIBC_TUNABLES, so
+# a tunable cannot make more static TLS free.
+crucible_rule_limit(static-tls _static_tls_limit)
+math(EXPR _static_tls_plant_bytes "${_static_tls_limit} * 64")
+add_library(test_static_tls_control SHARED static_tls_block.cpp)
+target_compile_definitions(test_static_tls_control PRIVATE STATIC_TLS_BLOCK_BYTES=${_static_tls_limit})
+add_library(test_static_tls_plant SHARED static_tls_block.cpp)
+target_compile_definitions(test_static_tls_plant PRIVATE STATIC_TLS_BLOCK_BYTES=${_static_tls_plant_bytes})
+foreach(_static_tls_library test_static_tls_control test_static_tls_plant)
+  target_link_libraries(${_static_tls_library} PRIVATE foundation)
+endforeach()
 crucible_test(test_process_wide_across_libraries)
-add_dependencies(test_process_wide_across_libraries test_process_wide_writer test_process_wide_reader)
+add_dependencies(test_process_wide_across_libraries test_process_wide_writer test_process_wide_reader
+  test_static_tls_control test_static_tls_plant)
 target_compile_definitions(test_process_wide_across_libraries PRIVATE
   PROCESS_WIDE_WRITER_PATH="$<TARGET_FILE:test_process_wide_writer>"
-  PROCESS_WIDE_READER_PATH="$<TARGET_FILE:test_process_wide_reader>")
+  PROCESS_WIDE_READER_PATH="$<TARGET_FILE:test_process_wide_reader>"
+  STATIC_TLS_CONTROL_PATH="$<TARGET_FILE:test_static_tls_control>"
+  STATIC_TLS_PLANT_PATH="$<TARGET_FILE:test_static_tls_plant>")
+set_tests_properties(test_process_wide_across_libraries PROPERTIES ENVIRONMENT_MODIFICATION "GLIBC_TUNABLES=unset:")
 crucible_test(test_graph)
 crucible_test(test_lower)
 crucible_test(test_reflect)

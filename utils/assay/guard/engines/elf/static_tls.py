@@ -6,8 +6,11 @@ THE RULE
     initial-exec model.  Such a variable puts the full TLS block of its
     shared library in the static TLS of the process.  dlopen finds that block only
     in the part of the static TLS that glibc keeps free.  With the default
-    tunables, that part has approximately 500 bytes.  The vessel library
-    loads only when its TLS block is small.
+    tunables, glibc 2.43 keeps 1664 bytes free in a new process.  The vessel
+    library loads only when its TLS block is small.  The last case of
+    test/test_process_wide_across_libraries.cpp is the run-time witness.  A
+    library with a block of the error threshold loads.  A library with a block
+    of 64 times the threshold does not load.
 
     The rule reads each member of each static library of the root
     (assay.guard.engines.elf.runner, THE BUILD).  The value of a member is
