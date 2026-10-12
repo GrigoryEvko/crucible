@@ -2,7 +2,6 @@
 # and `python3 utils/bin/guard write --rule clang-format` writes this file.
 format 1
 rule clang-format
-include/crucible/cntp/OverlayMulticast.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 include/crucible/ledger/Ledger.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 include/crucible/ledger/RefreshDaemon.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 include/crucible/observe/Metrics.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i

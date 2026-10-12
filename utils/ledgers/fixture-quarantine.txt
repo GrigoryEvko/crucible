@@ -146,12 +146,6 @@ test/cntp_neg/neg_integrity_raw_hash_field.cpp | std-object | 1 | std::array | -
 test/cntp_neg/neg_integrity_raw_payload_as_verified.cpp | std-entity | 1 | std::array | -
 test/cntp_neg/neg_integrity_raw_payload_as_verified.cpp | std-object | 2 | std::array | -
 test/cntp_neg/neg_mtls_raw_config_connect.cpp | std-entity | 2 | std::expected::value | -
-test/cntp_neg/neg_overlay_multicast_mint_bg_ctx.cpp | std-entity | 1 | std::expected::value | -
-test/cntp_neg/neg_overlay_multicast_mint_bg_ctx.cpp | std-object | 1 | std::expected | -
-test/cntp_neg/neg_overlay_multicast_private_ctor.cpp | std-entity | 1 | std::expected::value | -
-test/cntp_neg/neg_overlay_multicast_private_ctor.cpp | std-object | 1 | std::expected | -
-test/cntp_neg/neg_overlay_multicast_zero_stripes.cpp | std-entity | 1 | std::expected::value | -
-test/cntp_neg/neg_overlay_multicast_zero_stripes.cpp | std-object | 1 | std::expected | -
 test/cntp_neg/neg_pacing_bbr_pfifo_config.cpp | std-entity | 1 | std::expected::value | -
 test/cntp_neg/neg_pacing_raw_config_ensure.cpp | std-entity | 1 | std::expected::value | -
 test/cntp_neg/neg_pacing_raw_rate.cpp | std-entity | 1 | std::expected::value | -

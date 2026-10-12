@@ -150,9 +150,6 @@ struct TcpInfo {};
 // statistics, qdisc backlog, sysctl snapshots, hwmon temperatures.
 // Raw text cannot drive capacity, health, or routing decisions.
 struct KernelTelemetry {};
-// Application-layer multicast plans. Raw identities and unbounded
-// stripe or tree plans cannot drive cross-peer fanout.
-struct OverlayMulticast {};
 // Result value that survived redundant execution comparison. Raw
 // results and externally tagged values cannot substitute for the
 // post-comparison evidence.

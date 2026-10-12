@@ -63,4 +63,3 @@ struct PmuUncoreIioSnapshot {
 
 - `nvme_rq.bpf.c` — per-NVMe-command latency on top of which PCIe
   stack the NVMe sits
-- `xdp_rx.bpf.c` — per-NIC packet rate; this gives PCIe-side BW

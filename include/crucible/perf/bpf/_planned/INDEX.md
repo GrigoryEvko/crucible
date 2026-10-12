@@ -103,14 +103,10 @@ BPF cross-references are listed for completeness.
 | `nvme_rq.bpf.c`        | Per-NVMe-command setup→complete latency; per-queue per-opcode histogram. |
 | `block_rq.bpf.c`       | `block_rq_*` lifecycle (insert→issue→complete) for I/O scheduler attribution (mq-deadline / kyber / bfq). |
 
-## Tier-F — networking (12, since CNTP is multi-layer over AF_XDP)
+## Tier-F — networking (8)
 
 | Stub | One-liner |
 |---|---|
-| `xdp_rx.bpf.c`         | XDP at NIC RX before kernel stack: per-flow rate + RSS attribution + protocol bucket. |
-| `af_xdp_frame.bpf.c`   | AF_XDP socket frame ingress/egress accounting (CNTP fast path). |
-| `tc_egress.bpf.c`      | tc-bpf egress: per-class CNTP shaping accounting. |
-| `tc_ingress.bpf.c`     | tc-bpf ingress: post-XDP frame attribution + per-skb metadata enrichment. |
 | `sock_ops.bpf.c`       | Per-socket TCP RTT/RTO/retransmit telemetry via `BPF_PROG_TYPE_SOCK_OPS` callbacks (`SOCK_OPS_RTT_CB`, `SOCK_OPS_RTO_CB`). |
 | `sockmap.bpf.c`        | sk_msg/sk_skb sockmap forwarding observation for in-process CNTP routing. |
 | `tcp_lifetime.bpf.c`   | TCP connection lifecycle: `tcp_destroy_sock`, `tcp_rcv_space_adjust`, `tcp_send_loss_probe`. |

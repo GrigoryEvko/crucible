@@ -28,20 +28,18 @@ enum class TransportProbeKind : std::uint32_t {
     RdmaWrite = 1u << 0,
     RdmaSend = 1u << 1,
     RdmaRead = 1u << 2,
-    AfXdp = 1u << 3,
-    TcpBbr3 = 1u << 4,
-    TcpCubic = 1u << 5,
-    TcpDctcp = 1u << 6,
-    CollectiveSmallAllReduce = 1u << 7,
-    CollectiveSmallAllGather = 1u << 8,
-    FederationMtls = 1u << 9,
+    TcpBbr3 = 1u << 3,
+    TcpCubic = 1u << 4,
+    TcpDctcp = 1u << 5,
+    CollectiveSmallAllReduce = 1u << 6,
+    CollectiveSmallAllGather = 1u << 7,
+    FederationMtls = 1u << 8,
 };
 
 inline constexpr std::array all_transport_probe_kinds{
     TransportProbeKind::RdmaWrite,
     TransportProbeKind::RdmaSend,
     TransportProbeKind::RdmaRead,
-    TransportProbeKind::AfXdp,
     TransportProbeKind::TcpBbr3,
     TransportProbeKind::TcpCubic,
     TransportProbeKind::TcpDctcp,
@@ -58,8 +56,6 @@ inline constexpr std::array all_transport_probe_kinds{
             return "RdmaSend";
         case TransportProbeKind::RdmaRead:
             return "RdmaRead";
-        case TransportProbeKind::AfXdp:
-            return "AfXdp";
         case TransportProbeKind::TcpBbr3:
             return "TcpBbr3";
         case TransportProbeKind::TcpCubic:
