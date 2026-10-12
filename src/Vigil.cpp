@@ -63,6 +63,9 @@ bool Vigil::rollback() {
         restored_one = tx_log_.rollback(stage);
         if (!restored_one) return;
         if (const Transaction* tx = tx_log_.active(stage)) restored = tx->region.value();
+        // The foreground gets the region outside the publication slot, so
+        // the store keeps it until the foreground writes its holders again.
+        bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(restored));
     });
     if (!restored_one) return false;
     const VigilFgCtx fg = assert_producer_thread_();
@@ -78,6 +81,7 @@ bool Vigil::rollback() {
             mode_.publish_compiled();
         }
     }
+    publish_held_regions_();
     return true;
 }
 
@@ -105,6 +109,17 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // never reports a replay that has not started.  An observer that
     // waits for this publication reads has_pending_region.
     pending_region_.publish(region);
+
+    // The sweep of the region store after this callback releases each region
+    // that no holder names.  The transaction log holds each region that a
+    // rollback can restore, the slot holds the region that the foreground
+    // did not get, and the cells of held_regions_ hold the regions of the
+    // foreground.
+    BackgroundThread::RegionMarks marks{};
+    tx_log_.for_each_region(stage, [&marks](::fixy::WeakRef<const RegionNode> held) noexcept { marks.hold(held); });
+    marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(pending_region_.observe());
+    mark_held_regions_(marks);
+    bg_.set_region_marks(stage, marks);
 
     // The observation is presented with a background-drain context
     // because this runs on the region-publishing thread, not the

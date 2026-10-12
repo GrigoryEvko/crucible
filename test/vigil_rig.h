@@ -63,6 +63,7 @@ namespace test_vigil {
 // (test_vigil_divergence.cpp).
 void test_divergence_drops_the_unobserved_region();
 void test_divergence_drops_a_half_finished_alignment();
+void test_region_store_stays_bounded();
 
 // The producer role and its surface (test_vigil_producer.cpp).
 void test_record_op_claims_the_producer_role();

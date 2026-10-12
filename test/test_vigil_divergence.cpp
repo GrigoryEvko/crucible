@@ -195,4 +195,79 @@ void test_divergence_drops_a_half_finished_alignment() {
     crucible::test::pass("  test_divergence_drops_a_half_finished_alignment: PASSED\n");
 }
 
+namespace {
+
+// The op of the rig, with schema hashes that no other cycle uses.  A
+// divergence refutes the period of the region that diverged, with its body,
+// so each cycle gives the detector a new body.  Each region of a cycle then
+// has its own content hash too, and the region cache takes a new entry.
+divrig::OpData cycle_op(uint32_t cycle, uint32_t iter, uint32_t op_idx) {
+    divrig::OpData made = divrig::op_at(iter, op_idx);
+    made.entry.schema_hash = crucible::SchemaHash{divrig::SCHEMA[op_idx].raw() + (uint64_t{cycle} + 1) * 0x10000};
+    return made;
+}
+
+void record_cycle_op(crucible::Vigil& vigil, uint32_t cycle, uint32_t iter, uint32_t op_idx) {
+    divrig::OpData made = cycle_op(cycle, iter, op_idx);
+    (void)vigil.record_op(crucible::test::certify_synthetic_entry(made.entry), made.metas, made.n_metas);
+}
+
+// The input of feed_one_region, with the ops of the cycle.
+void feed_cycle_region(crucible::Vigil& vigil, uint32_t cycle, uint32_t first_iter) {
+    for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
+        for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
+            record_cycle_op(vigil, cycle, iter, i);
+    }
+    for (uint32_t i = 0; i < divrig::K; i++)
+        record_cycle_op(vigil, cycle, first_iter + 2, i);
+}
+
+}  // namespace
+
+// A long run of shape changes keeps the region store bounded.  Each cycle
+// publishes a region and aligns on it, records the next region while the
+// context is compiled, and diverges.  So each cycle publishes two regions,
+// and the run publishes more regions than the store holds.  The sweep
+// releases each region that no holder names.  The foreground replays the
+// regions that it holds, so a region that the sweep releases too early gives
+// a read after the release, which AddressSanitizer reports.
+void test_region_store_stays_bounded() {
+    using namespace divrig;
+    constexpr uint32_t CYCLES = 120;
+    // The uncompiled queue, the transaction log, the cells of the foreground,
+    // and the last published region with the handed region.
+    constexpr uint32_t MAX_HELD = crucible::BackgroundThread::UncompiledRegionQueue::CAP + 16 + 10 + 2;
+
+    crucible::Vigil vigil;
+    uint32_t base = 0;
+    for (uint32_t cycle = 0; cycle < CYCLES; ++cycle) {
+        feed_cycle_region(vigil, cycle, base);
+        crucible::test::flush_and_wait_region_published(vigil);
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            OpData aligned = cycle_op(cycle, base + 3, i);
+            (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+        }
+        assert(vigil.context().is_compiled() && "each cycle aligns on its region");
+
+        feed_cycle_region(vigil, cycle, base + 4);
+        vigil.flush();
+        OpData foreign_op = op_at(base + 7, 0);
+        foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
+        auto diverged =
+            crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
+        assert(diverged.status == crucible::ReplayStatus::DIVERGED);
+        base += 8;
+    }
+    vigil.flush();
+
+    const uint32_t stored = vigil.region_store_count();
+    const uint64_t dropped = vigil.region_store_drops();
+    assert(vigil.current_step() >= 2 * CYCLES && "the run published too few regions");
+    assert(dropped == 0 && "a full region store discarded a published region");
+    assert(stored <= MAX_HELD && "the region store kept a region that no holder names");
+
+    crucible::test::pass("  test_region_store_stays_bounded: PASSED (published={}, stored={})\n",
+                         static_cast<unsigned long long>(vigil.current_step()), stored);
+}
+
 }  // namespace test_vigil

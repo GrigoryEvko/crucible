@@ -12,6 +12,7 @@
 #include <crucible/MerkleDag.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Cyclic.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -105,7 +106,8 @@ struct RegionCache {
     // at insert time, so a region whose plan is built after it was cached
     // becomes eligible on its own.
     //
-    // The Vigil owns each region, and the cache only points at it.
+    // The region store of the pipeline owns each region, and the cache only
+    // points at it.  The store keeps each region that the cache holds.
     [[nodiscard]] const RegionNode* find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
                                                    const RegionNode* exclude = nullptr) const
         CRUCIBLE_NO_THREAD_SAFETY {
@@ -136,15 +138,24 @@ struct RegionCache {
     [[nodiscard]] uint32_t size() const { return count_.get(); }
     [[nodiscard]] bool empty() const { return count_.get() == 0; }
 
+    // The region of the entry of the given age, where age 0 is the newest
+    // entry, or an empty reference past the count.  The foreground gives
+    // these regions to the region store of the pipeline, which keeps each
+    // region that the cache holds.
+    [[nodiscard]] ::fixy::WeakRef<const RegionNode> region_at(uint32_t age) const CRUCIBLE_NO_THREAD_SAFETY {
+        if (age >= count_.get()) return {};
+        return regions_[head_.index_back(age)];
+    }
+
 private:
     // One array per field rather than one array of records, so that each
     // scan reads only the arrays it needs. The three pointer-wide arrays are
     // one cache line each at this capacity.
     //
-    // A slot holds a region the graph owns and this cache does not. The slot
+    // A slot holds a region the region store owns and this cache does not. The slot
     // type makes that explicit and keeps the identity read behind an accessor
     // that can report an empty slot.
-    std::array<::fixy::WeakRef<const RegionNode>, CAP> regions_{};
+    ::fixy::FixedArray<::fixy::WeakRef<const RegionNode>, CAP> regions_{};
     std::array<ContentHash, CAP> content_hashes_{};
     // The tag records that the pointer was taken out of a region at the
     // moment it was inserted here.

@@ -26,6 +26,7 @@
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -311,14 +312,54 @@ public:
         BuiltRegion region;
     };
 
+    // The regions that the owner of the pipeline holds, and the generation
+    // of the holders of its foreground.  The region callback gives them to
+    // set_region_marks on the publish stage, and the sweep of the region
+    // store after the callback reads them.  An owner that gives none has no
+    // foreground, and the store then releases each region that no holder of
+    // the pipeline names.
+    struct RegionMarks {
+        static constexpr uint32_t CAP = 32;
+        ::fixy::FixedArray<::fixy::WeakRef<const RegionNode>, CAP> held{};
+        uint32_t count = 0;
+        // The region that the owner can still give to its foreground, such
+        // as the region in a publication slot.  The store keeps it as it
+        // keeps the last published region.
+        ::fixy::WeakRef<const RegionNode> handed{};
+        // A foreground writes the regions that it holds, and each write
+        // advances the generation.  The store releases a region that left
+        // the view of the foreground only after a later write that does not
+        // name it.
+        bool has_foreground = false;
+        uint64_t foreground_generation = 0;
+
+        // Adds a region to the held regions.  An empty reference adds
+        // nothing.
+        void hold(::fixy::WeakRef<const RegionNode> region) noexcept {
+            if (!region.has_value()) return;
+            if (count == CAP) [[unlikely]] {
+                ::fixy::fatal("the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP");
+            }
+            held[count] = region;
+            ++count;
+        }
+    };
+
 private:
+    // The left generation of a region that is the last published region or
+    // the handed region.
+    static constexpr uint64_t NOT_LEFT = UINT64_MAX;
+
     // The memory of one published region: its parts, its RegionNode and its
     // MemoryPlan.  The publish stage makes the node, and the plan when the
-    // region has slots.
+    // region has slots.  A slot of the store with no node is free.
     struct RegionMemory {
         BuiltRegion parts;
         ::foundation::AlignedBuffer<RegionNode> node;
         ::foundation::AlignedBuffer<MemoryPlan> plan;
+        // The foreground generation at the first sweep that found the region
+        // neither the last published region nor the handed region.
+        uint64_t left_generation = NOT_LEFT;
     };
 
     // The arena of the trace graph and its CSR arrays.  Only the build stage
@@ -330,9 +371,24 @@ private:
     // uses it, and an epoch covers one publish.
     Arena publish_scratch_{size_t{1} << 20};
 
-    // The memory of each published region.  Only the publish stage writes
-    // it.  Each region stays until this object ends.
-    ::fixy::AppendOnly<RegionMemory> region_store_ = ::fixy::mint_append_only<RegionMemory>();
+    // The memory of each live region, in the slots of a fixed table.  Only
+    // the publish stage reads and writes it.  The sweep after each publish
+    // releases each region that no holder names.  The holders name at most
+    // 64 + 16 + 10 + 2 regions, so the table keeps a margin.  A foreground
+    // that never gets a region writes no holders, and its regions stay.  A
+    // publish into a full table then discards its region and counts it.
+    static constexpr uint32_t REGION_STORE_CAP = 128;
+    ::fixy::FixedArray<RegionMemory, REGION_STORE_CAP> region_store_{};
+    ::fixy::WeakRef<const RegionNode> last_published_{};
+    RegionMarks owner_marks_{};
+    uint64_t regions_dropped_full_ = 0;
+
+    // Releases each region of the store that no holder names, on the
+    // publish stage after each publish.  The body tells the rule.
+    void sweep_regions_(PublishStage const& stage) noexcept;
+
+    // True when the uncompiled queue or the marks of the owner name region.
+    [[nodiscard]] bool is_held_(::fixy::WeakRef<const RegionNode> region) const noexcept;
 
 public:
     // Regions that have been published but not compiled.  This is the
@@ -351,7 +407,9 @@ public:
     // already moved past.
     //
     // The publish stage is the sole writer.  total() is safe to read from
-    // any thread; at() is not, and needs the pipeline quiescent.
+    // any thread; at() is not, and needs the pipeline quiescent.  The region
+    // store keeps each region that the queue holds, so the queue keeps at
+    // most CAP regions alive.
     class UncompiledRegionQueue {
     public:
         static constexpr uint32_t CAP = 64;
@@ -640,7 +698,8 @@ public:
     // Makes the RegionNode and the memory plan of the region, publishes the
     // region and gives its memory to the region store.  The background
     // context of the publish stage allocates the node and the plan, and is
-    // handed to the region callback, which runs on the same thread.
+    // handed to the region callback, which runs on the same thread.  After
+    // the callback, the sweep releases each region that no holder names.
     void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts)
         CRUCIBLE_NO_THREAD_SAFETY;
 
@@ -692,6 +751,22 @@ public:
     [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
         return ::foundation::sat::add_sat(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
     }
+
+    // Gives the regions that the owner holds to the sweep of this publish.
+    // The region callback calls it, on the publish stage.
+    void set_region_marks(PublishStage const&, RegionMarks const& marks) noexcept { owner_marks_ = marks; }
+
+    // Marks a region that the owner gives to its foreground outside the
+    // publication slot, such as the region of a rollback.  The store then
+    // releases the region only after a later write of the foreground
+    // holders that does not name it.  A region that the store does not hold
+    // changes nothing.
+    void keep_region(PublishStage const& stage, ::fixy::WeakRef<const RegionNode> region) noexcept;
+
+    // The count of regions in the store, and the count of published regions
+    // that a full store discarded.  The publish stage owns the store.
+    [[nodiscard]] uint32_t region_count(PublishStage const& stage) const noexcept;
+    [[nodiscard]] uint64_t regions_dropped_full(PublishStage const&) const noexcept { return regions_dropped_full_; }
 
 #ifdef CRUCIBLE_BENCH
 public:  // The bench harness times sub-phases against the scratch buffers.

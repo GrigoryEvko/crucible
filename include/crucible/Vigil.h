@@ -37,7 +37,10 @@
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
@@ -335,6 +338,11 @@ public:
     // publish, and flush() orders that publish before it returns.
     [[nodiscard]] bool has_pending_region() const noexcept { return pending_region_.has_pending(); }
 
+    // A caller can read the region while it is the last published region.
+    // After that, the caller can read it until the producer thread next gets
+    // a region, diverges, does a rollback or loads.  Each of those writes the
+    // regions that the foreground holds, and the publish stage can then
+    // release the region.
     [[nodiscard]] const RegionNode* active_region() const noexcept {
         return bg_.active_region.load(std::memory_order_acquire);
     }
@@ -342,7 +350,7 @@ public:
     // The background thread published a writable region.  replay needs that
     // writable view, because the caller's execution lambda mutates the
     // region as it writes outputs.  The const accessor above serves
-    // introspection.
+    // introspection, and its rule for a read of the region applies here too.
     [[nodiscard]] RegionNode* active_region_mut() noexcept { return bg_.active_region.load(std::memory_order_acquire); }
 
     // Advanced only by the background thread, once per region transition.
@@ -432,6 +440,7 @@ public:
             region_cache_.insert(region);
             mode_.publish_compiled();
         }
+        publish_held_regions_();
         return true;
     }
 
@@ -501,6 +510,23 @@ public:
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
     [[nodiscard]] bool bg_detector_confirmed() const { return bg_.detector.confirmed; }
+
+    // The count of regions in the region store of the pipeline, and the
+    // count of published regions that a full store discarded.  Each call
+    // runs on the publish stage, between two publications.
+    [[nodiscard]] uint32_t region_store_count() {
+        uint32_t count = 0;
+        bg_.run_on_publish_stage(
+            [&count, this](BackgroundThread::PublishStage const& stage) noexcept { count = bg_.region_count(stage); });
+        return count;
+    }
+    [[nodiscard]] uint64_t region_store_drops() {
+        uint64_t drops = 0;
+        bg_.run_on_publish_stage([&drops, this](BackgroundThread::PublishStage const& stage) noexcept {
+            drops = bg_.regions_dropped_full(stage);
+        });
+        return drops;
+    }
 
     // True only when the configuration asked for the watchdog and the
     // tracing subprogram actually attached.
@@ -580,6 +606,45 @@ private:
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                                        RegionNode* region);
 
+    // Writes the regions that the foreground holds into held_regions_: the
+    // region of the alignment walk, the region of the replay context and the
+    // regions of the cache.  After the call, the foreground reads no other
+    // region than these and the last published region.  Runs on the
+    // producer thread at the end of each cold path that can change one of
+    // these holders.
+    [[gnu::cold]] void publish_held_regions_() noexcept {
+        const uint64_t before = held_regions_.sequence.load_acquire();
+        held_regions_.sequence.store_release(before + 1);
+        held_regions_.cells[0].store_release(pending_activation_);
+        held_regions_.cells[1].store_release(ctx_.active_region());
+        for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
+            held_regions_.cells[2 + age].store_release(region_cache_.region_at(age).try_get());
+        }
+        held_regions_.sequence.store_release(before + 2);
+    }
+
+    // Adds the regions of held_regions_ to marks, with the generation of the
+    // write that holds them.  Runs on the publish stage, and waits while the
+    // foreground writes the cells.
+    void mark_held_regions_(BackgroundThread::RegionMarks& marks) const noexcept {
+        while (true) {
+            const uint64_t before = held_regions_.sequence.load_acquire();
+            if ((before & 1u) == 0) {
+                BackgroundThread::RegionMarks read = marks;
+                for (uint32_t index = 0; index < HeldRegions::CAP; ++index) {
+                    read.hold(::fixy::WeakRef<const RegionNode>::from_raw(held_regions_.cells[index].load_acquire()));
+                }
+                if (held_regions_.sequence.load_acquire() == before) {
+                    read.has_foreground = true;
+                    read.foreground_generation = before / 2;
+                    marks = read;
+                    return;
+                }
+            }
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    }
+
     // The cold dispatch paths below are noinline so the hot path needs no
     // callee-saved registers for them.
 
@@ -634,6 +699,7 @@ private:
             auto compiled_view = ctx_.mint_compiled_view(fg);
             auto status = ctx_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
+                publish_held_regions_();
                 return {.action = DispatchResult::Action::COMPILED,
                         .status = status,
                         .pad = {},
@@ -646,6 +712,7 @@ private:
 
         mode_.publish_recording_after_divergence();
         bg_.reset_requested.signal();
+        publish_held_regions_();
         // The divergent op is deliberately not recorded: it would poison the
         // background thread's iteration detector.
         return {.action = DispatchResult::Action::RECORD,
@@ -677,6 +744,7 @@ private:
         } else {
             (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         }
+        publish_held_regions_();
 
         return {
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
@@ -863,6 +931,19 @@ private:
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
     CrucibleContext ctx_;
     RegionCache region_cache_;
+
+    // The regions that the foreground holds, for the sweep of the region
+    // store on the publish stage.  The foreground writes the cells at the end
+    // of each cold path that can change one of its holders, and never on the
+    // replay path.  The sequence is odd while the foreground writes, and each
+    // write adds two.  The publish stage reads the cells between two equal
+    // even values of the sequence.
+    struct HeldRegions {
+        static constexpr uint32_t CAP = 2 + RegionCache::CAP;
+        ::fixy::Atomic<uint64_t> sequence{};
+        ::fixy::FixedArray<::fixy::Atomic<const RegionNode*>, CAP> cells{};
+    };
+    HeldRegions held_regions_;
 
     // senses_ must precede wd_, which holds a borrow of it, so that reverse
     // destruction order tears the borrower down first.

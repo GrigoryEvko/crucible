@@ -270,15 +270,25 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_end) 
 
 // The node and the plan go into buffers of the region, and the arrays of the
 // sweep into the scratch of the publish stage, whose epoch ends in this call.
-// The memory goes to the region store before the region becomes visible, so
-// each region that a holder can name has an owner.  A move of a buffer keeps
-// the address of its storage, so the node and the ops keep their addresses
-// in the store.
+// The memory goes to a slot of the region store before the region becomes
+// visible, so each region that a holder can name has an owner.  A store with
+// no free slot discards the region, as a reset discards a stale region.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage,
                                       BuiltRegion parts) {
-    RegionMemory memory{.parts = std::move(parts),
-                        .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
-                        .plan = {}};
+    uint32_t free_index = REGION_STORE_CAP;
+    for (uint32_t index = 0; index < REGION_STORE_CAP && free_index == REGION_STORE_CAP; ++index) {
+        if (region_store_[index].node.empty()) free_index = index;
+    }
+    if (free_index == REGION_STORE_CAP) [[unlikely]] {
+        ++regions_dropped_full_;
+        discard_region(stage, std::move(parts));
+        return;
+    }
+    RegionMemory& memory = region_store_[free_index];
+    memory = RegionMemory{.parts = std::move(parts),
+                          .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
+                          .plan = {},
+                          .left_generation = NOT_LEFT};
     RegionNode& region = memory.node[0];
     init_region_node(region, memory.parts.ops.data(), static_cast<uint32_t>(memory.parts.ops.size()),
                      memory.parts.content_hash);
@@ -294,13 +304,72 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     release_meta_log(stage, memory.parts.max_meta_end);
     recompute_merkle(&region);
     const ::fixy::WeakRef<RegionNode> published{region};
-    region_store_.append(std::move(memory));
+    last_published_ = ::fixy::WeakRef<const RegionNode>{region};
 
     uncompiled_regions.push(&published.get());
     active_region.store(&published.get(), std::memory_order_release);
+    owner_marks_ = RegionMarks{};
     if (region_ready_cb) {
         region_ready_cb(bg, stage, &published.get());
     }
+    sweep_regions_(stage);
+}
+
+// The sweep releases a region when no holder names it.  The last published
+// region and the region in the slot stay.  With a foreground, each other
+// region also waits for a write of the foreground holders after the sweep
+// that found the region out of the view of the foreground.  That write names
+// each region that the foreground can still read, so the foreground reads no
+// region that the write does not name.  With no foreground, the sweep
+// releases a region with no holder at once.  Complexity: O(S * H) for S slots
+// and H held regions.
+void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
+    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
+        RegionMemory& memory = region_store_[index];
+        if (memory.node.empty()) continue;
+        const ::fixy::WeakRef<const RegionNode> region{memory.node[0]};
+        if (region == last_published_ || region == owner_marks_.handed) {
+            memory.left_generation = NOT_LEFT;
+            continue;
+        }
+        if (owner_marks_.has_foreground && memory.left_generation == NOT_LEFT) {
+            memory.left_generation = owner_marks_.foreground_generation;
+            continue;
+        }
+        if (is_held_(region)) continue;
+        if (owner_marks_.has_foreground && owner_marks_.foreground_generation <= memory.left_generation) continue;
+        memory = RegionMemory{};
+    }
+}
+
+bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const noexcept {
+    for (uint32_t index = 0; index < owner_marks_.count; ++index) {
+        if (owner_marks_.held[index] == region) return true;
+    }
+    const uint32_t queued = uncompiled_regions.size();
+    for (uint32_t age = 0; age < queued; ++age) {
+        if (::fixy::WeakRef<const RegionNode>::from_raw(uncompiled_regions.at(age)) == region) return true;
+    }
+    return false;
+}
+
+void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const RegionNode> region) noexcept {
+    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
+        RegionMemory& memory = region_store_[index];
+        if (memory.node.empty()) continue;
+        if (::fixy::WeakRef<const RegionNode>{memory.node[0]} == region) {
+            memory.left_generation = NOT_LEFT;
+            return;
+        }
+    }
+}
+
+uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
+    uint32_t count = 0;
+    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
+        if (!region_store_[index].node.empty()) ++count;
+    }
+    return count;
 }
 
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {

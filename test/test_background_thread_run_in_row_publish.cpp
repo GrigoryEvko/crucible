@@ -252,7 +252,9 @@ void test_published_regions_keep_their_hashes() {
 // A long run keeps the bytes of its scratch arenas.  The build stage ends an
 // epoch of its scratch arena after each work item, and the publish stage ends
 // an epoch of its own after each memory plan.  Each arena then holds the
-// blocks of its largest epoch, and no more blocks for each region.
+// blocks of its largest epoch, and no more blocks for each region.  The run
+// has no foreground, so the region store releases each region that neither
+// the uncompiled queue nor the last publish holds.
 void test_long_run_keeps_its_scratch() {
     using namespace publish_rig;
     constexpr uint32_t LONG_RUN_ITERS = 10000;
@@ -278,9 +280,19 @@ void test_long_run_keeps_its_scratch() {
     assert(published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
     assert(bt.scratch_retained_bytes() == scratch_before && "a scratch arena kept more blocks after its epochs");
 
+    uint32_t stored = 0;
+    uint64_t dropped = 0;
+    bt.run_on_publish_stage([&stored, &dropped, &bt](BackgroundThread::PublishStage const& stage) noexcept {
+        stored = bt.region_count(stage);
+        dropped = bt.regions_dropped_full(stage);
+    });
+    assert(dropped == 0 && "a full region store discarded a published region");
+    assert(stored <= BackgroundThread::UncompiledRegionQueue::CAP + 1
+           && "the region store kept a region that no holder names");
+
     crucible::test::pass("  long_run_keeps_its_scratch:                "
-                         "PASSED (regions={}, scratch={} bytes)\n",
-                         static_cast<unsigned long long>(published),
+                         "PASSED (regions={}, stored={}, scratch={} bytes)\n",
+                         static_cast<unsigned long long>(published), stored,
                          static_cast<unsigned long long>(bt.scratch_retained_bytes()));
 }
 

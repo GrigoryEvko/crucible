@@ -155,6 +155,7 @@ include/fixy/Federation.h | inlined | 2 | std::span::span | -
 include/fixy/Federation.h | inlined | 1 | std::unexpected::unexpected | -
 include/fixy/FixedArray.h | inlined | 1 | std::array::data | -
 include/fixy/FixedArray.h | inlined | 9 | std::array::operator[] | -
+include/fixy/FixedArray.h | inlined | 1 | std::array::~array | FixedArray keeps a std::array by design, and the region store of the pipeline is the first fixed array of an element with a destructor
 include/fixy/FixedArray.h | inlined | 1 | std::is_neq | -
 include/fixy/FixedArray.h | inlined | 1 | std::span::span | -
 include/fixy/FixedArray.h | inlined | 1 | std::strong_ordering::operator (conversion) | -

@@ -802,7 +802,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 **Compiler enforcement:** `-fsanitize=leak` (integrated into ASan on Linux), `-Wanalyzer-malloc-leak -Wanalyzer-fd-leak`.
 
 **Discipline:**
-- Arena bulk-frees graph memory (no per-object free).
+- An arena frees its bytes all together, at the end of an epoch or at the end of the arena, and it frees no single object. The publish stage frees the buffers of a published region when the region has no holder (`src/BackgroundThread.cpp`).
 - `std::unique_ptr` for long-lived owned buffers (TraceRing, MetaLog).
 - `bg_` thread member declared LAST in containing struct — destroyed first, joins before other members die.
 - No Rc cycles (we don't use Rc anyway).

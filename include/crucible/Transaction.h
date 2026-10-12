@@ -10,6 +10,7 @@
 // thread that wants a change sends it to the owner as a message.
 
 #include <crucible/Types.h>
+#include <fixy/Borrowed.h>
 #include <fixy/CyclicBuffer.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
@@ -324,6 +325,18 @@ public:
 
     Transaction* previous(Owner const&) && =
         delete("a temporary log releases its ring at the end of the statement. Use a log that has a name");
+
+    // Gives the region of each transaction in the ring to visit.  A rollback
+    // can make each such transaction active again, so the owner keeps each of
+    // these regions.  Complexity: O(N) in the ring capacity.
+    template <class Visit>
+    void for_each_region(Owner const&, Visit&& visit) const {
+        for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
+            const Transaction& entry = ring_.recent(i);
+            if (entry.region.value() == nullptr) continue;
+            visit(::fixy::WeakRef<const RegionNode>::from_raw(entry.region.value()));
+        }
+    }
 
     [[nodiscard]] uint32_t size(Owner const&) const {
         // The fill saturates at the capacity, which is far below what the
