@@ -1,0 +1,3 @@
+"""A planted module: a command with the job count 8 after the word -j."""
+
+MAKE = ["make", "-j", "8"]

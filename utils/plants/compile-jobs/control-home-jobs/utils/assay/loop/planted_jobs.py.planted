@@ -1,0 +1,28 @@
+"""A planted module: each build gets the job count of assay.core.proc, or the count that its caller gives."""
+
+import os
+
+from assay.core import proc
+
+jobs = 8
+HOME_JOBS = proc.DEFAULT_JOBS
+
+
+def home_command(build_dir: str) -> list[str]:
+    """Return a build with the job count of assay.core.proc."""
+    return ["cmake", "--build", build_dir, "-j", str(proc.DEFAULT_JOBS)]
+
+
+def named_command() -> list[str]:
+    """Return a build with a name that the module binds to the job count of assay.core.proc."""
+    return ["make", f"-j{HOME_JOBS}"]
+
+
+def caller_command(jobs: int) -> tuple[str, ...]:
+    """Return a build with the job count of the caller."""
+    return ("ninja", "-j", str(jobs))
+
+
+def environment_jobs() -> str:
+    """Return the job count of the environment, with the default of assay.core.proc."""
+    return os.environ.get("CRUCIBLE_PLANTED_JOBS", str(proc.DEFAULT_JOBS))

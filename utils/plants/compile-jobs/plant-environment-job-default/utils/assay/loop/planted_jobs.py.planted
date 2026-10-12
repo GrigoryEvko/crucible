@@ -1,0 +1,11 @@
+"""A planted module: a job count from the environment, with a literal default."""
+
+import os
+
+DEFAULT_JOBS = "6"
+
+
+def build_command(build_dir: str) -> list[str]:
+    """Return the command of the build."""
+    jobs = os.environ.get("CRUCIBLE_PLANTED_JOBS", DEFAULT_JOBS)
+    return ["cmake", "--build", build_dir, "-j", jobs]

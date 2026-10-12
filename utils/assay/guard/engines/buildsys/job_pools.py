@@ -20,6 +20,28 @@ THE COUNTS
     proc.py does not read the registry, because each run of `loop fixture`
     imports it (THE JOB COUNT of that module).
 
+THE LITERAL JOB COUNTS
+    A program can give a build or a test run a job count of its own.  That
+    count is a second home of the count.  The rule reads each module of
+    utils/assay of the tree, other than the tests in utils/assay/tests/.  A
+    test gives the -j option of a parser literal values, such as 0, to check
+    the parser, and it starts no build.  A job count is literal when it is one
+    of these values:
+      * An integer, or a text of digits
+      * str() or int() of a literal
+      * A name that an assignment of the module or of its function, or a
+        parameter default, gives a literal value.
+    The rule finds a literal job count at these positions:
+      * The word after -j, --jobs or --parallel in a list or a tuple
+      * A word -jN, or an f-string -j{X} with a literal X
+      * The second argument of a call with the name of an environment
+        variable that ends with _JOBS as its first argument, such as
+        os.environ.get.
+    The value proc.DEFAULT_JOBS is not literal.  A parameter with no literal
+    default is not literal, and its caller gives the count.  The rule parses
+    only a module with one of JOB_MARKS in its text.  On 2026-10-12, 20
+    modules held one, and the rule took 0.15 s more than with no such scan.
+
 THE RULE compile-jobs
     The rule reads build.ninja and each file that it includes, through
     assay.readers.ninja.  It gives:
@@ -35,11 +57,13 @@ THE RULE compile-jobs
       `program-jobs`  DEFAULT_JOBS of utils/assay/core/proc.py, or the jobs of a
                       build preset or a test preset of CMakePresets.json, is
                       not the count of the rule
-      `input`         a file of the graph, proc.py or CMakePresets.json cannot
-                      be read, or the threshold of the rule is not an integer
-                      above 0
-    The rule reads proc.py and CMakePresets.json of the tree that it checks,
-    and not the module that runs it.  CMakeUserPresets.json is a file of one
+      `literal-jobs`  a module of the package gives a build or a test run a
+                      literal job count (THE LITERAL JOB COUNTS)
+      `input`         the rule cannot read a file of the graph, proc.py, a
+                      module of the package or CMakePresets.json.  Or the
+                      threshold of the rule is not an integer above 0
+    The rule reads proc.py, the modules of the package and CMakePresets.json
+    of the tree that it checks, and not the modules that run it.  CMakeUserPresets.json is a file of one
     user, and the tree does not hold it.  The rule does not read it.
 
 THE RULE link-jobs
@@ -67,6 +91,7 @@ Complexity: one read of the graph and its included files, linear in their length
 import ast
 import shutil
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,6 +113,20 @@ PROC_CONSTANT = "DEFAULT_JOBS"
 PRESETS_FILE = "CMakePresets.json"
 # The word of an edge with no pool, in a finding.
 NO_POOL = "no pool"
+# The modules of the package and its tests, relative to the root of the tree (THE LITERAL JOB COUNTS).
+PACKAGE_DIRECTORY = "utils/assay"
+TESTS_DIRECTORY = "utils/assay/tests"
+# The words of a command that take a job count after them, and the start of a word that holds one.
+JOB_OPTIONS = frozenset({"-j", "--jobs", "--parallel"})
+JOB_PREFIX = "-j"
+# The end of the name of an environment variable of a job count.
+JOB_VARIABLE_SUFFIX = "_JOBS"
+# The texts of a module that can start a literal job count.  The rule parses only a module that holds one.
+JOB_MARKS = ('"-j', "'-j", '_JOBS"', "_JOBS'", '"--jobs"', "'--jobs'", '"--parallel"', "'--parallel'")
+# The calls that keep a literal: str(X) and int(X).
+CONVERSIONS = frozenset({"str", "int"})
+# The largest chain of names that the rule follows to a literal.
+NAME_DEPTH = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,9 +287,201 @@ def default_jobs(root: Path) -> tuple[int, int] | str:
     return f"{PROC_MODULE} has no assignment of an integer to {PROC_CONSTANT} at the top level"
 
 
-def program_findings(context: BuildContext, rule: PoolRule, count: int) -> list[check_report.Finding]:
-    """Give one error for DEFAULT_JOBS and for each build preset and test preset when its jobs are not the count."""
+ScopeNode = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda
+# The values that a scope gives each name.  An empty list is a name with no value that the rule can read.
+Bindings = dict[str, list[ast.expr]]
+
+
+def scope_bindings(body: Sequence[ast.AST]) -> Bindings:
+    """Return the value of each assignment to a name in a body, with no nested function or class.
+
+    Complexity: linear in the nodes of the body.
+    """
+    bound: Bindings = {}
+    pending = list(body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    bound.setdefault(target.id, []).append(node.value)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None and isinstance(node.target, ast.Name):
+            bound.setdefault(node.target.id, []).append(node.value)
+        pending.extend(ast.iter_child_nodes(node))
+    return bound
+
+
+def function_bindings(node: ScopeNode) -> Bindings:
+    """Return the values of the names of a function: each parameter with its default, and each assignment of its body.
+
+    A parameter with no default has no value.  The name then does not get a value of the module.
+    """
+    arguments = node.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    defaults: dict[str, ast.expr] = dict(
+        zip(
+            (item.arg for item in positional[len(positional) - len(arguments.defaults) :]),
+            arguments.defaults,
+            strict=True,
+        )
+    )
+    defaults.update(
+        (item.arg, default)
+        for item, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True)
+        if default is not None
+    )
+    names = [*positional, *arguments.kwonlyargs, *(item for item in (arguments.vararg, arguments.kwarg) if item)]
+    bound: Bindings = {item.arg: [defaults[item.arg]] if item.arg in defaults else [] for item in names}
+    body = node.body if isinstance(node.body, list) else [node.body]
+    for name, values in scope_bindings(body).items():
+        bound.setdefault(name, []).extend(values)
+    return bound
+
+
+class LiteralJobs(ast.NodeVisitor):
+    """The literal job counts of one module, each with its line and its text (THE LITERAL JOB COUNTS)."""
+
+    def __init__(self, tree: ast.Module) -> None:
+        """Read the values of the names of the module."""
+        self.scopes: list[Bindings] = [scope_bindings(tree.body)]
+        self.found: list[tuple[int, str]] = []
+
+    def is_literal(self, node: ast.expr, depth: int = 0) -> bool:
+        """Return if an expression is a literal job count, through at most NAME_DEPTH names.
+
+        The innermost scope that gives a name values holds the answer, and one literal value of the name is sufficient.
+        """
+        if isinstance(node, ast.Constant):
+            value = node.value
+            return type(value) is int or (isinstance(value, str) and value.isdigit())
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CONVERSIONS:
+            return len(node.args) == 1 and not node.keywords and self.is_literal(node.args[0], depth)
+        if isinstance(node, ast.Name) and depth < NAME_DEPTH:
+            scope = next((item for item in reversed(self.scopes) if node.id in item), None)
+            return scope is not None and any(self.is_literal(value, depth + 1) for value in scope[node.id])
+        return False
+
+    def is_joined_literal(self, node: ast.JoinedStr) -> bool:
+        """Return if an f-string is -j{X} with a literal X."""
+        if len(node.values) != 2:
+            return False
+        prefix, formatted = node.values
+        return (
+            isinstance(prefix, ast.Constant)
+            and prefix.value == JOB_PREFIX
+            and isinstance(formatted, ast.FormattedValue)
+            and formatted.format_spec is None
+            and self.is_literal(formatted.value)
+        )
+
+    def record(self, node: ast.expr) -> None:
+        """Keep one literal job count."""
+        self.found.append((node.lineno, ast.unparse(node)))
+
+    def is_literal_word(self, word: ast.expr) -> bool:
+        """Return if one word holds a literal job count: -jN, or the f-string -j{X} with a literal X."""
+        if isinstance(word, ast.JoinedStr):
+            return self.is_joined_literal(word)
+        text = word.value if isinstance(word, ast.Constant) and isinstance(word.value, str) else ""
+        return text.startswith(JOB_PREFIX) and text[len(JOB_PREFIX) :].isdigit()
+
+    def check_words(self, words: Sequence[ast.expr]) -> None:
+        """Keep each literal job count of the words of a list or a tuple."""
+        for index, word in enumerate(words):
+            if isinstance(word, ast.Constant) and word.value in JOB_OPTIONS:
+                if index + 1 < len(words) and self.is_literal(words[index + 1]):
+                    self.record(words[index + 1])
+            elif self.is_literal_word(word):
+                self.record(word)
+
+    def visit_scope(self, node: ScopeNode) -> None:
+        """Visit a function with its own bindings."""
+        self.scopes.append(function_bindings(node))
+        self.generic_visit(node)
+        self.scopes.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Visit a function with its own bindings."""
+        self.visit_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Visit a function with its own bindings."""
+        self.visit_scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Visit a lambda with its own bindings."""
+        self.visit_scope(node)
+
+    def visit_List(self, node: ast.List) -> None:
+        """Keep each literal job count of a list."""
+        self.check_words(node.elts)
+        self.generic_visit(node)
+
+    def visit_Tuple(self, node: ast.Tuple) -> None:
+        """Keep each literal job count of a tuple."""
+        self.check_words(node.elts)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Keep a literal default of a call that reads an environment variable of a job count."""
+        first = node.args[0] if node.args else None
+        if (
+            isinstance(first, ast.Constant)
+            and isinstance(first.value, str)
+            and first.value.endswith(JOB_VARIABLE_SUFFIX)
+            and len(node.args) >= 2
+            and self.is_literal(node.args[1])
+        ):
+            self.record(node.args[1])
+        self.generic_visit(node)
+
+
+def literal_job_findings(root: Path, rule: PoolRule, count: int) -> list[check_report.Finding]:
+    """Give one error for each literal job count of a module of the package of a tree (THE LITERAL JOB COUNTS).
+
+    Complexity: one read of each module, and one parse of each module that holds a mark of JOB_MARKS.
+    """
     found: list[check_report.Finding] = []
+    tests = root / TESTS_DIRECTORY
+    for path in sorted((root / PACKAGE_DIRECTORY).rglob("*.py")):
+        if path.is_relative_to(tests):
+            continue
+        shown = path.relative_to(root).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as problem:
+            found.append(error(rule, shown, 0, f"the rule cannot read {shown}: {problem}", "input", shown))
+            continue
+        if not any(mark in text for mark in JOB_MARKS):
+            continue
+        try:
+            source = python_reader.parse(text, shown)
+        except python_reader.PythonError as problem:
+            found.append(error(rule, shown, problem.line, f"the rule cannot parse {shown}: {problem}", "input", shown))
+            continue
+        visitor = LiteralJobs(source.tree)
+        visitor.visit(source.tree)
+        for line, literal in visitor.found:
+            found.append(
+                error(
+                    rule,
+                    shown,
+                    line,
+                    f"{shown} gives a build or a test run the literal job count {literal}, a count of its own, and "
+                    f"the rule {rule.rule_id} of utils/registry.txt gives {count} jobs.  Give it proc.DEFAULT_JOBS, "
+                    f"or a parameter that its caller gives",
+                    "literal-jobs",
+                    f"{shown}:{line}",
+                )
+            )
+    return found
+
+
+def program_findings(context: BuildContext, rule: PoolRule, count: int) -> list[check_report.Finding]:
+    """Give one error for DEFAULT_JOBS, a literal job count of a module and a preset when its jobs are not the count."""
+    found = literal_job_findings(context.root, rule, count)
     jobs = default_jobs(context.root)
     if isinstance(jobs, str):
         found.append(error(rule, PROC_MODULE, 0, jobs, "input", PROC_CONSTANT))

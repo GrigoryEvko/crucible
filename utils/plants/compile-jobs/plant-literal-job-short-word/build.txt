@@ -1,0 +1,2 @@
+# A module of the package gives ninja the word -j8.  The rule gives the error literal-jobs.
+format 1

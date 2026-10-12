@@ -1,0 +1,3 @@
+# A module of the package reads the job count of a build from the environment variable CRUCIBLE_PLANTED_JOBS, with
+# the default DEFAULT_JOBS, and the module binds DEFAULT_JOBS to "6".  The rule gives the error literal-jobs.
+format 1

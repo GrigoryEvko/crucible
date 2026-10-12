@@ -60,7 +60,6 @@ LOG = logging.getLogger("session_oracle.keskin")
 LIBRARY = Path(__file__).resolve().parent / "coq" / "LiveOracle.v"
 CHUNK = 8
 CHUNK_TIMEOUT = 900
-BUILD_JOBS = 8
 # The axioms that a checked certificate may rest on: the extensionality of
 # local type trees that the development assumes (src/balanced.v), and three
 # axioms of the Coq standard library that its proofs use.
@@ -100,12 +99,17 @@ def fetch() -> Path:
 
 
 def build(root: Path) -> None:
-    """Compile the development with its own makefile.  A second call is a no-op."""
+    """Compile the development with its own makefile.  A second call is a no-op.
+
+    make runs the job count of assay.core.proc.  On 2026-10-12 a build from a
+    clean tree took 192 s at 16 jobs and 189 s at 8 jobs.  Each run held at most
+    2.3 GiB in all its processes and 0.74 GiB in one coqc.
+    """
     if (root / "STLive" / "lemma" / "liveness.vo").is_file():
         return
-    LOG.info("building the ITP 2026 development in %s (about ten minutes)", root)
+    LOG.info("building the ITP 2026 development in %s (about three minutes)", root)
     for cmd in ([*_switch(), "coq_makefile", "-f", "_CoqProject", "-o", "Makefile"],
-                [*_switch(), "make", f"-j{BUILD_JOBS}"]):
+                [*_switch(), "make", f"-j{proc.DEFAULT_JOBS}"]):
         completed = proc.run(proc.Command(cmd, timeout_s=proc.BUILD_S, cwd=root))
         if completed.exit != 0:
             raise OracleError(f"building the ITP 2026 development failed at {' '.join(cmd[-3:])}:\n"

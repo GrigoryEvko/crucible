@@ -1,0 +1,3 @@
+# A module of the package gives make the f-string -j{jobs}, and the parameter jobs has the literal default 8.  The
+# rule gives the error literal-jobs.
+format 1

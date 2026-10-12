@@ -1,0 +1,3 @@
+"""A planted module: a command with the word -j8."""
+
+NINJA = ("ninja", "-C", "build", "-j8")

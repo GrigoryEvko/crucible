@@ -1,0 +1,8 @@
+"""A planted module: a command with a job count from a name that the module binds to a literal."""
+
+BUILD_JOBS = 8
+
+
+def build_command() -> list[str]:
+    """Return the command of the build."""
+    return ["make", f"-j{BUILD_JOBS}"]

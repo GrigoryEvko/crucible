@@ -1,0 +1,3 @@
+"""A planted test: it gives the -j option of a parser the word 0, to check the refusal."""
+
+REFUSED = ["test", "build", "-j", "0"]

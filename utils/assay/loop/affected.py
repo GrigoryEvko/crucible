@@ -1043,8 +1043,8 @@ def call_script(build_dir: Path, *extra: str, path: str | None = None) -> tuple[
     With `path`, the script runs with that PATH.
     """
     environment = proc.environment({"PATH": path}) if path is not None else None
-    result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(build_dir), "--no-build", "-j4", *extra],
-                                   timeout_s=proc.TOOL_S, env=environment))
+    result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(build_dir), "--no-build",
+                                    f"-j{proc.DEFAULT_JOBS}", *extra], timeout_s=proc.TOOL_S, env=environment))
     return result.exit, result.out + result.err
 
 
@@ -1258,7 +1258,7 @@ def self_test(ctest: str) -> int:
         expect("a call appends one line to the loop history, with the tests and with no build after --no-build",
                len(history) == 1 and history[0]["build"] is None and counts["failed"] == 1
                and counts["selected"] == counts["passed"] + 1 + counts["skip_code"] + counts["not_run"]
-               and history[0]["jobs"] == 4, output)
+               and history[0]["jobs"] == proc.DEFAULT_JOBS, output)
         expect("a test that gave its skip code counts apart from the disabled test, which did not run",
                counts.get("skip_code") == 1 and counts.get("not_run") == 1
                and "1 failed, 1 gave their skip code, 1 did not run." in output, output)

@@ -1,9 +1,10 @@
 """bench — build the benches, give them their capabilities and run each one on an isolated core (`loop bench`).
 
 THE STEPS FOR EACH BENCH
-    1. The command builds the bench in the build directory of the bench preset.
-       The build is incremental, so a bench that is current builds nothing.
-       --no-build omits the step.
+    1. The command builds the bench in the build directory of the bench preset,
+       with the job count of assay.core.proc (DEFAULT_JOBS).  The build is
+       incremental, so a bench that is current builds nothing.  --no-build
+       omits the step.
     2. It gives the binary the capabilities of the CMake target bench-caps of
        bench/CMakeLists.txt again, after each build: a link writes a new file
        with no file capabilities.  With them, the eBPF lines of the bench
@@ -26,7 +27,6 @@ THE ENVIRONMENT
     CRUCIBLE_BENCH_BUILD   The build directory of the bench preset, relative to the tree.  The default is build-bench
     CRUCIBLE_BENCH_PRESET  The preset that configures it.  The default is bench
     CRUCIBLE_BENCH_CORE    The core when the kernel isolates no core.  The default is 88
-    CRUCIBLE_BENCH_JOBS    The jobs of each incremental build.  The default is 8
 
 Usage
     loop bench [--no-build] [TARGET]... [-- ARG...]   build and run each TARGET, or the default set
@@ -57,7 +57,6 @@ from assay.setup import pins as cmake_pin
 DEFAULT_BUILD = "build-bench"
 DEFAULT_PRESET = "bench"
 DEFAULT_CORE = "88"
-DEFAULT_JOBS = "8"
 # The capabilities of the target bench-caps of bench/CMakeLists.txt.
 CAPABILITIES = "cap_bpf,cap_perfmon,cap_dac_read_search=eip"
 # The hot-path latency set.  bench_dispatch and bench_meta_log are not in it, because their builds drift.
@@ -85,20 +84,18 @@ class Request:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """The values of THE ENVIRONMENT: the build directory relative to the tree, the preset, the core and the jobs."""
+    """The values of THE ENVIRONMENT: the build directory relative to the tree, the preset and the core."""
 
     build: str
     preset: str
     core: str
-    jobs: str
 
     @classmethod
     def from_environment(cls) -> Settings:
         """Read the settings from the environment, with the default of each variable that is not set."""
         return cls(os.environ.get("CRUCIBLE_BENCH_BUILD", DEFAULT_BUILD),
                    os.environ.get("CRUCIBLE_BENCH_PRESET", DEFAULT_PRESET),
-                   os.environ.get("CRUCIBLE_BENCH_CORE", DEFAULT_CORE),
-                   os.environ.get("CRUCIBLE_BENCH_JOBS", DEFAULT_JOBS))
+                   os.environ.get("CRUCIBLE_BENCH_CORE", DEFAULT_CORE))
 
 
 def log(text: str) -> None:
@@ -239,8 +236,8 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         if request.should_build:
             log(f"build {target}")
             built = proc.run(proc.Command([build_cmake, "--build", str(build_dir), "--target", target, "-j",
-                                           settings.jobs], timeout_s=proc.BUILD_S, stdout=proc.Output.DISCARD,
-                                          stderr=proc.Output.INHERIT))
+                                           str(proc.DEFAULT_JOBS)], timeout_s=proc.BUILD_S,
+                                          stdout=proc.Output.DISCARD, stderr=proc.Output.INHERIT))
             if built.exit != 0:
                 raise BenchError(f"build failed: {target} (known-drifted bench? try another target)")
         if not os.access(binary, os.X_OK):
@@ -292,7 +289,7 @@ def self_test() -> int:
            pin_core("\n", "88") == ("88", False) and pin_core(None, "88") == ("88", False))
     with tempfile.TemporaryDirectory(prefix="loop-bench-") as work:
         try:
-            run(Path(work), parse([]), Settings("absent", DEFAULT_PRESET, DEFAULT_CORE, DEFAULT_JOBS))
+            run(Path(work), parse([]), Settings("absent", DEFAULT_PRESET, DEFAULT_CORE))
             expect("a build directory that is not configured is refused", False)
         except BenchError as problem:
             expect("a build directory that is not configured is refused", "not configured" in str(problem))

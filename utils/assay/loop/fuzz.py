@@ -6,7 +6,8 @@ THE ARGUMENTS
     BUILD_DIR  The instrumented build.  When BUILD_DIR is not configured, the
                command configures it with afl-g++-fast.  It also keeps a
                second build, BUILD_DIR-cmplog, with comparison logging, for
-               the main instance.  It builds fuzz_HARNESS in the two builds.
+               the main instance.  It builds fuzz_HARNESS in the two builds,
+               with the job count of assay.core.proc (DEFAULT_JOBS).
     OUT_DIR    The output directory of afl-fuzz.  The seeds go to
                OUT_DIR/seeds, and the scratch files of the harness go to
                OUT_DIR/tmp.  A harness that afl-fuzz stops leaves its scratch
@@ -20,7 +21,6 @@ THE ARGUMENTS
 
 THE ENVIRONMENT
     CRUCIBLE_FUZZ_RESERVED_CPUS  The cores that no instance can use.  The default is 88-95
-    CRUCIBLE_FUZZ_JOBS           The build jobs.  The default is 6
     AFL_BIN                      The directory of the AFL++ tools.  The default is $HOME/.local/bin
     CRUCIBLE_CXX                 The patched g++ that the compiler wrappers call, and the gcc in the same directory
     CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC, when CRUCIBLE_CXX is not set.  The default is
@@ -59,7 +59,6 @@ from assay.setup import gcc as patched_gcc
 from assay.setup import pins as cmake_pin
 
 DEFAULT_RESERVED = "88-95"
-DEFAULT_JOBS = "6"
 HARNESSES = Path("test/fuzz/boundary/harnesses")
 # The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
 # assay.core.proc before SIGKILL.
@@ -133,12 +132,13 @@ def campaign_of(argv: list[str], root: Path, reserved_text: str) -> Campaign:
     return Campaign(Path(build_text), Path(out_text), harness, cpus, int(seconds_text))
 
 
-def configure_and_build(root: Path, build_dir: Path, harness: str, afl_bin: Path, jobs: str,
+def configure_and_build(root: Path, build_dir: Path, harness: str, afl_bin: Path,
                         environment: dict[str, str]) -> None:
     """Configure an instrumented build when it is not configured, and build fuzz_HARNESS in it.
 
     The configure runs the cmake of PATH, and the build runs the cmake that
-    configured the directory (`setup check`, utils/assay/setup/pins.py).
+    configured the directory (`setup check`, utils/assay/setup/pins.py).  The
+    build runs the job count of assay.core.proc.
 
     Raises:
         proc.ToolFailed: If the configure or the build cannot start, runs past its limit or fails
@@ -153,7 +153,8 @@ def configure_and_build(root: Path, build_dir: Path, harness: str, afl_bin: Path
             timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
     build_cmake = cmake_pin.configured_program(build_dir, "cmake")
     proc.require(proc.run(proc.Command(
-        ["nice", "-n", "10", build_cmake, "--build", str(build_dir), "-j", jobs, "--target", f"fuzz_{harness}"],
+        ["nice", "-n", "10", build_cmake, "--build", str(build_dir), "-j", str(proc.DEFAULT_JOBS), "--target",
+         f"fuzz_{harness}"],
         timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
 
 
@@ -232,11 +233,10 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
         0 when each instance ended with status 0, else 1
     """
     afl_bin = Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
-    jobs = os.environ.get("CRUCIBLE_FUZZ_JOBS", DEFAULT_JOBS)
     environment = _afl_environment()
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
-    configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, jobs, environment)
-    configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, jobs, dict(environment, AFL_GCC_CMPLOG="1"))
+    configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, environment)
+    configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, dict(environment, AFL_GCC_CMPLOG="1"))
     binary = campaign.build_dir / "test" / "fuzz" / f"fuzz_{campaign.harness}"
     cmplog_binary = cmplog_dir / "test" / "fuzz" / f"fuzz_{campaign.harness}"
     scratch = campaign.out_dir / "tmp"
