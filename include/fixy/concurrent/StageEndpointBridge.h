@@ -7,11 +7,9 @@
 // Design notes:
 //   - Each mint takes its endpoints by move and refuses an lvalue, so no
 //     endpoint is consumed without a std::move at the call site.
-//   - SwmrStage is built through StageEndpointDoor, a final class with
-//     private static members and mint_swmr_stage as its friend.  No other
-//     code can build it.  The two other mints take the handle out of each
-//     endpoint and give the handles to mint_stage or mint_mpmc_stage of
-//     fixy/concurrent/Stage.h.
+//   - Each mint takes the handle out of each endpoint and gives the handles
+//     to mint_stage, mint_mpmc_stage or mint_swmr_stage of
+//     fixy/concurrent/Stage.h.  Only those mints can build a stage.
 //   - Each mint checks the row in the requires clause alone, as mint_stage
 //     does.  A refused row never arrives in the body.
 
@@ -20,7 +18,6 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/StageShape.h>
 
-#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -250,33 +247,10 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
 
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
     requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
-[[nodiscard]] constexpr auto mint_swmr_stage(Ctx const& ctx, ConsumerEp&& in_ep, Writer&& writer) noexcept {
-    return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_swmr_<FnPtr>(
-        ctx, std::move(in_ep).into_handle(), std::move(writer));
+[[nodiscard]] constexpr auto mint_swmr_stage_from_endpoint(Ctx const& ctx, ConsumerEp&& in_ep,
+                                                           Writer&& writer) noexcept {
+    return mint_swmr_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(writer));
 }
-
-// ── The door of the SwmrStage mint ───────────────────────────────────
-//
-// mint_swmr_stage gets its stage through this class.  Its members are
-// private and static.  Its friend is the mint, which does the check of the
-// body, the context and the endpoint before it calls a member.  The member
-// does its check again and builds the stage.  The class is final, and no
-// object of it exists.
-class StageEndpointDoor final : ::foundation::NoObject<StageEndpointDoor> {
-    template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
-        requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
-    friend constexpr auto mint_swmr_stage(Ctx const& ctx, ConsumerEp&& in_ep, Writer&& writer) noexcept;
-
-    template <auto FnPtr, class Ctx>
-    [[nodiscard]] static constexpr auto
-    make_swmr_(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 0>>&& in,
-               std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>&& writer) noexcept {
-        static_assert(CtxFitsSwmrPublishStage<FnPtr, Ctx>,
-                      "fixy::concurrent::diagnostic [StageDoor_Refused]: the stage door accepts only the body and "
-                      "context that mint_swmr_stage accepts.");
-        return SwmrStage<FnPtr, Ctx>{ctx, std::move(in), std::move(writer)};
-    }
-};
 
 // The armed cell of detail::is_endpoint is in test/fixy/test_armed_roster.cpp.
 // Its witnesses are endpoints over two channels, and a header that names

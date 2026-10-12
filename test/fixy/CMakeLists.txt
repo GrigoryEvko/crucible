@@ -3700,11 +3700,24 @@ fixy_neg_compile_test(neg_mpmc_stage_mint_row_not_admitted
   "required for the satisfaction of .CtxFitsVariadicStage<FnPtr, Ctx>."
   "variadic_stage_rows_admitted<FnPtr, Ctx>")
 fixy_neg_compile_test(neg_swmr_stage_non_writer
-  "no matching function for call to .mint_swmr_stage<swmr_writer_fixture::body>"
+  "no matching function for call to .mint_swmr_stage_from_endpoint<swmr_writer_fixture::body>"
   "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
 fixy_neg_compile_test(neg_swmr_stage_producer_endpoint
-  "no matching function for call to .mint_swmr_stage<swmr_direction_fixture::body>"
+  "no matching function for call to .mint_swmr_stage_from_endpoint<swmr_direction_fixture::body>"
   "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
+
+# The mint of a single-writer stage takes the consumer handle and the
+# writer.  A body whose second parameter has no publish is not a publish
+# stage, and a payload row that the context does not admit is refused, as
+# for mint_stage.
+fixy_neg_compile_test(neg_swmr_stage_mint_body_not_a_publish_stage
+  "no matching function for call to .mint_swmr_stage<swmr_body_fixture::body>"
+  "required for the satisfaction of .SwmrPublishStageBody<FnPtr>."
+  "the expression .is_swmr_writer_v<.* evaluated to .false.")
+fixy_neg_compile_test(neg_swmr_stage_mint_row_not_admitted
+  "no matching function for call to .mint_swmr_stage<swmr_row_fixture::body>"
+  "required for the satisfaction of .CtxFitsSwmrPublishStage<FnPtr, Ctx>."
+  "the expression .row_subset\\(.* evaluated to .false.")
 
 # The recording wrapper takes an endpoint and a session event log.
 fixy_neg_compile_test(neg_recording_endpoint_non_endpoint

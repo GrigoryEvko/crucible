@@ -1151,9 +1151,6 @@ inline constexpr StatedZero kZeros[] = {
      "a list of endpoint types that the stage gate reads at compile time: it has no member, and it is never a value"},
     {^^::fixy::concurrent::EndpointDoor,
      "the door of the endpoint mint: it has static members only, no object of it exists, and it is never a value"},
-    {^^::fixy::concurrent::StageEndpointDoor,
-     "the door of the stage mints that take endpoints: it has static members only, no object of it exists, and it "
-     "is never a value"},
 
     {^^::fixy::handle::Once, kDescriptor},
     {^^::fixy::handle::OneShotFlag, kDescriptor},

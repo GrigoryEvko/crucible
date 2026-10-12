@@ -137,6 +137,14 @@ static_assert(W1::aggregate_per_call_working_set == 128);
 static_assert(!std::is_copy_constructible_v<W1>);
 static_assert(std::is_move_constructible_v<W1>);
 
+// The mint of the single-writer stage takes the consumer handle and the
+// writer, and it gives the stage of the body.  The two negative-compile
+// fixtures neg_swmr_stage_mint_* hold the refusals of its gate.
+static_assert(std::is_same_v<decltype(::fixy::concurrent::mint_swmr_stage<&stage_swmr_publish>(
+                                 std::declval<HotFgCtx const&>(), std::declval<FakeConsumer<int>>(),
+                                 std::declval<FakeWriter<int>>())),
+                             W1>);
+
 }  // namespace detail::stage_self_test
 
 }  // namespace fixy::concurrent

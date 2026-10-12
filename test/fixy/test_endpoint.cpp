@@ -278,7 +278,7 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
     (void)feeder.try_push(6);
 
     int last = 0;
-    auto stage = c::mint_swmr_stage<&publishing_stage>(
+    auto stage = c::mint_swmr_stage_from_endpoint<&publishing_stage>(
         ctx, c::mint_endpoint<SwmrIn, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm))),
         LastValueWriter{.last = &last});
     std::move(stage).run();

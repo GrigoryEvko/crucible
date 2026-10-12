@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // A single-writer stage drains a consumer endpoint.  A producer endpoint
-// has no pop, so it cannot feed the stage, and mint_swmr_stage rejects the
-// call.
+// has no pop, so it cannot feed the stage, and mint_swmr_stage_from_endpoint
+// rejects the call.
 //
 // Expected diagnostic: CtxFitsSwmrStageFromEndpoint is not satisfied.
 
@@ -32,7 +32,7 @@ int main() {
     In in{};
     auto [in_p, in_c] = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
     (void)in_c;
-    auto stage = c::mint_swmr_stage<&body>(
+    auto stage = c::mint_swmr_stage_from_endpoint<&body>(
         ctx, c::mint_endpoint<In, c::Direction::Producer>(ctx, in.producer(std::move(in_p))), Writer{});
     std::move(stage).run();
     return 0;

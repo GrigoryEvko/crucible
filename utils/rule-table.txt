@@ -713,7 +713,6 @@ witness <fixy/session/Checkpoint.h> deleted | fixy::session::CheckpointDoor | fi
 witness <fixy/session/CrashTransport.h> deleted | fixy::session::CrashSessionDoor | fixy::session::CrashSessionDoor{}
 witness <fixy/session/Recording.h> deleted | fixy::session::RecordingDoor | fixy::session::RecordingDoor{}
 witness <fixy/concurrent/Endpoint.h> deleted | fixy::concurrent::EndpointDoor | fixy::concurrent::EndpointDoor{}
-witness <fixy/concurrent/StageEndpointBridge.h> deleted | fixy::concurrent::StageEndpointDoor | fixy::concurrent::StageEndpointDoor{}
 
 # The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
 # Measured in user instructions with ~/.local/gcc16-patched-p5/usr/bin/g++-16p on AMD EPYC 9655 96-Core Processor with 376 threads.  An empty translation unit costs 0.045 G.

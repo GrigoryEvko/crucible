@@ -13,9 +13,10 @@
 // they bind the same channel instance.
 //
 // Each stage has a private constructor.  The one friend of a Stage is
-// mint_stage, and the one friend of an MpmcStage is mint_mpmc_stage.  The
-// one friend of a SwmrStage is the door of
-// fixy/concurrent/StageEndpointBridge.h, which builds the stage for its mint.
+// mint_stage, the one friend of an MpmcStage is mint_mpmc_stage, and the one
+// friend of a SwmrStage is mint_swmr_stage.  Each mint takes handles.  A
+// mint that takes endpoints takes the handle out of each endpoint and calls
+// the mint of this header.
 //
 // The body names the handles of a stage, so the type of a stage holds only
 // the body and the context.
@@ -278,10 +279,6 @@ private:
     producer_handle_type out_;
 };
 
-// The door that builds SwmrStage.  It is defined in
-// fixy/concurrent/StageEndpointBridge.h.
-class StageEndpointDoor;
-
 // The body's parameters are all consumer handles first and all producer
 // handles after.  The stage holds one handle for each parameter, in the
 // order of the parameters, so an input I is handle I and an output I is
@@ -424,7 +421,13 @@ private:
                                                writer_handle_type&& writer) noexcept
         : ctx_{ctx}, in_{std::move(in)}, writer_{std::move(writer)} {}
 
-    friend class StageEndpointDoor;
+    // The constraint here has to be the factory's constraint written out
+    // identically, as for mint_stage above.
+    template <auto MintFnPtr, ::foundation::effects::IsExecCtx MintCtx>
+        requires CtxFitsSwmrPublishStage<MintFnPtr, MintCtx>
+    friend constexpr auto
+    mint_swmr_stage(MintCtx const&, std::remove_reference_t<::foundation::reflect::param_type_t<MintFnPtr, 0>>&&,
+                    std::remove_reference_t<::foundation::reflect::param_type_t<MintFnPtr, 1>>&&) noexcept;
 
     [[no_unique_address]] Ctx ctx_;
     consumer_handle_type in_;
@@ -452,6 +455,19 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Handles>
     // As for mint_stage, the requires clause checks the rows and the
     // handles, and a refused call never reaches this body.
     return MpmcStage<FnPtr, Ctx>{ctx, std::forward<Handles>(handles)...};
+}
+
+// The stage of a body that drains one channel and publishes each value
+// into the writer of a single-writer cell.  The consumer handle and the
+// writer come in by move, in the order of the parameters of the body.
+template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsSwmrPublishStage<FnPtr, Ctx>
+[[nodiscard]] constexpr auto
+mint_swmr_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 0>>&& in,
+                std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>&& writer) noexcept {
+    // As for mint_stage, the requires clause checks the body and the rows,
+    // and a refused call never reaches this body.
+    return SwmrStage<FnPtr, Ctx>{ctx, std::move(in), std::move(writer)};
 }
 
 // The fake handles and the stage bodies that only checks name.  MpmcStage

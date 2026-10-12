@@ -122,11 +122,6 @@
       "constructor": "\\bStage\\("
     },
     {
-      "name": "neg_witness_concurrent_stageendpointdoor_direct_construction",
-      "reason": "use of deleted function",
-      "constructor": "\\bStageEndpointDoor\\("
-    },
-    {
       "name": "neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bReaderHandle\\("
@@ -1087,10 +1082,6 @@
     {
       "type": "fixy::concurrent::EndpointDoor",
       "header": "fixy/concurrent/Endpoint.h"
-    },
-    {
-      "type": "fixy::concurrent::StageEndpointDoor",
-      "header": "fixy/concurrent/StageEndpointBridge.h"
     }
   ]
 }

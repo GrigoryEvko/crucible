@@ -233,7 +233,8 @@ does not apply to the row.
 | `mint_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
-| `mint_swmr_stage` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_swmr_stage_from_endpoint` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
 | `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
@@ -344,4 +345,4 @@ does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 43 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 114 | 54 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 115 | 55 | 57 | 3 | 0 | 4 |

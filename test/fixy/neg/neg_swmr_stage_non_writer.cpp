@@ -2,7 +2,7 @@
 //
 // A single-writer stage publishes into a writer, a handle with the publish
 // shape.  The second argument here has no publish member, so it is not a
-// writer, and mint_swmr_stage rejects the call.
+// writer, and mint_swmr_stage_from_endpoint rejects the call.
 //
 // Expected diagnostic: CtxFitsSwmrStageFromEndpoint is not satisfied.
 
@@ -33,7 +33,7 @@ int main() {
     In in{};
     auto [in_p, in_c] = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
     (void)in_p;
-    auto stage = c::mint_swmr_stage<&body>(
+    auto stage = c::mint_swmr_stage_from_endpoint<&body>(
         ctx, c::mint_endpoint<In, c::Direction::Consumer>(ctx, in.consumer(std::move(in_c))), NotAWriter{});
     std::move(stage).run();
     return 0;
