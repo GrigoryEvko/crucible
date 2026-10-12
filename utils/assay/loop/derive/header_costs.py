@@ -408,8 +408,8 @@ def has_accurate_count() -> bool:
     return probe is not None and meter.read_instruction_counter(probe) is not None
 
 
-def counted_run(argv: list[str], directory: Path) -> tuple[int | None, int, str]:
-    """Run one compile in the calling thread, and return its user instructions or None, its status and its errors.
+def counted_run(argv: list[str], directory: Path) -> tuple[int | None, int]:
+    """Run one compile in the calling thread, and return its user instructions or None, and its status.
 
     The count is None when the host gives no accurate count.  The counter of assay.core.meter attaches to the
     calling thread, and the count then holds only this compile (THE ROWS).
@@ -421,17 +421,59 @@ def counted_run(argv: list[str], directory: Path) -> tuple[int | None, int, str]
 
     counter = meter.open_instruction_counter()
     try:
-        completed = proc.run(proc.Command(argv, timeout_s=proc.TOOL_S, cwd=directory, stdout=proc.Output.DISCARD))
+        completed = proc.run(
+            proc.Command(
+                argv, timeout_s=proc.TOOL_S, cwd=directory, stdout=proc.Output.DISCARD, stderr=proc.Output.DISCARD
+            )
+        )
     except proc.ToolFailed as problem:
         if counter is not None:
             meter.read_instruction_counter(counter)
         raise MeasureError(str(problem)) from None
     count = meter.read_instruction_counter(counter) if counter is not None else None
-    return count, completed.exit, completed.err
+    return count, completed.exit
+
+
+def first_error(command: gauge_sample.Command, flags: list[str], source: Path) -> str:
+    """Compile a unit with a status that is not 0 again with a SARIF log, and return the message of its first error.
+
+    The first error is the first error head of the log.  The option of the head follows the message in brackets, as in
+    the text output of GCC.  The return value is an empty text when the log holds no error head.  A log that cannot
+    be read gives a text that tells it, and the measure of the other headers continues.  Only this compile writes a
+    log.  The counted runs of a unit then stay the same (assay.readers.sarif).
+
+    Raises:
+        MeasureError: If the compiler cannot start, or the run is longer than its time limit
+    """
+    from assay.readers import sarif
+
+    with tempfile.TemporaryDirectory(prefix="header-costs-log-") as scratch:
+        log_path = Path(scratch) / "unit.sarif"
+        argv = [command.compiler, *flags, "-fsyntax-only", f"{sarif.SARIF_FLAG}{log_path}", str(source)]
+        try:
+            proc.run(
+                proc.Command(
+                    argv,
+                    timeout_s=proc.TOOL_S,
+                    cwd=command.directory,
+                    stdout=proc.Output.DISCARD,
+                    stderr=proc.Output.DISCARD,
+                )
+            )
+        except proc.ToolFailed as problem:
+            raise MeasureError(str(problem)) from None
+        try:
+            log = sarif.read(log_path)
+        except (OSError, sarif.SarifError) as problem:
+            return f"its SARIF log cannot be read ({problem})"
+    head = next((record for record in log.diagnostics if record.is_error_head), None)
+    if head is None:
+        return ""
+    return f"{head.message} [{head.option}]" if head.option else head.message
 
 
 def measure_header(command: gauge_sample.Command, source: Path) -> tuple[float, int, int, str]:
-    """Measure one unit: the median instructions of its runs in G, its lines, the status and the first error line.
+    """Measure one unit: the median instructions of its runs in G, its lines, the status and the first error message.
 
     Raises:
         MeasureError: If the compiler cannot start, a run is longer than its time limit, or a run with the status 0
@@ -442,11 +484,10 @@ def measure_header(command: gauge_sample.Command, source: Path) -> tuple[float, 
         counted_run([command.compiler, *flags, "-fsyntax-only", str(source)], command.directory)
         for _ in range(MEASURE_RUNS)
     ]
-    failed = next((run for run in runs if run[1] != 0), None)
+    failed = next((status for _count, status in runs if status != 0), None)
     if failed is not None:
-        first = next((line.strip() for line in failed[2].splitlines() if "error" in line), "")
-        return 0.0, 0, failed[1], first
-    counts = [count for count, _status, _errors in runs if count is not None]
+        return 0.0, 0, failed, first_error(command, flags, source)
+    counts = [count for count, _status in runs if count is not None]
     if len(counts) != len(runs):
         raise MeasureError(f"a compile of {source.name} gave no accurate count of its user instructions")
     instructions = statistics.median(counts) / GIGA
@@ -536,7 +577,7 @@ def measured(root: Path, build_dir: Path, extra: list[str], jobs: int) -> ExitCo
     costs: dict[str, Cost] = {}
     for header, (instructions, lines, status, first) in zip(headers, results[1:], strict=True):
         if status != 0:
-            detail = f": {first.split('error:', 1)[-1].strip()}" if first else ""
+            detail = f": {first}" if first else ""
             costs[header] = Cost(
                 header, None, None, f"it does not compile alone with the flags of {reference_unit}{detail}"
             )

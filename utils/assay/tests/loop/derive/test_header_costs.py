@@ -34,13 +34,25 @@ GOOD_ROWS = (
 # The fake compiler: -fsyntax-only runs a long loop for <heavy.h> and fails for <broken.h>, and -E prints three
 # lines.
 FAKE_COMPILER = """#!{python}
+import json
 import sys
 source = open(sys.argv[-1], encoding="utf-8").read()
 if "-E" in sys.argv:
     print("one\\ntwo\\n\\nthree")
     sys.exit(0)
-if "broken.h" in source:
-    print("unit.cpp:1:10: fatal error: broken.h: No such file or directory", file=sys.stderr)
+results = {{
+    "broken.h": {{"ruleId": "fatal error", "message": {{"text": "broken.h: No such file or directory"}}}},
+    "warned.h": {{"ruleId": "-Werror=cpp", "level": "error", "message": {{"text": "#warning planted"}}}},
+}}
+for header, result in results.items():
+    if header in source:
+        print("unit.cpp:1:10: error: the text output, which no reader reads", file=sys.stderr)
+        for word in sys.argv:
+            if word.startswith("-fdiagnostics-add-output=sarif:file="):
+                log = {{"version": "2.1.0", "runs": [{{"results": [result]}}]}}
+                open(word.split("=", 2)[2], "w", encoding="utf-8").write(json.dumps(log))
+        sys.exit(1)
+if "nolog.h" in source:
     sys.exit(1)
 if "heavy.h" in source:
     total = 0
@@ -197,7 +209,7 @@ def measure_cases(expect: testing.Expect) -> None:
         )
         status, _text = testing.captured(lambda: writer.measured(root, Path(work) / "missing", [], 4))
         expect("--measure without a compile database is a missing input", status == ExitCode.MISSING_INPUT)
-        status, text = testing.captured(lambda: writer.measured(root, build, ["broken.h"], 4))
+        status, text = testing.captured(lambda: writer.measured(root, build, ["broken.h", "warned.h", "nolog.h"], 4))
         written = (root / writer.TABLE).read_text(encoding="utf-8")
         if not writer.has_accurate_count():
             expect(
@@ -214,9 +226,19 @@ def measure_cases(expect: testing.Expect) -> None:
             "heavy <heavy.h> | " in written and "light <meta> | " in written,
         )
         expect(
-            "--measure gives a header that does not compile an unmeasured heavy row with the first error",
+            "--measure gives a header that does not compile an unmeasured heavy row with the first error of its log",
             "heavy <broken.h> | unmeasured: it does not compile alone" in written
-            and "broken.h: No such file or directory" in written,
+            and "broken.h: No such file or directory" in written
+            and "text output" not in written,
+        )
+        expect(
+            "the reason of an unmeasured row gives the option of its error in brackets, as the text output does",
+            "#warning planted [-Werror=cpp]" in written,
+        )
+        expect(
+            "a unit with no SARIF log gets a reason that tells it, and the measure writes each other row",
+            "heavy <nolog.h> | unmeasured: it does not compile alone" in written
+            and "its SARIF log cannot be read" in written,
         )
         expect(
             "--measure keeps the head of the table and writes one comment line after the marker",
@@ -224,7 +246,7 @@ def measure_cases(expect: testing.Expect) -> None:
         )
         expect("--measure names no project header", "<crucible/Other.h>" not in written)
         expect("--measure writes again a row with a cell that the reader refuses", "0.37 s" not in written)
-        expect("--measure writes a summary line", "wrote 3 rows" in text)
+        expect("--measure writes a summary line", "wrote 5 rows" in text)
         status, _text = testing.captured(lambda: writer.checked(root))
         expect("the rows that --measure writes agree with --check", status == ExitCode.OK)
 
