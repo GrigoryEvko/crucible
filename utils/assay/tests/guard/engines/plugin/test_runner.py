@@ -566,8 +566,9 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     base_keys = dict(written.configurations[0].facts) if written.configurations else {}
     expect(
-        "the write keeps the head and writes the configuration under the name of the kind",
-        written.comment == HEAD
+        "the write gives the ledger the head comment of the rule in place of the planted head, and it writes the "
+        "configuration under the name of the kind",
+        written.comment == quarantine.LEDGER_COMMENT != HEAD
         and written.base_name == BASE_NAME
         and base_keys.get("CMAKE_BUILD_TYPE") == "Debug"
         and base_keys.get(build_config.KIND_KEY) == BASE_NAME

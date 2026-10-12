@@ -1,13 +1,15 @@
-# utils/ledgers/quarantine.txt — the findings of the quarantine plugin and the opt-out regions in each file, kind and
-# entity.
+# utils/ledgers/quarantine.txt — the findings of the quarantine plugin and the opt-out regions in each
+# file, kind and entity.
 #
 # The rule quarantine reads this ledger (`python3 utils/bin/guard explain quarantine`).  Its module
-# utils/assay/guard/engines/plugin/quarantine.py writes each row through utils/assay/core/ledger.py.  Do not edit a
-# count row by hand.  The rule reads the section .crucible.quarantine of each object of the target all, and it counts each
-# finding line one time.  A count above its row fails the rule, because a change can only lower a count (rule R11 of
-# misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map to it fails.  A
-# file that the ledger does not hold and that has a finding fails too: a new file has no finding.  A count below its
-# row also fails, until the same commit writes the rows again:
+# utils/assay/guard/engines/plugin/quarantine.py writes each count row and this head through
+# utils/assay/core/ledger.py.  Do not edit a count row by hand.  The rule reads the section
+# .crucible.quarantine of each object of the target all, and it counts each finding line one time.
+#
+# A count above its row fails the rule, because a change can only lower a count (rule R11 of
+# misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map
+# to it fails.  A file that the ledger does not hold and that has a finding fails too: a new file has
+# no finding.  A count below its row also fails, until the same commit writes the rows again:
 #     python3 utils/bin/guard write --rule quarantine --build-dir build
 # On a merge conflict in this file, take the version of main, build, and write the rows again.
 #
@@ -15,8 +17,8 @@
 #   configuration NAME KEY VALUE   A build that counts: the build kind and the target tier of
 #                                  utils/assay/core/target.py, and each cache variable that changes
 #                                  the objects of all or their preprocessor arms.  NAME is the build
-#                                  kind, with -bench and -fuzz for those options.  The first
-#                                  configuration is the base.
+#                                  kind, with -bench, -fuzz and -syntax for those options.  The
+#                                  first configuration is the base.
 #   reason PREFIX | REASON         The reason of each count row of a file under PREFIX: the step of
 #                                  the plan that removes its findings.  A person writes these rows,
 #                                  and a write removes a row that holds no count row (THE REASON OF
@@ -56,13 +58,19 @@
 # THE CONFIGURATIONS
 #   x86_64-debug-asan              The default preset, in the build directory build.  The base.
 #   x86_64-release                 The release preset (build-release).
-#   x86_64-debug-asan-bench-fuzz   The default preset with CRUCIBLE_BENCH=ON and CRUCIBLE_FUZZ=ON:
-#                                      cmake --preset default -B build-extended -DCRUCIBLE_BENCH=ON
+#   x86_64-debug-asan-bench-fuzz   The default preset with CRUCIBLE_BENCH=ON and CRUCIBLE_FUZZ=ON,
+#                                  in the build directory build-bench-fuzz:
+#                                      cmake --preset default -B build-bench-fuzz -DCRUCIBLE_BENCH=ON
 #                                      -DCRUCIBLE_FUZZ=ON
 #                                  The CI job fuzz builds it.
 #   x86_64-debug-tsan              The tsan preset (build-tsan).  Its preprocessor arms of
 #                                  __SANITIZE_THREAD__, such as the routes of
 #                                  src/foundation/os/Intercepted.cpp, count here.
+#   x86_64-debug-asan-syntax       The parse build of the preset syntax-x86-64-v3
+#                                  (build-syntax-x86-64-v3).  `python3 utils/bin/loop syntax DIR`
+#                                  parses its units, and it compiles no object.
+#   aarch64-debug-asan-syntax      The parse build of the preset syntax-aarch64
+#                                  (build-syntax-aarch64), with the cross compiler for aarch64.
 #   aarch64-...                    The default and the release preset on aarch64.  Only CI builds
 #                                  them.  The leg writes the rows of its configuration after a
 #                                  failure of the rule and when the ledger does not hold it, each
@@ -74,11 +82,15 @@
 #   configurations judges a build of a name that the ledger does not hold, and no build skips the
 #   rule (THE POLICY of utils/assay/core/configuration.py).  An arm that a configuration here
 #   counts then passes, and a new finding fails.
-#   A change that lowers a count in each configuration writes only the base rows.  A change of a
-#   file or an arm that only a later configuration compiles writes that configuration too, with
-#   `guard write` in its build directory.  A change of the keys of the base makes this file again:
-#   keep this head, remove the rows, and write each configuration with --add-configuration in its
-#   build directory, the base first.
+#   A write changes only the counts of the configuration of its build (THE WRITE of
+#   utils/assay/core/ledger.py).  This command builds the build directory of each configuration
+#   of this ledger that the host builds, and it writes each configuration, the base first:
+#       python3 utils/bin/guard write --all-configurations --rule quarantine
+#   It refuses a count above its row.  The gate of `python3 utils/bin/loop land` writes each count
+#   that falls in a configuration that it builds, and it folds the ledger into the commit (THE
+#   FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this file again:
+#   remove the rows, and write each configuration with --add-configuration in its build directory,
+#   the base first.
 #   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration sets
 #   TORCH_DIR, so the ledger does not count those units.  The rows of its name judge a build with
 #   TORCH_DIR, so the findings of those units fail it.

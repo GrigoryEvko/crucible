@@ -48,8 +48,9 @@ THE WRITE
     `guard write --rule RULE --build-dir DIR` writes the rows of the
     configuration of the build, where THE POLICY permits a write.  For the
     base, it writes the counts.  For a different configuration, it writes the
-    differences from the base rows.  The write keeps the head comment, the
-    other configurations and their counts.  It refuses a count more than its
+    differences from the base rows.  The write keeps the other configurations
+    and their counts.  It gives the ledger the head comment of the rule, and
+    with no such comment it keeps the head of the file.  It refuses a count more than its
     row, with two exceptions.  --raise permits each such count, and --admit
     permits a count of an admitted kind of the rule.  A file that git reports
     as moved takes the rows of its earlier path.
@@ -95,7 +96,8 @@ class CountedRule[Inputs]:
     of a write that refuses a count above its row.  The name that `evaluate` takes is the configuration of the rows
     that judge the build, assay.core.ledger.MAXIMUM, or None for the base rows (THE POLICY of
     assay.core.configuration).  With MAXIMUM, a count below its row is no error.  `context_of` makes the context of
-    a write from the root and the build directory (THE CONTEXT).
+    a write from the root and the build directory (THE CONTEXT).  `comment` is the head comment that each write gives
+    the ledger (assay.core.ledger, THE HEAD COMMENT).  An empty text keeps the head of the file.
     """
 
     rule_id: str
@@ -106,6 +108,7 @@ class CountedRule[Inputs]:
     admitted_kinds: frozenset[str]
     refusal: str
     context_of: Callable[[Path, Path | None], runner.PluginContext] = runner.PluginContext
+    comment: str = ""
 
 
 def described(kind: str, entity: str) -> str:
@@ -289,6 +292,8 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     written = rule_ledger.write_counts(rule, target.ledger, counts, target.name, mode, request.reason, moved=moves)
     if target.name is None or target.name == written.base_name:
         written = drop_gone_files(written, request.root, counts)
+    if spec.comment:
+        written = dataclasses.replace(written, comment=spec.comment)
     rule_ledger.store(written, request.root)
     check_report.write_line(
         f"{spec.summary(counts, configuration, census.objects, 'wrote')}, to "
