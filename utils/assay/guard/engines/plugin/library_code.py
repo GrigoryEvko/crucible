@@ -30,7 +30,11 @@ THE COUNTS
     template instance has a symbol of its own.  A count is the number of the
     locations of the file with a record of that kind and name.  A record
     symbol is no count.  The rule artifact-symbols reads it (THE HIDDEN
-    IMPORTS of assay.guard.engines.elf.artifact_symbols).
+    IMPORTS of assay.guard.engines.elf.artifact_symbols).  A door file has
+    a door header.  A call in the door file of a function of the include
+    closure of that header is a record symbol.  The body of such a function
+    gives no record inlined.  THE DOOR ADMISSION of
+    utils/tools/quarantine/plugin.h gives the rule.
 
 THE LEDGER
     utils/ledgers/library-code.txt holds the count of each file, kind and

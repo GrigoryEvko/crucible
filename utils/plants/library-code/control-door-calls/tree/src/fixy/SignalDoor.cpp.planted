@@ -1,0 +1,17 @@
+// The door of <signal.h> in this control.  Each call is a call of a function
+// of the include closure of its own door header, so each one is a record
+// symbol and no count.  <csignal> enters <signal.h> before the door file
+// includes it, and the order of the includes does not change the closure.
+
+#include <csignal>
+#include <signal.h>
+
+namespace probe {
+
+int install_handler(int signal_number, struct sigaction const& action) {
+    return ::sigaction(signal_number, &action, nullptr);
+}
+
+int send_signal(int signal_number) { return ::raise(signal_number); }
+
+}  // namespace probe

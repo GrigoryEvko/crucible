@@ -1,0 +1,23 @@
+# The door of <signal.h> calls sigaction, a function of its own door header,
+# so the call is a record symbol and no count (THE DOOR ADMISSION of
+# utils/tools/quarantine/plugin.h).  Its call of getenv comes from a different
+# header, so it stays a record call.  The base file that is not the door gives
+# a record call of sigaction.  The ledger of the plant holds no row, so the
+# module of the rule refuses each count of the two base files.
+compile door src/fixy/SignalDoor.cpp rules=utils/rule-table.txt library-code=on
+flag door -O2
+exit door pass
+judge door
+configuration x86_64-debug-asan
+finding door quarantine base-c-library-call src/fixy/SignalDoor.cpp:16:37 | getenv
+finding door library-code symbol src/fixy/SignalDoor.cpp:13:23 | sigaction
+finding door library-code call src/fixy/SignalDoor.cpp:16:37 | getenv getenv
+
+compile other src/fixy/Other.cpp rules=utils/rule-table.txt library-code=on
+flag other -O2
+exit other pass
+judge other
+finding other quarantine door-header src/fixy/Other.cpp:4:0 | <signal.h> has the door src/fixy/SignalDoor.cpp
+finding other quarantine base-c-library-object src/fixy/Other.cpp:8:66 | sigaction
+finding other quarantine base-c-library-call src/fixy/Other.cpp:9:23 | sigaction
+finding other library-code call src/fixy/Other.cpp:9:23 | sigaction sigaction

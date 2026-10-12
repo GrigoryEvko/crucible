@@ -53,6 +53,10 @@
 //       * A declaration of a library file: a record call or reference when a
 //         frame of the tree owns the instruction.  Else a record symbol at
 //         the call site of the library code in the nearest frame of the tree.
+//         A declaration that the door of its header admits at the place of
+//         the instruction gives a record symbol too, and a body of such a
+//         function that the code inlines gives no record inlined (THE DOOR
+//         ADMISSION of plugin.h).
 //       * An external declaration of the tree with C language linkage: a
 //         foreign symbol, and the record is symbol.
 //       * Each other declaration of the tree names code of the tree, and it
@@ -295,7 +299,7 @@ void read_symbols(rtx_insn* insn, const Frames& frames, FunctionRecords& records
         if (symbol_class == SymbolClass::tree_code) {
             continue;
         }
-        if (symbol_class == SymbolClass::library && !frames.is_owner_library) {
+        if (symbol_class == SymbolClass::library && !frames.is_owner_library && !is_door_admitted(location, decl)) {
             Kind kind = CALL_P(insn) ? Kind::library_call : Kind::library_reference;
             records.add(kind, location, frames.tree_origin, name,
                         [&] { return std::string(name) + ' ' + code_name(decl); });
@@ -328,6 +332,9 @@ struct LibraryCodePass final : rtl_opt_pass {
                 // The boundaries of a block are the same for each of its
                 // instructions.
                 for (const Boundary& boundary : found->second.boundaries) {
+                    if (is_door_admitted(boundary.site, boundary.origin)) {
+                        continue;
+                    }
                     records.add(Kind::library_inlined, boundary.site, boundary.caller, boundary.origin,
                                 [&boundary] { return code_name(boundary.origin); });
                 }

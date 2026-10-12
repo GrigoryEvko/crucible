@@ -1,0 +1,9 @@
+# The door of <signal.h> uses only the declarations of the include closure of
+# its own door header, so it has no finding in the mode error (THE DOOR
+# ADMISSION of utils/tools/quarantine/plugin.h).  Two headers of libstdc++
+# enter <signal.h> and the header of sigset_t before the door file includes
+# <signal.h>, and the door still admits each declaration.  The plant
+# plant-door-admission shows the findings that stay.
+
+compile door src/fixy/SignalDoor.cpp mode=error out=no
+exit door pass

@@ -1,0 +1,6 @@
+# The rule table of this control.  The source files of src/fixy/ are base
+# files, and the door row names src/fixy/SignalDoor.cpp as the one owner of
+# <signal.h>.  The compile and the module of the rule read this file.
+layer floor 0 src/fixy/
+allow floor <csignal>
+door <signal.h> src/fixy/SignalDoor.cpp

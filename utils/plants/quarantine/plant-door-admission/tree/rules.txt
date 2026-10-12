@@ -1,0 +1,14 @@
+# The rule table of this plant.  The layer low holds the two source files of
+# the plant.  The door row names src/fixy/SignalDoor.cpp as the one owner of
+# <signal.h>.
+
+layer low 0 include/fixy/ src/foundation/ src/fixy/
+
+allow low <cstddef>
+allow low <cstring>
+
+door <signal.h> src/fixy/SignalDoor.cpp
+door <unistd.h> src/fixy/UnistdDoor.cpp
+
+admit <type_traits> | a type trait is a compile-time query
+admit std::move | a cast to an rvalue reference

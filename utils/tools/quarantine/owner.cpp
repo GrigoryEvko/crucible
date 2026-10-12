@@ -248,7 +248,9 @@ bool check_function_use(tree function, location_t location, tree explicit_argume
             return record_standard_use(function, location, qualified_name(function), Use::other,
                                        result_of_explicit_arguments(function, explicit_arguments));
         case Library::c_library:
-            record_library(Kind::c_library_call, location, qualified_name(function));
+            if (!is_door_admitted(location, function)) {
+                record_library(Kind::c_library_call, location, qualified_name(function));
+            }
             return true;
         case Library::none:
             return check_foreign_use(function, location);
@@ -322,7 +324,9 @@ void check_variable_use(tree variable, location_t location) {
             record_standard_use(variable, location, qualified_name(variable));
             break;
         case Library::c_library:
-            record_library(Kind::c_library_call, location, qualified_name(variable));
+            if (!is_door_admitted(location, variable)) {
+                record_library(Kind::c_library_call, location, qualified_name(variable));
+            }
             break;
         case Library::none:
             check_foreign_use(variable, location);
@@ -563,7 +567,9 @@ void check_using(tree decl) {
     }
     tree first = TREE_CODE(targets) == OVERLOAD ? OVL_FIRST(targets) : targets;
     if ((TREE_CODE(first) == FUNCTION_DECL || VAR_P(first)) && library_of(first) == Library::c_library) {
-        record_library(Kind::c_library_call, location, qualified_name(first));
+        if (!is_door_admitted(location, first)) {
+            record_library(Kind::c_library_call, location, qualified_name(first));
+        }
         return;
     }
     const AdmitRow* pending = nullptr;

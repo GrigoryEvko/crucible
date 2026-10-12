@@ -1,0 +1,36 @@
+// The door of <signal.h> in this control.  Each declaration that the code
+// uses is in the include closure of <signal.h>: the functions sigaction,
+// sigaltstack, sigemptyset and raise, the struct sigaction and the types
+// siginfo_t, stack_t and sigset_t of headers of bits/.  The door admits each
+// one.  <csignal> enters <signal.h> before the door file includes it, and
+// <cstdlib> enters the header of sigset_t first, through <sys/types.h>.  The
+// order of the includes does not change the closure.
+
+#include <cstdlib>
+#include <csignal>
+#include <signal.h>
+
+namespace probe {
+
+void on_signal(int, siginfo_t*, void*) noexcept {}
+
+int install_handler(int signal_number) {
+    struct sigaction action{};
+    action.sa_sigaction = &on_signal;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigset_t blocked{};
+    if (::sigemptyset(&blocked) != 0) {
+        return -1;
+    }
+    action.sa_mask = blocked;
+    stack_t current{};
+    if (::sigaltstack(nullptr, &current) != 0) {
+        return -1;
+    }
+    if (::sigaction(signal_number, &action, nullptr) != 0) {
+        return -1;
+    }
+    return ::raise(signal_number);
+}
+
+}  // namespace probe

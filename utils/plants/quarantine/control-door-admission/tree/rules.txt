@@ -1,0 +1,13 @@
+# The rule table of this control.  The layer low holds the source file of the
+# control, and the door row names it as the one owner of <signal.h>.
+
+layer low 0 include/fixy/ src/foundation/ src/fixy/
+
+allow low <cstddef>
+allow low <csignal>
+allow low <cstdlib>
+
+door <signal.h> src/fixy/SignalDoor.cpp
+
+admit <type_traits> | a type trait is a compile-time query
+admit std::move | a cast to an rvalue reference

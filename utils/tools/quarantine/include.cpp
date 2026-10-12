@@ -266,6 +266,10 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
                             "<" + pending.spelled + "> has the door " + door.owner);
             } else if (!is_source_path(door.owner)) {
                 add_finding(Kind::header_door, nullptr, pending.place, "<" + pending.spelled + ">");
+            } else if (target != nullptr) {
+                // A source file that owns the door admits the declarations
+                // that the include brings in (THE DOOR ADMISSION of plugin.h).
+                state.door_entries[&includer].push_back(target);
             }
             return;
         }
@@ -301,6 +305,46 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
     add_finding(Kind::layer_header, nullptr, pending.place, "<" + pending.spelled + "> in " + allowance);
 }
 
+// True when a door row names the main file of the unit as its owner (THE DOOR
+// ADMISSION of plugin.h).  Complexity: O(door rows), one time.
+bool is_door_unit() {
+    if (!state.is_door_unit_known && main_input_filename != nullptr) {
+        state.is_door_unit_known = true;
+        const FileEntry& main_file = classify_file(main_input_filename);
+        for (const DoorRow& door : state.table.doors) {
+            state.is_door_unit = state.is_door_unit || (door.owner == main_file.relative && is_source_path(door.owner));
+        }
+    }
+    return state.is_door_unit;
+}
+
+// A directive of a header of the C library in a door unit.  The door admission
+// resolves it only when it builds the closure of a door header, so a door
+// unit pays one copy of the name here, and a different unit pays nothing.
+void note_library_include(location_t location, const char* name, bool is_angle, const unsigned char* directive) {
+    if (name == nullptr || !is_door_unit()) {
+        return;
+    }
+    expanded_location at = expand_location(location);
+    const std::string& library = c_library_directory();
+    if (at.file == nullptr || library.empty()) {
+        return;
+    }
+    const FileEntry& includer = classify_file(at.file);
+    if (!has_prefix(includer.real, library + "/")) {
+        return;
+    }
+    LibraryInclude include;
+    include.directive.is_set = true;
+    include.directive.place.file = &includer;
+    include.directive.spelled = name;
+    include.directive.is_angle = is_angle;
+    include.directive.is_next =
+        directive != nullptr && std::strcmp(reinterpret_cast<const char*>(directive), "include_next") == 0;
+    state.library_includes[&includer].push_back(std::move(include));
+    ++state.library_include_count;
+}
+
 // The include callback of libcpp: one #include directive, before the
 // preprocessor looks for the file.
 void on_include(cpp_reader* reader, location_t location, const unsigned char* directive, const char* name, int is_angle,
@@ -314,6 +358,7 @@ void on_include(cpp_reader* reader, location_t location, const unsigned char* di
     state.admitted_header_pending = header != state.admitted_headers.end() ? header->second : nullptr;
     Place place = place_of(location, Scope::quarantine);
     if (place.file == nullptr || name == nullptr) {
+        note_library_include(location, name, is_angle != 0, directive);
         return;
     }
     state.pending.is_set = true;
@@ -465,6 +510,95 @@ void finish_pending_include(const FileEntry* entered) {
         state.include_edges.push_back(IncludeEdge{pending.place.file, target, pending.place});
     }
     check_include(pending, target);
+}
+
+namespace {
+
+// True when FILE is the header of a door row whose owner is not DOOR_FILE: a
+// header of the C library that a different door owns, such as <unistd.h>,
+// which <signal.h> includes for SIGSTKSZ (THE DOOR ADMISSION of plugin.h).
+// Complexity: O(door rows).
+bool is_header_of_other_door(const FileEntry& file, const FileEntry& door_file) {
+    const std::string& library = c_library_directory();
+    if (library.empty() || !has_prefix(file.real, library + "/")) {
+        return false;
+    }
+    std::string spelled = file.real.substr(library.size() + 1);
+    for (const DoorRow& door : state.table.doors) {
+        if (door.header == spelled && door.owner != door_file.relative) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The include closure of the door headers ENTRIES of DOOR_FILE (THE DOOR
+// ADMISSION of plugin.h): each header, and each file that a directive of a
+// file of the closure names.  The walk resolves a directive as libcpp does,
+// also a directive that an include guard stopped, and it does not go into a
+// header of a different door.  The closure keeps the count of the directives
+// that it read, and a new directive builds it again.  Complexity: O(the
+// directives of the closure times the search chain), one time for each count.
+const std::unordered_set<const FileEntry*>& door_closure(const FileEntry& door_file,
+                                                         const std::vector<const FileEntry*>& entries) {
+    DoorClosure& closure = state.door_closures[&door_file];
+    if (closure.is_built && closure.include_count == state.library_include_count) {
+        return closure.files;
+    }
+    closure.files.clear();
+    std::vector<const FileEntry*> frontier;
+    for (const FileEntry* entry : entries) {
+        if (closure.files.insert(entry).second) {
+            frontier.push_back(entry);
+        }
+    }
+    while (!frontier.empty()) {
+        const FileEntry* file = frontier.back();
+        frontier.pop_back();
+        auto directives = state.library_includes.find(file);
+        if (directives == state.library_includes.end()) {
+            continue;
+        }
+        for (LibraryInclude& include : directives->second) {
+            if (!include.is_resolved) {
+                include.target = resolve_skipped_include(include.directive);
+                include.is_resolved = true;
+            }
+            const FileEntry* target = include.target;
+            if (target != nullptr && !is_header_of_other_door(*target, door_file)
+                && closure.files.insert(target).second) {
+                frontier.push_back(target);
+            }
+        }
+    }
+    closure.include_count = state.library_include_count;
+    closure.is_built = true;
+    return closure.files;
+}
+
+}  // namespace
+
+bool is_door_admitted(location_t location, tree decl) {
+    // The C++ front end reads each token of the unit before it parses one, so
+    // the last directive of the unit is still pending when its target entered
+    // no file.  Its target goes into the door entries here, and not first in
+    // the report of the unit.
+    finish_pending_include(nullptr);
+    if (decl == NULL_TREE || !DECL_P(decl) || state.door_entries.empty()) {
+        return false;
+    }
+    Place place = place_of(location, Scope::quarantine);
+    auto entries = place.file != nullptr ? state.door_entries.find(place.file) : state.door_entries.end();
+    if (entries == state.door_entries.end()) {
+        return false;
+    }
+    const line_map_ordinary* map = nullptr;
+    linemap_resolve_location(line_table, DECL_SOURCE_LOCATION(decl), LRK_SPELLING_LOCATION, &map);
+    if (map == nullptr) {
+        return false;
+    }
+    const FileEntry& declared = classify_file(ORDINARY_MAP_FILE_NAME(map));
+    return door_closure(*place.file, entries->second).count(&declared) != 0;
 }
 
 namespace {

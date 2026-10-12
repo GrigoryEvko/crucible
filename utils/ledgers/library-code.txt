@@ -716,15 +716,6 @@ include/foundation/reflect/Enumerate.h | inlined | 1 | std::basic_string_view::e
 src/fixy/os/NumaPlacement.cpp | call | 1 | __errno_location | -
 src/fixy/os/NumaPlacement.cpp | call | 1 | syscall | -
 src/fixy/os/NumaPlacement.cpp | call | 1 | sysconf | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_destroy | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_init | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setaffinity_np | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setguardsize | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_attr_setstacksize | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_create | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_join | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_self | -
-src/fixy/os/ThreadTasks.cpp | call | 1 | pthread_setname_np | -
 src/fixy/os/Topology.cpp | call | 3 | std::vector::push_back | -
 src/fixy/os/Topology.cpp | inlined | 1 | __gnu_cxx::__normal_iterator::operator* | -
 src/fixy/os/Topology.cpp | inlined | 3 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -770,8 +761,6 @@ src/foundation/ContractHandler.cpp | inlined | 3 | std::array::operator[] | -
 src/foundation/ContractHandler.cpp | inlined | 4 | std::basic_string_view::basic_string_view | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::begin | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::end | -
-src/foundation/ContractHandler.cpp | inlined | 1 | std::contracts::contract_violation::comment | -
-src/foundation/ContractHandler.cpp | inlined | 1 | std::contracts::contract_violation::location | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::file_name | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::function_name | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::line | -
@@ -1102,9 +1091,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
 @x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | __errno_location | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | call | +1 | write | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | inlined | +1 | read | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::data | -
@@ -1207,7 +1193,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::vector | -
 @x86_64-debug-ubsan-strict | src/foundation/ContractHandler.cpp | call | +2 | std::basic_string_view::basic_string_view | -
-@x86_64-debug-ubsan-strict | src/foundation/ContractHandler.cpp | inlined | -1 | std::contracts::contract_violation::comment | -
 @x86_64-debug-ubsan-strict | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
 @x86_64-release | include/fixy/Bands.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-release | include/fixy/Borrowed.h | call | -1 | std::span::back | -
@@ -1560,7 +1545,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::~vector | -
 @x86_64-release | src/foundation/ContractHandler.cpp | inlined | -2 | std::array::operator[] | -
 @x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
-@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::contracts::contract_violation::comment | -
 @x86_64-release | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
 @x86_64-release | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
 @x86_64-release | src/foundation/Permission.cpp | reference | -1 | stderr | -

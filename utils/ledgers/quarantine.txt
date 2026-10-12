@@ -3875,17 +3875,6 @@ src/cog/SrIov.cpp | std-object | 2 | std::span | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 2 | __errno_location | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | syscall | -
 src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | sysconf | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_attr_destroy | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_attr_init | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_attr_setaffinity_np | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_attr_setguardsize | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_attr_setstacksize | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_create | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_join | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_self | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-call | 1 | pthread_setname_np | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-object | 1 | cpu_set_t | -
-src/fixy/os/ThreadTasks.cpp | base-c-library-object | 2 | pthread_attr_t | -
 src/fixy/os/Topology.cpp | base-c-library-call | 1 | fprintf | -
 src/fixy/os/Topology.cpp | base-c-library-object | 1 | _IO_FILE | -
 src/fixy/os/Topology.cpp | base-std-entity | 3 | __gnu_cxx::__normal_iterator | -
@@ -3988,7 +3977,6 @@ src/foundation/os/Errno.cpp | base-std-entity | 1 | __gnu_cxx::operator== | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | std::vector | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | std::vector::begin | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | std::vector::end | -
-src/foundation/os/Syscall.cpp | base-c-library-object | 1 | new_utsname | -
 src/foundation/os/Syscall.cpp | base-std-entity | 3 | __gnu_cxx::__normal_iterator | -
 src/foundation/os/Syscall.cpp | base-std-entity | 3 | __gnu_cxx::__normal_iterator::operator* | -
 src/foundation/os/Syscall.cpp | base-std-entity | 3 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -11167,9 +11155,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-entity | +8 | std::span::data | -
 @x86_64-debug-asan-syntax | include/crucible/cntp/Fec.h | std-object | +2 | std::array | -
 @x86_64-debug-tsan | include/crucible/topology/Health.h | replace-pending:<limits> | -2 | std::numeric_limits::max | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | base-c-library-call | +1 | __errno_location | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | base-c-library-call | +1 | read | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | base-c-library-call | +1 | write | -
 @x86_64-release | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_cvtb2mask512 | -
 @x86_64-release | include/crucible/SwissTable.h | compiler-builtin | +1 | __builtin_ia32_pcmpeqb512_mask | -
 @x86_64-release | include/crucible/SwissTable.h | compiler-builtin | -2 | __builtin_ia32_pmovmskb128 | -

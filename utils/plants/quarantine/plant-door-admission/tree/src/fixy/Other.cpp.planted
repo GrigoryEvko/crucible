@@ -1,0 +1,14 @@
+// A base file that is not the door of <signal.h>.  Its include of the door
+// header, its object of struct sigaction and its call of sigaction stay
+// findings.
+
+#include <signal.h>
+
+namespace probe {
+
+int install_elsewhere(int signal_number) {
+    struct sigaction action{};
+    return ::sigaction(signal_number, &action, nullptr);
+}
+
+}  // namespace probe

@@ -1,0 +1,22 @@
+// The door of <signal.h> in this plant.  The function sigaction and the struct
+// sigaction of a header of bits/ come in through the include of <signal.h>,
+// so the door admits them.  memset comes in through <cstring>, which is not a
+// header of this door, so its call stays a finding.  SIGSTKSZ of <signal.h>
+// calls sysconf of <unistd.h>, a header of a different door, so that call
+// stays a finding too.
+
+#include <signal.h>
+
+#include <cstring>
+
+namespace probe {
+
+int install_handler(int signal_number) {
+    struct sigaction action{};
+    std::memset(&action, 0, 1);
+    return ::sigaction(signal_number, &action, nullptr);
+}
+
+long signal_stack_bytes() { return SIGSTKSZ; }
+
+}  // namespace probe

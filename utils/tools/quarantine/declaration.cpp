@@ -276,6 +276,9 @@ void record_raw_type(tree type, tree decl, Role role) {
 // quarantined file.  In a file of language_of, LANGUAGE names that file.
 void record_library_object(tree refused, location_t location, const FileEntry* language) {
     Kind kind = library_of(TYPE_MAIN_DECL(refused)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
+    if (kind == Kind::c_library_object && is_door_admitted(location, TYPE_MAIN_DECL(refused))) {
+        return;
+    }
     record_declared(kind, location, qualified_name(refused), language);
 }
 

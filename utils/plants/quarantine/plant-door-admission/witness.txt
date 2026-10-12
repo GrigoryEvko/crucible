@@ -1,0 +1,20 @@
+# The door of <signal.h> admits the declarations that the include of its own
+# door header brings in: the function sigaction, and the struct sigaction of a
+# header of bits/ (THE DOOR ADMISSION of utils/tools/quarantine/plugin.h).  The
+# call of memset in the door comes from a different header, and it stays a
+# finding.  The call of sysconf that SIGSTKSZ makes comes from <unistd.h>,
+# which <signal.h> includes and a different door row names, and it stays a
+# finding too.  The base file that is not the door gets each finding: the
+# include of the door header, the object of struct sigaction and the call of
+# sigaction.  The control control-door-admission shows the door alone.
+
+compile door src/fixy/SignalDoor.cpp mode=error out=no
+exit door fail
+error door src/fixy/SignalDoor.cpp:16 | quarantine: base-c-library-call memset;
+error door src/fixy/SignalDoor.cpp:20 | quarantine: base-c-library-call sysconf;
+
+compile other src/fixy/Other.cpp mode=error out=no
+exit other fail
+error other src/fixy/Other.cpp:5 | quarantine: door-header <signal.h> has the door src/fixy/SignalDoor.cpp;
+error other src/fixy/Other.cpp:10 | quarantine: base-c-library-object sigaction;
+error other src/fixy/Other.cpp:11 | quarantine: base-c-library-call sigaction;

@@ -1,0 +1,13 @@
+# The door of <signal.h> calls only the functions of the include closure of
+# its own door header, so each call is a record symbol, and the module of the
+# rule counts no record with no ledger row (THE DOOR ADMISSION of
+# utils/tools/quarantine/plugin.h).  <csignal> enters <signal.h> before the
+# door file includes it.  The plant plant-door-calls shows the records that
+# stay counts.
+compile door src/fixy/SignalDoor.cpp rules=utils/rule-table.txt library-code=on
+flag door -O2
+exit door pass
+judge door
+configuration x86_64-debug-asan
+finding door library-code symbol src/fixy/SignalDoor.cpp:12:23 | sigaction
+finding door library-code symbol src/fixy/SignalDoor.cpp:15:52 | raise

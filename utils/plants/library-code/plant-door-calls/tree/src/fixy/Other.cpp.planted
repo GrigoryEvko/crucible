@@ -1,0 +1,12 @@
+// A base file that is not the door of <signal.h>.  Its call of sigaction is a
+// record call.
+
+#include <signal.h>
+
+namespace probe {
+
+int install_elsewhere(int signal_number, struct sigaction const& action) {
+    return ::sigaction(signal_number, &action, nullptr);
+}
+
+}  // namespace probe

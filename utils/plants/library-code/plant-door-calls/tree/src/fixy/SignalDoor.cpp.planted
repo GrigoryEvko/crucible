@@ -1,0 +1,18 @@
+// The door of <signal.h> in this plant.  Its call of sigaction is a function
+// of its own door header, so the call is a record symbol.  getenv comes in
+// through <cstdlib>, which is not a header of this door, so its call is a
+// record call.
+
+#include <signal.h>
+
+#include <cstdlib>
+
+namespace probe {
+
+int install_handler(int signal_number, struct sigaction const& action) {
+    return ::sigaction(signal_number, &action, nullptr);
+}
+
+bool has_home() { return std::getenv("HOME") != nullptr; }
+
+}  // namespace probe

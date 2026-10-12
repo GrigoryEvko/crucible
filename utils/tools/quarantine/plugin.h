@@ -373,6 +373,38 @@
 //     families.  A base file outside its sentinel unit gets no finding of
 //     this rule, so each finding counts in one unit only.
 //
+// THE DOOR ADMISSION
+//     A door row names the one file of the root that can include a system
+//     header (rule R4), and decision D12 of misc/01_10_2026_quarantine.md
+//     keeps some calls in the C library, each in its door.  So in a source
+//     file that a door row names as its owner, a use of a declaration that
+//     came into the file through the include of its own door header gives no
+//     finding of the kinds c-library-call and c-library-object, or of their
+//     base kinds.  A call of such a function is a record symbol of the rule
+//     library-code and not a record call, and its inlined body gives no
+//     record (body.cpp, THE SYMBOLS).  The rule artifact-symbols still reads
+//     the symbol.  The include closure of the door header counts, because
+//     the C library declares a type of a header in a header of bits/, such as
+//     struct sigaction of <signal.h>, and POSIX lets <pthread.h> give the
+//     declarations of <sched.h>.  The closure is each file that a directive
+//     of the door header names, and each file that a directive of such a
+//     file names, as the unit read the directives.  A directive that an
+//     include guard stopped counts too.  So the order of the includes does
+//     not change the closure: a header of libstdc++ that enters <pthread.h>
+//     before the door file, or <stdlib.h> that enters the header of
+//     pthread_attr_t first, takes no declaration out of it (include.cpp,
+//     door_closure).  The closure follows only the directives of the headers
+//     of the C library, so the closure of a door header of libstdc++, such as
+//     <contracts> of src/foundation/ContractHandler.cpp, is that header
+//     alone.  A header that a different door row names is not in
+//     the closure, and the closure does not go through it: SIGSTKSZ of
+//     <signal.h> calls sysconf of <unistd.h>, and that call stays a
+//     finding.  The plugin reads the file of the first declaration of a
+//     name.  The same use in each other file stays a finding, and so does a
+//     use in the door file of a declaration of a file outside the closure.
+//     A header that a door row names as its owner admits nothing, because a
+//     door is a source file (the rule door-unit).
+//
 // THE SECTION
 //     A unit that writes an object puts its report into the section
 //     .crucible.quarantine of the object, in each mode (plugin.cpp).  The
@@ -1482,6 +1514,22 @@ struct PendingInclude {
     bool is_next = false;  // an #include_next directive
 };
 
+// An #include directive of a header of the C library in a door unit, and its
+// target when the door admission resolved it (THE DOOR ADMISSION).
+struct LibraryInclude {
+    PendingInclude directive;  // place.file is the includer
+    const FileEntry* target = nullptr;
+    bool is_resolved = false;
+};
+
+// The include closure of the door headers of one door file, and the count of
+// the library directives that it read.
+struct DoorClosure {
+    std::unordered_set<const FileEntry*> files;
+    std::size_t include_count = 0;
+    bool is_built = false;
+};
+
 // The library classes and enumerations that a type holds: the first one that
 // no admit row admits, and the first one that a row with `until` admits, with
 // that row.
@@ -1606,6 +1654,17 @@ struct State {
     // sealed namespace.
     std::vector<IncludeEdge> include_edges;
     std::vector<SealedReference> sealed_references;
+    // The door admission (THE DOOR ADMISSION): for each source file of the
+    // unit that a door row names as its owner, the target of each include of
+    // its own door header.  In a unit whose main file is such a door, each
+    // directive of a header of the C library by its includer, and the
+    // closure of the door headers of each door file.
+    std::unordered_map<const FileEntry*, std::vector<const FileEntry*>> door_entries;
+    std::unordered_map<const FileEntry*, std::vector<LibraryInclude>> library_includes;
+    std::size_t library_include_count = 0;
+    std::unordered_map<const FileEntry*, DoorClosure> door_closures;
+    bool is_door_unit_known = false;
+    bool is_door_unit = false;
     // The facts of each top namespace that a reference named.  The key is a
     // tree, so the collection hook clears the cache.
     std::unordered_map<tree, TopFacts> top_facts;
@@ -1885,6 +1944,11 @@ inline Place place_of(location_t location, Scope scope) {
     }
     return place;
 }
+
+// True when the use at LOCATION is a use of DECL that its door admits (THE
+// DOOR ADMISSION): the use is in a door file, and the file of DECL is in the
+// include closure of a door header that the file owns (include.cpp).
+bool is_door_admitted(location_t location, tree decl);
 
 // True when the front end gave DECL no type after an error.  The walks of the
 // end of a unit also run after a compile error (THE HOOKS OF THE UNIT of
