@@ -7,8 +7,10 @@
 // base gives a Result, and its caller handles the error with the same
 // roads as for an Option: match(), ok(), err(), value_or() and expect().
 // An error is a value: a scoped enum, or a trivially copyable class of at
-// most 16 bytes, so an error never allocates.  Err<E> marks an error, so
-// `return err(Code::full);` and `return value;` both convert to the Result.
+// most 16 bytes, so an error never allocates.  An error can also be a
+// linear class, so a failed operation can give a resource back.  Err<E>
+// marks an error, so `return err(Code::full);` and `return value;` both
+// convert to the Result.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
 // loop of zero or one turns, the total match(), value_or(), and expect(),
@@ -33,6 +35,15 @@
 // copies of it are safe.  expect(), value_or() and the rvalue match()
 // empty the source in each form.
 //
+// A linear payload (foundation/Linear.h) takes the owning form, also when
+// its bytes are trivially copyable, so a move never leaves a second copy
+// of the value.  An Option or a Result gives a linear payload only through
+// a consumer that takes the Option or the Result as an rvalue: expect(),
+// ok(), err() and the rvalue match().  A read through a const reference
+// consumes nothing.  value_or() and the cursor of a mutable loop do not
+// exist for a linear payload: the first drops its fallback, and a move
+// through the second empties the payload in place.
+//
 // The families of foundation/core use only the language, the compiler
 // builtins and the headers of the base allowance.  fixy/Core.h puts their
 // public names into namespace fixy.  A check of a family does the same
@@ -40,6 +51,7 @@
 // process through fatal() of the Report family.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Report.h>
 
 #include <concepts>
@@ -64,6 +76,21 @@ template <class T>
 concept ChoicePayload =
     std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
     && !std::same_as<T, NoValue> && std::is_nothrow_move_constructible_v<T> && std::is_nothrow_destructible_v<T>;
+
+// A payload that a member can drop or copy.  A linear payload is not one,
+// because its loss or its copy changes what the program can prove.  A
+// linear class never copies, so a payload that copies is droppable, and
+// the walk of the marker runs only for a payload that only moves.  That
+// walk reads the members of the payload.
+template <class T>
+concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::linear::is_linear_type(^^T);
+
+// A payload whose bytes an Option or a Result can copy: trivially copyable,
+// trivially destructible and droppable.  The conjunction stops at its
+// first false part, so the walk of DroppablePayload does not run for a
+// payload that a part before it refuses.
+template <class T>
+concept PlainPayload = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && DroppablePayload<T>;
 
 template <ChoicePayload T>
 class Option;
@@ -105,11 +132,24 @@ enum class OptionForm : unsigned char {
     owning,
 };
 
+// A niche payload copies, so it is never linear.  A linear payload takes
+// the owning form also when its bytes are trivially copyable.  Each branch
+// that the form does not take stays out of the instantiation, so a payload
+// with a niche is never walked: a member of such a payload can name its
+// Option, which is not complete while its form is chosen.
 template <class T>
-inline constexpr OptionForm option_form_of =
-    HasNiche<T> ? OptionForm::niche
-                : (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> ? OptionForm::plain
-                                                                                          : OptionForm::owning);
+consteval OptionForm option_form_for() noexcept {
+    if constexpr (HasNiche<T>) {
+        return OptionForm::niche;
+    } else if constexpr (PlainPayload<T>) {
+        return OptionForm::plain;
+    } else {
+        return OptionForm::owning;
+    }
+}
+
+template <class T>
+inline constexpr OptionForm option_form_of = option_form_for<T>();
 
 template <class T, OptionForm Form = option_form_of<T>>
 class OptionSlot;
@@ -317,8 +357,11 @@ public:
     }
 
     // The payload, or fallback when the Option is empty.  The Option is
-    // empty after the call.
-    [[nodiscard]] constexpr T value_or(T fallback) && noexcept {
+    // empty after the call.  A full Option drops the fallback, so a linear
+    // payload has no value_or().
+    [[nodiscard]] constexpr T value_or(T fallback) && noexcept
+        requires DroppablePayload<T>
+    {
         if (!slot_.holds_()) return fallback;
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
@@ -361,11 +404,18 @@ public:
     // temporary Option would point into an object that the full
     // expression ends, so the overloads for an rvalue are deleted.  A loop
     // over a temporary binds it to a reference first, and calls these
-    // overloads on that lvalue.
-    [[nodiscard]] constexpr OptionCursor<T> begin() & noexcept {
+    // overloads on that lvalue.  A linear payload has only the const
+    // cursor, so no loop moves the payload out and leaves the Option full.
+    [[nodiscard]] constexpr OptionCursor<T> begin() & noexcept
+        requires DroppablePayload<T>
+    {
         return OptionCursor<T>{slot_.holds_() ? &slot_.payload_() : nullptr};
     }
-    [[nodiscard]] constexpr OptionCursor<T> end() & noexcept { return OptionCursor<T>{nullptr}; }
+    [[nodiscard]] constexpr OptionCursor<T> end() & noexcept
+        requires DroppablePayload<T>
+    {
+        return OptionCursor<T>{nullptr};
+    }
     [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept {
         return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
     }
@@ -382,16 +432,21 @@ struct Unit final {
     [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
 };
 
-// An error: a scoped enum, or a trivially copyable and assignable class of
-// at most 16 bytes.  A plain integer is refused, because its meaning is not
-// in its type.  A class that owns memory is refused, because an error never
-// allocates.  A class with a reference member is refused, because the
-// reference cannot be assigned and can outlive its object.
+// An error: a scoped enum, a trivially copyable and assignable class of at
+// most 16 bytes, or a linear class.  A plain integer is refused, because
+// its meaning is not in its type.  A copyable class that owns memory is
+// refused, because an error never allocates.  A class with a reference
+// member is refused, because the reference cannot be assigned and can
+// outlive its object.  A linear error gives a resource back to the caller
+// of a failed operation.  It moves and ends with no throw, and only a
+// consumer of the Result gives it out.
 template <class E>
 concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E>
                   && (std::is_scoped_enum_v<E>
                       || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
-                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16));
+                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16)
+                      || (::foundation::linear::is_linear_type(^^E)
+                          && std::is_nothrow_move_constructible_v<E> && std::is_nothrow_destructible_v<E>));
 
 // The mark of an error, so that an error and a value of the same type
 // never meet in one conversion.
@@ -400,7 +455,9 @@ struct Err final {
     E error;
 };
 
-[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept { return Err<decltype(error)>{error}; }
+[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept {
+    return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
+}
 
 namespace detail {
 
@@ -412,7 +469,9 @@ struct ErrTag final {
     explicit constexpr ErrTag() noexcept = default;
 };
 
-template <class T, class E, bool IsTrivial = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>>
+// A linear value or error takes the owning slot, also when its bytes are
+// trivially copyable, so a move never leaves a second copy of it.
+template <class T, class E, bool IsTrivial = PlainPayload<T> && PlainPayload<E>>
 class ResultSlot;
 
 // The special members are implicit, and each one is trivial, because each
@@ -434,11 +493,12 @@ public:
     [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
     [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
     [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
-    [[nodiscard]] constexpr E error_() const noexcept { return stored_error_; }
+    [[nodiscard]] constexpr E& error_() noexcept { return stored_error_; }
+    [[nodiscard]] constexpr E const& error_() const noexcept { return stored_error_; }
 };
 
-// A value that owns something.  The Result is move-only, and a move moves
-// the value or copies the error.
+// A value or an error that owns something.  The Result is move-only, and
+// a move moves the value or the error.
 template <class T, class E>
 class ResultSlot<T, E, false> {
     union {
@@ -451,13 +511,13 @@ public:
     template <class U>
     constexpr ResultSlot(OkTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : stored_value_(static_cast<U&&>(value)), holds_value_{true} {}
-    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(error), holds_value_{false} {}
+    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(static_cast<E&&>(error)), holds_value_{false} {}
 
     constexpr ResultSlot(ResultSlot&& other) noexcept : holds_value_{other.holds_value_} {
         if (holds_value_) {
             ::new(static_cast<void*>(&stored_value_)) T(static_cast<T&&>(other.stored_value_));
         } else {
-            ::new(static_cast<void*>(&stored_error_)) E(other.stored_error_);
+            ::new(static_cast<void*>(&stored_error_)) E(static_cast<E&&>(other.stored_error_));
         }
     }
 
@@ -466,13 +526,18 @@ public:
     ResultSlot& operator=(ResultSlot&&) = delete("an owning Result is not assignable: build a new Result instead");
 
     constexpr ~ResultSlot() {
-        if (holds_value_) stored_value_.~T();
+        if (holds_value_) {
+            stored_value_.~T();
+        } else if constexpr (!std::is_trivially_destructible_v<E>) {
+            stored_error_.~E();
+        }
     }
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
     [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
     [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
-    [[nodiscard]] constexpr E error_() const noexcept { return stored_error_; }
+    [[nodiscard]] constexpr E& error_() noexcept { return stored_error_; }
+    [[nodiscard]] constexpr E const& error_() const noexcept { return stored_error_; }
 };
 
 }  // namespace detail
@@ -492,7 +557,7 @@ public:
     using error_type = E;
 
     constexpr Result(T value) noexcept : slot_{detail::OkTag{}, static_cast<T&&>(value)} {}
-    constexpr Result(Err<E> error) noexcept : slot_{detail::ErrTag{}, error.error} {}
+    constexpr Result(Err<E> error) noexcept : slot_{detail::ErrTag{}, static_cast<E&&>(error.error)} {}
 
     [[nodiscard]] constexpr bool is_ok() const noexcept { return slot_.holds_(); }
     [[nodiscard]] constexpr bool is_err() const noexcept { return !slot_.holds_(); }
@@ -503,14 +568,29 @@ public:
         return Option<T>::some(static_cast<T&&>(slot_.value_()));
     }
 
-    // The error as an Option, which is empty for a value.
-    [[nodiscard]] constexpr Option<E> err() const& noexcept {
+    // The error as an Option, which is empty for a value.  A copy of the
+    // error is the Option of a droppable error.
+    [[nodiscard]] constexpr Option<E> err() const& noexcept
+        requires DroppablePayload<E>
+    {
         if (slot_.holds_()) return Option<E>{none};
-        return Option<E>::some(slot_.error_());
+        return Option<E>::some(E{slot_.error_()});
     }
 
-    // The value, or fallback for an error.
-    [[nodiscard]] constexpr T value_or(T fallback) && noexcept {
+    // A linear error moves into the Option, so the caller gets the
+    // resource back once.
+    [[nodiscard]] constexpr Option<E> err() && noexcept
+        requires(!DroppablePayload<E>)
+    {
+        if (slot_.holds_()) return Option<E>{none};
+        return Option<E>::some(static_cast<E&&>(slot_.error_()));
+    }
+
+    // The value, or fallback for an error.  The call drops the fallback or
+    // the error, so a linear value or error has no value_or().
+    [[nodiscard]] constexpr T value_or(T fallback) && noexcept
+        requires(DroppablePayload<T> && DroppablePayload<E>)
+    {
         if (!slot_.holds_()) return fallback;
         return static_cast<T&&>(slot_.value_());
     }
@@ -540,7 +620,8 @@ public:
     // the two arms give the same type.  A call with one arm does not
     // compile, so no caller forgets the error.  The rvalue form gives up
     // the Result, which is often a temporary, so an arm that gives a
-    // reference is refused: the reference would dangle.
+    // reference is refused: the reference would dangle.  The error goes to
+    // on_err as an rvalue, so a linear error moves to the arm.
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
               && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
@@ -548,18 +629,18 @@ public:
     constexpr std::invoke_result_t<OnErr, E>
     match(OnOk&& on_ok,
           OnErr&& on_err) && noexcept(std::is_nothrow_invocable_v<OnOk, T&&> && std::is_nothrow_invocable_v<OnErr, E>) {
-        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
+        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(static_cast<E&&>(slot_.error_()));
         return static_cast<OnOk&&>(on_ok)(static_cast<T&&>(slot_.value_()));
     }
 
-    // The total match of a borrow: on_ok gets the value as a const
-    // reference, and the Result keeps it.
+    // The total match of a borrow: on_ok gets the value and on_err gets the
+    // error, each as a const reference, and the Result keeps them.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E>
-              && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E>>
-    constexpr std::invoke_result_t<OnErr, E>
+        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+              && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
+    constexpr std::invoke_result_t<OnErr, E const&>
     match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
-                                                        && std::is_nothrow_invocable_v<OnErr, E>) {
+                                                        && std::is_nothrow_invocable_v<OnErr, E const&>) {
         if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
         return static_cast<OnOk&&>(on_ok)(slot_.value_());
     }

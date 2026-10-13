@@ -5139,6 +5139,26 @@ fixy_neg_compile_test(neg_linear_forged_by_bit_cast
   "no matching function for call to .bit_cast<fixy::Linear<int> >\\(int\\)."
   "is_trivially_copyable_v<_To>")
 
+# The Choice family reads the linear marker of foundation/Linear.h.  An
+# Option or a Result of a linear payload takes the owning form, has no
+# value_or() and no mutable cursor, and gives a linear error only through
+# the rvalue err().
+fixy_neg_compile_test(neg_core_option_reads_the_linear_marker
+  "non-constant condition for static assertion"
+  "call to non-.constexpr. function .void foundation::core::fatal")
+fixy_neg_compile_test(neg_core_option_linear_cursor_moves_out
+  "redundant move in initialization"
+  "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\)")
+fixy_neg_compile_test(neg_core_option_linear_value_or_drops_fallback
+  "no matching function for call to .foundation::core::Option<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >::value_or"
+  "required for the satisfaction of .DroppablePayload<T>.")
+fixy_neg_compile_test(neg_core_result_linear_value_or_drops_fallback
+  "no matching function for call to .foundation::core::Result<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, .anonymous.::Refusal>::value_or"
+  "required for the satisfaction of .DroppablePayload<T>.")
+fixy_neg_compile_test(neg_core_result_linear_error_copied
+  "passing .const foundation::core::Result<int, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >. as .this. argument discards qualifiers"
+  "in call to .constexpr foundation::core::Option<E> foundation::core::Result<T, E>::err\\(\\) && requires !\\(DroppablePayload<E>\\)")
+
 # ── Brands: identity per mint ────────────────────────────────────────
 #
 # A region carries the brand of the permission it was built from, and a

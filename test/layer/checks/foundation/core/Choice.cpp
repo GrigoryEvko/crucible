@@ -2,8 +2,11 @@
 
 #include <foundation/core/Choice.h>
 
+#include <foundation/Linear.h>
+
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -279,6 +282,78 @@ template <class R>
 constexpr bool matches_with_one_arm =
     requires(R result) { static_cast<R&&>(result).match([](int) noexcept { return 0; }); };
 static_assert(!matches_with_one_arm<Result<int, Code>>);
+
+// ── A linear payload ──────────────────────────────────────────────────
+
+// A linear class.  Its move constructor is trivial, and its move
+// assignment is user-provided, so it is not trivially copyable.
+struct[[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    Token(Token&&) noexcept = default;
+    Token(Token const&) = delete;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+};
+
+// A class that holds a Token by value and deletes its assignments.  It is
+// linear through the Token.  By [class.prop] it is trivially copyable,
+// because its only eligible special member is a trivial move constructor.
+// GCC 16 counts the move assignment of the Token, so GCC 16 does not find
+// it trivially copyable.  The marker gives the owning form in each case.
+struct HoldsToken {
+    Token held;
+    HoldsToken(HoldsToken&&) noexcept = default;
+    HoldsToken& operator=(HoldsToken&&) = delete;
+};
+static_assert(::foundation::linear::is_linear_v<HoldsToken> && std::is_trivially_move_constructible_v<HoldsToken>);
+
+// The Choice family reads the marker, so each linear payload takes the
+// owning form, and its Option and its Result are move-only.
+static_assert(!DroppablePayload<Token> && !DroppablePayload<HoldsToken> && DroppablePayload<Owner>);
+static_assert(option_form_of<Token> == OptionForm::owning && option_form_of<HoldsToken> == OptionForm::owning);
+static_assert(!std::is_copy_constructible_v<Option<HoldsToken>> && !std::is_trivially_copyable_v<Option<HoldsToken>>);
+static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);
+
+// A linear payload has no value_or() and no mutable cursor.  A loop over a
+// mutable Option of a linear payload takes the const cursor, so a move
+// through it is a copy, which the payload refuses.
+template <class O>
+concept GivesValueOr = requires(O option, typename O::value_type fallback) {
+    static_cast<O&&>(option).value_or(static_cast<typename O::value_type&&>(fallback));
+};
+static_assert(!GivesValueOr<Option<Token>> && GivesValueOr<Option<Owner>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<Token>&>().begin()), OptionCursor<Token const>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner>>);
+
+// A linear error.  The const err() would copy it, so only the rvalue err()
+// gives it, and value_or() would drop it.
+static_assert(ErrorValue<Token> && ErrorValue<HoldsToken>);
+template <class R>
+concept CopiesItsError = requires(R const& result) { result.err(); };
+template <class R>
+concept GivesItsError = requires(R result) { static_cast<R&&>(result).err(); };
+static_assert(!CopiesItsError<Result<int, Token>> && GivesItsError<Result<int, Token>>);
+static_assert(CopiesItsError<Result<int, Code>>);
+template <class R>
+concept ResultGivesValueOr = requires(R result) { static_cast<R&&>(result).value_or(0); };
+static_assert(!ResultGivesValueOr<Result<int, Token>> && ResultGivesValueOr<Result<int, Code>>);
+
+// The roads of a linear error in a constant evaluation: the rvalue err()
+// and the rvalue match give the error once, and the const match reads it.
+[[nodiscard]] consteval Result<int, Token> refused_with(int handle) noexcept { return err(Token{handle}); }
+static_assert(refused_with(5).err().expect("the operation was refused").handle == 5);
+static_assert(refused_with(6).match([](int&&) noexcept { return 0; },
+                                    [](Token&& token) noexcept { return Token{static_cast<Token&&>(token)}.handle; })
+              == 6);
+[[nodiscard]] consteval int read_refusal() noexcept {
+    Result<int, Token> const refused = refused_with(7);
+    return refused.match([](int const&) noexcept { return 0; },
+                         [](Token const& token) noexcept { return token.handle; });
+}
+static_assert(read_refusal() == 7);
 
 }  // namespace detail::choice_checks
 

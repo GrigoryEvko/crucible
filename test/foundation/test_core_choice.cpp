@@ -1,8 +1,10 @@
 // Tests of foundation/core/Choice.h: Option, none, expect, value_or, match
-// and the loop of zero or one turns.
+// and the loop of zero or one turns, also for a linear payload and a
+// linear error.
 
 #include <foundation/core/Choice.h>
 
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 
 #include "abort_probe.h"
@@ -30,6 +32,29 @@ public:
     CountedOwner& operator=(CountedOwner const&) = delete;
     CountedOwner& operator=(CountedOwner&&) = delete;
     ~CountedOwner() { --live_owners; }
+
+    [[nodiscard]] int handle() const noexcept { return handle_; }
+
+private:
+    int handle_ = 0;
+};
+
+// The count of live CountedToken objects.  A linear payload moves into the
+// owning form, and each holder destroys each token one time.
+int live_tokens = 0;
+
+// A linear payload.  Its copy is deleted, and a move takes its handle.
+class[[= ::foundation::linear::linear{}]] CountedToken {
+public:
+    explicit CountedToken(int handle) noexcept : handle_{handle} { ++live_tokens; }
+    CountedToken(CountedToken&& other) noexcept : handle_{other.handle_} {
+        other.handle_ = 0;
+        ++live_tokens;
+    }
+    CountedToken(CountedToken const&) = delete;
+    CountedToken& operator=(CountedToken const&) = delete;
+    CountedToken& operator=(CountedToken&&) = delete;
+    ~CountedToken() { --live_tokens; }
 
     [[nodiscard]] int handle() const noexcept { return handle_; }
 
@@ -139,6 +164,31 @@ void test_owning_payload() {
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && dropped.is_some());
     }
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// A linear payload takes the owning form, so a move of the Option moves the
+// token and copies no byte of it.  The const loop reads the token with no
+// move, and the rvalue match gives the token to its arm.
+void test_linear_payload() {
+    {
+        Option<CountedToken> source = Option<CountedToken>::some(CountedToken{51});
+        Option<CountedToken> target{static_cast<Option<CountedToken>&&>(source)};
+        CRUCIBLE_FATAL_INVARIANT(target.is_some() && live_tokens == 1);
+        Option<CountedToken> const& reader = target;
+        int seen_handle = 0;
+        for (CountedToken const& token : reader) {
+            seen_handle = token.handle();
+        }
+        CRUCIBLE_FATAL_INVARIANT(seen_handle == 51 && target.is_some());
+        int const matched = static_cast<Option<CountedToken>&&>(target).match(
+            [](CountedToken&& token) noexcept {
+                CountedToken const kept{static_cast<CountedToken&&>(token)};
+                return kept.handle();
+            },
+            [] noexcept { return 0; });
+        CRUCIBLE_FATAL_INVARIANT(matched == 51 && live_tokens == 0);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 
 void test_value_or() {
@@ -310,6 +360,29 @@ void test_result_owning_value() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+// The error of a Result can be linear, so a failed operation gives its
+// resource back.  The const match reads the error, the rvalue err() moves
+// it into its Option, and the rvalue match moves it into its arm.
+[[nodiscard]] Result<int, CountedToken> refuse_with(int handle) noexcept { return err(CountedToken{handle}); }
+
+void test_result_linear_error() {
+    {
+        Result<int, CountedToken> const refused = refuse_with(61);
+        int const read_handle = refused.match([](int const&) noexcept { return 0; },
+                                              [](CountedToken const& token) noexcept { return token.handle(); });
+        CRUCIBLE_FATAL_INVARIANT(read_handle == 61 && live_tokens == 1);
+        CountedToken const given_back = refuse_with(62).err().expect("the operation was refused");
+        CRUCIBLE_FATAL_INVARIANT(given_back.handle() == 62 && live_tokens == 2);
+        int const moved_handle = refuse_with(63).match([](int&&) noexcept { return 0; },
+                                                       [](CountedToken&& token) noexcept {
+                                                           CountedToken const kept{static_cast<CountedToken&&>(token)};
+                                                           return kept.handle();
+                                                       });
+        CRUCIBLE_FATAL_INVARIANT(moved_handle == 63 && live_tokens == 2);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
 // The property: half_of agrees with a plain model for random values, on
 // each road to the value and to the error.
 void test_result_agrees_with_plain_model() {
@@ -338,6 +411,7 @@ int main() {
     test_loop();
     test_end_cursor_read_aborts();
     test_owning_payload();
+    test_linear_payload();
     test_value_or();
     test_match();
     test_niche_payload();
@@ -346,6 +420,7 @@ int main() {
     test_result_roads();
     test_result_of_unit();
     test_result_owning_value();
+    test_result_linear_error();
     test_result_agrees_with_plain_model();
     return 0;
 }
