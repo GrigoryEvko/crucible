@@ -80,6 +80,7 @@ utils/ledgers/syscall-capability.txt | rebase | admit | fae822439 | The move int
 utils/ledgers/test-memory.txt | grow | admit | b453058c4 | Each row keeps a test with its measured cause. Most rows are a CMake configure of 1.30 GB on the 384 CPUs of the build host, or the shadow memory of a sanitizer
 utils/ledgers/test-time.txt | grow | admit | b453058c4 | Each row keeps a test over 5 s with its measured cause, such as the compiles of a witness, a part of the session oracle, or ThreadSanitizer
 utils/ledgers/trait-guard.txt | rebase | admit | 51b0ded90 | The move into the family home of the quarantine plugin keys each row by its file, and no key of the 142 rows stayed
+utils/ledgers/use-after-move.txt | grow | admit | 02bcece12 | Each new row is a probe that reads a holder after its release door, and the probe shows that the holder names no channel and no bytes.
 utils/ledgers/use-after-move.txt | grow | admit | 1c34b4e4d | The 4 rows are probes of the state after a move. A moved DelegatedSession holds no endpoint, and a use of its empty payload or of its consumed hold aborts
 utils/ledgers/use-after-move.txt | grow | admit | 85d1cd51c | The 4 rows are probes of the state after a move. expect() and the rvalue match() leave an Option empty, and a consume() or a borrow of a moved-from Box aborts
 utils/ledgers/use-after-move.txt | grow | admit | b1cb3e1bc | The 5 rows are probes of the state after a move. consume() leaves an Option empty, and the move of an owning Option leaves the source empty

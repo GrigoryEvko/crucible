@@ -145,14 +145,9 @@ include/fixy/EpochVersioned.h | inlined | 1 | std::destroy_at | -
 include/fixy/EpochVersioned.h | inlined | 7 | std::expected::expected | -
 include/fixy/EpochVersioned.h | inlined | 1 | std::vector::vector | -
 include/fixy/EpochVersioned.h | inlined | 1 | std::vector::~vector | -
-include/fixy/Federation.h | call | 1 | std::expected::error | -
-include/fixy/Federation.h | call | 1 | std::unexpected::unexpected | -
 include/fixy/Federation.h | inlined | 3 | std::array::operator[] | -
-include/fixy/Federation.h | inlined | 1 | std::expected::error | -
-include/fixy/Federation.h | inlined | 1 | std::expected::has_value | -
 include/fixy/Federation.h | inlined | 3 | std::pair::pair | -
 include/fixy/Federation.h | inlined | 2 | std::span::span | -
-include/fixy/Federation.h | inlined | 1 | std::unexpected::unexpected | -
 include/fixy/FixedArray.h | inlined | 1 | std::array::data | -
 include/fixy/FixedArray.h | inlined | 9 | std::array::operator[] | -
 include/fixy/FixedArray.h | inlined | 1 | std::array::~array | FixedArray keeps a std::array by design, and the region store of the pipeline is the first fixed array of an element with a destructor
@@ -502,7 +497,7 @@ include/fixy/session/CrashTransport.h | inlined | 4 | std::optional::emplace | -
 include/fixy/session/CrashTransport.h | inlined | 1 | std::optional::has_value | -
 include/fixy/session/CrashTransport.h | inlined | 8 | std::optional::operator (conversion) | -
 include/fixy/session/CrashTransport.h | inlined | 3 | std::optional::operator-> | -
-include/fixy/session/CrashTransport.h | inlined | 7 | std::optional::optional | -
+include/fixy/session/CrashTransport.h | inlined | 4 | std::optional::optional | -
 include/fixy/session/CrashTransport.h | inlined | 1 | std::optional::value_or | -
 include/fixy/session/CrashTransport.h | inlined | 2 | std::optional::~optional | -
 include/fixy/session/CrashTransport.h | inlined | 2 | std::pair::pair | -
@@ -788,14 +783,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::destroy_at | -
 @x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::vector | -
 @x86_64-debug-tsan | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
-@x86_64-debug-tsan | include/fixy/Federation.h | call | -1 | std::expected::error | -
-@x86_64-debug-tsan | include/fixy/Federation.h | call | -1 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/Federation.h | inlined | -3 | std::array::operator[] | -
-@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
-@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::expected::has_value | -
 @x86_64-debug-tsan | include/fixy/Federation.h | inlined | -2 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/Federation.h | inlined | -2 | std::span::span | -
-@x86_64-debug-tsan | include/fixy/Federation.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -6 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -
 @x86_64-debug-tsan | include/fixy/FixedArray.h | inlined | -1 | std::span::span | -
@@ -1072,7 +1062,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -2 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/ConstantTime.h | inlined | -3 | std::span::size | -
 @x86_64-debug-ubsan-strict | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
-@x86_64-debug-ubsan-strict | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | call | +1 | std::array::operator[] | -
 @x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | inlined | -1 | std::array::data | -
 @x86_64-debug-ubsan-strict | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -
@@ -1194,13 +1183,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::destroy_at | -
 @x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::vector | -
 @x86_64-release | include/fixy/EpochVersioned.h | inlined | -1 | std::vector::~vector | -
-@x86_64-release | include/fixy/Federation.h | call | -1 | std::expected::error | -
-@x86_64-release | include/fixy/Federation.h | call | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/Federation.h | inlined | -3 | std::array::operator[] | -
-@x86_64-release | include/fixy/Federation.h | inlined | -1 | std::expected::error | -
 @x86_64-release | include/fixy/Federation.h | inlined | -2 | std::pair::pair | -
 @x86_64-release | include/fixy/Federation.h | inlined | -2 | std::span::span | -
-@x86_64-release | include/fixy/Federation.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::array::data | -
 @x86_64-release | include/fixy/FixedArray.h | inlined | -7 | std::array::operator[] | -
 @x86_64-release | include/fixy/FixedArray.h | inlined | -1 | std::is_neq | -

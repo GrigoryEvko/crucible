@@ -1945,12 +1945,8 @@ include/fixy/Federation.h | base-std-entity | 1 | __gnu_cxx::__normal_iterator::
 include/fixy/Federation.h | base-std-entity | 1 | __gnu_cxx::operator== | -
 include/fixy/Federation.h | base-std-entity | 1 | std::array | -
 include/fixy/Federation.h | base-std-entity | 3 | std::array::operator[] | -
-include/fixy/Federation.h | base-std-entity | 1 | std::expected | -
-include/fixy/Federation.h | base-std-entity | 1 | std::expected::error | -
-include/fixy/Federation.h | base-std-entity | 1 | std::expected::has_value | -
 include/fixy/Federation.h | base-std-entity | 2 | std::pair | -
 include/fixy/Federation.h | base-std-entity | 1 | std::to_integer | -
-include/fixy/Federation.h | base-std-entity | 7 | std::unexpected | -
 include/fixy/Federation.h | base-std-entity | 1 | std::vector | -
 include/fixy/Federation.h | base-std-entity | 1 | std::vector::begin | -
 include/fixy/Federation.h | base-std-entity | 1 | std::vector::end | -
@@ -1958,7 +1954,6 @@ include/fixy/Federation.h | base-std-object | 8 | std::array | -
 include/fixy/Federation.h | base-std-object | 1 | std::basic_string_view | -
 include/fixy/Federation.h | base-std-object | 2 | std::pair | -
 include/fixy/Federation.h | layer-header | 1 | <array> | -
-include/fixy/Federation.h | layer-header | 1 | <expected> | -
 include/fixy/Federation.h | layer-header | 1 | <span> | -
 include/fixy/Federation.h | layer-header | 1 | <string_view> | -
 include/fixy/FixedArray.h | base-std-entity | 1 | std::__detail::__cmp3way_res_impl | -
@@ -3428,7 +3423,6 @@ include/foundation/permissions/Permission.h | layer-header | 1 | <optional> | -
 include/foundation/permissions/Permission.h | layer-header | 1 | <string_view> | -
 include/foundation/permissions/Permission.h | layer-header | 1 | <tuple> | -
 include/foundation/permissions/Permission.h | layer-header | 1 | <vector> | -
-include/foundation/permissions/PermissionFork.h | base-std-entity | 1 | std::apply | -
 include/foundation/permissions/PermissionFork.h | base-std-entity | 1 | std::array::data | -
 include/foundation/permissions/PermissionFork.h | base-std-entity | 1 | std::array::operator[] | -
 include/foundation/permissions/PermissionFork.h | base-std-entity | 1 | std::array::size | -
@@ -4675,13 +4669,10 @@ test/fixy/test_federation.cpp | std-entity | 2 | std::array::end | -
 test/fixy/test_federation.cpp | std-entity | 1 | std::array::operator[] | -
 test/fixy/test_federation.cpp | std-entity | 1 | std::array::size | -
 test/fixy/test_federation.cpp | std-entity | 1 | std::array::value_type | -
-test/fixy/test_federation.cpp | std-entity | 9 | std::expected::error | -
-test/fixy/test_federation.cpp | std-entity | 13 | std::expected::has_value | -
 test/fixy/test_federation.cpp | std-entity | 12 | std::get | -
 test/fixy/test_federation.cpp | std-entity | 2 | std::operator== | -
 test/fixy/test_federation.cpp | std-entity | 4 | std::pair | -
 test/fixy/test_federation.cpp | std-object | 3 | std::array | -
-test/fixy/test_federation.cpp | std-object | 11 | std::expected | -
 test/fixy/test_federation.cpp | std-object | 7 | std::pair | -
 test/fixy/test_fixed_array.cpp | replace-pending:std::bit_cast | 1 | std::bit_cast | -
 test/fixy/test_fixed_array.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
@@ -4702,7 +4693,7 @@ test/fixy/test_fn.cpp | std-entity | 1 | std::operator== | -
 test/fixy/test_fn.cpp | std-object | 3 | std::array | -
 test/fixy/test_fn.cpp | std-object | 1 | std::basic_string_view | -
 test/fixy/test_fn.cpp | std-object | 1 | std::span | -
-test/fixy/test_forgeable_proofs.cpp | c-array-object | 10 | - | -
+test/fixy/test_forgeable_proofs.cpp | c-array-object | 9 | - | -
 test/fixy/test_forgeable_proofs.cpp | c-library-call | 1 | fprintf | -
 test/fixy/test_forgeable_proofs.cpp | c-library-call | 1 | printf | -
 test/fixy/test_forgeable_proofs.cpp | c-library-call | 1 | stderr | -
@@ -8039,8 +8030,8 @@ test/test_federation_protocol.cpp | std-entity | 15 | std::array::operator[] | -
 test/test_federation_protocol.cpp | std-entity | 13 | std::array::size | -
 test/test_federation_protocol.cpp | std-entity | 1 | std::basic_string_view::empty | -
 test/test_federation_protocol.cpp | std-entity | 19 | std::expected::error | -
-test/test_federation_protocol.cpp | std-entity | 55 | std::expected::has_value | -
-test/test_federation_protocol.cpp | std-entity | 20 | std::expected::operator* | -
+test/test_federation_protocol.cpp | std-entity | 54 | std::expected::has_value | -
+test/test_federation_protocol.cpp | std-entity | 19 | std::expected::operator* | -
 test/test_federation_protocol.cpp | std-entity | 34 | std::expected::operator-> | -
 test/test_federation_protocol.cpp | std-entity | 4 | std::get | -
 test/test_federation_protocol.cpp | std-entity | 5 | std::operator== | -
