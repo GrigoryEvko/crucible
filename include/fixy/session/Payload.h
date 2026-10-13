@@ -33,6 +33,10 @@
 //
 // A bare Permission in a payload moves as a Transferable does.
 //
+// The four markers that carry a token or a loan are linear
+// (foundation/Linear.h).  A receive is their door: the handle takes the
+// token or the loan out of the message into its set.
+//
 // ── A read loan is two states, not a free copy ──────────────────────
 //
 // A read proof that travels to a different thread lets the recipient
@@ -183,6 +187,7 @@
 // The crash attack campaign pins each of these on its ledger.
 
 #include <foundation/Brand.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Transition.h>
@@ -235,7 +240,7 @@ class HoldFactory;
 // a copy of a read proof is a second loan that no set records.
 
 template <class T, class Tag>
-struct [[nodiscard]] Transferable {
+struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     using payload_type = T;
     using transferred_perm = Tag;
 
@@ -258,7 +263,7 @@ struct [[nodiscard]] Transferable {
 };
 
 template <class T, class Tag>
-struct [[nodiscard]] Returned {
+struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
     using payload_type = T;
     using returned_perm = Tag;
 
@@ -283,7 +288,7 @@ struct [[nodiscard]] Returned {
 // without a parked token.  The loan is private: the recipient reaches it
 // only through accept_loan, and reads only through the door of its hold.
 template <class T, class Tag>
-struct [[nodiscard]] Borrowed {
+struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     using payload_type = T;
     using borrowed_perm = Tag;
 
@@ -313,7 +318,7 @@ private:
 // that no borrower sent cannot reopen the region.  The type-level check
 // makes the send sound too: the sender must hold BorrowedIn<Tag>.
 template <class T, class Tag>
-struct [[nodiscard]] Released {
+struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     using payload_type = T;
     using released_perm = Tag;
 

@@ -2,6 +2,8 @@
 
 #include <fixy/channels/SwmrSession.h>
 
+#include <foundation/Linear.h>
+
 namespace fixy::channels::swmr_session {
 
 namespace detail::swmr_session_self_test {
@@ -46,6 +48,15 @@ static_assert(std::is_move_constructible_v<ReaderHandle>);
 static_assert(SwmrWriterHandleOf<SmallSession, WriterHandle>);
 static_assert(!SwmrWriterHandleOf<SmallSession, WriterHandle&>, "a reference to a writer handle is not a handle");
 static_assert(!SwmrWriterHandleOf<SmallSession, ReaderHandle>, "a reader handle is not a writer handle");
+
+// The writer handle holds the linear writer token, so it is linear, and
+// release() gives the token back.  A reader handle holds a share, which
+// is not linear.
+static_assert(::foundation::linear::is_marked_linear(^^WriterHandle)
+              && ::foundation::linear::is_linear_v<WriterHandle>);
+static_assert(!::foundation::linear::is_linear_v<ReaderHandle>);
+static_assert(std::is_same_v<decltype(std::declval<WriterHandle>().release()),
+                             ::foundation::permissions::Permission<WriterTag, WriterBrand>>);
 
 static_assert(std::is_same_v<WriterRuntimeProto<int>,
                              ::fixy::session::Loop<::fixy::session::Send<int, ::fixy::session::Continue>>>);

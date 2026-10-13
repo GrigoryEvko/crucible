@@ -29,7 +29,6 @@ test/fixy/neg/neg_owned_mmap_forged_address.cpp | erased-brand | 1 | fixy::Owned
 test/fixy/neg/neg_owned_mmap_forged_through_mint_linear.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_owned_mmap_release_without_leak_atom.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_owned_region_does_not_erase_its_brand.cpp | erased-brand | 1 | fixy::OwnedRegion | -
-test/fixy/neg/neg_qtt_affine_over_shared_permission.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/fixy/neg/neg_qtt_linear_over_permission.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_scoped_view_escapes_through_private_member.cpp | erased-brand | 1 | fixy::ScopedView | -
 test/fixy/neg/neg_sess_loop_iteration_sends_permission.cpp | erased-brand | 1 | foundation::permissions::Permission | -
@@ -121,11 +120,9 @@ test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | erased
 test/foundation/neg/neg_lifetime_start_as_array_proof_holder.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_lifetime_start_as_proof_array.cpp | erased-brand | 3 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_forged_without_key.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_permission_tag_not_empty.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_read_loan_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::ReadLoan | -
-test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::ReadLoan | -
 test/foundation/neg/neg_read_loan_tag_not_empty.cpp | erased-brand | 1 | foundation::permissions::ReadLoan | -
 test/foundation/neg/neg_read_view_body_by_value.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/foundation/neg/neg_read_view_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
@@ -158,7 +155,7 @@ test/layer/checks/fixy/SharedRegion.cpp | erased-brand | 1 | fixy::SharedRead | 
 test/layer/checks/fixy/os/Mmap.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPlacement | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 32 | foundation::permissions::Permission | -
-test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 13 | foundation::permissions::SharedPermission | -
+test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 12 | foundation::permissions::SharedPermission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 5 | foundation::permissions::SharedPermissionGuard | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 2 | foundation::permissions::SharedPermissionPool | -
 test/layer/checks/foundation/permissions/ReadView.cpp | erased-brand | 8 | foundation::permissions::LentPermission | -

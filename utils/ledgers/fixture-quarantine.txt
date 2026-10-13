@@ -276,6 +276,7 @@ test/fixy/neg/neg_fixed_array_at_out_of_range_index.cpp | std-entity | 1 | std::
 test/fixy/neg/neg_fp_cos_poly_of_nan.cpp | replace-pending:<limits> | 1 | std::numeric_limits::quiet_NaN | -
 test/fixy/neg/neg_fp_log_poly_of_subnormal.cpp | replace-pending:<limits> | 1 | std::numeric_limits::denorm_min | -
 test/fixy/neg/neg_handle_traits_consumer_value_on_non_handle.cpp | std-object | 1 | std::optional | -
+test/fixy/neg/neg_linear_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/fixy/neg/neg_mpmc_stage_from_endpoints_arity_mismatch.cpp | std-entity | 4 | std::get | -
 test/fixy/neg/neg_mpmc_stage_from_endpoints_arity_mismatch.cpp | std-entity | 2 | std::pair | -
 test/fixy/neg/neg_mpmc_stage_from_endpoints_arity_mismatch.cpp | std-object | 2 | std::pair | -
@@ -983,10 +984,6 @@ test/foundation/neg/neg_permission_combine_without_ctx_refuses_row.cpp | std-obj
 test/foundation/neg/neg_permission_combine_witness_missing.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_permission_ctx_admits_each_tag_of_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_permission_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
-test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
-test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
-test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
-test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_permission_fork_body_keeps_its_view.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_permission_fork_body_may_throw.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_permission_fork_body_of_another_region.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
@@ -1024,10 +1021,6 @@ test/foundation/neg/neg_raw_escape_refusal_specialized.cpp | std-entity | 1 | st
 test/foundation/neg/neg_read_loan_copied.cpp | std-object | 1 | std::pair | -
 test/foundation/neg/neg_read_loan_effectful_row_without_ctx.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | the fixture builds the context of its probe from the context witness of the effects
 test/foundation/neg/neg_read_loan_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
-test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | c-array-object | 1 | - | -
-test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | lifetime-start | 1 | main(): std::start_lifetime_as | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
-test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | raw-pointer-object | 1 | - | -
-test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp | std-entity | 1 | std::start_lifetime_as | -
 test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-entity | 1 | std::function | -
 test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-object | 1 | std::function | -
 test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp | std-object | 1 | std::pair | -
@@ -1051,6 +1044,7 @@ test/foundation/neg/neg_row_mismatch_tag_not_a_tag.cpp | raw-pointer-object | 1 
 test/foundation/neg/neg_semiring_subtraction_for_add.cpp | detail-use | 1 | namespace-scope: foundation::algebra::detail | the fixture takes a test lattice from the private namespace of the algebra for its probe
 test/foundation/neg/neg_share_pool_lend_without_ctx_refuses_row.cpp | std-object | 1 | std::optional | -
 test/foundation/neg/neg_share_pool_upgrade_without_ctx_refuses_row.cpp | std-object | 1 | std::optional | -
+test/foundation/neg/neg_shared_permission_forged_by_bit_cast.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/neg/neg_shared_permission_guard_heap_new.cpp | std-object | 1 | std::optional | -
 test/foundation/neg/neg_shared_read_shaped_specialized.cpp | detail-use | 1 | namespace-scope: foundation::permissions::detail | the fixture specializes a private check, and its probe shows that the build refuses the specialization
 test/foundation/neg/neg_shared_read_shaped_specialized.cpp | std-entity | 1 | std::initializer_list | -

@@ -48,6 +48,6 @@ int main() {
             return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },
         [](auto head, auto const& /*right_view*/, DrainCtx const&) noexcept { return head; });
-    perm::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     return 0;
 }

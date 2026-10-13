@@ -2,6 +2,9 @@
 
 #include <foundation/permissions/Permission.h>
 
+#include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
+
 namespace foundation::permissions {
 
 // No route builds the key without a constructor.  std::bit_cast builds
@@ -68,11 +71,15 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
     return sizeof(Token) == 1 && std::is_trivially_destructible_v<Token> && !std::is_copy_constructible_v<Token>
         && !std::is_copy_assignable_v<Token> && std::is_move_constructible_v<Token>
         && std::is_nothrow_move_constructible_v<Token>
+        // A token is linear.  Its move constructor is trivial, so the ABI
+        // passes it in a register, and its move assignment is not.
+        && ::foundation::linear::is_linear_v<Token> && std::is_trivially_move_constructible_v<Token>
+        && !std::is_trivially_move_assignable_v<Token>
         // No route builds a token without a constructor: std::bit_cast
-        // needs a trivially copyable type, and std::start_lifetime_as an
-        // implicit-lifetime one.
+        // needs a trivially copyable type, and the checked lifetime start
+        // refuses the annotation no_start_over_bytes.
         && !std::is_trivially_copyable_v<Token>
-        && !std::is_implicit_lifetime_v<Token>
+        && !::foundation::lifetime::ImplicitLifetimeThroughout<Token>
         // The key is the sole route in.  Both halves are load-bearing:
         // drop the first and a token is default-constructible by
         // anyone, drop the second and the mints cannot build one.
@@ -204,8 +211,16 @@ static_assert(std::is_copy_constructible_v<SharedPermission<detail::seplog_test_
               "SharedPermission<Tag> MUST be copy-constructible (fractional)");
 static_assert(std::is_copy_assignable_v<SharedPermission<detail::seplog_test_tag>>,
               "SharedPermission<Tag> MUST be copy-assignable (fractional)");
-static_assert(std::is_trivially_copyable_v<SharedPermission<detail::seplog_test_tag>>,
-              "SharedPermission<Tag> must be trivially-copyable (zero-cost copy)");
+namespace detail::seplog_roster {
+using branded_share = SharedPermission<seplog_test_tag, brand_a>;
+static_assert(std::is_trivially_copy_constructible_v<branded_share>,
+              "a copy of a share costs nothing, and the ABI passes a share in a register");
+static_assert(!std::is_trivially_copyable_v<branded_share>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<branded_share>,
+              "std::bit_cast and the checked lifetime start build no share from bytes");
+static_assert(!::foundation::linear::is_linear_v<branded_share>,
+              "a copy of a share proves nothing more than the share, so a share is not linear");
+}  // namespace detail::seplog_roster
 static_assert(std::is_trivially_destructible_v<SharedPermission<detail::seplog_test_tag>>,
               "SharedPermission<Tag> destructor must be trivial");
 static_assert(SharedPermission<detail::seplog_test_tag>::confers_runtime_access == false,

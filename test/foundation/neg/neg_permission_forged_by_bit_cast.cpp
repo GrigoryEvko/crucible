@@ -1,7 +1,7 @@
 // An exclusive token built from a byte.  A token with a trivial copy is
 // trivially copyable, and std::bit_cast builds any such type from bytes
 // with no constructor call, so the private mint key did not stop it.
-// The move constructor of Permission is user-provided, so the token is
+// The move assignment of Permission is user-provided, so the token is
 // not trivially copyable, and std::bit_cast has no candidate.
 
 #include <foundation/permissions/Permission.h>

@@ -9,6 +9,7 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Types.h>
 #include <fixy/Tagged.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -109,7 +110,9 @@ public:
 
         KernelCacheSlot() noexcept = default;
 
-        class WriterHandle {
+        // The writer handle is linear (foundation/Linear.h).  Its door is
+        // release(), which gives the token back to the caller.
+        class[[= ::foundation::linear::linear{}]] WriterHandle {
             KernelCacheSlot* slot_ = nullptr;
             [[no_unique_address]] ::foundation::permissions::Permission<writer_tag> perm_;
 
@@ -129,6 +132,13 @@ public:
             operator=(WriterHandle const&) = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
             constexpr WriterHandle(WriterHandle&&) noexcept = default;
             constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
+
+            // The release door.  The handle gives the token back to the
+            // caller, and it names no slot after the call.
+            [[nodiscard]] constexpr ::foundation::permissions::Permission<writer_tag> release() && noexcept {
+                slot_ = nullptr;
+                return std::move(perm_);
+            }
 
             void publish(snapshot_type const& snapshot) noexcept {
                 CRUCIBLE_PRE(::foundation::decide::is_non_zero(snapshot.content_hash));
@@ -345,6 +355,7 @@ public:
                     .row_hash = lookup_row,
                     .kernel = kernel,
                 });
+                ::foundation::linear::drop(std::move(writer).release());
                 // Relaxed: nothing branches on the exact count.  The content
                 // hash CAS carries the real synchronization.
                 size_.fetch_add(1, std::memory_order_relaxed);
@@ -368,6 +379,7 @@ public:
                         // kernel or the other and both are valid.
                         auto writer = entry.writer(fresh_writer_permission_());
                         writer.publish_kernel_variant(kernel);
+                        ::foundation::linear::drop(std::move(writer).release());
                         return {};
                     }
                 }

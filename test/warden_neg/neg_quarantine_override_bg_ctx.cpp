@@ -17,6 +17,6 @@ int main() {
         ::foundation::permissions::mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>(startup);
     authority = policy.operator_override(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, std::move(authority),
                                          cog, crucible::warden::QuarantineState::Permanent, 1, 1);
-    ::foundation::permissions::permission_drop(std::move(authority));
+    ::foundation::linear::drop(std::move(authority));
     return 0;
 }

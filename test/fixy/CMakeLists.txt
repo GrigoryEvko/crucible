@@ -1194,7 +1194,7 @@ fixy_neg_compile_test(neg_federation_admittance_names_brand
 # nobody.
 fixy_neg_compile_test(neg_federation_admittance_const_admission
   "passing .const foundation::permissions::FederationAdmission<NegConstOrg>. as .this. argument discards qualifiers"
-  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, std::expected<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
+  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the
@@ -5110,13 +5110,13 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
 # Both recognisers of fixy/Qtt.h are structural: one reflection query
-# recognises each grade of Qtt, and one concept names the two permission
-# tokens.  A recogniser that answers false for each type lets
-# Affine<Linear<int>> compile for a release, and an exactly-once
-# obligation then becomes at-most-once.  These four fixtures hold both
-# recognisers: each names one composition that the gates must refuse,
-# and the second regex is the compiler's rendering of the instantiation,
-# which the fixture source never spells.
+# recognises each grade of Qtt, and the linear marker of
+# foundation/Linear.h names each linear type.  A recogniser that answers
+# false for each type lets Affine<Linear<int>> compile for a release, and
+# an exactly-once obligation then becomes at-most-once.  These four
+# fixtures hold both recognisers: each names one composition that the
+# gates must refuse, and the second regex is the compiler's rendering of
+# the instantiation, which the fixture source never spells.
 fixy_neg_compile_test(neg_qtt_affine_over_linear
   "Affine<Token> over a consume-disciplined token is unsound"
   "QttGrade::Zero, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
@@ -5129,9 +5129,15 @@ fixy_neg_compile_test(neg_qtt_linear_over_permission
   "Linear<Token> over an already-linear token is redundant"
   "QttGrade::One, foundation::permissions::Permission")
 
-fixy_neg_compile_test(neg_qtt_affine_over_shared_permission
+fixy_neg_compile_test(neg_qtt_affine_over_permission
   "Affine<Token> over a consume-disciplined token is unsound"
-  "QttGrade::Zero, foundation::permissions::SharedPermission")
+  "QttGrade::Zero, foundation::permissions::Permission")
+
+# The move assignment of the wrapper is user-provided, so the wrapper is
+# not trivially copyable, and std::bit_cast builds no Linear from bytes.
+fixy_neg_compile_test(neg_linear_forged_by_bit_cast
+  "no matching function for call to .bit_cast<fixy::Linear<int> >\\(int\\)."
+  "is_trivially_copyable_v<_To>")
 
 # ── Brands: identity per mint ────────────────────────────────────────
 #

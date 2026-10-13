@@ -139,7 +139,7 @@ static void test_permanent_requires_operator_permission() {
         policy.operator_override(init_ctx(), std::move(authority), target, warden::QuarantineState::Permanent, 1300, 3);
     assert(policy.state(target) == warden::QuarantineState::Permanent);
     assert(policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
-    perm::permission_drop(std::move(authority));
+    ::foundation::linear::drop(std::move(authority));
 
     crucible::test::pass("  test_permanent_requires_operator_permission: PASSED\n");
 }
@@ -157,7 +157,7 @@ static void test_event_ring_wrap_chronological_order() {
         auto next = (seq % 2 == 1) ? warden::QuarantineState::Quarantined : warden::QuarantineState::Healthy;
         authority = policy.operator_override(init_ctx(), std::move(authority), target, next, 100u * seq, seq);
     }
-    perm::permission_drop(std::move(authority));
+    ::foundation::linear::drop(std::move(authority));
 
     assert(policy.transition_event_count() == 4u);
 

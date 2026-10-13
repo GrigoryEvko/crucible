@@ -280,8 +280,8 @@ auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
 }
 
 // Each door that consumes a region leaves it empty: the move, the move
-// assignment, the split and the recombine.  No consumed region keeps the
-// bytes that its successor owns.
+// assignment, the split, the recombine and the release.  No consumed
+// region keeps the bytes that its successor owns.
 void test_every_consuming_door_empties_the_region() {
     static std::uint64_t storage[4] = {1, 2, 3, 4};
     auto source = branded_at_one_site(storage, 4);
@@ -303,6 +303,13 @@ void test_every_consuming_door_empties_the_region() {
     CRUCIBLE_TEST_REQUIRE(std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);
     CRUCIBLE_TEST_REQUIRE(std::get<1>(parts.shards).empty() && std::get<1>(parts.shards).data() == nullptr);
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage && whole.size() == 4);
+
+    // The release door gives the token back, and the token wraps the same
+    // storage again.
+    auto token = std::move(whole).release();
+    CRUCIBLE_FATAL_INVARIANT(whole.empty() && whole.data() == nullptr);
+    auto rewrapped = Branded::wrap(storage, 4, std::move(token));
+    CRUCIBLE_FATAL_INVARIANT(rewrapped.data() == storage && rewrapped.size() == 4);
 }
 
 void test_recombine_refuses_shards_of_two_regions_of_one_site() { require_mixed_rebuild_aborts(split_branded_in_two); }

@@ -1,8 +1,9 @@
 // Exclusive tokens started over a buffer as an array.  The library
 // function std::start_lifetime_as_array checks nothing about its element,
-// so it gives a pointer to tokens whose lifetime never started.  The
-// checked start requires that the element and each subobject of it is an
-// implicit-lifetime type, and it refuses the token.
+// so it gives a pointer to tokens that no mint made.  A token is an
+// implicit-lifetime type, because its move constructor is trivial.  The
+// checked start refuses a type that carries the annotation
+// no_start_over_bytes, and the token carries it.
 
 #include <foundation/Lifetime.h>
 #include <foundation/permissions/Permission.h>

@@ -1,6 +1,7 @@
 #include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/concurrent/HandleTraits.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <sys/wait.h>
@@ -132,6 +133,8 @@ namespace {
     static_assert(alignof(KernelSlot) == 8);
     static_assert(sizeof(SlotSnapshot) == 24);
     static_assert(::fixy::concurrent::IsSwmrWriter<KernelSlot::WriterHandle>);
+    static_assert(::foundation::linear::is_marked_linear(^^KernelSlot::WriterHandle),
+                  "the writer handle holds a linear token, and release() is its door");
     static_assert(::fixy::concurrent::IsSwmrReader<KernelSlot::ReaderHandle>);
     static_assert(std::is_same_v<::fixy::concurrent::swmr_writer_value_t<KernelSlot::WriterHandle>, SlotSnapshot>);
     static_assert(std::is_same_v<::fixy::concurrent::swmr_reader_value_t<KernelSlot::ReaderHandle>, SlotSnapshot>);

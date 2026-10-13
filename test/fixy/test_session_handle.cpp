@@ -684,7 +684,7 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     }
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
     auto [token] = std::move(hold).into_permissions();
-    ::foundation::permissions::permission_drop(std::move(token));
+    ::foundation::linear::drop(std::move(token));
     return 0;
 }
 
@@ -746,7 +746,7 @@ struct TokenWire {
         std::fprintf(stderr, "the receive left the token on the wire\n");
         return 1;
     }
-    ::foundation::permissions::permission_drop(std::move(token));
+    ::foundation::linear::drop(std::move(token));
     return 0;
 }
 
@@ -874,7 +874,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
             return std::move(sends).send(Pong{ping.value + 1},
                                          [](PeerEnd& e, Pong& p) noexcept { return put(e.pipe->to_self, p.value); });
         });
-    ::foundation::permissions::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
 
     if (seen_pong.load(std::memory_order_acquire) != 21) {
         std::fprintf(stderr, "the forked channel did not carry the reply\n");
@@ -1191,7 +1191,7 @@ struct PollBox {
             std::this_thread::sleep_for(late);
             return std::move(second_answer).send(second + 1, send_to_self);
         });
-    ::foundation::permissions::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     if (total.load(std::memory_order_acquire) != 4) {
         std::fprintf(stderr, "the polling channel carried %d, not 4\n", total.load(std::memory_order_acquire));
         return 1;

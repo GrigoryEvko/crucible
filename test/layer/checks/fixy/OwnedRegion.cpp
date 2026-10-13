@@ -2,6 +2,8 @@
 
 #include <fixy/OwnedRegion.h>
 
+#include <foundation/Linear.h>
+
 namespace fixy {
 
 static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) == sizeof(int*) + sizeof(std::size_t),
@@ -186,6 +188,14 @@ static_assert(!std::is_convertible_v<ReceiptA4&&, ReceiptA2>, "another arity's r
 static_assert(!std::is_convertible_v<ReceiptOtherTag&&, ReceiptA2>, "another tag's receipt is another type");
 static_assert(ReceiptA2::shard_count == 2);
 static_assert(std::is_same_v<ReceiptA2::tag_type, test_tag_a>);
+// A receipt is a linear value, and recombine is its one door.
+static_assert(::foundation::linear::is_marked_linear(^^ReceiptA2) && ::foundation::linear::is_linear_v<ReceiptA2>);
+// A region holds a token, so it is linear too.  release() is one of its
+// doors, and it gives the token back.
+static_assert(::foundation::linear::is_marked_linear(^^OR_int_a_branded)
+              && ::foundation::linear::is_linear_v<OR_int_a_branded>);
+static_assert(std::is_same_v<decltype(std::declval<OR_int_a_branded>().release()),
+                             ::foundation::permissions::Permission<test_tag_a, brand_a>>);
 
 }  // namespace detail::owned_region_self_test
 

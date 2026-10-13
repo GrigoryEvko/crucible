@@ -235,7 +235,7 @@ void test_permission_row_compile() {
     TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto disk = perm::mint_permission_root<DiskSpilled>(test_ctx);
     auto handed = perm::permission_handoff(test_ctx, std::move(disk));
-    perm::permission_drop(std::move(handed));
+    ::foundation::linear::drop(std::move(handed));
 
     using RowWhole = permission_row_compile_tags::Whole;
     using RowLeft = permission_row_compile_tags::IoChild;
@@ -247,7 +247,7 @@ void test_permission_row_compile() {
     auto split_n = perm::mint_permission_split_n<RowLeft, RowRight>(test_ctx, std::move(joined));
     auto joined_n = perm::mint_permission_combine_n<RowWhole>(test_ctx, std::move(std::get<0>(split_n)),
                                                               std::move(std::get<1>(split_n)));
-    perm::permission_drop(std::move(joined_n));
+    ::foundation::linear::drop(std::move(joined_n));
 }
 // The body names the fixture tags of detail::permset_smoke in
 // PermSet.h, so the two using-directives bring those names into scope.

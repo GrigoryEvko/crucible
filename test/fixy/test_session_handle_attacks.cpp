@@ -607,7 +607,7 @@ template <Receive How>
     auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
         ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, TakesBothBody<How>{},
         GiveAwayBody{});
-    perm::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     std::_Exit(kSilentExit);
 }
 
@@ -688,13 +688,13 @@ struct CycleLeftB {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left, attack_tags::Right>(
             ctx, perm::mint_permission_root<attack_tags::Whole>(), LeftEnd{&pipe_a}, RightEnd{&pipe_a}, CycleLeftA{},
             CycleRightA{});
-        perm::permission_drop(std::move(back));
+        ::foundation::linear::drop(std::move(back));
     }};
     std::jthread run_b{[&] {
         auto back = s::mint_forked_channel<LeftProto, attack_tags::Left2, attack_tags::Right2>(
             ctx, perm::mint_permission_root<attack_tags::Whole2>(), LeftEnd{&pipe_b}, RightEnd{&pipe_b}, CycleLeftB{},
             CycleRightB{});
-        perm::permission_drop(std::move(back));
+        ::foundation::linear::drop(std::move(back));
     }};
     run_a.join();
     run_b.join();

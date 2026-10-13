@@ -586,13 +586,13 @@ struct foundation::contracts::armed_cell<::fixy::is_writeoncenonnull> {
 // in fixy/Qtt.h.
 template <>
 struct foundation::contracts::armed_cell<::fixy::is_already_linear> {
-    using accepts = witnesses<::fixy::Linear<int>, ::fixy::Linear<int> const&, ::fixy::Linear<void*>>;
+    using accepts = witnesses<::fixy::Linear<int>, ::fixy::Linear<int> const&, ::fixy::Linear<void*>, w::RegionToken>;
     using refuses = witnesses<int, void*, ::fixy::Affine<int>, std::unique_ptr<int>>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::is_already_consume_disciplined> {
-    using accepts = witnesses<::fixy::Linear<int>, ::fixy::Affine<int>, ::fixy::Affine<void*>&&>;
+    using accepts = witnesses<::fixy::Linear<int>, ::fixy::Affine<int>, ::fixy::Affine<void*>&&, w::RegionToken>;
     using refuses = witnesses<int, void*, std::unique_ptr<int>>;
 };
 

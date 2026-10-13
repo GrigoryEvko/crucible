@@ -19,6 +19,10 @@
 // ends the process, and a handle takes the role again after the last one
 // ended.
 //
+// Each handle is linear (foundation/Linear.h).  Its door is release(),
+// which gives the role back to the channel and the token back to the
+// caller.  The handle is then unbound.
+//
 // The endpoint accessors are members named producer and consumer rather
 // than mint_ free functions.  Their admission is the parameter type and
 // the claim.  A caller that cannot produce a Permission<producer_tag,
@@ -31,6 +35,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
@@ -97,7 +102,7 @@ public:
 
     PermissionedSpscChannel() noexcept = default;
 
-    class ProducerHandle {
+    class[[= ::foundation::linear::linear{}]] ProducerHandle {
         // The move clears the binding, so a moved-from handle cannot
         // push: a defaulted move of an empty Permission is a no-op, and
         // a reference or a plain pointer would let the source and the
@@ -135,6 +140,15 @@ public:
             if (ch_.is_bound()) ch_->producer_claim_.release();
         }
 
+        // The release door.  The handle gives the producer role back to the
+        // channel and the token back to the caller, and it is unbound after
+        // the call.  The token can open a producer handle again.
+        [[nodiscard]] ::foundation::permissions::Permission<producer_tag, Brand> release() && noexcept {
+            ch_->producer_claim_.release();
+            ch_.unbind();
+            return std::move(perm_);
+        }
+
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_->ring_.try_push(item); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
@@ -149,7 +163,7 @@ public:
         }
     };
 
-    class ConsumerHandle {
+    class[[= ::foundation::linear::linear{}]] ConsumerHandle {
         // A binding that the move clears, for the same reason as in
         // ProducerHandle.
         ::foundation::ChannelBinding<PermissionedSpscChannel> ch_;
@@ -178,6 +192,13 @@ public:
 
         ~ConsumerHandle() {
             if (ch_.is_bound()) ch_->consumer_claim_.release();
+        }
+
+        // The release door, as for ProducerHandle.
+        [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
+            ch_->consumer_claim_.release();
+            ch_.unbind();
+            return std::move(perm_);
         }
 
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }

@@ -22,6 +22,6 @@ int main() {
     namespace fp = ::foundation::permissions;
     auto token = fp::mint_permission_root<Region>();
     auto back = fp::with_read_view(std::move(token), [](fp::ReadView<Region> const&) noexcept {});
-    fp::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     return 0;
 }

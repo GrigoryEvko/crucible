@@ -13,6 +13,8 @@
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 
+#include <foundation/Linear.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
@@ -252,6 +254,13 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
         std::fprintf(stderr, "the consumer got the wrong payloads\n");
         return 1;
     }
+
+    // The release door gives the consumer role and its token back, and the
+    // released handle names no channel.  The token opens a new consumer
+    // handle with no second claim.
+    auto second_consumer = channel.consumer(std::move(consumer).release());
+    if (consumer.channel_identity().is_bound() || !second_consumer.channel_identity().is_bound()) return 1;
+    ::foundation::linear::drop(std::move(second_consumer).release());
     return 0;
 }
 

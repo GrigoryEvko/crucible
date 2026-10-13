@@ -91,7 +91,7 @@ void run_on_four_threads(Body const& body) {
         [&body](WriteView<worker_tags::Second, WholeBrand> const&, WorkerCtx const&) noexcept { body(); },
         [&body](WriteView<worker_tags::Third, WholeBrand> const&, WorkerCtx const&) noexcept { body(); },
         [&body](WriteView<worker_tags::Fourth, WholeBrand> const&, WorkerCtx const&) noexcept { body(); });
-    ::foundation::permissions::permission_drop(std::move(rebuilt));
+    ::foundation::linear::drop(std::move(rebuilt));
 }
 
 void test_single_thread_operations() {

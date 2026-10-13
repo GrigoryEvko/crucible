@@ -38,6 +38,8 @@
 // through the return value.
 
 #include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
@@ -302,8 +304,10 @@ private:
 // it can travel in a message to a reader on another thread, and it does
 // not copy, so one parked token has one loan.  A view comes from a loan
 // only through with_read_view.
+// A loan is a linear value: the lender gets its token back only with the
+// loan, so a lost loan keeps the token parked.
 template <typename Tag, typename Brand>
-class [[nodiscard]] ReadLoan {
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] ReadLoan {
     static_assert(PermissionTag<Tag>, "ReadLoan<Tag>: Tag must be an empty non-union class type, as a "
                                       "Permission tag is");
     static_assert(::foundation::brand::IsBrand<Brand>, "ReadLoan<Tag, Brand>: Brand must be an empty class type: "
@@ -319,11 +323,13 @@ public:
                                        "token does not wait for");
     ReadLoan& operator=(const ReadLoan&) = delete("a ReadLoan is one read right. A copy is a second right that "
                                                   "the parked token does not wait for");
-    // User-provided, and not defaulted, so that no constructor is
-    // trivial: std::bit_cast and std::start_lifetime_as then refuse the
-    // type.  The move assignment stays defaulted, as on Permission.
-    constexpr ReadLoan(ReadLoan&&) noexcept {}
-    constexpr ReadLoan& operator=(ReadLoan&&) noexcept = default;
+    // The shape of Permission.  The move constructor and the destructor
+    // are trivial, so the ABI passes a loan in a register.  The move
+    // assignment is user-provided, so std::bit_cast refuses the loan, and
+    // an assignment stays a call in the tree of GCC.  The annotation
+    // no_start_over_bytes refuses the checked lifetime start.
+    constexpr ReadLoan(ReadLoan&&) noexcept = default;
+    constexpr ReadLoan& operator=(ReadLoan&&) noexcept { return *this; }
     ~ReadLoan() = default;
 
 private:
@@ -337,9 +343,11 @@ private:
 
 // The token of a region while its read loan is out.  It holds the token
 // and gives no access to it.  Only mint_permission_after_loan, which
-// takes the loan too, gives the token back.
+// takes the loan too, gives the token back, so that mint is the release
+// door of a parked token.  A parked token is a linear value, as the token
+// that it holds is.
 template <typename Tag, typename Brand>
-class [[nodiscard]] LentPermission {
+class [[nodiscard]][[= ::foundation::linear::linear{}]] LentPermission {
 public:
     using tag_type = Tag;
     using brand_type = Brand;

@@ -11,9 +11,11 @@
 //                           over a buffer
 //
 // Both are legal code with no undefined behavior.  So a proof type must
-// be neither trivially copyable nor an implicit-lifetime type.  The
-// usual repair is a user-provided constructor in place of a defaulted
-// one: it compiles to nothing for an empty class, and it is not trivial.
+// not be trivially copyable.  It also must not be an implicit-lifetime
+// type, unless it carries the annotation no_start_over_bytes, which the
+// checked lifetime start refuses.  The usual repair is a user-provided
+// constructor or assignment in place of a defaulted one: it compiles to
+// nothing for an empty class, and it is not trivial.
 //
 // The walk reads every class that is not a template in ::foundation and
 // ::fixy, from the headers that every_header.h names.  Reflection cannot
@@ -157,6 +159,7 @@ using BgBase = fe::detail::ContextBase<fe::Bg, fe::detail::ctx_mint::bg_key, fe:
 // the context, and a forged context passes every ctx-bound gate.
 inline constexpr std::meta::info template_witnesses[] = {
     ^^fp::Permission<Region>,
+    ^^fp::SharedPermission<Region>,
     ^^fp::ReadView<Region>,
     ^^fp::WriteView<Region, RegionBrand>,
     ^^fp::ReadLoan<Region>,
@@ -181,15 +184,6 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^sess::PermHold<fp::PermSet<Region>>,
     ^^sess::SharedReader<Region>,
 };
-
-// A gated template whose value confers nothing.  A forged one grants no
-// access, and its header pins that it confers none.
-inline constexpr std::meta::info inert_templates[] = {
-    ^^fp::SharedPermission,
-};
-static_assert(!fp::SharedPermission<Region>::confers_runtime_access,
-              "SharedPermission is on the inert list only while it confers no access.  Give it a user-provided "
-              "copy and move, and move it to the witness list, before it gates anything.");
 
 // The class templates of the two namespaces that anyone may build.  Each
 // is a trait, a row, a set of tags, a fold helper, or a value carrier
@@ -290,9 +284,7 @@ struct ForgeVerdict {
     collect_class_templates(^^fe, templates);
     collect_class_templates(^^fp, templates);
     for (const std::meta::info class_template : templates) {
-        if (has_witness(class_template) || is_listed(inert_templates, class_template)
-            || is_listed(open_templates, class_template))
-            continue;
+        if (has_witness(class_template) || is_listed(open_templates, class_template)) continue;
         if (verdict.unclassified_templates++ == 0) verdict.first_unclassified = class_template;
     }
     return verdict;
@@ -354,9 +346,6 @@ struct ByteCopyAllowance {
 };
 
 inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
-    {^^::fixy::Qtt,
-     "for a trivially copyable payload, peek and mint_linear already build the same duplicate.  A payload that is "
-     "not trivially copyable makes the wrapper not trivially copyable"},
     {^^::fixy::Tagged,
      "mint_tagged builds a tag that names a source from any value.  An earned tag makes the wrapper not trivially "
      "copyable"},
@@ -380,15 +369,12 @@ inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
      "the substrate keeps the trivial copyability of its payload by design, and foundation/algebra/Graded.h pins "
      "that parity.  A band of fixy/Bands.h is the substrate, so a byte image of a band claims a tier that mint_band "
      "did not set.  The entry stays until the parity rule changes"},
-    {^^::foundation::permissions::SharedPermission,
-     "a share confers no run-time access, and its header pins that.  The guard of the pool is the object that "
-     "stands for a live share, and the walk above keeps the token on the inert list"},
 };
 
 // The ledger only shrinks.  Lower this count in the commit that removes an
 // entry.  A new entry also needs a higher count, so the change shows the
 // reason of that entry to its reviewer.
-inline constexpr std::size_t byte_copy_ledger_size = 10;
+inline constexpr std::size_t byte_copy_ledger_size = 8;
 static_assert(std::size(byte_copy_ledger) == byte_copy_ledger_size,
               "the byte-copy ledger changed size.  Lower byte_copy_ledger_size when an entry leaves.  A new entry "
               "needs a reason that a reviewer accepts, and then a higher count");
@@ -701,11 +687,13 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // ── the route ledger ────────────────────────────────────────────────
 //
 // Routes that still forge every proof type above.  None of them is
-// refused by a property of the type, and each one gives a pointer to an
-// object whose lifetime never started.  Implicit object creation starts
-// the life of an implicit-lifetime type only, and a proof type is not
-// one, so an array or an aggregate of proof types starts with no element
-// alive.  A read through the pointer is undefined behavior.  main()
+// refused by a property of the type.  Implicit object creation starts the
+// life of an implicit-lifetime type only.  Most proof types are not one,
+// so each route gives a pointer to an object whose lifetime never started,
+// and a read through the pointer is undefined behavior.  A permission
+// token is one, because its move constructor is trivial, so the route
+// from a void pointer gives a token with no undefined behavior.  The rule
+// proof-routes refuses that route in the tree.  main()
 // compiles and runs each route for each pinned proof type, and never
 // reads through the pointer.  A route that no longer compiles fails the
 // build, and its entry then leaves the ledger.

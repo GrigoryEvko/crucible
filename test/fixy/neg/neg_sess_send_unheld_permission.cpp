@@ -25,7 +25,7 @@ int main() {
     auto head = s::mint_session_handle<Proto>(Wire{});
     auto at_end =
         std::move(head).send(perm::mint_permission_root<Region>(), [](Wire&, perm::Permission<Region>& token) noexcept {
-            perm::permission_drop(std::move(token));
+            ::foundation::linear::drop(std::move(token));
             return true;
         });
     (void)std::move(at_end).close();

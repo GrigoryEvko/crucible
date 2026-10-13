@@ -47,6 +47,7 @@
 // fixy/Federation.h defines.
 
 #include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -862,10 +863,14 @@ private:
 // defeats forward-declare-and-specialize as a way of avoiding this
 // header.
 
+// A token is a linear value: each path uses it one time, through a door.
 // The annotation authority tells the gate of foundation/effects/Computation.h
-// that a token is the authority to touch a region.
+// that a token is the authority to touch a region.  The annotation
+// no_start_over_bytes refuses a token to the checked lifetime start of
+// foundation/Lifetime.h.
 template <typename Tag, typename Brand>
-class [[nodiscard]][[= ::foundation::linear::authority{}]] Permission {
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]] Permission {
     static_assert(PermissionTag<Tag>, "Permission<Tag>: Tag must be an empty non-union class type "
                                       "(see PermissionTag concept above).  Pointers, references, "
                                       "primitives, enums, unions, and stateful classes are rejected. "
@@ -910,14 +915,19 @@ public:
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
     Permission& operator=(const Permission&) =
         delete("Permission<Tag>: linear — assignment would overwrite an existing permission token.");
-    // User-provided, and not defaulted.  A defaulted move is trivial, so
-    // the token was trivially copyable and an implicit-lifetime type:
-    // std::bit_cast built an exclusive token from a byte, and
-    // std::start_lifetime_as built one over a buffer, each with no
-    // constructor call.  With this move no constructor is trivial, so
-    // neither route applies.  The destructor stays trivial.
-    constexpr Permission(Permission&&) noexcept {}
-    constexpr Permission& operator=(Permission&&) noexcept = default;
+    // The move constructor and the destructor are trivial, so the ABI
+    // passes a token in a register.  The move assignment is user-provided,
+    // so the token is not trivially copyable, and std::bit_cast builds no
+    // token from a byte.  An assignment also stays a call in the tree of
+    // GCC, so a rule of the plugin can read it.  An assignment over a live
+    // token drops that token with no door.
+    //
+    // The trivial move constructor makes the token an implicit-lifetime
+    // type.  The rule start-lifetime refuses std::start_lifetime_as in the
+    // tree, and the annotation no_start_over_bytes refuses the checked
+    // lifetime start of foundation/Lifetime.h.
+    constexpr Permission(Permission&&) noexcept = default;
+    constexpr Permission& operator=(Permission&&) noexcept { return *this; }
     ~Permission() = default;
 
     // A token lives in a scope, a handle or a parameter.  A new-expression
@@ -940,11 +950,8 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 };
 
-// Discards the token where letting it fall out of scope would read as
-// an oversight.
-
-template <typename Tag, typename Brand>
-constexpr void permission_drop(Permission<Tag, Brand>&&) noexcept {}
+// A token that a caller gives up goes through the drop door of
+// foundation/Linear.h, ::foundation::linear::drop.
 
 // The one door that drops a brand.  It consumes the token of one instance
 // and gives a token on the erased identity DefaultBrand, which each erased
@@ -1216,9 +1223,11 @@ template <typename... Args>
 mint_permission_share(Args&&...) noexcept;
 
 // A share is the authority to read a region, so it carries the annotation
-// authority too.
+// authority too.  A copy of a share proves nothing more than the share, so
+// a share is not linear.
 template <typename Tag, typename Brand>
-class [[nodiscard]][[= ::foundation::linear::authority{}]] SharedPermission {
+class [[nodiscard]][[= ::foundation::linear::authority{}]][[= ::foundation::lifetime::no_start_over_bytes{}]]
+    SharedPermission {
     static_assert(::foundation::brand::IsBrand<Brand>, "SharedPermission<Tag, Brand>: Brand must be an empty class "
                                                        "type: the closure of a mint's fresh lambda, or DefaultBrand.");
 
@@ -1263,10 +1272,14 @@ public:
     // No conversion drops the brand of a share.  A share of one region is
     // never a share of the erased identity, which every region of the tag
     // shares.
+    // The constructors and the destructor are trivial, so the ABI passes a
+    // share in a register.  The assignments are user-provided, so the
+    // share is not trivially copyable, and std::bit_cast builds no share
+    // from a byte.
     constexpr SharedPermission(const SharedPermission&) noexcept = default;
     constexpr SharedPermission(SharedPermission&&) noexcept = default;
-    constexpr SharedPermission& operator=(const SharedPermission&) noexcept = default;
-    constexpr SharedPermission& operator=(SharedPermission&&) noexcept = default;
+    constexpr SharedPermission& operator=(const SharedPermission&) noexcept { return *this; }
+    constexpr SharedPermission& operator=(SharedPermission&&) noexcept { return *this; }
     ~SharedPermission() = default;
 
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
@@ -1275,8 +1288,10 @@ public:
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
+// The destructor gives the share back to the pool, so the end of the scope
+// of a guard is its named door.
 template <typename Tag, typename Brand>
-class [[nodiscard]] SharedPermissionGuard {
+class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]] SharedPermissionGuard {
     SharedPermissionPool<Tag, Brand>* pool_ = nullptr;
 
     constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag, Brand>& p) noexcept : pool_{&p} {}

@@ -17,6 +17,6 @@ int main() {
     ::fixy::BgDrainCtx const drain{::foundation::effects::testing::bg()};
     auto authority =
         ::foundation::permissions::mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>(drain);
-    ::foundation::permissions::permission_drop(std::move(authority));
+    ::foundation::linear::drop(std::move(authority));
     return 0;
 }

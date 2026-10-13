@@ -68,6 +68,6 @@ int main() {
             (void)work;
             return std::move(at_end);
         });
-    perm::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     return 0;
 }

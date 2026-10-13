@@ -2,6 +2,9 @@
 
 #include <foundation/permissions/ReadView.h>
 
+#include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
+
 namespace foundation::permissions {
 
 static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> must be a 1-byte empty class");
@@ -12,13 +15,35 @@ static_assert(sizeof(LentPermission<detail::read_view_test_tag>) == 1, "a parked
 
 // No route builds a view, a loan or a parked token without a
 // constructor.  std::bit_cast needs a trivially copyable type, and
-// std::start_lifetime_as needs an implicit-lifetime type.
+// std::start_lifetime_as needs an implicit-lifetime type.  A loan has the
+// shape of a token: its move constructor is trivial, so it is an
+// implicit-lifetime type, and the checked lifetime start refuses it.
 static_assert(!std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>);
 static_assert(!std::is_implicit_lifetime_v<ReadView<detail::read_view_test_tag>>);
 static_assert(!std::is_trivially_copyable_v<ReadLoan<detail::read_view_test_tag>>);
-static_assert(!std::is_implicit_lifetime_v<ReadLoan<detail::read_view_test_tag>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<ReadLoan<detail::read_view_test_tag>>);
 static_assert(!std::is_trivially_copyable_v<LentPermission<detail::read_view_test_tag>>);
 static_assert(!std::is_implicit_lifetime_v<LentPermission<detail::read_view_test_tag>>);
+
+namespace detail::read_view_linear_checks {
+
+using Loan = ReadLoan<read_view_test_tag, read_view_brand_a>;
+using Lent = LentPermission<read_view_test_tag, read_view_brand_a>;
+using View = ReadView<read_view_test_tag, read_view_brand_a>;
+
+// The move constructor of a loan is trivial, so the ABI passes a loan in a
+// register.  Its move assignment is user-provided.
+static_assert(std::is_trivially_move_constructible_v<Loan>);
+static_assert(!std::is_trivially_move_assignable_v<Loan>);
+
+// A loan and a parked token each carry the annotation linear.  A view
+// cannot move, so it is not linear.
+static_assert(::foundation::linear::is_linear_v<Loan>);
+static_assert(::foundation::linear::is_linear_v<Lent>);
+static_assert(::foundation::linear::is_marked_linear(^^Lent));
+static_assert(!::foundation::linear::is_linear_v<View>);
+
+}  // namespace detail::read_view_linear_checks
 static_assert(!std::is_default_constructible_v<ReadView<detail::read_view_test_tag>>);
 
 // A view does not copy and does not move, so it cannot leave the frame of
@@ -71,7 +96,7 @@ static_assert(door_hands_the_source_back());
         with_read_view(std::move(loan), [](ReadView<read_view_test_tag, Brand> const&) noexcept { return 7; });
     auto token = mint_permission_after_loan(std::move(lent), std::move(loan_back));
     constexpr bool keeps_the_brand = std::is_same_v<::foundation::brand::brand_of_t<decltype(token)>, Brand>;
-    permission_drop(std::move(token));
+    ::foundation::linear::drop(std::move(token));
     return value == 7 && keeps_the_brand && ::foundation::brand::IsFreshBrand<Brand>;
 }
 static_assert(loan_round_trip());

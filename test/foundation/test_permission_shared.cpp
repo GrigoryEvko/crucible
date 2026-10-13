@@ -49,7 +49,10 @@ struct MetricsRegion {
 void test_compile_time_properties() {
     static_assert(sizeof(SharedPermission<ConfigRegion>) == 1);
     static_assert(std::is_copy_constructible_v<SharedPermission<ConfigRegion>>);
-    static_assert(std::is_trivially_copyable_v<SharedPermission<ConfigRegion>>);
+    // A copy of a share costs nothing, and its assignments are
+    // user-provided, so std::bit_cast builds no share from bytes.
+    using ConfigShare = SharedPermission<ConfigRegion>;
+    static_assert(std::is_trivially_copy_constructible_v<ConfigShare> && !std::is_trivially_copyable_v<ConfigShare>);
 
     static_assert(!std::is_copy_constructible_v<SharedPermissionGuard<ConfigRegion>>);
     static_assert(std::is_move_constructible_v<SharedPermissionGuard<ConfigRegion>>);

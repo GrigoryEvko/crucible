@@ -28,6 +28,6 @@ int main() {
     // The type that the door returns, the erased token of the tag.
     using Erased = decltype(fp::permission_erase_brand(fp::mint_permission_root<Region>()));
     Erased erased = std::move(branded);
-    fp::permission_drop(std::move(erased));
+    ::foundation::linear::drop(std::move(erased));
     return 0;
 }

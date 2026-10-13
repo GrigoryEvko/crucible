@@ -19,6 +19,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -187,6 +188,15 @@ void test_single_append_drain() {
 
     auto empty = consumer.try_drain_one();
     CRUCIBLE_TEST_REQUIRE(!empty.has_value());
+
+    // The release door gives each role and its token back, and each token
+    // opens a new handle of its role with no second claim.
+    auto second_producer = log.producer(std::move(producer).release());
+    auto second_consumer = log.consumer(std::move(consumer).release());
+    CRUCIBLE_TEST_REQUIRE(second_producer.try_append_one(source));
+    CRUCIBLE_TEST_REQUIRE(second_consumer.size_approx() == 1);
+    ::foundation::linear::drop(std::move(second_producer).release());
+    ::foundation::linear::drop(std::move(second_consumer).release());
 }
 
 // A drain with a limit stops at the limit, and the next drain takes the

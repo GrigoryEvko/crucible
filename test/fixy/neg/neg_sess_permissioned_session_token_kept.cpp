@@ -30,6 +30,6 @@ int main() {
     auto [head, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, token);
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     static_cast<void>(std::move(hold).into_permissions());
-    perm::permission_drop(std::move(token));
+    ::foundation::linear::drop(std::move(token));
     return 0;
 }

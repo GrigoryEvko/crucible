@@ -10,11 +10,17 @@
 // Two runs check the positive half.  The moved-into handle keeps working,
 // and a handle moved into a thread carries the channel there with no data
 // race, which the thread sanitizer preset checks.
+//
+// A handle that holds a linear token is linear, and release() is its door.
+// The door gives the role back to the channel and the token back to the
+// caller, so the token opens a new handle.  A released handle names no
+// channel, as a moved-from handle does.
 
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -51,6 +57,16 @@ static_assert(!std::is_copy_constructible_v<Spsc::ProducerHandle>);
 static_assert(std::is_nothrow_move_constructible_v<Spsc::ProducerHandle>);
 static_assert(!std::is_move_assignable_v<Spsc::ProducerHandle>);
 static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
+
+// A handle that holds a linear token carries the annotation linear.  The
+// producer handle of an MPSC channel holds a share of a pool, which is not
+// linear, so that handle is not linear.
+static_assert(foundation::linear::is_marked_linear(^^Spsc::ProducerHandle));
+static_assert(foundation::linear::is_marked_linear(^^Spsc::ConsumerHandle));
+static_assert(foundation::linear::is_marked_linear(^^Mpsc::ConsumerHandle));
+static_assert(foundation::linear::is_linear_v<Spsc::ProducerHandle>);
+static_assert(foundation::linear::is_linear_v<Mpsc::ConsumerHandle>);
+static_assert(!foundation::linear::is_linear_v<Mpsc::ProducerHandle>);
 
 // The binding on its own: a move leaves the source empty, and the moved-into
 // binding reaches the object.
@@ -174,6 +190,15 @@ constexpr Attack kAttacks[] = {
     if (!producer_moved.try_push(7)) return 1;
     const auto item = consumer_moved.try_pop();
     if (!item || *item != 7) return 1;
+    // The release door gives each role and its token back, and the
+    // released handle names no channel.  Each token opens a new handle of
+    // its role with no second claim.
+    auto second_producer = channel.producer(std::move(producer_moved).release());
+    auto second_consumer = channel.consumer(std::move(consumer_moved).release());
+    if (producer_moved.channel_identity().is_bound() || consumer_moved.channel_identity().is_bound()) return 1;
+    if (!second_producer.try_push(8) || second_consumer.size_approx() != 1) return 1;
+    foundation::linear::drop(std::move(second_producer).release());
+    foundation::linear::drop(std::move(second_consumer).release());
     return 0;
 }
 

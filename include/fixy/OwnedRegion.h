@@ -35,6 +35,7 @@
 #include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
@@ -144,8 +145,9 @@ template <std::size_t N>
 struct disjoint;
 }  // namespace row_discipline
 
+// A receipt is a linear value: recombine is its one door.
 template <typename Tag, typename Brand, typename SplitName, std::size_t N>
-class [[nodiscard]] Disjoint {
+class [[nodiscard]][[= ::foundation::linear::linear{}]] Disjoint {
     static_assert(N > 0, "Disjoint: a split of zero shards proves nothing.");
     static_assert(::foundation::brand::IsBrand<SplitName>,
                   "Disjoint: SplitName must be an empty class type, the fresh name of one split site.");
@@ -213,8 +215,7 @@ using split_parts_t = typename split_parts_for_<T, Tag, Brand, SplitName, std::m
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand,
           typename SplitName = CRUCIBLE_FRESH_BRAND>
     requires(N > 0 && std::is_object_v<T>)
-[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
-mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;
+[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N> mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;
 
 }  // namespace fixy
 
@@ -265,12 +266,14 @@ mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permiss
 
 template <typename T, typename Allocator, typename Tag, typename Brand>
     requires ArrayArena<Allocator, T>
-[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(
-    ::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
-    ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
+[[nodiscard]] OwnedRegion<T, Tag, Brand>
+mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
+                  ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
 
+// A region is linear (foundation/Linear.h).  Its doors are the split,
+// recombine, the shared door of fixy/SharedRegion.h and release().
 template <typename T, typename Tag, typename Brand>
-class [[nodiscard]] OwnedRegion {
+class [[nodiscard]][[= ::foundation::linear::linear{}]] OwnedRegion {
     static_assert(::foundation::brand::IsBrand<Brand>, "OwnedRegion<T, Tag, Brand>: Brand must be an empty class "
                                                        "type: the brand of the permission the region was built "
                                                        "from, or DefaultBrand.");
@@ -355,6 +358,15 @@ public:
         return ::fixy::mint_owned_region(base, count, std::move(perm));
     }
 
+    // The release door.  The region gives its token back to the caller,
+    // and it covers no byte after the call.  The storage stays with its
+    // owner, as for wrap().
+    [[nodiscard]] constexpr ::foundation::permissions::Permission<Tag, Brand> release() && noexcept {
+        base_ = nullptr;
+        count_ = 0;
+        return std::move(perm_);
+    }
+
     [[nodiscard]] constexpr std::span<T> span() noexcept { return std::span<T>{base_, count_}; }
     [[nodiscard]] constexpr std::span<T const> cspan() const noexcept { return std::span<T const>{base_, count_}; }
 
@@ -436,9 +448,9 @@ mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permiss
 
 template <typename T, typename Allocator, typename Tag, typename Brand>
     requires ArrayArena<Allocator, T>
-[[nodiscard]] OwnedRegion<T, Tag, Brand> mint_owned_region(
-    ::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
-    ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
+[[nodiscard]] OwnedRegion<T, Tag, Brand>
+mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
+                  ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
     T* base = (count == 0) ? nullptr : arena.template alloc_array<T>(alloc_token, count);
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
@@ -461,8 +473,7 @@ constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
 
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>
     requires(N > 0 && std::is_object_v<T>)
-[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N>
-mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept {
+[[nodiscard]] split_parts_t<T, Tag, Brand, SplitName, N> mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept {
     static_assert(sizeof...(Never) == 0,
                   "mint_split<N>(region) takes one template argument. The name of the split follows it and is "
                   "minted here, because a caller who could spell it could write a receipt for a split it did "

@@ -46,8 +46,8 @@ concept CanPair = requires(A const& a, B const& b) { about_one_region(a, b); };
         static_assert(!brand::SameBrand<Other, Proof>);
         return true;
     });
-    perm::permission_drop(std::move(back));
-    perm::permission_drop(std::move(other));
+    ::foundation::linear::drop(std::move(back));
+    ::foundation::linear::drop(std::move(other));
     return paired ? 0 : 1;
 }
 
@@ -83,7 +83,7 @@ template <class Tag, int Which>
         // sound because the tokens never overlap in time.
         static_assert(std::is_same_v<Loop, decltype(perm::mint_permission_root<Region>())> == false,
                       "a second site inside the body is still a second brand");
-        perm::permission_drop(std::move(token));
+        ::foundation::linear::drop(std::move(token));
         ++minted;
     }
     return minted == 3 ? 0 : 1;
@@ -112,8 +112,8 @@ concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](au
     auto back = perm::with_read_view(std::move(owned), [](auto const& proof) noexcept {
         static_assert(!CanPair<Other, std::remove_cvref_t<decltype(proof)>>);
     });
-    perm::permission_drop(std::move(back));
-    perm::permission_drop(std::move(other));
+    ::foundation::linear::drop(std::move(back));
+    ::foundation::linear::drop(std::move(other));
     return 0;
 }
 
@@ -125,7 +125,7 @@ concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](au
     static_assert(brand::IsErased<decltype(erased)>);
     static_assert(!std::is_constructible_v<decltype(branded), decltype(erased)&&>, "no brand from the erased spelling");
     static_assert(!std::is_constructible_v<decltype(erased), decltype(branded)&&>, "no erasure outside the door");
-    perm::permission_drop(std::move(erased));
+    ::foundation::linear::drop(std::move(erased));
     return 0;
 }
 

@@ -245,7 +245,7 @@ struct RightBody {
     const std::uint32_t live_before = s::watch::live_count();
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, async_tags::Left, async_tags::Right>(
         ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, LeftBody{}, RightBody{});
-    perm::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     if (g_left_received.load(std::memory_order_relaxed) != 22
         || g_right_received.load(std::memory_order_relaxed) != 11) {
         std::fprintf(stderr, "test_session_async_channel: the pair did not exchange its two messages\n");

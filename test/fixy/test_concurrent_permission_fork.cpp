@@ -47,7 +47,6 @@ namespace {
 namespace eff = ::foundation::effects;
 using ::foundation::core::Atomic;
 using ::foundation::permissions::mint_permission_root;
-using ::foundation::permissions::permission_drop;
 using ::foundation::permissions::WriteView;
 
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
@@ -81,7 +80,7 @@ void test_bodies_run_at_the_same_time() {
         });
     static_assert(std::is_same_v<decltype(rebuilt), decltype(whole)>, "the parent comes back with its own brand");
     CRUCIBLE_FATAL_INVARIANT(!left_on_main.load_acquire() && !right_on_main.load_acquire());
-    permission_drop(std::move(rebuilt));
+    ::foundation::linear::drop(std::move(rebuilt));
 }
 
 // The copies of the recorded bodies, and the runs that found each fact of
@@ -122,7 +121,7 @@ void test_bodies_are_copied_on_the_calling_thread_in_child_order() {
         BgCtx{eff::testing::bg()}, mint_permission_root<fork_tags::Whole>(), left, right);
     CRUCIBLE_FATAL_INVARIANT(body_copies.load_acquire() == 2);
     CRUCIBLE_FATAL_INVARIANT(correct_runs.load_acquire() == 2);
-    permission_drop(std::move(rebuilt));
+    ::foundation::linear::drop(std::move(rebuilt));
 }
 
 // Two writers, each with its own write permission, read one view of a
@@ -150,9 +149,9 @@ void test_fork_inside_the_door_of_a_read_view() {
             // The fork has returned, so both workers have joined.
             CRUCIBLE_FATAL_INVARIANT(left_done.load_acquire() == 1);
             CRUCIBLE_FATAL_INVARIANT(right_done.load_acquire() == 1);
-            permission_drop(std::move(rebuilt));
+            ::foundation::linear::drop(std::move(rebuilt));
         });
-    permission_drop(std::move(config_back));
+    ::foundation::linear::drop(std::move(config_back));
 }
 
 }  // namespace

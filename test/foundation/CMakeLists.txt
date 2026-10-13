@@ -1166,16 +1166,21 @@ foundation_neg_compile_test(neg_read_view_host_door_closed
   "is private within this context"
   "ReadView<Tag, Brand>::ReadView\\(\\) .with Tag = .*Region")
 
-# No route builds a token, the mint key or a read proof without a
-# constructor.  std::bit_cast needs a trivially copyable type, and
-# std::start_lifetime_as an implicit-lifetime one, so each of the three
-# has user-provided constructors and no trivial one.
+# No route builds a token, a share, the mint key or a read proof without
+# a constructor.  std::bit_cast needs a trivially copyable type, and
+# std::start_lifetime_as an implicit-lifetime one.  The key and a read
+# proof have user-provided constructors and no trivial one.  A token, a
+# share and a loan keep a trivial move constructor, so the ABI passes them
+# in a register, and a user-provided assignment refuses std::bit_cast.
+# That trivial constructor makes them implicit-lifetime: the rule
+# start-lifetime refuses std::start_lifetime_as in the tree, and their
+# annotation no_start_over_bytes refuses the checked lifetime start.
 foundation_neg_compile_test(neg_permission_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::permissions::Permission<.*Region"
   "is_trivially_copyable_v<_To>")
-foundation_neg_compile_test(neg_permission_forged_by_start_lifetime_as
-  "static assertion failed"
-  "foundation::permissions::Permission<.*Region.*. is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_shared_permission_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::SharedPermission<.*Region"
+  "is_trivially_copyable_v<_To>")
 foundation_neg_compile_test(neg_mint_key_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::permissions::perm_mint_key>"
   "is_trivially_copyable_v<_To>")
@@ -1191,9 +1196,6 @@ foundation_neg_compile_test(neg_read_loan_forged_by_bit_cast
 foundation_neg_compile_test(neg_lent_permission_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::permissions::LentPermission<.*Region"
   "is_trivially_copyable_v<_To>")
-foundation_neg_compile_test(neg_read_loan_forged_by_start_lifetime_as
-  "static assertion failed"
-  "foundation::permissions::ReadLoan<.*Region.*. is not an implicit-lifetime type")
 foundation_neg_compile_test(neg_lent_permission_forged_by_start_lifetime_as
   "static assertion failed"
   "foundation::permissions::LentPermission<.*Region.*. is not an implicit-lifetime type")

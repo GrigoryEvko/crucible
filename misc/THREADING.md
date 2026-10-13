@@ -288,7 +288,7 @@ mint_permission_root<Tag>()      → Permission<Tag>            // create
 mint_permission_split<L, R>(p)        → (Permission<L>, Permission<R>)  // CSL split
 mint_permission_combine<In>(l, r)     → Permission<In>             // CSL merge
 mint_permission_split_n<Cs...>(p)     → tuple<Permission<Cs>...>   // n-ary split
-permission_drop(p)               → void                       // explicit discard
+linear::drop(std::move(p))       → void                       // explicit discard
 ```
 
 Each factory `static_assert`s on a `splits_into<Parent, Children...>` trait specialisation.  The user declares the region tree once; the type system enforces it everywhere.

@@ -2,6 +2,11 @@
 
 #include <fixy/Qtt.h>
 
+#include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
+
 #include <memory>
 
 namespace fixy {
@@ -46,12 +51,18 @@ static_assert(Affine<int>::usage_grade == ::foundation::algebra::lattices::QttGr
 
 namespace detail::qtt_witness {
 
-// Incomplete on purpose: the recognisers name the templates and
-// instantiate nothing, so an incomplete argument is the honest witness.
-struct tag;
+// The recognisers read the linear marker, which needs a complete class.
+struct tag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 using ExclusiveToken = ::foundation::permissions::Permission<tag>;
 using SharedToken = ::foundation::permissions::SharedPermission<tag>;
+
+// A class that can move and holds a token by value is linear through it.
+struct HoldsToken {
+    ExclusiveToken token;
+};
 
 }  // namespace detail::qtt_witness
 
@@ -59,18 +70,30 @@ using SharedToken = ::foundation::permissions::SharedPermission<tag>;
 // arms still reads as a gate and admits everything, until something
 // asserts that the arms still answer.  Each line names types the
 // recogniser must accept and types it must refuse, and an empty
-// recogniser fails the first, a universal one the second.
+// recogniser fails the first, a universal one the second.  A share is not
+// linear, because a copy of a share proves nothing more than the share.
 static_assert(::foundation::contracts::predicate_accepts<
               is_already_linear, Linear<int>, Linear<int> const&, Linear<int>&&, Linear<void*>,
-              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken const&>());
-static_assert(
-    ::foundation::contracts::predicate_refuses<is_already_linear, int, void*, Affine<int>, std::unique_ptr<int>>());
+              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::HoldsToken const&>());
+static_assert(::foundation::contracts::predicate_refuses<is_already_linear, int, void*, Affine<int>,
+                                                         std::unique_ptr<int>, detail::qtt_witness::SharedToken>());
 
 static_assert(::foundation::contracts::predicate_accepts<
               is_already_consume_disciplined, Linear<int>, Affine<int>, Affine<int> const&, Affine<void*>&&,
-              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken>());
-static_assert(
-    ::foundation::contracts::predicate_refuses<is_already_consume_disciplined, int, void*, std::unique_ptr<int>>());
+              detail::qtt_witness::ExclusiveToken, detail::qtt_witness::HoldsToken>());
+static_assert(::foundation::contracts::predicate_refuses<is_already_consume_disciplined, int, void*,
+                                                         std::unique_ptr<int>, detail::qtt_witness::SharedToken>());
+
+// The shape of the marker: Linear<T> is linear and Affine<T> is not, and
+// neither is trivially copyable, so std::bit_cast builds neither from
+// bytes.  The move assignment is a call, and the move constructor stays
+// trivial in the untracked build.
+static_assert(::foundation::linear::is_marked_linear(^^Linear<int>));
+static_assert(!::foundation::linear::is_linear_v<Affine<int>>);
+static_assert(!std::is_trivially_copyable_v<Linear<int>>);
+static_assert(!std::is_trivially_copyable_v<Affine<int>>);
+static_assert(!std::is_trivially_move_assignable_v<Linear<int>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Linear<int>>);
 
 // The two rejections the gates exist for, stated as the facts they
 // rest on.  The refusals themselves are compile errors, so they are

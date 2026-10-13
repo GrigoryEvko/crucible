@@ -20,6 +20,8 @@
 #include <fixy/session/Classified.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Payload.h>
+#include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
@@ -455,11 +457,21 @@ static_assert(!BuiltFromBytes<fp::perm_mint_key>);
 static_assert(!BuiltFromBytes<fp::ReadView<X>>);
 static_assert(!BuiltFromBytes<TX>, "a copy of a Transferable by bytes is a second token");
 static_assert(!BuiltFromBytes<BX>, "a copy of a Borrowed by bytes is a second loan");
-static_assert(!std::is_implicit_lifetime_v<fp::Permission<X>>);
+// A token and a loan keep a trivial move constructor, so the ABI passes
+// them in a register, and that makes them and a marker that holds one
+// implicit-lifetime types.  Their annotation no_start_over_bytes refuses
+// the checked lifetime start, and the rule start-lifetime refuses
+// std::start_lifetime_as in the tree.
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<fp::Permission<X>>);
 static_assert(!std::is_implicit_lifetime_v<fp::perm_mint_key>);
 static_assert(!std::is_implicit_lifetime_v<fp::ReadView<X>>);
-static_assert(!std::is_implicit_lifetime_v<TX>);
-static_assert(!std::is_implicit_lifetime_v<BX>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<TX>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<BX>);
+// Each marker that carries a token or a loan carries the annotation
+// linear, and a receive is its door.
+static_assert(::foundation::linear::is_marked_linear(^^TX) && ::foundation::linear::is_marked_linear(^^BX)
+              && ::foundation::linear::is_marked_linear(^^RX)
+              && ::foundation::linear::is_marked_linear(^^sess::Returned<int, X>));
 // A marker cannot be built without its token or its proof.
 static_assert(!std::is_constructible_v<TX, int>);
 static_assert(!std::is_constructible_v<BX, int>);
@@ -720,7 +732,7 @@ void borrowed_prefix_on_another_thread() {
     auto [after, token_back] =
         fp::with_read_view(std::move(token), [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
     require(after == 20, "the lender writes after the loan closes");
-    fp::permission_drop(std::move(token_back));
+    ::foundation::linear::drop(std::move(token_back));
     auto ended = std::move(empty).into_permissions();
     (void)ended;
 }

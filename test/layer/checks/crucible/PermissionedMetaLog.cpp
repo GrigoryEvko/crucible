@@ -2,6 +2,8 @@
 
 #include <crucible/PermissionedMetaLog.h>
 
+#include <foundation/Linear.h>
+
 #include <meta>
 
 namespace crucible {
@@ -48,6 +50,15 @@ consteval bool gives_a_record_address() {
 static_assert(!gives_a_record_address<MetaLog>());
 static_assert(!gives_a_record_address<Witness::ProducerHandle>());
 static_assert(!gives_a_record_address<Witness::ConsumerHandle>());
+
+// Each handle holds a linear token, so each handle is linear, and
+// release() gives the token back.
+static_assert(::foundation::linear::is_marked_linear(^^Witness::ProducerHandle)
+              && ::foundation::linear::is_marked_linear(^^Witness::ConsumerHandle));
+static_assert(std::is_same_v<decltype(std::declval<Witness::ProducerHandle>().release()),
+                             ::foundation::permissions::Permission<Witness::producer_tag, WitnessBrand>>);
+static_assert(std::is_same_v<decltype(std::declval<Witness::ConsumerHandle>().release()),
+                             ::foundation::permissions::Permission<Witness::consumer_tag, WitnessBrand>>);
 
 // The check finds a member that returns a reference to a record.
 struct ReferenceReader {

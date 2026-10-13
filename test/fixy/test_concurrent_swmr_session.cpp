@@ -7,6 +7,7 @@
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/HandleTraits.h>
 
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -163,6 +164,13 @@ void test_moved_handles_keep_their_channel() {
     Swmr::ReaderHandle moved_reader = std::move(*reader);
     CRUCIBLE_REQUIRE(moved_reader.load() == 6);
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
+
+    // The release door gives the writer role and its token back, and the
+    // token opens a new writer handle with no second claim.
+    auto second_writer = ses::mint_swmr_writer<Swmr>(swmr, std::move(moved_writer).release());
+    second_writer.publish(8);
+    CRUCIBLE_REQUIRE(moved_reader.load() == 8);
+    ::foundation::linear::drop(std::move(second_writer).release());
 }
 
 void test_session_send_recv() {

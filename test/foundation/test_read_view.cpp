@@ -91,7 +91,7 @@ void test_door_void_body_hands_the_source_back() {
 
     CRUCIBLE_TEST_REQUIRE(ran);
     static_assert(std::is_same_v<decltype(back), decltype(perm)>, "the source comes back with its own brand");
-    permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
 }
 
 // A body that returns a value gives the value and the source.
@@ -104,7 +104,7 @@ void test_door_value_body() {
         with_read_view(std::move(perm), [](ReadView<LoopBounds, Brand> const&) noexcept { return sentinel; });
 
     CRUCIBLE_TEST_REQUIRE(observed == sentinel);
-    permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
 }
 
 void test_door_struct_body() {
@@ -120,7 +120,7 @@ void test_door_struct_body() {
 
     CRUCIBLE_TEST_REQUIRE(result.lo == 42);
     CRUCIBLE_TEST_REQUIRE(result.hi == 99);
-    permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
 }
 
 // A generic body sees the view of the brand of the source, and an erased
@@ -138,7 +138,7 @@ void test_door_lends_the_view_of_the_source_brand() {
     });
     CRUCIBLE_TEST_REQUIRE(branded);
     CRUCIBLE_TEST_REQUIRE(erased);
-    permission_drop(std::move(erased_back));
+    ::foundation::linear::drop(std::move(erased_back));
 }
 
 namespace fork_tags {
@@ -219,8 +219,8 @@ void test_fork_inline_inside_the_door() {
     CRUCIBLE_TEST_REQUIRE(left_seen_at == 1);
     CRUCIBLE_TEST_REQUIRE(right_seen_at == 2);
 
-    permission_drop(std::move(rebuilt));
-    permission_drop(std::move(config_back));
+    ::foundation::linear::drop(std::move(rebuilt));
+    ::foundation::linear::drop(std::move(config_back));
 }
 
 // A view from a live share.  The door holds the guard while the body
@@ -243,7 +243,7 @@ void test_door_over_a_share_guard() {
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
     auto exclusive = pool.try_upgrade();
     CRUCIBLE_TEST_REQUIRE(exclusive.has_value());
-    permission_drop(std::move(*exclusive));
+    ::foundation::linear::drop(std::move(*exclusive));
 }
 
 // A loan travels to a reader on another thread.  The lender holds a
@@ -269,7 +269,7 @@ void test_loan_across_threads() {
     CRUCIBLE_TEST_REQUIRE(reads.load() == 3);
     auto back = mint_permission_after_loan(std::move(lent), std::move(returned));
     static_assert(std::is_same_v<decltype(back), decltype(token)>, "the token comes back with its own brand");
-    permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
 }
 
 // A handle keeps a write token and a read loan, each with the brand of its
@@ -288,8 +288,8 @@ void test_handle_composition_zero_cost() {
     WorkerHandle handle{mint_permission_root<WorkerSlice>(), std::move(loan)};
     static_assert(sizeof(handle) <= 2, "a handle of two empty proof tokens must be at most 2 bytes");
     auto config = mint_permission_after_loan(std::move(lent), std::move(handle.config_loan));
-    permission_drop(std::move(config));
-    permission_drop(std::move(handle.write_perm));
+    ::foundation::linear::drop(std::move(config));
+    ::foundation::linear::drop(std::move(handle.write_perm));
 }
 
 }  // namespace

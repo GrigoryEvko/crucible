@@ -17,6 +17,6 @@ int main() {
     ::fixy::HotFgCtx const foreground = ::foundation::effects::testing::foreground();
     authority = policy.operator_override(foreground, std::move(authority), cog,
                                          crucible::warden::QuarantineState::Permanent, 1, 1);
-    ::foundation::permissions::permission_drop(std::move(authority));
+    ::foundation::linear::drop(std::move(authority));
     return 0;
 }

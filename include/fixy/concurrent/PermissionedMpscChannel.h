@@ -15,7 +15,10 @@
 // The consumer side stays linear because the ring's pop path assumes a
 // sole consumer: the tail is consumer-owned and carries no
 // synchronization, so two consumers would race on the cell reads.  The
-// linear permission turns that race into a compile error.
+// linear permission turns that race into a compile error.  The consumer
+// handle is linear too (foundation/Linear.h).  Its door is release(),
+// which gives the role back to the channel and the token back to the
+// caller.
 //
 // A channel has the brand of the root that its permissions grow from.
 // The caller mints the whole root, names its brand in the channel type,
@@ -31,6 +34,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
@@ -148,7 +152,7 @@ public:
         }
     };
 
-    class ConsumerHandle {
+    class[[= ::foundation::linear::linear{}]] ConsumerHandle {
         // The move clears the binding, so a moved-from handle cannot
         // pop: a defaulted move of an empty Permission is a no-op, and
         // a reference or a plain pointer would let the source and the
@@ -181,6 +185,15 @@ public:
         // the role back.
         ~ConsumerHandle() {
             if (ch_.is_bound()) ch_->consumer_claim_.release();
+        }
+
+        // The release door.  The handle gives the consumer role back to the
+        // channel and the token back to the caller, and it is unbound after
+        // the call.  The token can open a consumer handle again.
+        [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
+            ch_->consumer_claim_.release();
+            ch_.unbind();
+            return std::move(perm_);
         }
 
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }

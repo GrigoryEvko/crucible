@@ -266,9 +266,8 @@ mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, 
     }(std::index_sequence_for<Children...>{});
     // The children never left this frame.  The combine consumes each of
     // them, and it checks the manifest and the brand again.
-    return std::apply(
-        [&ctx](auto&... child) noexcept { return mint_permission_combine_n<Parent>(ctx, std::move(child)...); },
-        children);
+    auto& [... child] = children;
+    return mint_permission_combine_n<Parent>(ctx, std::move(child)...);
 }
 
 namespace row_discipline {

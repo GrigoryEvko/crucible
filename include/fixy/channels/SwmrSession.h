@@ -21,6 +21,10 @@
 // foundation::ChannelBinding, so a moved-from handle cannot publish or
 // load.  The read transport is a polling read over try_load, so the
 // handle waits through the watch while a write is in flight.
+//
+// The writer handle is linear (foundation/Linear.h).  Its door is
+// release(), which gives the writer role back to the session and the
+// token back to the caller.
 
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -29,6 +33,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
@@ -114,7 +119,7 @@ public:
                 T const& initial) noexcept
         : snapshot_{initial}, reader_pool_{std::move(reader_root)} {}
 
-    class WriterHandle {
+    class[[= ::foundation::linear::linear{}]] WriterHandle {
         // The move clears the binding, so a moved-from writer cannot
         // publish while the permission lives in the handle it moved to.
         ::foundation::ChannelBinding<SwmrSession> session_;
@@ -158,6 +163,15 @@ public:
             return *this;
         }
         ~WriterHandle() { release_claim_(); }
+
+        // The release door.  The handle gives the writer role back to the
+        // session and the token back to the caller, and it is unbound after
+        // the call.  The token can open a writer handle again.
+        [[nodiscard]] ::foundation::permissions::Permission<writer_tag, writer_brand> release() && noexcept {
+            session_->writer_claim_.release();
+            session_.unbind();
+            return std::move(perm_);
+        }
 
         void publish(T const& value) noexcept { session_->snapshot_.publish(value); }
 

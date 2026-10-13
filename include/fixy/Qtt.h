@@ -46,7 +46,15 @@
 //
 // With the bit off, sizeof(Linear<T>) == sizeof(T), the move is trivial
 // and the destructor is trivial, because the state lives in a base that
-// is empty and collapses.
+// is empty and collapses.  The move assignment is user-provided in each
+// build, so the wrapper is not trivially copyable: std::bit_cast builds no
+// wrapper from bytes, and an Option of a wrapper takes the owning form.
+//
+// Linear<T> carries the annotation linear of foundation/Linear.h, and
+// Affine<T> does not.  An Affine value can end with no door, so it is not
+// linear.  The friend drop() is the drop door of Linear<T>.  The generic
+// door ::foundation::linear::drop does not apply to a tracked Linear,
+// because it destroys a live wrapper, which the tracker reports.
 //
 // What the bit reads, once it is on:
 //
@@ -72,11 +80,12 @@
 //     that ships.  The key arms one test target today.
 
 #include <fixy/GradedFacade.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/contracts/Armed.h>
-#include <foundation/permissions/Fwd.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -85,15 +94,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-
-// Declared, not included.  The two recognisers below name these
-// templates and instantiate neither, so a declaration is the whole
-// dependency and foundation/permissions/Permission.h does not become a
-// prerequisite of every file that wraps a value.  A change to either
-// template's parameter list breaks this declaration at the compile that
-// follows, which is the intended failure.
-// The declarations live in foundation/permissions/Fwd.h, which carries
-// the defaulted brand and nothing else.
 
 // The consume tracker's key.  A preset sets it for every target at
 // once; a bare include that never sees it gets the off build, and the
@@ -238,17 +238,15 @@ using Affine = Qtt<::foundation::algebra::lattices::QttGrade::Zero, T>;
 // With the arms missing, Affine<Linear<int>> compiles in a release
 // build, and an exactly-once obligation becomes at-most-once.
 //
-// Qtt IS the discipline, and one reflection query recognises every
-// grade of it without an arm per instantiation.  The two permission
-// tokens are a family written once, inside a concept body, and a
-// concept cannot be specialized.  The witnesses in the check file of
-// this header pin both recognisers in both directions, so an arm cannot
-// be removed silently.
-//
-// A new token family whose own type encodes an exactly-once obligation
-// is added to IsPermissionToken below and to the witnesses in the check
-// file of this header.  The second edit is what fails the build when
-// the first is forgotten.
+// The linear marker of foundation/Linear.h is the one source of the first
+// fact.  A permission token, a loan and Linear<T> each carry the
+// annotation linear, and a class that can move and holds one of them by
+// value is linear through it.  A share is not linear, because a copy of a
+// share proves nothing more than the share.  Qtt of either grade is
+// consume-disciplined too, and one reflection query recognises every grade
+// of it.  The witnesses in the check file of this header pin both
+// recognisers in both directions, so a recogniser cannot lose its answer
+// silently.
 //
 // The cv-ref strip lives inside the reflection query, so `Linear<const
 // Token>` answers as `Linear<Token>` does.
@@ -258,28 +256,17 @@ namespace detail {
 template <typename T>
 concept IsQttInstance = ::foundation::reflect::IsInstanceOf<T, ^^Qtt>;
 
-// Qtt at grade One: the exactly-once half of the family.  The grade is
-// read off the wrapper's own member rather than from a second table.
-template <typename T>
-concept IsExactlyOnceQtt =
-    IsQttInstance<T> && (std::remove_cvref_t<T>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
-
-// The permission tokens: empty, move-only, and consumed exactly once by
-// the operation they authorize.
-template <typename T>
-concept IsPermissionToken = ::foundation::reflect::IsInstanceOfAny<T, ^^::foundation::permissions::Permission,
-                                                                   ^^::foundation::permissions::SharedPermission>;
-
 }  // namespace detail
 
 template <typename T>
-struct is_already_linear : std::bool_constant<detail::IsExactlyOnceQtt<T> || detail::IsPermissionToken<T>> {};
+struct is_already_linear : std::bool_constant<::foundation::linear::is_linear_type(^^T)> {};
 
 template <typename T>
 inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
 
 template <typename T>
-struct is_already_consume_disciplined : std::bool_constant<detail::IsQttInstance<T> || detail::IsPermissionToken<T>> {};
+struct is_already_consume_disciplined
+    : std::bool_constant<detail::IsQttInstance<T> || ::foundation::linear::is_linear_type(^^T)> {};
 
 template <typename T>
 inline constexpr bool is_already_consume_disciplined_v = is_already_consume_disciplined<T>::value;
@@ -293,9 +280,14 @@ template <class T, class... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr Affine<T> mint_affine(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>);
 
+// The annotation no_start_over_bytes refuses the checked lifetime start of
+// foundation/Lifetime.h, because the trivial move constructor makes the
+// wrapper an implicit-lifetime type.
 template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
-class CRUCIBLE_QTT_ABI [[nodiscard]] Qtt
+class CRUCIBLE_QTT_ABI [[nodiscard]]
+[[= ::foundation::linear::linear_when<Grade == ::foundation::algebra::lattices::QttGrade::One>]]
+    [[= ::foundation::lifetime::no_start_over_bytes{}]] Qtt
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
                            ::foundation::algebra::lattices::QttSemiring::At<Grade>, T>,
       private detail::ConsumeTracker<Grade, T> {
@@ -332,6 +324,7 @@ private:
     graded_type impl_;
 
     using key_ = ::foundation::algebra::grade_key<Qtt>;
+    using tracker_ = detail::ConsumeTracker<Grade, T>;
 
     [[nodiscard]] static constexpr typename lattice_type::element_type pinned_grade() noexcept {
         return typename lattice_type::element_type{};
@@ -355,8 +348,21 @@ public:
     Qtt(const Qtt&) = delete("Linear<T> and Affine<T> are move-only; use std::move or drop()");
     Qtt& operator=(const Qtt&) = delete("Linear<T> and Affine<T> are move-only; use std::move or drop()");
     Qtt(Qtt&&) = default;
-    Qtt& operator=(Qtt&&) = default;
     ~Qtt() = default;
+
+    // User-provided, so the wrapper is not trivially copyable, and an
+    // assignment stays a call that a rule of the plugin can read.  An
+    // assignment over a live Linear drops its value with no door, and the
+    // tracked build reports that drop in the assignment of the tracker.
+    // A T that cannot move-assign leaves the wrapper with no eligible
+    // assignment, and the marker then refuses Linear<T>.
+    constexpr Qtt& operator=(Qtt&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
+        requires std::is_move_assignable_v<T>
+    {
+        this->tracker_::operator=(static_cast<tracker_&&>(other));
+        impl_ = static_cast<graded_type&&>(other.impl_);
+        return *this;
+    }
 
     // The usage the grade counts is spent here, and only here.  In a
     // tracked build the state is read before it is spent, so a second
@@ -394,8 +400,10 @@ public:
     // A Linear is consumed on the way out.  For an Affine this is a
     // no-op that records the deliberate choice not to consume, so that
     // a search distinguishes intentional discards from consume sites.
-    friend constexpr void drop(Qtt&& x) noexcept(Grade != ::foundation::algebra::lattices::QttGrade::One
-                                                 || std::is_nothrow_move_constructible_v<T>) {
+    // The annotation names it as the drop door of the wrapper.
+    [[= ::foundation::linear::drop_door{}]] friend constexpr void
+        drop(Qtt&& x) noexcept(Grade != ::foundation::algebra::lattices::QttGrade::One
+                               || std::is_nothrow_move_constructible_v<T>) {
         if constexpr (Grade == ::foundation::algebra::lattices::QttGrade::One) {
             (void)std::move(x).consume();
         } else {

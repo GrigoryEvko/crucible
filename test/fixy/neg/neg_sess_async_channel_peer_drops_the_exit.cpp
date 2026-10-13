@@ -60,6 +60,6 @@ int main() {
     const BgCtx ctx{eff::testing::bg()};
     auto back = s::mint_forked_async_channel<AwaitsStop, NeverStops, tags::Left, tags::Right>(
         ctx, perm::mint_permission_root<tags::Whole>(), RingEnd{}, RingEnd{}, AnyBody{}, AnyBody{});
-    perm::permission_drop(std::move(back));
+    ::foundation::linear::drop(std::move(back));
     return 0;
 }

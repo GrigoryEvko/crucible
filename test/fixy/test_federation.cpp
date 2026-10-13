@@ -173,6 +173,14 @@ template <typename LocalCipher>
     return std::move(admitted);
 }
 
+// True when the admittance refused the handshake for the reason.  The read
+// takes nothing out of the Result.
+template <typename Admitted>
+[[nodiscard]] bool refused_with(Admitted const& admitted, fed::AdmittanceError reason) noexcept {
+    return admitted.match([](auto const&) noexcept { return false; },
+                          [reason](fed::AdmittanceError error) noexcept { return error == reason; });
+}
+
 // A handshake that the peer tags under the shared key admits the peer,
 // and the same handshake a second time is a replay.
 int check_admits_once() {
@@ -182,15 +190,15 @@ int check_admits_once() {
     auto [peer_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
                                                                         fed::PeerKeyFingerprint{42}, fed::Nonce{1});
     auto admitted = admit(admission, local_cipher, handshake);
-    if (!admitted.has_value()) return 10;
-    static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(*admitted)>::tag_type,
+    if (!admitted.is_ok()) return 10;
+    static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(admitted)>::value_type::tag_type,
                                  fp::tag::FederatedPeer<FederationTestOrg>>);
     auto replayed = admit(admission, local_cipher, handshake);
-    if (replayed.has_value() || replayed.error() != fed::AdmittanceError::Replayed) return 11;
+    if (!refused_with(replayed, fed::AdmittanceError::Replayed)) return 11;
 
     auto [kept, second] =
         fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42}, fed::Nonce{2});
-    if (!admit(admission, local_cipher, second).has_value()) return 12;
+    if (!admit(admission, local_cipher, second).is_ok()) return 12;
     return 0;
 }
 
@@ -206,37 +214,37 @@ int check_each_refusal() {
     fed::FederationHandshake wrong_org = honest;
     wrong_org.org_id = fed::federation_org_id<FederationOtherOrg>;
     auto refused_org = admit(admission, local_cipher, wrong_org);
-    if (refused_org.has_value() || refused_org.error() != fed::AdmittanceError::OrgMismatch) return 20;
+    if (!refused_with(refused_org, fed::AdmittanceError::OrgMismatch)) return 20;
 
     fed::FederationHandshake no_peer_key = honest;
     no_peer_key.peer_key_fingerprint = fed::PeerKeyFingerprint{};
     auto refused_peer_key = admit(admission, local_cipher, no_peer_key);
-    if (refused_peer_key.has_value() || refused_peer_key.error() != fed::AdmittanceError::MissingPeerKey) return 21;
+    if (!refused_with(refused_peer_key, fed::AdmittanceError::MissingPeerKey)) return 21;
 
     fed::FederationHandshake no_nonce = honest;
     no_nonce.nonce = fed::Nonce{};
     auto refused_nonce = admit(admission, local_cipher, no_nonce);
-    if (refused_nonce.has_value() || refused_nonce.error() != fed::AdmittanceError::MissingNonce) return 22;
+    if (!refused_with(refused_nonce, fed::AdmittanceError::MissingNonce)) return 22;
 
     // A changed field breaks the tag, and so does a changed tag.
     fed::FederationHandshake other_peer_key = honest;
     other_peer_key.peer_key_fingerprint = fed::PeerKeyFingerprint{43};
     auto refused_field = admit(admission, local_cipher, other_peer_key);
-    if (refused_field.has_value() || refused_field.error() != fed::AdmittanceError::BadMac) return 23;
+    if (!refused_with(refused_field, fed::AdmittanceError::BadMac)) return 23;
 
     fed::FederationHandshake forged_mac = honest;
     forged_mac.mac = fed::HandshakeMac{honest.mac.raw() ^ 1U};
     auto refused_mac = admit(admission, local_cipher, forged_mac);
-    if (refused_mac.has_value() || refused_mac.error() != fed::AdmittanceError::BadMac) return 24;
+    if (!refused_with(refused_mac, fed::AdmittanceError::BadMac)) return 24;
 
     // A forged handshake with a nonce far above the window does not move
     // the window, so it cannot push out the nonce of the honest one.
     fed::FederationHandshake far_forgery = honest;
     far_forgery.nonce = fed::Nonce{honest.nonce.raw() + 1000};
     auto refused_far = admit(admission, local_cipher, far_forgery);
-    if (refused_far.has_value() || refused_far.error() != fed::AdmittanceError::BadMac) return 25;
+    if (!refused_with(refused_far, fed::AdmittanceError::BadMac)) return 25;
 
-    if (!admit(admission, local_cipher, honest).has_value()) return 26;
+    if (!admit(admission, local_cipher, honest).is_ok()) return 26;
     return 0;
 }
 
@@ -248,7 +256,7 @@ int check_other_key() {
     auto [stranger_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(2)),
                                                                             fed::PeerKeyFingerprint{42}, fed::Nonce{1});
     auto refused = admit(admission, local_cipher, handshake);
-    if (refused.has_value() || refused.error() != fed::AdmittanceError::BadMac) return 30;
+    if (!refused_with(refused, fed::AdmittanceError::BadMac)) return 30;
     return 0;
 }
 
@@ -260,11 +268,11 @@ int check_too_old() {
     auto local_cipher = fp::mint_permission_root<fed::LocalCipherTag>(fixture.ctx);
     auto [peer_key, late] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
                                                                    fed::PeerKeyFingerprint{42}, fed::Nonce{100});
-    if (!admit(admission, local_cipher, late).has_value()) return 40;
+    if (!admit(admission, local_cipher, late).is_ok()) return 40;
     auto [kept, early] =
         fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42}, fed::Nonce{36});
     auto refused = admit(admission, local_cipher, early);
-    if (refused.has_value() || refused.error() != fed::AdmittanceError::NonceTooOld) return 41;
+    if (!refused_with(refused, fed::AdmittanceError::NonceTooOld)) return 41;
     return 0;
 }
 

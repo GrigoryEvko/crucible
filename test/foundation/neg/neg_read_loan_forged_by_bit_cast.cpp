@@ -2,7 +2,7 @@
 //
 // A read loan built from a byte would be a read right that no parked
 // token waits for.  std::bit_cast needs a trivially copyable type, and
-// ReadLoan has a user-provided move constructor, so it is not one.
+// ReadLoan has a user-provided move assignment, so it is not one.
 //
 // Expected diagnostic: no matching function for std::bit_cast, whose
 // constraint asks for a trivially copyable target.

@@ -45,6 +45,6 @@ int main() {
         ::foundation::effects::testing::foreground(), std::move(forked),
         [](fp::WriteView<Left, OtherBrand> const&, FgCtx const&) noexcept {},
         [](auto const& /*right_view*/, FgCtx const&) noexcept {});
-    fp::permission_drop(std::move(other));
+    ::foundation::linear::drop(std::move(other));
     return 0;
 }

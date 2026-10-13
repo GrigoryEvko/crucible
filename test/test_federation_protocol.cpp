@@ -982,7 +982,7 @@ static void test_permissioned_decode_tags_the_view() {
         ::fixy::mint_secret<sh::Key>(shared_key), door::PeerKeyFingerprint{42}, door::Nonce{1});
     auto [returned_cipher [[maybe_unused]], admitted] =
         admission.mint_federation_admittance(std::move(local_cipher), handshake);
-    ASSERT_TRUE(admitted.has_value());
+    auto peer = std::move(admitted).expect("the shared key verifies the handshake");
 
     const KernelCacheKey key{
         ContentHash{0x1111111111111111ULL},
@@ -993,7 +993,7 @@ static void test_permissioned_decode_tags_the_view() {
     auto written = fed::serialize_federation_entry(buf, key, body);
     ASSERT_TRUE(written.has_value());
 
-    auto tagged = fed::deserialize_federation_entry(*admitted, std::span<const std::uint8_t>(buf.data(), *written),
+    auto tagged = fed::deserialize_federation_entry(peer, std::span<const std::uint8_t>(buf.data(), *written),
                                                     static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(tagged.has_value());
     using TaggedView = std::remove_cvref_t<decltype(*tagged)>;

@@ -8,11 +8,11 @@
 //     class [[= ::foundation::linear::linear{}]] Token { ... };
 //
 // Reflection reads the annotation through std::meta::annotations_of.  The
-// quarantine plugin reads the same annotation in the tree of GCC.  There,
-// each annotation is an attribute, and its value has the type of the
-// annotation.  So the trait of this header and the rules of the plugin
-// read one fact.  No macro writes the annotation, so a build with no
-// plugin reads it too.
+// quarantine plugin can read the same annotation in the tree of GCC.
+// There, each annotation is an attribute, and its value has the type of
+// the annotation.  So the trait of this header and the rules of the plugin
+// that phase A of misc/12_10_2026_linear.md adds read one fact.  No macro
+// writes the annotation, so a build with no plugin reads it too.
 //
 // A class template whose instances are linear only for some arguments
 // writes linear_when<CONDITION> in place of linear{}.  An instance whose
@@ -148,7 +148,10 @@ concept LinearValue = !std::is_reference_v<T> && !std::is_const_v<T> && is_linea
 
 // The drop door that reports nothing.  It moves the value into its own
 // frame, so the destructor of the value runs before the door returns.  A
-// search for this annotation lists each deliberate discard.
+// search for this annotation lists each deliberate discard.  A class whose
+// destructor checks that its value was consumed, such as a tracked
+// fixy::Linear<T>, ends through its own drop door, because this door
+// destroys a live value.
 template <LinearValue T>
 [[= drop_door{}]] constexpr void drop(T&& value) noexcept {
     T dropped(static_cast<T&&>(value));

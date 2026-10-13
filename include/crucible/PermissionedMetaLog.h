@@ -14,6 +14,10 @@
 // (foundation/ChannelBinding.h) refuses a second live handle of one role
 // there.
 //
+// Each handle is linear (foundation/Linear.h).  Its door is release(),
+// which gives the role back to the wrapper and the token back to the
+// caller.
+//
 // The endpoint accessors are members named producer and consumer, not
 // mint_ free functions.  Their admission is the parameter type and the
 // claim: a caller that cannot produce a Permission<producer_tag, Brand>
@@ -27,6 +31,7 @@
 #include <fixy/session/NetworkModel.h>
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -80,7 +85,7 @@ public:
     PermissionedMetaLog&
     operator=(PermissionedMetaLog&&) = delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
 
-    class ProducerHandle {
+    class[[= ::foundation::linear::linear{}]] ProducerHandle {
         // The move clears the binding, so a moved-from handle cannot
         // append or drain through the Permission it no longer holds.  The
         // binding names the wrapper, which holds the log and the claims.
@@ -116,6 +121,15 @@ public:
             if (ch_.is_bound()) ch_->producer_claim_.release();
         }
 
+        // The release door.  The handle gives the producer role back to the
+        // wrapper and the token back to the caller, and it is unbound after
+        // the call.  The token can open a producer handle again.
+        [[nodiscard]] ::foundation::permissions::Permission<producer_tag, Brand> release() && noexcept {
+            ch_->producer_claim_.release();
+            ch_.unbind();
+            return std::move(perm_);
+        }
+
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(const value_type* metas, std::uint32_t count) {
             return ch_->log_.try_append(metas, count);
         }
@@ -140,7 +154,7 @@ public:
     // is needed to observe the latest value.  The head index is read with get,
     // which acquires against the producer's release and is what makes the
     // appended records visible.
-    class ConsumerHandle {
+    class[[= ::foundation::linear::linear{}]] ConsumerHandle {
         ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
 
@@ -168,6 +182,13 @@ public:
 
         ~ConsumerHandle() {
             if (ch_.is_bound()) ch_->consumer_claim_.release();
+        }
+
+        // The release door, as for ProducerHandle.
+        [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
+            ch_->consumer_claim_.release();
+            ch_.unbind();
+            return std::move(perm_);
         }
 
         [[nodiscard, gnu::hot]] std::optional<value_type> try_drain_one() {

@@ -31,7 +31,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <meta>
 #include <span>
 #include <string_view>
@@ -317,18 +316,19 @@ public:
 
     // A token for the peer whose handshake this is, or the reason for
     // the refusal.  The token of the local cipher comes back beside the
-    // result on each path, with the brand that it came in with.
+    // result on each path, with the brand that it came in with.  The token
+    // for the peer is linear, so the Result gives it only to a consumer.
     template <typename... Explicit, typename LocalBrand, typename Brand = CRUCIBLE_FRESH_BRAND>
         requires ::fixy::federation::AdmittanceNamesNoBrand<Explicit...>
     [[nodiscard]] constexpr std::pair<
         Permission<::fixy::federation::LocalCipherTag, LocalBrand>,
-        std::expected<Permission<tag::FederatedPeer<Org>, Brand>, ::fixy::federation::AdmittanceError>>
+        ::fixy::Result<Permission<tag::FederatedPeer<Org>, Brand>, ::fixy::federation::AdmittanceError>>
     mint_federation_admittance(Permission<::fixy::federation::LocalCipherTag, LocalBrand>&& local_cipher,
                                ::fixy::federation::FederationHandshake const& handshake) noexcept {
-        std::expected<void, ::fixy::federation::AdmittanceError> const verdict =
+        ::fixy::Result<::fixy::Unit, ::fixy::federation::AdmittanceError> const verdict =
             verify_federation_handshake_(handshake);
-        if (!verdict.has_value()) {
-            return {std::move(local_cipher), std::unexpected(verdict.error())};
+        if (verdict.is_err()) {
+            return {std::move(local_cipher), ::fixy::err(verdict.err().expect("a refused handshake has its reason"))};
         }
         return {std::move(local_cipher), Permission<tag::FederatedPeer<Org>, Brand>{federation_admission_key{}}};
     }
@@ -341,23 +341,23 @@ private:
     // they record nothing.  The window records the nonce only after the
     // tag verifies.  The check depends on Org alone, so each brand of a
     // peer token shares one copy of it.
-    [[nodiscard]] constexpr std::expected<void, ::fixy::federation::AdmittanceError>
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, ::fixy::federation::AdmittanceError>
     verify_federation_handshake_(::fixy::federation::FederationHandshake const& handshake) noexcept {
         using ::fixy::federation::AdmittanceError;
         using ::fixy::federation::NonceVerdict;
         if (handshake.org_id != ::fixy::federation::federation_org_id<Org>) {
-            return std::unexpected(AdmittanceError::OrgMismatch);
+            return ::fixy::err(AdmittanceError::OrgMismatch);
         }
         if (!handshake.peer_key_fingerprint.is_set()) {
-            return std::unexpected(AdmittanceError::MissingPeerKey);
+            return ::fixy::err(AdmittanceError::MissingPeerKey);
         }
         switch (admission_window_.verdict(handshake.nonce)) {
             case NonceVerdict::Missing:
-                return std::unexpected(AdmittanceError::MissingNonce);
+                return ::fixy::err(AdmittanceError::MissingNonce);
             case NonceVerdict::Replayed:
-                return std::unexpected(AdmittanceError::Replayed);
+                return ::fixy::err(AdmittanceError::Replayed);
             case NonceVerdict::TooOld:
-                return std::unexpected(AdmittanceError::NonceTooOld);
+                return ::fixy::err(AdmittanceError::NonceTooOld);
             case NonceVerdict::Fresh:
                 break;
             default:
@@ -369,10 +369,10 @@ private:
             ::fixy::siphash::verify(std::move(admission_key_), message, ::fixy::federation::tag_of(handshake.mac));
         admission_key_ = std::move(kept);
         if (!verified) {
-            return std::unexpected(AdmittanceError::BadMac);
+            return ::fixy::err(AdmittanceError::BadMac);
         }
         admission_window_.record(handshake.nonce);
-        return {};
+        return ::fixy::Unit{};
     }
 
     ::fixy::Secret<::fixy::siphash::Key> admission_key_;
