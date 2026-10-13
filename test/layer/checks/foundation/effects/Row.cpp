@@ -80,6 +80,20 @@ static_assert(!is_subrow(^^R_alloc_io, ^^R_alloc));
 static_assert(is_subrow(^^R_alloc_io, ^^R_alloc_io_bg));
 static_assert(!is_subrow(^^R_io, ^^R_alloc));
 static_assert(!is_subrow(^^int, ^^R_alloc) && !is_subrow(^^R_empty, ^^int), "a type that is not a row is no subrow");
+static_assert(!is_subrow(^^R_alloc, ^^R_empty));
+
+// Two rows of one size with no shared atom, which a test of the size
+// accepts, and two rows that share one atom and differ in the other.
+using R_block = Row<Effect::Block>;
+using R_alloc_block = Row<Effect::Alloc, Effect::Block>;
+static_assert(!is_subrow(^^R_block, ^^R_alloc) && !is_subrow(^^R_block, ^^R_io));
+static_assert(!is_subrow(^^R_alloc_block, ^^R_alloc_io) && !is_subrow(^^R_alloc_io, ^^R_alloc_block));
+
+// The relation reads the set of atoms, so the order of the pack does not
+// change the answer.
+using R_io_alloc = Row<Effect::IO, Effect::Alloc>;
+static_assert(is_subrow(^^R_alloc_io, ^^R_io_alloc) && is_subrow(^^R_io_alloc, ^^R_alloc_io));
+static_assert(is_subrow(^^R_alloc, ^^R_io_alloc));
 
 static_assert(Subrow<R_empty, R_alloc_io>);
 static_assert(Subrow<R_alloc, R_alloc_io_bg>);
@@ -137,6 +151,8 @@ using R_universe = every_effect_row;
 static_assert(row_size(^^R_universe) == effect_count);
 static_assert(is_subrow(^^R_alloc_io, ^^R_universe));
 static_assert(is_subrow(^^R_alloc_io_bg, ^^R_universe));
+static_assert(is_subrow(^^R_empty, ^^R_universe) && is_subrow(^^R_universe, ^^R_universe));
+static_assert(!is_subrow(^^R_universe, ^^R_alloc_io_bg) && !is_subrow(^^R_universe, ^^R_empty));
 
 static_assert(row_size(^^row_difference_t<R_universe, R_universe>) == 0);
 static_assert(row_size(^^row_intersection_t<R_universe, R_empty>) == 0);

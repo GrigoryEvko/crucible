@@ -18,7 +18,7 @@ rule contract-cites
 - | - | 266 | crucible_pre | -
 - | - | 0 | crucible_pre_fast | -
 - | - | 0 | crucible_pre_msg | -
-- | - | 116 | decide_total | -
+- | - | 108 | decide_total | -
 - | - | 428 | total_contract_cites | -
 - | - | 142 | total_post_cites | -
 - | - | 266 | total_pre_cites | -
@@ -31,7 +31,6 @@ rule contract-cites
 - | decide_per_procedure | 2 | non_negative | -
 - | decide_per_procedure | 4 | not_sentinel_hash | -
 - | decide_per_procedure | 5 | positive | -
-- | decide_per_procedure | 8 | row_subset | -
 - | decide_per_procedure | 2 | tier_replaces | -
 - | decide_per_procedure | 17 | valid_span | -
 - | decide_per_procedure | 1 | weakly_increasing | -

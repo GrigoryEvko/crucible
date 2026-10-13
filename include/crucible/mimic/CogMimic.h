@@ -122,9 +122,9 @@ class CogMimic;
 template <class Ctx, cog::CogKind K>
 concept CtxFitsCogMimic =
     ::foundation::effects::IsExecCtx<Ctx>
-    && (::foundation::decide::row_subset(^^::foundation::effects::Row<::foundation::effects::Effect::Init>,
+    && (::foundation::effects::is_subrow(^^::foundation::effects::Row<::foundation::effects::Effect::Init>,
                                          ^^::foundation::effects::row_type_of_t<Ctx>)
-        || ::foundation::decide::row_subset(^^::foundation::effects::Row<::foundation::effects::Effect::Bg>,
+        || ::foundation::effects::is_subrow(^^::foundation::effects::Row<::foundation::effects::Effect::Bg>,
                                             ^^::foundation::effects::row_type_of_t<Ctx>))
     && cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && detail::HasCogMimicProjection<K>;
 

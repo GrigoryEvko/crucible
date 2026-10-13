@@ -61,7 +61,7 @@ include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::i
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::is_stage_graph | -
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::pipeline_chain_check | -
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::pipeline_row_union_impl | -
-include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::stage_graph_check | the check is generic over the graph type and reads its stages and edges as types; the closed form reads the graph through std::meta::info, as decide::row_subset does, and is a separate change
+include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::stage_graph_check | the check is generic over the graph type and reads its stages and edges as types; the closed form reads the graph through std::meta::info, as effects::is_subrow does, and is a separate change
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::stage_graph_row_union | -
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::stage_graph_traits | -
 include/fixy/concurrent/Pipeline.h | open-read | 1 | fixy::concurrent::detail::stage_ports | -

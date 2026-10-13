@@ -8,11 +8,8 @@
 
 #pragma once
 
-#include <foundation/effects/Row.h>
-
 #include <concepts>
 #include <cstddef>
-#include <meta>
 #include <span>
 #include <type_traits>
 
@@ -113,15 +110,6 @@ template <typename TierTag>
 constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
     using U = std::underlying_type_t<TierTag>;
     return static_cast<U>(candidate) >= static_cast<U>(required);
-}
-
-// True iff every effect atom of row Payload also appears in row Ctx, so a
-// value declared over Payload lifts into a slot declared over Ctx. The relation
-// is set membership, not structural equality: atom order does not matter.
-// The answer is a function at namespace scope that is not a template, so
-// no translation unit can specialize it for a pair of rows.
-[[nodiscard]] consteval bool row_subset(std::meta::info payload, std::meta::info ctx) {
-    return ::foundation::effects::is_subrow(payload, ctx);
 }
 
 // Material implication. False only for a true antecedent with a false

@@ -3204,7 +3204,6 @@ include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <string_view> | 
 include/foundation/contracts/ArmedRoster.h | layer-header | 1 | <vector> | -
 include/foundation/contracts/Decide.h | base-std-object | 2 | std::span | -
 include/foundation/contracts/Decide.h | layer-header | 1 | <span> | -
-include/foundation/contracts/Decide.h | upward-include | 1 | include/foundation/effects/Row.h | -
 include/foundation/core/Ref.h | replace-pending:std::nothrow | 1 | std::nothrow | -
 include/foundation/diag/Catalog.h | base-std-entity | 2 | std::array | -
 include/foundation/diag/Catalog.h | base-std-entity | 1 | std::array::operator[] | -
@@ -6309,8 +6308,8 @@ test/foundation/test_counter_clock_attacks.cpp | std-object | 10 | std::array | 
 test/foundation/test_counter_clock_attacks.cpp | std-object | 4 | std::basic_string_view | -
 test/foundation/test_counter_clock_attacks.cpp | std-object | 7 | std::expected | -
 test/foundation/test_decide.cpp | c-array-object | 44 | - | -
-test/foundation/test_decide.cpp | c-library-call | 63 | fprintf | -
-test/foundation/test_decide.cpp | c-library-call | 63 | stderr | -
+test/foundation/test_decide.cpp | c-library-call | 59 | fprintf | -
+test/foundation/test_decide.cpp | c-library-call | 59 | stderr | -
 test/foundation/test_decide.cpp | raw-pointer-object | 4 | - | -
 test/foundation/test_decide.cpp | replace-pending:<limits> | 30 | std::numeric_limits::max | -
 test/foundation/test_decide.cpp | replace-pending:<limits> | 15 | std::numeric_limits::min | -

@@ -497,9 +497,6 @@ foundation_neg_compile_test(neg_effects_row_size_specialized
 foundation_neg_compile_test(neg_effects_is_concurrent_row_specialized
   "template-id .is_concurrent_row<>. for .consteval bool foundation::effects::is_concurrent_row\\(std::meta::info\\). does not match any template declaration"
   "neg_effects_is_concurrent_row_specialized\\.cpp:11:[0-9]+: error:")
-foundation_neg_compile_test(neg_decide_row_subset_specialized
-  "template-id .row_subset<>. for .consteval bool foundation::decide::row_subset\\(std::meta::info, std::meta::info\\). does not match any template declaration"
-  "neg_decide_row_subset_specialized\\.cpp:12:[0-9]+: error:")
 foundation_neg_compile_test(neg_effects_is_effect_atom_specialized
   "template-id .is_effect_atom<>. for .consteval bool foundation::effects::is_effect_atom\\(Effect\\). does not match any template declaration"
   "neg_effects_is_effect_atom_specialized\\.cpp:10:[0-9]+: error:")

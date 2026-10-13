@@ -40,7 +40,6 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Decide.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/Runtime.h>
@@ -297,7 +296,7 @@ concept CtxStartsStageThreads =
 template <class Ctx, class... Stages>
 concept CtxFitsPipeline =
     ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
-    && ::foundation::decide::row_subset(^^pipeline_row_union_t<Stages...>, ^^typename Ctx::row_type);
+    && ::foundation::effects::is_subrow(^^pipeline_row_union_t<Stages...>, ^^typename Ctx::row_type);
 
 template <class... Stages>
 struct StagePack {};
@@ -532,7 +531,7 @@ using stage_graph_row_union_t = typename detail::stage_graph_row_union<std::remo
 template <class Ctx, class Graph>
 concept CtxFitsPipelineDag =
     ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && StageGraphWellFormed<Graph>
-    && ::foundation::decide::row_subset(^^stage_graph_row_union_t<Graph>, ^^typename Ctx::row_type);
+    && ::foundation::effects::is_subrow(^^stage_graph_row_union_t<Graph>, ^^typename Ctx::row_type);
 
 template <class Stage>
 struct is_stage_inline_safe : std::false_type {};

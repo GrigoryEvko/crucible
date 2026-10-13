@@ -3740,7 +3740,7 @@ fixy_neg_compile_test(neg_swmr_stage_mint_body_not_a_publish_stage
 fixy_neg_compile_test(neg_swmr_stage_mint_row_not_admitted
   "no matching function for call to .mint_swmr_stage<swmr_row_fixture::body>"
   "required for the satisfaction of .CtxFitsSwmrPublishStage<FnPtr, Ctx>."
-  "the expression .row_subset\\(.* evaluated to .false.")
+  "the expression .is_subrow\\(.* evaluated to .false.")
 
 # The recording wrapper takes an endpoint and a session event log.
 fixy_neg_compile_test(neg_recording_endpoint_non_endpoint
@@ -4013,7 +4013,7 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_ctx_starts_no_threads
 fixy_neg_compile_test(neg_pipeline_mint_row_union_not_admitted
   "constraints not satisfied"
   "required for the satisfaction of .CtxFitsPipeline<"
-  "row_subset\\(.*\\(\\^\\^ typename fixy::concurrent::detail::pipeline_row_union_impl<.*>::type, \\^\\^ typename Ctx::row_type\\).*evaluated to")
+  "is_subrow\\(.*\\(\\^\\^ typename fixy::concurrent::detail::pipeline_row_union_impl<.*>::type, \\^\\^ typename Ctx::row_type\\).*evaluated to")
 
 # The two disciplines the pipeline carries, as for the stage above.
 fixy_neg_compile_test(neg_pipeline_copied
