@@ -1,10 +1,12 @@
-// The compile-time checks of fixy/concurrent/StageEndpointBridge.h.
+// The compile-time checks of fixy/channels/StageEndpointBridge.h.
 
-#include <fixy/concurrent/StageEndpointBridge.h>
+#include <fixy/channels/StageEndpointBridge.h>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 namespace detail::stage_endpoint_bridge_self_test {
+
+namespace concurrent = ::fixy::concurrent;
 
 // The tags, the channels and the endpoints that the checks name.  No code
 // builds a channel of them.
@@ -13,8 +15,8 @@ struct UTag2 {};
 struct UBrand {};
 
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
-using Ch1 = PermissionedSpscChannel<int, 64, UTag1, UBrand>;
-using Ch2 = PermissionedSpscChannel<int, 64, UTag2, UBrand>;
+using Ch1 = concurrent::PermissionedSpscChannel<int, 64, UTag1, UBrand>;
+using Ch2 = concurrent::PermissionedSpscChannel<int, 64, UTag2, UBrand>;
 
 using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx>;
 using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx>;
@@ -37,7 +39,7 @@ static_assert(!IsMovedEndpoint<ConsEp&>);
 
 inline void int_stage_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
 
-static_assert(PipelineStage<&int_stage_body>);
+static_assert(concurrent::PipelineStage<&int_stage_body>);
 
 static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 
@@ -54,7 +56,7 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, FgCtx, ConsEp&, ProdEp
 // this check file on its own rather than only the tests.
 
 struct UTagFloat {};
-using ChFloat = PermissionedSpscChannel<float, 64, UTagFloat, UBrand>;
+using ChFloat = concurrent::PermissionedSpscChannel<float, 64, UTagFloat, UBrand>;
 using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, FgCtx>;
 using FloatProdEp = Endpoint<ChFloat, Direction::Producer, FgCtx>;
 
@@ -74,13 +76,13 @@ static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 // by reference to const, which is the producer pole, so the body is a
 // stage and the endpoint mint takes the MPSC producer endpoint.
 struct UTagMpsc {};
-using ChMpsc = PermissionedMpscChannel<int, 64, UTagMpsc, UBrand>;
+using ChMpsc = concurrent::PermissionedMpscChannel<int, 64, UTagMpsc, UBrand>;
 using MpscProdEp = Endpoint<ChMpsc, Direction::Producer, FgCtx>;
 
 inline void feed_mpsc_body(typename Ch1::ConsumerHandle&&, typename ChMpsc::ProducerHandle&&) noexcept {}
 
-static_assert(is_producer_handle_v<typename ChMpsc::ProducerHandle>);
-static_assert(PipelineStage<&feed_mpsc_body>);
+static_assert(concurrent::is_producer_handle_v<typename ChMpsc::ProducerHandle>);
+static_assert(concurrent::PipelineStage<&feed_mpsc_body>);
 static_assert(CtxFitsStageFromEndpoints<&feed_mpsc_body, FgCtx, ConsEp, MpscProdEp>);
 
 inline void fan_in_body(typename Ch1::ConsumerHandle&&, typename Ch1::ConsumerHandle&&,
@@ -88,8 +90,8 @@ inline void fan_in_body(typename Ch1::ConsumerHandle&&, typename Ch1::ConsumerHa
 inline void fan_out_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&,
                          typename Ch2::ProducerHandle&&) noexcept {}
 
-static_assert(VariadicPipelineStage<&fan_in_body>);
-static_assert(!PipelineStage<&fan_in_body>);
+static_assert(concurrent::VariadicPipelineStage<&fan_in_body>);
+static_assert(!concurrent::PipelineStage<&fan_in_body>);
 static_assert(StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp, ConsEp>, EndpointPack<ProdEp>>);
 static_assert(!StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp>, EndpointPack<ProdEp>>);
 static_assert(
@@ -98,8 +100,8 @@ static_assert(!StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<Con
 static_assert(CtxFitsMpmcStageFromEndpoints<&fan_in_body, FgCtx, ConsEp, ConsEp, ProdEp>);
 static_assert(!CtxFitsMpmcStageFromEndpoints<&fan_in_body, FgCtx, ConsEp&, ConsEp, ProdEp>);
 
-static_assert(VariadicPipelineStage<&fan_out_body>);
-static_assert(!PipelineStage<&fan_out_body>);
+static_assert(concurrent::VariadicPipelineStage<&fan_out_body>);
+static_assert(!concurrent::PipelineStage<&fan_out_body>);
 static_assert(StageHandlesMatchEndpointsExtended<&fan_out_body, EndpointPack<ConsEp>, EndpointPack<ProdEp, ProdEp>>);
 static_assert(!StageHandlesMatchEndpointsExtended<&fan_out_body, EndpointPack<ConsEp, ProdEp>, EndpointPack<ProdEp>>);
 static_assert(
@@ -107,4 +109,4 @@ static_assert(
 
 }  // namespace detail::stage_endpoint_bridge_self_test
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

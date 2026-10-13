@@ -1,8 +1,8 @@
-// The compile-time checks of fixy/Witnessed.h.
+// The compile-time checks of fixy/session/Witnessed.h.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
-namespace fixy {
+namespace fixy::session {
 
 namespace detail::witnessed_self_test {
 
@@ -26,9 +26,9 @@ using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 // and every claim below reads the same at either brand.
 struct probe_brand {};
 
-using PureBorrow = Borrowed<int, pure_tag, probe_brand>;
-using SpilledBorrow = Borrowed<int, spilled_tag, probe_brand>;
-using UnrowedBorrow = Borrowed<int, unrowed_tag, probe_brand>;
+using PureBorrow = ::fixy::Borrowed<int, pure_tag, probe_brand>;
+using SpilledBorrow = ::fixy::Borrowed<int, spilled_tag, probe_brand>;
+using UnrowedBorrow = ::fixy::Borrowed<int, unrowed_tag, probe_brand>;
 
 // The recogniser answers for both kinds and for nothing else.  An empty
 // recogniser fails the first line, a universal one the second.
@@ -104,4 +104,4 @@ static_assert(sizeof(Witnessed<PureBorrow, witness::UnderRow<pure_tag>>) == size
 
 }  // namespace detail::witnessed_self_test
 
-}  // namespace fixy
+}  // namespace fixy::session

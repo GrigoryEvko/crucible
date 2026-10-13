@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: SwmrSessionSurface is not satisfied.
 
-#include <fixy/concurrent/SwmrSession.h>
+#include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -29,7 +29,7 @@ struct NotAChannel {
 
 int main() {
     using namespace swmr_writer_surface_fixture;
-    namespace ses = ::fixy::concurrent::swmr_session;
+    namespace ses = ::fixy::channels::swmr_session;
     namespace perm = ::foundation::permissions;
     NotAChannel fake{};
     auto writer = ses::mint_swmr_writer<NotAChannel>(fake, perm::mint_permission_root<WriterTag>());

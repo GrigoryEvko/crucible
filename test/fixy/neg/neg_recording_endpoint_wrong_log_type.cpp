@@ -6,7 +6,7 @@
 // Expected diagnostic: no overload of mint_recording_endpoint takes an int
 // as the log.
 
-#include <fixy/concurrent/EndpointMint.h>
+#include <fixy/channels/EndpointMint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -15,6 +15,7 @@
 
 namespace recording_log_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 struct Tag {};
 inline auto channel_root() noexcept {
     return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
@@ -33,9 +34,9 @@ int main() {
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     int not_a_log = 0;
-    auto recorded = c::mint_recording_endpoint(
-        c::mint_endpoint<Channel, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm))), not_a_log,
-        s::RoleTagId{1}, s::RoleTagId{2});
+    auto recorded = channels::mint_recording_endpoint(channels::mint_endpoint<Channel, channels::Direction::Producer>(
+                                                          ctx, channel.producer(std::move(producer_perm))),
+                                                      not_a_log, s::RoleTagId{1}, s::RoleTagId{2});
     (void)recorded;
     return 0;
 }

@@ -5,7 +5,7 @@
 //
 // Expected diagnostic: IsExecCtx is not satisfied.
 
-#include <fixy/concurrent/Endpoint.h>
+#include <fixy/channels/Endpoint.h>
 
 #include <foundation/permissions/Permission.h>
 
@@ -13,6 +13,7 @@
 
 namespace endpoint_ctx_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 struct Tag {};
 inline auto channel_root() noexcept {
     return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
@@ -28,7 +29,7 @@ int main() {
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     const int not_a_ctx = 0;
-    auto endpoint =
-        c::mint_endpoint<Channel, c::Direction::Producer>(not_a_ctx, channel.producer(std::move(producer_perm)));
+    auto endpoint = channels::mint_endpoint<Channel, channels::Direction::Producer>(
+        not_a_ctx, channel.producer(std::move(producer_perm)));
     return endpoint.try_send(1) ? 0 : 1;
 }

@@ -11,7 +11,7 @@
 // receive has a branch for the crash of the peer.  The default protocol of
 // an endpoint has no such branch.
 
-#include <fixy/concurrent/Endpoint.h>
+#include <fixy/channels/Endpoint.h>
 #include <fixy/session/EventLog.h>
 #include <fixy/session/Recording.h>
 
@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 // The log is held by reference rather than owned, so the two sides of one
 // channel can share a log and produce a single ordered record of the
@@ -35,4 +35,4 @@ mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep, ::fixy::session::Sessio
     return ::fixy::session::mint_recorded_session(std::move(ep).into_bare_session(), log, self_role, peer_role);
 }
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

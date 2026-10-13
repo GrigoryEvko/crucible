@@ -7,7 +7,7 @@
 // Expected diagnostic: no overload of mint_substrate_session takes an
 // lvalue handle.
 
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -16,6 +16,7 @@
 
 namespace substrate_lvalue_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 namespace eff = ::foundation::effects;
 struct Tag {};
 inline auto channel_root() noexcept {
@@ -33,7 +34,7 @@ int main() {
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     auto producer = channel.producer(std::move(producer_perm));
-    auto head = c::mint_substrate_session<Channel, c::Direction::Producer>(ctx, producer);
+    auto head = channels::mint_substrate_session<Channel, channels::Direction::Producer>(ctx, producer);
     std::move(head).detach(::fixy::session::detach_reason::TestInstrumentation{});
     return 0;
 }

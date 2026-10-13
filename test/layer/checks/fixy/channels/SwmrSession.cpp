@@ -1,8 +1,8 @@
-// The compile-time checks of fixy/concurrent/SwmrSession.h.
+// The compile-time checks of fixy/channels/SwmrSession.h.
 
-#include <fixy/concurrent/SwmrSession.h>
+#include <fixy/channels/SwmrSession.h>
 
-namespace fixy::concurrent::swmr_session {
+namespace fixy::channels::swmr_session {
 
 namespace detail::swmr_session_self_test {
 
@@ -54,4 +54,4 @@ static_assert(std::is_same_v<ReaderRuntimeProto<int>,
 
 }  // namespace detail::swmr_session_self_test
 
-}  // namespace fixy::concurrent::swmr_session
+}  // namespace fixy::channels::swmr_session

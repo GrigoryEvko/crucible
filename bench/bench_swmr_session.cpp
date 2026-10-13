@@ -1,6 +1,6 @@
 // The SWMR channel against its seqlock.
 //
-// fixy/concurrent/SwmrSession.h wraps fixy/concurrent/AtomicSnapshot.h.  A
+// fixy/channels/SwmrSession.h wraps fixy/concurrent/AtomicSnapshot.h.  A
 // writer handle holds the linear writer permission and publishes, a reader
 // handle holds one share of the reader pool and loads, and each side can
 // run a session over its own handle.  Three layers on each side: the bare
@@ -11,8 +11,8 @@
 // bare load.  A handle cannot be reassigned, so each session arm keeps its
 // session in a std::optional and re-seats it with emplace.
 
+#include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
-#include <fixy/concurrent/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -31,7 +31,7 @@ namespace {
 namespace cc = ::fixy::concurrent;
 namespace perm = ::foundation::permissions;
 namespace s = ::fixy::session;
-namespace ses = ::fixy::concurrent::swmr_session;
+namespace ses = ::fixy::channels::swmr_session;
 
 struct Payload {
     std::uint64_t seq = 0;

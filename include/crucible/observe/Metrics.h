@@ -7,8 +7,8 @@
 // type, so the readers of one channel cannot present a share of another.
 
 #include <crucible/observe/MetricsSample.h>
+#include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
-#include <fixy/concurrent/SwmrSession.h>
 #include <foundation/Brand.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>
@@ -36,8 +36,8 @@ using RuntimeMetricsComputation =
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using RuntimeMetricsChannel =
-    ::fixy::concurrent::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag,
-                                                  RuntimeMetricsReaderTag, ReaderBrand, WriterBrand>;
+    ::fixy::channels::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag, RuntimeMetricsReaderTag,
+                                                ReaderBrand, WriterBrand>;
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using RuntimeMetricsWriter = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::WriterHandle;
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
@@ -45,10 +45,9 @@ using RuntimeMetricsReader = typename RuntimeMetricsChannel<ReaderBrand, WriterB
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 [[nodiscard]] RuntimeMetricsWriter<ReaderBrand, WriterBrand>
-mint_metrics_writer(
-    RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
-    ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission) noexcept {
-    return ::fixy::concurrent::swmr_session::mint_swmr_writer<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(
+mint_metrics_writer(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
+                    ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission) noexcept {
+    return ::fixy::channels::swmr_session::mint_swmr_writer<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(
         channel, std::move(permission));
 }
 
@@ -101,7 +100,7 @@ template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand
 [[nodiscard]] std::optional<KeeperMetricsReader<ReaderBrand, WriterBrand>>
 mint_keeper_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
     auto handle =
-        ::fixy::concurrent::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
+        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
     if (!handle) return std::nullopt;
     return KeeperMetricsReader<ReaderBrand, WriterBrand>{std::move(*handle)};
 }
@@ -110,7 +109,7 @@ template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand
 [[nodiscard]] std::optional<CanopyMetricsReader<ReaderBrand, WriterBrand>>
 mint_canopy_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
     auto handle =
-        ::fixy::concurrent::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
+        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
     if (!handle) return std::nullopt;
     return CanopyMetricsReader<ReaderBrand, WriterBrand>{std::move(*handle)};
 }

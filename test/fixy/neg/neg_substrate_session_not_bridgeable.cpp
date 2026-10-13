@@ -6,14 +6,14 @@
 //
 // Expected diagnostic: handle_for has no row for the fake channel.
 
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 
 #include <foundation/effects/Ctx.h>
 
 #include <utility>
 
 namespace substrate_table_fixture {
-namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 namespace eff = ::foundation::effects;
 struct FakeChannel {
     using value_type = int;
@@ -26,7 +26,8 @@ struct FakeChannel {
 int main() {
     using namespace substrate_table_fixture;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
-    auto head = c::mint_substrate_session<FakeChannel, c::Direction::Producer>(ctx, FakeChannel::ProducerHandle{});
+    auto head = channels::mint_substrate_session<FakeChannel, channels::Direction::Producer>(
+        ctx, FakeChannel::ProducerHandle{});
     std::move(head).detach(::fixy::session::detach_reason::TestInstrumentation{});
     return 0;
 }

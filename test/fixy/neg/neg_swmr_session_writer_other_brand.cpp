@@ -5,7 +5,7 @@
 // become a second writer of the session.  Two writers would race in the
 // seqlock, and a reader could take a byte mix of the two values.
 
-#include <fixy/concurrent/SwmrSession.h>
+#include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -19,9 +19,9 @@ struct ReaderTag {
 };
 inline auto reader_root() noexcept { return ::foundation::permissions::mint_permission_root<ReaderTag>(); }
 inline auto writer_root() noexcept { return ::foundation::permissions::mint_permission_root<WriterTag>(); }
-using Swmr = ::fixy::concurrent::swmr_session::SwmrSession<int, WriterTag, ReaderTag,
-                                                           ::foundation::brand::brand_of_t<decltype(reader_root())>,
-                                                           ::foundation::brand::brand_of_t<decltype(writer_root())>>;
+using Swmr = ::fixy::channels::swmr_session::SwmrSession<int, WriterTag, ReaderTag,
+                                                         ::foundation::brand::brand_of_t<decltype(reader_root())>,
+                                                         ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 }  // namespace swmr_writer_brand_fixture
 
 int main() {

@@ -210,39 +210,37 @@ does not apply to the row.
 | `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-| `mint_witnessed_under` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+
+## include/fixy/channels/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `LazyEstablishedChannel::mint_established_session` | `include/fixy/channels/LazyEstablishedChannel.h` | Y | - (alloc) | Y | Y | member | · | HS14: 2 |
+| `mint_endpoint` | `include/fixy/channels/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
+| `mint_mpmc_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_reader_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_recording_endpoint` | `include/fixy/channels/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_swmr_reader` | `include/fixy/channels/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
+| `mint_swmr_stage_from_endpoint` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_swmr_writer` | `include/fixy/channels/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
+| `mint_writer_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/concurrent/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_mpmc_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 | `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 21 |
-| `mint_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
-| `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_swmr_stage_from_endpoint` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | - (alloc) | Y | Y | token | · | HS14: 4 |
-| `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-
-## include/fixy/handle/
-
-| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
-|---|---|---|---|---|---|---|---|---|
-| `LazyEstablishedChannel::mint_established_session` | `include/fixy/handle/LazyEstablishedChannel.h` | Y | - (alloc) | Y | Y | member | · | HS14: 2 |
 
 ## include/fixy/os/
 
@@ -293,6 +291,8 @@ does not apply to the row.
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_watch_hooks` | `include/fixy/session/Watch.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_witnessed_at` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_witnessed_under` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/algebra/
 

@@ -140,10 +140,8 @@ struct EndpointBrand {};
 using EndpointFgCtx = fe::ExecCtx<fe::ctx_cap::Fg, Row<>>;
 using EndpointCh1 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag1, EndpointBrand>;
 using EndpointCh2 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag2, EndpointBrand>;
-using ConsumerEndpoint =
-    ::fixy::concurrent::Endpoint<EndpointCh1, ::fixy::concurrent::Direction::Consumer, EndpointFgCtx>;
-using ProducerEndpoint =
-    ::fixy::concurrent::Endpoint<EndpointCh2, ::fixy::concurrent::Direction::Producer, EndpointFgCtx>;
+using ConsumerEndpoint = ::fixy::channels::Endpoint<EndpointCh1, ::fixy::channels::Direction::Consumer, EndpointFgCtx>;
+using ProducerEndpoint = ::fixy::channels::Endpoint<EndpointCh2, ::fixy::channels::Direction::Producer, EndpointFgCtx>;
 
 // A machine with one edge, Idle to Busy, for the transition predicate.
 struct Idle {};
@@ -542,7 +540,7 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::has_load> {
 // is not, and the trait sees a reference as no endpoint: IsEndpoint strips
 // the reference before it asks.
 template <>
-struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_endpoint> {
+struct foundation::contracts::armed_cell<::fixy::channels::detail::is_endpoint> {
     using accepts = witnesses<w::ConsumerEndpoint, w::ProducerEndpoint>;
     using refuses = witnesses<int, w::EndpointCh1::ConsumerHandle, w::ConsumerEndpoint&>;
 };

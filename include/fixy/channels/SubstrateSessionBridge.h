@@ -30,7 +30,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 enum class Direction : std::uint8_t {
     Producer = 0,
@@ -43,9 +43,9 @@ namespace detail {
 // two templates, so no other type joins it, and a cv-qualified channel is
 // not a channel of the table.
 template <class Substr>
-concept IsBridgedChannel =
-    std::same_as<Substr, std::remove_cvref_t<Substr>>
-    && ::foundation::reflect::IsInstanceOfAny<Substr, ^^PermissionedSpscChannel, ^^PermissionedMpscChannel>;
+concept IsBridgedChannel = std::same_as<Substr, std::remove_cvref_t<Substr>>
+                        && ::foundation::reflect::IsInstanceOfAny<Substr, ^^::fixy::concurrent::PermissionedSpscChannel,
+                                                                  ^^::fixy::concurrent::PermissionedMpscChannel>;
 
 }  // namespace detail
 
@@ -95,8 +95,9 @@ concept HasDefaultProtoFor = requires { typename default_proto_for<Substr, Dir>:
 // The handle of a direction has the pole shape of that direction, so a
 // stage can take it.  fixy/concurrent/StageShape.h reads the same shape.
 template <class Substr, Direction Dir>
-concept HandleHasPoleOf = (Dir == Direction::Producer && is_producer_handle_v<handle_for_t<Substr, Dir>>)
-                       || (Dir == Direction::Consumer && is_consumer_handle_v<handle_for_t<Substr, Dir>>);
+concept HandleHasPoleOf =
+    (Dir == Direction::Producer && ::fixy::concurrent::is_producer_handle_v<handle_for_t<Substr, Dir>>)
+    || (Dir == Direction::Consumer && ::fixy::concurrent::is_consumer_handle_v<handle_for_t<Substr, Dir>>);
 
 }  // namespace detail
 
@@ -124,4 +125,4 @@ template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
     return ::fixy::session::mint_session<default_proto_for_t<Substr, Dir>>(ctx, std::move(handle));
 }
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

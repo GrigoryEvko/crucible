@@ -4,7 +4,7 @@
 // scope says nothing here: both handles are in scope, and only one of
 // them is the session where the borrow was taken.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
@@ -39,7 +39,7 @@ std::uint64_t storage[3] = {1, 2, 3};
 int main() {
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    auto witnessed = ::fixy::mint_witnessed_at(at_send, borrow);
+    auto witnessed = s::mint_witnessed_at(at_send, borrow);
     auto at_end = std::move(at_send).send(Ping{1}, [](Wire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;

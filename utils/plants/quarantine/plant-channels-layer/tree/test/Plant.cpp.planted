@@ -1,0 +1,13 @@
+// A quarantined unit that includes one planted header of the base: the
+// header of the layer that the flag names, or else the header of
+// fixy/channels/.  Each of these headers includes fixy/channels/PlantHigh.h.
+
+#if defined(PLANT_CONCURRENT_UP)
+#include <fixy/concurrent/PlantLow.h>
+#elif defined(PLANT_SESSION_UP)
+#include <fixy/session/PlantLow.h>
+#else
+#include <fixy/channels/PlantHigh.h>
+#endif
+
+int read_plant() { return probe::high_value(); }

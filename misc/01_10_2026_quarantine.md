@@ -318,7 +318,7 @@ The gauge scripts stay in the repository, because every later stage repeats them
 
 For each header in scope:
 1. Move its self-test namespaces and its namespace-scope `static_assert`s to its check file, unchanged. Keep each `static_assert` inside a class or a template.
-2. When the header names a type from its own self-test namespace outside that namespace (for example `fixy/concurrent/StageEndpointBridge.h`), move that type out of the self-test namespace first.
+2. When the header names a type from its own self-test namespace outside that namespace (for example `fixy/channels/StageEndpointBridge.h`), move that type out of the self-test namespace first.
 3. When a check depends on the translation unit that includes the header (for example a count of members that a later header can add), it stays in the header, with a reason row in the ledger. Report each such row.
 4. Set the ledger rows of the unit to zero, in the same commit.
 

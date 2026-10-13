@@ -4,13 +4,13 @@
 // refused.  A mint that took no context would give the handle to any
 // caller.
 
-#include <fixy/handle/LazyEstablishedChannel.h>
+#include <fixy/channels/LazyEstablishedChannel.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-namespace h = ::fixy::handle;
+namespace channels = ::fixy::channels;
 namespace s = ::fixy::session;
 namespace eff = ::foundation::effects;
 
@@ -24,7 +24,7 @@ using SendsIo = s::Send<IoWork, s::End>;
 }  // namespace
 
 int main() {
-    h::LazyEstablishedChannel<SendsIo, Wire> channel;
+    channels::LazyEstablishedChannel<SendsIo, Wire> channel;
     Wire wire{};
     channel.establish(wire);
 

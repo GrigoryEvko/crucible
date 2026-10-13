@@ -16,9 +16,9 @@ set(CRUCIBLE_PERMISSION_ROW_HEADERS
     crucible/warden/Quarantine.h
     fixy/Federation.h
     fixy/OwnedRegion.h
+    fixy/channels/SwmrSession.h
     fixy/concurrent/PermissionedMpscChannel.h
     fixy/concurrent/PermissionedSpscChannel.h
-    fixy/concurrent/SwmrSession.h
     fixy/os/OwnedMmap.h
     foundation/permissions/Permission.h
     foundation/permissions/ReadView.h

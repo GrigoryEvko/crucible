@@ -48,7 +48,7 @@ struct swmr_writer;
 struct swmr_reader;
 }  // namespace fixy::row_discipline
 
-namespace fixy::concurrent::swmr_session {
+namespace fixy::channels::swmr_session {
 
 template <typename T>
 using WriterRuntimeProto = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy::session::Continue>>;
@@ -311,4 +311,4 @@ struct WriterBrand {};
 struct ReaderBrand {};
 }  // namespace detail::swmr_session_witness
 
-}  // namespace fixy::concurrent::swmr_session
+}  // namespace fixy::channels::swmr_session

@@ -1,14 +1,14 @@
-// What fixy/concurrent/SubstrateSessionBridge.h, Endpoint.h,
+// What fixy/channels/SubstrateSessionBridge.h, Endpoint.h,
 // StageEndpointBridge.h and EndpointMint.h claim, checked at run time.
 //
 // Each check moves real values through a real channel.  A channel protocol
 // loops with no exit, so each session ends with a typed detach, which
 // releases the channel handle that the session owns.
 
-#include <fixy/concurrent/EndpointMint.h>
-#include <fixy/concurrent/Endpoint.h>
-#include <fixy/concurrent/StageEndpointBridge.h>
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/EndpointMint.h>
+#include <fixy/channels/Endpoint.h>
+#include <fixy/channels/StageEndpointBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -21,6 +21,7 @@
 #include "../test_assert.h"
 
 namespace c = fixy::concurrent;
+namespace channels = fixy::channels;
 namespace s = fixy::session;
 namespace perm = foundation::permissions;
 
@@ -48,7 +49,7 @@ using BridgeSpsc = c::spsc_channel_t<int, 8, decltype(bridge_root())>;
 
 // The table bridges the two directions of a channel.  A value that names
 // no direction has no handle of its pole, so the channel does not bridge it.
-static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)>);
+static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels::Direction>(2)>);
 
 [[nodiscard]] int bridge_round_trip() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
@@ -56,16 +57,16 @@ static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<BridgeSpsc::producer_tag, BridgeSpsc::consumer_tag>(bridge_root());
 
-    std::optional producer{
-        c::mint_substrate_session<BridgeSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)))};
+    std::optional producer{channels::mint_substrate_session<BridgeSpsc, channels::Direction::Producer>(
+        ctx, channel.producer(std::move(producer_perm)))};
     for (int value = 1; value <= 3; ++value) {
         producer.emplace(std::move(*producer).send(value * 10, push_int));
     }
     std::move(*producer).detach(s::detach_reason::InfiniteLoopProtocol{});
     if (channel.size_approx() != 3) return fail("the producer session left the wrong number of values");
 
-    std::optional consumer{
-        c::mint_substrate_session<BridgeSpsc, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm)))};
+    std::optional consumer{channels::mint_substrate_session<BridgeSpsc, channels::Direction::Consumer>(
+        ctx, channel.consumer(std::move(consumer_perm)))};
     for (int value = 1; value <= 3; ++value) {
         auto [got, next] = std::move(*consumer).recv(pop_int);
         if (got != value * 10) return fail("the consumer session read the wrong value");
@@ -88,10 +89,10 @@ using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<EndpointSpsc::producer_tag, EndpointSpsc::consumer_tag>(endpoint_root());
 
-    auto producer =
-        c::mint_endpoint<EndpointSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));
-    auto consumer =
-        c::mint_endpoint<EndpointSpsc, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm)));
+    auto producer = channels::mint_endpoint<EndpointSpsc, channels::Direction::Producer>(
+        ctx, channel.producer(std::move(producer_perm)));
+    auto consumer = channels::mint_endpoint<EndpointSpsc, channels::Direction::Consumer>(
+        ctx, channel.consumer(std::move(consumer_perm)));
 
     if (!producer.try_send(7)) return fail("the producer endpoint was refused below capacity");
     if (producer.size_approx() != 1) return fail("the producer endpoint saw the wrong size");
@@ -149,11 +150,11 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     (void)feeder.try_push(1);
     (void)feeder.try_push(2);
 
-    auto in_ep =
-        c::mint_endpoint<StageIn, c::Direction::Consumer>(ctx, in_channel.consumer(std::move(in_consumer_perm)));
-    auto out_ep =
-        c::mint_endpoint<StageOut, c::Direction::Producer>(ctx, out_channel.producer(std::move(out_producer_perm)));
-    auto stage = c::mint_stage_from_endpoints<&doubling_stage>(ctx, std::move(in_ep), std::move(out_ep));
+    auto in_ep = channels::mint_endpoint<StageIn, channels::Direction::Consumer>(
+        ctx, in_channel.consumer(std::move(in_consumer_perm)));
+    auto out_ep = channels::mint_endpoint<StageOut, channels::Direction::Producer>(
+        ctx, out_channel.producer(std::move(out_producer_perm)));
+    auto stage = channels::mint_stage_from_endpoints<&doubling_stage>(ctx, std::move(in_ep), std::move(out_ep));
     std::move(stage).run();
 
     const std::optional<int> first = drain.try_pop();
@@ -193,9 +194,11 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
 
     std::optional out_producer = out_channel.producer();
     if (!out_producer) return fail("the MPSC channel lent no producer share");
-    auto stage = c::mint_stage_from_endpoints<&forwarding_stage>(
-        ctx, c::mint_endpoint<FeedIn, c::Direction::Consumer>(ctx, in_channel.consumer(std::move(in_consumer_perm))),
-        c::mint_endpoint<FeedOut, c::Direction::Producer>(ctx, std::move(*out_producer)));
+    auto stage = channels::mint_stage_from_endpoints<&forwarding_stage>(
+        ctx,
+        channels::mint_endpoint<FeedIn, channels::Direction::Consumer>(
+            ctx, in_channel.consumer(std::move(in_consumer_perm))),
+        channels::mint_endpoint<FeedOut, channels::Direction::Producer>(ctx, std::move(*out_producer)));
     std::move(stage).run();
 
     const std::optional<int> first = drain.try_pop();
@@ -240,10 +243,14 @@ void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& ri
     (void)left_feeder.try_push(3);
     (void)right_feeder.try_push(4);
 
-    auto stage = c::mint_mpmc_stage_from_endpoints<&summing_stage>(
-        ctx, c::mint_endpoint<FanLeft, c::Direction::Consumer>(ctx, left.consumer(std::move(left_consumer_perm))),
-        c::mint_endpoint<FanRight, c::Direction::Consumer>(ctx, right.consumer(std::move(right_consumer_perm))),
-        c::mint_endpoint<FanOut, c::Direction::Producer>(ctx, out.producer(std::move(out_producer_perm))));
+    auto stage = channels::mint_mpmc_stage_from_endpoints<&summing_stage>(
+        ctx,
+        channels::mint_endpoint<FanLeft, channels::Direction::Consumer>(ctx,
+                                                                        left.consumer(std::move(left_consumer_perm))),
+        channels::mint_endpoint<FanRight, channels::Direction::Consumer>(
+            ctx, right.consumer(std::move(right_consumer_perm))),
+        channels::mint_endpoint<FanOut, channels::Direction::Producer>(ctx,
+                                                                       out.producer(std::move(out_producer_perm))));
     std::move(stage).run();
 
     const std::optional<int> sum = drain.try_pop();
@@ -278,8 +285,9 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
     (void)feeder.try_push(6);
 
     int last = 0;
-    auto stage = c::mint_swmr_stage_from_endpoint<&publishing_stage>(
-        ctx, c::mint_endpoint<SwmrIn, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm))),
+    auto stage = channels::mint_swmr_stage_from_endpoint<&publishing_stage>(
+        ctx,
+        channels::mint_endpoint<SwmrIn, channels::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm))),
         LastValueWriter{.last = &last});
     std::move(stage).run();
     if (last != 6) return fail("the single-writer stage did not publish the last value");
@@ -300,9 +308,10 @@ using RecordSpsc = c::spsc_channel_t<int, 8, decltype(record_root())>;
     auto consumer = channel.consumer(std::move(consumer_perm));
 
     s::SessionEventLog log;
-    auto recorded = c::mint_recording_endpoint(
-        c::mint_endpoint<RecordSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm))), log,
-        s::RoleTagId{1}, s::RoleTagId{2});
+    auto recorded =
+        channels::mint_recording_endpoint(channels::mint_endpoint<RecordSpsc, channels::Direction::Producer>(
+                                              ctx, channel.producer(std::move(producer_perm))),
+                                          log, s::RoleTagId{1}, s::RoleTagId{2});
     auto after_send = std::move(recorded).send(11, push_int);
     std::move(after_send).detach(s::detach_reason::InfiniteLoopProtocol{});
 

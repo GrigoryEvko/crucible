@@ -7,7 +7,7 @@
 // Expected diagnostic: no overload of mint_recording_endpoint takes a
 // channel handle.
 
-#include <fixy/concurrent/EndpointMint.h>
+#include <fixy/channels/EndpointMint.h>
 
 #include <foundation/permissions/Permission.h>
 
@@ -15,6 +15,7 @@
 
 namespace recording_endpoint_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 struct Tag {};
 inline auto channel_root() noexcept {
     return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
@@ -31,8 +32,8 @@ int main() {
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     s::SessionEventLog log;
-    auto recorded =
-        c::mint_recording_endpoint(channel.producer(std::move(producer_perm)), log, s::RoleTagId{1}, s::RoleTagId{2});
+    auto recorded = channels::mint_recording_endpoint(channel.producer(std::move(producer_perm)), log, s::RoleTagId{1},
+                                                      s::RoleTagId{2});
     (void)recorded;
     return 0;
 }

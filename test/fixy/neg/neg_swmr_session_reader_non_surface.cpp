@@ -5,10 +5,10 @@
 //
 // Expected diagnostic: SwmrSessionSurface is not satisfied.
 
-#include <fixy/concurrent/SwmrSession.h>
+#include <fixy/channels/SwmrSession.h>
 
 int main() {
-    namespace ses = ::fixy::concurrent::swmr_session;
+    namespace ses = ::fixy::channels::swmr_session;
     int not_a_channel = 0;
     auto reader = ses::mint_swmr_reader<int>(not_a_channel);
     (void)reader;

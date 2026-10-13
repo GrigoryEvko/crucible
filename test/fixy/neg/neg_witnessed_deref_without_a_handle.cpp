@@ -2,7 +2,7 @@
 // execution context.  A context discharges a row and says nothing about
 // where a session stands, so the gate refuses it.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
@@ -37,7 +37,7 @@ std::uint64_t storage[3] = {1, 2, 3};
 int main() {
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    auto witnessed = ::fixy::mint_witnessed_at(at_send, borrow);
+    auto witnessed = s::mint_witnessed_at(at_send, borrow);
     FgCtx ctx = eff::testing::foreground();
     [[maybe_unused]] auto read = deref(witnessed, ctx);
     (void)std::move(at_send)

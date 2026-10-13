@@ -11,8 +11,9 @@
 # A reviewer writes each reason.  `python3 utils/bin/guard explain detail-namespace` tells the rule.
 format 1
 rule detail-namespace
-@build/test/fixy/armed_roster/witness_roster.h | detail-use | 17 | namespace-scope: fixy::concurrent::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brands and the stage functions of the witnesses of the channels, the stages and the endpoints are in this namespace
-@build/test/fixy/armed_roster/witness_roster.h | detail-use | 8 | namespace-scope: fixy::concurrent::swmr_session::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags and the brands of the witnesses of the single-writer session are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 3 | namespace-scope: fixy::channels::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brand and the context of the witness of the endpoint are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 8 | namespace-scope: fixy::channels::swmr_session::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags and the brands of the witnesses of the single-writer session are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 14 | namespace-scope: fixy::concurrent::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brands and the stage functions of the witnesses of the channels and the stages are in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::detail | the generated roster of the witness rows names each witness type of the rule table, and the probe region of the witness of the NUMA placement is in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::session::detail | the generated roster of the witness rows names each witness type of the rule table, and the handle core of the session layer is in this namespace
 @build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: foundation::algebra::detail | the generated roster of the witness rows names each witness type of the rule table, and the lattice of the witness of the graded wrapper is in this namespace
@@ -26,8 +27,9 @@ test/fixy/row_hash_census.h | detail-use | 3 | namespace-scope: fixy::detail | h
 test/fixy/session_crash_attack.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/session_global_attack.h | detail-use | 1 | test_session_global_attack::check_generated(test_session_global_attack::FamilyCounts&, std::string_view, uint64_t): fixy::session::detail | reads the projection check of each role
 test/fixy/session_recording.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_armed_roster.cpp | detail-use | 1 | namespace-scope: fixy::channels::detail | names the armed predicate of the endpoint bridge
 test/fixy/test_armed_roster.cpp | detail-use | 46 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
-test/fixy/test_armed_roster.cpp | detail-use | 27 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages, the stage fakes and the endpoint bridge
+test/fixy/test_armed_roster.cpp | detail-use | 26 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages and the stage fakes
 test/fixy/test_armed_roster.cpp | detail-use | 11 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
 test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail | names each armed predicate of the fixy root
 test/fixy/test_armed_roster.cpp | detail-use | 6 | namespace-scope: fixy::mach::detail | names each armed predicate of the machine transitions

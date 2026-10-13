@@ -57,6 +57,26 @@
       "constructor": "\\bBudgetStamp\\("
     },
     {
+      "name": "neg_witness_channels_endpoint_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bEndpoint\\("
+    },
+    {
+      "name": "neg_witness_channels_endpointdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bEndpointDoor\\("
+    },
+    {
+      "name": "neg_witness_channels_swmr_session_swmrsession_readerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReaderHandle\\("
+    },
+    {
+      "name": "neg_witness_channels_swmr_session_swmrsession_writerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWriterHandle\\("
+    },
+    {
       "name": "neg_witness_cipher_durable_cipherdurablehandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bCipherDurableHandle\\("
@@ -65,16 +85,6 @@
       "name": "neg_witness_clocksource_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bClockSource\\("
-    },
-    {
-      "name": "neg_witness_concurrent_endpoint_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bEndpoint\\("
-    },
-    {
-      "name": "neg_witness_concurrent_endpointdoor_direct_construction",
-      "reason": "use of deleted function",
-      "constructor": "\\bEndpointDoor\\("
     },
     {
       "name": "neg_witness_concurrent_mpmcstage_direct_construction",
@@ -120,16 +130,6 @@
       "name": "neg_witness_concurrent_stage_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bStage\\("
-    },
-    {
-      "name": "neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bReaderHandle\\("
-    },
-    {
-      "name": "neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bWriterHandle\\("
     },
     {
       "name": "neg_witness_concurrent_swmrstage_direct_construction",
@@ -537,6 +537,11 @@
       "constructor": "\\bWatchHooks\\("
     },
     {
+      "name": "neg_witness_session_witnessed_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWitnessed\\("
+    },
+    {
       "name": "neg_witness_sharedread_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bSharedRead\\("
@@ -595,11 +600,6 @@
       "name": "neg_witness_versionstamp_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bVersionStamp\\("
-    },
-    {
-      "name": "neg_witness_witnessed_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bWitnessed\\("
     },
     {
       "name": "neg_witness_writeonce_direct_construction",
@@ -782,12 +782,12 @@
       "header": "fixy/concurrent/PermissionedMpscChannel.h"
     },
     {
-      "type": "fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle",
-      "header": "fixy/concurrent/SwmrSession.h"
+      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle",
+      "header": "fixy/channels/SwmrSession.h"
     },
     {
-      "type": "fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::ReaderHandle",
-      "header": "fixy/concurrent/SwmrSession.h"
+      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::ReaderHandle",
+      "header": "fixy/channels/SwmrSession.h"
     },
     {
       "type": "fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>",
@@ -926,8 +926,8 @@
       "header": "fixy/SharedRegion.h"
     },
     {
-      "type": "fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>>",
-      "header": "fixy/Witnessed.h"
+      "type": "fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>",
+      "header": "fixy/session/Witnessed.h"
     },
     {
       "type": "fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2>",
@@ -1034,8 +1034,8 @@
       "header": "fixy/concurrent/Stage.h"
     },
     {
-      "type": "fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_witness::UserTag, fixy::concurrent::detail::endpoint_witness::UserBrand>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_witness::FgCtx>",
-      "header": "fixy/concurrent/Endpoint.h"
+      "type": "fixy::channels::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::channels::detail::endpoint_witness::UserTag, fixy::channels::detail::endpoint_witness::UserBrand>, fixy::channels::Direction::Producer, fixy::channels::detail::endpoint_witness::FgCtx>",
+      "header": "fixy/channels/Endpoint.h"
     },
     {
       "type": "fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>>",
@@ -1098,8 +1098,8 @@
       "header": "fixy/session/Recording.h"
     },
     {
-      "type": "fixy::concurrent::EndpointDoor",
-      "header": "fixy/concurrent/Endpoint.h"
+      "type": "fixy::channels::EndpointDoor",
+      "header": "fixy/channels/Endpoint.h"
     }
   ]
 }

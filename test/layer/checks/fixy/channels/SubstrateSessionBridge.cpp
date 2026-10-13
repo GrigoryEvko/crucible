@@ -1,8 +1,8 @@
-// The compile-time checks of fixy/concurrent/SubstrateSessionBridge.h.
+// The compile-time checks of fixy/channels/SubstrateSessionBridge.h.
 
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 namespace detail::substrate_session_bridge_self_test {
 
@@ -11,8 +11,8 @@ namespace proto = ::fixy::session;
 struct UserTag {};
 struct UserBrand {};
 
-using Spsc = PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
-using Mpsc = PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
+using Spsc = ::fixy::concurrent::PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
+using Mpsc = ::fixy::concurrent::PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
 
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Producer>, typename Spsc::ProducerHandle>);
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Consumer>, typename Spsc::ConsumerHandle>);
@@ -48,4 +48,4 @@ static_assert(!IsBridgeableDirection<LooksLikeAChannel, Direction::Producer>);
 
 }  // namespace detail::substrate_session_bridge_self_test
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

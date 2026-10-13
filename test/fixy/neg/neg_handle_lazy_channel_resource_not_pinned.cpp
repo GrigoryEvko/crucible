@@ -4,9 +4,9 @@
 // handle over a raw pointer to such a struct would dangle after the
 // move.
 
-#include <fixy/handle/LazyEstablishedChannel.h>
+#include <fixy/channels/LazyEstablishedChannel.h>
 
-namespace h = ::fixy::handle;
+namespace channels = ::fixy::channels;
 namespace s = ::fixy::session;
 
 namespace {
@@ -16,6 +16,6 @@ struct MovableWire {
 }  // namespace
 
 int main() {
-    h::LazyEstablishedChannel<s::Send<int, s::End>, MovableWire> channel;
+    channels::LazyEstablishedChannel<s::Send<int, s::End>, MovableWire> channel;
     return channel.is_established() ? 1 : 0;
 }

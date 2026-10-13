@@ -11,11 +11,11 @@
 // pipeline over one channel instance for each link passes the check.
 
 #include <fixy/Ctx.h>
+#include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
-#include <fixy/concurrent/SwmrSession.h>
 
 #include <foundation/Brand.h>
 #include <foundation/effects/Ctx.h>
@@ -34,7 +34,7 @@
 
 namespace c = fixy::concurrent;
 namespace perm = foundation::permissions;
-namespace ses = fixy::concurrent::swmr_session;
+namespace ses = fixy::channels::swmr_session;
 
 namespace {
 

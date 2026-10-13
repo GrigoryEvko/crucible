@@ -4,12 +4,12 @@
 // witness_discharges is a function at namespace scope that is not a
 // template, so no specialization matches it.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <meta>
 
 template <>
-consteval bool fixy::witness_discharges(std::meta::info, std::meta::info) {
+consteval bool fixy::session::witness_discharges(std::meta::info, std::meta::info) {
     return true;
 }
 

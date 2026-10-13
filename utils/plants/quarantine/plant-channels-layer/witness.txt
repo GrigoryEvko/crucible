@@ -1,0 +1,20 @@
+# The layer X6_channels of the rule table of the repository, in a tree with
+# the paths of the repository.  A quarantined unit includes one planted
+# header of the base.  A header of fixy/concurrent/ (the layer
+# X4_concurrent) and a header of fixy/session/ (the layer X5_session) that
+# include a header of fixy/channels/ give an upward include.  A header of
+# fixy/channels/ that includes a header of fixy/session/ includes a lower
+# layer, and it gives no finding.
+
+compile channels-down test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit channels-down pass
+
+compile concurrent-up test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag concurrent-up -DPLANT_CONCURRENT_UP
+exit concurrent-up fail
+error concurrent-up include/fixy/concurrent/PlantLow.h:6 | quarantine: upward-include include/fixy/channels/PlantHigh.h (the layer X6_channels) from the layer X4_concurrent;
+
+compile session-up test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag session-up -DPLANT_SESSION_UP
+exit session-up fail
+error session-up include/fixy/session/PlantLow.h:6 | quarantine: upward-include include/fixy/channels/PlantHigh.h (the layer X6_channels) from the layer X5_session;

@@ -29,11 +29,15 @@
 #include <fixy/Borrowed.h>
 #include <fixy/Budgeted.h>
 #include <fixy/CanonicalOrder.h>
+#include <fixy/channels/Endpoint.h>
+#include <fixy/channels/LazyEstablishedChannel.h>
+#include <fixy/channels/StageEndpointBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
+#include <fixy/channels/SwmrSession.h>
 #include <fixy/Checked.h>
 #include <fixy/Collision.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
-#include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
@@ -45,10 +49,7 @@
 #include <fixy/concurrent/Spawn.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/Stage.h>
-#include <fixy/concurrent/StageEndpointBridge.h>
 #include <fixy/concurrent/StageShape.h>
-#include <fixy/concurrent/SubstrateSessionBridge.h>
-#include <fixy/concurrent/SwmrSession.h>
 #include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/ConstantTime.h>
@@ -62,7 +63,6 @@
 #include <fixy/fp/Canonicalize.h>
 #include <fixy/fp/Polynomial.h>
 #include <fixy/GradedFacade.h>
-#include <fixy/handle/LazyEstablishedChannel.h>
 #include <fixy/handle/Once.h>
 #include <fixy/handle/PublishOnce.h>
 #include <fixy/Insights.h>
@@ -100,12 +100,12 @@
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Stepping.h>
 #include <fixy/session/VigilMode.h>
+#include <fixy/session/Witnessed.h>
 #include <fixy/SharedRegion.h>
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/Throws.h>
-#include <fixy/Witnessed.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
@@ -405,8 +405,10 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy,
     ^^::fixy::session,
     ^^::fixy::session::vigil_mode,
+    ^^::fixy::session::witness,
     ^^::fixy::concurrent,
-    ^^::fixy::concurrent::swmr_session,
+    ^^::fixy::channels,
+    ^^::fixy::channels::swmr_session,
     ^^::fixy::handle,
     ^^::fixy::io,
     ^^::fixy::fs,
@@ -416,7 +418,6 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::sched,
     ^^::fixy::spin,
     ^^::fixy::time,
-    ^^::fixy::witness,
     ^^::fixy::cipher::durable,
 };
 
@@ -650,7 +651,7 @@ using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitn
 using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
 using SwmrWitness =
-    ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
+    ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
 
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
@@ -765,7 +766,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::SharedRegion, ^^::fixy::SharedRegion<int, PureRegionTag>},
     {^^::fixy::ScopedView, ^^::fixy::ScopedView<::fixy::detail::sv_test_carrier, ::fixy::detail::sv_test_tag>},
     {^^::fixy::SharedRead, ^^::fixy::SharedRead<int, PureRegionTag>},
-    {^^::fixy::Witnessed, ^^::fixy::Witnessed<BorrowedInt, ::fixy::witness::UnderRow<PureRegionTag>>},
+    {^^::fixy::session::Witnessed,
+     ^^::fixy::session::Witnessed<BorrowedInt, ::fixy::session::witness::UnderRow<PureRegionTag>>},
 
     {^^::fixy::session::SessionHandle, ^^::fixy::session::SessionHandle<::fixy::session::End, int>},
     {^^::fixy::session::SessionFromMachine, ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},
@@ -779,7 +781,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::PermissionedMpscChannel, ^^MpscWitness},
     {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
-    {^^::fixy::concurrent::swmr_session::SwmrSession, ^^SwmrWitness},
+    {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^StageWitness},
     {^^::fixy::concurrent::MpmcStage, ^^MpmcStageWitness},
     {^^::fixy::concurrent::SwmrStage, ^^SwmrStageWitness},
@@ -790,8 +792,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::handle::Lazy, ^^::fixy::handle::Lazy<int>},
     {^^::fixy::handle::PublishOnce, ^^::fixy::handle::PublishOnce<int>},
     {^^::fixy::handle::PublishSlot, ^^::fixy::handle::PublishSlot<int>},
-    {^^::fixy::handle::LazyEstablishedChannel,
-     ^^::fixy::handle::LazyEstablishedChannel<::fixy::session::End, LazyChannelWire>},
+    {^^::fixy::channels::LazyEstablishedChannel,
+     ^^::fixy::channels::LazyEstablishedChannel<::fixy::session::End, LazyChannelWire>},
 
     {^^::fixy::sched::SchedPriority, ^^::fixy::sched::SchedPriority<0>},
     {^^::fixy::spin::Gate, ^^::fixy::spin::SpinLock<PureRegionTag>},
@@ -1143,15 +1145,16 @@ inline constexpr StatedZero kZeros[] = {
      "the record of the check of a stage graph: a constant evaluation computes it, it is the argument of the concept "
      "that a refusal prints, and it is never a value in a signature"},
     {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
-    {^^::fixy::concurrent::handle_for, kMetafunction},
-    {^^::fixy::concurrent::default_proto_for, kMetafunction},
-    {^^::fixy::concurrent::Endpoint,
+
+    {^^::fixy::channels::handle_for, kMetafunction},
+    {^^::fixy::channels::default_proto_for, kMetafunction},
+    {^^::fixy::channels::Endpoint,
      "a builder that binds a channel handle to a context once: a stage mint or a session mint consumes it, the "
      "stage or the session handle that comes out folds, and an endpoint is never a template argument of a kernel "
      "signature"},
-    {^^::fixy::concurrent::EndpointPack,
+    {^^::fixy::channels::EndpointPack,
      "a list of endpoint types that the stage gate reads at compile time: it has no member, and it is never a value"},
-    {^^::fixy::concurrent::EndpointDoor,
+    {^^::fixy::channels::EndpointDoor,
      "the door of the endpoint mint: it has static members only, no object of it exists, and it is never a value"},
 
     {^^::fixy::handle::Once, kDescriptor},
@@ -1184,8 +1187,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::sched::PriorAffinity,
      "the mask that one pin replaced: it holds the authority to undo that pin on its thread, and it is never a value "
      "in a kernel signature"},
-    {^^::fixy::witness::AtProtocol, kVocabulary},
-    {^^::fixy::witness::UnderRow, kVocabulary},
+    {^^::fixy::session::witness::AtProtocol, kVocabulary},
+    {^^::fixy::session::witness::UnderRow, kVocabulary},
     {^^::fixy::cipher::durable::warm_writer_stance, kVocabulary},
     {^^::fixy::cipher::durable::cold_writer_stance, kVocabulary},
     {^^::fixy::cipher::durable::head_advance_stance, kVocabulary},

@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: no mint_swmr_writer overload takes the permission.
 
-#include <fixy/concurrent/SwmrSession.h>
+#include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -20,14 +20,14 @@ struct ReaderTag {
 };
 inline auto reader_root() noexcept { return ::foundation::permissions::mint_permission_root<ReaderTag>(); }
 inline auto writer_root() noexcept { return ::foundation::permissions::mint_permission_root<WriterTag>(); }
-using Swmr = ::fixy::concurrent::swmr_session::SwmrSession<int, WriterTag, ReaderTag,
-                                                           ::foundation::brand::brand_of_t<decltype(reader_root())>,
-                                                           ::foundation::brand::brand_of_t<decltype(writer_root())>>;
+using Swmr = ::fixy::channels::swmr_session::SwmrSession<int, WriterTag, ReaderTag,
+                                                         ::foundation::brand::brand_of_t<decltype(reader_root())>,
+                                                         ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 }  // namespace swmr_writer_tag_fixture
 
 int main() {
     using namespace swmr_writer_tag_fixture;
-    namespace ses = ::fixy::concurrent::swmr_session;
+    namespace ses = ::fixy::channels::swmr_session;
     namespace perm = ::foundation::permissions;
     Swmr swmr{reader_root(), 1};
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<ReaderTag>());

@@ -5,9 +5,9 @@
 // The channel is established correctly first, so nothing about the
 // publication is at fault here — only the argument.
 
-#include <fixy/handle/LazyEstablishedChannel.h>
+#include <fixy/channels/LazyEstablishedChannel.h>
 
-namespace h = ::fixy::handle;
+namespace channels = ::fixy::channels;
 namespace s = ::fixy::session;
 
 namespace {
@@ -17,7 +17,7 @@ struct Wire : ::foundation::Pinned<Wire> {
 }  // namespace
 
 int main() {
-    h::LazyEstablishedChannel<s::Send<int, s::End>, Wire> channel;
+    channels::LazyEstablishedChannel<s::Send<int, s::End>, Wire> channel;
     Wire wire{};
     channel.establish(wire);
 

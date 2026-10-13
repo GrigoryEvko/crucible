@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: CtxFitsMpmcStageFromEndpoints is not satisfied.
 
-#include <fixy/concurrent/StageEndpointBridge.h>
+#include <fixy/channels/StageEndpointBridge.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -15,6 +15,7 @@
 
 namespace mpmc_lvalue_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 struct LeftTag {};
 struct RightTag {};
 struct OutTag {};
@@ -47,10 +48,11 @@ int main() {
     (void)left_p;
     (void)right_p;
     (void)out_c;
-    auto left_ep = c::mint_endpoint<Left, c::Direction::Consumer>(ctx, left.consumer(std::move(left_c)));
-    auto stage = c::mint_mpmc_stage_from_endpoints<&fan_in>(
-        ctx, left_ep, c::mint_endpoint<Right, c::Direction::Consumer>(ctx, right.consumer(std::move(right_c))),
-        c::mint_endpoint<Out, c::Direction::Producer>(ctx, out.producer(std::move(out_p))));
+    auto left_ep = channels::mint_endpoint<Left, channels::Direction::Consumer>(ctx, left.consumer(std::move(left_c)));
+    auto stage = channels::mint_mpmc_stage_from_endpoints<&fan_in>(
+        ctx, left_ep,
+        channels::mint_endpoint<Right, channels::Direction::Consumer>(ctx, right.consumer(std::move(right_c))),
+        channels::mint_endpoint<Out, channels::Direction::Producer>(ctx, out.producer(std::move(out_p))));
     std::move(stage).run();
     return 0;
 }

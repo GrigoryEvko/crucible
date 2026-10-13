@@ -1252,7 +1252,7 @@ struct PublishOnceDoublePublish : tag_base {
                                                     "second publisher.  When several threads can publish, call "
                                                     "publish inside fixy::handle::Once::call.  The first thread "
                                                     "publishes, and the other threads wait and do not publish.  "
-                                                    "fixy::handle::LazyEstablishedChannel does not serialize "
+                                                    "fixy::channels::LazyEstablishedChannel does not serialize "
                                                     "establish: establish calls publish directly, so a second "
                                                     "establish also ends the process.  After establish, the channel "
                                                     "gives its one session to the first observer, and it refuses "

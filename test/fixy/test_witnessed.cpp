@@ -11,7 +11,7 @@
 // refused, because a gate that admitted everything would pass the first
 // half of every cell.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/OwnedRegion.h>
@@ -105,11 +105,11 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
 
     auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
     auto borrow = ::fixy::mint_borrowed(region);
-    auto witnessed = ::fixy::mint_witnessed_under(borrow);
+    auto witnessed = ::fixy::session::mint_witnessed_under(borrow);
 
     // The obligation is the tag's, read off the borrow rather than
     // spelled by the caller, so there is nothing here to spell wrongly.
-    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::witness::UnderRow<Cache>>);
+    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::UnderRow<Cache>>);
 
     auto read = deref(witnessed, ctx);
     CRUCIBLE_TEST_REQUIRE(read.size() == 4);
@@ -125,8 +125,8 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
 void test_a_context_that_refuses_the_row_refuses_the_read() {
     using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
     using SpilledBorrow = ::fixy::Borrowed<std::uint64_t, Spilled, probe_brand>;
-    using CacheWitnessed = ::fixy::Witnessed<CacheBorrow, ::fixy::witness::UnderRow<Cache>>;
-    using SpilledWitnessed = ::fixy::Witnessed<SpilledBorrow, ::fixy::witness::UnderRow<Spilled>>;
+    using CacheWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::UnderRow<Cache>>;
+    using SpilledWitnessed = ::fixy::session::Witnessed<SpilledBorrow, ::fixy::session::witness::UnderRow<Spilled>>;
 
     // A region whose tag costs nothing is read from anywhere.  One whose
     // tag says IO is read only where IO is permitted, and the refusal is
@@ -145,9 +145,9 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
 
     auto handle = s::mint_session_handle<Sending, Wire>(Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    auto witnessed = ::fixy::mint_witnessed_at(handle, borrow);
+    auto witnessed = ::fixy::session::mint_witnessed_at(handle, borrow);
 
-    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::witness::AtProtocol<Sending>>);
+    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::AtProtocol<Sending>>);
 
     auto read = deref(witnessed, handle);
     CRUCIBLE_TEST_REQUIRE(read.size() == 3);
@@ -171,7 +171,7 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
     using AtSend = s::SessionHandle<Sending, Wire>;
     using AtEnd = s::SessionHandle<s::End, Wire>;
     using SendBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using Witnessed = ::fixy::Witnessed<SendBorrow, ::fixy::witness::AtProtocol<Sending>>;
+    using Witnessed = ::fixy::session::Witnessed<SendBorrow, ::fixy::session::witness::AtProtocol<Sending>>;
 
     static_assert(CanDeref<Witnessed, AtSend>);
     static_assert(!CanDeref<Witnessed, AtEnd>, "the same handle spelling at another position is another witness");
@@ -189,8 +189,8 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
 
 void test_a_witness_of_one_kind_is_not_the_other() {
     using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using RowWitnessed = ::fixy::Witnessed<CacheBorrow, ::fixy::witness::UnderRow<Cache>>;
-    using PositionWitnessed = ::fixy::Witnessed<CacheBorrow, ::fixy::witness::AtProtocol<Sending>>;
+    using RowWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::UnderRow<Cache>>;
+    using PositionWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::AtProtocol<Sending>>;
     using AtSend = s::SessionHandle<Sending, Wire>;
 
     static_assert(CanDeref<RowWitnessed, FgCtx>);

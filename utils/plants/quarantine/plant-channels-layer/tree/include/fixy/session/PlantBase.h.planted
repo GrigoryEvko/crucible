@@ -1,0 +1,9 @@
+#pragma once
+
+// A header of the layer X5_session with no include.
+
+namespace probe {
+
+inline int base_value() { return 1; }
+
+}  // namespace probe

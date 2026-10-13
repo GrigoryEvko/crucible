@@ -3683,7 +3683,7 @@ fixy_neg_compile_test(neg_substrate_session_lvalue_handle
   "cannot convert .producer.")
 fixy_neg_compile_test(neg_substrate_session_not_bridgeable
   "no matching function for call to .mint_substrate_session<substrate_table_fixture::FakeChannel"
-  "incomplete type .struct fixy::concurrent::handle_for<substrate_table_fixture::FakeChannel")
+  "incomplete type .struct fixy::channels::handle_for<substrate_table_fixture::FakeChannel")
 
 # An endpoint binds a handle to an execution context, and its gate is the
 # gate of the session that the endpoint can start.
@@ -3745,7 +3745,7 @@ fixy_neg_compile_test(neg_swmr_stage_mint_row_not_admitted
 # The recording wrapper takes an endpoint and a session event log.
 fixy_neg_compile_test(neg_recording_endpoint_non_endpoint
   "no matching function for call to .mint_recording_endpoint"
-  "is not derived from .fixy::concurrent::Endpoint<Substr, Dir, Ctx>.")
+  "is not derived from .fixy::channels::Endpoint<Substr, Dir, Ctx>.")
 fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
   "no matching function for call to .mint_recording_endpoint"
   "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventLog&.")
@@ -3778,7 +3778,7 @@ fixy_neg_compile_test(neg_swmr_session_reader_non_surface
   "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = int.")
 fixy_neg_compile_test(neg_swmr_session_reader_const_channel
   "no matching function for call to .mint_swmr_reader"
-  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::concurrent::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag")
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::channels::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag")
 
 # Each session mint takes the handle of its own role, by move.
 fixy_neg_compile_test(neg_swmr_session_writer_session_reader_handle
@@ -4134,10 +4134,10 @@ fixy_neg_compile_test(neg_handle_one_shot_flag_reset_braced_proof
 # that can move has no stable address for the session to hold.
 fixy_test(test_handle_lazy_channel)
 fixy_neg_compile_test(neg_handle_lazy_channel_mint_without_context
-  "no matching function for call to .fixy::handle::LazyEstablishedChannel<.*>::mint_established_session\\(int\\)."
+  "no matching function for call to .fixy::channels::LazyEstablishedChannel<.*>::mint_established_session\\(int\\)."
   "IsExecCtx")
 fixy_neg_compile_test(neg_handle_lazy_channel_mint_context_lacks_io
-  "no matching function for call to .fixy::handle::LazyEstablishedChannel<.*>::mint_established_session"
+  "no matching function for call to .fixy::channels::LazyEstablishedChannel<.*>::mint_established_session"
   "CtxFitsSession")
 fixy_neg_compile_test(neg_handle_lazy_channel_resource_not_pinned
   "static assertion failed"
@@ -5415,14 +5415,14 @@ fixy_neg_compile_test(neg_witnessed_deref_at_a_later_protocol_position
 # TEMPORAL, presented the wrong kind of thing entirely.
 fixy_neg_compile_test(neg_witnessed_deref_without_a_handle
   "no matching function for call to .deref\\("
-  "Witness = fixy::witness::AtProtocol<fixy::session::Send<"
+  "Witness = fixy::session::witness::AtProtocol<fixy::session::Send<"
   "Presented = foundation::effects::ExecCtx<")
 
 # EFFECT: the region's tag says the read costs IO, and the context's row
 # is empty.  The same Subrow test a lend already runs, on the borrow.
 fixy_neg_compile_test(neg_witnessed_deref_ctx_refuses_the_row
   "no matching function for call to .deref\\("
-  "Witness = fixy::witness::UnderRow<<unnamed>::Spilled>"
+  "Witness = fixy::session::witness::UnderRow<<unnamed>::Spilled>"
   "Presented = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg")
 
 # EFFECT, presented the wrong kind of thing entirely.  With the one
@@ -5430,14 +5430,14 @@ fixy_neg_compile_test(neg_witnessed_deref_ctx_refuses_the_row
 # obligation.
 fixy_neg_compile_test(neg_witnessed_deref_with_a_handle_for_a_row
   "no matching function for call to .deref\\("
-  "Witness = fixy::witness::UnderRow<<unnamed>::Cache"
+  "Witness = fixy::session::witness::UnderRow<<unnamed>::Cache"
   "Presented = fixy::session::SessionHandle<fixy::session::Send<")
 
 # The one gate reads a function that is not a template, so a
 # specialization that lets every value discharge every witness matches no
 # template.
 fixy_neg_compile_test(neg_witness_discharges_specialized
-  "template-id .witness_discharges<>. for .consteval bool fixy::witness_discharges\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "template-id .witness_discharges<>. for .consteval bool fixy::session::witness_discharges\\(std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_witness_discharges_specialized\\.cpp:12:[0-9]+: error:")
 
 # The mint refuses a tag that states no obligation, rather than minting
@@ -5449,7 +5449,7 @@ fixy_neg_compile_test(neg_witnessed_under_a_tag_with_no_row
 # The position a borrow names has to outlive the borrow.
 fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
   "use of deleted function"
-  "mint_witnessed_at\\(const session::SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
+  "mint_witnessed_at\\(const SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
   "the protocol position the borrow would name is already gone")
 
 # ── The component walk, read by four gates ────────────────────────────

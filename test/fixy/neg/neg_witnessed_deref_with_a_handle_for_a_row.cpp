@@ -3,7 +3,7 @@
 // and says nothing about what a caller is permitted to do, so the gate
 // refuses it.  The two kinds are one gate and not one obligation.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
@@ -37,7 +37,7 @@ std::uint64_t storage[3] = {1, 2, 3};
 
 int main() {
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    auto witnessed = ::fixy::mint_witnessed_under(borrow);
+    auto witnessed = s::mint_witnessed_under(borrow);
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     [[maybe_unused]] auto read = deref(witnessed, at_send);
     (void)std::move(at_send)

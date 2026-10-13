@@ -19,7 +19,7 @@
 //   - The endpoint keeps a copy of the minting context, because a context
 //     has no public default constructor.
 
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 #include <fixy/session/Handle.h>
 
 #include <foundation/NoObject.h>
@@ -31,7 +31,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 // The class template, the endpoint door and the mint all spell this one
 // gate, so they cannot drift apart.  An endpoint keeps a copy of its
@@ -151,7 +151,7 @@ class EndpointDoor final : ::foundation::NoObject<EndpointDoor> {
     [[nodiscard]] static constexpr auto make_(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept
         -> Endpoint<Substr, Dir, Ctx> {
         static_assert(CtxFitsEndpointMint<Substr, Dir, Ctx>,
-                      "fixy::concurrent::diagnostic [Endpoint_Door_Refused]: the endpoint door accepts only a "
+                      "fixy::channels::diagnostic [Endpoint_Door_Refused]: the endpoint door accepts only a "
                       "context and a handle that mint_endpoint accepts.");
         return Endpoint<Substr, Dir, Ctx>{ctx, std::move(handle)};
     }
@@ -166,4 +166,4 @@ struct UserBrand {};
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
 }  // namespace detail::endpoint_witness
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

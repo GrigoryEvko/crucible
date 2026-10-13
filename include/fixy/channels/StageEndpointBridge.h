@@ -13,7 +13,7 @@
 //   - Each mint checks the row in the requires clause alone, as mint_stage
 //     does.  A refused row never arrives in the body.
 
-#include <fixy/concurrent/Endpoint.h>
+#include <fixy/channels/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/StageShape.h>
@@ -28,9 +28,17 @@
 #include <type_traits>
 #include <utility>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 namespace detail {
+
+// The gates in detail use these names of the concurrent layer.  The
+// declarations are in detail, so the names are not part of fixy::channels.
+using ::fixy::concurrent::CtxFitsSwmrPublishStage;
+using ::fixy::concurrent::CtxFitsVariadicStage;
+using ::fixy::concurrent::is_swmr_writer_v;
+using ::fixy::concurrent::StageArity;
+using ::fixy::concurrent::VariadicPipelineStage;
 
 template <class T>
 struct is_endpoint : std::false_type {};
@@ -65,7 +73,7 @@ concept IsMovedEndpoint = IsEndpoint<E> && !std::is_lvalue_reference_v<E>;
 
 template <auto FnPtr, class ConsumerEp, class ProducerEp>
 concept StageHandlesMatchEndpoints =
-    PipelineStage<FnPtr>
+    ::fixy::concurrent::PipelineStage<FnPtr>
     && std::is_same_v<typename std::remove_cvref_t<ConsumerEp>::handle_type,
                       std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 0>>>
     && std::is_same_v<typename std::remove_cvref_t<ProducerEp>::handle_type,
@@ -228,7 +236,7 @@ concept CtxFitsSwmrStageFromEndpoint = detail::swmr_stage_from_endpoint_gate<FnP
 
 template <auto FnPtr, class Ctx, class ConsumerEp, class ProducerEp>
 concept CtxFitsStageFromEndpoints =
-    CtxFitsStage<FnPtr, Ctx> && IsConsumerEndpoint<ConsumerEp> && IsProducerEndpoint<ProducerEp>
+    ::fixy::concurrent::CtxFitsStage<FnPtr, Ctx> && IsConsumerEndpoint<ConsumerEp> && IsProducerEndpoint<ProducerEp>
     && IsMovedEndpoint<ConsumerEp> && IsMovedEndpoint<ProducerEp>
     && StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>;
 
@@ -236,20 +244,20 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
     requires CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>
 [[nodiscard]] constexpr auto mint_stage_from_endpoints(Ctx const& ctx, ConsumerEp&& in_ep,
                                                        ProducerEp&& out_ep) noexcept {
-    return mint_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(out_ep).into_handle());
+    return ::fixy::concurrent::mint_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(out_ep).into_handle());
 }
 
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
     requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
 [[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept {
-    return mint_mpmc_stage<FnPtr>(ctx, std::move(endpoints).into_handle()...);
+    return ::fixy::concurrent::mint_mpmc_stage<FnPtr>(ctx, std::move(endpoints).into_handle()...);
 }
 
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
     requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
 [[nodiscard]] constexpr auto mint_swmr_stage_from_endpoint(Ctx const& ctx, ConsumerEp&& in_ep,
                                                            Writer&& writer) noexcept {
-    return mint_swmr_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(writer));
+    return ::fixy::concurrent::mint_swmr_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(writer));
 }
 
 // The armed cell of detail::is_endpoint is in test/fixy/test_armed_roster.cpp.
@@ -257,4 +265,4 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
 // them builds the two channel types in each translation unit that
 // includes it.
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

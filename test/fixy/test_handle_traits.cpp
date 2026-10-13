@@ -16,7 +16,7 @@
 // one, with no synthetic in the way.
 //
 // The single-writer poles are witnessed here by synthetics alone.  The
-// SwmrSession concept of fixy/concurrent/SwmrSession.h requires
+// SwmrSession concept of fixy/channels/SwmrSession.h requires
 // IsSwmrWriter of each writer handle and IsSwmrReader of each reader
 // handle.
 

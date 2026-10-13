@@ -1,8 +1,8 @@
-// The compile-time checks of fixy/concurrent/Endpoint.h.
+// The compile-time checks of fixy/channels/Endpoint.h.
 
-#include <fixy/concurrent/Endpoint.h>
+#include <fixy/channels/Endpoint.h>
 
-namespace fixy::concurrent {
+namespace fixy::channels {
 
 namespace detail::endpoint_self_test {
 
@@ -10,8 +10,8 @@ namespace proto = ::fixy::session;
 
 using endpoint_witness::UserTag;
 using endpoint_witness::UserBrand;
-using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
-using SmallMpsc = PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
+using SmallSpsc = ::fixy::concurrent::PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
+using SmallMpsc = ::fixy::concurrent::PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
 using endpoint_witness::FgCtx;
 using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx>;
 using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx>;
@@ -40,4 +40,4 @@ static_assert(sizeof(ConsEp) == sizeof(void*));
 
 }  // namespace detail::endpoint_self_test
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::channels

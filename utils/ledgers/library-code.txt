@@ -225,6 +225,12 @@ include/fixy/Tagged.h | inlined | 2 | std::basic_string::basic_string | -
 include/fixy/Tagged.h | inlined | 2 | std::basic_string::~basic_string | -
 include/fixy/Tagged.h | inlined | 2 | std::filesystem::path::path | -
 include/fixy/Tagged.h | inlined | 3 | std::filesystem::path::~path | -
+include/fixy/channels/LazyEstablishedChannel.h | inlined | 1 | std::atomic::exchange | -
+include/fixy/channels/LazyEstablishedChannel.h | inlined | 1 | std::expected::expected | -
+include/fixy/channels/SwmrSession.h | inlined | 2 | std::optional::operator (conversion) | -
+include/fixy/channels/SwmrSession.h | inlined | 2 | std::optional::operator* | -
+include/fixy/channels/SwmrSession.h | inlined | 1 | std::optional::optional | -
+include/fixy/channels/SwmrSession.h | inlined | 1 | std::optional::~optional | -
 include/fixy/concurrent/AtomicSnapshot.h | inlined | 1 | std::optional::optional | -
 include/fixy/concurrent/AtomicSnapshot.h | inlined | 2 | std::span::front | -
 include/fixy/concurrent/ChaseLevDeque.h | inlined | 6 | std::__atomic_base::load | -
@@ -282,10 +288,6 @@ include/fixy/concurrent/SpscRing.h | inlined | 1 | std::span::empty | -
 include/fixy/concurrent/SpscRing.h | inlined | 2 | std::span::size | -
 include/fixy/concurrent/Stage.h | inlined | 1 | std::tuple::tuple | -
 include/fixy/concurrent/Stage.h | inlined | 1 | std::tuple::~tuple | -
-include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator (conversion) | -
-include/fixy/concurrent/SwmrSession.h | inlined | 2 | std::optional::operator* | -
-include/fixy/concurrent/SwmrSession.h | inlined | 1 | std::optional::optional | -
-include/fixy/concurrent/SwmrSession.h | inlined | 1 | std::optional::~optional | -
 include/fixy/fp/Polynomial.h | inlined | 2 | std::array::operator[] | -
 include/fixy/fp/Polynomial.h | inlined | 2 | std::bit_cast | -
 include/fixy/fp/Polynomial.h | inlined | 1 | std::copysign | -
@@ -294,8 +296,6 @@ include/fixy/fp/Polynomial.h | inlined | 4 | std::fma | -
 include/fixy/fp/Polynomial.h | inlined | 1 | std::isnormal | -
 include/fixy/fp/Polynomial.h | inlined | 1 | std::pair::pair | -
 include/fixy/fp/Polynomial.h | inlined | 1 | std::sqrt | -
-include/fixy/handle/LazyEstablishedChannel.h | inlined | 1 | std::atomic::exchange | -
-include/fixy/handle/LazyEstablishedChannel.h | inlined | 1 | std::expected::expected | -
 include/fixy/handle/Once.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
 include/fixy/handle/Once.h | inlined | 2 | std::__atomic_base::load | -
 include/fixy/handle/Once.h | inlined | 1 | std::__atomic_base::store | -
@@ -833,6 +833,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/SipHash.h | inlined | -5 | std::span::span | -
 @x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::basic_string::basic_string | -
 @x86_64-debug-tsan | include/fixy/Tagged.h | call | -2 | std::filesystem::path::path | -
+@x86_64-debug-tsan | include/fixy/channels/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/channels/SwmrSession.h | inlined | -2 | std::optional::operator* | -
+@x86_64-debug-tsan | include/fixy/channels/SwmrSession.h | inlined | -1 | std::optional::~optional | -
 @x86_64-debug-tsan | include/fixy/concurrent/AtomicSnapshot.h | inlined | -2 | std::span::front | -
 @x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -1 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::optional::optional | -
@@ -859,9 +862,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
 @x86_64-debug-tsan | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
 @x86_64-debug-tsan | include/fixy/concurrent/Stage.h | inlined | -1 | std::tuple::tuple | -
-@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
-@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
-@x86_64-debug-tsan | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -
 @x86_64-debug-tsan | include/fixy/fp/Polynomial.h | inlined | -2 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/fp/Polynomial.h | inlined | -1 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/handle/Once.h | inlined | +1 | std::launder | -
@@ -1086,10 +1086,10 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/SharedRegion.h | inlined | -1 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/SharedRegion.h | inlined | -1 | std::span::size | -
 @x86_64-debug-ubsan-strict | include/fixy/Tagged.h | inlined | -2 | std::basic_string::basic_string | -
+@x86_64-debug-ubsan-strict | include/fixy/channels/SwmrSession.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/PermissionedMpscChannel.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | call | -1 | std::vector::push_back | -
 @x86_64-debug-ubsan-strict | include/fixy/concurrent/Pipeline.h | inlined | -1 | std::vector::operator= | -
-@x86_64-debug-ubsan-strict | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/handle/OneShotFlag.h | inlined | -1 | std::atomic::load | -
 @x86_64-debug-ubsan-strict | include/fixy/handle/PublishOnce.h | inlined | -2 | std::atomic::load | -
 @x86_64-debug-ubsan-strict | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::error | -
@@ -1244,6 +1244,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/Tagged.h | call | -2 | std::basic_string::basic_string | -
 @x86_64-release | include/fixy/Tagged.h | call | -2 | std::filesystem::path::path | -
 @x86_64-release | include/fixy/Tagged.h | call | +3 | std::filesystem::path::~path | -
+@x86_64-release | include/fixy/channels/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/channels/SwmrSession.h | inlined | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/channels/SwmrSession.h | inlined | -1 | std::optional::~optional | -
 @x86_64-release | include/fixy/concurrent/AtomicSnapshot.h | inlined | -2 | std::span::front | -
 @x86_64-release | include/fixy/concurrent/ChaseLevDeque.h | inlined | -1 | std::__atomic_base::store | -
 @x86_64-release | include/fixy/concurrent/ChaseLevDeque.h | inlined | -3 | std::array::operator[] | -
@@ -1281,9 +1284,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -1 | std::span::empty | -
 @x86_64-release | include/fixy/concurrent/SpscRing.h | inlined | -2 | std::span::size | -
 @x86_64-release | include/fixy/concurrent/Stage.h | inlined | -1 | std::tuple::tuple | -
-@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator (conversion) | -
-@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -2 | std::optional::operator* | -
-@x86_64-release | include/fixy/concurrent/SwmrSession.h | inlined | -1 | std::optional::~optional | -
 @x86_64-release | include/fixy/fp/Polynomial.h | inlined | -2 | std::array::operator[] | -
 @x86_64-release | include/fixy/fp/Polynomial.h | inlined | -1 | std::pair::pair | -
 @x86_64-release | include/fixy/handle/PublishCommit.h | inlined | +1 | std::__atomic_base::load | -

@@ -1,0 +1,12 @@
+#pragma once
+
+// A header of the layer X6_channels.  Its include of a header of the layer
+// X5_session is an include of a lower layer.
+
+#include <fixy/session/PlantBase.h>
+
+namespace probe {
+
+inline int high_value() { return base_value() + 1; }
+
+}  // namespace probe

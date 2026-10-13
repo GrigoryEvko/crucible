@@ -60,7 +60,7 @@ The first three cost `sizeof(T)`. `test/fixy/test_wrapper_verification.cpp` chec
 **Structural wrappers — deliberately not graded.** These wrappers follow non-graded disciplines (RAII, typestate, structural constraint) that do not fit the `Graded<M, L, T>` shape:
 - `Permission<Tag, Brand>` + `mint_permission_fork` (`foundation/permissions/Permission.h`, `fixy/concurrent/PermissionFork.h`) — CSL frame-rule linear tokens (misc/THREADING.md).
 - `SessionHandle<Proto, Resource, LoopCtx, Policy, PS>` (`fixy/session/Handle.h`) — type-state binary and MPST session types in `include/fixy/session/`, namespace `fixy::session` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop). The last parameter threads a CSL `PermSet<Tags...>` through the protocol position. `Send<Transferable<T, X>, K>` consumes `Permission<X>` from the set, and `Recv<Transferable<T, X>, K>` produces it. A `Continue` must see the permission set of its loop entry. A handle at `End` closes only when the set holds no open loan. `mint_permissioned_session` mints a handle with a non-empty set.
-- `mint_substrate_session<Substrate, Direction>(ctx, handle)` and `mint_endpoint<Substrate, Direction>(ctx, handle)` (`fixy/concurrent/SubstrateSessionBridge.h`, `fixy/concurrent/Endpoint.h`) — the typed-session door over a handle of `PermissionedSpscChannel` or `PermissionedMpscChannel`. The session has the empty permission set.
+- `mint_substrate_session<Substrate, Direction>(ctx, handle)` and `mint_endpoint<Substrate, Direction>(ctx, handle)` (`fixy/channels/SubstrateSessionBridge.h`, `fixy/channels/Endpoint.h`) — the typed-session door over a handle of `PermissionedSpscChannel` or `PermissionedMpscChannel`. The session has the empty permission set.
 - `PermissionedMetaLog<UserTag, Brand>` + `metalog_session::{mint_metalog_producer_session,mint_metalog_consumer_session}` (`include/crucible/PermissionedMetaLog.h`, `include/crucible/MetaLogSession.h`) — role-typed foreground append / background drain façade over the production `MetaLog` TensorMeta side-channel. Each session owns its channel handle and has the empty permission set.
 - `ScopedView<Carrier, Tag, Brand>` (`fixy/ScopedView.h`) — lifetime-bounded borrow for non-consuming inspection.
 - `Machine<State, Edges>` (`fixy/Machine.h`) — type-indexed state machines. An illegal transition is a compile error.
@@ -1796,11 +1796,12 @@ Need structured fork-join (split parent → N children → rejoin)?
 
 Need one writer that publishes the latest value to many readers?
     → SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>
-                                            (fixy/concurrent/SwmrSession.h, over AtomicSnapshot)
+                                            (fixy/channels/SwmrSession.h, over AtomicSnapshot)
 
 Need a queue from one or many producers to one consumer?
     → PermissionedSpscChannel<T, Capacity, UserTag, Brand> / PermissionedMpscChannel<T, Capacity, UserTag, Brand>
-                                            (fixy/concurrent/, typed sessions via mint_substrate_session;
+                                            (fixy/concurrent/, typed sessions via mint_substrate_session of
+                                             fixy/channels/;
                                              Brand is the brand of the root site, and spsc_channel_t /
                                              mpsc_channel_t read it off the root type)
 ```
@@ -3133,7 +3134,7 @@ Each change moves each producer and each consumer of an API at one time. It keep
 
 ### The layers and the include policy (R2, R3)
 
-The `layer` rows of the rule table give the layers of the base, from F0 floor to X5 session, each with a rank. The plan adds the layer X6 channels (plan §12). A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
+The `layer` rows of the rule table give the layers of the base, from F0 floor to X6 channels, each with a rank. A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
 
 The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, the rule `quarantine` counts each such name with a base kind (The base kinds). The audit can make the allowance shorter. Only the owner can make it longer.
 

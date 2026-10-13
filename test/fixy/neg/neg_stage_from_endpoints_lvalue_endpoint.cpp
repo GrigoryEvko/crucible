@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: IsMovedEndpoint is not satisfied.
 
-#include <fixy/concurrent/StageEndpointBridge.h>
+#include <fixy/channels/StageEndpointBridge.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -15,6 +15,7 @@
 
 namespace stage_lvalue_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 struct InTag {};
 struct OutTag {};
 inline auto in_root() noexcept { return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<InTag>>(); }
@@ -37,9 +38,9 @@ int main() {
     auto [out_p, out_c] = perm::mint_permission_split<Out::producer_tag, Out::consumer_tag>(out_root());
     (void)in_p;
     (void)out_c;
-    auto in_ep = c::mint_endpoint<In, c::Direction::Consumer>(ctx, in.consumer(std::move(in_c)));
-    auto out_ep = c::mint_endpoint<Out, c::Direction::Producer>(ctx, out.producer(std::move(out_p)));
-    auto stage = c::mint_stage_from_endpoints<&body>(ctx, in_ep, std::move(out_ep));
+    auto in_ep = channels::mint_endpoint<In, channels::Direction::Consumer>(ctx, in.consumer(std::move(in_c)));
+    auto out_ep = channels::mint_endpoint<Out, channels::Direction::Producer>(ctx, out.producer(std::move(out_p)));
+    auto stage = channels::mint_stage_from_endpoints<&body>(ctx, in_ep, std::move(out_ep));
     std::move(stage).run();
     return 0;
 }

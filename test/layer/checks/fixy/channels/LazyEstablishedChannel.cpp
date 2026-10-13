@@ -1,8 +1,8 @@
-// The compile-time checks of fixy/handle/LazyEstablishedChannel.h.
+// The compile-time checks of fixy/channels/LazyEstablishedChannel.h.
 
-#include <fixy/handle/LazyEstablishedChannel.h>
+#include <fixy/channels/LazyEstablishedChannel.h>
 
-namespace fixy::handle {
+namespace fixy::channels {
 
 namespace detail::lazy_established_channel_self_test {
 
@@ -17,9 +17,9 @@ using Channel = LazyEstablishedChannel<Stream, Wire>;
 static_assert(!std::is_copy_constructible_v<Channel>);
 static_assert(!std::is_move_constructible_v<Channel>);
 static_assert(std::is_base_of_v<::foundation::Pinned<Channel>, Channel>);
-static_assert(sizeof(Channel) == 2 * sizeof(std::atomic<Wire*>),
+static_assert(sizeof(Channel) == 2 * sizeof(::fixy::handle::PublishOnce<Wire>),
               "the channel is the publication slot and the claim flag, and nothing more");
 
 }  // namespace detail::lazy_established_channel_self_test
 
-}  // namespace fixy::handle
+}  // namespace fixy::channels

@@ -3,7 +3,7 @@
 // against a session that no longer exists.  The deleted rvalue twin
 // says that rather than leaving the binding error to say it.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
@@ -37,6 +37,6 @@ std::uint64_t storage[3] = {1, 2, 3};
 
 int main() {
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    [[maybe_unused]] auto witnessed = ::fixy::mint_witnessed_at(s::mint_session_handle<Sending, Wire>(Wire{}), borrow);
+    [[maybe_unused]] auto witnessed = s::mint_witnessed_at(s::mint_session_handle<Sending, Wire>(Wire{}), borrow);
     return 0;
 }

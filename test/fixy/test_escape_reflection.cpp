@@ -26,7 +26,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/Secret.h>
 #include <fixy/SharedRegion.h>
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 #include <fixy/os/Fs.h>
 #include <foundation/permissions/Permission.h>
 
@@ -62,6 +62,6 @@ CRUCIBLE_NO_RAW_ESCAPE(fixy::WeakRef<int>);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::SharedRegion<int, probe_tag, probe_brand>);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::SharedRead<int, probe_tag, probe_brand>);
 CRUCIBLE_NO_RAW_ESCAPE(
-    fixy::Witnessed<fixy::Borrowed<int, probe_tag, probe_brand>, fixy::witness::UnderRow<probe_tag>>);
+    fixy::session::Witnessed<fixy::Borrowed<int, probe_tag, probe_brand>, fixy::session::witness::UnderRow<probe_tag>>);
 
 int main() { return 0; }

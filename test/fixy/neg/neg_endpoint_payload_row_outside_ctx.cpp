@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: CtxFitsEndpointMint is not satisfied.
 
-#include <fixy/concurrent/Endpoint.h>
+#include <fixy/channels/Endpoint.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -17,6 +17,7 @@
 
 namespace endpoint_row_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 namespace eff = ::foundation::effects;
 struct Tag {};
 using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
@@ -33,7 +34,7 @@ using Channel = c::spsc_channel_t<IoWork, 8, decltype(channel_root())>;
 int main() {
     using namespace endpoint_row_fixture;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
-    static_cast<void>(
-        sizeof(c::mint_endpoint<Channel, c::Direction::Producer>(ctx, std::declval<Channel::ProducerHandle>())));
+    static_cast<void>(sizeof(
+        channels::mint_endpoint<Channel, channels::Direction::Producer>(ctx, std::declval<Channel::ProducerHandle>())));
     return 0;
 }

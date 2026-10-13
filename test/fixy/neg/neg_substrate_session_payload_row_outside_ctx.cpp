@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: CtxFitsSubstrateSessionMint is not satisfied.
 
-#include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/channels/SubstrateSessionBridge.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -16,6 +16,7 @@
 
 namespace substrate_row_fixture {
 namespace c = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 namespace eff = ::foundation::effects;
 struct Tag {};
 using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
@@ -32,7 +33,7 @@ using Channel = c::spsc_channel_t<IoWork, 8, decltype(channel_root())>;
 int main() {
     using namespace substrate_row_fixture;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
-    static_cast<void>(sizeof(
-        c::mint_substrate_session<Channel, c::Direction::Producer>(ctx, std::declval<Channel::ProducerHandle>())));
+    static_cast<void>(sizeof(channels::mint_substrate_session<Channel, channels::Direction::Producer>(
+        ctx, std::declval<Channel::ProducerHandle>())));
     return 0;
 }

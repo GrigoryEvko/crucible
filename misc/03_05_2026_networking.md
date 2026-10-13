@@ -7103,7 +7103,7 @@ The bench harness `bench/bench_mrc_session.cpp` (parallel to `bench/bench_permis
 - CrashWatchedHandle + permission_inherit (GAPS-044/045) — `bridges/CrashTransport.h`, `permissions/PermissionInherit.h`
 - FederatedPermission<Org> per-org tags (GAPS-043) — `permissions/FederationPermission.h`
 - safety::Machine<States> + MachineSessionBridge (GAPS-080) — `safety/Machine.h`, `bridges/MachineSessionBridge.h`
-- Endpoint<Substr, Direction, Ctx> keystone — `concurrent/Endpoint.h`
+- Endpoint<Substr, Direction, Ctx> keystone — `channels/Endpoint.h`
 - Stage / Pipeline composition (GAPS-025/026) — `concurrent/Stage.h`, `Pipeline.h`
 - AdaptiveScheduler with cache-tier rule (GAPS-032..035) — `concurrent/AdaptiveScheduler.h`
 - RecordingSessionHandle + SessionEventLog — `bridges/RecordingSessionHandle.h`, `sessions/SessionEventLog.h`

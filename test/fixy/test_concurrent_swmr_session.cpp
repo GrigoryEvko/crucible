@@ -1,11 +1,11 @@
-// What fixy/concurrent/SwmrSession.h claims, checked at run time.
+// What fixy/channels/SwmrSession.h claims, checked at run time.
 //
 // Each check moves real values through a real channel.  A session
 // protocol loops with no exit, so each session ends with a typed detach,
 // which releases the handle that the session owns.
 
+#include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/HandleTraits.h>
-#include <fixy/concurrent/SwmrSession.h>
 
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -26,7 +26,7 @@
 namespace {
 
 namespace perm = ::foundation::permissions;
-namespace ses = ::fixy::concurrent::swmr_session;
+namespace ses = ::fixy::channels::swmr_session;
 namespace s = ::fixy::session;
 
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;

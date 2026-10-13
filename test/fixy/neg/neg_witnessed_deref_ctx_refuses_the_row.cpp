@@ -3,7 +3,7 @@
 // whose row is empty.  The borrow runs the same Subrow test that a lend
 // from the permission pool runs.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
@@ -37,7 +37,7 @@ std::uint64_t storage[3] = {1, 2, 3};
 
 int main() {
     auto borrow = ::fixy::mint_borrowed<Spilled>(storage);
-    auto witnessed = ::fixy::mint_witnessed_under(borrow);
+    auto witnessed = s::mint_witnessed_under(borrow);
     FgCtx ctx = eff::testing::foreground();
     [[maybe_unused]] auto read = deref(witnessed, ctx);
     return 0;

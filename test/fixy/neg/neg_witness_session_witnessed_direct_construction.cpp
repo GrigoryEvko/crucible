@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>> in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>> attests to a fact that it cannot see.  The expression below is
+// fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/Witnessed.h>
+#include <fixy/session/Witnessed.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +29,6 @@ struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::witness::UnderRow<foundation::permissions::tag::HugePageTag>>{fixy::detail::witnessed_mint_t{}, forge::rvalue<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>>()};
+    [[maybe_unused]] auto forged = fixy::session::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>, fixy::session::witness::UnderRow<foundation::permissions::tag::HugePageTag>>{fixy::session::detail::witnessed_mint_t{}, forge::rvalue<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, forge::brand>>()};
     return 0;
 }

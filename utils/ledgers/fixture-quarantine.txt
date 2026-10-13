@@ -701,11 +701,15 @@ test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp | detail-use | 1 |
 test/fixy/neg/neg_witness_boundedmonotonic_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_budgetauthority_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_budgetstamp_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_channels_endpoint_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_channels_endpoint_direct_construction.cpp | detail-use | 6 | main(): fixy::channels::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
+test/fixy/neg/neg_witness_channels_endpointdoor_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_channels_swmr_session_swmrsession_readerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_channels_swmr_session_swmrsession_readerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::channels::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
+test/fixy/neg/neg_witness_channels_swmr_session_swmrsession_writerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_channels_swmr_session_swmrsession_writerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::channels::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_cipher_durable_cipherdurablehandle_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_clocksource_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_concurrent_endpoint_direct_construction.cpp | detail-use | 6 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
-test/fixy/neg/neg_witness_concurrent_endpointdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_mpmcstage_direct_construction.cpp | detail-use | 4 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -723,10 +727,6 @@ test/fixy/neg/neg_witness_concurrent_pipelinedag_direct_construction.cpp | c-lib
 test/fixy/neg/neg_witness_concurrent_pipelinedag_direct_construction.cpp | detail-use | 4 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_stage_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_stage_direct_construction.cpp | detail-use | 3 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
-test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::concurrent::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
-test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction.cpp | detail-use | 10 | main(): fixy::concurrent::swmr_session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_concurrent_swmrstage_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_concurrent_swmrstage_direct_construction.cpp | detail-use | 3 | main(): fixy::concurrent::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_core_box_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -824,6 +824,8 @@ test/fixy/neg/neg_witness_session_sessionhandle_direct_construction.cpp | replac
 test/fixy/neg/neg_witness_session_sessionmintdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_sessionopenkey_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_watch_watchhooks_direct_construction.cpp | c-library-call | 2 | abort | The witness rows of WatchHooks and GuardedRegion in the rule table write two witness fixtures, and each calls abort in its forger stand-ins as each witness fixture does
+test/fixy/neg/neg_witness_session_witnessed_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_session_witnessed_direct_construction.cpp | detail-use | 1 | main(): fixy::session::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | std-entity | 1 | std::span | -
@@ -838,8 +840,6 @@ test/fixy/neg/neg_witness_time_ptpdevicedoor_direct_construction.cpp | c-library
 test/fixy/neg/neg_witness_time_tscreader_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_versionsource_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_versionstamp_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_witnessed_direct_construction.cpp | c-library-call | 2 | abort | -
-test/fixy/neg/neg_witness_witnessed_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_writeonce_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_writeoncenonnull_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witnessed_at_from_a_temporary_handle.cpp | c-array-object | 1 | - | -

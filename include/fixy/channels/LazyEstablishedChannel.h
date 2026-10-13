@@ -50,7 +50,7 @@ template <typename Proto>
 struct lazy_established_channel;
 }  // namespace fixy::row_discipline
 
-namespace fixy::handle {
+namespace fixy::channels {
 
 // The reason that mint_established_session gives no handle.
 enum class LazyChannelRefusal : std::uint8_t {
@@ -76,7 +76,7 @@ class [[nodiscard]] LazyEstablishedChannel : public ::foundation::Pinned<LazyEst
                   "the Resource must derive from foundation::Pinned<Resource>.  The session holds it by lvalue "
                   "reference, so its address must not change after establish.");
 
-    PublishOnce<Resource> resource_;
+    ::fixy::handle::PublishOnce<Resource> resource_;
     std::atomic<bool> claimed_{false};
 
 public:
@@ -102,8 +102,8 @@ public:
     // exchange, so two observers that race get one handle between them.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::session::CtxFitsSession<Ctx, Proto, Resource&>
-    [[nodiscard]] auto mint_established_session(
-        Ctx const& ctx, std::source_location loc = std::source_location::current()) noexcept
+    [[nodiscard]] auto mint_established_session(Ctx const& ctx,
+                                                std::source_location loc = std::source_location::current()) noexcept
         -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx,
                                                                 Resource&>(ctx, std::declval<Resource&>())),
                          LazyChannelRefusal> {
@@ -127,4 +127,4 @@ public:
     }
 };
 
-}  // namespace fixy::handle
+}  // namespace fixy::channels

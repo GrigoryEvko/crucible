@@ -1,0 +1,6 @@
+#pragma once
+
+// A header of the layer X4_concurrent.  Its include of a header of the
+// layer X6_channels is an upward include.
+
+#include <fixy/channels/PlantHigh.h>

@@ -1,6 +1,6 @@
 // The typed session over an SPSC channel handle against the bare handle.
 //
-// mint_substrate_session (fixy/concurrent/SubstrateSessionBridge.h) takes a
+// mint_substrate_session (fixy/channels/SubstrateSessionBridge.h) takes a
 // channel handle by move, so the session owns the handle for its whole
 // life, and a send or a receive goes through a transport: a trying write
 // (bool(handle&, Item&)) or a polling read (std::optional<Item>(handle&)).
@@ -28,8 +28,8 @@
 // cross-thread behaviour.  The numbers are for inspection, and the program
 // exits 0.
 
+#include <fixy/channels/SubstrateSessionBridge.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
-#include <fixy/concurrent/SubstrateSessionBridge.h>
 
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -48,6 +48,7 @@
 namespace {
 
 namespace cc = ::fixy::concurrent;
+namespace channels = ::fixy::channels;
 namespace s = ::fixy::session;
 namespace perm = ::foundation::permissions;
 
@@ -117,7 +118,7 @@ struct Rig {
     Rig<1> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional session{
-        cc::mint_substrate_session<Channel<1>, cc::Direction::Producer>(kForeground, std::move(producer))};
+        channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(kForeground, std::move(producer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         session.emplace(std::move(*session).send(++item, try_push_item));
@@ -132,7 +133,7 @@ struct Rig {
     Rig<2> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional session{
-        cc::mint_substrate_session<Channel<2>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
+        channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         if (!producer.try_push(++item)) [[unlikely]]
@@ -150,9 +151,9 @@ struct Rig {
     Rig<3> rig;
     auto& [producer, consumer] = rig.handles;
     std::optional sender{
-        cc::mint_substrate_session<Channel<3>, cc::Direction::Producer>(kForeground, std::move(producer))};
+        channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(kForeground, std::move(producer))};
     std::optional receiver{
-        cc::mint_substrate_session<Channel<3>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
+        channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         sender.emplace(std::move(*sender).send(++item, try_push_item));

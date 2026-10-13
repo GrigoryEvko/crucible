@@ -73,7 +73,6 @@ fixy/ScopedView.cpp | 0.0 | ::fixy::session::combinators
 fixy/Secret.cpp | 0.1 | ::fixy::tags::secret_policy, ::fixy::tags::secret_policy::admitted_policies
 fixy/SharedRegion.cpp | 0.1 | ::foundation::permissions::permission_rows
 fixy/Tagged.cpp | 0.3 | ::fixy::tags::admitted_retags
-fixy/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
 fixy/atoms/Barrier.cpp | 0.3 | ::fixy::atom::barrier, unknown
 fixy/atoms/Ctrl.cpp | 0.5 | ::fixy::atom::ctrl, unknown
 fixy/atoms/Dispatch.cpp | 0.1 | ::fixy::atom::dispatch, unknown
@@ -90,10 +89,10 @@ fixy/atoms/Stack.cpp | 0.1 | ::fixy::atom::stack, unknown
 fixy/atoms/Stdio.cpp | 0.1 | ::fixy::atom::stdio, unknown
 fixy/atoms/Sync.cpp | 0.3 | ::fixy::atom::sync, unknown
 fixy/atoms/Syscall.cpp | 2.2 | ::fixy::atom::syscall, unknown
-fixy/concurrent/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
+fixy/channels/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
+fixy/channels/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
+fixy/channels/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/concurrent/Spawn.cpp | 0.4 | unknown
-fixy/concurrent/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
-fixy/handle/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/os/CipherDurable.cpp | 0.1 | unknown
 fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown
@@ -105,6 +104,7 @@ fixy/session/Delegate.cpp | 0.2 | ::fixy::session::combinators
 fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
+fixy/session/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
 foundation/diag/Catalog.cpp | 3.2 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
