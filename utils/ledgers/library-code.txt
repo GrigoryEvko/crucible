@@ -566,13 +566,10 @@ include/fixy/session/Watch.h | inlined | 1 | std::basic_string_view::size | -
 include/fixy/session/Watch.h | inlined | 1 | std::operator== | -
 include/fixy/session/Watch.h | inlined | 1 | std::source_location::file_name | -
 include/fixy/session/Watch.h | inlined | 1 | std::source_location::line | -
-include/foundation/AlignedBuffer.h | call | 2 | abort | -
 include/foundation/AlignedBuffer.h | call | 1 | aligned_alloc | -
 include/foundation/AlignedBuffer.h | call | 1 | free | -
-include/foundation/AlignedBuffer.h | inlined | 3 | fprintf | -
 include/foundation/AlignedBuffer.h | inlined | 1 | std::span::data | -
 include/foundation/AlignedBuffer.h | inlined | 1 | std::span::span | -
-include/foundation/AlignedBuffer.h | reference | 3 | stderr | -
 include/foundation/ChannelBinding.h | inlined | 1 | std::atomic::exchange | -
 include/foundation/ChannelBinding.h | inlined | 1 | std::atomic::store | -
 include/foundation/ChannelBinding.h | inlined | 2 | std::exchange | -
@@ -1419,7 +1416,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::size | -
 @x86_64-release | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
 @x86_64-release | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::span | -
-@x86_64-release | include/foundation/AlignedBuffer.h | reference | -3 | stderr | -
 @x86_64-release | include/foundation/ChannelBinding.h | inlined | -1 | std::exchange | -
 @x86_64-release | include/foundation/Lifetime.h | inlined | -1 | std::span::span | -
 @x86_64-release | include/foundation/Platform.h | inlined | -1 | std::is_gt | -

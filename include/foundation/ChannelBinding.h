@@ -41,10 +41,9 @@
 // PermissionedMetaLog.h hold their channel through this binding.
 
 #include <foundation/Platform.h>
-#include <foundation/diag/Runtime.h>
+#include <foundation/core/Report.h>
 
 #include <atomic>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -154,7 +153,7 @@ public:
 
     // Takes the role for a new handle, or ends the process when a live
     // handle holds it.  The detail names the role in the report.
-    void take(std::string_view detail) noexcept {
+    void take(::foundation::core::TextView detail) noexcept {
         if (held_.exchange(true, std::memory_order_acq_rel)) [[unlikely]] {
             second_holder_abort_(detail);
         }
@@ -166,8 +165,11 @@ public:
     [[nodiscard]] bool is_held() const noexcept { return held_.load(std::memory_order_acquire); }
 
 private:
-    [[noreturn]] CRUCIBLE_COLD static void second_holder_abort_(std::string_view detail) noexcept {
-        ::foundation::diag::report_violation_at_and_abort(::foundation::diag::Category::LinearityViolation, detail);
+    // The text names the category LinearityViolation of the diagnostic
+    // catalog, which gives the remediation.
+    [[noreturn]] CRUCIBLE_COLD static void second_holder_abort_(::foundation::core::TextView detail) noexcept {
+        ::foundation::core::fatal("LinearityViolation: a second live handle took one linear role of a channel: {}",
+                                  detail);
     }
 
     std::atomic<bool> held_{false};

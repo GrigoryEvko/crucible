@@ -26,11 +26,10 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/core/Report.h>
 
 #include <bit>
 #include <cstddef>
-#include <cstdio>
 #include <cstdlib>
 #include <new>
 #include <span>
@@ -45,30 +44,25 @@ inline constexpr std::size_t huge_page_bytes = std::size_t{2} << 20;
 
 namespace detail {
 
-template <typename Tag>
-CRUCIBLE_COLD inline void print_diagnostic_() noexcept {
-    std::fprintf(stderr, "  %.*s: %.*s\n  remediation: %.*s\n", static_cast<int>(Tag::name.size()), Tag::name.data(),
-                 static_cast<int>(Tag::description.size()), Tag::description.data(),
-                 static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
-}
-
+// The two fatal exits of an allocation.  Each text names the entry of the
+// diagnostic catalog (foundation/diag/Catalog.h) that gives the causes and
+// the remediation.
 [[noreturn]] CRUCIBLE_COLD inline void aligned_allocation_failed_abort_(std::size_t alloc_bytes,
                                                                         std::size_t alignment) noexcept {
-    std::fprintf(stderr, "crucible: fatal: aligned_alloc(alignment=%zu, bytes=%zu) returned nullptr\n", alignment,
-                 alloc_bytes);
-    if (alignment >= huge_page_bytes) print_diagnostic_<::foundation::diag::HugePageAllocationFailed>();
-    std::abort();
+    if (alignment >= huge_page_bytes) {
+        ::foundation::core::fatal("aligned_alloc(alignment={}, bytes={}) gave no storage.  The catalog entry "
+                                  "foundation::diag::HugePageAllocationFailed gives the remediation",
+                                  alignment, alloc_bytes);
+    }
+    ::foundation::core::fatal("aligned_alloc(alignment={}, bytes={}) gave no storage", alignment, alloc_bytes);
 }
 
 [[noreturn]] CRUCIBLE_COLD inline void allocation_size_overflow_abort_(std::size_t prefix_bytes, std::size_t count,
                                                                        std::size_t element_bytes,
                                                                        std::size_t alignment) noexcept {
-    std::fprintf(stderr,
-                 "crucible: fatal: %zu prefix bytes and %zu elements of %zu bytes, rounded to %zu, do not fit in "
-                 "size_t\n",
-                 prefix_bytes, count, element_bytes, alignment);
-    print_diagnostic_<::foundation::diag::AllocationSizeOverflow>();
-    std::abort();
+    ::foundation::core::fatal("{} prefix bytes and {} elements of {} bytes, rounded to {}, do not fit in size_t.  The "
+                              "catalog entry foundation::diag::AllocationSizeOverflow gives the remediation",
+                              prefix_bytes, count, element_bytes, alignment);
 }
 
 // The bytes of one allocation: a prefix, then `count` elements of
@@ -119,8 +113,9 @@ public:
     constexpr AlignedBuffer() noexcept = default;
 
     // The bytes the allocation of `count` elements occupies: the element
-    // bytes rounded up to the alignment.  A wrap aborts through the
-    // AllocationSizeOverflow diagnostic.
+    // bytes rounded up to the alignment.  A wrap ends the process through
+    // the fatal exit, and the text names the catalog entry
+    // AllocationSizeOverflow.
     [[nodiscard]] static constexpr size_type allocation_bytes(size_type count) noexcept {
         return detail::aligned_allocation_bytes<Alignment>(0, count, sizeof(T));
     }
