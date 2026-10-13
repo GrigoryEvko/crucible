@@ -410,20 +410,23 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # Report family.  It also holds the door directory of the base floor,
 # src/foundation/os: the raw system call primitive with its start-up check of
 # the kernel, the sink write of the Report family, the file door, the
-# directory door and the door of AddressSanitizer.  foundation starts no
-# thread.  `fixy` is a static library
-# for the same reason: it holds the cold bodies of fixy headers, the probe of
-# the machine topology, the door that starts and joins each thread of the base
-# and the futex door.
+# directory door, the door of AddressSanitizer, the auxiliary vector door and
+# the guarded memory door.  foundation starts no thread.  `fixy` is a static
+# library for the same reason: it holds the cold bodies of fixy headers, the
+# probe of the machine topology, the door that starts and joins each thread of
+# the base, the futex door, the signal door, the exit hook door, the monotonic
+# clock door and the cold code of the session watch.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
   src/foundation/Permission.cpp
   src/foundation/Platform.cpp
   src/foundation/core/Report.cpp
+  src/foundation/os/Auxiliary.cpp
   src/foundation/os/Directory.cpp
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp
+  src/foundation/os/GuardedRegion.cpp
   src/foundation/os/Intercepted.cpp
   src/foundation/os/Poison.cpp
   src/foundation/os/ReportSink.cpp
@@ -440,11 +443,15 @@ target_link_libraries(foundation PUBLIC crucible_dialect)
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
+  src/fixy/os/ExitHooks.cpp
   src/fixy/os/Futex.cpp
+  src/fixy/os/MonotonicClock.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
+  src/fixy/os/Signal.cpp
   src/fixy/os/ThreadTasks.cpp
   src/fixy/os/Topology.cpp
+  src/fixy/session/Watch.cpp
 )
 target_include_directories(fixy PUBLIC include/)
 target_link_libraries(fixy PUBLIC foundation)

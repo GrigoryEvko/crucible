@@ -236,7 +236,7 @@
 
 layer F0_floor 0 include/foundation/Platform.h include/foundation/Pinned.h include/foundation/Quarantine.h
 layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ include/foundation/Brand.h include/foundation/Lifetime.h include/foundation/ByteSeal.h include/foundation/Linear.h include/foundation/diag/FailClosed.h include/foundation/NoObject.h
-layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
+layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h include/foundation/os/MapWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
 layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
 layer F1_algebra 5 include/foundation/ src/foundation/
@@ -262,10 +262,11 @@ door <linux/utsname.h> src/foundation/os/Syscall.cpp
 door <asm/errno.h> src/foundation/os/Errno.cpp
 door <linux/fcntl.h> src/foundation/os/Syscall.cpp
 door <linux/futex.h> src/foundation/os/Syscall.cpp
+door <linux/mman.h> src/foundation/os/Syscall.cpp
 door <linux/time_types.h> src/foundation/os/Syscall.cpp
 door <errno.h> src/foundation/os/Intercepted.cpp
 door <unistd.h> src/foundation/os/Intercepted.cpp
-door <linux/auxvec.h> src/fixy/os/Topology.cpp
+door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
 door <linux/io_uring.h> include/fixy/os/Io.h
 door <sys/sendfile.h> include/fixy/os/Io.h
 door <linux/mempolicy.h> include/fixy/os/NumaPlacement.h
@@ -275,6 +276,9 @@ door <sys/socket.h> include/fixy/os/Socket.h
 door <linux/ptp_clock.h> include/fixy/os/Time.h
 door <sys/ioctl.h> include/fixy/os/Time.h
 door <pthread.h> src/fixy/os/ThreadTasks.cpp
+door <signal.h> src/fixy/os/Signal.cpp
+door <stdlib.h> src/fixy/os/ExitHooks.cpp
+door <time.h> src/fixy/os/MonotonicClock.cpp
 door <contracts> src/foundation/ContractHandler.cpp
 
 admit <type_traits> | a type trait is a compile-time query, and it makes no object
@@ -468,6 +472,7 @@ witness <foundation/effects/Effect.h> private | foundation::effects::detail::ctx
 witness <foundation/effects/Effect.h> private | foundation::effects::detail::ctx_mint::init_key | foundation::effects::detail::ctx_mint::init_key{}
 witness <foundation/effects/Effect.h> private | foundation::effects::detail::ctx_mint::test_key | foundation::effects::detail::ctx_mint::test_key{}
 witness <foundation/effects/Ctx.h> private | foundation::effects::detail::ctx_mint::fg_key | foundation::effects::detail::ctx_mint::fg_key{}
+witness <foundation/os/GuardedRegion.h> private | foundation::os::GuardedRegion | foundation::os::GuardedRegion{forge::rvalue<char*>(), forge::rvalue<std::size_t>()}
 witness <foundation/effects/Ctx.h> no-match | foundation::effects::ctx_cap::Fg | foundation::effects::ctx_cap::Fg{}
 witness <foundation/effects/Ctx.h> no-match | foundation::effects::ctx_cap::BrandedFg<int> | foundation::effects::ctx_cap::BrandedFg<int>{}
 witness <foundation/effects/Ctx.h> no-match | foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>> | foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>>{}
@@ -520,6 +525,7 @@ witness <foundation/diag/FailClosed.h> private | foundation::fail_closed::detail
 witness <fixy/session/Handle.h> no-match | fixy::session::SessionHandle<fixy::session::End, int*> | fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>(), forge::lvalue<fixy::session::watch::session_ref>(), forge::lvalue<std::source_location>()}
 witness <fixy/session/CrashTransport.h> private | fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int> | fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<const fixy::session::PeerCrashCell>(), forge::lvalue<fixy::session::PeerCrashCell>(), forge::lvalue<const int>()}
 witness <fixy/session/Checkpoint.h> private | fixy::session::CheckpointHandle<fixy::session::SessionHandle<fixy::session::End, int*>, fixy::session::End, void, fixy::session::CheckpointFrame<fixy::session::End, fixy::session::End, void>> | fixy::session::CheckpointHandle<fixy::session::SessionHandle<fixy::session::End, int*>, fixy::session::End, void, fixy::session::CheckpointFrame<fixy::session::End, fixy::session::End, void>>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>()}
+witness <fixy/session/Watch.h> private | fixy::session::watch::WatchHooks | fixy::session::watch::WatchHooks{}
 witness <fixy/session/Recording.h> private | fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>> | fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<fixy::session::SessionEventLog>(), fixy::session::RoleTagId{}, fixy::session::RoleTagId{}}
 witness <fixy/session/EventLog.h> private | fixy::session::SessionEvent | fixy::session::SessionEvent{fixy::session::SessionOp::Stop, fixy::session::RoleTagId{}, fixy::session::RoleTagId{}, 0, 0, 0, 200}
 # The hold of a session's tokens: only mint_permission_hold builds one,

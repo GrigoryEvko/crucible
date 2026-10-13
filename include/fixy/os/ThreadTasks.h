@@ -38,12 +38,27 @@
 //     back.  A join that fails ends the process too, because the door started
 //     and joins each thread one time.
 //
+// THE ALTERNATE STACK
+//     Each thread that the door starts holds a ThreadSignalStack of
+//     fixy/os/Signal.h while its task runs.  The handler of a fatal signal
+//     then runs on that stack, also when the task overflows its own stack.
+//     The thread puts back its earlier alternate stack and unmaps the stack
+//     of the door when its task returns.  A thread that the base does not
+//     start gets no alternate stack from the door.
+//
+// THE FORK HOOK
+//     run_in_fork_child registers a function that the child of a fork runs
+//     before fork returns in the child, through pthread_atfork.  A child has
+//     only the thread that called fork, so a hook can drop the state of the
+//     other threads of the parent.
+//
 // THE GATE
 //     run_joined takes a context that owns Bg or Init, the authority to start
 //     threads.  The list form in detail has no gate of its own.  Its callers
 //     in the base hold the gate: the fork of fixy/concurrent/PermissionFork.h,
 //     the parallel loop of fixy/concurrent/Spawn.h and the pipeline of
-//     fixy/concurrent/Pipeline.h.
+//     fixy/concurrent/Pipeline.h.  run_in_fork_child changes the process
+//     for each fork after it, so it takes a context that owns Init.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/core/Choice.h>
@@ -150,7 +165,25 @@ void run_body_(void* frame) noexcept {
     (*static_cast<Body*>(frame))();
 }
 
+// Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
+// the error number of pthread_atfork: enomem when the C library has no room
+// for one more hook.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+run_in_fork_child_(void (*hook)() noexcept) noexcept;
+
 }  // namespace detail
+
+// A context that can change the process for each fork: one that owns Init.
+template <typename Ctx>
+concept CtxRegistersForkHooks = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+
+// Registers HOOK for the child of each fork after the call (THE FORK HOOK).
+template <typename Ctx>
+    requires CtxRegistersForkHooks<Ctx>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
+    return detail::run_in_fork_child_(hook);
+}
 
 // Runs each body on a thread of its own with the options, and joins each
 // thread before it returns.  Each body is an object of the caller, and the

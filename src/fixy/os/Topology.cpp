@@ -3,13 +3,12 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
+#include <foundation/os/Auxiliary.h>
 #include <foundation/os/Directory.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/File.h>
 #include <foundation/os/PathText.h>
 #include <foundation/os/Syscall.h>
-
-#include <linux/auxvec.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -191,10 +190,6 @@ constexpr std::size_t kValueCapacity = 4096;
 // The bytes of /proc/cpuinfo that the probe reads.  The block of the first
 // CPU holds the vendor and the model, and it is much shorter.
 constexpr std::size_t kCpuInfoCapacity = 16384;
-
-// The bytes of the auxiliary vector that the probe reads.  The kernel gives
-// fewer than 64 entries of 16 bytes.
-constexpr std::size_t kAuxvCapacity = 4096;
 
 // The words of the affinity mask: 1024 CPUs, the size of cpu_set_t of the C
 // library, so the count agrees with CPU_COUNT of sched_getaffinity(3).
@@ -392,22 +387,10 @@ private:
 }
 
 // The page size that the kernel gives the process in the auxiliary vector
-// (AT_PAGESZ), as sysconf(_SC_PAGESIZE) gives it.  Each entry is two words:
-// the type and the value, and the type AT_NULL ends the vector.
+// (AT_PAGESZ), as sysconf(_SC_PAGESIZE) gives it.  The auxiliary vector door
+// reads the vector.
 [[nodiscard]] std::size_t probe_page_size_() noexcept {
-    base_core::FixedText<kAuxvCapacity> auxiliary{};
-    if (os_door::read_file("/proc/self/auxv", auxiliary).is_err()) return kFallbackPageSize;
-    char const* const bytes = base_core::detail::text_first_(auxiliary.view());
-    constexpr std::size_t kEntryBytes = 2 * sizeof(std::uint64_t);
-    for (std::size_t offset = 0; offset + kEntryBytes <= auxiliary.size(); offset += kEntryBytes) {
-        std::uint64_t type = 0;
-        std::uint64_t value = 0;
-        __builtin_memcpy(&type, bytes + offset, sizeof type);
-        __builtin_memcpy(&value, bytes + offset + sizeof type, sizeof value);
-        if (type == AT_NULL) break;
-        if (type == AT_PAGESZ && value > 0) return static_cast<std::size_t>(value);
-    }
-    return kFallbackPageSize;
+    return os_door::read_auxiliary(os_door::AuxiliaryEntry::page_size).value_or(kFallbackPageSize);
 }
 
 // The kernel writes all three settings and brackets the active one, as in

@@ -1273,7 +1273,7 @@ struct LateRead {
         watch::claim("second end", loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
     watch::link(first, second);
     const auto owner_of = [](watch::endpoint_id endpoint) noexcept {
-        return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load(std::memory_order_acquire);
+        return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load_acquire();
     };
     if (owner_of(first) != 0 || owner_of(second) != 0) {
         std::fprintf(stderr, "a channel claim named the claiming thread as the holder of an end\n");

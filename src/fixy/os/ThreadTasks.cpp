@@ -7,6 +7,7 @@
 #include <fixy/os/ThreadTasks.h>
 
 #include <fixy/os/CpuPinned.h>
+#include <fixy/os/Signal.h>
 #include <foundation/core/Report.h>
 #include <foundation/os/Errno.h>
 
@@ -26,9 +27,13 @@ static_assert(std::is_same_v<::pthread_t, std::uint64_t>,
 // The error of a call of <pthread.h> that did not give 0.
 [[nodiscard]] ::foundation::os::Errno error_of(int code) noexcept { return static_cast<::foundation::os::Errno>(code); }
 
-// The function of each new thread.  The thread takes its name first, so its
-// task reads the name of the call.
+// The function of each new thread.  The thread sets its alternate signal
+// stack, and it takes its name, so its task reads the name of the call.  The
+// stack object ends after the task, and it puts back the alternate stack
+// that the thread had before (THE ALTERNATE STACK of fixy/os/ThreadTasks.h).
 void* start_task(void* argument) noexcept {
+    [[maybe_unused]] ::fixy::signal::ThreadSignalStack const signal_stack =
+        ::fixy::signal::ThreadSignalStack::install_on_calling_thread();
     thread_task const& task = *static_cast<thread_task const*>(argument);
     if (task.name != nullptr) {
         name_calling_thread(task.name);
@@ -109,6 +114,13 @@ run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions cons
         }
         task.handle = 0;
     }
+    return ::foundation::core::Unit{};
+}
+
+::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+run_in_fork_child_(void (*hook)() noexcept) noexcept {
+    int const code = ::pthread_atfork(nullptr, nullptr, hook);
+    if (code != 0) return ::foundation::core::err(error_of(code));
     return ::foundation::core::Unit{};
 }
 

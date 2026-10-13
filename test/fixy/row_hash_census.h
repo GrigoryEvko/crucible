@@ -434,8 +434,8 @@ inline constexpr std::string_view kMachinery =
     "machinery that computes over grades at compile time; nothing here is a value in a signature";
 
 inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
-    {^^::foundation::os, "the raw system call primitive, its argument words and the kernel floor: words of the "
-                         "kernel interface that carry no grade"},
+    {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor and the owner of a "
+                         "guarded map: words and memory of the kernel interface that carry no grade"},
     {^^::fixy::tags::source, kGradeVocabulary},
     {^^::fixy::tags::trust, kGradeVocabulary},
     {^^::fixy::tags::access, kGradeVocabulary},
@@ -486,6 +486,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                        "carry no claim to fold"},
     {^^::fixy::futex, "the word, the deadline and the ends of a wait of the futex door: words of the kernel interface "
                       "that carry no claim to fold"},
+    {^^::fixy::signal, "the alternate signal stack of a thread that the signal door sets: process state of the door, "
+                       "which carries no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},

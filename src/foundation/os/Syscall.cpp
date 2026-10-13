@@ -3,7 +3,7 @@
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
-// <linux/fcntl.h>, <linux/futex.h>, <linux/time_types.h> and
+// <linux/fcntl.h>, <linux/futex.h>, <linux/mman.h>, <linux/time_types.h> and
 // <linux/utsname.h>.  It includes no header of the C library, because some
 // declarations of the two kinds of header conflict.  In a build with
 // ThreadSanitizer, the primitive gives a read or a write that can block to
@@ -13,6 +13,7 @@
 
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
+#include <foundation/os/MapWords.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/Syscall.h>
 
@@ -20,6 +21,7 @@
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
 #include <linux/futex.h>
+#include <linux/mman.h>
 #include <linux/time_types.h>
 #include <linux/utsname.h>
 
@@ -39,6 +41,14 @@ static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FD
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenCloseOnExec == O_CLOEXEC, "kOpenCloseOnExec is not O_CLOEXEC of <linux/fcntl.h>");
 static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
+
+// The argument words of foundation/os/MapWords.h are the words of the kernel
+// header.
+static_assert(kProtectNone == PROT_NONE, "kProtectNone is not PROT_NONE of <linux/mman.h>");
+static_assert(kProtectReadWrite == (PROT_READ | PROT_WRITE),
+              "kProtectReadWrite is not PROT_READ | PROT_WRITE of <linux/mman.h>");
+static_assert(kMapPrivateAnonymous == (MAP_PRIVATE | MAP_ANONYMOUS),
+              "kMapPrivateAnonymous is not MAP_PRIVATE | MAP_ANONYMOUS of <linux/mman.h>");
 
 // The argument words of foundation/os/FutexWords.h are the words of the
 // kernel headers.
@@ -80,6 +90,12 @@ constexpr long kNoCall = -1;
             return __NR_sched_getaffinity;
         case Syscall::futex:
             return __NR_futex;
+        case Syscall::mmap:
+            return __NR_mmap;
+        case Syscall::mprotect:
+            return __NR_mprotect;
+        case Syscall::munmap:
+            return __NR_munmap;
         default:
             return kNoCall;
     }
@@ -218,6 +234,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::uname:
         case Syscall::getdents64:
         case Syscall::sched_getaffinity:
+        case Syscall::mmap:
+        case Syscall::mprotect:
+        case Syscall::munmap:
         default:
             break;
     }

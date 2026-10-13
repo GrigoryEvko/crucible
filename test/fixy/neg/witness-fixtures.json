@@ -302,6 +302,11 @@
       "constructor": "\\bOrderedAppendOnly\\("
     },
     {
+      "name": "neg_witness_os_guardedregion_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bGuardedRegion\\("
+    },
+    {
       "name": "neg_witness_ownedfile_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOwnedFile\\("
@@ -527,6 +532,11 @@
       "constructor": "\\bSessionOpenKey\\("
     },
     {
+      "name": "neg_witness_session_watch_watchhooks_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWatchHooks\\("
+    },
+    {
       "name": "neg_witness_sharedread_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bSharedRead\\("
@@ -632,6 +642,10 @@
       "header": "foundation/effects/Ctx.h"
     },
     {
+      "type": "foundation::os::GuardedRegion",
+      "header": "foundation/os/GuardedRegion.h"
+    },
+    {
       "type": "foundation::effects::ctx_cap::Fg",
       "header": "foundation/effects/Ctx.h"
     },
@@ -730,6 +744,10 @@
     {
       "type": "fixy::session::CheckpointHandle<fixy::session::SessionHandle<fixy::session::End, int*>, fixy::session::End, void, fixy::session::CheckpointFrame<fixy::session::End, fixy::session::End, void>>",
       "header": "fixy/session/Checkpoint.h"
+    },
+    {
+      "type": "fixy::session::watch::WatchHooks",
+      "header": "fixy/session/Watch.h"
     },
     {
       "type": "fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>>",

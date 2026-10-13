@@ -770,6 +770,7 @@ test/fixy/neg/neg_witness_net_socketdoor_direct_construction.cpp | c-library-cal
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | detail-use | 2 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_orderedappendonly_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_os_guardedregion_direct_construction.cpp | c-library-call | 2 | abort | The witness rows of WatchHooks and GuardedRegion in the rule table write two witness fixtures, and each calls abort in its forger stand-ins as each witness fixture does
 test/fixy/neg/neg_witness_ownedfile_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_ownedfile_direct_construction.cpp | c-library-call | 1 | stdout | -
 test/fixy/neg/neg_witness_ownedfiledoor_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -822,6 +823,7 @@ test/fixy/neg/neg_witness_session_sessionhandle_direct_construction.cpp | c-libr
 test/fixy/neg/neg_witness_session_sessionhandle_direct_construction.cpp | replace-pending:std::source_location | 1 | std::source_location | -
 test/fixy/neg/neg_witness_session_sessionmintdoor_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_session_sessionopenkey_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_session_watch_watchhooks_direct_construction.cpp | c-library-call | 2 | abort | The witness rows of WatchHooks and GuardedRegion in the rule table write two witness fixtures, and each calls abort in its forger stand-ins as each witness fixture does
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | detail-use | 1 | main(): fixy::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp | std-entity | 1 | std::span | -

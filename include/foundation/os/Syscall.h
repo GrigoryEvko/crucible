@@ -66,6 +66,9 @@ enum class Syscall : std::uint8_t {
     getdents64,
     sched_getaffinity,
     futex,
+    mmap,
+    mprotect,
+    munmap,
 };
 
 // True when the call can wait with no bound for another thread or process,

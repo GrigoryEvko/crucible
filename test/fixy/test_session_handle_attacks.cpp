@@ -61,8 +61,11 @@
 // a declared wait, and the captured diagnostics show which check refused
 // each.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Handle.h>
 
 #include <foundation/effects/Ctx.h>
@@ -954,6 +957,46 @@ void refuse_core_dump(int status) noexcept {
     std::_Exit(kSilentExit);
 }
 
+// The recursion below grows the stack until the guard page below the stack
+// stops the thread with SIGSEGV.  The store after the call keeps each frame,
+// so no optimization makes the recursion a loop.  The process never gets to
+// the limit, and the limit prevents a warning about a recursion with no end.
+// ThreadSanitizer keeps a shadow call stack of a fixed size for each thread,
+// and a recursion through the 8 MiB of the main stack fills it before the
+// stack: the fault is then inside the runtime of the sanitizer.  So the
+// recursion has no instrumentation of ThreadSanitizer.
+volatile std::uint64_t overflow_sink = 0;
+volatile std::uint64_t overflow_limit = ~std::uint64_t{0};
+
+[[gnu::noinline, gnu::no_sanitize_thread]] std::uint64_t overflow_stack(std::uint64_t depth) noexcept {
+    volatile std::uint64_t frame = depth;
+    if (depth == overflow_limit) return depth;
+    const std::uint64_t below = overflow_stack(depth + 1);
+    overflow_sink = frame;
+    return below + frame;
+}
+
+// A live session, and an overflow of the stack of the main thread.  The
+// overflowed stack has no space for the frame of the handler, so the handler
+// runs only on the alternate signal stack of the thread.
+[[noreturn]] void live_session_then_stack_overflow() {
+    auto handle = fresh();
+    static_cast<void>(overflow_stack(0));
+    fixy::unreachable();
+}
+
+// The same overflow on a thread that the thread door of the base starts.
+[[noreturn]] void live_session_then_stack_overflow_on_base_thread() {
+    auto overflow = []() noexcept {
+        auto handle = fresh();
+        static_cast<void>(overflow_stack(0));
+    };
+    BgCtx const ctx{eff::testing::bg()};
+    fixy::thread::ThreadOptions const options{.stack_bytes = std::size_t{256} << 10};
+    static_cast<void>(fixy::thread::run_joined(ctx, options, overflow));
+    fixy::unreachable();
+}
+
 // No session is live when the process aborts, so the report stays empty.
 [[noreturn]] void abort_with_no_live_session() {
     auto handle = fresh();
@@ -963,6 +1006,8 @@ void refuse_core_dump(int status) noexcept {
 
 struct captured_end {
     bool is_clean_exit = false;
+    // The signal that ended the child, or zero when no signal ended it.
+    int end_signal = 0;
     std::string output;
 };
 
@@ -1002,21 +1047,30 @@ struct captured_end {
     }
     refuse_core_dump(status);
     end.is_clean_exit = WIFEXITED(status) != 0 && WEXITSTATUS(status) == 0;
+    end.end_signal = WIFSIGNALED(status) != 0 ? WTERMSIG(status) : 0;
     return end;
 }
 
+// A case of the report at a fatal signal.  expected_signal is the signal that
+// must end the child, or zero when the case does not check the signal.  The
+// sanitizer options of the test in test/fixy/CMakeLists.txt keep the deadly
+// signal handlers of the sanitizers out, so the previous action of SIGSEGV is
+// the default action in each build.
 struct signal_case {
     std::string_view name;
     bool expects_report;
+    int expected_signal;
     void (*run)();
 };
 
 constexpr signal_case kSignalCases[] = {
-    {"leak_then_abort", true, leak_then_abort},
-    {"leak_then_segv", true, leak_then_segv},
-    {"leak_then_bus_error", true, leak_then_bus_error},
-    {"leak_then_floating_point_error", true, leak_then_floating_point_error},
-    {"abort_with_no_live_session", false, abort_with_no_live_session},
+    {"leak_then_abort", true, 0, leak_then_abort},
+    {"leak_then_segv", true, 0, leak_then_segv},
+    {"leak_then_bus_error", true, 0, leak_then_bus_error},
+    {"leak_then_floating_point_error", true, 0, leak_then_floating_point_error},
+    {"live_session_then_stack_overflow", true, SIGSEGV, live_session_then_stack_overflow},
+    {"live_session_then_stack_overflow_on_base_thread", true, SIGSEGV, live_session_then_stack_overflow_on_base_thread},
+    {"abort_with_no_live_session", false, 0, abort_with_no_live_session},
 };
 
 constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
@@ -1027,9 +1081,11 @@ constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
         const captured_end end = run_capturing(entry.run);
         const bool has_report = end.output.find(kSignalReport) != std::string::npos
                              && end.output.find("live endpoint") != std::string::npos;
-        const bool is_expected = !end.is_clean_exit && has_report == entry.expects_report;
-        std::fprintf(stderr, "[signal] %-40.*s report %-3s %s\n", static_cast<int>(entry.name.size()),
-                     entry.name.data(), has_report ? "yes" : "no", is_expected ? "as expected" : "UNEXPECTED");
+        const bool has_expected_end = entry.expected_signal == 0 || end.end_signal == entry.expected_signal;
+        const bool is_expected = !end.is_clean_exit && has_report == entry.expects_report && has_expected_end;
+        std::fprintf(stderr, "[signal] %-40.*s report %-3s signal %-2d %s\n", static_cast<int>(entry.name.size()),
+                     entry.name.data(), has_report ? "yes" : "no", end.end_signal,
+                     is_expected ? "as expected" : "UNEXPECTED");
         if (!is_expected) {
             ++failures;
             std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());
@@ -1092,6 +1148,10 @@ constexpr wait_refusal_case kWaitRefusals[] = {
 }  // namespace
 
 int main() {
+    // The hooks give the report at exit and at a fatal signal, and each child
+    // of a case inherits them.
+    [[maybe_unused]] const s::watch::WatchHooks hooks =
+        s::watch::mint_watch_hooks(fixy::ColdInitCtx{eff::testing::init()});
     std::fprintf(stderr, "[expected] the attack campaign below prints diagnostics from child processes\n");
     int failures = 0;
     std::size_t caught = 0;

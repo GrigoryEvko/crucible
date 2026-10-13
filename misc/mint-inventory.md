@@ -292,6 +292,7 @@ does not apply to the row.
 | `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | HS14: 45 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_watch_hooks` | `include/fixy/session/Watch.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/foundation/algebra/
 
@@ -345,4 +346,4 @@ does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 43 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 115 | 55 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 116 | 56 | 57 | 3 | 0 | 4 |

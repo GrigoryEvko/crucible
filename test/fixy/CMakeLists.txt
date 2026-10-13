@@ -1528,6 +1528,14 @@ fixy_neg_compile_test(neg_budget_stamp_start_as_array
 fixy_neg_compile_test(neg_budget_authority_without_init
   "no matching function for call to .mint_budget_authority"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test,")
+# The hooks of the session watch take a context that owns Init: a test
+# context and a background context are refused.
+fixy_neg_compile_test(neg_watch_hooks_test_context
+  "no matching function for call to .mint_watch_hooks"
+  "required for the satisfaction of .CtxFitsWatchHooks<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test,")
+fixy_neg_compile_test(neg_watch_hooks_background_context
+  "no matching function for call to .mint_watch_hooks"
+  "required for the satisfaction of .CtxFitsWatchHooks<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 fixy_neg_compile_test(neg_budget_authority_in_background
   "no matching function for call to .mint_budget_authority"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
@@ -1867,6 +1875,21 @@ fixy_test(test_session_projected_value)
 # with a deadline, and the attacks that succeed are pinned on a ledger
 # that can only shrink.
 fixy_test(test_session_handle_attacks)
+# A sanitizer gives a thread an alternate signal stack of its own, and it
+# installs a handler of SIGSEGV.  With use_sigaltstack=0 and handle_segv=0,
+# the cases of a stack overflow see only the alternate stacks of the watch
+# hooks and of the thread door, so the test fails when the base gives none.
+# The previous action of SIGSEGV is then the default action, and the overflow
+# ends the child with SIGSEGV in each build.  A build with no sanitizer
+# ignores the options.
+set(_attacks_signal_options "use_sigaltstack=0:handle_segv=0")
+if(CRUCIBLE_TSAN)
+  set_property(TEST test_session_handle_attacks PROPERTY ENVIRONMENT
+    "TSAN_OPTIONS=halt_on_error=1:${_attacks_signal_options}")
+else()
+  set_property(TEST test_session_handle_attacks PROPERTY ENVIRONMENT
+    "ASAN_OPTIONS=${_attacks_signal_options}" "UBSAN_OPTIONS=${_attacks_signal_options}")
+endif()
 
 # Delegation moves a live handle into a message and keeps its watch
 # record live.  The keys of the private surfaces have the sealed shape of

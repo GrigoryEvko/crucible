@@ -249,6 +249,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.26 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | _ITM_deregisterTMCloneTable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -358,6 +359,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | __memcpy_chk@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __memset_chk@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __popcountdi2@GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | import | 1 | __register_atfork@GLIBC_2.3.2 | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | import | 1 | __sanitizer_annotate_contiguous_container | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __stack_chk_fail@GLIBC_2.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | __tls_get_addr | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -419,6 +421,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_setaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_yield@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | import | 1 | sigaltstack | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | import | 1 | stderr@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | strerror | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -477,6 +480,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | section | 1 | .symtab | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | section | 1 | .tbss | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | section | 1 | .text | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | static-member | 1 | libc_nonshared.a(pthread_atfork.oS) | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | version | 1 | libbpf.so.1 LIBBPF_0.0.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libbpf.so.1 LIBBPF_0.0.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libbpf.so.1 LIBBPF_0.0.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -487,6 +491,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | version | 1 | libbpf.so.1 LIBBPF_0.5.0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libbpf.so.1 LIBBPF_0.6.0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libc.so.6 GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | version | 1 | libc.so.6 GLIBC_2.3.2 | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | version | 1 | libc.so.6 GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libc.so.6 GLIBC_2.32 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libc.so.6 GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -859,6 +864,8 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | read@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sigaltstack | -
+@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | -
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | strcmp@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | strerror | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -1007,6 +1014,8 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-release | @build/vessel | import | +1 | read@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-release | @build/vessel | import | -1 | sigaltstack | -
+@x86_64-release | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | -
 @x86_64-release | @build/vessel | import | -1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | strcmp@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | strerror | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

@@ -78,7 +78,21 @@ THE CHECK
   with one planted wrong row for each test must fail and name its case.
 
   To regenerate after a relation changes:
-      python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched/usr/bin/g++-16p" --at HEAD
+      python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched/usr/bin/g++-16p" --at HEAD --build-dir build
+
+THE LINK OF A PROGRAM
+  A program of a runtime test, and of the wire family of regenerate,
+  includes fixy/session/Handle.h.  The cold code of fixy/session/Watch.h is
+  in libfixy.a, and that code calls the doors of libfoundation.a.  A program
+  then links the archives of a build.  The CMake file API gives the link
+  line of the target test_session_oracle_fixy_wire of that build
+  (build_link_flags).  The archives of a build with a sanitizer call the
+  runtime of the sanitizer, and the flags of the link line link that
+  runtime.  regenerate takes the build with --build-dir.  The group oracle
+  of `guard selftest` takes it from the variable ASSAY_TEST_BUILD_DIR, which
+  test/CMakeLists.txt sets.  A run with --at REV also links the archives of
+  the build, and not archives of REV.  The result store of a unit reads each
+  file that the linker opened, and a new archive builds the unit again.
 
 THE TOOLCHAINS
   Install them one time, in your home directory.  Nothing goes into the
@@ -194,6 +208,7 @@ from pathlib import Path
 from assay.core import git as tree_git
 from assay.core import proc
 from assay.core import report as check_report
+from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
 from assay.oracle.emit import GoldenError, Row, emit_all, read_golden, write_golden
 from assay.oracle.execution import equal_up_to_unfolding, explore
@@ -709,12 +724,16 @@ class Env:
     ``include`` is the include tree that the probes read.  It is the
     working tree by default.  A snapshot of HEAD measures the committed
     relations when the working tree holds edits that are not committed.
+    ``build_dir`` is the build that gives the archives of a program of the
+    wire family (THE LINK OF A PROGRAM).  It is None for a run that links no
+    program.
     """
 
     cxx: str
     heads: Path
     workers: int
     include: Path
+    build_dir: Path | None = None
 
 
 def _timeout_row(family: str, c: Case) -> Row:
@@ -1388,10 +1407,57 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
 # writes (PeerMsg, whose label names the peer).
 
 
-def runtime_flags(cxx: str) -> list[str]:
-    """Return the link flags that let a test binary find the runtime of ``cxx``."""
+# The target of a build that gives the link line of a program of a runtime
+# test (THE LINK OF A PROGRAM).
+LINK_TARGET = "test_session_oracle_fixy_wire"
+
+
+def build_link_flags(build_dir: Path) -> list[str]:
+    """Return the link flags and the archives of a program of a runtime test from the build ``build_dir``.
+
+    The CMake file API gives the link line of LINK_TARGET, which links the
+    archives that a program links (THE LINK OF A PROGRAM).  A fragment is
+    shell text, and shlex reads it.  A library that is no flag and no
+    absolute path gets the build root.
+
+    Raises:
+        SystemExit: If the code model of the build cannot be read, or holds no target LINK_TARGET
+    """
+    import shlex
+
+    from assay.readers import cmake
+
+    try:
+        model = cmake.codemodel(build_dir)
+    except cmake.CmakeError as problem:
+        check_report.write_line(
+            f"session_oracle: the code model of the build {build_dir} cannot be read ({problem}).  A program of a "
+            "runtime test links the archives of a build: configure the build, and give its directory",
+            is_error=True,
+        )
+        raise SystemExit(ExitCode.MISSING_INPUT) from None
+    for target in model.targets:
+        if target.name != LINK_TARGET:
+            continue
+        flags: list[str] = []
+        for fragment, role in target.link_fragments:
+            for word in shlex.split(fragment):
+                is_relative_library = role == "libraries" and not word.startswith("-") and not Path(word).is_absolute()
+                flags.append(str(Path(model.build) / word) if is_relative_library else word)
+        return flags
+    check_report.write_line(
+        f"session_oracle: the build {build_dir} has no target {LINK_TARGET}, which gives the link line of a program "
+        "of a runtime test",
+        is_error=True,
+    )
+    raise SystemExit(ExitCode.MISSING_INPUT)
+
+
+def runtime_flags(cxx: str, build_dir: Path) -> list[str]:
+    """Return the link flags that let a test binary find the runtime of ``cxx`` and the archives of ``build_dir``."""
     lib = proc.run(proc.Command([cxx, "-print-file-name=libstdc++.so"], timeout_s=proc.QUICK_S)).out.strip()
-    return ["-pthread", f"-Wl,-rpath,{Path(lib).parent}"] if lib else ["-pthread"]
+    runtime = ["-pthread", f"-Wl,-rpath,{Path(lib).parent}"] if lib else ["-pthread"]
+    return [*runtime, *build_link_flags(build_dir)]
 
 
 def cxx_flags(include: Path) -> list[str]:
@@ -1399,10 +1465,13 @@ def cxx_flags(include: Path) -> list[str]:
 
     The operation limit is the limit of the build, the measured rule
     constexpr-ops of utils/registry.txt.  An emitted test then compiles where
-    the build compiles it.
+    the build compiles it.  The code is position-independent.  The link line
+    of a program can make a position-independent executable (THE LINK OF A
+    PROGRAM).  A position-independent object links into each kind of
+    executable.
     """
     ops_limit = check_report.threshold_text(check_report.read_budgets()["constexpr-ops"].error)
-    return ["-std=c++26", "-freflection", "-fcontracts", f"-fconstexpr-ops-limit={ops_limit}",
+    return ["-std=c++26", "-freflection", "-fcontracts", f"-fconstexpr-ops-limit={ops_limit}", "-fPIE",
             f"-I{include}", f"-I{TEST_DIR}", "-fdiagnostics-color=never"]
 
 
@@ -1412,22 +1481,22 @@ def compile_object(cxx: str, include: Path, source: Path, obj: Path) -> proc.Com
                                  timeout_s=proc.TOOL_S))
 
 
-def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str]) -> proc.Completed:
-    """Link ``objects`` into ``binary``, and run it with ``args``.
+def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str], build_dir: Path) -> proc.Completed:
+    """Link ``objects`` with the archives of ``build_dir`` into ``binary``, and run it with ``args``.
 
     A failed link returns the linker's result.  The run has a time limit
     of ten minutes.
     """
     # -fcontracts links the library that holds the default contract violation handler.
     linked = proc.run(proc.Command([cxx, "-fcontracts", *(str(obj) for obj in objects), "-o", str(binary),
-                                    *runtime_flags(cxx)], timeout_s=proc.TOOL_S))
+                                    *runtime_flags(cxx, build_dir)], timeout_s=proc.TOOL_S))
     if linked.exit != 0:
         return linked
     return proc.run(proc.Command([str(binary), *args], timeout_s=600))
 
 
-def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> proc.Completed:
-    """Compile ``source`` beside wire_driver.h, link it, and run it with ``args``.
+def build_and_run(cxx: str, include: Path, source: str, args: list[str], build_dir: Path) -> proc.Completed:
+    """Compile ``source`` beside wire_driver.h, link it with the archives of ``build_dir``, and run it with ``args``.
 
     A failed build returns the compiler's result.
     """
@@ -1438,7 +1507,7 @@ def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> proc
         built = compile_object(cxx, include, src, obj)
         if built.exit != 0:
             return built
-        return link_and_run(cxx, [obj], Path(tmp) / "run", args)
+        return link_and_run(cxx, [obj], Path(tmp) / "run", args, build_dir)
 
 
 def wire_pairs(c: Case, sync_rows: dict[tuple[str, str], Row]) -> list[str]:
@@ -1470,6 +1539,15 @@ def wire_pairs(c: Case, sync_rows: dict[tuple[str, str], Row]) -> list[str]:
     return out
 
 
+def _link_build_dir(env: Env) -> Path:
+    """Return the build that gives the archives of a program, or stop with the reason (THE LINK OF A PROGRAM)."""
+    if env.build_dir is None:
+        check_report.write_line("session_oracle: a program of the wire family links the archives of a build (THE "
+                                "LINK OF A PROGRAM): give the build directory with --build-dir", is_error=True)
+        raise SystemExit(ExitCode.USAGE)
+    return env.build_dir
+
+
 def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str, list[Row]]:
     """Run each safe keyed pair over the handle and compare its outcome with ok.
 
@@ -1481,6 +1559,8 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
     by_key = {(r.case, r.role): r for r in sync_rows if r.family == "fixy.keyed_subtype_sync"}
     work = [(c, wire_pairs(c, by_key)) for c in cases]
     work = [(c, roles) for c, roles in work if roles]
+    if work:
+        _link_build_dir(env)
 
     def measure(item: tuple[Case, list[str]]) -> dict[str, str]:
         c, roles = item
@@ -1488,7 +1568,7 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
         entries = [(wire_label(c.ident, role), *wire_pair(text, role), "-") for role in roles]
         # One block, so the program is one shard.
         (source,) = wire_shards([entries])
-        completed = build_and_run(env.cxx, env.include, source, ["--measure"])
+        completed = build_and_run(env.cxx, env.include, source, ["--measure"], _link_build_dir(env))
         if completed.exit != 0:
             raise RuntimeError(f"wire case {c.ident}: the program failed:\n{(completed.out + completed.err)[-3000:]}")
         outcomes: dict[str, str] = {}
@@ -2339,19 +2419,22 @@ def measured_tree(at: str | None) -> Iterator[tuple[Path, str]]:
         yield Path(tmp) / "include", commit
 
 
-def regenerate(cxx: str, workers: int, do_shrink: bool = True, at: str | None = None) -> None:
-    """Run the full pipeline against the tree of ``at`` and write the golden file and the tests."""
+def regenerate(cxx: str, workers: int, build_dir: Path, do_shrink: bool = True, at: str | None = None) -> None:
+    """Run the full pipeline against the tree of ``at`` and write the golden file and the tests.
+
+    A program of the wire family links the archives of ``build_dir`` (THE LINK OF A PROGRAM).
+    """
     with measured_tree(at) as (include, measured):
-        _regenerate(cxx, workers, do_shrink, include, measured)
+        _regenerate(cxx, workers, do_shrink, include, measured, build_dir)
 
 
-def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured: str) -> None:
+def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured: str, build_dir: Path) -> None:
     from assay.oracle import rocq
     from assay.oracle.probe import pch_heads
 
     multi, fixy = corpora()
     with pch_heads(cxx, include) as heads:
-        env = Env(cxx, heads, workers, include)
+        env = Env(cxx, heads, workers, include, build_dir)
         LOG.info("evaluating %d multiparty cases and %d two-party cases against %s", len(multi),
                  len(fixy), include)
         rows = [r for rs in evaluate_multi(multi, env).values() for r in rs]
@@ -2608,10 +2691,14 @@ def main(argv: list[str]) -> int:
                         help="regenerate without the minimal corpus, for a quick look")
     parser.add_argument("--at", metavar="REV",
                         help="measure the include tree of this commit (regenerate); the default is the working tree")
+    parser.add_argument("--build-dir", metavar="DIR", type=Path,
+                        help="the build that gives the archives of a program of the wire family (regenerate)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     if args.mode == "regenerate" and not args.cxx:
         parser.error("regenerate needs --cxx")
+    if args.mode == "regenerate" and args.build_dir is None:
+        parser.error("regenerate needs --build-dir: a program of the wire family links the archives of a build")
     if args.mode != "regenerate" and args.at:
         parser.error("--at applies to regenerate only")
     if args.cxx and not is_executable(args.cxx):
@@ -2620,7 +2707,7 @@ def main(argv: list[str]) -> int:
         parser.error(f"'{args.at}' names no commit of this repository")
     if args.mode == "regenerate":
         activate_opam()
-        regenerate(args.cxx, args.jobs, do_shrink=not args.no_shrink, at=args.at)
+        regenerate(args.cxx, args.jobs, args.build_dir, do_shrink=not args.no_shrink, at=args.at)
         return check()
     if args.mode == "derive":
         return derive(args.cxx, args.jobs)

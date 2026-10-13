@@ -464,9 +464,11 @@ foreach(part RANGE ${session_oracle_last_part})
   crucible_script_test(NAME selftest_oracle_${part}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle
             --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
+  # A program unit links the archives of this build (THE LINK OF A PROGRAM of
+  # utils/assay/oracle/runner.py).
   set_tests_properties(selftest_oracle_${part} PROPERTIES
     LABELS "ci_guard;session_oracle"
-    ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX}"
+    ENVIRONMENT "ASSAY_TEST_CXX=${CRUCIBLE_REAL_CXX};ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}"
     PROCESSORS 8)
 endforeach()
 

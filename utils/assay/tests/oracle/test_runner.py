@@ -5,7 +5,9 @@ THE UNITS
     against the include tree of the working tree, with the patched compiler
     of assay.core.testing.  A static test gives one unit for each shard,
     because each shard compiles alone.  A runtime test gives one unit for
-    each program, because a program links and runs all its shards.
+    each program, because a program links and runs all its shards.  A
+    program links the archives of the build that the variable
+    BUILD_DIR_VARIABLE names (THE LINK OF A PROGRAM of assay.oracle.runner).
     PROGRAM_SHARD_BUDGET gives the length of the shards of a program.  Each
     clean unit must exit 0.  A copy of the rows holds one incorrect agree row
     in each emitted test (_plant()).  Each planted unit holds the rows of the
@@ -53,6 +55,9 @@ from assay.tests import oracle as oracle_parts
 
 # The group oracle gives this module the part of the call (THE PARTS).
 PARTED = True
+# The variable that names the build that gives the archives of a program
+# unit.  test/CMakeLists.txt sets it for each part of the group.
+BUILD_DIR_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 # The emitted tests with assertions that run, with the families of their rows.
 # The test is a program that fails when a row is different.  Each other
 # emitted test fails to compile.
@@ -217,8 +222,10 @@ def _units_of(
         yield f"planted {stem}", stem, emit_family([row for row in planted if row.case == case], stem, budget), label
 
 
-def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: list[Row]) -> Outcome:
+def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: list[Row], build_dir: Path) -> Outcome:
     """Build and judge each unit of one part (THE UNITS, THE PARTS), and give the failures and the counts.
+
+    A program unit links the archives of ``build_dir`` (THE LINK OF A PROGRAM of assay.oracle.runner).
 
     Raises:
         RuntimeError: If an emitted test has no agree row to plant
@@ -240,7 +247,7 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
         store = UnitStore(
             cxx,
             runner.cxx_flags(include),
-            runner.runtime_flags(cxx),
+            runner.runtime_flags(cxx, build_dir),
             root,
             caller=f"self-test-{index_of_part}-of-{count}",
         )
@@ -292,11 +299,15 @@ def emitted_test_cases(expect: testing.Expect, part: tuple[int, int]) -> None:
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", bool(cxx) and Path(cxx).is_file())
     if not cxx or not Path(cxx).is_file():
         return
+    build_text = os.environ.get(BUILD_DIR_VARIABLE, "")
+    expect(f"{BUILD_DIR_VARIABLE} names the build that gives the archives of a program unit", bool(build_text))
+    if not build_text:
+        return
     index_of_part, count = part
     _, rows = read_golden(runner.GOLDEN)
     try:
         with runner.measured_tree(None) as (include, _):
-            outcome = run_part(cxx, include, min(JOBS, os.cpu_count() or 1), part, rows)
+            outcome = run_part(cxx, include, min(JOBS, os.cpu_count() or 1), part, rows, Path(build_text))
     except RuntimeError as problem:
         expect(f"each emitted test has an agree row to plant: {problem}", False)
         return

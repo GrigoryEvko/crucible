@@ -389,7 +389,11 @@ CRT_ALLOWLIST = frozenset({"__dso_handle"})
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
 # The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).  The thread door
-# of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, and names it.
+# of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, and registers the fork hook
+# of a caller.  The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it
+# sets the signal stack of a thread.  The C library keeps the signal actions of the process and the signal sets of
+# its threads.  The exit hook door of fixy/os/ExitHooks.h registers a hook for std::exit and std::quick_exit.  The
+# monotonic clock door of fixy/os/MonotonicClock.h reads the clock in user space.
 DOOR_CALLS = frozenset(
     {
         "pthread_create",
@@ -401,7 +405,13 @@ DOOR_CALLS = frozenset(
         "pthread_attr_setaffinity_np",
         "pthread_self",
         "pthread_setname_np",
+        "pthread_atfork",
         "sigaction",
+        "sigaltstack",
+        "sigemptyset",
+        "raise",
+        "atexit",
+        "at_quick_exit",
         "dlopen",
         "clock_gettime",
         "malloc",
