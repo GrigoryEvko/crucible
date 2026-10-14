@@ -208,6 +208,25 @@ function(crucible_patched_gcc_problem cxx out_var)
     string(APPEND problems "${probe_output}")
   endif()
 
+  # The patched compiler gives a plugin two more events of the C++ front end:
+  # an initializer before the front end replaces it with its folded value, and
+  # the target of a trivial assignment of an empty class.  The plugin.def of
+  # its plugin headers names each one.  The stock compiler and a compiler with
+  # only the first four patches have no such event, and the probe refuses them.
+  crucible_run_gcc_probe("${cxx}" plugin_initializer_events.cpp exit_code probe_output
+                         -isystem "${plugin_directory}/include")
+  if(NOT plugin_query_code EQUAL 0 OR NOT exit_code EQUAL 0)
+    string(APPEND problems "\n- The plugin events of the folded initializers and of the empty-class assignments")
+    string(APPEND problems " (utils/toolchain/gcc/patches/0005-*.patch) are missing.  That compiler replaces an")
+    string(APPEND problems " initializer whose value is a constant with that value before a plugin reads the tree.")
+    string(APPEND problems "  It also drops the target of a trivial assignment of an empty class.  Without the two")
+    string(APPEND problems " events, the planned rule must-consume of the quarantine plugin cannot see a consume in")
+    string(APPEND problems " such an initializer or after such an assignment.")
+    string(APPEND problems "  The plugin headers are in '${plugin_directory}/include', and the probe")
+    string(APPEND problems " cmake/probes/plugin_initializer_events.cpp gave the exit status '${exit_code}' and this")
+    string(APPEND problems " output:\n${probe_output}")
+  endif()
+
   if(problems STREQUAL "")
     set(${out_var} "" PARENT_SCOPE)
     return()

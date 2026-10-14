@@ -5,7 +5,7 @@
 # and the configure must stop.  A ccache link must resolve to the compiler
 # that ccache runs.
 #
-# The compiler of the build must pass every probe.  Ten stub compilers in
+# The compiler of the build must pass every probe.  Eleven stub compilers in
 # WORK must each get the result that their behaviour calls for:
 #   - A stub that accepts every file stands for a compiler without the
 #     contract fix.  The probes must refuse it.
@@ -29,6 +29,10 @@
 #     the direct events stands for a compiler with the previous form of the
 #     patch.  That compiler gives PLUGIN_NAME_USE and PLUGIN_MEMBER_ACCESS
 #     through invoke_plugin_callbacks.  The probes must refuse it.
+#   - A stub that refuses the probe of the initializer events stands for a
+#     compiler with only the first four patches.  That compiler has no event
+#     for a folded initializer or for a trivial assignment of an empty class.
+#     The probes must refuse it.
 #   - A stub that does what the patched compiler does must pass.
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/../PatchedGccProbe.cmake")
@@ -51,6 +55,8 @@ set(memchr_error "memchr_offset.cpp:19:37: error: static assertion failed")
 set(sarif_error "sarif_context.cpp:16:19: error: no matching function for call to 'use(int)'")
 set(events_error "plugin_events.cpp:23:22: error: 'PLUGIN_EXPLICIT_INSTANTIATION_text' was not declared in this scope")
 set(slots_error "plugin_events.cpp:43:39: error: 'plugin_name_use_slot' was not declared in this scope")
+set(initializer_events_error
+  "plugin_initializer_events.cpp:17:22: error: 'PLUGIN_FOLDED_INITIALIZER_text' was not declared in this scope")
 # The SARIF log of the probe with the constraint line, and the log that a
 # compiler without the SARIF fix writes.
 set(sarif_with_context
@@ -101,6 +107,8 @@ write_stub(lacks_plugin_events
   "case \"$probe\" in\n${patched_contract_case}*plugin_events.cpp) echo \"${events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(lacks_direct_events
   "case \"$probe\" in\n${patched_contract_case}*plugin_events.cpp) echo \"${slots_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
+write_stub(lacks_initializer_events
+  "case \"$probe\" in\n${patched_contract_case}*plugin_initializer_events.cpp) echo \"${initializer_events_error}\" >&2; exit 1 ;;\n${patched_sarif_case}esac\nexit 0\n")
 write_stub(acts_patched "case \"$probe\" in\n${patched_contract_case}${patched_sarif_case}esac\nexit 0\n")
 
 function(expect_pass cxx label)
@@ -123,6 +131,7 @@ set(contract_reason "constexpr cache of contracts")
 set(memchr_reason "constant evaluation of memchr")
 set(sarif_reason "context of a diagnostic to the SARIF output")
 set(events_reason "plugin events of the C\\+\\+ front end")
+set(initializer_events_reason "plugin events of the folded initializers")
 
 # A ccache masquerade link resolves to the program of the same name that PATH
 # holds outside the directory of the link.  Any other compiler is itself.
@@ -158,6 +167,9 @@ expect_refusal("${WORK}/lacks_sarif_fix" "a stub without the SARIF fix" "${sarif
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${events_reason}")
 expect_refusal("${WORK}/lacks_plugin_events" "a stub without the plugin events" "${events_reason}")
 expect_refusal("${WORK}/lacks_direct_events" "a stub with the previous form of the plugin events" "${events_reason}")
+expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${initializer_events_reason}")
+expect_refusal("${WORK}/lacks_initializer_events" "a stub with only the first four patches"
+               "${initializer_events_reason}")
 
 # A configure of the tree, without the toolchain file, with a compiler that
 # lacks a fix, stops at the check after project().  The wrapper runs the

@@ -1,0 +1,627 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Mon, 12 Oct 2026 10:13:03 +0200
+Subject: [PATCH] c++: plugin events for folded initializers and empty-class
+ assignments
+
+A plugin that checks C++ source reads the semantic tree at
+PLUGIN_PRE_GENERICIZE.  The front end changes two kinds of tree before that
+event, and a fact of the source is then lost.
+
+First, the front end replaces an initializer with the tree that a fold
+gives.  When the value of the initializer is a constant, the fold drops
+each call, conversion and std::move in it.  This occurs, for example, for
+a call of a constexpr function that takes an empty class by reference: the
+tree keeps an empty CONSTRUCTOR and no sign of the call.  The front end
+folds at four places: store_init_value for the initializer of a variable,
+expand_default_init for a call of a constexpr constructor, massage_init_elt
+for an element of a braced list, and build_vec_init for an element of an
+array.
+
+Second, build_over_call replaces a call of a trivial assignment operator of
+an empty class with COMPOUND_EXPR (SOURCE, TARGET).  In an expression
+statement, convert_to_void then replaces TARGET with a void constant, so the
+tree does not show which object the assignment assigns to.
+
+Two new events give these facts to a plugin while the front end makes the
+change.  PLUGIN_FOLDED_INITIALIZER gives the kind of the place, the object,
+the initializer before the fold, the tree that replaces it, and the
+location, each time that the fold gives a different tree.
+PLUGIN_EMPTY_CLASS_ASSIGNMENT gives the target, the source, the assignment
+operator and the location.  The source stays in the tree as the first
+operand of the COMPOUND_EXPR, so a plugin can find the place of the
+assignment.  The two events also come at the instantiation of a template.
+
+The output of the compiler does not change.  Each event goes through
+invoke_plugin_callbacks, so with no plugin the cost is one load and one
+branch when a fold gives a different tree, and nothing more.  On three
+heavy units of a C++26 code base, the user instructions of cc1plus with
+-fsyntax-only and no plugin change by less than 0.01 %, less than the
+spread of three runs.  The units give approximately 10000 events each, and
+a callback that counts them costs less than the spread too.
+
+gcc/ChangeLog:
+
+	* plugin.def (PLUGIN_FOLDED_INITIALIZER)
+	(PLUGIN_EMPTY_CLASS_ASSIGNMENT): New events.
+	* plugin.cc (register_callback, invoke_plugin_callbacks_full): Handle
+	the new events.
+	* doc/plugins.texi (Plugin callbacks): Document the new events.
+
+gcc/cp/ChangeLog:
+
+	* cp-tree.h (enum plugin_folded_initializer_kind)
+	(struct plugin_folded_initializer_data)
+	(struct plugin_empty_class_assignment_data): New.
+	* typeck2.cc: Include plugin.h.
+	(store_init_value): Invoke PLUGIN_FOLDED_INITIALIZER when the folds
+	give a different initializer.
+	(massage_init_elt): Invoke PLUGIN_FOLDED_INITIALIZER when the fold of
+	an element gives a different constant.
+	* init.cc: Include plugin.h.
+	(expand_default_init): Invoke PLUGIN_FOLDED_INITIALIZER when the call
+	of a constexpr constructor folds to a constant.
+	(build_vec_init): Invoke PLUGIN_FOLDED_INITIALIZER when the
+	initialization of an element folds to a different constant.
+	* call.cc: Include plugin.h.
+	(build_over_call): Invoke PLUGIN_EMPTY_CLASS_ASSIGNMENT for a trivial
+	assignment of an empty class.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/plugin/plugin.exp: Add the two tests that follow.
+	* g++.dg/plugin/folded_initializer_plugin.cc: New test plugin.
+	* g++.dg/plugin/folded-initializer-plugin-test.C: New test.
+	* g++.dg/plugin/empty_class_assignment_plugin.cc: New test plugin.
+	* g++.dg/plugin/empty-class-assignment-plugin-test.C: New test.
+---
+ gcc/cp/call.cc                                |  7 ++
+ gcc/cp/cp-tree.h                              | 68 +++++++++++++++++++
+ gcc/cp/init.cc                                | 17 ++++-
+ gcc/cp/typeck2.cc                             | 24 ++++++-
+ gcc/doc/plugins.texi                          | 52 ++++++++++++++
+ gcc/plugin.cc                                 |  4 ++
+ gcc/plugin.def                                | 12 ++++
+ .../empty-class-assignment-plugin-test.C      | 34 ++++++++++
+ .../plugin/empty_class_assignment_plugin.cc   | 36 ++++++++++
+ .../plugin/folded-initializer-plugin-test.C   | 51 ++++++++++++++
+ .../plugin/folded_initializer_plugin.cc       | 53 +++++++++++++++
+ gcc/testsuite/g++.dg/plugin/plugin.exp        |  3 +
+ 12 files changed, 359 insertions(+), 2 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/plugin/empty-class-assignment-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/empty_class_assignment_plugin.cc
+ create mode 100644 gcc/testsuite/g++.dg/plugin/folded-initializer-plugin-test.C
+ create mode 100644 gcc/testsuite/g++.dg/plugin/folded_initializer_plugin.cc
+
+diff --git a/gcc/cp/call.cc b/gcc/cp/call.cc
+index dbab639..d5c29a6 100644
+--- a/gcc/cp/call.cc
++++ b/gcc/cp/call.cc
+@@ -46,6 +46,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "tristate.h"
+ #include "tree-pretty-print-markup.h"
+ #include "contracts.h" // maybe_contract_wrap_call
++#include "plugin.h"
+
+ /* The various kinds of conversion.  */
+
+@@ -10983,6 +10984,12 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
+ 	  to = force_lvalue (to, complain);
+ 	  val = build2 (COMPOUND_EXPR, type, arg, to);
+ 	  suppress_warning (val, OPT_Wunused);
++	  if (to != error_mark_node)
++	    {
++	      plugin_empty_class_assignment_data data
++		= { to, arg, fn, input_location };
++	      invoke_plugin_callbacks (PLUGIN_EMPTY_CLASS_ASSIGNMENT, &data);
++	    }
+ 	}
+       else if (tree_int_cst_equal (TYPE_SIZE (type), TYPE_SIZE (as_base)))
+ 	{
+diff --git a/gcc/cp/cp-tree.h b/gcc/cp/cp-tree.h
+index fc3cfc6..c4e1d74 100644
+--- a/gcc/cp/cp-tree.h
++++ b/gcc/cp/cp-tree.h
+@@ -8246,6 +8246,74 @@ struct plugin_reflection_data
+   location_t location;
+ };
+
++/* The kinds of the plugin event PLUGIN_FOLDED_INITIALIZER: the places
++   where the front end replaces an initializer with its folded value.  */
++
++enum plugin_folded_initializer_kind
++{
++  /* The initializer of a variable, in store_init_value.  */
++  PLUGIN_FOLDED_VARIABLE,
++  /* A call of a constexpr constructor that initializes an object, in
++     expand_default_init.  */
++  PLUGIN_FOLDED_CONSTRUCTOR_CALL,
++  /* An element of a braced initializer list, in massage_init_elt: an
++     element of an aggregate, of a compound literal or of the capture list
++     of a lambda.  */
++  PLUGIN_FOLDED_ELEMENT,
++  /* The initialization of an element of an array, in build_vec_init.  */
++  PLUGIN_FOLDED_ARRAY_ELEMENT
++};
++
++/* The data of the plugin event PLUGIN_FOLDED_INITIALIZER.  The front end
++   invokes the event each time that it replaces an initializer with a
++   different tree that a fold gives, also in a template and at the
++   instantiation of a template.  When the value of the initializer is a
++   constant, the fold drops each call, conversion and std::move in it, so
++   the semantic tree at PLUGIN_PRE_GENERICIZE does not hold them.  The event
++   gives the initializer before the fold.  */
++
++struct plugin_folded_initializer_data
++{
++  enum plugin_folded_initializer_kind kind;
++  /* The object that the initializer initializes: the VAR_DECL of a
++     variable, the expression of the object of a constructor call, or
++     NULL_TREE for an element.  */
++  tree object;
++  /* The initializer before the fold.  It can share a subtree with FOLDED,
++     and FOLDED can be a subtree of it, as when the fold drops a
++     TARGET_EXPR.  The fold can replace an operand of a shared subtree.  */
++  tree original;
++  /* The tree that replaces ORIGINAL.  The front end keeps this tree, as
++     the DECL_INITIAL of a variable, as the value of an INIT_EXPR or as an
++     element of a CONSTRUCTOR.  Only PLUGIN_FOLDED_VARIABLE can give a tree
++     that is not a constant.  store_init_value then moves the parts of it
++     that are not constant into statements (split_nonconstant_init).  */
++  tree folded;
++  /* The location of ORIGINAL, or of the object when ORIGINAL has none.  */
++  location_t location;
++};
++
++/* The data of the plugin event PLUGIN_EMPTY_CLASS_ASSIGNMENT.  The front
++   end invokes the event when it replaces a call of a trivial assignment
++   operator of an empty class with the COMPOUND_EXPR (SOURCE, TARGET).  In
++   an expression statement, convert_to_void then replaces TARGET with a
++   void constant, so the semantic tree does not hold the target of the
++   assignment.  */
++
++struct plugin_empty_class_assignment_data
++{
++  /* The object that the assignment assigns to.  */
++  tree target;
++  /* The right operand, after its conversion to the type of the parameter.
++     It stays in the tree as the first operand of the COMPOUND_EXPR.  */
++  tree source;
++  /* The FUNCTION_DECL of the trivial assignment operator.  */
++  tree fn;
++  /* input_location when the front end builds the replacement: the location
++     of the assignment.  */
++  location_t location;
++};
++
+ /* in pt.cc */
+ extern tree canonical_type_parameter		(tree);
+ extern void push_access_scope			(tree);
+diff --git a/gcc/cp/init.cc b/gcc/cp/init.cc
+index 044435d..e3fc715 100644
+--- a/gcc/cp/init.cc
++++ b/gcc/cp/init.cc
+@@ -35,6 +35,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "asan.h"
+ #include "stor-layout.h"
+ #include "pointer-query.h"
++#include "plugin.h"
+
+ static bool begin_init_stmts (tree *, tree *);
+ static tree finish_init_stmts (bool, tree, tree);
+@@ -2262,7 +2263,13 @@ expand_default_init (tree binfo, tree true_exp, tree exp, tree init, int flags,
+ 	{
+ 	  tree e = maybe_constant_init (rval, exp);
+ 	  if (TREE_CONSTANT (e))
+-	    rval = cp_build_init_expr (exp, e);
++	    {
++	      plugin_folded_initializer_data data
++		= { PLUGIN_FOLDED_CONSTRUCTOR_CALL, exp, rval, e,
++		    cp_expr_loc_or_input_loc (rval) };
++	      invoke_plugin_callbacks (PLUGIN_FOLDED_INITIALIZER, &data);
++	      rval = cp_build_init_expr (exp, e);
++	    }
+ 	}
+     }
+
+@@ -5008,6 +5015,14 @@ build_vec_init (tree base, tree maxindex, tree init,
+ 	      tree e = maybe_constant_init (one_init);
+ 	      if (reduced_constant_expression_p (e))
+ 		{
++		  if (e != one_init)
++		    {
++		      plugin_folded_initializer_data data
++			= { PLUGIN_FOLDED_ARRAY_ELEMENT, NULL_TREE, one_init,
++			    e, cp_expr_loc_or_input_loc (one_init) };
++		      invoke_plugin_callbacks (PLUGIN_FOLDED_INITIALIZER,
++					       &data);
++		    }
+ 		  CONSTRUCTOR_APPEND_ELT (const_vec, field, e);
+ 		  if (do_static_init)
+ 		    one_init = NULL_TREE;
+diff --git a/gcc/cp/typeck2.cc b/gcc/cp/typeck2.cc
+index 155c2ac..0f5ab36 100644
+--- a/gcc/cp/typeck2.cc
++++ b/gcc/cp/typeck2.cc
+@@ -34,6 +34,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "intl.h"
+ #include "gcc-rich-location.h"
+ #include "target.h"
++#include "plugin.h"
+
+ static tree
+ process_init_constructor (tree type, tree init, int nested, int flags,
+@@ -967,6 +968,9 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
+
+   current_ref_temp_count = 0;
+   value = extend_ref_init_temps (decl, value, cleanups);
++  /* The initializer before the folds below, for the plugin event
++     PLUGIN_FOLDED_INITIALIZER.  */
++  tree unfolded = value;
+
+   /* In C++11 constant expression is a semantic, not syntactic, property.
+      In C++98, make sure that what we thought was a constant expression at
+@@ -1038,6 +1042,15 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
+       || TREE_STATIC (decl))
+     value = cp_fully_fold_init (value);
+
++  if (value != unfolded && !error_operand_p (value)
++      && !error_operand_p (unfolded))
++    {
++      plugin_folded_initializer_data data
++	= { PLUGIN_FOLDED_VARIABLE, decl, unfolded, value,
++	    cp_expr_loc_or_loc (unfolded, DECL_SOURCE_LOCATION (decl)) };
++      invoke_plugin_callbacks (PLUGIN_FOLDED_INITIALIZER, &data);
++    }
++
+   /* Handle aggregate NSDMI in non-constant initializers, too.  */
+   value = replace_placeholders (value, decl);
+
+@@ -1687,7 +1700,16 @@ massage_init_elt (tree type, tree init, int nested, int flags,
+     {
+       tree t = fold_non_dependent_init (init, complain);
+       if (TREE_CONSTANT (t))
+-	init = t;
++	{
++	  if (t != init)
++	    {
++	      plugin_folded_initializer_data data
++		= { PLUGIN_FOLDED_ELEMENT, NULL_TREE, init, t,
++		    cp_expr_loc_or_input_loc (init) };
++	      invoke_plugin_callbacks (PLUGIN_FOLDED_INITIALIZER, &data);
++	    }
++	  init = t;
++	}
+       set_target_expr_eliding (init);
+     }
+   return init;
+diff --git a/gcc/doc/plugins.texi b/gcc/doc/plugins.texi
+index 7ed8516..f6081ee 100644
+--- a/gcc/doc/plugins.texi
++++ b/gcc/doc/plugins.texi
+@@ -235,6 +235,12 @@ enum plugin_event
+   /* Called by the C++ front end after it parses a reflect-expression, and
+      when it resolves a splice-specifier.  */
+   PLUGIN_REFLECTION,
++  /* Called by the C++ front end when it replaces an initializer with the
++     tree that a fold gives.  */
++  PLUGIN_FOLDED_INITIALIZER,
++  /* Called by the C++ front end when it replaces a trivial assignment of an
++     empty class with its right operand.  */
++  PLUGIN_EMPTY_CLASS_ASSIGNMENT,
+
+   PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
+                                    array.  */
+@@ -380,6 +386,52 @@ see one reflection more than one time.  A name in the operand of a
+ reflect-expression also gives the @i{PLUGIN_NAME_USE} event, so a plugin
+ can tell a reflection of a name from a plain use of it.
+
++The @i{PLUGIN_FOLDED_INITIALIZER} event is triggered by the C++ front end
++each time that it replaces an initializer with a different tree that a fold
++gives, also in a template and at the instantiation of a template.  When the
++value of an initializer is a constant, the fold drops each call,
++conversion and @code{std::move} in it, so the tree at
++@i{PLUGIN_PRE_GENERICIZE} does not hold them.  This occurs, for example,
++for a call of a @code{constexpr} function that takes an empty class by
++reference.  The GCC data is a pointer to a
++@code{struct plugin_folded_initializer_data}, declared in
++@file{cp/cp-tree.h}.  Its field @code{kind} names the place of the fold:
++@code{PLUGIN_FOLDED_VARIABLE} for the initializer of a variable,
++@code{PLUGIN_FOLDED_CONSTRUCTOR_CALL} for a call of a @code{constexpr}
++constructor that initializes an object, @code{PLUGIN_FOLDED_ELEMENT} for
++an element of a braced initializer list (an aggregate, a compound literal
++or the capture list of a lambda), and @code{PLUGIN_FOLDED_ARRAY_ELEMENT}
++for the initialization of an element of an array.  Its field
++@code{object} is the variable, the expression of the object of the
++constructor call, or null for an element.  Its field @code{original} is
++the initializer before the fold, and its field @code{folded} is the tree
++that the front end keeps in its place: the @code{DECL_INITIAL} of a
++variable, the value of an @code{INIT_EXPR} or an element of a
++@code{CONSTRUCTOR}.  Only @code{PLUGIN_FOLDED_VARIABLE} can give a
++@code{folded} tree that is not a constant.  The front end then moves the
++parts of it that are not constant into statements.  The two trees can
++share a subtree, and @code{folded}
++can be a subtree of @code{original}, as when the fold drops a
++@code{TARGET_EXPR}.  The fold can also replace an operand of a shared
++subtree.  Its field @code{location} is the location of @code{original}.
++The front end collects no garbage between a fold in the body of a
++function and the @i{PLUGIN_PRE_GENERICIZE} event of that function, so a
++plugin can keep the two trees until that event.
++
++The @i{PLUGIN_EMPTY_CLASS_ASSIGNMENT} event is triggered by the C++ front
++end when it replaces a call of a trivial assignment operator of an empty
++class with the @code{COMPOUND_EXPR} of the right operand and the target,
++also at the instantiation of a template.  In an expression statement, the
++front end then replaces the target with a void constant, so the tree does
++not show which object the assignment assigns to.  The GCC data is a
++pointer to a @code{struct plugin_empty_class_assignment_data}, declared in
++@file{cp/cp-tree.h}.  Its field @code{target} is the object that the
++assignment assigns to, its field @code{source} is the right operand after
++its conversion to the type of the parameter, its field @code{fn} is the
++assignment operator, and its field @code{location} is the location of the
++assignment.  The source stays in the tree as the first operand of the
++@code{COMPOUND_EXPR}, so a plugin can find the place of the assignment.
++
+ The @i{PLUGIN_NAME_USE} and @i{PLUGIN_MEMBER_ACCESS} events are direct
+ events.  They occur very often, so the front end calls their callbacks
+ itself, with the facts of the event as arguments, and not through
+diff --git a/gcc/plugin.cc b/gcc/plugin.cc
+index deda05b..34949f5 100644
+--- a/gcc/plugin.cc
++++ b/gcc/plugin.cc
+@@ -582,6 +582,8 @@ register_callback (const char *plugin_name,
+       case PLUGIN_USING_FORM:
+       case PLUGIN_MEMBER_ACCESS:
+       case PLUGIN_REFLECTION:
++      case PLUGIN_FOLDED_INITIALIZER:
++      case PLUGIN_EMPTY_CLASS_ASSIGNMENT:
+         {
+           struct callback_info *new_callback;
+           if (!callback)
+@@ -678,6 +680,8 @@ invoke_plugin_callbacks_full (int event, void *gcc_data)
+       case PLUGIN_SIZEOF_OR_ALIGNOF:
+       case PLUGIN_USING_FORM:
+       case PLUGIN_REFLECTION:
++      case PLUGIN_FOLDED_INITIALIZER:
++      case PLUGIN_EMPTY_CLASS_ASSIGNMENT:
+         {
+           /* Iterate over every callback registered with this event and
+              call it.  */
+diff --git a/gcc/plugin.def b/gcc/plugin.def
+index c55efe6..0d078f6 100644
+--- a/gcc/plugin.def
++++ b/gcc/plugin.def
+@@ -135,6 +135,18 @@ DEFEVENT (PLUGIN_MEMBER_ACCESS)
+    plugin_reflection_data, declared in cp/cp-tree.h.  */
+ DEFEVENT (PLUGIN_REFLECTION)
+
++/* Called by the C++ front end when it replaces an initializer with the
++   tree that a fold gives, at parse time and at the instantiation of a
++   template.  The event data is a pointer to a struct
++   plugin_folded_initializer_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_FOLDED_INITIALIZER)
++
++/* Called by the C++ front end when it replaces a trivial assignment of an
++   empty class with its right operand, at parse time and at the
++   instantiation of a template.  The event data is a pointer to a struct
++   plugin_empty_class_assignment_data, declared in cp/cp-tree.h.  */
++DEFEVENT (PLUGIN_EMPTY_CLASS_ASSIGNMENT)
++
+ /* When adding a new hard-coded plugin event, don't forget to edit in
+    file plugin.cc the functions register_callback and
+    invoke_plugin_callbacks_full accordingly!  */
+diff --git a/gcc/testsuite/g++.dg/plugin/empty-class-assignment-plugin-test.C b/gcc/testsuite/g++.dg/plugin/empty-class-assignment-plugin-test.C
+new file mode 100644
+index 0000000..77831e0
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/empty-class-assignment-plugin-test.C
+@@ -0,0 +1,34 @@
++// Test the plugin event PLUGIN_EMPTY_CLASS_ASSIGNMENT: one event for each
++// trivial assignment of an empty class, also in a condition and at the
++// instantiation of a template, and no event for a class that is not empty or
++// for an assignment operator that the user provides.
++// { dg-do compile }
++
++struct tracked_empty {};
++struct tracked_full { int value; };
++struct tracked_user
++{
++  tracked_user &operator= (const tracked_user &) { return *this; }
++};
++
++tracked_empty make_empty ();
++
++bool
++use (tracked_empty first, tracked_full full, tracked_full other,
++     tracked_user user, tracked_user user_other)
++{
++  first = make_empty (); // { dg-warning "assignment to 'first' of the empty class 'tracked_empty'" }
++  bool done = ((first = tracked_empty ()), true); // { dg-warning "assignment to 'first' of the empty class 'tracked_empty'" }
++  full = other;
++  user = user_other;
++  return done;
++}
++
++template <class T>
++void
++pattern (T target, T source)
++{
++  target = source; // { dg-warning "assignment to 'target' of the empty class 'tracked_empty'" }
++}
++
++template void pattern<tracked_empty> (tracked_empty, tracked_empty);
+diff --git a/gcc/testsuite/g++.dg/plugin/empty_class_assignment_plugin.cc b/gcc/testsuite/g++.dg/plugin/empty_class_assignment_plugin.cc
+new file mode 100644
+index 0000000..2bae7ec
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/empty_class_assignment_plugin.cc
+@@ -0,0 +1,36 @@
++/* A plugin that gives a warning for each trivial assignment of an empty
++   class that PLUGIN_EMPTY_CLASS_ASSIGNMENT reports, with the target of the
++   assignment.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_empty_class_assignment (void *event_data, void *)
++{
++  plugin_empty_class_assignment_data *data
++    = (plugin_empty_class_assignment_data *) event_data;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  warning_at (loc, 0, "assignment to %qE of the empty class %qT", data->target,
++	      DECL_CONTEXT (data->fn));
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT,
++		     plugin_empty_class_assignment, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/folded-initializer-plugin-test.C b/gcc/testsuite/g++.dg/plugin/folded-initializer-plugin-test.C
+new file mode 100644
+index 0000000..8ac1a16
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/folded-initializer-plugin-test.C
+@@ -0,0 +1,51 @@
++// Test the plugin event PLUGIN_FOLDED_INITIALIZER: one event for each
++// initializer that the front end replaces with its folded value, at each of
++// the four places, also at the instantiation of a template, and no event for
++// an initializer that stays.
++// { dg-do compile }
++// { dg-options "-std=c++20" }
++
++struct tracked_token
++{
++  constexpr tracked_token () noexcept = default;
++  constexpr tracked_token (tracked_token &&) noexcept {}
++};
++
++struct tracked_holder { tracked_token held; };
++
++struct tracked_owner
++{
++  constexpr explicit tracked_owner (tracked_token &&token) noexcept
++    : held (static_cast<tracked_token &&> (token)) {}
++  tracked_token held;
++};
++
++constexpr tracked_token
++tracked_pass (tracked_token &&token) noexcept
++{
++  return static_cast<tracked_token &&> (token);
++}
++
++int runtime_value ();
++
++int
++use ()
++{
++  tracked_token token;
++  tracked_token back = tracked_pass (static_cast<tracked_token &&> (token)); // { dg-warning "folded initializer of variable 'back': target_expr to constructor" }
++  tracked_holder holder { static_cast<tracked_token &&> (back) }; // { dg-warning "folded element: target_expr to constructor" }
++  tracked_owner owner (static_cast<tracked_token &&> (holder.held)); // { dg-warning "folded constructor call for 'owner': call_expr to constructor" }
++  tracked_token both[1] { static_cast<tracked_token &&> (owner.held) }; // { dg-warning "folded array element: expr_stmt to constructor" }
++  int kept = runtime_value ();
++  return kept;
++}
++
++template <class T>
++void
++pattern ()
++{
++  T value;
++  T moved = tracked_pass (static_cast<T &&> (value)); // { dg-warning "folded initializer of variable 'moved': target_expr to constructor" }
++}
++
++template void pattern<tracked_token> ();
+diff --git a/gcc/testsuite/g++.dg/plugin/folded_initializer_plugin.cc b/gcc/testsuite/g++.dg/plugin/folded_initializer_plugin.cc
+new file mode 100644
+index 0000000..569143f
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/plugin/folded_initializer_plugin.cc
+@@ -0,0 +1,53 @@
++/* A plugin that gives a warning for each initializer that
++   PLUGIN_FOLDED_INITIALIZER reports, with the kind of the fold, the object
++   and the tree codes before and after the fold.  */
++
++#include "gcc-plugin.h"
++#include <stdlib.h>
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tree.h"
++#include "intl.h"
++#include "cp/cp-tree.h"
++#include "diagnostic.h"
++
++int plugin_is_GPL_compatible;
++
++static void
++plugin_folded_initializer (void *event_data, void *)
++{
++  plugin_folded_initializer_data *data
++    = (plugin_folded_initializer_data *) event_data;
++  location_t loc = linemap_resolve_location (line_table, data->location,
++					      LRK_MACRO_EXPANSION_POINT,
++					      NULL);
++  const char *before = get_tree_code_name (TREE_CODE (data->original));
++  const char *after = get_tree_code_name (TREE_CODE (data->folded));
++  switch (data->kind)
++    {
++    case PLUGIN_FOLDED_VARIABLE:
++      warning_at (loc, 0, "folded initializer of variable %qD: %s to %s",
++		  data->object, before, after);
++      break;
++    case PLUGIN_FOLDED_CONSTRUCTOR_CALL:
++      warning_at (loc, 0, "folded constructor call for %qE: %s to %s",
++		  data->object, before, after);
++      break;
++    case PLUGIN_FOLDED_ELEMENT:
++      warning_at (loc, 0, "folded element: %s to %s", before, after);
++      break;
++    case PLUGIN_FOLDED_ARRAY_ELEMENT:
++      warning_at (loc, 0, "folded array element: %s to %s", before, after);
++      break;
++    }
++}
++
++int
++plugin_init (struct plugin_name_args *plugin_info,
++	     struct plugin_gcc_version *)
++{
++  register_callback (plugin_info->base_name, PLUGIN_FOLDED_INITIALIZER,
++		     plugin_folded_initializer, NULL);
++  return 0;
++}
+diff --git a/gcc/testsuite/g++.dg/plugin/plugin.exp b/gcc/testsuite/g++.dg/plugin/plugin.exp
+index ecfa94e..2255982 100644
+--- a/gcc/testsuite/g++.dg/plugin/plugin.exp
++++ b/gcc/testsuite/g++.dg/plugin/plugin.exp
+@@ -107,6 +107,9 @@ set plugin_test_list [list \
+ 	  direct-event-plugin-test-3.C \
+ 	  direct-event-plugin-test-4.C \
+ 	  direct-event-plugin-test-5.C } \
++    { folded_initializer_plugin.cc folded-initializer-plugin-test.C } \
++    { empty_class_assignment_plugin.cc \
++	  empty-class-assignment-plugin-test.C } \
+ ]
+
+ foreach file [find $PLUGIN_DEFAULT_REPO *.gcm] {
+--
+2.55.0
+
