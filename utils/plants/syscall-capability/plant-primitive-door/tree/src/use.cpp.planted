@@ -1,0 +1,3 @@
+// A quarantined unit of src/ that includes the door header of the plant, as
+// the sentinel unit of that header.
+#include <fixy/os/Pin.h>

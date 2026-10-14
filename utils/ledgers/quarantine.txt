@@ -257,7 +257,6 @@ bench/bench_harness.h | compiler-builtin | 1 | __atomic_load_n | -
 bench/bench_harness.h | compiler-builtin | 2 | __builtin_ia32_lfence | -
 bench/bench_harness.h | compiler-builtin | 1 | __builtin_ia32_rdtsc | -
 bench/bench_harness.h | compiler-builtin | 1 | __builtin_ia32_rdtscp | -
-bench/bench_harness.h | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
 bench/bench_harness.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 bench/bench_harness.h | inline-asm | 1 | asm | -
 bench/bench_harness.h | raw-pointer-object | 43 | - | -
@@ -1734,7 +1733,6 @@ include/crucible/warden/Hardening.h | c-library-call | 1 | strcmp | -
 include/crucible/warden/Hardening.h | c-library-call | 1 | strerror | -
 include/crucible/warden/Hardening.h | c-library-call | 3 | syscall | -
 include/crucible/warden/Hardening.h | c-library-call | 1 | sysconf | -
-include/crucible/warden/Hardening.h | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
 include/crucible/warden/Hardening.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 include/crucible/warden/Hardening.h | raw-pointer-object | 14 | - | -
 include/crucible/warden/Hardening.h | replace-pending:std::bit_cast | 4 | std::bit_cast | -
@@ -2286,8 +2284,6 @@ include/fixy/concurrent/PermissionedMpscChannel.h | base-std-object | 2 | std::o
 include/fixy/concurrent/PermissionedMpscChannel.h | layer-header | 1 | <optional> | -
 include/fixy/concurrent/PermissionedSpscChannel.h | base-std-object | 1 | std::optional | -
 include/fixy/concurrent/PermissionedSpscChannel.h | layer-header | 1 | <optional> | -
-include/fixy/concurrent/Pipeline.h | base-c-library-call | 1 | sched_getaffinity | -
-include/fixy/concurrent/Pipeline.h | base-c-library-object | 1 | cpu_set_t | -
 include/fixy/concurrent/Pipeline.h | base-std-entity | 1 | std::__atomic_base::fetch_add | -
 include/fixy/concurrent/Pipeline.h | base-std-entity | 1 | std::binary_search | -
 include/fixy/concurrent/Pipeline.h | base-std-entity | 5 | std::get | -
@@ -2304,11 +2300,9 @@ include/fixy/concurrent/Pipeline.h | base-std-object | 4 | std::array | -
 include/fixy/concurrent/Pipeline.h | base-std-object | 1 | std::atomic | -
 include/fixy/concurrent/Pipeline.h | base-std-object | 2 | std::tuple | -
 include/fixy/concurrent/Pipeline.h | base-std-object | 5 | std::vector | -
-include/fixy/concurrent/Pipeline.h | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <algorithm> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <array> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <atomic> | -
-include/fixy/concurrent/Pipeline.h | layer-header | 1 | <sched.h> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <tuple> | -
 include/fixy/concurrent/Pipeline.h | layer-header | 1 | <vector> | -
 include/fixy/concurrent/Spawn.h | base-std-entity | 3 | std::get | -
@@ -2396,21 +2390,11 @@ include/fixy/os/CipherDurable.h | base-std-object | 9 | std::filesystem::path | 
 include/fixy/os/CipherDurable.h | layer-header | 1 | <expected> | -
 include/fixy/os/CipherDurable.h | layer-header | 1 | <system_error> | -
 include/fixy/os/ClockSource.h | layer-header | 1 | <string_view> | -
-include/fixy/os/CpuPinned.h | base-c-library-call | 1 | __errno_location | -
-include/fixy/os/CpuPinned.h | base-c-library-call | 1 | sched_setaffinity | -
-include/fixy/os/CpuPinned.h | base-c-library-object | 3 | cpu_set_t | -
-include/fixy/os/CpuPinned.h | base-std-entity | 1 | std::__atomic_base::fetch_add | -
-include/fixy/os/CpuPinned.h | base-std-entity | 1 | std::array::operator[] | -
 include/fixy/os/CpuPinned.h | base-std-entity | 2 | std::exchange | -
 include/fixy/os/CpuPinned.h | base-std-entity | 1 | std::expected | -
-include/fixy/os/CpuPinned.h | base-std-entity | 1 | std::unexpected | -
 include/fixy/os/CpuPinned.h | base-std-entity | 1 | std::vector::operator[] | -
-include/fixy/os/CpuPinned.h | base-std-object | 1 | std::atomic | -
-include/fixy/os/CpuPinned.h | base-std-object | 4 | std::expected | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <atomic> | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/CpuPinned.h | base-std-object | 2 | std::expected | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <expected> | -
-include/fixy/os/CpuPinned.h | layer-header | 1 | <sched.h> | -
 include/fixy/os/Fd.h | base-std-entity | 3 | std::exchange | -
 include/fixy/os/Fs.h | base-std-entity | 12 | std::error_code | -
 include/fixy/os/Fs.h | base-std-entity | 5 | std::expected | -
@@ -2499,25 +2483,12 @@ include/fixy/os/Path.h | layer-header | 1 | <cstdlib> | -
 include/fixy/os/Path.h | layer-header | 1 | <expected> | -
 include/fixy/os/Path.h | layer-header | 1 | <filesystem> | -
 include/fixy/os/Path.h | layer-header | 1 | <string> | -
-include/fixy/os/Sched.h | base-c-library-call | 5 | __errno_location | -
-include/fixy/os/Sched.h | base-c-library-call | 1 | sched_getaffinity | -
-include/fixy/os/Sched.h | base-c-library-call | 1 | sched_setscheduler | -
-include/fixy/os/Sched.h | base-c-library-call | 1 | setpriority | -
-include/fixy/os/Sched.h | base-c-library-call | 1 | syscall | -
-include/fixy/os/Sched.h | base-c-library-object | 3 | cpu_set_t | -
-include/fixy/os/Sched.h | base-c-library-object | 1 | sched_param | -
 include/fixy/os/Sched.h | base-std-entity | 2 | std::exchange | -
 include/fixy/os/Sched.h | base-std-entity | 8 | std::expected | -
-include/fixy/os/Sched.h | base-std-entity | 3 | std::expected::error | -
-include/fixy/os/Sched.h | base-std-entity | 1 | std::expected::operator* | -
 include/fixy/os/Sched.h | base-std-entity | 2 | std::in_place | -
-include/fixy/os/Sched.h | base-std-entity | 8 | std::unexpected | -
-include/fixy/os/Sched.h | base-std-object | 11 | std::expected | -
-include/fixy/os/Sched.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/Sched.h | layer-header | 1 | <cerrno> | -
+include/fixy/os/Sched.h | base-std-entity | 7 | std::unexpected | -
+include/fixy/os/Sched.h | base-std-object | 8 | std::expected | -
 include/fixy/os/Sched.h | layer-header | 1 | <expected> | -
-include/fixy/os/Sched.h | layer-header | 1 | <sched.h> | -
-include/fixy/os/Sched.h | layer-header | 1 | <sys/syscall.h> | -
 include/fixy/os/Socket.h | base-c-library-call | 1 | __errno_location | -
 include/fixy/os/Socket.h | base-c-library-call | 1 | socket | -
 include/fixy/os/Socket.h | base-std-entity | 3 | std::error_code | -
@@ -5594,7 +5565,6 @@ test/fixy/test_session_handle_attacks.cpp | c-library-call | 1 | read | -
 test/fixy/test_session_handle_attacks.cpp | c-library-call | 21 | stderr | -
 test/fixy/test_session_handle_attacks.cpp | c-library-call | 2 | waitpid | -
 test/fixy/test_session_handle_attacks.cpp | c-library-object | 1 | rlimit | -
-test/fixy/test_session_handle_attacks.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
 test/fixy/test_session_handle_attacks.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_session_handle_attacks.cpp | raw-function-pointer | 5 | - | -
 test/fixy/test_session_handle_attacks.cpp | raw-new-delete | 7 | new | -
@@ -7941,7 +7911,6 @@ test/test_expr_pool_capacity.cpp | c-library-call | 1 | pipe | -
 test/test_expr_pool_capacity.cpp | c-library-call | 1 | read | -
 test/test_expr_pool_capacity.cpp | c-library-call | 2 | stderr | -
 test/test_expr_pool_capacity.cpp | c-library-call | 1 | waitpid | -
-test/test_expr_pool_capacity.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
 test/test_expr_pool_capacity.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_expr_pool_capacity.cpp | raw-function-pointer | 2 | - | -
 test/test_expr_pool_capacity.cpp | std-entity | 2 | std::basic_string_view::find | -
@@ -8972,7 +8941,6 @@ test/test_trace_loader.cpp | c-library-call | 3 | strcmp | -
 test/test_trace_loader.cpp | c-library-call | 1 | strlen | -
 test/test_trace_loader.cpp | c-library-object | 1 | _IO_FILE | -
 test/test_trace_loader.cpp | c-library-object | 1 | rusage | -
-test/test_trace_loader.cpp | door-header | 1 | <sys/resource.h> has the door include/fixy/os/Sched.h | -
 test/test_trace_loader.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/test_trace_loader.cpp | raw-pointer-object | 8 | - | -
 test/test_trace_loader.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -

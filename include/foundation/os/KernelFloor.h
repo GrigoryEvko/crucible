@@ -14,8 +14,9 @@
 // THE FEATURE CALLS
 //   A feature call is a call that the caller of a door chooses, and that no
 //   other door needs: renameat2 for the commit that refuses an existing
-//   target, copy_file_range for the copy between two files, and
-//   io_uring_setup for the ring of io_uring.  Its door gives the error enosys
+//   target, copy_file_range for the copy between two files, io_uring_setup
+//   for the ring of io_uring, and sched_setattr for the policy SCHED_DEADLINE
+//   of fixy/os/Sched.h.  Its door gives the error enosys
 //   of an older kernel to its caller in the Result of the door.  An older
 //   kernel then refuses the feature and not the process, so the minimum does
 //   not count the release of a feature call.

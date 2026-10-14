@@ -4,13 +4,6 @@
 
 namespace fixy {
 
-namespace detail {
-
-static_assert(AffinityMask::kBits == CPU_SETSIZE,
-              "an affinity mask must hold each CPU that the kernel can pin, and no more");
-
-}  // namespace detail
-
 static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>)
                   == 2 * sizeof(std::uint64_t),
               "a pin proof holds its unit payload and its pin event, and nothing more");

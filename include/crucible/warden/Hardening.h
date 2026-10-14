@@ -12,6 +12,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/Sched.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -136,7 +137,11 @@ public:
     // reverts and then swaps, so a flag left set here would travel
     // into the moved-from handle and make it claim work it has already
     // undone.
-    void revert() noexcept {
+    //
+    // The revert is teardown work of system calls, so no caller inlines
+    // it.  A caller pays one call, and a measurement loop keeps its code
+    // small.
+    CRUCIBLE_NOINLINE void revert() noexcept {
 #ifdef __linux__
         if (reverted_) return;
         reverted_ = true;

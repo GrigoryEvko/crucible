@@ -411,8 +411,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | pthread_join | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_self@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | sched_setaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_yield@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sigaltstack | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
 @build/vessel | import | 1 | stderr@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -846,8 +844,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sigaltstack | -
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | -
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -990,8 +986,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-release | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | sigaltstack | -
 @x86_64-release | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | -
 @x86_64-release | @build/vessel | import | -1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

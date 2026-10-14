@@ -12,9 +12,9 @@
 // than on the shape of a token anyone could build.
 //
 // A pin holds for one thread, and only until that thread pins again.  So
-// the proof names one pin event.  Each successful sched_setaffinity
-// through this header takes the next value of one count for the process,
-// and records it as the pin event in force on the calling thread.  The
+// the proof names one pin event.  Each successful sched_setaffinity of the
+// affinity door takes the next value of one count for the process, and
+// records it as the pin event in force on the calling thread.  The
 // proof keeps the value, and is_in_force() compares it with the value in
 // force on the thread that asks.  A proof moved to another thread, or
 // kept after its thread pinned again, is not in force, and a consumer
@@ -24,13 +24,26 @@
 // a value, because each of those doors claims a pin that nobody
 // performed.
 //
-// A pin that does not go through this header is not recorded.  A raw
-// sched_setaffinity call, a call from another thread that names this
-// thread, and a taskset from outside the process move the thread with no
-// record, and a proof then stays in force for a mask the thread no
-// longer has.  The rule syscall-capability of the quarantine plugin refuses
-// the first two in each file that a build compiles: a sched_setaffinity or
-// a pthread_setaffinity_np outside detail::set_calling_thread_affinity is a
+// THE AFFINITY DOOR
+//   detail::sched_setaffinity_sys sets the affinity mask of the calling
+//   thread and records the pin event of the change, and
+//   detail::sched_getaffinity_sys reads the mask.  Their bodies are in
+//   src/fixy/os/CpuPinned.cpp, so a caller pays one call and holds no copy
+//   of the door.  Each one issues its one system call through
+//   foundation::os::raw_syscall, and the kernel reads or writes the words of
+//   an AffinityMask.  So the door includes no header of the kernel and no
+//   header of the C library.  A door function that issues one system call
+//   NAME out of line has the name NAME_sys, so the rule
+//   syscall-grant-coverage counts a call of it as a call of NAME.
+//
+// A pin that does not go through the door is not recorded.  A
+// sched_setaffinity call around the door, a call from another thread that
+// names this thread, and a taskset from outside the process move the
+// thread with no record, and a proof then stays in force for a mask the
+// thread no longer has.  The rule syscall-capability of the quarantine
+// plugin refuses the first two in each file that a build compiles: a
+// sched_setaffinity of the C library or of the raw primitive, or a
+// pthread_setaffinity_np, outside detail::sched_setaffinity_sys is a
 // finding that no ledger row admits.  Nothing refuses the third.
 //
 // Posture is a parameter of the mint rather than a fact the syscall
@@ -50,14 +63,12 @@
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
 
-#include <sched.h>
-
-#include <atomic>
-#include <cerrno>
 #include <concepts>
-#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <meta>
@@ -93,20 +104,8 @@ using PinProofUnit = int;
 
 namespace detail {
 
-// A mask has one bit for each CPU of the kernel set, so each set bit is a
-// valid CPU_SET index, and the loop needs no bound check of its own.  The
-// check file of this header pins the count of bits to CPU_SETSIZE.
-CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, ::cpu_set_t& set) noexcept {
-    CPU_ZERO(&set);
-    for (std::uint16_t core = 0; core < AffinityMask::kBits; ++core) {
-        if (((mask.words[core / 64] >> (core % 64)) & 1ULL) != 0ULL) {
-            CPU_SET(static_cast<std::size_t>(core), &set);
-        }
-    }
-}
-
-// The pin event in force on a thread that never pinned through this
-// header, and the event of a proof that a move emptied.  The count
+// The pin event in force on a thread that never pinned through the
+// affinity door, and the event of a proof that a move emptied.  The count
 // starts at no_pin_event and each event adds one, so no event is
 // no_pin_event.  At one event each nanosecond, the count gets to
 // released_pin_event after more than 500 years, so no event of a process
@@ -120,39 +119,38 @@ inline constexpr std::uint64_t released_pin_event = ~std::uint64_t{0};
 // One count for the process, whatever shared library pins a thread.  Two
 // copies of the count, one in each library, could give two threads one
 // event value, and a proof of one thread would then be in force on the
-// other.
-CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<std::uint64_t> pin_event_count{no_pin_event};
+// other.  Only sched_setaffinity_sys changes it.
+CRUCIBLE_PROCESS_WIDE inline constinit ::foundation::core::Atomic<std::uint64_t> pin_event_count{no_pin_event};
 
-// The pin event in force on the calling thread.
-CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event = no_pin_event;
+// The pin event in force on the calling thread.  is_in_force() reads it in
+// the header, so a read of the TSC pays one load of it and no call.  Only
+// sched_setaffinity_sys changes it.  The initial-exec model makes each access
+// one load or store relative to the thread pointer, also in a library, so no
+// access calls the dynamic loader.  The value takes 8 bytes of the static TLS
+// of the process.
+CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local std::uint64_t tls_pin_event =
+    no_pin_event;
 
-// Sets the affinity of the calling thread to the set, and records a new
-// pin event.  Returns the event, or the errno of a failed call.  A failed
-// call leaves the affinity as it was, so the event in force stays.
+// Sets the affinity mask of the calling thread to the mask, and records a
+// new pin event (THE AFFINITY DOOR).  Returns the event, or the error of the
+// kernel.  A failed call leaves the affinity as it was, so the event in force
+// stays.  An empty mask is EINVAL of the kernel.
 //
-// This function is the one door to the affinity system call.  Each change
-// of affinity comes through it, so a proof of an earlier pin on this
-// thread stops being in force.  The function mints nothing.  The proof is
-// built by mint_affinity, on its success, and nowhere else.  The gated
-// callers are mint_affinity, apply_affinity_to_mask and
-// PriorAffinity::restore in fixy/os/Sched.h.  apply_affinity_to_cpu calls
-// apply_affinity_to_mask.
-[[nodiscard]] inline std::expected<std::uint64_t, int> set_calling_thread_affinity(::cpu_set_t const& set) noexcept {
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {
-        return std::unexpected{errno};
-    }
-    const std::uint64_t event = pin_event_count.fetch_add(1, std::memory_order_acq_rel) + 1;
-    tls_pin_event = event;
-    return event;
-}
+// Each change of affinity comes through this function, so a proof of an
+// earlier pin on this thread stops being in force.  The function mints
+// nothing.  The proof is built by mint_affinity, on its success, and
+// nowhere else.  The gated callers are mint_affinity, apply_affinity_to_mask
+// and PriorAffinity::restore in fixy/os/Sched.h.  apply_affinity_to_cpu
+// calls apply_affinity_to_mask.
+[[nodiscard]] ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
+sched_setaffinity_sys(AffinityMask const& mask) noexcept;
 
-// Pins the calling thread to the mask.  Returns the new pin event, or
-// the errno of a failed call.
-[[nodiscard]] inline std::expected<std::uint64_t, int> pin_calling_thread(AffinityMask mask) noexcept {
-    ::cpu_set_t set;
-    fill_cpu_set(mask, set);
-    return set_calling_thread_affinity(set);
-}
+// The affinity mask of the calling thread (THE AFFINITY DOOR), or the error
+// of the kernel.  The kernel writes the bits of each CPU that it knows, and
+// each other bit of the mask stays zero.  A kernel with more CPUs than the
+// mask holds gives EINVAL.  The gated callers are read_affinity and
+// apply_affinity_to_mask in fixy/os/Sched.h.
+[[nodiscard]] ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> sched_getaffinity_sys() noexcept;
 
 }  // namespace detail
 
@@ -219,13 +217,13 @@ private:
     std::uint64_t pin_event_ = detail::released_pin_event;
 
     // The only constructor that builds a proof, and it is private.  The
-    // event is the one that set_calling_thread_affinity returned for this
+    // event is the one that detail::sched_setaffinity_sys returned for this
     // same mask.
     constexpr CpuPinned(Unit value, std::uint64_t pin_event) noexcept(std::is_nothrow_move_constructible_v<Unit>)
         : value_{std::move(value)}, pin_event_{pin_event} {}
 
     // The sole friend, and the whole gate.  It is reached only after
-    // detail::pin_calling_thread returned a pin event for this same Mask,
+    // detail::sched_setaffinity_sys returned a pin event for this same Mask,
     // so a proof in force names a pin of the thread that asks.
     //
     // Keep this friend a function that PERFORMS AND CHECKS the syscall.

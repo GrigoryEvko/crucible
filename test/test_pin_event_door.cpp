@@ -2,7 +2,7 @@
 //
 // A pin proof of fixy/os/CpuPinned.h holds one pin event, and is_in_force()
 // compares it with the event in force on the thread.  Only the door
-// fixy::detail::set_calling_thread_affinity records an event.  A change of
+// fixy::detail::sched_setaffinity_sys records an event.  A change of
 // affinity that goes around the door leaves an older proof in force while
 // the thread runs under another mask.
 //

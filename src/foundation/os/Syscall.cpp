@@ -3,7 +3,8 @@
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
-// <linux/fcntl.h>, <linux/futex.h>, <linux/mman.h>, <linux/time_types.h> and
+// <linux/fcntl.h>, <linux/futex.h>, <linux/mman.h>, <linux/resource.h>,
+// <linux/sched.h>, <linux/sched/types.h>, <linux/time_types.h> and
 // <linux/utsname.h>.  It includes no header of the C library, because some
 // declarations of the two kinds of header conflict.  In a build with
 // ThreadSanitizer, the primitive gives a read or a write that can block to
@@ -15,6 +16,7 @@
 #include <foundation/os/KernelFloor.h>
 #include <foundation/os/MapWords.h>
 #include <foundation/os/OpenFlags.h>
+#include <foundation/os/SchedWords.h>
 #include <foundation/os/Syscall.h>
 
 #include <asm-generic/errno-base.h>
@@ -22,6 +24,9 @@
 #include <linux/fcntl.h>
 #include <linux/futex.h>
 #include <linux/mman.h>
+#include <linux/resource.h>
+#include <linux/sched.h>
+#include <linux/sched/types.h>
 #include <linux/time_types.h>
 #include <linux/utsname.h>
 
@@ -91,6 +96,36 @@ static_assert(offsetof(KernelTimespec, seconds) == offsetof(::__kernel_timespec,
 static_assert(offsetof(KernelTimespec, nanoseconds) == offsetof(::__kernel_timespec, tv_nsec),
               "KernelTimespec::nanoseconds is not at the place of tv_nsec of struct __kernel_timespec");
 
+// The argument words of foundation/os/SchedWords.h are the words of the kernel
+// headers.
+static_assert(kSchedNormal == SCHED_NORMAL, "kSchedNormal is not SCHED_NORMAL of <linux/sched.h>");
+static_assert(kSchedFifo == SCHED_FIFO, "kSchedFifo is not SCHED_FIFO of <linux/sched.h>");
+static_assert(kSchedRoundRobin == SCHED_RR, "kSchedRoundRobin is not SCHED_RR of <linux/sched.h>");
+static_assert(kSchedBatch == SCHED_BATCH, "kSchedBatch is not SCHED_BATCH of <linux/sched.h>");
+static_assert(kSchedIdle == SCHED_IDLE, "kSchedIdle is not SCHED_IDLE of <linux/sched.h>");
+static_assert(kSchedDeadline == SCHED_DEADLINE, "kSchedDeadline is not SCHED_DEADLINE of <linux/sched.h>");
+static_assert(kPriorityOfThread == PRIO_PROCESS, "kPriorityOfThread is not PRIO_PROCESS of <linux/resource.h>");
+static_assert(kSchedAttrSize == SCHED_ATTR_SIZE_VER0,
+              "kSchedAttrSize is not SCHED_ATTR_SIZE_VER0 of <linux/sched/types.h>");
+static_assert(sizeof(KernelSchedAttr) == SCHED_ATTR_SIZE_VER0,
+              "KernelSchedAttr does not have the size of the first published struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, size) == offsetof(::sched_attr, size),
+              "KernelSchedAttr::size is not at the place of size of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, policy) == offsetof(::sched_attr, sched_policy),
+              "KernelSchedAttr::policy is not at the place of sched_policy of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, flags) == offsetof(::sched_attr, sched_flags),
+              "KernelSchedAttr::flags is not at the place of sched_flags of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, nice) == offsetof(::sched_attr, sched_nice),
+              "KernelSchedAttr::nice is not at the place of sched_nice of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, priority) == offsetof(::sched_attr, sched_priority),
+              "KernelSchedAttr::priority is not at the place of sched_priority of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, runtime_ns) == offsetof(::sched_attr, sched_runtime),
+              "KernelSchedAttr::runtime_ns is not at the place of sched_runtime of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, deadline_ns) == offsetof(::sched_attr, sched_deadline),
+              "KernelSchedAttr::deadline_ns is not at the place of sched_deadline of struct sched_attr");
+static_assert(offsetof(KernelSchedAttr, period_ns) == offsetof(::sched_attr, sched_period),
+              "KernelSchedAttr::period_ns is not at the place of sched_period of struct sched_attr");
+
 namespace {
 
 // The number of each call on the architecture of the build, from
@@ -142,6 +177,14 @@ constexpr long kNoCall = -1;
             return __NR_io_uring_setup;
         case Syscall::ioctl:
             return __NR_ioctl;
+        case Syscall::sched_setaffinity:
+            return __NR_sched_setaffinity;
+        case Syscall::sched_setscheduler:
+            return __NR_sched_setscheduler;
+        case Syscall::sched_setattr:
+            return __NR_sched_setattr;
+        case Syscall::setpriority:
+            return __NR_setpriority;
         default:
             return kNoCall;
     }
@@ -264,8 +307,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // operations that the doors give it: the later of the first release of the
 // architecture and the release that added the call.  openat and renameat
 // came in 2.6.16.  futex came in 2.6.0, and the futex door uses
-// FUTEX_WAIT_BITSET, which came in 2.6.25.  renameat2 came in 3.15,
-// copy_file_range in 4.5 and io_uring_setup in 5.1.
+// FUTEX_WAIT_BITSET, which came in 2.6.25.  sched_setattr came in 3.14,
+// renameat2 in 3.15, copy_file_range in 4.5 and io_uring_setup in 5.1.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
@@ -275,6 +318,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::futex:
             added = KernelVersion{2, 6, 25};
+            break;
+        case Syscall::sched_setattr:
+            added = KernelVersion{3, 14, 0};
             break;
         case Syscall::renameat2:
             added = KernelVersion{3, 15, 0};
@@ -300,6 +346,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::madvise:
         case Syscall::sendfile:
         case Syscall::ioctl:
+        case Syscall::sched_setaffinity:
+        case Syscall::sched_setscheduler:
+        case Syscall::setpriority:
         default:
             break;
     }
@@ -309,10 +358,12 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // True when the call is a feature that the caller of a door chooses (THE
 // FEATURE CALLS of foundation/os/KernelFloor.h): renameat2 gives the commit
 // that refuses an existing target, copy_file_range the copy between two
-// files, and io_uring_setup the ring of io_uring.  The door gives the error
-// enosys of an older kernel to its caller.
+// files, io_uring_setup the ring of io_uring, and sched_setattr the policy
+// SCHED_DEADLINE.  The door gives the error enosys of an older kernel to its
+// caller.
 [[nodiscard]] constexpr bool is_feature_call(Syscall call) noexcept {
-    return call == Syscall::renameat2 || call == Syscall::copy_file_range || call == Syscall::io_uring_setup;
+    return call == Syscall::renameat2 || call == Syscall::copy_file_range || call == Syscall::io_uring_setup
+        || call == Syscall::sched_setattr;
 }
 
 // The largest release that an enumerator of Syscall needs, other than a

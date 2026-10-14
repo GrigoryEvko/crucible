@@ -249,7 +249,6 @@ include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 2 | std::optional:
 include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 2 | std::optional::operator* | -
 include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 1 | std::optional::optional | -
 include/fixy/concurrent/PermissionedMpscChannel.h | inlined | 1 | std::optional::~optional | -
-include/fixy/concurrent/Pipeline.h | call | 1 | sched_getaffinity | -
 include/fixy/concurrent/Pipeline.h | call | 1 | std::binary_search | -
 include/fixy/concurrent/Pipeline.h | call | 1 | std::vector::operator= | -
 include/fixy/concurrent/Pipeline.h | call | 1 | std::vector::push_back | -
@@ -312,13 +311,7 @@ include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::operator (convers
 include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::operator* | -
 include/fixy/os/CipherDurable.h | inlined | 3 | std::expected::~expected | -
 include/fixy/os/CipherDurable.h | inlined | 3 | std::unexpected::unexpected | -
-include/fixy/os/CpuPinned.h | call | 1 | __errno_location | -
-include/fixy/os/CpuPinned.h | call | 1 | sched_setaffinity | -
-include/fixy/os/CpuPinned.h | inlined | 1 | std::__atomic_base::fetch_add | -
-include/fixy/os/CpuPinned.h | inlined | 1 | std::array::operator[] | -
 include/fixy/os/CpuPinned.h | inlined | 1 | std::exchange | -
-include/fixy/os/CpuPinned.h | inlined | 2 | std::expected::expected | -
-include/fixy/os/CpuPinned.h | inlined | 1 | std::unexpected::unexpected | -
 include/fixy/os/Fd.h | inlined | 2 | std::exchange | -
 include/fixy/os/Fs.h | call | 7 | std::system_category | -
 include/fixy/os/Fs.h | inlined | 7 | std::error_code::error_code | -
@@ -387,15 +380,8 @@ include/fixy/os/Path.h | inlined | 1 | std::filesystem::path::path | -
 include/fixy/os/Path.h | inlined | 1 | std::filesystem::path::string | -
 include/fixy/os/Path.h | inlined | 2 | std::filesystem::path::~path | -
 include/fixy/os/Path.h | inlined | 3 | std::unexpected::unexpected | -
-include/fixy/os/Sched.h | call | 3 | __errno_location | -
-include/fixy/os/Sched.h | call | 1 | sched_getaffinity | -
-include/fixy/os/Sched.h | call | 1 | sched_setscheduler | -
-include/fixy/os/Sched.h | call | 1 | setpriority | -
 include/fixy/os/Sched.h | inlined | 2 | std::exchange | -
-include/fixy/os/Sched.h | inlined | 3 | std::expected::error | -
 include/fixy/os/Sched.h | inlined | 10 | std::expected::expected | -
-include/fixy/os/Sched.h | inlined | 3 | std::expected::operator (conversion) | -
-include/fixy/os/Sched.h | inlined | 1 | std::expected::operator* | -
 include/fixy/os/Sched.h | inlined | 6 | std::unexpected::unexpected | -
 include/fixy/os/Socket.h | call | 1 | __errno_location | -
 include/fixy/os/Socket.h | call | 1 | socket | -
@@ -828,8 +814,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
 @x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::~expected | -
 @x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -1 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -1 | std::array::operator[] | -
-@x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -2 | std::expected::expected | -
 @x86_64-debug-tsan | include/fixy/os/Fs.h | call | -1 | std::system_category | -
 @x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -7 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::span::data | -
@@ -865,11 +849,8 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -3 | std::expected::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/os/Path.h | inlined | +2 | std::filesystem::path::iterator::operator++ | -
 @x86_64-debug-tsan | include/fixy/os/Path.h | inlined | -3 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
 @x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -4 | std::expected::expected | -
-@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::expected::operator (conversion) | -
-@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
-@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Sched.h | inlined | -6 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
 @x86_64-debug-tsan | include/fixy/os/Socket.h | inlined | -4 | std::expected::expected | -
@@ -1050,8 +1031,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | call | +1 | std::unexpected::unexpected | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
-@x86_64-debug-ubsan-strict | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
-@x86_64-debug-ubsan-strict | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Socket.h | inlined | -1 | std::expected::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Time.h | inlined | -1 | std::expected::error | -
@@ -1236,9 +1215,6 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
 @x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::~expected | -
 @x86_64-release | include/fixy/os/CipherDurable.h | inlined | -3 | std::unexpected::unexpected | -
-@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -1 | std::array::operator[] | -
-@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -2 | std::expected::expected | -
-@x86_64-release | include/fixy/os/CpuPinned.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Fd.h | inlined | -1 | std::exchange | -
 @x86_64-release | include/fixy/os/Fs.h | call | -2 | std::system_category | -
 @x86_64-release | include/fixy/os/Fs.h | inlined | -7 | std::error_code::error_code | -
@@ -1279,11 +1255,8 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/os/Path.h | inlined | +2 | std::filesystem::path::iterator::operator++ | -
 @x86_64-release | include/fixy/os/Path.h | inlined | -3 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Sched.h | inlined | -1 | std::exchange | -
-@x86_64-release | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
 @x86_64-release | include/fixy/os/Sched.h | inlined | -4 | std::expected::expected | -
-@x86_64-release | include/fixy/os/Sched.h | inlined | -2 | std::expected::operator (conversion) | -
-@x86_64-release | include/fixy/os/Sched.h | inlined | -1 | std::expected::operator* | -
-@x86_64-release | include/fixy/os/Sched.h | inlined | -4 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Sched.h | inlined | -6 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-release | include/fixy/os/Socket.h | inlined | -1 | std::expected::error | -
 @x86_64-release | include/fixy/os/Socket.h | inlined | -4 | std::expected::expected | -

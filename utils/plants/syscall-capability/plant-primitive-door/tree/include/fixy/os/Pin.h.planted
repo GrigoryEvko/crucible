@@ -1,0 +1,20 @@
+// A base header of the door directory.  It declares the primitive of the
+// plant, issues the affinity call in its door function, and issues the same
+// call again in a function that goes around the door.
+#pragma once
+
+#include <cstdint>
+
+namespace planted {
+
+enum class Call : std::uint8_t {
+    sched_setaffinity,
+};
+
+long raw_syscall(Call call, long word) noexcept;
+
+inline long pin_door(long word) noexcept { return raw_syscall(Call::sched_setaffinity, word); }
+
+inline long pin_around(long word) noexcept { return raw_syscall(Call::sched_setaffinity, word); }
+
+}  // namespace planted

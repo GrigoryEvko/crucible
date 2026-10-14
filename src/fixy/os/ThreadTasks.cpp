@@ -6,8 +6,8 @@
 
 #include <fixy/os/ThreadTasks.h>
 
-#include <fixy/os/CpuPinned.h>
 #include <fixy/os/Signal.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/core/Report.h>
 #include <foundation/os/Errno.h>
 
@@ -24,8 +24,26 @@ namespace {
 static_assert(std::is_same_v<::pthread_t, std::uint64_t>,
               "the door keeps the handle of a thread in a std::uint64_t of the task list");
 
+// THE SET OF CPUS: a set of CPUs of the C library is an array of words of 64
+// bits, with the bit of CPU N in the word N / 64 at the place N % 64, on
+// x86_64 and aarch64.  An affinity mask has the same layout and the same
+// size, so the bytes of the mask are the bytes of the set.
+static_assert(::foundation::algebra::lattices::AffinityMask::kBits == CPU_SETSIZE,
+              "an affinity mask must hold each CPU that a set of CPUs of the C library can name, and no more");
+static_assert(sizeof(::foundation::algebra::lattices::AffinityMask) == sizeof(::cpu_set_t),
+              "an affinity mask must have the bytes of a set of CPUs of the C library, and no more");
+static_assert(std::is_trivially_copyable_v<::foundation::algebra::lattices::AffinityMask>
+                  && std::is_trivially_copyable_v<::cpu_set_t>,
+              "the door copies the bytes of an affinity mask into a set of CPUs");
+
 // The error of a call of <pthread.h> that did not give 0.
 [[nodiscard]] ::foundation::os::Errno error_of(int code) noexcept { return static_cast<::foundation::os::Errno>(code); }
+
+// The set of CPUs of the C library that holds each CPU of the mask (THE SET
+// OF CPUS).
+void fill_cpu_set(::foundation::algebra::lattices::AffinityMask const& mask, ::cpu_set_t& set) noexcept {
+    __builtin_memcpy(&set, &mask, sizeof(set));
+}
 
 // The function of each new thread.  The thread sets its alternate signal
 // stack, and it takes its name, so its task reads the name of the call.  The
@@ -54,7 +72,7 @@ public:
         if (code_ == 0) code_ = ::pthread_attr_setguardsize(&attributes_, options.guard_bytes);
         if (code_ == 0 && options.affinity != ::foundation::algebra::lattices::AffinityMask{}) {
             ::cpu_set_t set{};
-            ::fixy::detail::fill_cpu_set(options.affinity, set);
+            fill_cpu_set(options.affinity, set);
             code_ = ::pthread_attr_setaffinity_np(&attributes_, sizeof(set), &set);
         }
     }

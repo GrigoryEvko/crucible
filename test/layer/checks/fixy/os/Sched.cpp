@@ -8,9 +8,9 @@ using BgWitness = ::fixy::BgDrainCtx;
 using InitWitness = ::fixy::ColdInitCtx;
 using FgWitness = ::fixy::HotFgCtx;
 
-static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Other) == SCHED_OTHER);
-static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo) == SCHED_FIFO);
-static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Deadline) == SCHED_DEADLINE);
+static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Other) == ::foundation::os::kSchedNormal);
+static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo) == ::foundation::os::kSchedFifo);
+static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Deadline) == ::foundation::os::kSchedDeadline);
 
 // The kept conjunct, both arms.  Deleting it would turn the second pin
 // into a runtime EINVAL.

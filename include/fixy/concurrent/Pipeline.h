@@ -37,9 +37,11 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
+#include <fixy/os/Sched.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/Runtime.h>
@@ -55,15 +57,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#if __has_include(<pthread.h>) && __has_include(<sched.h>)
-#include <pthread.h>
-#include <sched.h>
-#include <fixy/os/Sched.h>
-#define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
-#else
-#define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
-#endif
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -616,21 +609,18 @@ CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<std::size_t> pipeline_cpu_cur
 // that the process must not use, such as a reserved or an isolated core, is
 // outside that mask, so no stage goes there.  An unreadable mask gives no
 // CPU, and the stages then run unpinned.  The context proves that the caller
-// can start threads, which is the authority that a pin asks for.
+// can start threads, which is the authority that a pin asks for.  The mask
+// comes from read_affinity, the affinity door of fixy/os/Sched.h.
 template <class Ctx>
     requires CtxStartsStageThreads<Ctx>
-[[nodiscard]] std::vector<int> caller_allowed_cpus_(Ctx const& /*ctx*/) noexcept {
+[[nodiscard]] std::vector<int> caller_allowed_cpus_(Ctx const& ctx) noexcept {
+    using ::foundation::algebra::lattices::AffinityMask;
     std::vector<int> cpus;
-#if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
-    if (::sched_getaffinity(0, sizeof(mask), &mask) != 0) {
-        return cpus;
+    for (AffinityMask const& mask : ::fixy::sched::read_affinity(ctx).ok()) {
+        for (std::uint16_t cpu = 0; cpu < AffinityMask::kBits; ++cpu) {
+            if (mask.contains(cpu)) cpus.push_back(static_cast<int>(cpu));
+        }
     }
-    for (std::size_t cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
-        if (CPU_ISSET(cpu, &mask)) cpus.push_back(static_cast<int>(cpu));
-    }
-#endif
     return cpus;
 }
 
@@ -675,17 +665,12 @@ template <std::size_t N, class Ctx>
 // A negative cpu does nothing, and a refused pin is tolerated.
 template <class Ctx>
 void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
-#if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
     if constexpr (::fixy::sched::CtxFitsRuntimeAffinity<Ctx>) {
         (void)::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
     } else {
         (void)ctx;
         (void)cpu;
     }
-#else
-    (void)ctx;
-    (void)cpu;
-#endif
 }
 
 // What a linear pipeline and a graph do after their gate holds.  The two

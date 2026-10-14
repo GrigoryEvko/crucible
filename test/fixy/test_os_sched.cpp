@@ -1,6 +1,6 @@
 // The scheduling family exercised at run time: the pin proof, the
-// scheduling-class band, the thread name, and the four mints that reach
-// the kernel.
+// scheduling-class band, the thread name, the four mints that reach the
+// kernel, and the deadline door.
 //
 // Each case builds a scenario — construct a value, mutate it, mint over
 // it, call a syscall — rather than stating a property of a type as
@@ -25,6 +25,11 @@
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
+
+#include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
+#include <foundation/os/Errno.h>
+#include <foundation/os/SchedWords.h>
 
 #include <sched.h>
 
@@ -326,6 +331,31 @@ static_assert(!can_apply_mask<int>);
     return 0;
 }
 
+// The deadline door sets SCHED_DEADLINE, and no mint reaches it without
+// CAP_SYS_NICE.  So the case calls the door, with a budget that the kernel
+// admits: 1 ms of each period of 10 ms.  The kernel reads the attributes
+// before it does a check of the privilege, so EINVAL or E2BIG tells that it
+// did not read the attributes of the door.  An unprivileged thread gets
+// EPERM, and so does a thread whose affinity does not hold each CPU of its
+// root domain.  A privileged thread gets the policy, or EBUSY when the
+// admission test of the kernel refuses the budget.  The case then puts back
+// SCHED_OTHER.
+void deadline_door_reaches_the_kernel() {
+    namespace core = ::foundation::core;
+    namespace os = ::foundation::os;
+    core::Result<core::Unit, os::Errno> const applied =
+        fixy::sched::detail::sched_setattr_sys(1000000, 10000000, 10000000);
+    bool const is_policy_set = applied.is_ok();
+    bool const is_refused_by_a_check =
+        applied.match([](core::Unit) noexcept { return false; },
+                      [](os::Errno error) noexcept { return error == os::Errno::eperm || error == os::Errno::ebusy; });
+    CRUCIBLE_FATAL_INVARIANT(is_policy_set || is_refused_by_a_check);
+    if (is_policy_set) {
+        bool const is_put_back = fixy::sched::detail::sched_setscheduler_sys(os::kSchedNormal, 0).is_ok();
+        CRUCIBLE_FATAL_INVARIANT(is_put_back);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -334,5 +364,6 @@ int main() {
     if (const int rc = sched_class_answers_read_at_run_time(); rc != 0) return rc;
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;
     if (const int rc = scheduler_mints_reach_the_kernel(); rc != 0) return rc;
+    deadline_door_reaches_the_kernel();
     return 0;
 }

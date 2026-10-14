@@ -79,6 +79,10 @@ enum class Syscall : std::uint8_t {
     copy_file_range,
     io_uring_setup,
     ioctl,
+    sched_setaffinity,
+    sched_setscheduler,
+    sched_setattr,
+    setpriority,
 };
 
 // True when the call can wait with no bound for another thread or process,

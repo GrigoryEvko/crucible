@@ -3,7 +3,8 @@
 // Setting a real-time policy, a deadline budget, or a lower nice value needs
 // CAP_SYS_NICE and fails for an unprivileged thread. A proof that claims the
 // thread is pinned, real-time or niced must not exist when the syscall failed,
-// so every mint here returns the errno and lets the caller decide.
+// so every mint here returns the error number of the kernel and lets the
+// caller decide.
 
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
@@ -13,15 +14,12 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
+#include <foundation/core/Choice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
+#include <foundation/os/SchedWords.h>
 
-#include <sched.h>
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstdint>
 #include <expected>
 #include <type_traits>
@@ -81,62 +79,69 @@ private:
 
 namespace detail {
 
-// fill_cpu_set is in fixy/os/CpuPinned.h, beside the pin proof it
-// serves.  The proof's sole constructor is private to mint_affinity, so
-// the syscall and the type it authorizes share a header.
-
+// The policy number of the kernel for each policy, from
+// foundation/os/SchedWords.h, or -1 for a value outside the enumeration.
 [[nodiscard]] consteval int sched_policy_constant(SchedulerPolicy_v policy) noexcept {
     switch (policy) {
         case SchedulerPolicy_v::Idle:
-            return SCHED_IDLE;
+            return ::foundation::os::kSchedIdle;
         case SchedulerPolicy_v::Batch:
-            return SCHED_BATCH;
+            return ::foundation::os::kSchedBatch;
         case SchedulerPolicy_v::Other:
-            return SCHED_OTHER;
+            return ::foundation::os::kSchedNormal;
         case SchedulerPolicy_v::RoundRobin:
-            return SCHED_RR;
+            return ::foundation::os::kSchedRoundRobin;
         case SchedulerPolicy_v::Fifo:
-            return SCHED_FIFO;
+            return ::foundation::os::kSchedFifo;
         case SchedulerPolicy_v::Deadline:
-            return SCHED_DEADLINE;
+            return ::foundation::os::kSchedDeadline;
         default:
             return -1;
     }
 }
 
-// The kernel sched_attr layout for SCHED_DEADLINE. glibc declares no
-// wrapper, so the struct is restated here and the field order is fixed by
-// the kernel.
-struct sched_attr_abi {
-    std::uint32_t size = sizeof(sched_attr_abi);
-    std::uint32_t sched_policy = 0;
-    std::uint64_t sched_flags = 0;
-    std::int32_t sched_nice = 0;
-    std::uint32_t sched_prio = 0;
-    std::uint64_t sched_runtime = 0;
-    std::uint64_t sched_deadline = 0;
-    std::uint64_t sched_period = 0;
-};
+// THE SCHEDULING DOOR.  Each function issues its one system call for the
+// calling thread through foundation::os::raw_syscall, and gives the error of
+// the kernel.  The bodies are in src/fixy/os/Sched.cpp, which includes no
+// header of the kernel and no header of the C library.  A function that
+// issues one system call NAME out of line has the name NAME_sys (THE
+// AFFINITY DOOR of fixy/os/CpuPinned.h).
 
-[[nodiscard]] CRUCIBLE_INLINE int apply_deadline(std::uint64_t runtime_ns, std::uint64_t deadline_ns,
-                                                 std::uint64_t period_ns) noexcept {
-    sched_attr_abi attr{};
-    attr.sched_policy = static_cast<std::uint32_t>(SCHED_DEADLINE);
-    attr.sched_runtime = runtime_ns;
-    attr.sched_deadline = deadline_ns;
-    attr.sched_period = period_ns;
-    return static_cast<int>(::syscall(SYS_sched_setattr, 0, &attr, 0u));
+// Sets the policy of the calling thread, with the real-time priority that
+// SCHED_FIFO and SCHED_RR read and that each other policy needs as zero.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sched_setscheduler_sys(int policy, int rt_priority) noexcept;
+
+// Sets the policy SCHED_DEADLINE of the calling thread, with its budget in
+// nanoseconds.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sched_setattr_sys(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept;
+
+// Sets the nice value of the calling thread.  On Linux, the target of the
+// call is the thread, and not each thread of the process.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+setpriority_sys(int nice) noexcept;
+
+// The error number of the kernel, in the int of the results of this header.
+[[nodiscard]] constexpr int error_number(::foundation::os::Errno error) noexcept { return static_cast<int>(error); }
+
+// The error number of the kernel in a result of a door, or 0 for a value.
+// No error number of the kernel is 0.
+template <class T>
+[[nodiscard]] constexpr int
+error_number_of(::foundation::core::Result<T, ::foundation::os::Errno> const& result) noexcept {
+    return result.match([](T const&) noexcept { return 0; },
+                        [](::foundation::os::Errno const& error) noexcept { return error_number(error); });
 }
 
 template <SchedulerPolicy_v Policy>
-[[nodiscard]] CRUCIBLE_INLINE int apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns,
-                                                         std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept {
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns, std::uint64_t deadline_ns,
+                       std::uint64_t period_ns) noexcept {
     if constexpr (Policy == SchedulerPolicy_v::Deadline) {
-        return apply_deadline(runtime_ns, deadline_ns, period_ns);
+        return sched_setattr_sys(runtime_ns, deadline_ns, period_ns);
     } else {
-        sched_param param{};
-        param.sched_priority = rt_priority;
-        return ::sched_setscheduler(0, sched_policy_constant(Policy), &param);
+        return sched_setscheduler_sys(sched_policy_constant(Policy), rt_priority);
     }
 }
 
@@ -190,11 +195,12 @@ concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nic
 template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
 [[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, int> mint_affinity(Ctx const&) noexcept {
-    const auto pin_event = sf::detail::pin_calling_thread(Mask);
-    if (!pin_event) [[unlikely]] {
-        return std::unexpected(pin_event.error());
+    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> pin_event =
+        sf::detail::sched_setaffinity_sys(Mask);
+    for (::foundation::os::Errno const error : pin_event.err()) {
+        return std::unexpected(detail::error_number(error));
     }
-    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, *pin_event};
+    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, std::move(pin_event).expect("the pin succeeded above")};
 }
 
 // Deadline admission requires runtime < deadline <= period. The SchedClass
@@ -257,25 +263,37 @@ template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t Deadl
     requires CtxFitsSchedPolicyMint<Ctx, Policy>
 [[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
 mint_scheduler_policy(Ctx const&, int rt_priority) noexcept {
-    if (detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs) != 0) [[unlikely]] {
-        return std::unexpected(errno);
+    if (int const error = detail::error_number_of(
+            detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs));
+        error != 0) {
+        return std::unexpected(error);
     }
     return SchedProofDoor::policy_proof_<Policy, RuntimeNs, DeadlineNs, PeriodNs>(rt_priority);
 }
 
-// On Linux, PRIO_PROCESS with a who of 0 sets the nice value of the calling
-// thread, not of the whole process.
+// The nice value is a value of the calling thread, not of the whole process
+// (setpriority_sys).
 template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
 [[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
-    errno = 0;
-    if (::setpriority(PRIO_PROCESS, 0, Nice) != 0 && errno != 0) [[unlikely]] {
-        return std::unexpected(errno);
+    if (int const error = detail::error_number_of(detail::setpriority_sys(Nice)); error != 0) {
+        return std::unexpected(error);
     }
     return SchedProofDoor::priority_proof_<Nice>();
 }
 
 using ::fixy::mint_thread_name;
+
+// The affinity mask of the calling thread, or the error of the kernel.  The
+// read changes nothing, and it records no pin event.  It is not a mint,
+// because it gives a fact of the kernel and no authority.  Its gate is the
+// gate of the other affinity doors, CtxFitsRuntimeAffinity in
+// fixy/os/CpuPinned.h.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> read_affinity(Ctx const&) noexcept {
+    return sf::detail::sched_getaffinity_sys();
+}
 
 class PriorAffinity;
 
@@ -311,22 +329,21 @@ public:
     [[nodiscard]] bool is_held() const noexcept { return is_held_; }
 
     [[nodiscard]] std::expected<void, int> restore() && noexcept {
-        if (!is_held_) return {};
-        if (owner_ != ::foundation::effects::detail::producer_claim::calling_thread_identity()) [[unlikely]] {
-            return std::unexpected(EPERM);
-        }
-        is_held_ = false;
-        const auto pin_event = sf::detail::set_calling_thread_affinity(mask_);
-        if (!pin_event) [[unlikely]] {
-            return std::unexpected(pin_event.error());
+        if (int const error = detail::error_number_of(restore_mask_()); error != 0) {
+            return std::unexpected(error);
         }
         return {};
     }
 
 private:
+    // The body of restore().  It is in src/fixy/os/Sched.cpp, so a caller
+    // pays one call and holds no copy of the mask or of the door.
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+    restore_mask_() noexcept;
+
     // Holds no mask: the call asked for no pin.
     PriorAffinity() noexcept = default;
-    explicit PriorAffinity(::cpu_set_t const& mask) noexcept
+    explicit PriorAffinity(AffinityMask const& mask) noexcept
         : mask_{mask},
           owner_{::foundation::effects::detail::producer_claim::calling_thread_identity()},
           is_held_{true} {}
@@ -336,7 +353,7 @@ private:
     friend auto apply_affinity_to_mask(FriendCtx const&, AffinityMask mask) noexcept
         -> std::expected<PriorAffinity, int>;
 
-    ::cpu_set_t mask_{};
+    AffinityMask mask_{};
     // The identity of the thread that pinned, from foundation/effects/Ctx.h.
     // Zero names no thread.
     std::uintptr_t owner_ = 0;
@@ -351,20 +368,22 @@ private:
 // goes through the same helper as mint_affinity, so it records a new pin
 // event, and a proof of an earlier pin on this thread stops being in
 // force.  The result holds the mask of the thread before the pin.
+//
+// The two door calls stand in the body and not in a lambda, because the walk
+// of the rule syscall-grant-coverage does not read the body of a lambda, and
+// the grant of crucible/warden/Hardening.h names the two calls of this door.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
 [[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int> {
     if (mask == AffinityMask{}) return PriorAffinity{};
-    cpu_set_t prior;
-    CPU_ZERO(&prior);
-    if (::sched_getaffinity(0, sizeof(prior), &prior) != 0) [[unlikely]] {
-        return std::unexpected(errno);
+    ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> prior = sf::detail::sched_getaffinity_sys();
+    if (int const error = detail::error_number_of(prior); error != 0) {
+        return std::unexpected(error);
     }
-    const auto pin_event = sf::detail::pin_calling_thread(mask);
-    if (!pin_event) [[unlikely]] {
-        return std::unexpected(pin_event.error());
+    if (int const error = detail::error_number_of(sf::detail::sched_setaffinity_sys(mask)); error != 0) {
+        return std::unexpected(error);
     }
-    return PriorAffinity{prior};
+    return PriorAffinity{std::move(prior).expect("the read of the prior mask succeeded above")};
 }
 
 // A pin to one CPU, through apply_affinity_to_mask.  A negative index asks
@@ -374,7 +393,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] auto apply_affinity_to_cpu(Ctx const& ctx, int cpu) noexcept -> std::expected<PriorAffinity, int> {
     if (cpu < 0) return apply_affinity_to_mask(ctx, AffinityMask{});
     if (static_cast<unsigned>(cpu) > AffinityMask::kMaxCore) [[unlikely]] {
-        return std::unexpected(EINVAL);
+        return std::unexpected(detail::error_number(::foundation::os::Errno::einval));
     }
     return apply_affinity_to_mask(ctx, AffinityMask::single(static_cast<std::uint16_t>(cpu)));
 }

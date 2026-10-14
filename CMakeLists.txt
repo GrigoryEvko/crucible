@@ -415,7 +415,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # library for the same reason: it holds the cold bodies of fixy headers, the
 # probe of the machine topology, the door that starts and joins each thread of
 # the base, the futex door, the signal door, the exit hook door, the monotonic
-# clock door and the cold code of the session watch.
+# clock door, the affinity door, the scheduling door and the cold code of the
+# session watch.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
@@ -443,6 +444,7 @@ target_link_libraries(foundation PUBLIC crucible_dialect)
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
+  src/fixy/os/CpuPinned.cpp
   src/fixy/os/ExitHooks.cpp
   src/fixy/os/Fd.cpp
   src/fixy/os/Fs.cpp
@@ -452,6 +454,7 @@ add_library(fixy STATIC
   src/fixy/os/MonotonicClock.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
+  src/fixy/os/Sched.cpp
   src/fixy/os/Signal.cpp
   src/fixy/os/ThreadTasks.cpp
   src/fixy/os/Topology.cpp

@@ -15,8 +15,8 @@ configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/libcrucible.a | x86_64-debug-asan | 42616 | - | the first measure of the library code in each static library of the root
-@build/libcrucible.a | x86_64-debug-asan-bench-fuzz | 42616 | - | the measure at the last write of the ledger
-@build/libcrucible.a | x86_64-debug-tsan | 10026 | - | the first measure of the library code in each static library of the root
+@build/libcrucible.a | x86_64-debug-asan-bench-fuzz | 42687 | - | the measure at the last write of the ledger
+@build/libcrucible.a | x86_64-debug-tsan | 10024 | - | the first measure of the library code in each static library of the root
 @build/libcrucible.a | x86_64-debug-ubsan-strict | 39080 | - | the first measure of the library code in each static library of the root
 @build/libcrucible.a | x86_64-release | 22341 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_cipher.a | x86_64-debug-asan | 98863 | - | the first measure of the library code in each static library of the root
@@ -25,20 +25,20 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/libcrucible_cipher.a | x86_64-debug-ubsan-strict | 52516 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_cipher.a | x86_64-release | 30580 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_perf.a | x86_64-debug-asan | 60716 | - | the first measure of the library code in each static library of the root
-@build/libcrucible_perf.a | x86_64-debug-asan-bench-fuzz | 60716 | - | the measure at the last write of the ledger
-@build/libcrucible_perf.a | x86_64-debug-tsan | 24044 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-debug-asan-bench-fuzz | 61007 | - | the measure at the last write of the ledger
+@build/libcrucible_perf.a | x86_64-debug-tsan | 24028 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_perf.a | x86_64-debug-ubsan-strict | 35187 | - | the first measure of the library code in each static library of the root
-@build/libcrucible_perf.a | x86_64-release | 28504 | - | the first measure of the library code in each static library of the root
-@build/libcrucible_vigil.a | x86_64-debug-asan | 87807 | - | the first measure of the library code in each static library of the root
-@build/libcrucible_vigil.a | x86_64-debug-asan-bench-fuzz | 87807 | - | the measure at the last write of the ledger
-@build/libcrucible_vigil.a | x86_64-debug-tsan | 31861 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_perf.a | x86_64-release | 28526 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-debug-asan | 86922 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-debug-asan-bench-fuzz | 85911 | - | the measure at the last write of the ledger
+@build/libcrucible_vigil.a | x86_64-debug-tsan | 31562 | - | the first measure of the library code in each static library of the root
 @build/libcrucible_vigil.a | x86_64-debug-ubsan-strict | 46680 | - | the first measure of the library code in each static library of the root
-@build/libcrucible_vigil.a | x86_64-release | 28520 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-debug-asan | 83322 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-debug-asan-bench-fuzz | 83322 | - | the measure at the last write of the ledger
-@build/libfixy.a | x86_64-debug-tsan | 22763 | - | the first measure of the library code in each static library of the root
+@build/libcrucible_vigil.a | x86_64-release | 28340 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-asan | 83451 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-debug-asan-bench-fuzz | 83451 | - | the measure at the last write of the ledger
+@build/libfixy.a | x86_64-debug-tsan | 22820 | - | the first measure of the library code in each static library of the root
 @build/libfixy.a | x86_64-debug-ubsan-strict | 38755 | - | the first measure of the library code in each static library of the root
-@build/libfixy.a | x86_64-release | 31648 | - | the first measure of the library code in each static library of the root
+@build/libfixy.a | x86_64-release | 31938 | - | the first measure of the library code in each static library of the root
 @build/libfoundation.a | x86_64-debug-asan | 10059 | - | the first measure of the library code in each static library of the root
 @build/libfoundation.a | x86_64-debug-asan-bench-fuzz | 10059 | - | the measure at the last write of the ledger
 @build/libfoundation.a | x86_64-debug-tsan | 4838 | - | the first measure of the library code in each static library of the root

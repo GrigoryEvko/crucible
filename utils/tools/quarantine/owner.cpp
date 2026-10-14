@@ -16,8 +16,9 @@
 //     template pattern, the unresolved name of a call is a use of each entity
 //     with that last name, because argument-dependent lookup can resolve it in
 //     an instantiation.  A call of syscall() whose number is the value of the
-//     macro SYS_NAME is a use of the function NAME.  A lambda is a part of the
-//     function that holds it.
+//     macro SYS_NAME is a use of the function NAME, and so is a call of a
+//     primitive with the enumerator NAME.  A lambda is a part of the function
+//     that holds it.
 //
 // THE CLAIMS (the rule syscall-capability)
 //     The rule table names the system calls and the primitive of the base:
@@ -1119,6 +1120,9 @@ void check_owned_call(tree call, location_t location, tree function) {
     } else if (!primitive.empty()) {
         std::string name = first_enumerator_name(call);
         shape = primitive + "(" + (name.empty() ? std::string("?") : name) + ")";
+        if (!name.empty()) {
+            check_owner_rows(name, shape, location, function);
+        }
         check_denied_call(name, shape, location, function);
     }
     Place place = owned_place(location);

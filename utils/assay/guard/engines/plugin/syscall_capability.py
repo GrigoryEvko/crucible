@@ -16,13 +16,13 @@ THE CLAIMS
 
 THE DOORS
     Two owner rows of the rule table give the one site of sched_setaffinity
-    and pthread_setaffinity_np: the body of
-    fixy::detail::set_calling_thread_affinity in include/fixy/os/CpuPinned.h.
-    That door records a pin event, and a pin proof stays in force across a
-    pin that goes around the door.  The function does not call
-    pthread_setaffinity_np, and each call of it is a finding.  A call of
-    syscall() with the number of SYS_sched_setaffinity is a use of
-    sched_setaffinity.  Each use in a different function is the kind
+    and pthread_setaffinity_np: the body of fixy::detail::sched_setaffinity_sys
+    in src/fixy/os/CpuPinned.cpp.  That door records a pin event, and a pin
+    proof stays in force across a pin that goes around the door.  The
+    function does not call pthread_setaffinity_np, and each call of it is a
+    finding.  A call of syscall() with the number of SYS_sched_setaffinity,
+    and a call of the primitive with the enumerator sched_setaffinity, are
+    uses of sched_setaffinity.  Each use in a different function is the kind
     `outside-door`, in each file that a build compiles, also a test and a
     bench.  In the same way, an owner row gives the four door directories as
     the sites of the raw system call primitive of the base,
