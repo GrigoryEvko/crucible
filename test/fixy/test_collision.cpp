@@ -11,6 +11,7 @@
 
 #include <fixy/Bands.h>
 #include <fixy/Collision.h>
+#include <fixy/collision/Codes.h>
 #include <fixy/Fn.h>
 #include <fixy/concurrent/Spawn.h>
 #include <fixy/Secret.h>

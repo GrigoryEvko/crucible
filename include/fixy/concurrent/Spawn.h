@@ -154,7 +154,7 @@ namespace fixy::atom::detail {
 // is finite, its members are distinct grades, and it belongs in
 // collision::all_atom_roster.  Joining these three would put three
 // placeholder strings into the generated-rejection corpus as if they were
-// grades.  fixy/Collision.h's sample_set_wrongly_joined() is what holds
+// grades.  sample_set_wrongly_joined() of fixy/collision/Report.h holds
 // this distinction, so the name is load-bearing rather than descriptive.
 using spawn_atom_samples = std::tuple<spawn::detach_with<"sample detach">, spawn::syscall_only<"sample clone">,
                                       spawn::subprocess<"sample fork">>;

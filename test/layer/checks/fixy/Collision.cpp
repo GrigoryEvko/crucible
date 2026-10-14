@@ -14,122 +14,12 @@ static_assert(::fixy::every_axis_has_traits(),
               "must be classified: it carries a hand-written specialization, or it is named on "
               "Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
 
-// The vantage point of fixy/Collision.h.  Alone, this file covers the
-// families that the header includes.  The walk units compile it again after
-// each header that can add to fixy::atom::detail
-// (test/layer/walk-checks.txt), and there the two checks cover the rest.
-// The tag is never defined — it is an identity for the instantiation
-// point, not a type anyone uses.
-struct collision_header_site;
-
-static_assert(roster_join_diagnostic<collision_header_site>().empty(), roster_join_diagnostic<collision_header_site>());
-static_assert(sample_set_diagnostic<collision_header_site>().empty(), sample_set_diagnostic<collision_header_site>());
-
 static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
               "collision::pending_axes has gained its first atom — in which case the rules registered against it in "
               "collision::pending_rules can now fire and must be written as live rules, and the axis removed from "
               "pending_axes — or, since both lists are empty, a family roster under fixy/atoms/ is no longer "
               "joined into collision::all_atom_roster, which makes its axes look empty.");
-
-// ---------------------------------------------------------------------
-// The corpus pins.
-//
-// Each compares two things that were written separately.  None computes
-// one side from the other.
-
-// Fifty-four codes of the specification, plus three that this file adds.
-//
-// The count is stated against the specification, an external list, so a
-// code dropped from this list stops being reported as absent — the
-// failure this list exists to prevent.
-//
-// B002 is one addition, and it is an addition rather than a rereading of
-// a code of the specification.  Axis::Observability carries two
-// theorems: B001's back-pressure trap, and the containment of the
-// observability row in the effect row.  Reusing B001 for the second
-// would discard a theorem that has its own remedy, and the codes are
-// stable API precisely so that cannot happen quietly.
-//
-// R004 and W003 are the other two.  R004 refuses a continuation that
-// captures a live session handle in a frame that is not linear, and W003
-// refuses a hot binding that holds one and states no wait.
-static_assert(rule_corpus_size == 57,
-              "fixy/Collision.h: the rule corpus must account for the 54 codes of the specification, plus "
-              "B002, R004 and W003, which this file adds.  A code dropped from this list stops being reported "
-              "as absent.");
-
-namespace detail {
-
-[[nodiscard]] consteval std::string_view named_(std::string_view lead, std::string_view code) noexcept {
-    return std::define_static_string(std::string{lead} + std::string{code});
-}
-
-[[nodiscard]] consteval std::string_view absent_pin_message_(std::string_view lead, const std::string& offenders) {
-    std::string message;
-    for (const char letter : lead)
-        message += letter;
-    message += offenders;
-    return std::define_static_string(message);
-}
-
-}  // namespace detail
-
-static_assert(detail::code_the_enum_disagrees_about_().empty(),
-              detail::named_("fixy/Collision.h: the rule corpus and the RuleCode enum disagree about rule ",
-                             detail::code_the_enum_disagrees_about_()));
-
-static_assert(detail::code_the_corpus_never_listed_().empty(),
-              detail::named_("fixy/Collision.h: this RuleCode enumerator is in no rule_corpus entry: ",
-                             detail::code_the_corpus_never_listed_()));
-
-static_assert(detail::absent_rows_not_listed_().empty(),
-              detail::absent_pin_message_(
-                  "fixy/Collision.h: the corpus marks these rules Absent and absent_rule_codes does not name them.  "
-                  "The Absent set only shrinks: a rule leaves it by being written or by a recorded reason, and "
-                  "never joins it.  Write the rule, or keep the row it had: ",
-                  detail::absent_rows_not_listed_()));
-
-static_assert(detail::listed_codes_not_absent_().empty(),
-              detail::absent_pin_message_(
-                  "fixy/Collision.h: absent_rule_codes names these codes and the corpus does not mark them "
-                  "Absent.  A code whose row left the Absent set leaves this list in the same edit: ",
-                  detail::listed_codes_not_absent_()));
-
-static_assert(detail::absent_code_listed_twice_().empty(),
-              detail::named_("fixy/Collision.h: absent_rule_codes names this code twice: ",
-                             detail::absent_code_listed_twice_()));
-
-// pending_rules and the corpus are two hand-written lists of the same
-// set.  Comparing them catches an edit to one and not the other.
-static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
-              "fixy/Collision.h: pending_rules and the corpus disagree about how many rules are waiting on an "
-              "atomless axis.");
-
-// There is deliberately no pin on pending_axis_count here.  It would be
-// derived from the array it counts, and the biconditional above already
-// fixes the SET by name against the atom catalog: an axis dropped from
-// pending_axes while still atomless fails it, and an axis added while it
-// has an atom fails it too.  The count could therefore never fail on its
-// own, and a pin that cannot fail reads as a second check.
-
-static_assert(detail::every_live_entry_is_implemented_(),
-              "fixy/Collision.h: the corpus records a rule as Live and live_rules defines no <code>_ok member "
-              "for it.  A rule is Live when it is written, not when it is listed.");
-
-static_assert(detail::implemented_rule_count_() == live_rule_count,
-              "fixy/Collision.h: live_rules defines a different number of <code>_ok members than the corpus "
-              "records as Live.  Either a rule was written without a corpus entry, or one entry names a rule "
-              "the implementation spells differently.");
-
-static_assert(detail::every_ok_member_has_a_verdict_row_(),
-              "fixy/Collision.h: live_rules defines a <code>_ok member with no row in verdicts().  fn's "
-              "tier-5 message reads those rows, so the rule would refuse a binding without naming itself, "
-              "and its negative fixture would have nothing to floor on.");
-
-static_assert(live_rules<>::verdicts().size() == detail::implemented_rule_count_(),
-              "fixy/Collision.h: verdicts() holds a different number of rows than live_rules has <code>_ok "
-              "members.  A row without a member, or a member without a row.");
 
 static_assert(live_rules<>::failing_codes().empty(),
               "fixy/Collision.h: the empty pack sits at every strict pole and must trip no rule, so the "

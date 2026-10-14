@@ -1,4 +1,4 @@
-// The check file of fixy/Collision.h asks roster_join_diagnostic() if each
+// The check file of fixy/collision/Report.h asks roster_join_diagnostic() if each
 // `*_atom_roster` alias of fixy::atom::detail is joined into
 // fixy::collision::all_atom_roster.  The walk units compile that check file
 // after each header that can add to the namespace
@@ -23,6 +23,6 @@ using probe_orphan_atom_roster = std::tuple<int>;
 using probe_joined_atom_roster = sync_atom_roster;
 }  // namespace fixy::atom::detail
 
-#include "../../layer/checks/fixy/Collision.cpp"
+#include "../../layer/checks/fixy/collision/Report.cpp"
 
 int main() { return 0; }

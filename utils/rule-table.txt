@@ -247,7 +247,7 @@ layer F1_effects 8 include/foundation/effects/
 layer F1_permissions 9 include/foundation/permissions/
 layer F1_rest 10 include/foundation/ src/foundation/
 layer X1_wrappers 11 include/fixy/ src/fixy/
-layer X2_binding 12 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
+layer X2_binding 12 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/collision/ include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
 layer X3_os 13 include/fixy/os/ src/fixy/os/
 layer X4_concurrent 14 include/fixy/concurrent/ include/fixy/handle/
 layer X5_session 15 include/fixy/session/ src/fixy/session/

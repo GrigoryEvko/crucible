@@ -61,7 +61,7 @@ crucible/warden/Quarantine.cpp | 0.5 | ::foundation::permissions::permission_row
 fixy/Atom.cpp | 2.2 | unknown
 fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::hot_path, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
-fixy/Collision.cpp | 13.1 | ::fixy::atom::detail, unknown
+fixy/Collision.cpp | 13.1 | unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 7.2 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::admitted_transitions, unknown
@@ -92,6 +92,7 @@ fixy/atoms/Syscall.cpp | 2.2 | ::fixy::atom::syscall, unknown
 fixy/channels/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/channels/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/channels/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
+fixy/collision/Report.cpp | unmeasured | ::fixy::atom::detail, unknown
 fixy/concurrent/Spawn.cpp | 0.4 | unknown
 fixy/os/CipherDurable.cpp | 0.1 | unknown
 fixy/os/Fs.cpp | 0.1 | unknown

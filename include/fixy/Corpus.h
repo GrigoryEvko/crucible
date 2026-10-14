@@ -486,9 +486,9 @@ inline constexpr std::size_t corpus_size = std::tuple_size_v<Entries>;
 // and it answers with the name of each entry that Entries does not hold.
 //
 // The Site parameter gives each caller a vantage point of its own, as in
-// fixy/Collision.h.  std::meta::members_of answers as of the point where
-// the walk is instantiated, and each caller passes its own tag type, so
-// its call walks the namespace as its translation unit has it at that
+// fixy/collision/Report.h.  std::meta::members_of answers as of the point
+// where the walk is instantiated, and each caller passes its own tag type,
+// so its call walks the namespace as its translation unit has it at that
 // line.  The walk is O(members of the namespace × corpus size).
 
 namespace detail {

@@ -1,4 +1,4 @@
-// The check file of fixy/Collision.h asks sample_set_diagnostic() if a
+// The check file of fixy/collision/Report.h asks sample_set_diagnostic() if a
 // `*_atom_samples` alias of fixy::atom::detail is joined into
 // fixy::collision::all_atom_roster.  A sample set stays outside the
 // population, and this half of the relation keeps a rename from moving a
@@ -24,6 +24,6 @@ using probe_wrong_atom_samples = sync_atom_roster;
 using probe_ok_atom_samples = std::tuple<int>;
 }  // namespace fixy::atom::detail
 
-#include "../../layer/checks/fixy/Collision.cpp"
+#include "../../layer/checks/fixy/collision/Report.cpp"
 
 int main() { return 0; }
