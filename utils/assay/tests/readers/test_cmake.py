@@ -254,6 +254,78 @@ def preset_cases(expect: testing.Expect) -> None:
         )
 
 
+# A presets file with a chain of parents, vendor entries and three test presets.
+INHERITING_PRESETS = """{"version": 6, "configurePresets": [
+  {"name": "base", "binaryDir": "${sourceDir}/build-${presetName}", "cacheVariables": {"A": "base", "B": "base"},
+   "environment": {"E": "base"}, "vendor": {"crucible": {"tier": "gate", "count": 3}, "other": [1]}},
+  {"name": "side", "binaryDir": "${sourceParentDir}/side", "cacheVariables": {"B": "side", "C": "side"}},
+  {"name": "child", "inherits": ["base", "side"], "cacheVariables": {"A": "child"}},
+  {"name": "single", "inherits": "side", "binaryDir": "${sourceDirName}-out"},
+  {"name": "loop", "inherits": "knot"}, {"name": "knot", "inherits": "loop"},
+  {"name": "orphan", "inherits": "missing"},
+  {"name": "odd", "binaryDir": "${generator}/odd"}],
+ "testPresets": [
+  {"name": "plain", "configurePreset": "base", "vendor": {"crucible": {"tier": "nightly"}}},
+  {"name": "again", "configurePreset": "base", "execution": {"repeat": {"mode": "until-fail", "count": 5}}},
+  {"name": "some", "configurePreset": 3, "filter": {"include": {"name": "x"}}}]}"""
+
+
+def inheritance_cases(expect: testing.Expect) -> None:
+    """Check the parents, the vendor entries and the test presets of a planted presets file (THE INHERITANCE)."""
+    with tempfile.TemporaryDirectory(prefix="assay-cmake-") as scratch:
+        root = Path(scratch) / "tree"
+        root.mkdir()
+        (root / "CMakePresets.json").write_text(INHERITING_PRESETS, encoding="utf-8")
+        (presets_file,) = cmake.presets(root)
+        by_name = {preset.name: preset for preset in presets_file.configure}
+        expect(
+            "a preset gives its parents in their sequence, one text as one parent, and no field as no parent",
+            by_name["child"].inherits == ("base", "side")
+            and by_name["single"].inherits == ("side",)
+            and by_name["base"].inherits == (),
+        )
+        expect(
+            "a vendor entry gives its fields as texts or None, and an entry that is no object gives None",
+            by_name["base"].vendor == {"crucible": {"tier": "gate", "count": None}, "other": None}
+            and by_name["child"].vendor == {},
+        )
+        child = cmake.effective(presets_file.configure, "child")
+        expect(
+            "a child wins over its parents, and an earlier parent wins over a later one",
+            child.cache_variables == {"A": "child", "B": "base", "C": "side"} and child.environment == {"E": "base"},
+        )
+        expect(
+            "a child gets the binaryDir of its first parent with one, and keeps its own vendor entries",
+            child.binary_dir == "${sourceDir}/build-${presetName}" and child.vendor == {},
+        )
+        expect(
+            "the build directory expands the macros with the name of the child",
+            cmake.build_directory(root, "child") == root / "build-child"
+            and cmake.build_directory(root, "side") == root.parent / "side"
+            and cmake.build_directory(root, "single") == root / "tree-out",
+        )
+        for name, text in (
+            ("loop", "make a cycle of inherits"),
+            ("orphan", "inherits the configure preset missing"),
+            ("odd", "names a macro that the reader does not expand"),
+            ("absent", "gives the configure preset absent"),
+        ):
+            expect(f"the build directory of the preset {name} is an error", text in refused_build(root, name))
+        plain, again, some = presets_file.tests
+        expect(
+            "a test preset gives its configure preset, its vendor entries, and whether it filters or repeats",
+            (plain.name, plain.configure_preset, plain.is_plain) == ("plain", "base", True)
+            and plain.vendor == {"crucible": {"tier": "nightly"}}
+            and (again.configure_preset, again.is_plain) == ("base", False)
+            and (some.configure_preset, some.is_plain) == (None, False),
+        )
+
+
+def refused_build(root: Path, name: str) -> str:
+    """Return the message of the error of the build directory of a preset, or an empty text when it has none."""
+    return refused(lambda: cmake.build_directory(root, name), cmake.CmakeError)
+
+
 def programs() -> tuple[str, str, str]:
     """Return the cmake, the compiler and the ninja of the configured case (the module text)."""
     from assay.setup import pins
@@ -342,5 +414,7 @@ def configured_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (planted_cases, error_cases, preset_cases, configured_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (planted_cases, error_cases, preset_cases, inheritance_cases, configured_cases),
     )

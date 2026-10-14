@@ -26,11 +26,29 @@ WHAT THE READER GIVES
     codemodel(build_dir): each target of the build, with its type, its
     artifacts, its sources, its precompiled headers and its link fragments.
     Each target also gives the position of the CMake command that makes it.
-    presets(root): the configure presets of each presets file of a tree, and
-    the job count of each build preset and each test preset.  A build preset
-    gives its field jobs, and a test preset the field jobs of execution.
-    request(build_dir) and plant(build_dir, ...): the query of a scratch
-    project, and a planted reply for a test.
+    presets(root): the configure presets and the test presets of each
+    presets file of a tree.  It also gives the job count of each build preset
+    and each test preset.  A build preset gives its field jobs, and a test
+    preset the field jobs of execution.  effective() and build_directory(): a
+    configure preset with the fields of its parents, and its build directory
+    (THE INHERITANCE).  request(build_dir) and plant(build_dir, ...): the
+    query of a scratch project, and a planted reply for a test.
+
+THE VENDOR ENTRIES
+    CMake reads the field vendor of a preset only to make sure that it is an
+    object.  Each key of that object names the data of one vendor.  The
+    reader gives each entry as the values of its fields, as a text or None,
+    as it gives the cache variables.  An entry that is no object gives None.
+
+THE INHERITANCE
+    A configure preset gets each field that it does not give from the presets
+    of its field inherits.  The first parent of the list wins over each
+    parent after it, and the preset wins over each parent.  The cache
+    variables and the environment merge by name in the same sequence.  A
+    preset gives its binaryDir, or it gets the binaryDir of its first parent
+    that has one.  A child gets no vendor entry of a parent, because CMake
+    does not read the field.  build_directory() expands the macros of
+    BINARY_MACROS, and refuses each other macro.
 
 ERRORS
     CmakeError names the file and the command that writes it.  MissingReply,
@@ -61,6 +79,9 @@ QUERIES = ("codemodel-v2", "cache-v2", "cmakeFiles-v1", "toolchains-v1")
 # The client of request(): a scratch project gets its replies through this query directory.
 CLIENT = "client-assay"
 PRESET_FILES = ("CMakePresets.json", "CMakeUserPresets.json")
+# The macros of a field binaryDir that build_directory() expands (THE INHERITANCE).
+PRESET_NAME_MACRO = "${presetName}"
+BINARY_MACROS = ("${sourceDir}", "${sourceParentDir}", "${sourceDirName}", PRESET_NAME_MACRO)
 AGAIN = "Configure the build directory again, for example with `cmake --preset default` or `cmake BUILD_DIR`."
 
 
@@ -248,15 +269,18 @@ class Toolchain:
 
 
 class Preset:
-    """One configure preset: its name, its cache variables, its environment and its build directory.
+    """One configure preset: its name, its cache variables, its environment, its build directory, its parents and its
+    vendor entries.
 
     A value is a text, or None when the presets file gives a value that is
     not a text, such as a boolean or null.  `binary_dir` is the field
     binaryDir as the file gives it, with its macros, or None when the preset
-    gives no text there.
+    gives no text there.  `inherits` holds the names of the field inherits, in
+    their sequence.  `vendor` gives the fields of each entry of the field
+    vendor (THE VENDOR ENTRIES).
     """
 
-    __slots__ = ("binary_dir", "cache_variables", "environment", "name")
+    __slots__ = ("binary_dir", "cache_variables", "environment", "inherits", "name", "vendor")
 
     def __init__(
         self,
@@ -264,16 +288,52 @@ class Preset:
         cache_variables: Mapping[str, str | None],
         environment: Mapping[str, str | None],
         binary_dir: str | None = None,
+        inherits: tuple[str, ...] = (),
+        vendor: Mapping[str, Mapping[str, str | None] | None] | None = None,
     ) -> None:
         """Hold the parts of one preset."""
         self.name = name
         self.cache_variables = dict(cache_variables)
         self.environment = dict(environment)
         self.binary_dir = binary_dir
+        self.inherits = inherits
+        self.vendor = {key: None if fields is None else dict(fields) for key, fields in (vendor or {}).items()}
 
     def __repr__(self) -> str:
         """Return the preset for a message."""
         return f"Preset({self.name!r})"
+
+
+class TestPreset:
+    """One test preset: its name, its configure preset, its parents, its vendor entries, and its kind.
+
+    `configure_preset` is the field configurePreset, or None when the preset
+    gives no text there.  A plain test preset gives no field `filter`, and
+    its field `execution` gives no field `repeat`.  It then runs each test of
+    the build of its configure preset one time.  `vendor` gives the fields of
+    each entry of the field vendor (THE VENDOR ENTRIES).
+    """
+
+    __slots__ = ("configure_preset", "inherits", "is_plain", "name", "vendor")
+
+    def __init__(
+        self,
+        name: str,
+        configure_preset: str | None,
+        is_plain: bool,
+        inherits: tuple[str, ...] = (),
+        vendor: Mapping[str, Mapping[str, str | None] | None] | None = None,
+    ) -> None:
+        """Hold the parts of one test preset."""
+        self.name = name
+        self.configure_preset = configure_preset
+        self.is_plain = is_plain
+        self.inherits = inherits
+        self.vendor = {key: None if fields is None else dict(fields) for key, fields in (vendor or {}).items()}
+
+    def __repr__(self) -> str:
+        """Return the test preset for a message."""
+        return f"TestPreset({self.name!r})"
 
 
 class PresetJobs:
@@ -297,21 +357,28 @@ class PresetJobs:
 
 
 class PresetFile:
-    """One presets file of a tree: its path, its configure presets, its job counts, and the problem that stops its read.
+    """One presets file of a tree: its path, its configure presets, its job counts, its test presets, and the problem
+    that stops its read.
 
     `problem` is None for a file that reads.
     """
 
-    __slots__ = ("configure", "jobs", "path", "problem")
+    __slots__ = ("configure", "jobs", "path", "problem", "tests")
 
     def __init__(
-        self, path: Path, configure: tuple[Preset, ...], problem: str | None, jobs: tuple[PresetJobs, ...] = ()
+        self,
+        path: Path,
+        configure: tuple[Preset, ...],
+        problem: str | None,
+        jobs: tuple[PresetJobs, ...] = (),
+        tests: tuple[TestPreset, ...] = (),
     ) -> None:
         """Hold the parts of one presets file."""
         self.path = path
         self.configure = configure
         self.problem = problem
         self.jobs = jobs
+        self.tests = tests
 
     def __repr__(self) -> str:
         """Return the file for a message."""
@@ -678,6 +745,48 @@ def _preset_values(value: object) -> dict[str, str | None]:
     return found
 
 
+def _preset_vendor(value: object) -> dict[str, dict[str, str | None] | None]:
+    """Return the fields of each entry of a field vendor (THE VENDOR ENTRIES), or no entry when the field is no object."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): _preset_values(fields) if isinstance(fields, dict) else None for key, fields in value.items()}
+
+
+def _preset_inherits(value: object) -> tuple[str, ...]:
+    """Return the names of a field inherits: one text, or a list of texts.  Each other value gives no name."""
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list):
+        return tuple(item for item in value if isinstance(item, str))
+    return ()
+
+
+def _test_presets(document: Mapping[str, object]) -> tuple[TestPreset, ...]:
+    """Return each test preset with a name, with its configure preset, its parents, its vendor entries and its kind.
+
+    The caller made sure that testPresets is a list of objects.  Complexity: linear in the test presets.
+    """
+    items = document.get("testPresets", [])
+    found: list[TestPreset] = []
+    for item in items if isinstance(items, list) else []:
+        name = item.get("name") if isinstance(item, dict) else None
+        if not isinstance(item, dict) or not isinstance(name, str) or not name:
+            continue
+        configure = item.get("configurePreset")
+        execution = item.get("execution")
+        has_repeat = isinstance(execution, dict) and "repeat" in execution
+        found.append(
+            TestPreset(
+                name,
+                configure if isinstance(configure, str) else None,
+                "filter" not in item and not has_repeat,
+                _preset_inherits(item.get("inherits")),
+                _preset_vendor(item.get("vendor")),
+            )
+        )
+    return tuple(found)
+
+
 def _preset_jobs(document: Mapping[str, object]) -> tuple[PresetJobs, ...] | str:
     """Return the job count of each build preset and each test preset with a name, or the problem of a list.
 
@@ -735,12 +844,14 @@ def _preset_file(path: Path) -> PresetFile:
                 _preset_values(item.get("cacheVariables")),
                 _preset_values(item.get("environment")),
                 binary_dir if isinstance(binary_dir, str) else None,
+                _preset_inherits(item.get("inherits")),
+                _preset_vendor(item.get("vendor")),
             )
         )
     jobs = _preset_jobs(document)
     if isinstance(jobs, str):
         return PresetFile(path, (), jobs)
-    return PresetFile(path, tuple(found), None, jobs)
+    return PresetFile(path, tuple(found), None, jobs, _test_presets(document))
 
 
 def presets(root: Path) -> tuple[PresetFile, ...]:
@@ -752,6 +863,69 @@ def presets(root: Path) -> tuple[PresetFile, ...]:
     return tuple(
         found for found in files if found.configure or found.jobs or found.problem is not None or found.path.is_file()
     )
+
+
+def effective(configure: Iterable[Preset], name: str) -> Preset:
+    """Return one configure preset with the fields that it inherits from its parents (THE INHERITANCE).
+
+    `configure` holds the configure presets of each presets file of a tree.  The result keeps the parents and the
+    vendor entries of the preset itself.  Complexity: linear in the presets and in the edges of the field inherits.
+
+    Raises:
+        CmakeError: If no preset has the name, a parent is not a configure preset, or the parents make a cycle
+    """
+    by_name = {preset.name: preset for preset in configure}
+
+    def resolve(current: str, chain: tuple[str, ...]) -> Preset:
+        """Return a preset with the fields of its parents, with the names of its children in `chain`."""
+        if current in chain:
+            raise CmakeError(f"the configure presets {' -> '.join((*chain, current))} make a cycle of inherits")
+        preset = by_name.get(current)
+        if preset is None and chain:
+            raise CmakeError(f"the preset {chain[-1]} inherits the configure preset {current}, which no file gives")
+        if preset is None:
+            raise CmakeError(f"no presets file gives the configure preset {current}")
+        parents = [resolve(parent, (*chain, current)) for parent in preset.inherits]
+        cache_variables: dict[str, str | None] = {}
+        environment: dict[str, str | None] = {}
+        for parent in reversed(parents):
+            cache_variables.update(parent.cache_variables)
+            environment.update(parent.environment)
+        cache_variables.update(preset.cache_variables)
+        environment.update(preset.environment)
+        binary_dir = preset.binary_dir
+        if binary_dir is None:
+            binary_dir = next((parent.binary_dir for parent in parents if parent.binary_dir is not None), None)
+        return Preset(current, cache_variables, environment, binary_dir, preset.inherits, preset.vendor)
+
+    return resolve(name, ())
+
+
+def build_directory(root: Path, name: str) -> Path:
+    """Return the build directory of a configure preset of the presets files of a tree (THE INHERITANCE).
+
+    The function expands the macros of BINARY_MACROS in the field binaryDir.  A relative directory is relative to the
+    root.  Complexity: one read of each presets file.
+
+    Raises:
+        CmakeError: If no presets file gives the preset, no parent gives a binaryDir, or the field names an other macro
+    """
+    from pathlib import Path
+
+    configure = [preset for presets_file in presets(root) for preset in presets_file.configure]
+    if not any(preset.name == name for preset in configure):
+        raise CmakeError(f"no presets file of {root} gives the configure preset {name}")
+    text = effective(configure, name).binary_dir
+    if text is None:
+        raise CmakeError(
+            f"the preset {name} of the presets files of {root} gives no binaryDir, and no parent gives one"
+        )
+    values = {"${sourceDir}": str(root), "${sourceParentDir}": str(root.parent), "${sourceDirName}": root.name}
+    for macro in BINARY_MACROS:
+        text = text.replace(macro, name if macro == PRESET_NAME_MACRO else values[macro])
+    if "$" in text:
+        raise CmakeError(f"the binaryDir of the preset {name} names a macro that the reader does not expand: {text}")
+    return Path(text) if Path(text).is_absolute() else root / text
 
 
 # ── Plants for the tests ───────────────────────────────────────────────────

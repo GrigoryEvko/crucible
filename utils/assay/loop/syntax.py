@@ -209,9 +209,6 @@ CONDITION_FIELDS = {
     "preproc_ifdef": "name",
     "preproc_elifdef": "name",
 }
-# The macros of a presets file that build_directory() expands.
-SOURCE_DIR_MACRO = "${sourceDir}"
-PRESET_NAME_MACRO = "${presetName}"
 
 
 class ParseError(Exception):
@@ -680,22 +677,17 @@ def arm_files(root: Path) -> dict[str, frozenset[str]]:
 def build_directory(root: Path, preset: str) -> Path:
     """Return the build directory of a configure preset of the presets files of a tree (THE CHANGE OF AN ARM).
 
-    The function expands the macros ${sourceDir} and ${presetName} of the field binaryDir.
+    assay.readers.cmake gives the binaryDir of the preset or of a parent, with its macros expanded.
 
     Raises:
-        ParseError: If no presets file gives the preset, or the preset gives no binaryDir
+        ParseError: If no presets file gives the preset, or no binaryDir of the preset or of a parent applies
     """
     from assay.readers import cmake
 
-    for presets_file in cmake.presets(root):
-        for item in presets_file.configure:
-            if item.name != preset:
-                continue
-            if item.binary_dir is None:
-                raise ParseError(f"the preset {preset} of {presets_file.path} gives no binaryDir")
-            text = item.binary_dir.replace(SOURCE_DIR_MACRO, str(root)).replace(PRESET_NAME_MACRO, preset)
-            return Path(text) if Path(text).is_absolute() else root / text
-    raise ParseError(f"no presets file of {root} gives the configure preset {preset}")
+    try:
+        return cmake.build_directory(root, preset)
+    except cmake.CmakeError as problem:
+        raise ParseError(str(problem)) from None
 
 
 def main(argv: list[str]) -> int:
