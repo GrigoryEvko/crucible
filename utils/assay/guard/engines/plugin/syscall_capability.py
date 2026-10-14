@@ -289,6 +289,9 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     if target.is_added and mode == rule_ledger.WriteMode.LOWER and len(target.ledger.configurations) > 1:
         mode = rule_ledger.WriteMode.RAISE
     moves = git.change_moves(request.root)
+    before = rule_ledger.ledger_before(
+        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(RULE))
+    )
     try:
         written = rule_ledger.write(
             rule,
@@ -299,6 +302,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             reason=request.reason,
             moved=moves.renamed,
             flows=moves.flows,
+            before=before,
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)

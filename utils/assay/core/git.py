@@ -77,7 +77,10 @@ THE MOVED LINES
     the sorted sequence of the paths.  moves_of() gives the moved lines of
     each file, and each pair of files (A, B) where the change moved a line
     from A to B.  The rule quarantine-lines, the ledger writers and the rule
-    history read them (THE MOVE of assay.core.ledger).
+    history read them (THE MOVE of assay.core.ledger).  Moves.base is the
+    commit of the base of the diff.  base_file() reads a file at that
+    commit, such as a ledger before the change (THE LEDGER BEFORE THE
+    CHANGE of assay.core.ledger).
 
 THE DIFF
     read_diff() reads the output of `git diff -U0`.  The head of a hunk gives
@@ -125,7 +128,7 @@ import shutil
 import tempfile
 from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from assay.core import proc
@@ -171,7 +174,7 @@ INITIAL_COMMIT = "(initial)"
 NULL_OBJECT = "0" * 40
 # The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
 READS_HISTORY = frozenset({
-    "archive", "author_date", "blobs", "change_base", "change_moves", "changed_files", "changed_paths", "changes",
+    "archive", "author_date", "base_file", "blobs", "change_base", "change_moves", "changed_files", "changed_paths", "changes",
     "commit_subject", "commits", "dated_commits", "diff_moves", "file_diffs", "has_no_change", "head",
     "index_changes", "index_patch", "is_ancestor", "is_clean", "is_index_clean", "is_shallow", "message_of",
     "parent", "patch", "path_history", "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head",
@@ -288,12 +291,13 @@ class Moves:
 
     `renamed` gives the path at the base of each moved file, by its new path.  `lines` gives the moved lines of
     each file by its new path.  `flows` holds each pair (A, B) where the change moved a line from the file A at the
-    base to the file B.
+    base to the file B.  `base` is the commit of the base, or None with no base.
     """
 
     renamed: Mapping[str, str] = field(default_factory=dict)
     lines: Mapping[str, frozenset[int]] = field(default_factory=dict)
     flows: frozenset[tuple[str, str]] = frozenset()
+    base: str | None = None
 
     def is_moved(self, path: str, line: int) -> bool:
         """Tell if the change moved the line LINE of the file PATH (THE MOVED LINES)."""
@@ -752,12 +756,26 @@ def moves_of(diffs: Sequence[FileDiff]) -> Moves:
 def diff_moves(root: Path, base: str, revision: str | None = None, paths: Sequence[str] = ()) -> Moves:
     """Return the moves of the diff from a commit to a revision, or to the working tree with its new files.
 
-    `paths` limits the diff to some paths.  Complexity: that of file_diffs() and moves_of().
+    `paths` limits the diff to some paths.  The field base of the result is the base.  Complexity: that of
+    file_diffs() and moves_of().
 
     Raises:
         GitError: If git fails, or a new file cannot be read
     """
-    return moves_of(file_diffs(root, base, revision, paths, with_new=revision is None))
+    return replace(moves_of(file_diffs(root, base, revision, paths, with_new=revision is None)), base=base)
+
+
+def base_file(root: Path, moves: Moves, path: str) -> bytes | None:
+    """Return the content of a file at the commit of the base of a change (Moves.base).
+
+    The result is None with no base, with no such file at the base, and for an error of git.
+    """
+    if moves.base is None:
+        return None
+    try:
+        return show(root, moves.base, path)
+    except GitError:
+        return None
 
 
 def change_moves(root: Path) -> Moves:

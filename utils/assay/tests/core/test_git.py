@@ -200,6 +200,14 @@ def move_cases(expect: Callable[[str, bool], None]) -> None:
             git.change_moves(root).renamed == {"renamed.cpp": "rewritten.cpp"}
             and git.diff_moves(root, "HEAD").renamed == {},
         )
+        moves = git.change_moves(root)
+        expect(
+            "the moves give the commit of the base, and base_file reads a file there, or None with no file or no base",
+            moves.base == rewrite
+            and git.base_file(root, moves, "rewritten.cpp") is not None
+            and git.base_file(root, moves, "renamed.cpp") is None
+            and git.base_file(root, git.Moves(), "rewritten.cpp") is None,
+        )
 
 
 def moved_line_cases(expect: Callable[[str, bool], None]) -> None:

@@ -57,7 +57,9 @@ THE WRITE
     change moved lines from pays an increase of the same kind.  The entity of
     the increase is the same entity or an entity that agrees (THE MOVE of
     assay.core.ledger).  A change that divides a file then writes its rows
-    with no --raise.
+    with no --raise.  The write reads the ledger before the change.  A write
+    of the base moves the counts of each other configuration from that
+    ledger (THE LEDGER BEFORE THE CHANGE of assay.core.ledger).
     A write of the base removes the difference rows of each source file that
     the tree does not hold, because no build compiles it.  A file of the build
     directory keeps its rows.  `guard write --rule RULE --import LOG` puts the
@@ -293,8 +295,19 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         if increased is None:
             return 1
         mode = rule_ledger.WriteMode.RAISE if increased else rule_ledger.WriteMode.LOWER
+    before = rule_ledger.ledger_before(
+        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
+    )
     written = rule_ledger.write_counts(
-        rule, target.ledger, counts, target.name, mode, request.reason, moved=moves.renamed, flows=moves.flows
+        rule,
+        target.ledger,
+        counts,
+        target.name,
+        mode,
+        request.reason,
+        moved=moves.renamed,
+        flows=moves.flows,
+        before=before,
     )
     if target.name is None or target.name == written.base_name:
         written = drop_gone_files(written, request.root, counts)

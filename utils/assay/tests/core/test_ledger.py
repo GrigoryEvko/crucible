@@ -756,6 +756,85 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     )
 
 
+def written_in_sequence(
+    rule: rule_registry.Rule,
+    before: rule_ledger.Ledger,
+    found: Mapping[str, list[check_report.Finding]],
+    names: tuple[str, ...],
+    flows: set[tuple[str, str]],
+) -> rule_ledger.Ledger:
+    """Return the ledger after the writes of the configurations of `names` in sequence, from the ledger `before`."""
+    written = before
+    for name in names:
+        written = rule_ledger.write(rule, written, found[name], name, flows=flows, before=before)
+    return written
+
+
+def before_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check THE LEDGER BEFORE THE CHANGE: a move applies at most one time to a configuration, in each sequence."""
+    count = table["count-rule"]
+    text = (
+        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
+        "split.h | kind | 2 | vector | -\n"
+    )
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    flows = {("split.h", "part.h")}
+    halves = [finding("split.h", entity="vector"), finding("part.h", entity="vector")]
+    found = {"base": halves, "arm": halves}
+    measured = {rule_ledger.Key("split.h", "kind", "vector"): 1, rule_ledger.Key("part.h", "kind", "vector"): 1}
+    sequences = {
+        "the other configuration first, the base second": ("arm", "base"),
+        "the base first, the other configuration second": ("base", "arm"),
+        "the other configuration two times, then the base": ("arm", "arm", "base"),
+        "the other configuration, the base, the other configuration again": ("arm", "base", "arm"),
+        "the base two times, then the other configuration": ("base", "base", "arm"),
+        "the base only, so the other configuration gets the estimate": ("base",),
+    }
+    rendered: set[str] = set()
+    for words, names in sequences.items():
+        written = written_in_sequence(count, ledger, found, names, flows)
+        expect(
+            f"a partial fall of a split, {words}: the move applies one time to each configuration",
+            written.expected("base") == measured and written.expected("arm") == measured,
+        )
+        rendered.add(rule_ledger.render(written))
+    expect("each sequence of the writes of one change gives the same ledger", len(rendered) == 1)
+    expect(
+        "with no ledger before the change, a write uses its own ledger",
+        rule_ledger.write(count, ledger, halves, "base", flows=flows).expected("arm") == measured,
+    )
+    own = rule_ledger.parse(text + "@arm | split.h | kind | +1 | vector | -\n", "l.txt", "count-rule", count.policy)
+    kept = {rule_ledger.Key("split.h", "kind", "vector"): 2, rule_ledger.Key("part.h", "kind", "vector"): 1}
+    found_own = {"base": halves, "arm": [*halves, finding("split.h", entity="vector")]}
+    expect(
+        "a count that only the other configuration holds stays at the source of the move, in each sequence",
+        all(
+            written_in_sequence(count, own, found_own, names, flows).expected("arm") == kept
+            for names in sequences.values()
+        ),
+    )
+    added = rule_ledger.parse(
+        "format 1\nrule count-rule\nconfiguration base machine x86_64\nsplit.h | kind | 2 | vector | -\n",
+        "l.txt",
+        "count-rule",
+        count.policy,
+    )
+    expect(
+        "a configuration that the ledger before the change does not hold keeps its counts after a write of the base",
+        rule_ledger.write(count, ledger, halves, "base", flows=flows, before=added).expected("arm")
+        == {rule_ledger.Key("split.h", "kind", "vector"): 2},
+    )
+    read_back = rule_ledger.ledger_before(count, "abc123", text.encode())
+    expect(
+        "ledger_before reads the text at the base: None with no base or a bad text, an empty ledger with no file",
+        read_back is not None
+        and read_back.expected("arm") == ledger.expected("arm")
+        and rule_ledger.ledger_before(count, None, text.encode()) is None
+        and rule_ledger.ledger_before(count, "abc123", b"format 9\n") is None
+        and rule_ledger.ledger_before(count, "abc123", None) == rule_ledger.empty(count),
+    )
+
+
 def namespace_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check the second half of THE MOVE: a move of code to a different namespace of the tree changes no finding."""
     old = "foundation::algebra::transition::read(const foundation::algebra::transition::node&): std::meta::info"
@@ -847,6 +926,7 @@ def main(argv: list[str]) -> int:
     no_configuration_cases(expect, table)
     other_configuration_cases(expect, table)
     move_cases(expect, table)
+    before_cases(expect, table)
     namespace_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")

@@ -225,6 +225,10 @@ def write_inspection(
             is_error=True,
         )
         return 1
+    moves = git.change_moves(request.root)
+    before = rule_ledger.ledger_before(
+        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
+    )
     written = rule_ledger.write_counts(
         rule,
         target.ledger,
@@ -232,7 +236,8 @@ def write_inspection(
         target.name,
         rule_ledger.WriteMode.RAISE,
         request.reason,
-        git.change_moves(request.root).renamed,
+        moves.renamed,
+        before=before,
     )
     rule_ledger.store(written, request.root)
     check_report.write_line(

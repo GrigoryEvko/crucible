@@ -121,12 +121,12 @@ THE WRITE
     A write changes only the counts of the configuration of its build.  Each
     configuration writes its counts in its own build.  A write of the base
     can change the base count of a key by N.  The difference of the key in
-    each other configuration then changes by -N, and the count of that
-    configuration stays the same.  A change that lowers a count in each
-    configuration then writes the rows of each configuration.  Until then,
-    the run of a configuration that the write did not cover gives the error
-    of a count below its row.  Its own write in the mode lower records the
-    fall.
+    each other configuration then changes by -N.  The count of that
+    configuration stays the same, other than a move (THE LEDGER BEFORE THE
+    CHANGE).  A change that lowers a count in each configuration then
+    writes the rows of each configuration.  Until then, the run of a
+    configuration that the write did not cover gives the error of a count
+    below its row.  Its own write in the mode lower records the fall.
 
 THE MOVE
     A change can move lines from one file to a different file, for example
@@ -150,6 +150,31 @@ THE MOVE
     row gets the reason of the row of the fall that pays it.  An increase
     that no fall pays stays an error.  For the policy admit, each row is a
     count of one.
+
+THE LEDGER BEFORE THE CHANGE
+    The change moved the same lines in each build.  A write of the base then
+    also moves the paid counts of each other configuration.  The caller
+    reads the ledger at the commit of the base of the change with
+    ledger_before(), and the write gets it.  The estimate of a configuration
+    is its counts in that ledger after the payments of the write.  These
+    payments go from the base counts of that ledger to the base counts of
+    the write (paid_moves()).  A configuration moves at most the count that
+    it holds at the source of a payment.
+
+    A write of the base gives a configuration the estimate when its counts
+    are the estimate for the base counts before the write.  No write of the
+    change measured such a configuration.  Each other configuration has its
+    own measurement, and its counts stay.  A move then applies at most one
+    time to a configuration, for each sequence and each number of writes in
+    one change.  A configuration that the ledger before the change does not
+    hold keeps its counts.  With no ledger before the change, the write uses
+    its own ledger.
+
+    A write can measure a configuration with no change from the ledger
+    before the change.  No row shows such a write.  A subsequent write of
+    the base then gives that configuration the estimate.  The check of an
+    increase and the reasons of new rows use the payments from the ledger of
+    the write.  A previous write of the change can raise a count.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
@@ -626,6 +651,27 @@ def read(rule: Rule, root: Path = REPO_ROOT, file: Path | None = None) -> Ledger
     return parse(path.read_text(encoding="utf-8"), shown, rule.id, rule.policy)
 
 
+def ledger_before(rule: Rule, base: str | None, text: bytes | None) -> Ledger | None:
+    """Return the ledger of a rule at the commit of the base of a change, from its text there.
+
+    Args:
+        rule: The rule
+        base: The commit of the base of the change, or None with no base
+        text: The content of the file of the ledger at that commit, or None when the commit holds no such file
+
+    The result is None with no base, and for a text that does not obey the schema of a ledger.  A write then uses
+    its own ledger (THE LEDGER BEFORE THE CHANGE).  A base with no file of the ledger gives an empty ledger.
+    """
+    if base is None:
+        return None
+    if text is None:
+        return empty(rule)
+    try:
+        return parse(text.decode("utf-8"), f"{base}:{shown_path(rule.id)}", rule.id, rule.policy)
+    except rows_grammar.RowsError, UnicodeDecodeError:
+        return None
+
+
 def value_text(value: int | float | str) -> str:
     """Return a value as the text of its cell, with no '.0' for a whole number."""
     if isinstance(value, float):
@@ -959,6 +1005,15 @@ def moved_entries(table: Mapping[Key, Entry], moved: Mapping[str, str]) -> dict[
     return result
 
 
+def moved_ledger(ledger: Ledger, moved: Mapping[str, str]) -> Ledger:
+    """Return a ledger with each base row and each difference row of a moved file at its new path."""
+    return replace(
+        ledger,
+        base=moved_entries(ledger.base, moved),
+        deltas={name: moved_entries(table, moved) for name, table in ledger.deltas.items()},
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Payment:
     """The part of a fall of one key that pays an increase of a key with the same kind and entity (THE MOVE)."""
@@ -1097,6 +1152,7 @@ def write(
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
     flows: Iterable[tuple[str, str]] = (),
+    before: Ledger | None = None,
 ) -> Ledger:
     """Return the ledger that admits the error findings of a rule (THE WRITE).
 
@@ -1109,6 +1165,8 @@ def write(
         reason: The reason of each new row and each raised count, necessary in the mode admit
         moved: The old path of each file that git reports as moved
         flows: Each pair of files (A, B) where the change moved a line from A to B (THE MOVE)
+        before: The ledger at the commit of the base of the change, or None to use `ledger` (THE LEDGER BEFORE THE
+            CHANGE)
 
     Raises:
         LedgerError: If the mode refuses a finding, the policy has no write here, or a necessary reason is missing
@@ -1116,7 +1174,7 @@ def write(
     Complexity: O(f log f + r) for f findings and r rows.
     """
     counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
-    return write_counts(rule, ledger, counts, configuration, mode, reason, moved, flows)
+    return write_counts(rule, ledger, counts, configuration, mode, reason, moved, flows, before)
 
 
 def write_counts(
@@ -1128,12 +1186,15 @@ def write_counts(
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
     flows: Iterable[tuple[str, str]] = (),
+    before: Ledger | None = None,
 ) -> Ledger:
     """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
 
     A module that counts its findings itself, such as the rule quarantine,
     writes its ledger with this function.  An increase that a fall pays along
-    `flows` is no increase (THE MOVE).
+    `flows` is no increase (THE MOVE).  A write of the base moves the paid
+    counts of each other configuration from `before` (THE LEDGER BEFORE THE
+    CHANGE).
 
     Raises:
         LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
@@ -1147,8 +1208,8 @@ def write_counts(
     moved = dict(moved or {})
     flows = frozenset(flows)
     counts = {key: count for key, count in counts.items() if count > 0}
-    base = moved_entries(ledger.base, moved)
-    deltas = {name: moved_entries(table, moved) for name, table in ledger.deltas.items()}
+    current = moved_ledger(ledger, moved)
+    base, deltas = current.base, current.deltas
     if rule.policy == Policy.ADMIT:
         payments = move_payments(dict.fromkeys(base, 1), dict.fromkeys(counts, 1), flows)
         carried = {payment.target: base[payment.source].reason for payment in payments}
@@ -1186,12 +1247,9 @@ def write_counts(
             key: Entry(key, count, base[key].reason if key in base else (carried.get(key) or reason or ""))
             for key, count in counts.items()
         }
+        start = moved_ledger(before, moved) if before is not None else current
         return needed_reasons(
-            replace(
-                ledger,
-                base={**new_base, **kept_admits},
-                deltas=other_deltas(ledger, base, deltas, counts, payments),
-            )
+            replace(ledger, base={**new_base, **kept_admits}, deltas=other_deltas(current, start, counts, flows))
         )
     # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
     # of the base moves them.
@@ -1213,29 +1271,33 @@ def base_counts_rows(base: Mapping[Key, Entry]) -> dict[Key, Entry]:
 
 
 def other_deltas(
-    ledger: Ledger,
-    base: Mapping[Key, Entry],
-    deltas: Mapping[str, Mapping[Key, Entry]],
-    counts: Mapping[Key, int],
-    payments: Iterable[Payment] = (),
+    ledger: Ledger, before: Ledger, counts: Mapping[Key, int], flows: Iterable[tuple[str, str]] = ()
 ) -> dict[str, dict[Key, Entry]]:
     """Return the difference rows of each other configuration after a write of the base counts `counts` (THE WRITE).
 
-    `base` and `deltas` are the rows of the ledger with each moved file at
-    its new path.  Each other configuration keeps its count of each key, and
-    its difference rows hold that count against the new base count.  Each
-    payment of the base write also moves its count in each other
-    configuration (THE MOVE).  The change moved the same lines in each
-    build.  Then the sequence of the writes of two configurations gives the
-    same ledger.  A row keeps its reason.  Complexity: linear in the rows
-    and the payments, times the configurations.
+    `ledger` is the ledger of the write, and `before` is the ledger before
+    the change.  The two hold each moved file at its new path.  Each other
+    configuration keeps its count of each key, other than a move.  A
+    configuration that holds the estimate for the base counts of `ledger`
+    gets the estimate for `counts` (THE LEDGER BEFORE THE CHANGE).  Its
+    difference rows hold its counts against the new base counts, and a row
+    keeps its reason.  The sequence and the number of the writes of one
+    change then give the same ledger.  Complexity: that of two calls of
+    move_payments(), and linear in the rows times the configurations.
     """
-    moved = replace(ledger, base=base, deltas=deltas)
-    payments = tuple(payments)
-    return {
-        item.name: difference_table(paid_moves(moved.expected(item.name), payments), counts, deltas.get(item.name, {}))
-        for item in ledger.configurations[1:]
-    }
+    flows = frozenset(flows)
+    start = before.expected(before.base_name)
+    previous_payments = move_payments(start, ledger.expected(ledger.base_name), flows)
+    payments = move_payments(start, counts, flows)
+    tables: dict[str, dict[Key, Entry]] = {}
+    for item in ledger.configurations[1:]:
+        own = ledger.expected(item.name)
+        if before.configuration(item.name) is not None:
+            held = before.expected(item.name)
+            if own == paid_moves(held, previous_payments):
+                own = paid_moves(held, payments)
+        tables[item.name] = difference_table(own, counts, ledger.deltas.get(item.name, {}))
+    return tables
 
 
 def paid_moves(expected: Mapping[Key, int], payments: Iterable[Payment]) -> dict[Key, int]:
@@ -1243,7 +1305,8 @@ def paid_moves(expected: Mapping[Key, int], payments: Iterable[Payment]) -> dict
 
     A configuration moves at most the count that it holds at the source.  A
     count that a different arm gives only this configuration then stays at
-    the source.  Complexity: linear in the counts and the payments.
+    the source.  The result has no zero count, as Ledger.expected() has
+    none.  Complexity: linear in the counts and the payments.
     """
     result = dict(expected)
     for payment in payments:
@@ -1251,7 +1314,7 @@ def paid_moves(expected: Mapping[Key, int], payments: Iterable[Payment]) -> dict
         if count > 0:
             result[payment.source] -= count
             result[payment.target] = result.get(payment.target, 0) + count
-    return result
+    return {key: count for key, count in result.items() if count != 0}
 
 
 def rows_of_configuration(

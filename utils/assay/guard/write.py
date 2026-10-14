@@ -286,8 +286,9 @@ def main(argv: list[str]) -> int:
                                            if not named or key.path in named})
             found = [item for item in found if not named or item.path in named]
             moves = git.change_moves(root)
+            before = rule_ledger.ledger_before(rule, moves.base, git.base_file(root, moves, rule_ledger.shown_path(rule.id)))
             written = rule_ledger.write(rule, judged, found, mode=options.mode or rule_ledger.WriteMode.LOWER,
-                                        reason=options.reason, moved=moves.renamed, flows=moves.flows)
+                                        reason=options.reason, moved=moves.renamed, flows=moves.flows, before=before)
             if named:
                 kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
                 own = written.base

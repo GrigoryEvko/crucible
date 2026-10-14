@@ -301,6 +301,9 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         )
         return check_report.emit(problems, rule.id, None)
     moves = git.change_moves(request.root)
+    before = rule_ledger.ledger_before(
+        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
+    )
     try:
         written = rule_ledger.write_counts(
             rule,
@@ -311,6 +314,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             request.reason,
             moves.renamed,
             moves.flows,
+            before,
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
