@@ -12,5 +12,6 @@ SUBCOMMANDS = {
     "bench": ("assay.loop.bench", "run the benches"),
     "fuzz": ("assay.loop.fuzz", "run a campaign"),
     "pgo": ("assay.loop.pgo", "collect a profile"),
+    "evidence": ("assay.loop.evidence", "add evidence to the sampled checks"),
     "step": ("assay.loop.step", None),
 }

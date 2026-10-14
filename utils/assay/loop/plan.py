@@ -290,12 +290,19 @@ STEPS = (
         "collects the profile of profile-guided optimization for the tier of the host",
         preset="pgo-generate",
     ),
+    Step(
+        "evidence",
+        tiers.Tier.NIGHTLY,
+        ("loop", "evidence", "run"),
+        "adds evidence to the sampled checks in a time budget, and judges it against the targets of the registry",
+    ),
 )
 SUITE = Holding(is_suite=True)
 HOLDERS = {
     "cmake": SUITE,
     "guard-warnings": SUITE,
     "header-alone": Holding(rule="header-alone"),
+    "loop-evidence": Holding(step="evidence"),
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),
     "loop-history": SUITE,

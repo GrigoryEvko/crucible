@@ -311,11 +311,13 @@ class TestPreset:
     `configure_preset` is the field configurePreset, or None when the preset
     gives no text there.  A plain test preset gives no field `filter`, and
     its field `execution` gives no field `repeat`.  It then runs each test of
-    the build of its configure preset one time.  `vendor` gives the fields of
-    each entry of the field vendor (THE VENDOR ENTRIES).
+    the build of its configure preset one time.  `is_repeated` tells that the
+    field `execution` gives the field `repeat`.  The preset then runs each
+    test again.  `vendor` gives the fields of each entry of the field vendor
+    (THE VENDOR ENTRIES).
     """
 
-    __slots__ = ("configure_preset", "inherits", "is_plain", "name", "vendor")
+    __slots__ = ("configure_preset", "inherits", "is_plain", "is_repeated", "name", "vendor")
 
     def __init__(
         self,
@@ -324,11 +326,13 @@ class TestPreset:
         is_plain: bool,
         inherits: tuple[str, ...] = (),
         vendor: Mapping[str, Mapping[str, str | None] | None] | None = None,
+        is_repeated: bool = False,
     ) -> None:
         """Hold the parts of one test preset."""
         self.name = name
         self.configure_preset = configure_preset
         self.is_plain = is_plain
+        self.is_repeated = is_repeated
         self.inherits = inherits
         self.vendor = {key: None if fields is None else dict(fields) for key, fields in (vendor or {}).items()}
 
@@ -783,6 +787,7 @@ def _test_presets(document: Mapping[str, object]) -> tuple[TestPreset, ...]:
                 "filter" not in item and not has_repeat,
                 _preset_inherits(item.get("inherits")),
                 _preset_vendor(item.get("vendor")),
+                has_repeat,
             )
         )
     return tuple(found)

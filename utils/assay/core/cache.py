@@ -158,6 +158,11 @@ LIMITS: dict[str, int] = {
     # test and set of inputs has one file of one 4 KB block.  The limit holds 32,768 results: 64 sets of inputs of each
     # of the 506 tests with a key of the Debug build on 2026-10-14.
     "test-results": 128 << 20,
+    # The evidence of the sampled checks (utils/assay/loop/evidence/store.py), one file for each rule and key.  On
+    # 2026-10-14, a record of 10 samples held 1142 bytes on average.  A full record of 256 samples then holds
+    # approximately 7 blocks of 4 KB.  The limit holds approximately 2,300 full records: four keys of each of the 507
+    # tests with a key of the Debug build on 2026-10-14.
+    "evidence": 64 << 20,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = "pycache"

@@ -22,7 +22,9 @@ THE ROWS
                    rule has the three fields or none of them.  The unit is
                    one word: s, G (10^9 instructions), GB, MB, KB, bytes,
                    %, operations, elements, x (a multiple), links, jobs or
-                   passes
+                   passes.  A rule of the holder `loop-evidence` holds a
+                   target: the quantity of evidence that the runs must get
+                   (assay.loop.evidence.targets)
       inputs       the paths that the rule reads and that its module does not
                    show
       doc          the section of CLAUDE.md that states the rule, such as XV,

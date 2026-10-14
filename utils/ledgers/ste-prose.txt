@@ -1700,7 +1700,6 @@ utils/assay/oracle/runner.py | refused-word | 1 | drifted: generate | A text of 
 utils/assay/oracle/runner.py | refused-word | 1 | drifted: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | drifted: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 2 | evaluate_enroute: reach | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/oracle/runner.py | refused-word | 1 | evaluate_enroute: round | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | evaluate_keskin: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | evaluate_keyed_subtype: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | evaluate_multi: gap | A text of today.  The change that writes the text again in STE lowers the count
@@ -1738,7 +1737,6 @@ utils/assay/oracle/runner.py | refused-word | 1 | minimal_corpus: so | A text of
 utils/assay/oracle/runner.py | refused-word | 1 | names_commit: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | reliable_set_spelling: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 2 | shrink: every | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/oracle/runner.py | refused-word | 1 | shrink: round | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | shrink: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | sprout_verdicts: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/runner.py | refused-word | 1 | sprout_verdicts: form | A text of today.  The change that writes the text again in STE lowers the count

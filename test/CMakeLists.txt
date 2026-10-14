@@ -4975,11 +4975,20 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
         loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset
-        loop.test_tracer)
+        loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
   set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
+endforeach()
+# The tests of the items of the evidence and of the runner of the kind repetition run the ctest of this build on the
+# fake build tree of `loop test`.
+foreach(_assay_test loop.evidence.test_items loop.evidence.test_repetition)
+  string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
+  crucible_script_test(NAME ${_assay_test_name}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
+  set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta"
+    ENVIRONMENT "ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
 endforeach()
 # The test of the rule clang-format runs the pinned clang-format on planted
 # files.  `python3 utils/bin/setup install clang-format` installs it.  With no

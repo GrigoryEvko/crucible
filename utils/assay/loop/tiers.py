@@ -110,7 +110,8 @@ class PresetTier:
     `is_parse` tells that the preset sets CRUCIBLE_SYNTAX_ONLY, itself or
     through a parent.  `configure` is the configure preset of a test preset,
     and `is_inherited` tells that a plain test preset gets the tier of its
-    configure preset.
+    configure preset.  `is_repeated` tells that a test preset runs each test
+    again (assay.readers.cmake, TestPreset).
     """
 
     kind: PresetKind
@@ -123,6 +124,7 @@ class PresetTier:
     configure: str = ""
     is_inherited: bool = False
     problem: str = ""
+    is_repeated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,8 +242,12 @@ def read_test(test: cmake.TestPreset, configure: Mapping[str, PresetTier]) -> Pr
         )
     block = read_block(PresetKind.TEST, test.name, test.vendor)
     if isinstance(block, str):
-        return PresetTier(PresetKind.TEST, test.name, None, configure=parent_name, problem=block)
-    return PresetTier(PresetKind.TEST, test.name, block.tier, block.reason, configure=parent_name)
+        return PresetTier(
+            PresetKind.TEST, test.name, None, configure=parent_name, problem=block, is_repeated=test.is_repeated
+        )
+    return PresetTier(
+        PresetKind.TEST, test.name, block.tier, block.reason, configure=parent_name, is_repeated=test.is_repeated
+    )
 
 
 def read(root: Path) -> Tiers:
