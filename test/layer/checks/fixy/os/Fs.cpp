@@ -4,12 +4,18 @@
 
 namespace fixy::fs::detail::fs_surface_invariants {
 
-static_assert(open_mode_flags_of(^^open_mode::ReadOnly) == O_RDONLY);
-static_assert(open_mode_flags_of(^^open_mode::WriteTruncate) == (O_WRONLY | O_CREAT | O_TRUNC));
-static_assert(open_mode_flags_of(^^open_mode::WriteAppend) == (O_WRONLY | O_CREAT | O_APPEND));
-static_assert(flag_bits_of(^^flag::CloseOnExec) == O_CLOEXEC);
-static_assert(flag_bits_of(^^flag::NoFollow) == O_NOFOLLOW);
-static_assert(flag_bits_of(^^flag::FullSync) == O_SYNC);
+// The words of foundation/os/OpenFlags.h, which src/foundation/os/Syscall.cpp
+// compares with the O_* words of <linux/fcntl.h>.
+namespace word = ::foundation::os;
+
+static_assert(open_mode_flags_of(^^open_mode::ReadOnly) == word::kOpenReadOnly);
+static_assert(open_mode_flags_of(^^open_mode::WriteTruncate)
+              == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate));
+static_assert(open_mode_flags_of(^^open_mode::WriteAppend)
+              == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenAppend));
+static_assert(flag_bits_of(^^flag::CloseOnExec) == word::kOpenCloseOnExec);
+static_assert(flag_bits_of(^^flag::NoFollow) == word::kOpenNoFollow);
+static_assert(flag_bits_of(^^flag::FullSync) == word::kOpenFullSync);
 
 using A_RO = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 using A_Trunc = ::fixy::atom::fs::mode<open_mode::WriteTruncate>;
@@ -22,9 +28,12 @@ static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode, A_NoFol
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode>);
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode, A_RO, A_Trunc>);
 
-static_assert(fold_open_flags<A_RO>() == (O_RDONLY | O_CLOEXEC));
-static_assert(fold_open_flags<A_Trunc, A_NoFollow>() == (O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC));
-static_assert(fold_open_flags<A_Trunc, A_Fsync, A_Rename>() == (O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC),
+static_assert(fold_open_flags<A_RO>() == (word::kOpenReadOnly | word::kOpenCloseOnExec));
+static_assert(fold_open_flags<A_Trunc, A_NoFollow>()
+              == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | word::kOpenNoFollow
+                  | word::kOpenCloseOnExec));
+static_assert(fold_open_flags<A_Trunc, A_Fsync, A_Rename>()
+                  == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | word::kOpenCloseOnExec),
               "durable and atomic_write atoms declare intent and add no open flag.");
 
 // A tag with no row in a table has no bits.  A read of them is a

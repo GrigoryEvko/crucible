@@ -4,9 +4,11 @@
 
 namespace fixy::mmap::detail::mmap_surface_invariants {
 
-static_assert(advice_value_of(^^advice::DontNeed) == MADV_DONTNEED);
-static_assert(advice_value_of(^^advice::HugePage) == MADV_HUGEPAGE);
-static_assert(advice_value_of(^^advice::Free) == MADV_FREE);
+// The words of foundation/os/MapWords.h, which src/foundation/os/Syscall.cpp
+// compares with the MADV_* words of <linux/mman.h>.
+static_assert(advice_value_of(^^advice::DontNeed) == ::foundation::os::kAdviseDontNeed);
+static_assert(advice_value_of(^^advice::HugePage) == ::foundation::os::kAdviseHugePage);
+static_assert(advice_value_of(^^advice::Free) == ::foundation::os::kAdviseFree);
 
 static_assert(DiscardsPages<advice::DontNeed>);
 static_assert(DiscardsPages<advice::Free>, "Free lets the kernel drop the pages before the next write.");

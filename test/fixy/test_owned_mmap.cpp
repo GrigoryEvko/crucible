@@ -121,7 +121,7 @@ int check_live_mapping() {
     auto r = std::move(*mapped);
     void* const addr = r.data();
     if (!r.is_mapped()) return 10;
-    if (addr == MAP_FAILED) return 11;
+    if (addr == nullptr) return 11;
     if (r.size() != len) return 12;
 
     // The destructor unmaps.  A second region moved from this one must
@@ -177,7 +177,7 @@ int check_empty_state() {
     Region empty{};
     if (empty.is_mapped()) return 40;
     if (empty.size() != 0u) return 41;
-    if (empty.data() != MAP_FAILED) return 42;
+    if (empty.data() != nullptr) return 42;
 
     Region moved = std::move(empty);
     if (moved.is_mapped()) return 43;
@@ -187,7 +187,7 @@ int check_empty_state() {
     if (assigned.is_mapped()) return 44;
 
     auto [addr, len] = std::move(assigned).release(SampleLeak{});
-    if (addr != MAP_FAILED) return 45;
+    if (addr != nullptr) return 45;
     if (len != 0u) return 46;
 
     return 0;

@@ -268,14 +268,14 @@ door <linux/time_types.h> src/foundation/os/Syscall.cpp
 door <errno.h> src/foundation/os/Intercepted.cpp
 door <unistd.h> src/foundation/os/Intercepted.cpp
 door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
-door <linux/io_uring.h> include/fixy/os/Io.h
-door <sys/sendfile.h> include/fixy/os/Io.h
+door <asm/stat.h> src/fixy/os/Fs.cpp
+door <linux/fs.h> src/fixy/os/Fs.cpp
+door <linux/io_uring.h> src/fixy/os/Io.cpp
 door <linux/mempolicy.h> include/fixy/os/NumaPlacement.h
 door <sys/resource.h> include/fixy/os/Sched.h
 door <linux/netlink.h> include/fixy/os/Socket.h
 door <sys/socket.h> include/fixy/os/Socket.h
 door <linux/ptp_clock.h> include/fixy/os/Time.h
-door <sys/ioctl.h> include/fixy/os/Time.h
 door <pthread.h> src/fixy/os/ThreadTasks.cpp
 door <signal.h> src/fixy/os/Signal.cpp
 door <stdlib.h> src/fixy/os/ExitHooks.cpp
@@ -680,7 +680,7 @@ witness <fixy/os/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::R
 # exists.
 witness <fixy/os/OwnedFile.h> private | fixy::OwnedFile | fixy::OwnedFile{stdout}
 witness <fixy/os/OwnedFile.h> deleted | fixy::OwnedFileDoor | fixy::OwnedFileDoor{}
-witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}}
+witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # The three doors of OwnedFd.  No object of a door exists, its members
 # are private, and its friends are the gated mints that open a descriptor.

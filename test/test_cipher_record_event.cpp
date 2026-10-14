@@ -11,6 +11,7 @@
 #include <fixy/os/Time.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
+#include "scratch_dir.h"
 #include "test_assert.h"
 
 #include <charconv>
@@ -483,11 +484,10 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
 }
 
 int main() {
-    // Use a per-process temp dir so the test is hermetic.
-    const auto tmpl =
-        std::filesystem::temp_directory_path() / ("crucible_test_record_event_" + std::to_string(::getpid()));
-    std::filesystem::create_directories(tmpl);
-    const std::string base = tmpl.string();
+    // A scratch directory of this process, so the test is hermetic.
+    const crucible::test::ScratchDir scratch{"crucible_test_record_event"};
+    assert(scratch.is_ready());
+    const std::string base = scratch.path();
 
     ::fixy::report(::fixy::Sink::Out, "test_cipher_record_event\n");
     test_t01_required_row_pinned();
@@ -507,9 +507,6 @@ int main() {
     test_external_visibility();
     test_canonical_row_acceptance(base.c_str());
     test_pre_clause_orthogonal(base.c_str());
-
-    std::error_code ec;
-    std::filesystem::remove_all(tmpl, ec);
 
     crucible::test::pass("test_cipher_record_event: 16 groups, all passed\n");
     return 0;

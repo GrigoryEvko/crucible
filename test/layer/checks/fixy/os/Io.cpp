@@ -4,11 +4,13 @@
 
 namespace fixy::io::detail::io_surface_invariants {
 
-static_assert(ring_flag_bits_of(^^ring_flag::IoPoll) == IORING_SETUP_IOPOLL);
-static_assert(ring_flag_bits_of(^^ring_flag::SqPoll) == IORING_SETUP_SQPOLL);
-static_assert(ring_flag_bits_of(^^ring_flag::SingleIssuer) == IORING_SETUP_SINGLE_ISSUER);
-static_assert(ring_flag_bits_of(^^ring_flag::CoopTaskrun) == IORING_SETUP_COOP_TASKRUN);
-static_assert(ring_flag_bits_of(^^ring_flag::DeferTaskrun) == IORING_SETUP_DEFER_TASKRUN);
+// The IORING_SETUP_* bits of fixy/os/Io.h, which src/fixy/os/Io.cpp
+// compares with <linux/io_uring.h>.
+static_assert(ring_flag_bits_of(^^ring_flag::IoPoll) == ring_setup_io_poll);
+static_assert(ring_flag_bits_of(^^ring_flag::SqPoll) == ring_setup_sq_poll);
+static_assert(ring_flag_bits_of(^^ring_flag::SingleIssuer) == ring_setup_single_issuer);
+static_assert(ring_flag_bits_of(^^ring_flag::CoopTaskrun) == ring_setup_coop_taskrun);
+static_assert(ring_flag_bits_of(^^ring_flag::DeferTaskrun) == ring_setup_defer_taskrun);
 
 static_assert(EngineIsIoUring<engine::IoUring>);
 static_assert(SimpleTransfer<zerocopy::CopyFileRange>);
@@ -64,7 +66,7 @@ static_assert(cq_entries_of_v<A_Engine, A_Sq8, A_Cq16> == 16);
 // and two different flags fold together.
 static_assert(::fixy::atom_pack::RepeatsAnAtomOf<^^::fixy::atom::io::ring_flag, A_IoPoll, A_IoPoll>);
 static_assert(!::fixy::atom_pack::RepeatsAnAtomOf<^^::fixy::atom::io::ring_flag, A_IoPoll, A_SqPoll>);
-static_assert(fold_ring_flags<A_IoPoll, A_SqPoll>() == (IORING_SETUP_IOPOLL | IORING_SETUP_SQPOLL));
+static_assert(fold_ring_flags<A_IoPoll, A_SqPoll>() == (ring_setup_io_poll | ring_setup_sq_poll));
 static_assert(all_ring_flags_known_v<A_Engine, A_Sq8, A_IoPoll>);
 static_assert(!all_ring_flags_known_v<A_Engine, A_Sq8, A_FutureFlag>);
 
@@ -113,8 +115,7 @@ static_assert(std::is_nothrow_move_constructible_v<IoUringRing>);
 static_assert(std::is_nothrow_move_assignable_v<IoUringRing>);
 static_assert(!std::is_copy_constructible_v<IoUringRing>);
 static_assert(!std::is_copy_assignable_v<IoUringRing>);
-static_assert(!std::is_constructible_v<IoUringRing, int, void*, std::size_t, void*, std::size_t, void*, std::size_t,
-                                       std::uint32_t, std::uint32_t>,
+static_assert(!std::is_constructible_v<IoUringRing, ::fixy::io::detail::RingParts const&>,
               "the constructor that claims a descriptor and three mappings must not be public: a caller who never "
               "called io_uring_setup could hand it numbers and the destructor would close and unmap them.");
 

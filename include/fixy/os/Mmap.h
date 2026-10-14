@@ -34,6 +34,7 @@
 //     so a mapping has an identity past its tag.
 
 #include <fixy/os/OwnedMmap.h>
+#include <fixy/os/Fd.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
@@ -42,33 +43,15 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/os/Errno.h>
+#include <foundation/os/MapWords.h>
 
-#include <sys/mman.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstddef>
 #include <expected>
 #include <meta>
 #include <system_error>
 #include <type_traits>
 #include <utility>
-
-// A libc header older than a flag does not declare it, so each value is
-// spelled here as well.
-
-#ifndef MADV_COLLAPSE
-#define MADV_COLLAPSE 25  // Linux 6.1 (2022-12).
-#endif
-#ifndef MADV_FREE
-#define MADV_FREE 8  // Linux 4.5 (2016-03).
-#endif
-#ifndef MADV_WIPEONFORK
-#define MADV_WIPEONFORK 18  // Linux 4.14 (2017-11).
-#endif
-#ifndef MADV_DONTDUMP
-#define MADV_DONTDUMP 16  // Linux 3.4 (2012-05).
-#endif
 
 namespace fixy::mmap {
 
@@ -88,17 +71,22 @@ namespace fixy::mmap {
 // door that maps, because that door calculates its bits from the type of
 // the region that it builds.
 
-// The MADV_* value of each advice tag.  A tag reaches madvise only
-// through a row of this table, and fixy/os/AtomPack.h says why a table
-// is closed.  A class template map takes a specialization for a class of
-// the caller, and the plain surface can then discard pages under a tag
-// that it does not know.
+// The MADV_* value of each advice tag, with the values of
+// foundation/os/MapWords.h.  A tag reaches madvise only through a row of
+// this table, and fixy/os/AtomPack.h says why a table is closed.  A class
+// template map takes a specialization for a class of the caller, and the
+// plain surface can then discard pages under a tag that it does not know.
 inline constexpr ::fixy::atom_pack::tag_row<int> advice_table[] = {
-    {^^advice::HugePage, MADV_HUGEPAGE},     {^^advice::NoHugePage, MADV_NOHUGEPAGE},
-    {^^advice::Collapse, MADV_COLLAPSE},     {^^advice::Sequential, MADV_SEQUENTIAL},
-    {^^advice::Random, MADV_RANDOM},         {^^advice::WillNeed, MADV_WILLNEED},
-    {^^advice::DontNeed, MADV_DONTNEED},     {^^advice::Free, MADV_FREE},
-    {^^advice::WipeOnFork, MADV_WIPEONFORK}, {^^advice::DontDump, MADV_DONTDUMP},
+    {^^advice::HugePage, ::foundation::os::kAdviseHugePage},
+    {^^advice::NoHugePage, ::foundation::os::kAdviseNoHugePage},
+    {^^advice::Collapse, ::foundation::os::kAdviseCollapse},
+    {^^advice::Sequential, ::foundation::os::kAdviseSequential},
+    {^^advice::Random, ::foundation::os::kAdviseRandom},
+    {^^advice::WillNeed, ::foundation::os::kAdviseWillNeed},
+    {^^advice::DontNeed, ::foundation::os::kAdviseDontNeed},
+    {^^advice::Free, ::foundation::os::kAdviseFree},
+    {^^advice::WipeOnFork, ::foundation::os::kAdviseWipeOnFork},
+    {^^advice::DontDump, ::foundation::os::kAdviseDontDump},
 };
 
 template <typename Advice>
@@ -114,7 +102,8 @@ concept KnownAdvice = ::fixy::atom_pack::has_row(advice_table, ^^Advice);
 // pages.  The rule reads the value and not the tag, so it holds for each
 // row of the table.  MADV_REMOVE frees the backing store as well.
 [[nodiscard]] consteval bool discards_pages(int madvise_value) noexcept {
-    return madvise_value == MADV_DONTNEED || madvise_value == MADV_FREE || madvise_value == MADV_REMOVE;
+    return madvise_value == ::foundation::os::kAdviseDontNeed || madvise_value == ::foundation::os::kAdviseFree
+        || madvise_value == ::foundation::os::kAdviseRemove;
 }
 
 template <typename Advice>
@@ -369,11 +358,10 @@ template <typename Advice, typename Tag, typename Prot, typename Share, typename
     requires CtxFitsSafeAdvise<Ctx, Advice>
 [[nodiscard]] inline std::expected<void, std::error_code> advise(Ctx const&,
                                                                  OwnedMmap<Tag, Prot, Share, Brand>& region) noexcept {
-    if (!region.is_mapped()) {
-        return std::unexpected{std::error_code{EINVAL, std::system_category()}};
-    }
-    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice)) < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    // The door gives EINVAL for a region that is not mapped.
+    if (auto const advised = detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
+        advised.is_err()) {
+        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(advised), std::system_category()}};
     }
     return {};
 }
@@ -410,11 +398,10 @@ template <typename Advice, typename Tag, typename Prot, typename Share, typename
 [[nodiscard]] inline std::expected<void, std::error_code>
 advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
                      Proof const& /*exclusive_proof*/) noexcept {
-    if (!region.is_mapped()) {
-        return std::unexpected{std::error_code{EINVAL, std::system_category()}};
-    }
-    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice)) < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    // The door gives EINVAL for a region that is not mapped.
+    if (auto const advised = detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
+        advised.is_err()) {
+        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(advised), std::system_category()}};
     }
     return {};
 }

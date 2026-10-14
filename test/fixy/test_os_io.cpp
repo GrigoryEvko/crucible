@@ -24,8 +24,6 @@
 #include "../scratch_dir.h"
 
 #include <linux/io_uring.h>
-#include <sys/mman.h>
-#include <unistd.h>
 
 #include <cerrno>
 #include <cstddef>
@@ -141,15 +139,15 @@ struct TransferFiles final {
 
     // All three mappings have to be real, and the submission-entry array
     // has to be big enough to hold the entries the ring claims.
-    if (handle.sq_ring() == MAP_FAILED || handle.sq_ring() == nullptr) {
+    if (handle.sq_ring() == nullptr) {
         std::fprintf(stderr, "the submission ring is not mapped\n");
         return 1;
     }
-    if (handle.cq_ring() == MAP_FAILED || handle.cq_ring() == nullptr) {
+    if (handle.cq_ring() == nullptr) {
         std::fprintf(stderr, "the completion ring is not mapped\n");
         return 1;
     }
-    if (handle.sqes() == MAP_FAILED || handle.sqes() == nullptr) {
+    if (handle.sqes() == nullptr) {
         std::fprintf(stderr, "the submission-entry array is not mapped\n");
         return 1;
     }

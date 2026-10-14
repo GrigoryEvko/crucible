@@ -6,9 +6,19 @@
 // A raw call has no fallback of the C library, so an older kernel gives
 // ENOSYS where the C library gave a result.  minimum_kernel() gives the
 // largest release that a call of the enumeration Syscall needs on the
-// architecture of the build.  The door file src/foundation/os/Syscall.cpp
-// gives the release of each enumerator and derives the minimum from them.  A
-// new enumerator with a newer release raises the minimum with no other edit.
+// architecture of the build, other than a feature call.  The door file
+// src/foundation/os/Syscall.cpp gives the release of each enumerator and
+// derives the minimum from them.  A new enumerator with a newer release
+// raises the minimum with no other edit.
+//
+// THE FEATURE CALLS
+//   A feature call is a call that the caller of a door chooses, and that no
+//   other door needs: renameat2 for the commit that refuses an existing
+//   target, copy_file_range for the copy between two files, and
+//   io_uring_setup for the ring of io_uring.  Its door gives the error enosys
+//   of an older kernel to its caller in the Result of the door.  An older
+//   kernel then refuses the feature and not the process, so the minimum does
+//   not count the release of a feature call.
 //
 // The start-up check is a function of that door file that the loader runs
 // before main, and before the constructors of the other objects, in each

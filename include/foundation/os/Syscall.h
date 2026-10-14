@@ -69,12 +69,24 @@ enum class Syscall : std::uint8_t {
     mmap,
     mprotect,
     munmap,
+    fsync,
+    fdatasync,
+    fstat,
+    renameat,
+    renameat2,
+    madvise,
+    sendfile,
+    copy_file_range,
+    io_uring_setup,
+    ioctl,
 };
 
 // True when the call can wait with no bound for another thread or process,
 // for example a read of an empty pipe, a write to a full one, or a futex
 // wait.  In a build with ThreadSanitizer, the primitive tells the sanitizer
-// of such a call (THE SANITIZERS).
+// of such a call (THE SANITIZERS).  An ioctl waits only for a request that
+// waits, and the door of fixy/os/Fd.h sends only a request that the kernel
+// answers at once.
 [[nodiscard]] constexpr bool can_block(Syscall call) noexcept {
     return call == Syscall::read || call == Syscall::write || call == Syscall::futex;
 }

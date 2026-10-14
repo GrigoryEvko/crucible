@@ -20,11 +20,14 @@
 // SA_NODEFER, so the next tick still arrives, and its violation is the
 // second one on the thread.
 
+#include <fixy/Ctx.h>
+#include <fixy/os/Time.h>
 #include <foundation/contracts/Pre.h>
 
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <string_view>
@@ -32,7 +35,6 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
 
 namespace {
@@ -91,14 +93,16 @@ template <typename Body>
     }
     ::close(channel[1]);
     int status = 0;
-    const ::timespec pause{0, 10000000};
+    constexpr std::uint64_t pause_nanos = 10000000;
+    fixy::TestRunnerCtx const runner{foundation::effects::testing::test()};
+    auto const pause = fixy::time::mint_bounded_sleep<pause_nanos>(runner);
     for (int tick = 0; tick < 1000; ++tick) {
         const ::pid_t reaped = ::waitpid(child, &status, WNOHANG);
         if (reaped == child) {
             result.ended_in_time = true;
             break;
         }
-        ::nanosleep(&pause, nullptr);
+        static_cast<void>(pause.sleep_for(pause_nanos));
     }
     if (!result.ended_in_time) {
         ::kill(child, SIGKILL);

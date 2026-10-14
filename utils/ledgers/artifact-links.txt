@@ -121,11 +121,9 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | version | 1 | libc.so.6 GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.24 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.27 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tests | version | 1 | libc.so.6 GLIBC_2.28 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.3.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.32 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tests | version | 1 | libc.so.6 GLIBC_2.33 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.38 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libc.so.6 GLIBC_2.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -229,7 +227,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tools | version | 1 | libbpf.so.1 LIBBPF_0.6.0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | version | 1 | libc.so.6 GLIBC_2.33 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.38 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libc.so.6 GLIBC_2.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -405,9 +402,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | memcpy | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | memmove | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | memset | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | mmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | munmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | open@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_attr_destroy@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_attr_init@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_attr_setaffinity_np@GLIBC_2.32 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -417,7 +411,6 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | import | 1 | pthread_join | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_self@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | import | 1 | read | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_setaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | sched_yield@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -619,14 +612,12 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-tsan | @build/tests | needed | +1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tests | needed | -1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tests | static-member | -1 | libc_nonshared.a(atexit.oS) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-tsan | @build/tests | version | -1 | libc.so.6 GLIBC_2.33 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tests | version | -1 | libc.so.6 GLIBC_2.7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | init | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | init | +1 | __tsan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | needed | -1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | needed | +1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-tsan | @build/tools | version | -1 | libc.so.6 GLIBC_2.33 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/tools | version | -1 | libm.so.6 GLIBC_2.27 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -712,8 +703,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-tsan | @build/vessel | import | -1 | abort@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | +1 | close | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | import | -1 | close@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-tsan | @build/vessel | import | +1 | open | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-tsan | @build/vessel | import | -1 | open@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-debug-tsan | @build/vessel | import | +1 | read | -
 @x86_64-debug-tsan | @build/vessel | import | +1 | write | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-tsan | @build/vessel | needed | -1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -850,18 +840,12 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | memmove@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | memset | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | memset@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | mmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | mmap@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | munmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | munmap@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | pthread_create | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | pthread_create@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | pthread_join | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | -1 | read | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | read@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | -1 | sigaltstack | -
@@ -1000,18 +984,12 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-release | @build/vessel | import | +1 | memmove@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | memset | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | memset@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | mmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | mmap@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | munmap | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | munmap@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | pthread_create | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | pthread_create@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | pthread_join | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | read | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | read@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | sched_getaffinity | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | +1 | sched_getaffinity@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-release | @build/vessel | import | -1 | sigaltstack | -

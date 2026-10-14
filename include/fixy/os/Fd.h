@@ -8,17 +8,22 @@
 // the gate, includes this header and does not pay for that parse.
 //
 // The handle has a private constructor, and three door classes make the
-// ::open and ::socket calls: FileDoor in fixy/os/Fs.h, SocketDoor in
+// open and socket calls: FileDoor in fixy/os/Fs.h, SocketDoor in
 // fixy/os/Socket.h and PtpDeviceDoor in fixy/os/Time.h.  The members of
 // each door are private, and its friends are the gated mints that use
 // it.  So a descriptor that is owned is a descriptor the kernel handed
 // out to a gated mint.
+//
+// The door file src/fixy/os/Fd.cpp holds the open, the close and the query
+// of a descriptor.  It issues them with the raw primitive of
+// foundation/os/Syscall.h, so this header includes no system header.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
 
-#include <unistd.h>
-
+#include <cstdint>
 #include <utility>
 
 namespace fixy::fs {
@@ -26,6 +31,44 @@ namespace fixy::fs {
 namespace eff = ::foundation::effects;
 
 class FileDoor;
+
+namespace detail {
+
+// Opens PATH, which a zero ends, relative to the current directory with the
+// open flags FLAGS of foundation/os/OpenFlags.h.  The kernel reads MODE, the
+// permission bits of a file that the open makes, only when FLAGS holds
+// kOpenCreate.  The result is the descriptor, or the error of the kernel.  A
+// door class of OwnedFd is the one caller that keeps the descriptor.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_descriptor_(char const* path, int flags,
+                                                                                        std::uint32_t mode) noexcept;
+
+// Closes DESCRIPTOR.  The kernel releases the descriptor also when the close
+// reports an error, so the caller has no error that it can act on, and the
+// door does not report one.
+void close_descriptor_(int descriptor) noexcept;
+
+// Sends the ioctl request REQUEST to DESCRIPTOR, with the address ARGUMENT
+// of the memory that the request reads or writes.  The door is only for a
+// request that the kernel answers at once, such as a query of the
+// capabilities of a device, because the primitive tells ThreadSanitizer of
+// no wait for an ioctl (THE SANITIZERS of foundation/os/Syscall.h).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcept;
+
+// The error number of the error of FAILED, a Result of a door that holds an
+// error.  The calls of fixy/os give it to a std::error_code of the system
+// category.  Each caller reads only a Result that holds an error, so the EIO
+// of a Result with a value is not a path of the tree.
+template <class T>
+[[nodiscard]] constexpr int
+error_number_of_(::foundation::core::Result<T, ::foundation::os::Errno> const& failed) noexcept {
+    return std::to_underlying(failed.err().value_or(::foundation::os::Errno::eio));
+}
+
+// The error number of a call on a handle that holds no descriptor.
+inline constexpr int closed_handle_error = std::to_underlying(::foundation::os::Errno::ebadf);
+
+}  // namespace detail
 
 }  // namespace fixy::fs
 
@@ -96,7 +139,7 @@ public:
 private:
     void close_() noexcept {
         if (fd_ >= 0) {
-            ::close(fd_);
+            detail::close_descriptor_(fd_);
             fd_ = -1;
         }
     }

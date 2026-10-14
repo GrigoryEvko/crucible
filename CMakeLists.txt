@@ -444,7 +444,11 @@ target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
   src/fixy/os/ExitHooks.cpp
+  src/fixy/os/Fd.cpp
+  src/fixy/os/Fs.cpp
   src/fixy/os/Futex.cpp
+  src/fixy/os/Io.cpp
+  src/fixy/os/Mmap.cpp
   src/fixy/os/MonotonicClock.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
@@ -720,15 +724,16 @@ if (CRUCIBLE_HAVE_BPF)
     ${_CRUCIBLE_PERF_SOURCES}
     ${_CRUCIBLE_BPF_EMBED_SOURCES})
   target_include_directories(crucible_perf PUBLIC include/)
-  # crucible_perf links foundation, and foundation links crucible_dialect,
-  # so the perf sources compile under the dialect of every other target:
-  # the warning set, -Werror, the hardening flags, the FP floor and the
-  # contract semantic of the build.  The link also puts libfoundation.a
-  # after libcrucible_perf.a on every consumer's link line, so the
-  # contract handler that the perf contract clauses call resolves.  The
+  # crucible_perf links fixy, fixy links foundation, and foundation links
+  # crucible_dialect, so the perf sources compile under the dialect of every
+  # other target: the warning set, -Werror, the hardening flags, the FP floor
+  # and the contract semantic of the build.  The link also puts libfixy.a
+  # and libfoundation.a after libcrucible_perf.a on every consumer's link
+  # line.  So the map door of fixy/os/OwnedMmap.h, in libfixy.a, and the
+  # contract handler that the perf contract clauses call resolve.  The
   # embed units of the BPF objects (cmake/CrucibleBpf.cmake) compile with
   # the same warning set.
-  target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF foundation)
+  target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF fixy)
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
   endif()
@@ -797,11 +802,12 @@ target_link_libraries(crucible PUBLIC crucible_vigil)
 # streams, std::filesystem and its resident cache hold the throws of a failed
 # allocation, which the rule artifact-symbols reads in each static library
 # and admits.  The Vigil runtime opens the store, so it links
-# this library.
+# this library.  The store writes its files through the file door of
+# fixy/os/Fs.h, whose system calls are in libfixy.a, so it links fixy.
 add_library(crucible_cipher STATIC src/Cipher.cpp)
 target_include_directories(crucible_cipher PUBLIC include/)
 target_compile_definitions(crucible_cipher PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
-target_link_libraries(crucible_cipher PUBLIC foundation)
+target_link_libraries(crucible_cipher PUBLIC fixy)
 target_link_libraries(crucible_vigil PUBLIC crucible_cipher)
 target_link_libraries(crucible PUBLIC crucible_cipher)
 

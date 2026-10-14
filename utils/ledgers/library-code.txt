@@ -319,55 +319,30 @@ include/fixy/os/CpuPinned.h | inlined | 1 | std::array::operator[] | -
 include/fixy/os/CpuPinned.h | inlined | 1 | std::exchange | -
 include/fixy/os/CpuPinned.h | inlined | 2 | std::expected::expected | -
 include/fixy/os/CpuPinned.h | inlined | 1 | std::unexpected::unexpected | -
-include/fixy/os/Fd.h | call | 1 | close | -
 include/fixy/os/Fd.h | inlined | 2 | std::exchange | -
-include/fixy/os/Fs.h | call | 7 | __errno_location | -
-include/fixy/os/Fs.h | call | 1 | fdatasync | -
-include/fixy/os/Fs.h | call | 1 | fstat | -
-include/fixy/os/Fs.h | call | 1 | fsync | -
-include/fixy/os/Fs.h | call | 1 | rename | -
-include/fixy/os/Fs.h | call | 1 | renameat2 | -
-include/fixy/os/Fs.h | call | 11 | std::system_category | -
-include/fixy/os/Fs.h | call | 1 | write | -
-include/fixy/os/Fs.h | inlined | 2 | open | -
-include/fixy/os/Fs.h | inlined | 1 | read | -
-include/fixy/os/Fs.h | inlined | 11 | std::error_code::error_code | -
-include/fixy/os/Fs.h | inlined | 2 | std::expected::error | -
-include/fixy/os/Fs.h | inlined | 19 | std::expected::expected | -
-include/fixy/os/Fs.h | inlined | 2 | std::expected::operator (conversion) | -
-include/fixy/os/Fs.h | inlined | 2 | std::expected::operator* | -
-include/fixy/os/Fs.h | inlined | 2 | std::expected::~expected | -
+include/fixy/os/Fs.h | call | 7 | std::system_category | -
+include/fixy/os/Fs.h | inlined | 7 | std::error_code::error_code | -
+include/fixy/os/Fs.h | inlined | 11 | std::expected::expected | -
 include/fixy/os/Fs.h | inlined | 4 | std::filesystem::path::c_str | -
 include/fixy/os/Fs.h | inlined | 2 | std::span::data | -
 include/fixy/os/Fs.h | inlined | 2 | std::span::size | -
-include/fixy/os/Fs.h | inlined | 13 | std::unexpected::unexpected | -
+include/fixy/os/Fs.h | inlined | 7 | std::unexpected::unexpected | -
 include/fixy/os/Futex.h | inlined | 1 | std::error_code::value | -
 include/fixy/os/Futex.h | inlined | 1 | std::expected::has_value | -
-include/fixy/os/Io.h | call | 5 | __errno_location | -
-include/fixy/os/Io.h | call | 4 | close | -
-include/fixy/os/Io.h | call | 1 | copy_file_range | -
-include/fixy/os/Io.h | call | 3 | mmap | -
-include/fixy/os/Io.h | call | 6 | munmap | -
-include/fixy/os/Io.h | call | 1 | sendfile | -
-include/fixy/os/Io.h | call | 6 | std::system_category | -
-include/fixy/os/Io.h | call | 1 | syscall | -
-include/fixy/os/Io.h | inlined | 6 | std::error_code::error_code | -
-include/fixy/os/Io.h | inlined | 9 | std::exchange | -
-include/fixy/os/Io.h | inlined | 8 | std::expected::expected | -
-include/fixy/os/Io.h | inlined | 6 | std::unexpected::unexpected | -
-include/fixy/os/Mmap.h | call | 2 | __errno_location | -
-include/fixy/os/Mmap.h | call | 2 | madvise | -
-include/fixy/os/Mmap.h | call | 3 | std::error_code::error_code | -
-include/fixy/os/Mmap.h | call | 4 | std::expected::expected | -
-include/fixy/os/Mmap.h | call | 4 | std::system_category | -
-include/fixy/os/Mmap.h | call | 3 | std::unexpected::unexpected | -
-include/fixy/os/Mmap.h | inlined | 1 | std::error_code::error_code | -
+include/fixy/os/Io.h | call | 3 | std::system_category | -
+include/fixy/os/Io.h | inlined | 3 | std::error_code::error_code | -
+include/fixy/os/Io.h | inlined | 5 | std::expected::expected | -
+include/fixy/os/Io.h | inlined | 3 | std::unexpected::unexpected | -
+include/fixy/os/Mmap.h | call | 2 | std::error_code::error_code | -
+include/fixy/os/Mmap.h | call | 1 | std::expected::expected | -
+include/fixy/os/Mmap.h | call | 2 | std::system_category | -
+include/fixy/os/Mmap.h | call | 2 | std::unexpected::unexpected | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::error | -
 include/fixy/os/Mmap.h | inlined | 5 | std::expected::expected | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator (conversion) | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::operator* | -
 include/fixy/os/Mmap.h | inlined | 2 | std::expected::~expected | -
-include/fixy/os/Mmap.h | inlined | 3 | std::unexpected::unexpected | -
+include/fixy/os/Mmap.h | inlined | 2 | std::unexpected::unexpected | -
 include/fixy/os/NumaPlacement.h | call | 1 | __errno_location | -
 include/fixy/os/NumaPlacement.h | call | 1 | std::system_category | -
 include/fixy/os/NumaPlacement.h | call | 1 | syscall | -
@@ -383,12 +358,7 @@ include/fixy/os/OwnedFile.h | call | 1 | tmpfile | -
 include/fixy/os/OwnedFile.h | inlined | 4 | std::exchange | -
 include/fixy/os/OwnedFile.h | inlined | 4 | std::expected::expected | -
 include/fixy/os/OwnedFile.h | inlined | 2 | std::unexpected::unexpected | -
-include/fixy/os/OwnedMmap.h | call | 1 | __errno_location | -
-include/fixy/os/OwnedMmap.h | call | 1 | mmap | -
-include/fixy/os/OwnedMmap.h | call | 1 | munmap | -
-include/fixy/os/OwnedMmap.h | call | 1 | std::error_code::error_code | -
 include/fixy/os/OwnedMmap.h | call | 1 | std::system_category | -
-include/fixy/os/OwnedMmap.h | call | 1 | std::unexpected::unexpected | -
 include/fixy/os/OwnedMmap.h | inlined | 1 | std::error_code::error_code | -
 include/fixy/os/OwnedMmap.h | inlined | 6 | std::exchange | -
 include/fixy/os/OwnedMmap.h | inlined | 2 | std::expected::expected | -
@@ -440,12 +410,10 @@ include/fixy/os/Socket.h | inlined | 2 | std::unexpected::unexpected | -
 include/fixy/os/SpinLock.h | inlined | 1 | std::atomic_flag::clear | -
 include/fixy/os/SpinLock.h | inlined | 1 | std::atomic_flag::test | -
 include/fixy/os/SpinLock.h | inlined | 2 | std::atomic_flag::test_and_set | -
-include/fixy/os/Time.h | call | 4 | __errno_location | -
+include/fixy/os/Time.h | call | 2 | __errno_location | -
 include/fixy/os/Time.h | call | 2 | clock_gettime | -
 include/fixy/os/Time.h | call | 1 | clock_nanosleep | -
-include/fixy/os/Time.h | call | 1 | ioctl | -
 include/fixy/os/Time.h | call | 5 | std::system_category | -
-include/fixy/os/Time.h | inlined | 1 | open | -
 include/fixy/os/Time.h | inlined | 4 | std::array::operator[] | -
 include/fixy/os/Time.h | inlined | 5 | std::error_code::error_code | -
 include/fixy/os/Time.h | inlined | 1 | std::expected::error | -
@@ -862,36 +830,27 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/CipherDurable.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -1 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/os/CpuPinned.h | inlined | -2 | std::expected::expected | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | call | -3 | std::system_category | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -11 | std::error_code::error_code | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -8 | std::expected::expected | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator (conversion) | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | call | -1 | std::system_category | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -7 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::span::data | -
 @x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -2 | std::span::size | -
-@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -11 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Fs.h | inlined | -7 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
 @x86_64-debug-tsan | include/fixy/os/Futex.h | inlined | -1 | std::expected::has_value | -
-@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -6 | std::error_code::error_code | -
-@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -4 | std::exchange | -
-@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -6 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -3 | std::error_code::error_code | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -4 | std::expected::expected | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -3 | std::unexpected::unexpected | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -3 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Io.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -2 | std::error_code::error_code | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -1 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | call | -2 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | +3 | std::expected::expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | +1 | std::expected::expected | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -1 | std::expected::~expected | -
-@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::expected::~expected | -
+@x86_64-debug-tsan | include/fixy/os/Mmap.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -
-@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | call | -1 | std::error_code::error_code | -
-@x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | call | -1 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -4 | std::exchange | -
 @x86_64-debug-tsan | include/fixy/os/OwnedMmap.h | inlined | -1 | std::pair::pair | -
@@ -926,7 +885,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::operator* | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::expected::~expected | -
 @x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -1 | std::make_error_code | -
-@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -9 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/os/Time.h | inlined | -10 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/os/Topology.h | call | -2 | std::basic_string::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/os/Topology.h | call | -1 | std::vector::~vector | -
 @x86_64-debug-tsan | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::__normal_iterator::operator* | -
@@ -1080,15 +1039,15 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/handle/PublishOnce.h | inlined | -2 | std::atomic::load | -
 @x86_64-debug-ubsan-strict | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/os/CipherDurable.h | inlined | -3 | std::expected::operator* | -
-@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
-@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
-@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -1 | std::filesystem::path::c_str | -
+@x86_64-debug-ubsan-strict | include/fixy/os/Fs.h | inlined | -3 | std::filesystem::path::c_str | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | call | +1 | std::unexpected::unexpected | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Mmap.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedFile.h | inlined | -1 | std::exchange | -
+@x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | call | +1 | std::error_code::error_code | -
+@x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | call | +1 | std::unexpected::unexpected | -
 @x86_64-debug-ubsan-strict | include/fixy/os/OwnedMmap.h | inlined | -1 | std::span::data | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Path.h | inlined | -3 | std::expected::error | -
 @x86_64-debug-ubsan-strict | include/fixy/os/Sched.h | inlined | -3 | std::expected::error | -
@@ -1282,43 +1241,29 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/os/CpuPinned.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Fd.h | inlined | -1 | std::exchange | -
 @x86_64-release | include/fixy/os/Fs.h | call | -2 | std::system_category | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -11 | std::error_code::error_code | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::error | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -5 | std::expected::expected | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator (conversion) | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::operator* | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::expected::~expected | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -7 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -1 | std::expected::expected | -
 @x86_64-release | include/fixy/os/Fs.h | inlined | -4 | std::filesystem::path::c_str | -
 @x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::span::data | -
 @x86_64-release | include/fixy/os/Fs.h | inlined | -2 | std::span::size | -
-@x86_64-release | include/fixy/os/Fs.h | inlined | -11 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Fs.h | inlined | -7 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Futex.h | inlined | -1 | std::error_code::value | -
 @x86_64-release | include/fixy/os/Futex.h | inlined | -1 | std::expected::has_value | -
-@x86_64-release | include/fixy/os/Io.h | call | -1 | __errno_location | -
-@x86_64-release | include/fixy/os/Io.h | call | -1 | close | -
-@x86_64-release | include/fixy/os/Io.h | call | -1 | munmap | -
-@x86_64-release | include/fixy/os/Io.h | call | -1 | std::system_category | -
-@x86_64-release | include/fixy/os/Io.h | inlined | -6 | std::error_code::error_code | -
-@x86_64-release | include/fixy/os/Io.h | inlined | -7 | std::exchange | -
-@x86_64-release | include/fixy/os/Io.h | inlined | -1 | std::expected::expected | -
-@x86_64-release | include/fixy/os/Io.h | inlined | -6 | std::unexpected::unexpected | -
-@x86_64-release | include/fixy/os/Mmap.h | call | -3 | std::error_code::error_code | -
-@x86_64-release | include/fixy/os/Mmap.h | call | -4 | std::expected::expected | -
-@x86_64-release | include/fixy/os/Mmap.h | call | -1 | std::system_category | -
-@x86_64-release | include/fixy/os/Mmap.h | call | -3 | std::unexpected::unexpected | -
-@x86_64-release | include/fixy/os/Mmap.h | inlined | -1 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -3 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Io.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -2 | std::error_code::error_code | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -1 | std::expected::expected | -
+@x86_64-release | include/fixy/os/Mmap.h | call | -2 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::error | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -1 | std::expected::expected | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator (conversion) | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::operator* | -
 @x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::expected::~expected | -
-@x86_64-release | include/fixy/os/Mmap.h | inlined | -3 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Mmap.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-release | include/fixy/os/NumaPlacement.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/OwnedFile.h | inlined | -2 | std::exchange | -
 @x86_64-release | include/fixy/os/OwnedFile.h | inlined | -2 | std::expected::expected | -
-@x86_64-release | include/fixy/os/OwnedMmap.h | call | -1 | std::error_code::error_code | -
-@x86_64-release | include/fixy/os/OwnedMmap.h | call | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::error_code::error_code | -
 @x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -4 | std::exchange | -
 @x86_64-release | include/fixy/os/OwnedMmap.h | inlined | -1 | std::pair::pair | -
@@ -1354,7 +1299,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::operator (conversion) | -
 @x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::operator* | -
 @x86_64-release | include/fixy/os/Time.h | inlined | -1 | std::expected::~expected | -
-@x86_64-release | include/fixy/os/Time.h | inlined | -9 | std::unexpected::unexpected | -
+@x86_64-release | include/fixy/os/Time.h | inlined | -10 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/os/Topology.h | call | -2 | std::basic_string::operator (conversion) | -
 @x86_64-release | include/fixy/os/Topology.h | call | -1 | std::vector::~vector | -
 @x86_64-release | include/fixy/os/Topology.h | inlined | -3 | __gnu_cxx::__normal_iterator::operator* | -

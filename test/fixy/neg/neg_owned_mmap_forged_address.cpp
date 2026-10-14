@@ -1,5 +1,5 @@
 // OwnedMmap's destructor calls ::munmap on whatever address it holds,
-// and is_mapped() rejects only MAP_FAILED and nullptr.  A public
+// and is_mapped() rejects only nullptr.  A public
 // constructor over an address would therefore do two things at once: it
 // would let a caller claim a mapping it never made, and it would let the
 // caller name any address in the process for unmapping on scope exit.  A

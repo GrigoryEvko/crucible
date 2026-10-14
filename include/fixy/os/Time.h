@@ -22,6 +22,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/OpenFlags.h>
 #include <foundation/reflect/Instance.h>
 
 #include <array>
@@ -35,9 +36,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <fcntl.h>
 #include <linux/ptp_clock.h>
-#include <sys/ioctl.h>
 
 namespace fixy::time {
 
@@ -468,8 +467,10 @@ struct PtpClockReader final {
     // query names a device that is still open.
     [[nodiscard]] std::expected<::ptp_clock_caps, std::error_code> caps() const noexcept {
         ::ptp_clock_caps kernel_caps{};
-        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps) != 0) {
-            return std::unexpected{std::error_code{errno, std::system_category()}};
+        auto const queried = ::fixy::fs::detail::query_descriptor_(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps);
+        if (queried.is_err()) {
+            return std::unexpected{
+                std::error_code{::fixy::fs::detail::error_number_of_(queried), std::system_category()}};
         }
         return kernel_caps;
     }
@@ -516,11 +517,12 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        const int fd = ::open(path.data(), O_RDONLY | O_CLOEXEC);
-        if (fd < 0) {
-            return std::unexpected{errno};
+        auto opened = ::fixy::fs::detail::open_descriptor_(
+            path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0);
+        if (opened.is_err()) {
+            return std::unexpected{::fixy::fs::detail::error_number_of_(opened)};
         }
-        return ::fixy::fs::OwnedFd{fd};
+        return ::fixy::fs::OwnedFd{std::move(opened).expect("the descriptor door gave the descriptor of the open")};
     }
 };
 

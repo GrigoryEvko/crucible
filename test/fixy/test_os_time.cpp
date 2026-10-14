@@ -18,6 +18,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
+#include <foundation/Quarantine.h>
 
 #include <atomic>
 #include <cstdint>
@@ -31,9 +32,33 @@
 #include <type_traits>
 #include <utility>
 
+#include "../test_assert.h"
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a signal interrupts a thread that sleeps in the bounded sleeper")
 #include <pthread.h>
 #include <signal.h>
-#include "../test_assert.h"
+
+namespace {
+
+// The handler of SIGUSR1 does nothing.  It has no SA_RESTART, so a signal
+// ends a clock_nanosleep early with EINTR.
+void ignore_the_signal(int) noexcept {}
+
+[[nodiscard]] bool install_the_handler() noexcept {
+    struct ::sigaction action{};
+    action.sa_handler = &ignore_the_signal;
+    static_cast<void>(::sigemptyset(&action.sa_mask));
+    return ::sigaction(SIGUSR1, &action, nullptr) == 0;
+}
+
+// The id of a thread is an unsigned long on x86_64 and aarch64, so it fits in
+// a word of 64 bits.
+[[nodiscard]] std::uint64_t calling_thread() noexcept { return ::pthread_self(); }
+
+[[nodiscard]] bool send_the_signal(std::uint64_t thread) noexcept { return ::pthread_kill(thread, SIGUSR1) == 0; }
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace eff = foundation::effects;
 namespace ml = foundation::algebra::lattices;
@@ -169,27 +194,22 @@ using BgWitness = fixy::BgDrainCtx;
 // sleep ends, so the sleep is interrupted many times.  The sleep must
 // still last the full 50 ms.  The handler stays installed when the case
 // ends, so a signal that arrives late does not end the process.
-void ignore_the_signal(int) noexcept {}
-
 [[nodiscard]] int sleep_lasts_through_a_signal() {
     constexpr std::uint64_t sleep_nanos = 50000000;
     BlockWitness blocking{eff::testing::test()};
     BgWitness bg{eff::testing::bg()};
 
-    struct sigaction action{};
-    action.sa_handler = &ignore_the_signal;
-    ::sigemptyset(&action.sa_mask);
-    if (::sigaction(SIGUSR1, &action, nullptr) != 0) {
+    if (!install_the_handler()) {
         std::fprintf(stderr, "installing the SIGUSR1 handler failed\n");
         return 1;
     }
 
-    const ::pthread_t sleeping_thread = ::pthread_self();
+    const std::uint64_t sleeping_thread = calling_thread();
     std::atomic<bool> is_sleep_done{false};
     std::jthread signaller([sleeping_thread, &is_sleep_done, blocking] {
         auto pause = fixy::time::mint_bounded_sleep<1000000>(blocking);
         while (!is_sleep_done.load(std::memory_order_acquire)) {
-            (void)::pthread_kill(sleeping_thread, SIGUSR1);
+            (void)send_the_signal(sleeping_thread);
             (void)pause.sleep_for(1000000);
         }
     });

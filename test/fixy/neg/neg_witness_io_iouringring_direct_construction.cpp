@@ -25,6 +25,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}};
+    [[maybe_unused]] auto forged = fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}};
     return 0;
 }

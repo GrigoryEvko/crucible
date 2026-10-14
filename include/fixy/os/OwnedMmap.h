@@ -2,9 +2,14 @@
 
 // Exclusive ownership of one mmap'd region, unmapped on destruction.
 //
-// The empty sentinel is MAP_FAILED and not nullptr, because ::mmap
-// returns MAP_FAILED on failure.  The stored length is exactly the length
-// given to ::mmap, because ::munmap is called with it verbatim.
+// The empty sentinel is nullptr.  The map door gives a failed map as an
+// error and no address, and a map with no fixed address is never at address
+// zero.  The stored length is exactly the length given to the map, because
+// the unmap is called with it verbatim.
+//
+// The door file src/fixy/os/Mmap.cpp holds the map, the unmap and the
+// advice of a region.  It issues them with the raw primitive of
+// foundation/os/Syscall.h, so this header includes no system header.
 //
 // Prot and Share are claims about the region, and the type makes them
 // true.  The one door that maps, mint_region, calculates the PROT_* word
@@ -41,11 +46,11 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/os/Errno.h>
+#include <foundation/os/MapWords.h>
 
-#include <sys/mman.h>
-
-#include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <meta>
@@ -53,34 +58,29 @@
 #include <type_traits>
 #include <utility>
 
-// A libc header older than the flag does not declare it.
-#ifndef MAP_HUGE_2MB
-#define MAP_HUGE_2MB (21 << 26)
-#endif
-
 namespace fixy::mmap {
 
 // The PROT_* word of each protection tag and the MAP_* bits of each share
-// tag.  A tag reaches mmap only through a row of these tables, and
-// fixy/os/AtomPack.h says why a table is closed: a class template map
-// takes a specialization for a class of the caller, and that class can
-// then bring PROT_WRITE | PROT_EXEC to the door.  No row is PROT_NONE or a
-// zero share word, so a tag with no row is refused rather than mapped as
-// a page that nobody may touch.
+// tag, with the values of foundation/os/MapWords.h.  A tag reaches mmap
+// only through a row of these tables, and fixy/os/AtomPack.h says why a
+// table is closed: a class template map takes a specialization for a class
+// of the caller, and that class can then bring PROT_WRITE | PROT_EXEC to
+// the door.  No row is PROT_NONE or a zero share word, so a tag with no row
+// is refused rather than mapped as a page that nobody may touch.
 inline constexpr ::fixy::atom_pack::tag_row<int> prot_table[] = {
-    {^^prot::ReadOnly, PROT_READ},
-    {^^prot::WriteCopy, PROT_READ | PROT_WRITE},
-    {^^prot::ReadWrite, PROT_READ | PROT_WRITE},
-    {^^prot::Exec, PROT_READ | PROT_EXEC},
+    {^^prot::ReadOnly, ::foundation::os::kProtectRead},
+    {^^prot::WriteCopy, ::foundation::os::kProtectRead | ::foundation::os::kProtectWrite},
+    {^^prot::ReadWrite, ::foundation::os::kProtectRead | ::foundation::os::kProtectWrite},
+    {^^prot::Exec, ::foundation::os::kProtectRead | ::foundation::os::kProtectExecute},
 };
 
 inline constexpr ::fixy::atom_pack::tag_row<int> share_table[] = {
-    {^^share::Private, MAP_PRIVATE},
-    {^^share::Shared, MAP_SHARED},
-    {^^share::Anonymous, MAP_PRIVATE | MAP_ANONYMOUS},
-    {^^share::Locked, MAP_LOCKED},
-    {^^share::Populate, MAP_POPULATE},
-    {^^share::HugeTLB, MAP_HUGETLB | MAP_HUGE_2MB},
+    {^^share::Private, ::foundation::os::kMapPrivate},
+    {^^share::Shared, ::foundation::os::kMapShared},
+    {^^share::Anonymous, ::foundation::os::kMapPrivate | ::foundation::os::kMapAnonymous},
+    {^^share::Locked, ::foundation::os::kMapLocked},
+    {^^share::Populate, ::foundation::os::kMapPopulate},
+    {^^share::HugeTLB, ::foundation::os::kMapHugeTlb | ::foundation::os::kMapHuge2Mb},
 };
 
 // A mapping has exactly one primary share mode.  The other share tags are
@@ -119,6 +119,27 @@ concept RegionModifier =
     (MappedShare<Modifier> && !PrimaryShare<Modifier>) || std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>;
 
 namespace detail {
+
+// The calls of the door file src/fixy/os/Mmap.cpp.  Each call gives the
+// error of the kernel in its Result.
+
+// Maps LENGTH bytes with the PROT_* word PROTECTION and the MAP_* word
+// FLAGS, from OFFSET of the file of DESCRIPTOR, or memory with no file for a
+// descriptor of -1.  The kernel picks the address, and the result is the
+// address of the map.
+[[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
+map_region_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
+
+// Unmaps the LENGTH bytes at ADDRESS, which a call of map_region_ gave.  The
+// kernel refuses an unmap only for an address or a length that no map
+// gave, so the door reports no error.
+void unmap_region_(void* address, std::size_t length) noexcept;
+
+// Gives the kernel the advice ADVICE, a MADV_* word, for the LENGTH bytes at
+// ADDRESS.  A null ADDRESS, the address of a region that is not mapped, gives
+// EINVAL and makes no system call.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+advise_region_(void* address, std::size_t length, int advice) noexcept;
 
 // The MAP_* bits of a modifier.  The licence adds no bit.
 template <typename Modifier>
@@ -178,9 +199,11 @@ concept CtxAdmitsMapping = ::foundation::effects::IsExecCtx<Ctx>
 // will run.  The rule reads the PROT_* word and not the tag, so it holds
 // for each row of the table.
 template <typename Prot, typename... Modifiers>
-concept ExecIsLicensed =
-    MappedProt<Prot> && ((prot_bits_of(^^Prot) & (PROT_WRITE | PROT_EXEC)) != (PROT_WRITE | PROT_EXEC))
-    && ((prot_bits_of(^^Prot) & PROT_EXEC) == 0 || (std::is_same_v<Modifiers, ::fixy::atom::mmap::trusted_jit> || ...));
+concept ExecIsLicensed = MappedProt<Prot>
+                      && ((prot_bits_of(^^Prot) & (::foundation::os::kProtectWrite | ::foundation::os::kProtectExecute))
+                          != (::foundation::os::kProtectWrite | ::foundation::os::kProtectExecute))
+                      && ((prot_bits_of(^^Prot) & ::foundation::os::kProtectExecute) == 0
+                          || (std::is_same_v<Modifiers, ::fixy::atom::mmap::trusted_jit> || ...));
 
 // Two copies of one modifier fold to the same word, and a repeat names
 // nothing new, so the gate refuses it.
@@ -198,9 +221,10 @@ concept CtxFitsRegionMint =
 // so an element of a larger alignment is refused.  A view that writes
 // needs a protection that writes.
 template <typename Prot, typename T>
-concept MappingViewElement = MappedProt<Prot> && ::foundation::core::ViewElement<T>
-                          && ::foundation::lifetime::ImplicitLifetimeThroughout<std::remove_const_t<T>>
-                          && (alignof(T) <= 4096) && (std::is_const_v<T> || (prot_bits_of(^^Prot) & PROT_WRITE) != 0);
+concept MappingViewElement =
+    MappedProt<Prot> && ::foundation::core::ViewElement<T>
+    && ::foundation::lifetime::ImplicitLifetimeThroughout<std::remove_const_t<T>> && (alignof(T) <= 4096)
+    && (std::is_const_v<T> || (prot_bits_of(^^Prot) & ::foundation::os::kProtectWrite) != 0);
 
 }  // namespace mmap
 
@@ -216,7 +240,7 @@ class [[nodiscard]] OwnedMmap {
                   "OwnedMmap<Tag, Prot, Share, Brand>: Share must be a primary share tag of fixy::mmap::share: "
                   "Private, Shared or Anonymous.  The type is the claim of the share mode.");
 
-    void* addr_ = MAP_FAILED;
+    void* addr_ = nullptr;
     std::size_t len_ = 0;
 
     // Private, and mint_region is its only caller.  A public one lets any
@@ -249,23 +273,24 @@ public:
                 std::size_t length, ::off_t offset) noexcept {
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);
-        if (address == MAP_FAILED) {
-            return std::unexpected{std::error_code{errno, std::system_category()}};
+        auto mapped = mmap::detail::map_region_(length, protection, flags, fd, offset);
+        if (mapped.is_err()) {
+            return std::unexpected{std::error_code{
+                std::to_underlying(mapped.err().expect("the map door gave an error")), std::system_category()}};
         }
-        return OwnedMmap{address, length};
+        return OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length};
     }
 
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
     OwnedMmap& operator=(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
 
     OwnedMmap(OwnedMmap&& other) noexcept
-        : addr_{std::exchange(other.addr_, MAP_FAILED)}, len_{std::exchange(other.len_, 0)} {}
+        : addr_{std::exchange(other.addr_, nullptr)}, len_{std::exchange(other.len_, 0)} {}
 
     OwnedMmap& operator=(OwnedMmap&& other) noexcept {
         if (this != &other) {
             release_();
-            addr_ = std::exchange(other.addr_, MAP_FAILED);
+            addr_ = std::exchange(other.addr_, nullptr);
             len_ = std::exchange(other.len_, 0);
         }
         return *this;
@@ -277,7 +302,7 @@ public:
     // the returned pointer.
     [[nodiscard]] void* data() const noexcept { return addr_; }
     [[nodiscard]] std::size_t size() const noexcept { return len_; }
-    [[nodiscard]] bool is_mapped() const noexcept { return addr_ != MAP_FAILED && addr_ != nullptr; }
+    [[nodiscard]] bool is_mapped() const noexcept { return addr_ != nullptr; }
 
     // The bytes of the mapping as a View of T, with the count from the
     // length of the mapping, or no value when the length is not a whole
@@ -320,7 +345,7 @@ public:
     // lives in the type and costs nothing at run time.
     template <atom::IsLeakAtom LeakAtom>
     [[nodiscard]] std::pair<void*, std::size_t> release(LeakAtom) && noexcept {
-        return {std::exchange(addr_, MAP_FAILED), std::exchange(len_, 0)};
+        return {std::exchange(addr_, nullptr), std::exchange(len_, 0)};
     }
 
 private:
@@ -336,8 +361,8 @@ private:
 
     void release_() noexcept {
         if (is_mapped()) {
-            ::munmap(addr_, len_);
-            addr_ = MAP_FAILED;
+            mmap::detail::unmap_region_(addr_, len_);
+            addr_ = nullptr;
             len_ = 0;
         }
     }

@@ -38,8 +38,6 @@
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
-#include <sys/stat.h>
-
 #include <expected>
 #include <system_error>
 #include <type_traits>

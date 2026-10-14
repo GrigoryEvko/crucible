@@ -59,16 +59,18 @@ static_assert(!can_release<DummyTag>);
 static_assert(!can_release<void*>);
 static_assert(!can_release<int>);
 
-// The bits of each tag, pinned.
-static_assert(mmap::prot_bits_of(^^mmap::prot::ReadOnly) == PROT_READ);
-static_assert(mmap::prot_bits_of(^^mmap::prot::WriteCopy) == (PROT_READ | PROT_WRITE));
-static_assert(mmap::prot_bits_of(^^mmap::prot::ReadWrite) == (PROT_READ | PROT_WRITE));
-static_assert(mmap::prot_bits_of(^^mmap::prot::Exec) == (PROT_READ | PROT_EXEC));
-static_assert((mmap::prot_bits_of(^^mmap::prot::Exec) & PROT_WRITE) == 0,
+// The bits of each tag, pinned to the words of foundation/os/MapWords.h,
+// which src/foundation/os/Syscall.cpp compares with <linux/mman.h>.
+namespace word = ::foundation::os;
+static_assert(mmap::prot_bits_of(^^mmap::prot::ReadOnly) == word::kProtectRead);
+static_assert(mmap::prot_bits_of(^^mmap::prot::WriteCopy) == (word::kProtectRead | word::kProtectWrite));
+static_assert(mmap::prot_bits_of(^^mmap::prot::ReadWrite) == (word::kProtectRead | word::kProtectWrite));
+static_assert(mmap::prot_bits_of(^^mmap::prot::Exec) == (word::kProtectRead | word::kProtectExecute));
+static_assert((mmap::prot_bits_of(^^mmap::prot::Exec) & word::kProtectWrite) == 0,
               "W^X: prot::Exec must NOT include PROT_WRITE");
-static_assert(mmap::share_flags_of(^^mmap::share::Private) == MAP_PRIVATE);
-static_assert(mmap::share_flags_of(^^mmap::share::Shared) == MAP_SHARED);
-static_assert(mmap::share_flags_of(^^mmap::share::Anonymous) == (MAP_PRIVATE | MAP_ANONYMOUS),
+static_assert(mmap::share_flags_of(^^mmap::share::Private) == word::kMapPrivate);
+static_assert(mmap::share_flags_of(^^mmap::share::Shared) == word::kMapShared);
+static_assert(mmap::share_flags_of(^^mmap::share::Anonymous) == (word::kMapPrivate | word::kMapAnonymous),
               "an anonymous region is private: the kernel keeps a NUMA binding only for a private range");
 
 // The gate, one clause at a time.

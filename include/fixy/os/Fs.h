@@ -8,9 +8,9 @@
 // Once for the O_* word the syscall takes, and once for the effect row
 // the calling context has to admit.
 //
-// The syscall bodies are inline, because fixy is header-only.  Each body
-// is a few lines around one call, so a second file does not pay for
-// itself.
+// The door file src/fixy/os/Fs.cpp holds the system calls, and it issues
+// them with the raw primitive of foundation/os/Syscall.h.  The templates
+// of this header read the atom packs at compile time and call the door.
 //
 // Design notes:
 //
@@ -53,16 +53,14 @@
 #include <fixy/os/Fd.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/Errno.h>
+#include <foundation/os/OpenFlags.h>
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstddef>
-#include <cstdio>
+#include <cstdint>
 #include <expected>
 #include <meta>
 #include <span>
@@ -74,24 +72,27 @@ namespace fixy::fs {
 
 namespace eff = ::foundation::effects;
 
-// The O_* word of each open mode and the O_* bits of each flag.  A tag
-// reaches the open call only through a row of these tables, and
-// fixy/os/AtomPack.h says why a table is closed.  O_RDONLY is zero, so a
-// map that answers zero for an unknown mode opens it for reading.  A
-// class template map also takes a specialization for a class of the
-// caller, and that class can add O_TRUNC to an open whose mode is
-// ReadOnly.
+// The O_* word of each open mode and the O_* bits of each flag, with the
+// values of foundation/os/OpenFlags.h.  A tag reaches the open call only
+// through a row of these tables, and fixy/os/AtomPack.h says why a table
+// is closed.  O_RDONLY is zero, so a map that answers zero for an unknown
+// mode opens it for reading.  A class template map also takes a
+// specialization for a class of the caller, and that class can add
+// O_TRUNC to an open whose mode is ReadOnly.
 inline constexpr ::fixy::atom_pack::tag_row<int> open_mode_table[] = {
-    {^^open_mode::ReadOnly, O_RDONLY},
-    {^^open_mode::WriteCreate, O_WRONLY | O_CREAT},
-    {^^open_mode::WriteAppend, O_WRONLY | O_CREAT | O_APPEND},
-    {^^open_mode::WriteTruncate, O_WRONLY | O_CREAT | O_TRUNC},
-    {^^open_mode::ReadWrite, O_RDWR | O_CREAT},
+    {^^open_mode::ReadOnly, ::foundation::os::kOpenReadOnly},
+    {^^open_mode::WriteCreate, ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate},
+    {^^open_mode::WriteAppend,
+     ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenAppend},
+    {^^open_mode::WriteTruncate,
+     ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenTruncate},
+    {^^open_mode::ReadWrite, ::foundation::os::kOpenReadWrite | ::foundation::os::kOpenCreate},
 };
 
 inline constexpr ::fixy::atom_pack::tag_row<int> flag_table[] = {
-    {^^flag::CloseOnExec, O_CLOEXEC}, {^^flag::NoFollow, O_NOFOLLOW}, {^^flag::DataSync, O_DSYNC},
-    {^^flag::FullSync, O_SYNC},       {^^flag::Direct, O_DIRECT},
+    {^^flag::CloseOnExec, ::foundation::os::kOpenCloseOnExec}, {^^flag::NoFollow, ::foundation::os::kOpenNoFollow},
+    {^^flag::DataSync, ::foundation::os::kOpenDataSync},       {^^flag::FullSync, ::foundation::os::kOpenFullSync},
+    {^^flag::Direct, ::foundation::os::kOpenDirect},
 };
 
 // The sync and atomicity tags have no bits, so each is a closed list.
@@ -127,6 +128,48 @@ concept KnownAtomicity = ::fixy::atom_pack::names_tag(atomicity_tags, ^^Atomicit
 [[nodiscard]] consteval int flag_bits_of(std::meta::info flag_tag) noexcept {
     return ::fixy::atom_pack::value_for(flag_table, flag_tag);
 }
+
+namespace detail {
+
+// The file calls of the door file src/fixy/os/Fs.cpp.  Each call takes a
+// descriptor or a path that a zero ends, and it gives the error of the
+// kernel in its Result.  A read or a write that a signal interrupts starts
+// again, and each other error returns.  A descriptor below zero, the
+// descriptor of a closed handle, gives EBADF and makes no system call.
+
+// Flushes the data of DESCRIPTOR, with the metadata that a read of the data
+// needs (fdatasync).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sync_data_(int descriptor) noexcept;
+
+// Flushes the data and all the metadata of DESCRIPTOR (fsync).  On a
+// descriptor of a directory, the flush writes the entries of the directory.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sync_all_(int descriptor) noexcept;
+
+// Renames FROM to TO, and replaces a file at TO (renameat).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+rename_replacing_(char const* from, char const* to) noexcept;
+
+// Renames FROM to TO, and gives eexist when a file is at TO (renameat2 with
+// RENAME_NOREPLACE).  A file system with no such rename gives einval, and a
+// kernel older than renameat2 gives enosys.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+rename_no_replace_(char const* from, char const* to) noexcept;
+
+// Reads into the COUNT bytes at FIRST until they are full or the file ends,
+// and gives the count of the bytes that it read.
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full_(int descriptor, std::byte* first, std::size_t count) noexcept;
+
+// Writes the COUNT bytes at FIRST.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full_(int descriptor, std::byte const* first, std::size_t count) noexcept;
+
+// The size in bytes of the file of DESCRIPTOR (fstat).
+[[nodiscard]] ::foundation::core::Result<std::int64_t, ::foundation::os::Errno> file_size_(int descriptor) noexcept;
+
+}  // namespace detail
 
 class FileDoor;
 class Dirfd;
@@ -253,7 +296,7 @@ inline constexpr int atom_open_flags_v = atom_open_flags<A>();
 // execve leaks into every child process.
 template <typename... Atoms>
 [[nodiscard]] consteval int fold_open_flags() noexcept {
-    int acc = O_CLOEXEC;
+    int acc = ::foundation::os::kOpenCloseOnExec;
     ((acc |= atom_open_flags_v<Atoms>), ...);
     return acc;
 }
@@ -301,10 +344,10 @@ template <typename... Atoms, eff::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
 mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms = 0644) noexcept;
 
-// The door to ::open.  No object of it exists.  Its members are private,
-// and its two friends are the gated mints that open a path, mint_file
-// and open_dirfd.  OwnedFd befriends this class, so a handle over a path
-// comes only from one of those two mints, after their gates.
+// The door to the open of a path.  No object of it exists.  Its members
+// are private, and its two friends are the gated mints that open a path,
+// mint_file and open_dirfd.  OwnedFd befriends this class, so a handle
+// over a path comes only from one of those two mints, after their gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -319,26 +362,35 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
         -> std::expected<Dirfd, std::error_code>;
 
-    // ::open consults perms only when flags carries O_CREAT and ignores
-    // it otherwise, so it is passed unconditionally.  Returns the errno on
-    // failure and no handle.
-    [[nodiscard]] static std::expected<OwnedFd, int> open_path_(const char* path, int flags, ::mode_t perms) noexcept {
-        const int fd = ::open(path, flags, perms);
-        if (fd < 0) {
-            return std::unexpected{errno};
-        }
-        return OwnedFd{fd};
+    // The handle of a descriptor that the open gave, or the error of the
+    // open.
+    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+        return std::move(opened).match(
+            [](int descriptor) -> ::foundation::core::Result<OwnedFd, ::foundation::os::Errno> {
+                return OwnedFd{descriptor};
+            },
+            [](::foundation::os::Errno error) -> ::foundation::core::Result<OwnedFd, ::foundation::os::Errno> {
+                return ::foundation::core::err(error);
+            });
+    }
+
+    // The open reads perms only when flags holds O_CREAT and ignores it
+    // otherwise, so it is passed in each case.
+    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    open_path_(const char* path, int flags, ::mode_t perms) noexcept {
+        return own_(detail::open_descriptor_(path, flags, perms));
     }
 
     // O_DIRECTORY refuses anything else, O_NOFOLLOW refuses a symlink
     // that stands in for the directory, and the descriptor is what a later
     // fsync flushes the entry through.
-    [[nodiscard]] static std::expected<OwnedFd, int> open_directory_(const char* dir_path) noexcept {
-        const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);
-        if (fd < 0) {
-            return std::unexpected{errno};
-        }
-        return OwnedFd{fd};
+    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    open_directory_(const char* dir_path) noexcept {
+        return own_(detail::open_descriptor_(dir_path,
+                                             ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
+                                                 | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly,
+                                             0));
     }
 };
 
@@ -348,29 +400,23 @@ template <typename... Atoms, eff::IsExecCtx Ctx>
 mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms) noexcept {
     constexpr int flags = detail::fold_open_flags<Atoms...>();
     auto fd = FileDoor::open_path_(sanitized_path.value().c_str(), flags, perms);
-    if (!fd) {
-        return std::unexpected{std::error_code{fd.error(), std::system_category()}};
+    if (fd.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(fd), std::system_category()}};
     }
-    return mint_linear<OwnedFd>(std::move(*fd));
+    return mint_linear<OwnedFd>(std::move(fd).expect("the file door gave the descriptor of the open"));
 }
 
 // Not a mint: this acts on an existing handle and synthesizes nothing.
 template <typename SyncOp, eff::IsExecCtx Ctx>
     requires CtxFitsSync<Ctx, SyncOp>
 [[nodiscard]] inline std::expected<void, std::error_code> sync(Ctx const&, const OwnedFd& handle) noexcept {
-    if (!handle.is_open()) {
-        return std::unexpected{std::error_code{EBADF, std::system_category()}};
-    }
-    int rc = 0;
-    if constexpr (std::is_same_v<SyncOp, sync_op::Fdatasync>) {
-        rc = ::fdatasync(handle.get());
-    } else {
-        // Fsync, and FsyncParentDir on a directory descriptor, which is
-        // the call that flushes the directory entry.
-        rc = ::fsync(handle.get());
-    }
-    if (rc < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    // Fsync, and FsyncParentDir on a directory descriptor, which is the call
+    // that flushes the directory entry.  The door gives EBADF for a closed
+    // handle.
+    auto const synced =
+        std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(handle.get()) : detail::sync_all_(handle.get());
+    if (synced.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(synced), std::system_category()}};
     }
     return {};
 }
@@ -383,7 +429,7 @@ template <typename SyncOp, eff::IsExecCtx Ctx>
     return sync<SyncOp>(ctx, dir.handle());
 }
 
-// Rename uses ::rename, where the last writer wins.  RenameAt2NoReplace
+// Rename uses renameat, where the last writer wins.  RenameAt2NoReplace
 // uses renameat2(RENAME_NOREPLACE), which fails with EEXIST when the
 // target exists instead of overwriting it.  A filesystem without that
 // flag reports EINVAL, and that is passed through rather than replaced
@@ -396,14 +442,11 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline std::expected<void, std::error_code> commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp,
                                                                         Path<tags::source::Sanitized> target) noexcept {
-    int rc = 0;
-    if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
-        rc = ::rename(tmp.value().c_str(), target.value().c_str());
-    } else {
-        rc = ::renameat2(AT_FDCWD, tmp.value().c_str(), AT_FDCWD, target.value().c_str(), RENAME_NOREPLACE);
-    }
-    if (rc < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    auto const renamed = std::is_same_v<Atomicity, atomicity::Rename>
+                           ? detail::rename_replacing_(tmp.value().c_str(), target.value().c_str())
+                           : detail::rename_no_replace_(tmp.value().c_str(), target.value().c_str());
+    if (renamed.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(renamed), std::system_category()}};
     }
     return {};
 }
@@ -412,10 +455,10 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
     auto fd = FileDoor::open_directory_(dir.value().c_str());
-    if (!fd) {
-        return std::unexpected{std::error_code{fd.error(), std::system_category()}};
+    if (fd.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(fd), std::system_category()}};
     }
-    return Dirfd{std::move(*fd)};
+    return Dirfd{std::move(fd).expect("the file door gave the descriptor of the open")};
 }
 
 // The three calls below read and write through a handle that is open.
@@ -431,37 +474,22 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline std::expected<std::size_t, std::error_code> read_full(Ctx const&, const OwnedFd& handle,
                                                                            std::span<std::byte> buffer) noexcept {
-    if (!handle.is_open()) {
-        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    // The door gives EBADF for a closed handle.
+    auto bytes_read = detail::read_full_(handle.get(), buffer.data(), buffer.size());
+    if (bytes_read.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(bytes_read), std::system_category()}};
     }
-    std::size_t total = 0;
-    while (total < buffer.size()) {
-        const ::ssize_t transferred = ::read(handle.get(), buffer.data() + total, buffer.size() - total);
-        if (transferred == 0) break;
-        if (transferred < 0) {
-            if (errno == EINTR) continue;
-            return std::unexpected{std::error_code{errno, std::system_category()}};
-        }
-        total += static_cast<std::size_t>(transferred);
-    }
-    return total;
+    return std::move(bytes_read).expect("the read of the file door gave its count");
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline std::expected<void, std::error_code> write_full(Ctx const&, const OwnedFd& handle,
                                                                      std::span<const std::byte> buffer) noexcept {
-    if (!handle.is_open()) {
-        return std::unexpected{std::error_code{EBADF, std::system_category()}};
-    }
-    std::size_t total = 0;
-    while (total < buffer.size()) {
-        const ::ssize_t transferred = ::write(handle.get(), buffer.data() + total, buffer.size() - total);
-        if (transferred < 0) {
-            if (errno == EINTR) continue;
-            return std::unexpected{std::error_code{errno, std::system_category()}};
-        }
-        total += static_cast<std::size_t>(transferred);
+    // The door gives EBADF for a closed handle.
+    auto const written = detail::write_full_(handle.get(), buffer.data(), buffer.size());
+    if (written.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(written), std::system_category()}};
     }
     return {};
 }
@@ -469,14 +497,12 @@ template <eff::IsExecCtx Ctx>
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline std::expected<::off_t, std::error_code> file_size(Ctx const&, const OwnedFd& handle) noexcept {
-    if (!handle.is_open()) {
-        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    // The door gives EBADF for a closed handle.
+    auto measured = detail::file_size_(handle.get());
+    if (measured.is_err()) {
+        return std::unexpected{std::error_code{detail::error_number_of_(measured), std::system_category()}};
     }
-    struct ::stat status{};
-    if (::fstat(handle.get(), &status) < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
-    return status.st_size;
+    return std::move(measured).expect("the status read of the file door gave the size");
 }
 
 // The read-only open, spelled once.

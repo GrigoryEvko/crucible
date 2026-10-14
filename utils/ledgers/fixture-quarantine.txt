@@ -346,7 +346,6 @@ test/fixy/neg/neg_os_fs_durable_truncate_external_path.cpp | raw-pointer-object 
 test/fixy/neg/neg_os_fs_durable_truncate_external_path.cpp | std-entity | 1 | std::expected::operator* | -
 test/fixy/neg/neg_os_fs_durable_truncate_external_path.cpp | std-entity | 2 | std::filesystem::path | -
 test/fixy/neg/neg_os_fs_durable_truncate_external_path.cpp | std-object | 1 | std::filesystem::path | -
-test/fixy/neg/neg_os_fs_file_door_is_private.cpp | std-object | 1 | std::expected | -
 test/fixy/neg/neg_os_fs_mint_file_ctx_lacks_block.cpp | raw-pointer-object | 1 | - | -
 test/fixy/neg/neg_os_fs_mint_file_ctx_lacks_block.cpp | std-entity | 1 | std::expected::operator* | -
 test/fixy/neg/neg_os_fs_mint_file_ctx_lacks_block.cpp | std-entity | 1 | std::filesystem::path | -

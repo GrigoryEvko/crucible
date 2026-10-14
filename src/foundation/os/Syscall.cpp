@@ -39,16 +39,42 @@ namespace foundation::os {
 // header.
 static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FDCWD of <linux/fcntl.h>");
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
+static_assert(kOpenWriteOnly == O_WRONLY, "kOpenWriteOnly is not O_WRONLY of <linux/fcntl.h>");
+static_assert(kOpenReadWrite == O_RDWR, "kOpenReadWrite is not O_RDWR of <linux/fcntl.h>");
+static_assert(kOpenCreate == O_CREAT, "kOpenCreate is not O_CREAT of <linux/fcntl.h>");
+static_assert(kOpenTruncate == O_TRUNC, "kOpenTruncate is not O_TRUNC of <linux/fcntl.h>");
+static_assert(kOpenAppend == O_APPEND, "kOpenAppend is not O_APPEND of <linux/fcntl.h>");
+static_assert(kOpenDataSync == O_DSYNC, "kOpenDataSync is not O_DSYNC of <linux/fcntl.h>");
+static_assert(kOpenFullSync == O_SYNC, "kOpenFullSync is not O_SYNC of <linux/fcntl.h>");
 static_assert(kOpenCloseOnExec == O_CLOEXEC, "kOpenCloseOnExec is not O_CLOEXEC of <linux/fcntl.h>");
 static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
+static_assert(kOpenNoFollow == O_NOFOLLOW, "kOpenNoFollow is not O_NOFOLLOW of <linux/fcntl.h>");
+static_assert(kOpenDirect == O_DIRECT, "kOpenDirect is not O_DIRECT of <linux/fcntl.h>");
 
 // The argument words of foundation/os/MapWords.h are the words of the kernel
 // header.
 static_assert(kProtectNone == PROT_NONE, "kProtectNone is not PROT_NONE of <linux/mman.h>");
-static_assert(kProtectReadWrite == (PROT_READ | PROT_WRITE),
-              "kProtectReadWrite is not PROT_READ | PROT_WRITE of <linux/mman.h>");
-static_assert(kMapPrivateAnonymous == (MAP_PRIVATE | MAP_ANONYMOUS),
-              "kMapPrivateAnonymous is not MAP_PRIVATE | MAP_ANONYMOUS of <linux/mman.h>");
+static_assert(kProtectRead == PROT_READ, "kProtectRead is not PROT_READ of <linux/mman.h>");
+static_assert(kProtectWrite == PROT_WRITE, "kProtectWrite is not PROT_WRITE of <linux/mman.h>");
+static_assert(kProtectExecute == PROT_EXEC, "kProtectExecute is not PROT_EXEC of <linux/mman.h>");
+static_assert(kMapShared == MAP_SHARED, "kMapShared is not MAP_SHARED of <linux/mman.h>");
+static_assert(kMapPrivate == MAP_PRIVATE, "kMapPrivate is not MAP_PRIVATE of <linux/mman.h>");
+static_assert(kMapAnonymous == MAP_ANONYMOUS, "kMapAnonymous is not MAP_ANONYMOUS of <linux/mman.h>");
+static_assert(kMapLocked == MAP_LOCKED, "kMapLocked is not MAP_LOCKED of <linux/mman.h>");
+static_assert(kMapPopulate == MAP_POPULATE, "kMapPopulate is not MAP_POPULATE of <linux/mman.h>");
+static_assert(kMapHugeTlb == MAP_HUGETLB, "kMapHugeTlb is not MAP_HUGETLB of <linux/mman.h>");
+static_assert(kMapHuge2Mb == MAP_HUGE_2MB, "kMapHuge2Mb is not MAP_HUGE_2MB of <linux/mman.h>");
+static_assert(kAdviseRandom == MADV_RANDOM, "kAdviseRandom is not MADV_RANDOM of <linux/mman.h>");
+static_assert(kAdviseSequential == MADV_SEQUENTIAL, "kAdviseSequential is not MADV_SEQUENTIAL of <linux/mman.h>");
+static_assert(kAdviseWillNeed == MADV_WILLNEED, "kAdviseWillNeed is not MADV_WILLNEED of <linux/mman.h>");
+static_assert(kAdviseDontNeed == MADV_DONTNEED, "kAdviseDontNeed is not MADV_DONTNEED of <linux/mman.h>");
+static_assert(kAdviseFree == MADV_FREE, "kAdviseFree is not MADV_FREE of <linux/mman.h>");
+static_assert(kAdviseRemove == MADV_REMOVE, "kAdviseRemove is not MADV_REMOVE of <linux/mman.h>");
+static_assert(kAdviseHugePage == MADV_HUGEPAGE, "kAdviseHugePage is not MADV_HUGEPAGE of <linux/mman.h>");
+static_assert(kAdviseNoHugePage == MADV_NOHUGEPAGE, "kAdviseNoHugePage is not MADV_NOHUGEPAGE of <linux/mman.h>");
+static_assert(kAdviseDontDump == MADV_DONTDUMP, "kAdviseDontDump is not MADV_DONTDUMP of <linux/mman.h>");
+static_assert(kAdviseWipeOnFork == MADV_WIPEONFORK, "kAdviseWipeOnFork is not MADV_WIPEONFORK of <linux/mman.h>");
+static_assert(kAdviseCollapse == MADV_COLLAPSE, "kAdviseCollapse is not MADV_COLLAPSE of <linux/mman.h>");
 
 // The argument words of foundation/os/FutexWords.h are the words of the
 // kernel headers.
@@ -96,6 +122,26 @@ constexpr long kNoCall = -1;
             return __NR_mprotect;
         case Syscall::munmap:
             return __NR_munmap;
+        case Syscall::fsync:
+            return __NR_fsync;
+        case Syscall::fdatasync:
+            return __NR_fdatasync;
+        case Syscall::fstat:
+            return __NR_fstat;
+        case Syscall::renameat:
+            return __NR_renameat;
+        case Syscall::renameat2:
+            return __NR_renameat2;
+        case Syscall::madvise:
+            return __NR_madvise;
+        case Syscall::sendfile:
+            return __NR_sendfile;
+        case Syscall::copy_file_range:
+            return __NR_copy_file_range;
+        case Syscall::io_uring_setup:
+            return __NR_io_uring_setup;
+        case Syscall::ioctl:
+            return __NR_ioctl;
         default:
             return kNoCall;
     }
@@ -216,17 +262,28 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 
 // The release in which a call came to the architecture of the build, with the
 // operations that the doors give it: the later of the first release of the
-// architecture and the release that added the call.  openat came in 2.6.16.
-// futex came in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came
-// in 2.6.25.
+// architecture and the release that added the call.  openat and renameat
+// came in 2.6.16.  futex came in 2.6.0, and the futex door uses
+// FUTEX_WAIT_BITSET, which came in 2.6.25.  renameat2 came in 3.15,
+// copy_file_range in 4.5 and io_uring_setup in 5.1.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
         case Syscall::openat:
+        case Syscall::renameat:
             added = KernelVersion{2, 6, 16};
             break;
         case Syscall::futex:
             added = KernelVersion{2, 6, 25};
+            break;
+        case Syscall::renameat2:
+            added = KernelVersion{3, 15, 0};
+            break;
+        case Syscall::copy_file_range:
+            added = KernelVersion{4, 5, 0};
+            break;
+        case Syscall::io_uring_setup:
+            added = KernelVersion{5, 1, 0};
             break;
         case Syscall::read:
         case Syscall::write:
@@ -237,18 +294,38 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::mmap:
         case Syscall::mprotect:
         case Syscall::munmap:
+        case Syscall::fsync:
+        case Syscall::fdatasync:
+        case Syscall::fstat:
+        case Syscall::madvise:
+        case Syscall::sendfile:
+        case Syscall::ioctl:
         default:
             break;
     }
     return added > kFirstRelease ? added : kFirstRelease;
 }
 
-// The largest release that an enumerator of Syscall needs.  The walk reads
-// each enumerator, so a new call joins the derivation with no other edit.
+// True when the call is a feature that the caller of a door chooses (THE
+// FEATURE CALLS of foundation/os/KernelFloor.h): renameat2 gives the commit
+// that refuses an existing target, copy_file_range the copy between two
+// files, and io_uring_setup the ring of io_uring.  The door gives the error
+// enosys of an older kernel to its caller.
+[[nodiscard]] constexpr bool is_feature_call(Syscall call) noexcept {
+    return call == Syscall::renameat2 || call == Syscall::copy_file_range || call == Syscall::io_uring_setup;
+}
+
+// The largest release that an enumerator of Syscall needs, other than a
+// feature call.  The walk reads each enumerator, so a new call joins the
+// derivation with no other edit.
 [[nodiscard]] consteval KernelVersion derive_minimum_kernel() noexcept {
     KernelVersion largest = kFirstRelease;
     for (std::meta::info const enumerator : std::meta::enumerators_of(^^Syscall)) {
-        KernelVersion const needed = introduced_in(std::meta::extract<Syscall>(enumerator));
+        Syscall const call = std::meta::extract<Syscall>(enumerator);
+        if (is_feature_call(call)) {
+            continue;
+        }
+        KernelVersion const needed = introduced_in(call);
         if (needed > largest) {
             largest = needed;
         }

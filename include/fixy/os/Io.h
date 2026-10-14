@@ -39,22 +39,24 @@
 //     it moves bytes only between descriptors that the caller owns.  It
 //     asks again after a short transfer or EINTR, and the sendfile form
 //     takes no destination offset, which sendfile does not read.
+//
+//  6. The door file src/fixy/os/Io.cpp holds the setup of the ring, its
+//     maps and its release, and the two transfers.  It issues them with
+//     the raw primitive of foundation/os/Syscall.h, and it is the one
+//     includer of <linux/io_uring.h>.  This header includes no system
+//     header.  The setup of a ring and copy_file_range are feature calls
+//     of foundation/os/KernelFloor.h: an older kernel gives enosys.
 
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/Errno.h>
 
-#include <linux/io_uring.h>
-#include <sys/mman.h>
-#include <sys/sendfile.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -63,26 +65,37 @@
 #include <type_traits>
 #include <utility>
 
-// A kernel header older than the flag does not declare it, so each value
-// is spelled here as well.  COOP_TASKRUN arrives in Linux 5.19,
-// SINGLE_ISSUER in 6.0, DEFER_TASKRUN in 6.1.
-
-#ifndef IORING_SETUP_COOP_TASKRUN
-#define IORING_SETUP_COOP_TASKRUN (1U << 8)
-#endif
-#ifndef IORING_SETUP_SINGLE_ISSUER
-#define IORING_SETUP_SINGLE_ISSUER (1U << 12)
-#endif
-#ifndef IORING_SETUP_DEFER_TASKRUN
-#define IORING_SETUP_DEFER_TASKRUN (1U << 13)
-#endif
-#ifndef IORING_FEAT_SINGLE_MMAP
-#define IORING_FEAT_SINGLE_MMAP (1U << 0)
-#endif
-
 namespace fixy::io {
 
 class IoUringRing;
+
+namespace detail {
+
+// The IORING_SETUP_* bits of the ring flags, with the values of
+// <linux/io_uring.h>.  The door file src/fixy/os/Io.cpp compares each value
+// with that header.
+inline constexpr std::uint32_t ring_setup_io_poll = 1U << 0;
+inline constexpr std::uint32_t ring_setup_sq_poll = 1U << 1;
+inline constexpr std::uint32_t ring_setup_coop_taskrun = 1U << 8;
+inline constexpr std::uint32_t ring_setup_single_issuer = 1U << 12;
+inline constexpr std::uint32_t ring_setup_defer_taskrun = 1U << 13;
+
+// The transfers of the door file src/fixy/os/Io.cpp.  Each one moves at most
+// LENGTH bytes, asks again after a short transfer or EINTR, and stops at the
+// end of the source.  It gives the count that it moved, or the first other
+// error of the kernel.
+
+// sendfile from SOURCE_OFFSET of SOURCE to the file position of DESTINATION.
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+send_file_(int destination, int source, std::int64_t source_offset, std::size_t length) noexcept;
+
+// copy_file_range from SOURCE_OFFSET of SOURCE to DESTINATION_OFFSET of
+// DESTINATION.
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+copy_file_range_(int source, std::int64_t source_offset, int destination, std::int64_t destination_offset,
+                 std::size_t length) noexcept;
+
+}  // namespace detail
 
 // An atom pack engages exactly one engine.  Only IoUring reaches a mint
 // here, so a tag added to fixy::io::engine later is refused rather than
@@ -107,11 +120,11 @@ concept SimpleTransfer = ::fixy::atom_pack::names_tag(simple_transfer_tags, ^^Z)
 // zero for an unknown flag sets up a ring without the flag the caller
 // asked for.
 inline constexpr ::fixy::atom_pack::tag_row<std::uint32_t> ring_flag_table[] = {
-    {^^ring_flag::IoPoll, IORING_SETUP_IOPOLL},
-    {^^ring_flag::SqPoll, IORING_SETUP_SQPOLL},
-    {^^ring_flag::SingleIssuer, IORING_SETUP_SINGLE_ISSUER},
-    {^^ring_flag::CoopTaskrun, IORING_SETUP_COOP_TASKRUN},
-    {^^ring_flag::DeferTaskrun, IORING_SETUP_DEFER_TASKRUN},
+    {^^ring_flag::IoPoll, detail::ring_setup_io_poll},
+    {^^ring_flag::SqPoll, detail::ring_setup_sq_poll},
+    {^^ring_flag::SingleIssuer, detail::ring_setup_single_issuer},
+    {^^ring_flag::CoopTaskrun, detail::ring_setup_coop_taskrun},
+    {^^ring_flag::DeferTaskrun, detail::ring_setup_defer_taskrun},
 };
 
 // A flag is known when the table has a row.  The walk at the foot of this
@@ -305,6 +318,35 @@ template <typename Ctx, typename... Atoms>
 concept CtxFitsCopyRangeTransfer =
     CtxFitsZerocopyTransfer<Ctx, Atoms...> && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::CopyFileRange>;
 
+namespace detail {
+
+// The parts of a ring that the kernel gave: its descriptor, the address and
+// the count of bytes of each of the three maps, and the two counts of
+// entries.  A completion size of zero marks a completion ring that aliases
+// the submission ring.
+struct RingParts {
+    int descriptor = -1;
+    void* sq_ring = nullptr;
+    std::size_t sq_size = 0;
+    void* cq_ring = nullptr;
+    std::size_t cq_size = 0;
+    void* sqes = nullptr;
+    std::size_t sqes_size = 0;
+    std::uint32_t sq_entries = 0;
+    std::uint32_t cq_entries = 0;
+};
+
+// The door of the setup, in src/fixy/os/Io.cpp.  It makes a ring with
+// SQ_ENTRIES submission entries, CQ_ENTRIES completion entries or the
+// default of the kernel for zero, and the IORING_SETUP_* bits FLAGS.  It maps
+// the submission ring, the completion ring and the submission entries, and
+// it gives only what the kernel gave.  On an error it releases each part that
+// it made, and it gives the error.
+[[nodiscard]] ::foundation::core::Result<RingParts, ::foundation::os::Errno>
+set_up_ring_(std::uint32_t sq_entries, std::uint32_t cq_entries, std::uint32_t flags) noexcept;
+
+}  // namespace detail
+
 // Declared before the class so the class can name it as its sole friend.
 // The definition follows the class, because it builds one.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
@@ -320,27 +362,11 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // Only the setup call knows what the
 // kernel actually gave out, so only the setup call can build one.
 class [[nodiscard]] IoUringRing {
-    int ring_fd_ = -1;
-    void* sq_ring_ = MAP_FAILED;
-    std::size_t sq_size_ = 0;
-    void* cq_ring_ = MAP_FAILED;
-    std::size_t cq_size_ = 0;  // 0 marker = aliases sq_ring_ (SINGLE_MMAP)
-    void* sqes_ = MAP_FAILED;
-    std::size_t sqes_size_ = 0;
-    std::uint32_t sq_entries_n_ = 0;
-    std::uint32_t cq_entries_n_ = 0;
+    // The empty parts are the empty handle.  A completion size of zero marks
+    // a completion ring that aliases the submission ring (SINGLE_MMAP).
+    detail::RingParts parts_{};
 
-    IoUringRing(int fd, void* sq_ring, std::size_t sq_size, void* cq_ring, std::size_t cq_size, void* sqes,
-                std::size_t sqes_size, std::uint32_t sq_entries_n, std::uint32_t cq_entries_n) noexcept
-        : ring_fd_{fd},
-          sq_ring_{sq_ring},
-          sq_size_{sq_size},
-          cq_ring_{cq_ring},
-          cq_size_{cq_size},
-          sqes_{sqes},
-          sqes_size_{sqes_size},
-          sq_entries_n_{sq_entries_n},
-          cq_entries_n_{cq_entries_n} {}
+    explicit IoUringRing(detail::RingParts const& parts) noexcept : parts_{parts} {}
 
     // The trailing return type is not a style choice: written the other
     // way the declaration ends `..., std::error_code> ::fixy::io::...`
@@ -361,71 +387,37 @@ public:
     IoUringRing&
     operator=(const IoUringRing&) = delete("io_uring fd + mmaps are unique; copy would double-close/unmap");
 
-    IoUringRing(IoUringRing&& other) noexcept
-        : ring_fd_{std::exchange(other.ring_fd_, -1)},
-          sq_ring_{std::exchange(other.sq_ring_, MAP_FAILED)},
-          sq_size_{std::exchange(other.sq_size_, 0)},
-          cq_ring_{std::exchange(other.cq_ring_, MAP_FAILED)},
-          cq_size_{std::exchange(other.cq_size_, 0)},
-          sqes_{std::exchange(other.sqes_, MAP_FAILED)},
-          sqes_size_{std::exchange(other.sqes_size_, 0)},
-          sq_entries_n_{std::exchange(other.sq_entries_n_, 0)},
-          cq_entries_n_{std::exchange(other.cq_entries_n_, 0)} {}
+    // A move takes the parts of OTHER and leaves OTHER the empty handle.
+    IoUringRing(IoUringRing&& other) noexcept : parts_{other.parts_} { other.parts_ = detail::RingParts{}; }
 
     IoUringRing& operator=(IoUringRing&& other) noexcept {
         if (this != &other) {
             release_();
-            ring_fd_ = std::exchange(other.ring_fd_, -1);
-            sq_ring_ = std::exchange(other.sq_ring_, MAP_FAILED);
-            sq_size_ = std::exchange(other.sq_size_, 0);
-            cq_ring_ = std::exchange(other.cq_ring_, MAP_FAILED);
-            cq_size_ = std::exchange(other.cq_size_, 0);
-            sqes_ = std::exchange(other.sqes_, MAP_FAILED);
-            sqes_size_ = std::exchange(other.sqes_size_, 0);
-            sq_entries_n_ = std::exchange(other.sq_entries_n_, 0);
-            cq_entries_n_ = std::exchange(other.cq_entries_n_, 0);
+            parts_ = other.parts_;
+            other.parts_ = detail::RingParts{};
         }
         return *this;
     }
 
     ~IoUringRing() noexcept { release_(); }
 
-    [[nodiscard]] int ring_fd() const noexcept { return ring_fd_; }
-    [[nodiscard]] void* sq_ring() const noexcept { return sq_ring_; }
-    [[nodiscard]] std::size_t sq_ring_size() const noexcept { return sq_size_; }
-    [[nodiscard]] void* cq_ring() const noexcept { return cq_ring_; }
-    [[nodiscard]] std::size_t cq_ring_size() const noexcept { return cq_size_; }
-    [[nodiscard]] void* sqes() const noexcept { return sqes_; }
-    [[nodiscard]] std::size_t sqes_size() const noexcept { return sqes_size_; }
-    [[nodiscard]] std::uint32_t sq_entries() const noexcept { return sq_entries_n_; }
-    [[nodiscard]] std::uint32_t cq_entries() const noexcept { return cq_entries_n_; }
-    [[nodiscard]] bool is_valid() const noexcept { return ring_fd_ >= 0; }
+    [[nodiscard]] int ring_fd() const noexcept { return parts_.descriptor; }
+    [[nodiscard]] void* sq_ring() const noexcept { return parts_.sq_ring; }
+    [[nodiscard]] std::size_t sq_ring_size() const noexcept { return parts_.sq_size; }
+    [[nodiscard]] void* cq_ring() const noexcept { return parts_.cq_ring; }
+    [[nodiscard]] std::size_t cq_ring_size() const noexcept { return parts_.cq_size; }
+    [[nodiscard]] void* sqes() const noexcept { return parts_.sqes; }
+    [[nodiscard]] std::size_t sqes_size() const noexcept { return parts_.sqes_size; }
+    [[nodiscard]] std::uint32_t sq_entries() const noexcept { return parts_.sq_entries; }
+    [[nodiscard]] std::uint32_t cq_entries() const noexcept { return parts_.cq_entries; }
+    [[nodiscard]] bool is_valid() const noexcept { return parts_.descriptor >= 0; }
 
 private:
-    void release_() noexcept {
-        if (sqes_ != MAP_FAILED && sqes_ != nullptr) {
-            ::munmap(sqes_, sqes_size_);
-            sqes_ = MAP_FAILED;
-            sqes_size_ = 0;
-        }
-        // cq_size_ == 0 marks IORING_FEAT_SINGLE_MMAP (cq aliases sq).
-        if (cq_size_ != 0 && cq_ring_ != MAP_FAILED && cq_ring_ != nullptr) {
-            ::munmap(cq_ring_, cq_size_);
-        }
-        cq_ring_ = MAP_FAILED;
-        cq_size_ = 0;
-        if (sq_ring_ != MAP_FAILED && sq_ring_ != nullptr) {
-            ::munmap(sq_ring_, sq_size_);
-            sq_ring_ = MAP_FAILED;
-            sq_size_ = 0;
-        }
-        if (ring_fd_ >= 0) {
-            ::close(ring_fd_);
-            ring_fd_ = -1;
-        }
-        sq_entries_n_ = 0;
-        cq_entries_n_ = 0;
-    }
+    // Unmaps the three parts of the ring and closes its descriptor, in the
+    // reverse of the order of the setup, in src/fixy/os/Io.cpp.  A
+    // completion size of zero marks a completion ring that aliases the
+    // submission ring, and the release unmaps it one time.
+    void release_() noexcept;
 };
 
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
@@ -435,68 +427,11 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
     constexpr std::uint32_t cq_n = detail::cq_entries_of_v<Atoms...>;
     constexpr std::uint32_t flags = detail::fold_ring_flags<Atoms...>();
 
-    ::io_uring_params params{};
-    params.flags = flags;
-    if constexpr (cq_n != 0) {
-        params.cq_entries = cq_n;
-        params.flags |= IORING_SETUP_CQSIZE;
+    auto parts = detail::set_up_ring_(sq_n, cq_n, flags);
+    if (parts.is_err()) {
+        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(parts), std::system_category()}};
     }
-
-    const long setup = ::syscall(__NR_io_uring_setup, static_cast<unsigned int>(sq_n), &params);
-    if (setup < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
-    const int fd = static_cast<int>(setup);
-
-    const std::size_t sq_ring_size = static_cast<std::size_t>(params.sq_off.array)
-                                   + static_cast<std::size_t>(params.sq_entries) * sizeof(std::uint32_t);
-
-    const std::size_t cq_ring_size = static_cast<std::size_t>(params.cq_off.cqes)
-                                   + static_cast<std::size_t>(params.cq_entries) * sizeof(::io_uring_cqe);
-
-    const std::size_t sqes_array_size = static_cast<std::size_t>(params.sq_entries) * sizeof(::io_uring_sqe);
-
-    void* const sq_ring =
-        ::mmap(nullptr, sq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
-    if (sq_ring == MAP_FAILED) {
-        const int failure = errno;
-        ::close(fd);
-        return std::unexpected{std::error_code{failure, std::system_category()}};
-    }
-
-    void* cq_ring = MAP_FAILED;
-    std::size_t cq_size_for_dtor = 0;
-    if ((params.features & IORING_FEAT_SINGLE_MMAP) != 0) {
-        // Linux 5.4 and later hand back one allocation that both rings
-        // live in, and aliasing them is the documented contract.  A zero
-        // size is what tells the destructor not to unmap the second one.
-        cq_ring = sq_ring;
-    } else {
-        cq_ring =
-            ::mmap(nullptr, cq_ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_CQ_RING);
-        if (cq_ring == MAP_FAILED) {
-            const int failure = errno;
-            ::munmap(sq_ring, sq_ring_size);
-            ::close(fd);
-            return std::unexpected{std::error_code{failure, std::system_category()}};
-        }
-        cq_size_for_dtor = cq_ring_size;
-    }
-
-    void* const sqes =
-        ::mmap(nullptr, sqes_array_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
-    if (sqes == MAP_FAILED) {
-        const int failure = errno;
-        if (cq_size_for_dtor != 0) {
-            ::munmap(cq_ring, cq_ring_size);
-        }
-        ::munmap(sq_ring, sq_ring_size);
-        ::close(fd);
-        return std::unexpected{std::error_code{failure, std::system_category()}};
-    }
-
-    return mint_linear<IoUringRing>(IoUringRing{fd, sq_ring, sq_ring_size, cq_ring, cq_size_for_dtor, sqes,
-                                                sqes_array_size, params.sq_entries, params.cq_entries});
+    return mint_linear<IoUringRing>(IoUringRing{std::move(parts).expect("the setup door gave the parts of the ring")});
 }
 
 // A transfer moves the bytes of one descriptor to another inside the
@@ -512,27 +447,20 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // bytes.
 namespace detail {
 
-// The loop that the two forms share.  step moves at most the count that
-// it takes, and returns the count that it moved, 0 at the end of the
-// source, or -1 with errno set.
+// The check and the result that the two forms share.  step makes the
+// transfer through the door, and gives the count that it moved or the error
+// of the kernel.
 template <typename Step>
-[[nodiscard]] std::expected<std::size_t, std::error_code> transfer_all(::fixy::fs::OwnedFd const& source,
-                                                                       ::fixy::fs::OwnedFd const& destination,
-                                                                       std::size_t length, Step step) noexcept {
+[[nodiscard]] std::expected<std::size_t, std::error_code>
+transfer_all(::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination, Step step) noexcept {
     if (!source.is_open() || !destination.is_open()) {
-        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+        return std::unexpected{std::error_code{::fixy::fs::detail::closed_handle_error, std::system_category()}};
     }
-    std::size_t moved = 0;
-    while (moved < length) {
-        const ::ssize_t count = step(length - moved);
-        if (count == 0) break;
-        if (count < 0) {
-            if (errno == EINTR) continue;
-            return std::unexpected{std::error_code{errno, std::system_category()}};
-        }
-        moved += static_cast<std::size_t>(count);
+    auto moved = step();
+    if (moved.is_err()) {
+        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(moved), std::system_category()}};
     }
-    return moved;
+    return std::move(moved).expect("the transfer door gave the count that it moved");
 }
 
 }  // namespace detail
@@ -545,8 +473,8 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<std::size_t, std::error_code>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
                   std::size_t length, ::off_t source_offset = 0) noexcept {
-    return detail::transfer_all(source, destination, length, [&, offset = source_offset](std::size_t rest) mutable {
-        return ::sendfile(destination.get(), source.get(), &offset, rest);
+    return detail::transfer_all(source, destination, [&] {
+        return detail::send_file_(destination.get(), source.get(), source_offset, length);
     });
 }
 
@@ -557,11 +485,9 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<std::size_t, std::error_code>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
                   std::size_t length, ::off_t source_offset = 0, ::off_t destination_offset = 0) noexcept {
-    return detail::transfer_all(
-        source, destination, length,
-        [&, in_offset = source_offset, out_offset = destination_offset](std::size_t rest) mutable {
-            return ::copy_file_range(source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
-        });
+    return detail::transfer_all(source, destination, [&] {
+        return detail::copy_file_range_(source.get(), source_offset, destination.get(), destination_offset, length);
+    });
 }
 
 }  // namespace fixy::io

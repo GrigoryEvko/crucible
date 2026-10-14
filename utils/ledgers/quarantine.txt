@@ -2394,7 +2394,6 @@ include/fixy/os/CipherDurable.h | base-std-entity | 4 | std::unexpected | -
 include/fixy/os/CipherDurable.h | base-std-object | 9 | std::expected | -
 include/fixy/os/CipherDurable.h | base-std-object | 9 | std::filesystem::path | -
 include/fixy/os/CipherDurable.h | layer-header | 1 | <expected> | -
-include/fixy/os/CipherDurable.h | layer-header | 1 | <sys/stat.h> | -
 include/fixy/os/CipherDurable.h | layer-header | 1 | <system_error> | -
 include/fixy/os/ClockSource.h | layer-header | 1 | <string_view> | -
 include/fixy/os/CpuPinned.h | base-c-library-call | 1 | __errno_location | -
@@ -2412,69 +2411,32 @@ include/fixy/os/CpuPinned.h | layer-header | 1 | <atomic> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <expected> | -
 include/fixy/os/CpuPinned.h | layer-header | 1 | <sched.h> | -
-include/fixy/os/Fd.h | base-c-library-call | 1 | close | -
 include/fixy/os/Fd.h | base-std-entity | 3 | std::exchange | -
-include/fixy/os/Fd.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/Fs.h | base-c-library-call | 9 | __errno_location | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | fdatasync | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | fstat | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | fsync | -
-include/fixy/os/Fs.h | base-c-library-call | 2 | open | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | read | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | rename | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | renameat2 | -
-include/fixy/os/Fs.h | base-c-library-call | 1 | write | -
-include/fixy/os/Fs.h | base-c-library-object | 1 | stat | -
-include/fixy/os/Fs.h | base-std-entity | 16 | std::error_code | -
+include/fixy/os/Fs.h | base-std-entity | 12 | std::error_code | -
 include/fixy/os/Fs.h | base-std-entity | 5 | std::expected | -
-include/fixy/os/Fs.h | base-std-entity | 2 | std::expected::error | -
-include/fixy/os/Fs.h | base-std-entity | 2 | std::expected::operator* | -
 include/fixy/os/Fs.h | base-std-entity | 6 | std::filesystem::path::c_str | -
 include/fixy/os/Fs.h | base-std-entity | 2 | std::span::data | -
-include/fixy/os/Fs.h | base-std-entity | 4 | std::span::size | -
-include/fixy/os/Fs.h | base-std-entity | 11 | std::system_category | -
-include/fixy/os/Fs.h | base-std-entity | 13 | std::unexpected | -
-include/fixy/os/Fs.h | base-std-object | 14 | std::expected | -
+include/fixy/os/Fs.h | base-std-entity | 2 | std::span::size | -
+include/fixy/os/Fs.h | base-std-entity | 7 | std::system_category | -
+include/fixy/os/Fs.h | base-std-entity | 7 | std::unexpected | -
+include/fixy/os/Fs.h | base-std-object | 10 | std::expected | -
 include/fixy/os/Fs.h | base-std-object | 6 | std::filesystem::path | -
 include/fixy/os/Fs.h | base-std-object | 2 | std::span | -
-include/fixy/os/Fs.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/Fs.h | layer-header | 1 | <cerrno> | -
-include/fixy/os/Fs.h | layer-header | 1 | <cstdio> | -
 include/fixy/os/Fs.h | layer-header | 1 | <expected> | -
-include/fixy/os/Fs.h | layer-header | 1 | <fcntl.h> | -
 include/fixy/os/Fs.h | layer-header | 1 | <span> | -
-include/fixy/os/Fs.h | layer-header | 1 | <sys/stat.h> | -
 include/fixy/os/Fs.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Io.h | base-c-library-call | 6 | __errno_location | -
-include/fixy/os/Io.h | base-c-library-call | 4 | close | -
-include/fixy/os/Io.h | base-c-library-call | 1 | copy_file_range | -
-include/fixy/os/Io.h | base-c-library-call | 3 | mmap | -
-include/fixy/os/Io.h | base-c-library-call | 6 | munmap | -
-include/fixy/os/Io.h | base-c-library-call | 1 | sendfile | -
-include/fixy/os/Io.h | base-c-library-call | 1 | syscall | -
-include/fixy/os/Io.h | base-c-library-object | 1 | io_uring_params | -
-include/fixy/os/Io.h | base-std-entity | 8 | std::error_code | -
-include/fixy/os/Io.h | base-std-entity | 18 | std::exchange | -
+include/fixy/os/Io.h | base-std-entity | 5 | std::error_code | -
 include/fixy/os/Io.h | base-std-entity | 2 | std::expected | -
-include/fixy/os/Io.h | base-std-entity | 6 | std::system_category | -
-include/fixy/os/Io.h | base-std-entity | 6 | std::unexpected | -
+include/fixy/os/Io.h | base-std-entity | 3 | std::system_category | -
+include/fixy/os/Io.h | base-std-entity | 3 | std::unexpected | -
 include/fixy/os/Io.h | base-std-object | 4 | std::expected | -
-include/fixy/os/Io.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/Io.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Io.h | layer-header | 1 | <expected> | -
-include/fixy/os/Io.h | layer-header | 1 | <sys/mman.h> | -
-include/fixy/os/Io.h | layer-header | 1 | <sys/syscall.h> | -
 include/fixy/os/Io.h | layer-header | 1 | <system_error> | -
-include/fixy/os/Mmap.h | base-c-library-call | 2 | __errno_location | -
-include/fixy/os/Mmap.h | base-c-library-call | 2 | madvise | -
-include/fixy/os/Mmap.h | base-std-entity | 4 | std::error_code | -
-include/fixy/os/Mmap.h | base-std-entity | 4 | std::system_category | -
-include/fixy/os/Mmap.h | base-std-entity | 6 | std::unexpected | -
+include/fixy/os/Mmap.h | base-std-entity | 2 | std::error_code | -
+include/fixy/os/Mmap.h | base-std-entity | 2 | std::system_category | -
+include/fixy/os/Mmap.h | base-std-entity | 4 | std::unexpected | -
 include/fixy/os/Mmap.h | base-std-object | 5 | std::expected | -
-include/fixy/os/Mmap.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/Mmap.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <expected> | -
-include/fixy/os/Mmap.h | layer-header | 1 | <sys/mman.h> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <system_error> | -
 include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | __errno_location | -
 include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | syscall | -
@@ -2503,19 +2465,14 @@ include/fixy/os/OwnedFile.h | base-std-object | 4 | std::expected | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <cstdio> | -
 include/fixy/os/OwnedFile.h | layer-header | 1 | <expected> | -
-include/fixy/os/OwnedMmap.h | base-c-library-call | 1 | __errno_location | -
-include/fixy/os/OwnedMmap.h | base-c-library-call | 1 | mmap | -
-include/fixy/os/OwnedMmap.h | base-c-library-call | 1 | munmap | -
 include/fixy/os/OwnedMmap.h | base-std-entity | 1 | std::error_code | -
 include/fixy/os/OwnedMmap.h | base-std-entity | 6 | std::exchange | -
 include/fixy/os/OwnedMmap.h | base-std-entity | 1 | std::system_category | -
 include/fixy/os/OwnedMmap.h | base-std-entity | 1 | std::unexpected | -
 include/fixy/os/OwnedMmap.h | base-std-object | 1 | std::expected | -
 include/fixy/os/OwnedMmap.h | base-std-object | 1 | std::pair | -
-include/fixy/os/OwnedMmap.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/OwnedMmap.h | layer-header | 1 | <cstdlib> | -
 include/fixy/os/OwnedMmap.h | layer-header | 1 | <expected> | -
-include/fixy/os/OwnedMmap.h | layer-header | 1 | <sys/mman.h> | -
 include/fixy/os/OwnedMmap.h | layer-header | 1 | <system_error> | -
 include/fixy/os/Path.h | base-std-entity | 1 | std::basic_string::empty | -
 include/fixy/os/Path.h | base-std-entity | 1 | std::basic_string::find | -
@@ -2582,11 +2539,9 @@ include/fixy/os/ThreadName.h | base-std-entity | 1 | std::array::data | -
 include/fixy/os/ThreadName.h | base-std-object | 1 | std::array | -
 include/fixy/os/ThreadName.h | layer-header | 1 | <array> | -
 include/fixy/os/ThreadName.h | layer-header | 1 | <string_view> | -
-include/fixy/os/Time.h | base-c-library-call | 4 | __errno_location | -
+include/fixy/os/Time.h | base-c-library-call | 2 | __errno_location | -
 include/fixy/os/Time.h | base-c-library-call | 2 | clock_gettime | -
 include/fixy/os/Time.h | base-c-library-call | 1 | clock_nanosleep | -
-include/fixy/os/Time.h | base-c-library-call | 1 | ioctl | -
-include/fixy/os/Time.h | base-c-library-call | 1 | open | -
 include/fixy/os/Time.h | base-c-library-object | 1 | ptp_clock_caps | -
 include/fixy/os/Time.h | base-c-library-object | 3 | timespec | -
 include/fixy/os/Time.h | base-std-entity | 1 | std::array::data | -
@@ -2606,7 +2561,6 @@ include/fixy/os/Time.h | layer-header | 1 | <array> | -
 include/fixy/os/Time.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/Time.h | layer-header | 1 | <ctime> | -
 include/fixy/os/Time.h | layer-header | 1 | <expected> | -
-include/fixy/os/Time.h | layer-header | 1 | <fcntl.h> | -
 include/fixy/os/Time.h | layer-header | 1 | <limits> | -
 include/fixy/os/Time.h | layer-header | 1 | <system_error> | -
 include/fixy/os/Topology.h | base-c-library-call | 1 | stderr | -
@@ -4130,7 +4084,6 @@ src/topology/Ptp.cpp | c-library-object | 1 | ifreq | -
 src/topology/Ptp.cpp | c-library-object | 1 | iovec | -
 src/topology/Ptp.cpp | c-library-object | 1 | msghdr | -
 src/topology/Ptp.cpp | c-library-object | 2 | timespec | -
-src/topology/Ptp.cpp | door-header | 1 | <sys/ioctl.h> has the door include/fixy/os/Time.h | -
 src/topology/Ptp.cpp | door-header | 1 | <sys/socket.h> has the door include/fixy/os/Socket.h | -
 src/topology/Ptp.cpp | raw-pointer-object | 1 | - | -
 src/topology/Ptp.cpp | std-entity | 1 | std::array::data | -
@@ -4884,8 +4837,7 @@ test/fixy/test_os_io.cpp | c-library-call | 23 | fprintf | -
 test/fixy/test_os_io.cpp | c-library-call | 1 | memcmp | -
 test/fixy/test_os_io.cpp | c-library-call | 1 | pread | -
 test/fixy/test_os_io.cpp | c-library-call | 23 | stderr | -
-test/fixy/test_os_io.cpp | door-header | 1 | <linux/io_uring.h> has the door include/fixy/os/Io.h | -
-test/fixy/test_os_io.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
+test/fixy/test_os_io.cpp | door-header | 1 | <linux/io_uring.h> has the door src/fixy/os/Io.cpp | -
 test/fixy/test_os_io.cpp | std-entity | 1 | std::as_bytes | -
 test/fixy/test_os_io.cpp | std-entity | 4 | std::basic_string::c_str | -
 test/fixy/test_os_io.cpp | std-entity | 3 | std::error_code::message | -
@@ -5004,15 +4956,16 @@ test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library repor
 test/fixy/test_os_thread_tasks.cpp | opted-out | 1 | ORACLE: the C library reports the attributes of the calling thread \| door-header <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
 test/fixy/test_os_thread_tasks.cpp | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/test_os_time.cpp | c-library-call | 40 | fprintf | -
-test/fixy/test_os_time.cpp | c-library-call | 1 | pthread_kill | -
-test/fixy/test_os_time.cpp | c-library-call | 1 | pthread_self | -
-test/fixy/test_os_time.cpp | c-library-call | 1 | sigaction | -
-test/fixy/test_os_time.cpp | c-library-call | 1 | sigemptyset | -
 test/fixy/test_os_time.cpp | c-library-call | 40 | stderr | -
-test/fixy/test_os_time.cpp | c-library-object | 1 | sigaction | -
 test/fixy/test_os_time.cpp | c-library-object | 1 | timespec | -
-test/fixy/test_os_time.cpp | door-header | 1 | <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
-test/fixy/test_os_time.cpp | door-header | 1 | <signal.h> has the door src/fixy/os/Signal.cpp | The door rows of <signal.h> and <time.h> make each direct include of those headers in a quarantined test a finding of the kind door-header
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| c-library-call pthread_kill | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| c-library-call pthread_self | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| c-library-call sigaction | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| c-library-call sigemptyset | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| c-library-object sigaction | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| door-header <pthread.h> has the door src/fixy/os/ThreadTasks.cpp | -
+test/fixy/test_os_time.cpp | opted-out | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper \| door-header <signal.h> has the door src/fixy/os/Signal.cpp | -
+test/fixy/test_os_time.cpp | region | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/test_os_time.cpp | replace-pending:<limits> | 1 | std::numeric_limits::max | -
 test/fixy/test_os_time.cpp | std-entity | 1 | std::atomic | -
 test/fixy/test_os_time.cpp | std-entity | 1 | std::atomic::load | -
@@ -6230,7 +6183,6 @@ test/foundation/test_contract_handler.cpp | c-library-call | 3 | fcntl | -
 test/foundation/test_contract_handler.cpp | c-library-call | 1 | fork | -
 test/foundation/test_contract_handler.cpp | c-library-call | 2 | fprintf | -
 test/foundation/test_contract_handler.cpp | c-library-call | 1 | kill | -
-test/foundation/test_contract_handler.cpp | c-library-call | 1 | nanosleep | -
 test/foundation/test_contract_handler.cpp | c-library-call | 1 | pipe | -
 test/foundation/test_contract_handler.cpp | c-library-call | 1 | printf | -
 test/foundation/test_contract_handler.cpp | c-library-call | 2 | read | -
@@ -6242,8 +6194,6 @@ test/foundation/test_contract_handler.cpp | c-library-call | 2 | waitpid | -
 test/foundation/test_contract_handler.cpp | c-library-call | 1 | write | -
 test/foundation/test_contract_handler.cpp | c-library-object | 1 | itimerval | -
 test/foundation/test_contract_handler.cpp | c-library-object | 1 | sigaction | -
-test/foundation/test_contract_handler.cpp | c-library-object | 1 | timespec | -
-test/foundation/test_contract_handler.cpp | door-header | 1 | <time.h> has the door src/fixy/os/MonotonicClock.cpp | The door rows of <signal.h> and <time.h> make each direct include of those headers in a quarantined test a finding of the kind door-header
 test/foundation/test_contract_handler.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/foundation/test_contract_handler.cpp | raw-pointer-object | 2 | - | -
 test/foundation/test_contract_handler.cpp | std-entity | 1 | std::basic_string::append | -
@@ -7579,7 +7529,6 @@ test/test_cipher_publish_tier.cpp | std-entity | 1 | std::filesystem::path | -
 test/test_cipher_publish_tier.cpp | std-entity | 1 | std::filesystem::remove_all | -
 test/test_cipher_publish_tier.cpp | std-entity | 1 | std::uninitialized_value_construct_n | -
 test/test_cipher_record_event.cpp | c-array-object | 1 | - | -
-test/test_cipher_record_event.cpp | c-library-call | 1 | getpid | -
 test/test_cipher_record_event.cpp | raw-pointer-object | 12 | - | -
 test/test_cipher_record_event.cpp | std-entity | 12 | std::basic_string | -
 test/test_cipher_record_event.cpp | std-entity | 11 | std::basic_string::c_str | -
@@ -7591,27 +7540,20 @@ test/test_cipher_record_event.cpp | std-entity | 1 | std::errc | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::expected | -
 test/test_cipher_record_event.cpp | std-entity | 2 | std::expected::has_value | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::expected::operator-> | -
-test/test_cipher_record_event.cpp | std-entity | 12 | std::filesystem::create_directories | -
-test/test_cipher_record_event.cpp | std-entity | 1 | std::filesystem::operator/ | -
+test/test_cipher_record_event.cpp | std-entity | 11 | std::filesystem::create_directories | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::filesystem::path | -
-test/test_cipher_record_event.cpp | std-entity | 1 | std::filesystem::path::string | -
-test/test_cipher_record_event.cpp | std-entity | 1 | std::filesystem::remove_all | -
-test/test_cipher_record_event.cpp | std-entity | 1 | std::filesystem::temp_directory_path | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::from_chars | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::from_chars_result | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::getline | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::istreambuf_iterator | -
-test/test_cipher_record_event.cpp | std-entity | 15 | std::operator+ | -
+test/test_cipher_record_event.cpp | std-entity | 14 | std::operator+ | -
 test/test_cipher_record_event.cpp | std-entity | 2 | std::operator== | -
-test/test_cipher_record_event.cpp | std-entity | 1 | std::to_string | -
 test/test_cipher_record_event.cpp | std-entity | 4 | std::vector::operator[] | -
 test/test_cipher_record_event.cpp | std-entity | 1 | std::vector::push_back | -
 test/test_cipher_record_event.cpp | std-entity | 3 | std::vector::size | -
 test/test_cipher_record_event.cpp | std-object | 2 | std::basic_ifstream | -
 test/test_cipher_record_event.cpp | std-object | 17 | std::basic_string | -
-test/test_cipher_record_event.cpp | std-object | 1 | std::error_code | -
 test/test_cipher_record_event.cpp | std-object | 3 | std::expected | -
-test/test_cipher_record_event.cpp | std-object | 1 | std::filesystem::path | -
 test/test_cipher_record_event.cpp | std-object | 1 | std::from_chars_result | -
 test/test_cipher_record_event.cpp | std-object | 3 | std::vector | -
 test/test_cipher_tier_promotion.cpp | raw-pointer-object | 2 | - | -
