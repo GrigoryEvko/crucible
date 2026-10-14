@@ -9,9 +9,9 @@
 #include <meta>
 
 template <>
-consteval foundation::algebra::transition::verdict fixy::session::detail::subtype::sync_verdict(std::meta::info,
-                                                                                                std::meta::info) {
-    return {true, foundation::algebra::transition::mismatch::none, {}, {}};
+consteval fixy::session::transition::verdict fixy::session::detail::subtype::sync_verdict(std::meta::info,
+                                                                                          std::meta::info) {
+    return {true, fixy::session::transition::mismatch::none, {}, {}};
 }
 
 int main() { return 0; }

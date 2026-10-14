@@ -190,7 +190,6 @@
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
-#include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/permissions/PermSet.h>
@@ -200,7 +199,9 @@
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <fixy/session/Classified.h>
+#include <fixy/session/Fold.h>
 #include <fixy/session/Protocol.h>
+#include <fixy/session/Registry.h>
 
 #include <any>
 #include <cstddef>
@@ -412,12 +413,12 @@ enum class DelegationCarrier : std::uint8_t {
 namespace detail {
 
 // A walk of this header changes no vector in a loop.  Each list that a walk
-// makes is a stack of foundation/algebra/Transition.h, and the walk reads it
+// makes is a stack of fixy/session/Registry.h, and the walk reads it
 // through a pointer.  That header states the costs of a vector in a
 // constant evaluation of this GCC 16 build.
-using ::foundation::algebra::transition::make_room;
-using ::foundation::algebra::transition::push;
-using ::foundation::algebra::transition::stack;
+using ::fixy::session::transition::make_room;
+using ::fixy::session::transition::push;
+using ::fixy::session::transition::stack;
 
 // ── Why a payload is refused ────────────────────────────────────────
 
@@ -506,7 +507,7 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 // True when the type is a session protocol: its head is a combinator
 // that fixy/session/Protocol.h, or a header that extends it, registers.
 [[nodiscard]] consteval bool is_session_protocol_type(std::meta::info type) {
-    return std::meta::is_type(type) && ::foundation::algebra::transition::is_registered(protocol_registry, type);
+    return std::meta::is_type(type) && ::fixy::session::transition::is_registered(protocol_registry, type);
 }
 
 // True when the class declares a member type named protocol or
@@ -1376,7 +1377,7 @@ namespace detail {
 // for each distinct node, times the scan of `visited`.
 template <class Visitor>
 consteval bool walk_protocol_spine(std::meta::info protocol, stack<std::meta::info>& visited, Visitor& visit) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     const std::meta::info type = std::meta::dealias(protocol);
     if (holds_type(visited, type)) return true;
     push(visited, type);
@@ -1419,7 +1420,7 @@ namespace detail {
 // the role of each Sender note of a choice.  Complexity: one visit for each
 // distinct node, times the scans of `peers` and of the visited nodes.
 consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::info>& peers) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     stack<std::meta::info> visited{};
     auto collect = [&peers](const tr::node& view) consteval {
         if (!view.is_registered) return true;
@@ -1439,7 +1440,7 @@ consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::in
 // True when a Send of the protocol hands an endpoint of a session to a
 // role that the protocol of that session names as a peer.
 [[nodiscard]] consteval bool delegates_to_own_peer(std::meta::info protocol) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     bool is_found = false;
     stack<std::meta::info> visited{};
     auto check = [&is_found](const tr::node& view) consteval {
@@ -1519,7 +1520,7 @@ struct DeliveryWalk {
 // A node gives the same regions on every path that reaches it, so the
 // walk visits each node one time, also across the delegated protocols.
 consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& walk) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     auto deliver = [&walk](const tr::node& view) consteval {
         if (!view.is_registered) {
             walk.verdict.unregistered_node = view.type;
@@ -1582,7 +1583,7 @@ using delivery_facts_cached = delivery_facts_cell<delivery_facts(^^Proto)>;
 [[nodiscard]] consteval std::string_view delivery_refusal_text(DeliveryVerdict verdict) {
     if (verdict.payload.refusal != PayloadRefusal::None) return payload_refusal_text(verdict.payload);
     if (verdict.unregistered_node == std::meta::info{}) return {};
-    return ::foundation::algebra::transition::unregistered_message(unregistered_prefix, verdict.unregistered_node);
+    return ::fixy::session::transition::unregistered_message(unregistered_prefix, verdict.unregistered_node);
 }
 
 // A protocol that the walk stops on is a compile error.  The gate has the

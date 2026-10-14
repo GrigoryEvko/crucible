@@ -20,18 +20,18 @@ struct Absorb {};
 }  // namespace
 
 namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::combinator user_emit{
+inline constexpr ::fixy::session::transition::combinator user_emit{
     .shape = ^^::Emit,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
+    .kind = ::fixy::session::transition::shape_kind::step,
+    .direction = ::fixy::session::transition::polarity::output,
     .dual = ^^::Absorb,
-    .payload_variance = ::foundation::algebra::transition::variance::covariant};
-inline constexpr ::foundation::algebra::transition::combinator user_absorb{
+    .payload_variance = ::fixy::session::transition::variance::covariant};
+inline constexpr ::fixy::session::transition::combinator user_absorb{
     .shape = ^^::Absorb,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::input,
+    .kind = ::fixy::session::transition::shape_kind::step,
+    .direction = ::fixy::session::transition::polarity::input,
     .dual = ^^::Emit,
-    .payload_variance = ::foundation::algebra::transition::variance::contravariant};
+    .payload_variance = ::fixy::session::transition::variance::contravariant};
 }  // namespace fixy::session::combinators
 
 int main() { return ::fixy::session::is_send_v<Emit<int, ::fixy::session::End>> ? 0 : 1; }

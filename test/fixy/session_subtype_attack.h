@@ -22,7 +22,7 @@
 namespace test_session_subtype_attack_types {
 
 namespace s = ::fixy::session;
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 namespace tags = ::fixy::tags;
 
 struct A {};

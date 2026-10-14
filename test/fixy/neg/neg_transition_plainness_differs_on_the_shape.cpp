@@ -10,9 +10,10 @@
 //
 // Expected diagnostic: the registration of Mark is incoherent, because
 // its dual disagrees on plainness.
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Fold.h>
+#include <fixy/session/Registry.h>
 
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 
 namespace neg_transition_plainness_differs_on_the_shape_types {
 template <class K>

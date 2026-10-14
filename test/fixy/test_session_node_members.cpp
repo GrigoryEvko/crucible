@@ -11,18 +11,18 @@
 // claims.
 
 #include <fixy/session/Crash.h>
+#include <fixy/session/Fold.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
-
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Registry.h>
 
 #include <meta>
 #include <vector>
 
 namespace s = ::fixy::session;
 namespace g = ::fixy::session::global;
-namespace t = ::foundation::algebra::transition;
+namespace t = ::fixy::session::transition;
 
 namespace {
 

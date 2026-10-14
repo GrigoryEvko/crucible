@@ -15,7 +15,7 @@ namespace test_session_subtype_attack_types {
 // so a combinator that a different header registers stops the build
 // (neg_sess_combinator_outside_seal).  The coherence rules, which refuse
 // a dual that is no involution or a variance that does not flip, have
-// their witnesses in the self-test of foundation/algebra/Transition.h.
+// their witnesses in test/layer/checks/fixy/session/Refinement.cpp.
 
 // ── Empty choices ────────────────────────────────────────────────────
 //

@@ -14,7 +14,7 @@ inline constexpr bool long_weakens_to_int_v = std::is_same_v<T, long> && std::is
 }  // namespace
 
 namespace fixy::session::payload_axioms {
-inline constexpr ::foundation::algebra::transition::subsort_axiom long_to_int{.weakens = ^^::long_weakens_to_int_v};
+inline constexpr ::fixy::session::transition::subsort_axiom long_to_int{.weakens = ^^::long_weakens_to_int_v};
 }  // namespace fixy::session::payload_axioms
 
 int main() {

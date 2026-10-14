@@ -3,7 +3,7 @@
 // foot of the header then differs from the seal, and the build stops
 // there, before a query can read the rule.
 
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Registry.h>
 
 namespace {
 
@@ -13,7 +13,7 @@ struct Opaque {};
 }  // namespace
 
 namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::payload_rule opaque{
+inline constexpr ::fixy::session::transition::payload_rule opaque{
     .shape = ^^::Opaque, .is_sendable = false, .is_label = false};
 }  // namespace fixy::session::combinators
 

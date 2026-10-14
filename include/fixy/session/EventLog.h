@@ -123,7 +123,7 @@ struct InnerPermSetHash {
     constexpr auto operator<=>(const InnerPermSetHash&) const noexcept = default;
 };
 // The label word of the branch that a Select or an Offer of a keyed
-// choice took (foundation/algebra/Transition.h).  Zero in a positional
+// choice took (fixy/session/Wire.h).  Zero in a positional
 // choice, and for a branch that is no label.
 struct LabelWord {
     std::uint64_t value = 0;

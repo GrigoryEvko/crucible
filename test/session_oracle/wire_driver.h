@@ -47,7 +47,7 @@ namespace session_oracle::wire {
 namespace fs = ::fixy::session;
 
 // The word that a Send of a value writes.  A label word always has its
-// top bit set (foundation/algebra/Transition.h), and a position is small,
+// top bit set (fixy/session/Fold.h), and a position is small,
 // so this word is neither.
 inline constexpr std::uint64_t value_word = 0x0076616c7565ULL;
 inline constexpr int fuel_per_endpoint = 12;

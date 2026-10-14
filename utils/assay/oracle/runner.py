@@ -964,7 +964,7 @@ def _subtype_source(pairs: list[tuple[str, Local, Local]], relations: tuple[str,
         if "s" in relations:
             src += show(f"s{key}", f"std::bool_constant<fs::is_subtype_sync_v<{ns}::T, {ns}::U>>")
             src += show(f"x{key}", f"std::bool_constant<fs::subtype_mismatch_v<{ns}::T, {ns}::U> == "
-                                   f"::foundation::algebra::transition::mismatch::loses_termination>")
+                                   f"::fixy::session::transition::mismatch::loses_termination>")
         if "a" in relations:
             src += show(f"a{key}", f"std::bool_constant<fs::is_subtype_async_v<{ns}::T, {ns}::U, "
                                    f"::{SUBTYPE_CHANNEL}>>")
@@ -2401,8 +2401,7 @@ def measured_tree(at: str | None) -> Iterator[tuple[Path, str]]:
         except tree_git.GitError:
             head = "unknown"
         try:
-            dirty = not tree_git.is_clean(REPO_ROOT,
-                                          ("include/fixy/session", "include/foundation/algebra/Transition.h"))
+            dirty = not tree_git.is_clean(REPO_ROOT, ("include/fixy/session",))
         except tree_git.GitError:
             dirty = True
         yield REPO_ROOT / "include", f"{head}{', the working tree with edits in the session headers' if dirty else ''}"

@@ -96,7 +96,8 @@
 // (its Remark 4.2), so crashed_roles_t can be larger, and each check
 // that reads it is stricter than the paper.
 
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Fold.h>
+#include <fixy/session/Registry.h>
 #include <foundation/contracts/Armed.h>
 
 #include <cstddef>
@@ -179,13 +180,13 @@ namespace detail {
 // specialization of Rec, Branch, Comm, EnRouteChoice or Crashed.
 [[nodiscard]] consteval bool is_global_node(std::meta::info type) {
     if (type == ^^End || type == ^^Var) return true;
-    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
+    const std::meta::info shape = ::fixy::session::transition::shape_of(type);
     if (shape == type) return false;
     return shape == ^^Rec || shape == ^^Branch || shape == ^^Comm || shape == ^^EnRouteChoice || shape == ^^Crashed;
 }
 
-consteval void global_node_members(std::meta::info type, ::foundation::algebra::transition::node_members& result) {
-    namespace tr = ::foundation::algebra::transition;
+consteval void global_node_members(std::meta::info type, ::fixy::session::transition::node_members& result) {
+    namespace tr = ::fixy::session::transition;
     using tr::member_claim;
     result.is_node = is_global_node(type);
     if (!result.is_node || type == ^^End || type == ^^Var) return;
@@ -221,7 +222,7 @@ consteval void global_node_members(std::meta::info type, ::foundation::algebra::
 
 // True when the members of the global node `type` and of each node below
 // it agree with their arguments, as first_disagreeing_node of
-// foundation/algebra/Transition.h finds with the reader above.  The
+// fixy/session/Fold.h finds with the reader above.  The
 // children are read through the concept below, so the compiler keeps the
 // answer for each node type.  A global type and its unfolding share each
 // node of the loop body, and each projection of one global type reads the
@@ -235,7 +236,7 @@ template <typename Node>
 concept GlobalMembersAgreeBelow = global_members_agree_below(^^Node);
 
 [[nodiscard]] consteval bool global_members_agree_below(std::meta::info type) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     const std::meta::info node_type = std::meta::dealias(type);
     tr::node_members view{};
     global_node_members(node_type, view);

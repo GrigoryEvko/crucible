@@ -1,10 +1,13 @@
-// The transition algebra of foundation/algebra/Transition.h, over
-// stand-in registries.  Each check names the rule it holds.  A registry
-// in its own namespace is one experiment: the coherent registry is the
-// baseline, and each incoherent registry breaks exactly one coherence
-// rule.
+// The transition algebra of fixy/session/Registry.h, Fold.h, Wire.h
+// and Refinement.h, over stand-in registries.  Each check names the rule
+// it holds.  A registry in its own namespace is one experiment: the
+// coherent registry is the baseline, and each incoherent registry breaks
+// exactly one coherence rule.
 
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Fold.h>
+#include <fixy/session/Refinement.h>
+#include <fixy/session/Registry.h>
+#include <fixy/session/Wire.h>
 
 #include <cstddef>
 #include <cstdio>
@@ -13,7 +16,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 
 namespace test_transition_types {
 
@@ -597,7 +600,7 @@ static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int
 // a label word, and the peer could not tell the two labels apart.  No word
 // exists for such a key: every stable id refuses a type that names a
 // closure, so the collision never reaches the wire.
-// test/foundation/neg/neg_label_word_of_a_closure_key.cpp is the witness.
+// test/fixy/neg/neg_label_word_of_a_closure_key.cpp is the witness.
 using ClosureLabelA = decltype([] {});
 using ClosureLabelB = decltype([] {});
 static_assert(!std::is_same_v<ClosureLabelA, ClosureLabelB>);

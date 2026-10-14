@@ -24,9 +24,9 @@
 //
 // The combinators are registered in `fixy::session::combinators`, and
 // every operation here is one algebra of the transition fold in
-// foundation/algebra/Transition.h: duality, composition, composition at
+// fixy/session/Fold.h: duality, composition, composition at
 // one branch, well-formedness, terminality and the empty-choice test.
-// The registration contract is stated in that header.
+// The registration contract is stated in fixy/session/Registry.h.
 //
 // Each query reads the registry and fails closed.  A type that is not a
 // registered combinator stops the build with a message that names it.
@@ -48,7 +48,9 @@
 // EpochLattice and GenerationLattice.  A loop context has four forms, and
 // one function reads them (the section on the loop context).
 
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Fold.h>
+#include <fixy/session/Registry.h>
+#include <fixy/session/Wire.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/reflect/Anchor.h>
 
@@ -290,55 +292,54 @@ using label_of_t = typename label_of<T>::type;
 namespace combinators {
 
 // A keyed Send is a Select of one branch, and a keyed Recv is an Offer of
-// one branch (foundation/algebra/Transition.h, section on branches and
-// labels).
-inline constexpr ::foundation::algebra::transition::combinator send{
+// one branch (fixy/session/Fold.h, section on branches and labels).
+inline constexpr ::fixy::session::transition::combinator send{
     .shape = ^^Send,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
+    .kind = ::fixy::session::transition::shape_kind::step,
+    .direction = ::fixy::session::transition::polarity::output,
     .dual = ^^Recv,
-    .payload_variance = ::foundation::algebra::transition::variance::covariant,
+    .payload_variance = ::fixy::session::transition::variance::covariant,
     .keyed_choice = ^^Select};
 
-inline constexpr ::foundation::algebra::transition::combinator recv{
-    .shape = ^^Recv,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^Send,
-    .payload_variance = ::foundation::algebra::transition::variance::contravariant,
-    .keyed_choice = ^^Offer};
+inline constexpr ::fixy::session::transition::combinator recv{.shape = ^^Recv,
+                                                              .kind = ::fixy::session::transition::shape_kind::step,
+                                                              .direction = ::fixy::session::transition::polarity::input,
+                                                              .dual = ^^Send,
+                                                              .payload_variance =
+                                                                  ::fixy::session::transition::variance::contravariant,
+                                                              .keyed_choice = ^^Offer};
 
 // A choice and its dual name the same note template, so the dual of an
 // Offer with a note is a Select with the same note, and duality is an
 // involution on every registered combinator.
-inline constexpr ::foundation::algebra::transition::combinator select{
-    .shape = ^^Select,
-    .kind = ::foundation::algebra::transition::shape_kind::choice,
-    .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^Offer,
-    .annotation = ^^Sender};
+inline constexpr ::fixy::session::transition::combinator select{.shape = ^^Select,
+                                                                .kind = ::fixy::session::transition::shape_kind::choice,
+                                                                .direction =
+                                                                    ::fixy::session::transition::polarity::output,
+                                                                .dual = ^^Offer,
+                                                                .annotation = ^^Sender};
 
-inline constexpr ::foundation::algebra::transition::combinator offer{
-    .shape = ^^Offer,
-    .kind = ::foundation::algebra::transition::shape_kind::choice,
-    .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^Select,
-    .annotation = ^^Sender};
+inline constexpr ::fixy::session::transition::combinator offer{.shape = ^^Offer,
+                                                               .kind = ::fixy::session::transition::shape_kind::choice,
+                                                               .direction =
+                                                                   ::fixy::session::transition::polarity::input,
+                                                               .dual = ^^Select,
+                                                               .annotation = ^^Sender};
 
-inline constexpr ::foundation::algebra::transition::combinator loop{
-    .shape = ^^Loop, .kind = ::foundation::algebra::transition::shape_kind::binder, .dual = ^^Loop};
+inline constexpr ::fixy::session::transition::combinator loop{
+    .shape = ^^Loop, .kind = ::fixy::session::transition::shape_kind::binder, .dual = ^^Loop};
 
-inline constexpr ::foundation::algebra::transition::combinator loop_back{
-    .shape = ^^Continue, .kind = ::foundation::algebra::transition::shape_kind::back, .dual = ^^Continue};
+inline constexpr ::fixy::session::transition::combinator loop_back{
+    .shape = ^^Continue, .kind = ::fixy::session::transition::shape_kind::back, .dual = ^^Continue};
 
-inline constexpr ::foundation::algebra::transition::combinator end{
-    .shape = ^^End, .kind = ::foundation::algebra::transition::shape_kind::terminal, .dual = ^^End};
+inline constexpr ::fixy::session::transition::combinator end{
+    .shape = ^^End, .kind = ::fixy::session::transition::shape_kind::terminal, .dual = ^^End};
 
-inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
+inline constexpr ::fixy::session::transition::combinator vendor_pinned{
     .shape = ^^VendorPinned,
-    .kind = ::foundation::algebra::transition::shape_kind::wrapper,
+    .kind = ::fixy::session::transition::shape_kind::wrapper,
     .dual = ^^VendorPinned,
-    .value_variance = ::foundation::algebra::transition::variance::invariant,
+    .value_variance = ::fixy::session::transition::variance::invariant,
     .value_admits = ^^detail::vendor_is_named_v};
 
 // A delegation head is a step, and the protocol of the endpoint is its
@@ -347,77 +348,72 @@ inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
 // fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
 // The delegated protocol becomes a session of its own, so it is
 // well-formed outside every Loop, and an empty choice in it is found.
-inline constexpr ::foundation::algebra::transition::combinator delegate{
-    .shape = ^^Delegate,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^Accept,
-    .payload_is_protocol = true};
+inline constexpr ::fixy::session::transition::combinator delegate{.shape = ^^Delegate,
+                                                                  .kind = ::fixy::session::transition::shape_kind::step,
+                                                                  .direction =
+                                                                      ::fixy::session::transition::polarity::output,
+                                                                  .dual = ^^Accept,
+                                                                  .payload_is_protocol = true};
 
-inline constexpr ::foundation::algebra::transition::combinator accept{
-    .shape = ^^Accept,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^Delegate,
-    .payload_is_protocol = true};
+inline constexpr ::fixy::session::transition::combinator accept{.shape = ^^Accept,
+                                                                .kind = ::fixy::session::transition::shape_kind::step,
+                                                                .direction =
+                                                                    ::fixy::session::transition::polarity::input,
+                                                                .dual = ^^Delegate,
+                                                                .payload_is_protocol = true};
 
 // Stop is a terminal that absorbs a suffix: a crashed endpoint never
 // resumes, so composition keeps it.  Its dual is itself, and refinement
 // relates it only to itself (rule Sub-stop of fixy/session/Crash.h).
-inline constexpr ::foundation::algebra::transition::combinator stop{
-    .shape = ^^Stop,
-    .kind = ::foundation::algebra::transition::shape_kind::terminal,
-    .dual = ^^Stop,
-    .absorbs_suffix = true,
-    .is_plain = false};
+inline constexpr ::fixy::session::transition::combinator stop{.shape = ^^Stop,
+                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
+                                                              .dual = ^^Stop,
+                                                              .absorbs_suffix = true,
+                                                              .is_plain = false};
 
 // Commit is a marker: it takes a checkpoint and continues, and its dual
 // commits at the same label.  A Roll or an Abort never falls through to
 // what follows it, so composition keeps it, as it keeps a crashed
 // endpoint.  No handle stands at one of the three: the checkpoint handle
 // does the primitive in the step that exchanges its label.
-inline constexpr ::foundation::algebra::transition::combinator commit{
-    .shape = ^^Commit,
-    .kind = ::foundation::algebra::transition::shape_kind::marker,
-    .dual = ^^Commit,
-    .is_plain = false};
+inline constexpr ::fixy::session::transition::combinator commit{
+    .shape = ^^Commit, .kind = ::fixy::session::transition::shape_kind::marker, .dual = ^^Commit, .is_plain = false};
 
-inline constexpr ::foundation::algebra::transition::combinator roll{
-    .shape = ^^Roll,
-    .kind = ::foundation::algebra::transition::shape_kind::terminal,
-    .dual = ^^Roll,
-    .absorbs_suffix = true,
-    .is_plain = false};
+inline constexpr ::fixy::session::transition::combinator roll{.shape = ^^Roll,
+                                                              .kind = ::fixy::session::transition::shape_kind::terminal,
+                                                              .dual = ^^Roll,
+                                                              .absorbs_suffix = true,
+                                                              .is_plain = false};
 
-inline constexpr ::foundation::algebra::transition::combinator restart{
-    .shape = ^^Abort,
-    .kind = ::foundation::algebra::transition::shape_kind::terminal,
-    .dual = ^^Abort,
-    .absorbs_suffix = true,
-    .is_plain = false};
+inline constexpr ::fixy::session::transition::combinator restart{.shape = ^^Abort,
+                                                                 .kind =
+                                                                     ::fixy::session::transition::shape_kind::terminal,
+                                                                 .dual = ^^Abort,
+                                                                 .absorbs_suffix = true,
+                                                                 .is_plain = false};
 
-inline constexpr ::foundation::algebra::transition::seal combinator_seal{
-    .kind = ^^::foundation::algebra::transition::combinator, .count = 14};
+inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
+                                                                   .count = 14};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
-inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
+inline constexpr ::fixy::session::transition::payload_rule crash_label{
     .shape = ^^Crash, .is_sendable = false, .is_label = false};
 
 // A keyed Recv of a message from Peer is the Offer that Peer signals, so
 // it takes the note Sender<Peer>, as the projection writes that Offer.
-inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
-    .shape = ^^PeerMsg,
-    .label_key = ^^detail::peer_message::label_of_t,
-    .input_note = ^^detail::peer_message::note_of_t};
+inline constexpr ::fixy::session::transition::payload_rule peer_message{.shape = ^^PeerMsg,
+                                                                        .label_key = ^^detail::peer_message::label_of_t,
+                                                                        .input_note =
+                                                                            ^^detail::peer_message::note_of_t};
 
 // A message of the binary view names a label key too, so a choice of the
 // binary view is keyed, and the handle sends the label word.
-inline constexpr ::foundation::algebra::transition::payload_rule labelled{.shape = ^^Labelled,
-                                                                          .label_key = ^^detail::labelled::label_of_t};
+inline constexpr ::fixy::session::transition::payload_rule labelled{.shape = ^^Labelled,
+                                                                    .label_key = ^^detail::labelled::label_of_t};
 
-inline constexpr ::foundation::algebra::transition::seal payload_rule_seal{
-    .kind = ^^::foundation::algebra::transition::payload_rule, .count = 3};
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 3};
 
 }  // namespace combinators
 
@@ -450,7 +446,7 @@ inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic
 // constant evaluation that asked stops, and the diagnostic prints the
 // message of the refusal.
 consteval void require_registered_head(std::meta::info protocol) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     if (!tr::is_registered(protocol_registry, protocol)) {
         throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, protocol)), protocol);
     }
@@ -483,8 +479,8 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
 // carries.  The payload of a step is a child too, so the members of a
 // crash label and of a keyed message are claimed.  The reader puts each
 // claim, base and child on the stacks of `result`, which its caller owns.
-consteval void session_node_members(std::meta::info type, ::foundation::algebra::transition::node_members& result) {
-    namespace tr = ::foundation::algebra::transition;
+consteval void session_node_members(std::meta::info type, ::fixy::session::transition::node_members& result) {
+    namespace tr = ::fixy::session::transition;
     using tr::member_claim;
     // A payload with a rule of the registry is read by its members too:
     // the peer of a crash label, and the peer, label and payload of a
@@ -556,7 +552,7 @@ template <typename Node>
 concept MembersAgreeBelow = members_agree_below(^^Node);
 
 [[nodiscard]] consteval bool members_agree_below(std::meta::info type) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     const std::meta::info node_type = std::meta::dealias(type);
     tr::node_members view{};
     session_node_members(node_type, view);
@@ -576,7 +572,7 @@ concept MembersAgreeBelow = members_agree_below(^^Node);
 // protocol that has a node whose members lie walks the tree again, to
 // name the first such node.
 consteval bool require_agreeing_members(std::meta::info protocol) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     if (std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {std::meta::dealias(protocol)}))) {
         return true;
     }
@@ -590,7 +586,7 @@ consteval bool require_agreeing_members(std::meta::info protocol) {
 // The spine of a protocol, as two questions about each node and each node
 // below it on the spine: the next node and each branch.  A payload and a
 // value are not nodes.  first_unregistered and first_incoherent of
-// foundation/algebra/Transition.h ask the same two questions, and they
+// fixy/session/Fold.h ask the same two questions, and they
 // name the node that fails.  The two functions here read the children
 // through a concept, so the compiler keeps the answer for each node type,
 // as members_agree_below does.  Complexity: linear in the distinct node
@@ -606,8 +602,7 @@ concept SpineCoherentBelow = spine_coherent_below(^^Node);
 
 // True when each node of the spine is a registered combinator.
 [[nodiscard]] consteval bool spine_registered_below(std::meta::info type) {
-    const ::foundation::algebra::transition::node view =
-        ::foundation::algebra::transition::decompose(protocol_registry, type);
+    const ::fixy::session::transition::node view = ::fixy::session::transition::decompose(protocol_registry, type);
     if (!view.is_registered) return false;
     if (view.next != std::meta::info{}
         && !std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {view.next}))) {
@@ -623,7 +618,7 @@ concept SpineCoherentBelow = spine_coherent_below(^^Node);
 // coherent.  An unregistered node is no incoherence, as in
 // first_incoherent.
 [[nodiscard]] consteval bool spine_coherent_below(std::meta::info type) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     const tr::node view = tr::decompose(protocol_registry, type);
     if (!view.is_registered) return true;
     if (tr::check_combinator(protocol_registry, view.entry.shape).reason != tr::incoherence::none) return false;
@@ -645,7 +640,7 @@ concept SpineCoherentBelow = spine_coherent_below(^^Node);
 // comes first, and only a spine with an unregistered node walks again to
 // name it.
 consteval bool require_registered_spine(std::meta::info protocol) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     if (!std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {std::meta::dealias(protocol)}))) {
         const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
         if (missing != std::meta::info{}) {
@@ -659,7 +654,7 @@ consteval bool require_registered_spine(std::meta::info protocol) {
 // The recognizer of every shape trait.  It is a function over
 // reflections, not a template, so no specialization reaches it.
 [[nodiscard]] consteval bool head_is(std::meta::info type, std::meta::info shape) {
-    return ::foundation::algebra::transition::head_shape(protocol_registry, type) == shape;
+    return ::fixy::session::transition::head_shape(protocol_registry, type) == shape;
 }
 
 }  // namespace detail
@@ -701,7 +696,7 @@ struct PermLoopFrame {};
 void a_loop_context_has_no_known_form() noexcept;
 
 [[nodiscard]] consteval bool is_instance_of(std::meta::info type, std::meta::info family) {
-    return ::foundation::algebra::transition::shape_of(type) == family;
+    return ::fixy::session::transition::shape_of(type) == family;
 }
 
 // The Loop that an inner loop context stands for, or void for void.
@@ -831,7 +826,7 @@ using protocol_inner_t = typename detail::vendor_view<P>::protocol;
 // branch.  Its message is the label word below, and then the value of its
 // payload when the payload is not void (fixy/session/Handle.h).
 template <typename P>
-concept is_keyed_step_v = ::foundation::algebra::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
+concept is_keyed_step_v = ::fixy::session::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
 
 namespace detail {
 
@@ -839,7 +834,7 @@ namespace detail {
 // this function and not step_wire_word_v, so a specialization of the
 // public spelling changes only what its author reads, never the wire.
 [[nodiscard]] consteval std::uint64_t step_wire_word_of(std::meta::info step) {
-    return ::foundation::algebra::transition::wire_word_of_step(protocol_registry, step).value;
+    return ::fixy::session::transition::wire_word_of_step(protocol_registry, step).value;
 }
 
 }  // namespace detail
@@ -864,8 +859,8 @@ namespace detail {
 // translation unit can specialize the answer.
 [[nodiscard]] consteval bool terminal_state_of(std::meta::info protocol) {
     require_registered_head(protocol);
-    return ::foundation::algebra::transition::fold(protocol_registry, protocol,
-                                                   ::foundation::algebra::transition::terminal_algebra{}, 0);
+    return ::fixy::session::transition::fold(protocol_registry, protocol,
+                                             ::fixy::session::transition::terminal_algebra{}, 0);
 }
 
 }  // namespace detail
@@ -900,8 +895,8 @@ namespace detail {
 // translation unit can specialize the answer.
 [[nodiscard]] consteval bool empty_choice_of(std::meta::info protocol) {
     require_registered_spine(protocol);
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, protocol, ::foundation::algebra::transition::empty_choice_algebra{protocol_registry}, 0);
+    return ::fixy::session::transition::fold(protocol_registry, protocol,
+                                             ::fixy::session::transition::empty_choice_algebra{protocol_registry}, 0);
 }
 
 }  // namespace detail
@@ -920,8 +915,8 @@ namespace detail {
 // translation unit can specialize the dual of a protocol.
 [[nodiscard]] consteval std::meta::info dual_type_of(std::meta::info protocol) {
     require_registered_spine(protocol);
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, protocol, ::foundation::algebra::transition::dual_algebra{protocol_registry}, 0);
+    return ::fixy::session::transition::fold(protocol_registry, protocol,
+                                             ::fixy::session::transition::dual_algebra{protocol_registry}, 0);
 }
 
 template <typename P>
@@ -959,8 +954,8 @@ namespace detail {
 // A node that the registry does not know keeps its spelling.
 template <typename P>
 consteval std::meta::info canonical_type_of() {
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::canonical_algebra{protocol_registry}, 0);
+    return ::fixy::session::transition::fold(protocol_registry, ^^P,
+                                             ::fixy::session::transition::canonical_algebra{protocol_registry}, 0);
 }
 
 template <typename P>
@@ -1011,7 +1006,7 @@ consteval void ensure_dual() noexcept {
 // turn each exit of a loop into a loop-back, and the protocol could
 // never end.  Composition refuses that capture.  Without capture it
 // keeps terminability: when P and Q can end from each position, so can
-// the result.  foundation/algebra/Transition.h states the probe.
+// the result.  fixy/session/Fold.h states the probe.
 
 namespace detail {
 
@@ -1019,7 +1014,7 @@ namespace detail {
 // constant per suffix, so a composition that reads it at each level of P
 // computes it once.
 template <typename Q>
-inline constexpr bool suffix_is_open_v = ::foundation::algebra::transition::has_open_back(protocol_registry, ^^Q);
+inline constexpr bool suffix_is_open_v = ::fixy::session::transition::has_open_back(protocol_registry, ^^Q);
 
 // True when composition of Q into P puts an open Continue of Q under a
 // Loop of P.  The probe of P runs only for an open suffix.
@@ -1028,15 +1023,15 @@ consteval bool composition_captures() {
     if constexpr (!suffix_is_open_v<Q>) {
         return false;
     } else {
-        return ::foundation::algebra::transition::has_bound_terminal(protocol_registry, ^^P);
+        return ::fixy::session::transition::has_bound_terminal(protocol_registry, ^^P);
     }
 }
 
 template <typename P, typename Q>
 consteval std::meta::info compose_type_of() {
     require_registered_spine(^^P);
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::compose_algebra{protocol_registry, ^^Q}, 0);
+    return ::fixy::session::transition::fold(protocol_registry, ^^P,
+                                             ::fixy::session::transition::compose_algebra{protocol_registry, ^^Q}, 0);
 }
 
 template <typename P, typename Q>
@@ -1071,13 +1066,13 @@ using compose_t = typename detail::compose_view<P, Q>::type;
 namespace detail {
 
 template <typename P>
-consteval ::foundation::algebra::transition::shape_kind spine_stop_kind() {
-    return ::foundation::algebra::transition::first_stop_of_spine(protocol_registry, ^^P).entry.kind;
+consteval ::fixy::session::transition::shape_kind spine_stop_kind() {
+    return ::fixy::session::transition::first_stop_of_spine(protocol_registry, ^^P).entry.kind;
 }
 
 template <typename P>
 consteval std::size_t spine_branch_count() {
-    return ::foundation::algebra::transition::first_stop_of_spine(protocol_registry, ^^P).branches.size();
+    return ::fixy::session::transition::first_stop_of_spine(protocol_registry, ^^P).branches.size();
 }
 
 // True when composition of Q into branch I of the first choice of P puts
@@ -1088,22 +1083,21 @@ consteval bool branch_composition_captures() {
     if constexpr (!suffix_is_open_v<Q>) {
         return false;
     } else {
-        const ::foundation::algebra::transition::node stop =
-            ::foundation::algebra::transition::first_stop_of_spine(protocol_registry, ^^P);
-        if (stop.entry.kind != ::foundation::algebra::transition::shape_kind::choice || I >= stop.branches.size()) {
+        const ::fixy::session::transition::node stop =
+            ::fixy::session::transition::first_stop_of_spine(protocol_registry, ^^P);
+        if (stop.entry.kind != ::fixy::session::transition::shape_kind::choice || I >= stop.branches.size()) {
             return false;
         }
-        return ::foundation::algebra::transition::has_bound_terminal(
+        return ::fixy::session::transition::has_bound_terminal(
             protocol_registry, stop.branches[I],
-            ::foundation::algebra::transition::binders_above_first_stop(protocol_registry, ^^P));
+            ::fixy::session::transition::binders_above_first_stop(protocol_registry, ^^P));
     }
 }
 
 template <typename P, std::size_t I, typename Q>
 consteval std::meta::info compose_at_branch_type_of() {
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q},
-        0);
+    return ::fixy::session::transition::fold(
+        protocol_registry, ^^P, ::fixy::session::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q}, 0);
 }
 
 template <typename P, std::size_t I, typename Q>
@@ -1111,9 +1105,9 @@ struct compose_at_branch_view {
 private:
     static consteval bool check() { return require_registered_spine(^^P); }
     static constexpr bool is_head_checked = check();
-    static constexpr ::foundation::algebra::transition::shape_kind stop = spine_stop_kind<P>();
-    static constexpr bool reaches_choice = stop == ::foundation::algebra::transition::shape_kind::choice;
-    static constexpr bool reaches_back = stop == ::foundation::algebra::transition::shape_kind::back;
+    static constexpr ::fixy::session::transition::shape_kind stop = spine_stop_kind<P>();
+    static constexpr bool reaches_choice = stop == ::fixy::session::transition::shape_kind::choice;
+    static constexpr bool reaches_back = stop == ::fixy::session::transition::shape_kind::back;
     static constexpr bool index_fits = !reaches_choice || I < spine_branch_count<P>();
     static constexpr bool captures = branch_composition_captures<P, I, Q>();
 
@@ -1170,7 +1164,7 @@ using compose_at_branch_t = typename detail::compose_at_branch_view<P, I, Q>::ty
 //      branch uniquely, names a label key on each label branch or on
 //      none, gives each label key its own label word, and in a keyed
 //      choice makes each label branch its label step, with no Loop and
-//      no VendorPinned above it.  foundation/algebra/Transition.h states
+//      no VendorPinned above it.  fixy/session/Fold.h states
 //      the six rules, and ensure_choices_well_formed below names the
 //      rule that a choice breaks;
 //   6. the delegated protocol of each Delegate and each Accept is
@@ -1191,7 +1185,7 @@ namespace detail {
 
 // The walk starts outside every loop when the loop context names no Loop,
 // and inside one loop after its first step when it names one.
-[[nodiscard]] consteval ::foundation::algebra::transition::well_formed_algebra::position
+[[nodiscard]] consteval ::fixy::session::transition::well_formed_algebra::position
 position_of(std::meta::info loop_ctx) {
     if (std::meta::dealias(inner_loop_ctx_of(loop_ctx)) == ^^void) return {false, true};
     return {true, true};
@@ -1202,9 +1196,9 @@ position_of(std::meta::info loop_ctx) {
 [[nodiscard]] consteval bool well_formed_of(std::meta::info protocol, std::meta::info loop_ctx) {
     require_registered_head(protocol);
     require_agreeing_members(protocol);
-    return ::foundation::algebra::transition::fold(
-        protocol_registry, protocol, ::foundation::algebra::transition::well_formed_algebra{protocol_registry},
-        position_of(loop_ctx));
+    return ::fixy::session::transition::fold(protocol_registry, protocol,
+                                             ::fixy::session::transition::well_formed_algebra{protocol_registry},
+                                             position_of(loop_ctx));
 }
 
 }  // namespace detail
@@ -1219,14 +1213,14 @@ namespace detail {
 
 template <typename P>
 consteval std::string_view choice_fault_message() {
-    const ::foundation::algebra::transition::choice_verdict verdict =
-        ::foundation::algebra::transition::first_faulty_choice(protocol_registry, ^^P);
+    const ::fixy::session::transition::choice_verdict verdict =
+        ::fixy::session::transition::first_faulty_choice(protocol_registry, ^^P);
     ::foundation::reflect::anchored_t<^^P, std::string> text =
         "fixy::session::diagnostic [Protocol_Choice_Ill_Formed]: the choice ";
     text +=
         verdict.choice == std::meta::info{} ? std::string_view{"(none)"} : std::meta::display_string_of(verdict.choice);
     text += " is not well-formed: ";
-    text += ::foundation::algebra::transition::choice_fault_name(verdict.fault);
+    text += ::fixy::session::transition::choice_fault_name(verdict.fault);
     text += ".";
     return std::define_static_string(text);
 }
@@ -1234,13 +1228,13 @@ consteval std::string_view choice_fault_message() {
 }  // namespace detail
 
 // Names the first choice of P that breaks a rule of the section on
-// branches and labels of foundation/algebra/Transition.h, and the rule.
+// branches and labels of fixy/session/Fold.h, and the rule.
 // Complexity: the sum of O(b²) over the choices of P.
 template <typename P>
 consteval void ensure_choices_well_formed() noexcept {
     detail::require_registered_head(^^P);
-    static_assert(::foundation::algebra::transition::first_faulty_choice(detail::protocol_registry, ^^P).fault
-                      == ::foundation::algebra::transition::choice_fault::none,
+    static_assert(::fixy::session::transition::first_faulty_choice(detail::protocol_registry, ^^P).fault
+                      == ::fixy::session::transition::choice_fault::none,
                   detail::choice_fault_message<P>());
 }
 
@@ -1248,13 +1242,12 @@ consteval void ensure_choices_well_formed() noexcept {
 // stands before this header, in a namespace that a different header
 // opened first, makes the count differ here.  A registration after this
 // header makes it differ at the next read of a shape.
-static_assert(::foundation::algebra::transition::read_seal(detail::protocol_registry,
-                                                           ^^::foundation::algebra::transition::combinator)
-                      .fault
-                  == ::foundation::algebra::transition::seal_fault::none,
-              "fixy::session::diagnostic [Protocol_Combinator_Outside_Seal]: fixy::session::combinators holds a "
-              "combinator registration that its seal does not count.  Every combinator of the session layer is "
-              "registered in fixy/session/Protocol.h.");
+static_assert(
+    ::fixy::session::transition::read_seal(detail::protocol_registry, ^^::fixy::session::transition::combinator).fault
+        == ::fixy::session::transition::seal_fault::none,
+    "fixy::session::diagnostic [Protocol_Combinator_Outside_Seal]: fixy::session::combinators holds a "
+    "combinator registration that its seal does not count.  Every combinator of the session layer is "
+    "registered in fixy/session/Protocol.h.");
 
 // The check file of this header checks that each registration of the
 // sealed registry is coherent.
@@ -1262,11 +1255,10 @@ static_assert(::foundation::algebra::transition::read_seal(detail::protocol_regi
 // The seal counts every payload rule of the registry.  A rule that stands
 // before this header, in a namespace that a different header opened
 // first, makes the count differ here.
-static_assert(::foundation::algebra::transition::read_seal(detail::protocol_registry,
-                                                           ^^::foundation::algebra::transition::payload_rule)
-                      .fault
-                  == ::foundation::algebra::transition::seal_fault::none,
-              "fixy::session::diagnostic [Protocol_Payload_Rule_Outside_Seal]: fixy::session::combinators holds a "
-              "payload rule that its seal does not count.  Every payload rule stands in fixy/session/Protocol.h.");
+static_assert(
+    ::fixy::session::transition::read_seal(detail::protocol_registry, ^^::fixy::session::transition::payload_rule).fault
+        == ::fixy::session::transition::seal_fault::none,
+    "fixy::session::diagnostic [Protocol_Payload_Rule_Outside_Seal]: fixy::session::combinators holds a "
+    "payload rule that its seal does not count.  Every payload rule stands in fixy/session/Protocol.h.");
 
 }  // namespace fixy::session

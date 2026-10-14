@@ -727,27 +727,6 @@ foundation_neg_compile_test(neg_reflect_bits_to_string_null_buffer_with_capacity
 # The namespace-member relation of foundation/diag/FailClosed.h.
 foundation_test(test_fail_closed)
 
-# The transition algebra of foundation/algebra/Transition.h: the
-# coherence of a registry, the one fold, the payload preorder and the
-# refinement preorder, over stand-in registries.
-foundation_test(test_transition)
-
-# A closure takes no label word: the word comes from a stable id, and a
-# stable id refuses a type that names a closure, so two closure keys that
-# print one name never share a word on the wire.
-foundation_neg_compile_test(neg_label_word_of_a_closure_key
-  "a stable id refuses the type"
-  "has no declared name")
-
-# A combinator and its dual agree on whether a plain protocol may hold
-# them.  The coherence check names the pair from each side.
-foundation_neg_compile_test(neg_transition_plainness_differs_on_the_shape
-  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_shape_types::Mark is incoherent"
-  "the dual disagrees on whether a plain protocol may hold it")
-foundation_neg_compile_test(neg_transition_plainness_differs_on_the_dual
-  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_dual_types::Unmark is incoherent"
-  "the dual disagrees on whether a plain protocol may hold it")
-
 # The only Raw -> Checked edge is declared outside the relation's
 # namespace, so the pair is not admitted.  The satisfaction note names
 # the concept and the namespace the check was given.

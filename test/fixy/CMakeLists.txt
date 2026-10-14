@@ -2016,6 +2016,27 @@ fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
   "uncaught exception of type .std::meta::exception.*\\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
 
+# The transition algebra of fixy/session/Registry.h, Fold.h, Wire.h and
+# Refinement.h: the coherence of a registry, the one fold, the payload
+# preorder and the refinement preorder, over stand-in registries.
+fixy_test(test_transition)
+
+# A closure takes no label word: the word comes from a stable id, and a
+# stable id refuses a type that names a closure, so two closure keys that
+# print one name never share a word on the wire.
+fixy_neg_compile_test(neg_label_word_of_a_closure_key
+  "a stable id refuses the type"
+  "has no declared name")
+
+# A combinator and its dual agree on whether a plain protocol may hold
+# them.  The coherence check names the pair from each side.
+fixy_neg_compile_test(neg_transition_plainness_differs_on_the_shape
+  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_shape_types::Mark is incoherent"
+  "the dual disagrees on whether a plain protocol may hold it")
+fixy_neg_compile_test(neg_transition_plainness_differs_on_the_dual
+  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_dual_types::Unmark is incoherent"
+  "the dual disagrees on whether a plain protocol may hold it")
+
 # A specialization of a combinator whose nested member disagrees with its
 # template arguments is refused at the mint, and a specialized global node
 # is refused at the projection.  test_session_node_members checks that the
@@ -2041,22 +2062,22 @@ fixy_neg_compile_test(neg_sess_compatible_client_wrong_role
 # that stands outside a seal stops the build: a second registration of
 # Send before fixy/session/Protocol.h, and a new combinator from a user
 # file after it.  The coherence rules of a registration have their
-# witnesses in the self-test of foundation/algebra/Transition.h.
+# witnesses in test/layer/checks/fixy/session/Refinement.cpp.
 fixy_neg_compile_test(neg_sess_payload_rule_after_seal
   "a_registration_stands_outside_its_seal"
-  "expansion of .foundation::algebra::transition::read_payload_rule")
+  "expansion of .fixy::session::transition::read_payload_rule")
 fixy_neg_compile_test(neg_sess_payload_rule_before_seal
   "fixy::session::diagnostic \\[Protocol_Payload_Rule_Outside_Seal\\]"
   "holds a payload rule that its seal does not count")
 fixy_neg_compile_test(neg_sess_axiom_after_seal
   "a_registration_stands_outside_its_seal"
-  "expansion of .foundation::algebra::transition::detail::subsorts_within")
+  "expansion of .fixy::session::transition::detail::subsorts_within")
 fixy_neg_compile_test(neg_sess_combinator_registered_twice
   "fixy::session::diagnostic \\[Protocol_Combinator_Outside_Seal\\]"
   "holds a combinator registration that its seal does not count")
 fixy_neg_compile_test(neg_sess_combinator_outside_seal
   "a_registration_stands_outside_its_seal"
-  "expansion of .foundation::algebra::transition::read_combinator\\(\\^\\^fixy::session::combinators, \\^\\^.*Emit\\)")
+  "expansion of .fixy::session::transition::read_combinator\\(\\^\\^fixy::session::combinators, \\^\\^.*Emit\\)")
 
 # No trait of fixy/session/Protocol.h, Delegate.h, Crash.h or
 # Checkpoint.h is a template that a user can specialize.  A class
@@ -2152,7 +2173,7 @@ fixy_neg_compile_test(neg_sess_perm_set_is_empty_specialized
   "template-id .perm_set_is_empty<>. for .consteval bool fixy::session::detail::perm_set_is_empty\\(std::meta::info\\). does not match any template declaration"
   "neg_sess_perm_set_is_empty_specialized\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_sess_sync_verdict_specialized
-  "template-id .sync_verdict<>. for .consteval foundation::algebra::transition::verdict fixy::session::detail::subtype::sync_verdict\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "template-id .sync_verdict<>. for .consteval fixy::session::transition::verdict fixy::session::detail::subtype::sync_verdict\\(std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_sess_sync_verdict_specialized\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_sess_bounded_specialized
   "template-id .bounded<>. for .consteval bool fixy::session::detail::async::bounded\\(std::meta::info, std::meta::info, std::size_t, bool\\). does not match any template declaration"
@@ -2362,7 +2383,7 @@ fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
 # label step, and the label step of a keyed Send takes no value: the value
 # step after it sends the value.  A keyed step refines a choice by label.
 # The rule that a keyed step needs a keyed choice in its registration has
-# its witness in the self-test of foundation/algebra/Transition.h.
+# its witness in test/layer/checks/fixy/session/Refinement.cpp.
 fixy_neg_compile_test(neg_sess_wf_keyed_label_under_loop
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
   "a label branch of a keyed choice starts with a wrapper or a binder")

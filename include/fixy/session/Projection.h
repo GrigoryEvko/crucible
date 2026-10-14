@@ -120,10 +120,10 @@
 // crash-stop projection refuses its receiver.
 
 #include <fixy/session/Crash.h>
+#include <fixy/session/Fold.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Subtype.h>
-#include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 
 #include <cstddef>
@@ -764,9 +764,9 @@ consteval auto project_under() {
     constexpr std::meta::info disagreeing =
         std::meta::extract<bool>(std::meta::substitute(^^g::detail::GlobalMembersAgreeBelow, {^^G}))
             ? std::meta::info{}
-            : ::foundation::algebra::transition::first_disagreeing_node(&g::detail::global_node_members, ^^G);
+            : ::fixy::session::transition::first_disagreeing_node(&g::detail::global_node_members, ^^G);
     static_assert(disagreeing == std::meta::info{},
-                  ::foundation::algebra::transition::disagreeing_message(
+                  ::fixy::session::transition::disagreeing_message(
                       "fixy::session::diagnostic [Projection_Specialized_Global_Node]: ",
                       disagreeing == std::meta::info{} ? ^^G : disagreeing));
     if constexpr (disagreeing != std::meta::info{}) {

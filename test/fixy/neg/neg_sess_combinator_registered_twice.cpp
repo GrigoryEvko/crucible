@@ -8,7 +8,7 @@
 //
 // Expected diagnostic: the registry holds a combinator registration that
 // its seal does not count.
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Registry.h>
 
 namespace fixy::session {
 template <typename T, typename Rest>
@@ -18,12 +18,12 @@ struct Recv;
 }  // namespace fixy::session
 
 namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::combinator send_again{
+inline constexpr ::fixy::session::transition::combinator send_again{
     .shape = ^^::fixy::session::Send,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
+    .kind = ::fixy::session::transition::shape_kind::step,
+    .direction = ::fixy::session::transition::polarity::output,
     .dual = ^^::fixy::session::Recv,
-    .payload_variance = ::foundation::algebra::transition::variance::invariant};
+    .payload_variance = ::fixy::session::transition::variance::invariant};
 }  // namespace fixy::session::combinators
 
 #include <fixy/session/Protocol.h>

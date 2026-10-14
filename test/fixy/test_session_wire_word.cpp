@@ -26,7 +26,7 @@
 #include <cstdio>
 
 namespace s = ::fixy::session;
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 
 // The same definitions stand in the peer file.
 namespace wire_word_probe {

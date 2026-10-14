@@ -53,7 +53,7 @@
 //
 // select<I>() gives the Transport the wire word of branch I, and branch()
 // dispatches on the word that its Transport reads.  The word comes from
-// foundation/algebra/Transition.h.  In a keyed choice, where each label
+// fixy/session/Wire.h.  In a keyed choice, where each label
 // branch names a label key, the word is the label word of that key.  In
 // a positional choice, the word is the position of the branch.  A keyed
 // Select therefore reaches the branch of the peer with the same label,
@@ -106,8 +106,10 @@
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/NetworkModel.h>
 #include <fixy/session/Payload.h>
+#include <fixy/session/Registry.h>
 #include <fixy/session/Stepping.h>
 #include <fixy/session/Subtype.h>
+#include <fixy/session/Wire.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
@@ -961,8 +963,7 @@ concept keyed_step_has_value_v = !std::is_void_v<keyed_value_t<typename Step::me
 // key, so its wire words are label words.  It is a concept, so no program
 // specializes it: branch_of_wire_word reads it to decode a received word.
 template <typename Choice>
-concept is_keyed_choice_v =
-    ::foundation::algebra::transition::is_keyed_choice_type(detail::protocol_registry, ^^Choice);
+concept is_keyed_choice_v = ::fixy::session::transition::is_keyed_choice_type(detail::protocol_registry, ^^Choice);
 
 namespace detail {
 
@@ -970,8 +971,8 @@ namespace detail {
 // the peer never picks it: the endpoint enters it on an event.
 template <typename Choice, std::size_t I>
 consteval std::uint64_t branch_wire_word_of() {
-    constexpr ::foundation::algebra::transition::wire_word word =
-        ::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, I);
+    constexpr ::fixy::session::transition::wire_word word =
+        ::fixy::session::transition::wire_word_of(protocol_registry, ^^Choice, I);
     static_assert(word.is_wired, "fixy::session::diagnostic [Branch_Has_No_Wire_Word]: branch I of the choice is no "
                                  "label, so no endpoint picks it with a word.  The endpoint enters such a branch on "
                                  "an event, for example the detection of a crash.");
@@ -980,10 +981,10 @@ consteval std::uint64_t branch_wire_word_of() {
 
 // The word of each branch of the choice, and whether the branch has one.
 template <typename Choice, std::size_t Count>
-consteval std::array<::foundation::algebra::transition::wire_word, Count> wire_words_of() {
-    std::array<::foundation::algebra::transition::wire_word, Count> words{};
+consteval std::array<::fixy::session::transition::wire_word, Count> wire_words_of() {
+    std::array<::fixy::session::transition::wire_word, Count> words{};
     for (std::size_t index = 0; index < Count; ++index) {
-        words[index] = ::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, index);
+        words[index] = ::fixy::session::transition::wire_word_of(protocol_registry, ^^Choice, index);
     }
     return words;
 }
@@ -2077,7 +2078,7 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
 
 // The handle that a choice enters for branch I.  A label branch of a
 // keyed choice is its label step (rule 6 of the section on branches and
-// labels of foundation/algebra/Transition.h), and the word of the branch
+// labels of fixy/session/Fold.h), and the word of the branch
 // is the label word of that step.  The handle enters at the value step of
 // the message, or past the message when its payload is void.  Every other
 // branch, a positional one or one that is no label, enters at its head.
@@ -2548,7 +2549,7 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 
 namespace detail {
 
-// The walk keeps the rules in a stack of foundation/algebra/Transition.h
+// The walk keeps the rules in a stack of fixy/session/Registry.h
 // and reads them through a pointer.  It makes the vector one time, at the end.
 [[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule> session_payload_rules() {
     using Rule = ::fixy::concurrent::payload_family_rule;
@@ -2586,10 +2587,9 @@ namespace detail {
     const std::size_t member_count = members.size();
     for (std::size_t place = 0; place < member_count; ++place) {
         if (!std::meta::is_variable(member[place])) continue;
-        if (std::meta::remove_cvref(std::meta::type_of(member[place]))
-            != ^^::foundation::algebra::transition::combinator)
+        if (std::meta::remove_cvref(std::meta::type_of(member[place])) != ^^::fixy::session::transition::combinator)
             continue;
-        const auto entry = std::meta::extract<::foundation::algebra::transition::combinator>(member[place]);
+        const auto entry = std::meta::extract<::fixy::session::transition::combinator>(member[place]);
         if (std::meta::is_class_template(entry.shape) && !has_rule(entry.shape)) {
             push(rules, Rule{entry.shape, carries_every});
         }
@@ -2665,11 +2665,11 @@ namespace detail {
 // start at the branch in the loop context, and the context admits the
 // effect row of the branch.
 template <typename Ctx, typename Choice, std::size_t I, typename LoopCtx, typename PS>
-concept RecoverAdmitted = ::foundation::reflect::IsInstanceOf<Choice, ^^Offer> && (I < Choice::branch_count)
-                       && !::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, I).is_wired
-                       && perm_set_is_empty(^^PS)
-                       && RewindableTo<std::tuple_element_t<I, typename Choice::branches_tuple>, LoopCtx, LoopCtx>
-                       && CtxAdmitsProtocolRow<Ctx, std::tuple_element_t<I, typename Choice::branches_tuple>>;
+concept RecoverAdmitted =
+    ::foundation::reflect::IsInstanceOf<Choice, ^^Offer> && (I < Choice::branch_count)
+    && !::fixy::session::transition::wire_word_of(protocol_registry, ^^Choice, I).is_wired && perm_set_is_empty(^^PS)
+    && RewindableTo<std::tuple_element_t<I, typename Choice::branches_tuple>, LoopCtx, LoopCtx>
+    && CtxAdmitsProtocolRow<Ctx, std::tuple_element_t<I, typename Choice::branches_tuple>>;
 
 [[nodiscard]] consteval bool recover_admits(std::meta::info ctx, std::meta::info choice, std::size_t index,
                                             std::meta::info loop_ctx, std::meta::info perm_set) {

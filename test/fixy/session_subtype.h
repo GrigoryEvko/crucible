@@ -16,7 +16,7 @@
 namespace test_session_subtype_types {
 
 namespace s = ::fixy::session;
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 namespace tags = ::fixy::tags;
 using ::foundation::algebra::lattices::Tolerance;
 

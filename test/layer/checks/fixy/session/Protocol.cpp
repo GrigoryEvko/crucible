@@ -12,7 +12,7 @@ namespace detail {
 // is a parameter, so the compiler cannot fold the read before the test of
 // the seal.
 [[nodiscard]] consteval bool registry_is_coherent(std::meta::info registry) {
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     if (tr::read_seal(registry, ^^tr::combinator).fault != tr::seal_fault::none) return true;
     return tr::check_registry(registry).reason == tr::incoherence::none;
 }

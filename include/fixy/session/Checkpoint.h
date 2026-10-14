@@ -76,6 +76,7 @@
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Payload.h>
+#include <fixy/session/Registry.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/contracts/Armed.h>
@@ -124,7 +125,7 @@ namespace detail::checkpoint {
 
 // A primitive at the head of P, with no wrapper around it.
 [[nodiscard]] consteval bool is_primitive_type(std::meta::info type) {
-    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
+    const std::meta::info shape = ::fixy::session::transition::shape_of(type);
     return shape == ^^Commit || shape == ^^Roll || shape == ^^Abort;
 }
 
@@ -198,7 +199,7 @@ enum class CheckpointVerdict : std::uint8_t {
 
 namespace detail::checkpoint {
 
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 using info = std::meta::info;
 
 enum class Kind : std::uint8_t {
@@ -365,7 +366,7 @@ consteval Party initial_party(info protocol) {
 
 // `seen` holds each configuration that the walk admitted, and `pending`
 // each admitted configuration that the walk has not stepped yet.  Each is
-// a stack of foundation/algebra/Transition.h, read through a pointer, so
+// a stack of fixy/session/Registry.h, read through a pointer, so
 // the walk changes no vector.
 struct Exploration {
     tr::stack<Configuration> seen;

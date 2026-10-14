@@ -1,8 +1,9 @@
-// The compile-time checks of foundation/algebra/Transition.h.
+// The compile-time checks of fixy/session/Refinement.h, and of the headers
+// of the transition algebra that it includes.
 
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Refinement.h>
 
-namespace foundation::algebra::transition {
+namespace fixy::session::transition {
 
 // ── Self-test over a stand-in registry ────────────────────────────────
 
@@ -540,4 +541,4 @@ static_assert(!step_agrees(^^Step<short, Done>), "a base that no claim names is 
 
 }  // namespace detail::transition_self_test
 
-}  // namespace foundation::algebra::transition
+}  // namespace fixy::session::transition

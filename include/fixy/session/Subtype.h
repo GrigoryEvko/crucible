@@ -9,7 +9,7 @@
 // ── The synchronous relation ──────────────────────────────────────────
 //
 // is_subtype_sync_v<T, U> is the refinement preorder of the transition
-// algebra in foundation/algebra/Transition.h, over the combinators of
+// algebra in fixy/session/Refinement.h, over the combinators of
 // fixy/session/Protocol.h.  It runs on the two type graphs and visits
 // each pair of nodes once, so it is O(|T|·|U|) (Udomsrirungruang and
 // Yoshida, POPL 2025, section 5).  It is the coinductive relation on
@@ -41,7 +41,7 @@
 // whose payload names a label key is the Select or the Offer of that one
 // label branch, because a message is a choice with one label (Barwell,
 // Hou, Yoshida and Zhou, LMCS 2025, Definition 4.9).  The type graph of
-// foundation/algebra/Transition.h reads the step so, and both relations
+// fixy/session/Refinement.h reads the step so, and both relations
 // walk that graph.  A keyed Send refines each keyed Select that has its
 // label.  An Offer that receives the label refines a keyed Recv of it.
 // The Recv takes the Sender note of the peer that its payload names, so
@@ -196,8 +196,10 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/session/ContentAddressed.h>
+#include <fixy/session/Fold.h>
 #include <fixy/session/Protocol.h>
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Refinement.h>
+#include <fixy/session/Registry.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/diag/FailClosed.h>
@@ -238,7 +240,7 @@ namespace detail::subtype {
 // The synchronous verdict on one pair, defined below.  The payload order
 // reads it for a delegated endpoint, whose protocol is a smaller type
 // than the protocol that sends it, so the recursion ends.
-consteval ::foundation::algebra::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super);
+consteval ::fixy::session::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super);
 
 }  // namespace detail::subtype
 
@@ -316,53 +318,52 @@ inline constexpr bool tier_weakens_v<::fixy::NumericalTier<Tight, X>, ::fixy::Nu
 
 namespace payload_axioms {
 
-inline constexpr ::foundation::algebra::transition::subsort_axiom refinement_drops{
+inline constexpr ::fixy::session::transition::subsort_axiom refinement_drops{
     .drops = ^^detail::payload_order::refinement_drops_v, .inner = ^^detail::payload_order::refinement_value_t};
 
-inline constexpr ::foundation::algebra::transition::subsort_axiom refinement_weakens{
+inline constexpr ::fixy::session::transition::subsort_axiom refinement_weakens{
     .weakens = ^^detail::payload_order::refinement_weakens_v};
 
-inline constexpr ::foundation::algebra::transition::subsort_axiom tagged_drops{
+inline constexpr ::fixy::session::transition::subsort_axiom tagged_drops{
     .drops = ^^detail::payload_order::tagged_drops_v, .inner = ^^detail::payload_order::tagged_value_t};
 
-inline constexpr ::foundation::algebra::transition::subsort_axiom tier_weakens{
-    .weakens = ^^detail::payload_order::tier_weakens_v};
+inline constexpr ::fixy::session::transition::subsort_axiom tier_weakens{.weakens =
+                                                                             ^^detail::payload_order::tier_weakens_v};
 
 // A message is below another message when the peers are the same, the
 // labels are the same, and the payload is below in the payload order.
 // Bit 2 marks the position of Payload.
-inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
-                                                                               .covariant = 0b100};
+inline constexpr ::fixy::session::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg, .covariant = 0b100};
 
 // A delegated endpoint is below another when its protocol is refined by
 // the protocol of the other, and the Resource, the policy and the set are
 // the same.
-inline constexpr ::foundation::algebra::transition::subsort_axiom delegation_contravariant{
+inline constexpr ::fixy::session::transition::subsort_axiom delegation_contravariant{
     .weakens = ^^detail::payload_order::delegation_weakens_v};
 
 // A payload and its content-addressed form are below each other, at any
 // depth of the marker.
-inline constexpr ::foundation::algebra::transition::subsort_axiom content_addressed{
+inline constexpr ::fixy::session::transition::subsort_axiom content_addressed{
     .weakens = ^^::fixy::session::content_addressed_equivalent_v};
 
-inline constexpr ::foundation::algebra::transition::seal axiom_seal{
-    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 7};
+inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
+                                                              .count = 7};
 
 }  // namespace payload_axioms
 
 // The seal counts every axiom of the order.  An axiom that stands before
 // this header, in a namespace that a different header opened first,
 // makes the count differ here.
-static_assert(::foundation::algebra::transition::read_seal(^^::fixy::session::payload_axioms,
-                                                           ^^::foundation::algebra::transition::subsort_axiom)
+static_assert(::fixy::session::transition::read_seal(^^::fixy::session::payload_axioms,
+                                                     ^^::fixy::session::transition::subsort_axiom)
                       .fault
-                  == ::foundation::algebra::transition::seal_fault::none,
+                  == ::fixy::session::transition::seal_fault::none,
               "fixy::session::diagnostic [Subtype_Axiom_Outside_Seal]: fixy::session::payload_axioms holds an axiom "
               "that its seal does not count.  Every axiom of the payload order stands in fixy/session/Subtype.h.");
 
 template <typename Sub, typename Super>
 inline constexpr bool is_payload_subsort_v =
-    ::foundation::algebra::transition::subsorts(^^::fixy::session::payload_axioms, ^^Sub, ^^Super);
+    ::fixy::session::transition::subsorts(^^::fixy::session::payload_axioms, ^^Sub, ^^Super);
 
 // ── The synchronous relation ─────────────────────────────────────────
 
@@ -401,7 +402,7 @@ concept SoundSpine = spine_is_sound(^^P);
 // evaluation that asked stops, and the diagnostic prints the message.
 consteval void require_registered_spine(std::meta::info protocol) {
     if (holds_for(^^SoundSpine, protocol)) return;
-    namespace tr = ::foundation::algebra::transition;
+    namespace tr = ::fixy::session::transition;
     const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
     if (missing != std::meta::info{}) {
         throw std::meta::exception(
@@ -416,16 +417,16 @@ consteval void require_registered_spine(std::meta::info protocol) {
 
 // A function at namespace scope that is not a template, so no
 // translation unit can specialize the verdict.
-consteval ::foundation::algebra::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super) {
+consteval ::fixy::session::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super) {
     require_registered_spine(sub);
     require_registered_spine(super);
     if (!holds_for(^^::fixy::session::is_well_formed_v, sub)) {
-        return {false, ::foundation::algebra::transition::mismatch::ill_formed, sub, {}};
+        return {false, ::fixy::session::transition::mismatch::ill_formed, sub, {}};
     }
     if (!holds_for(^^::fixy::session::is_well_formed_v, super)) {
-        return {false, ::foundation::algebra::transition::mismatch::ill_formed, {}, super};
+        return {false, ::fixy::session::transition::mismatch::ill_formed, {}, super};
     }
-    return ::foundation::algebra::transition::refines(protocol_registry, ^^::fixy::session::payload_axioms, sub, super);
+    return ::fixy::session::transition::refines(protocol_registry, ^^::fixy::session::payload_axioms, sub, super);
 }
 
 }  // namespace detail::subtype
@@ -437,11 +438,10 @@ template <typename Sub, typename Super>
 concept SubtypeSync = detail::subtype::sync_verdict(^^Sub, ^^Super).holds;
 
 template <typename Sub, typename Super>
-inline constexpr ::foundation::algebra::transition::verdict subtype_verdict_v =
-    detail::subtype::sync_verdict(^^Sub, ^^Super);
+inline constexpr ::fixy::session::transition::verdict subtype_verdict_v = detail::subtype::sync_verdict(^^Sub, ^^Super);
 
 template <typename Sub, typename Super>
-inline constexpr ::foundation::algebra::transition::mismatch subtype_mismatch_v = subtype_verdict_v<Sub, Super>.reason;
+inline constexpr ::fixy::session::transition::mismatch subtype_mismatch_v = subtype_verdict_v<Sub, Super>.reason;
 
 template <typename Sub, typename Super>
 inline constexpr bool is_subtype_sync_v = SubtypeSync<Sub, Super>;
@@ -465,12 +465,12 @@ struct SubtypeOk {};
 // expected", so for a Recv the order is the reverse of the operands.
 // An operand that is not well-formed is Lhs or Rhs, and the other one
 // is void.
-template <::foundation::algebra::transition::mismatch Reason, typename Lhs, typename Rhs>
+template <::fixy::session::transition::mismatch Reason, typename Lhs, typename Rhs>
 struct SubtypeRejection {
-    static constexpr ::foundation::algebra::transition::mismatch reason = Reason;
+    static constexpr ::fixy::session::transition::mismatch reason = Reason;
     using lhs = Lhs;
     using rhs = Rhs;
-    static constexpr std::string_view description = ::foundation::algebra::transition::mismatch_name(Reason);
+    static constexpr std::string_view description = ::fixy::session::transition::mismatch_name(Reason);
 };
 
 namespace detail::subtype {
@@ -481,14 +481,14 @@ namespace detail::subtype {
 
 template <typename Sub, typename Super>
 struct reason_of {
-    static constexpr ::foundation::algebra::transition::verdict found = subtype_verdict_v<Sub, Super>;
+    static constexpr ::fixy::session::transition::verdict found = subtype_verdict_v<Sub, Super>;
     using type = std::conditional_t<
         found.holds, SubtypeOk,
         SubtypeRejection<found.reason, typename[:or_void(found.sub):], typename[:or_void(found.super):]>>;
 };
 
-[[nodiscard]] consteval std::string_view mismatch_token(::foundation::algebra::transition::mismatch reason) {
-    using ::foundation::algebra::transition::mismatch;
+[[nodiscard]] consteval std::string_view mismatch_token(::fixy::session::transition::mismatch reason) {
+    using ::fixy::session::transition::mismatch;
     switch (reason) {
         case mismatch::none:
             return "Subtype_Holds";
@@ -531,13 +531,13 @@ struct reason_of {
 // The text of a refusal: the class of the failure, then the failed pair.
 template <typename Sub, typename Super>
 consteval std::string_view refusal_message(std::string_view site) {
-    const ::foundation::algebra::transition::verdict found = subtype_verdict_v<Sub, Super>;
+    const ::fixy::session::transition::verdict found = subtype_verdict_v<Sub, Super>;
     ::foundation::reflect::anchored_t<^^Sub, std::string> text = "fixy::session::diagnostic [";
     text += mismatch_token(found.reason);
     text += "]: ";
     text += site;
     text += ": the subtype does not refine the supertype, because ";
-    text += ::foundation::algebra::transition::mismatch_name(found.reason);
+    text += ::fixy::session::transition::mismatch_name(found.reason);
     text += ".  The failed pair is ";
     text += found.sub == std::meta::info{} ? std::string_view{"(none)"} : std::meta::display_string_of(found.sub);
     text += " against ";
@@ -710,7 +710,7 @@ inline constexpr action_code label_bit = 2U;
 
 struct move {
     action_code act = 0;
-    std::size_t next = ::foundation::algebra::transition::npos;
+    std::size_t next = ::fixy::session::transition::npos;
 };
 
 // A prefix: `length` codes from place `start` of the pool of the search,
@@ -725,11 +725,11 @@ struct prefix {
 
 struct assumption {
     prefix sub_prefix{};
-    std::size_t sub_node = ::foundation::algebra::transition::npos;
+    std::size_t sub_node = ::fixy::session::transition::npos;
     prefix super_prefix{};
-    std::size_t super_node = ::foundation::algebra::transition::npos;
+    std::size_t super_node = ::fixy::session::transition::npos;
     std::size_t rho_length = 0;
-    std::size_t config = ::foundation::algebra::transition::npos;
+    std::size_t config = ::fixy::session::transition::npos;
 };
 
 // The derivation of a proof, as a graph.  Each call of prove that holds
@@ -739,13 +739,13 @@ struct assumption {
 // assumption it uses.  A path to a configuration that rule end closes is
 // a run in which the subtype and the peer of the supertype both end.
 struct configuration {
-    std::size_t super_node = ::foundation::algebra::transition::npos;
+    std::size_t super_node = ::fixy::session::transition::npos;
     bool is_end = false;
 };
 
 struct edge {
-    std::size_t from = ::foundation::algebra::transition::npos;
-    std::size_t to = ::foundation::algebra::transition::npos;
+    std::size_t from = ::fixy::session::transition::npos;
+    std::size_t to = ::fixy::session::transition::npos;
 };
 
 // The answer of the payload order for the codes of two steps.
@@ -756,10 +756,10 @@ struct payload_answer {
 };
 
 // A step of the search changes no vector: each run of the search is a
-// stack of foundation/algebra/Transition.h.
-using ::foundation::algebra::transition::make_room;
-using ::foundation::algebra::transition::push;
-using ::foundation::algebra::transition::stack;
+// stack of fixy/session/Registry.h.
+using ::fixy::session::transition::make_room;
+using ::fixy::session::transition::push;
+using ::fixy::session::transition::stack;
 
 // The fuel of one direction of the search.  A search that has no fuel
 // left has not proven the pair, and the pair is refused.  Each step
@@ -798,8 +798,8 @@ inline constexpr std::size_t search_fuel = std::size_t{1} << 16;
 //   configurations, edges
 //               the derivation.
 struct search {
-    ::foundation::algebra::transition::graph_view sub{};
-    ::foundation::algebra::transition::graph_view super{};
+    ::fixy::session::transition::graph_view sub{};
+    ::fixy::session::transition::graph_view super{};
     std::meta::info axioms{};
     std::size_t capacity = 0;
     std::size_t fuel = search_fuel;
@@ -818,7 +818,7 @@ struct search {
 // Records the edge from one configuration to another.  A configuration
 // with no parent is the root, and no edge leads to it.
 consteval void add_edge(search& state, std::size_t from, std::size_t to) {
-    if (from == ::foundation::algebra::transition::npos) return;
+    if (from == ::fixy::session::transition::npos) return;
     push(state.edges, edge{from, to});
 }
 
@@ -859,8 +859,8 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
         return sub.is_keyed == super.is_keyed && sub.label == super.label && sub.key == super.key
             && sub.note == super.note;
     }
-    return sub.is_output ? ::foundation::algebra::transition::subsorts(axioms, sub.payload, super.payload)
-                         : ::foundation::algebra::transition::subsorts(axioms, super.payload, sub.payload);
+    return sub.is_output ? ::fixy::session::transition::subsorts(axioms, sub.payload, super.payload)
+                         : ::fixy::session::transition::subsorts(axioms, super.payload, sub.payload);
 }
 
 // The answer of matches for the actions of two codes, the subtype action
@@ -898,7 +898,7 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
 consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
     while (sub_prefix.length > 0) {
         const action_code head = state.pool.items[sub_prefix.start];
-        std::size_t partner = ::foundation::algebra::transition::npos;
+        std::size_t partner = ::fixy::session::transition::npos;
         if ((head & output_bit) != 0) {
             for (std::size_t index = 0; index < super_prefix.length; ++index) {
                 if ((state.pool.items[super_prefix.start + index] & output_bit) != 0) {
@@ -909,7 +909,7 @@ consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
         } else if (super_prefix.length > 0 && (state.pool.items[super_prefix.start] & output_bit) == 0) {
             partner = 0;
         }
-        if (partner == ::foundation::algebra::transition::npos
+        if (partner == ::fixy::session::transition::npos
             || !matches_code(state, head, state.pool.items[super_prefix.start + partner])) {
             return;
         }
@@ -953,9 +953,9 @@ consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
     return (!needs_output || has_output) && (!needs_input || has_input);
 }
 
-[[nodiscard]] consteval bool is_action_node(const ::foundation::algebra::transition::graph_node& node) {
-    return node.entry.kind == ::foundation::algebra::transition::shape_kind::step
-        || node.entry.kind == ::foundation::algebra::transition::shape_kind::choice;
+[[nodiscard]] consteval bool is_action_node(const ::fixy::session::transition::graph_node& node) {
+    return node.entry.kind == ::fixy::session::transition::shape_kind::step
+        || node.entry.kind == ::fixy::session::transition::shape_kind::choice;
 }
 
 // The code of an action.  The table gets the action when it does not
@@ -975,20 +975,20 @@ consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
 // writes its moves.  A step has one move: its payload, to its
 // continuation.  A choice has one move for each branch, in the order of
 // the branches, with the word that the handle sends for the branch.
-[[nodiscard]] consteval std::size_t moves_of(search& state, const ::foundation::algebra::transition::graph_view& graph,
+[[nodiscard]] consteval std::size_t moves_of(search& state, const ::fixy::session::transition::graph_view& graph,
                                              std::size_t offset, std::size_t index) {
     const std::size_t slot = 2 * (offset + index);
-    if (state.node_items[slot] != ::foundation::algebra::transition::npos) return slot;
-    const ::foundation::algebra::transition::graph_node& node = graph.nodes[index];
-    const bool is_output = node.entry.direction == ::foundation::algebra::transition::polarity::output;
+    if (state.node_items[slot] != ::fixy::session::transition::npos) return slot;
+    const ::fixy::session::transition::graph_node& node = graph.nodes[index];
+    const bool is_output = node.entry.direction == ::fixy::session::transition::polarity::output;
     const std::size_t first = state.moves.top;
-    if (node.entry.kind == ::foundation::algebra::transition::shape_kind::step) {
+    if (node.entry.kind == ::fixy::session::transition::shape_kind::step) {
         const action_code code = code_of(state, action{is_output, false, false, 0, {}, node.payload, {}});
         push(state.moves, move{code, node.next});
     } else {
         for (std::size_t branch = 0; branch < node.child_count; ++branch) {
             const std::size_t child = graph.children[node.first_child + branch];
-            const ::foundation::algebra::transition::graph_node& head = graph.nodes[child];
+            const ::fixy::session::transition::graph_node& head = graph.nodes[child];
             const std::uint64_t label = node.is_keyed ? head.label_word : static_cast<std::uint64_t>(branch);
             const std::meta::info key = node.is_keyed ? head.label_key : std::meta::info{};
             const action_code code =
@@ -1003,10 +1003,9 @@ consteval void reduce(search& state, prefix& sub_prefix, prefix& super_prefix) {
 
 // A back node leads to its binder.  The binder itself is not entered
 // here, because the unfold is a rule of its own.
-[[nodiscard]] consteval std::size_t to_binder(const ::foundation::algebra::transition::graph_view& graph,
-                                              std::size_t index) {
-    if (index == ::foundation::algebra::transition::npos) return index;
-    if (graph.nodes[index].entry.kind == ::foundation::algebra::transition::shape_kind::back) {
+[[nodiscard]] consteval std::size_t to_binder(const ::fixy::session::transition::graph_view& graph, std::size_t index) {
+    if (index == ::fixy::session::transition::npos) return index;
+    if (graph.nodes[index].entry.kind == ::fixy::session::transition::shape_kind::back) {
         return graph.nodes[index].next;
     }
     return index;
@@ -1067,10 +1066,9 @@ consteval bool exchange(search& state, prefix sub_prefix, std::size_t sub_index,
     const std::size_t own_end = own_first + state.node_items[own_slot + 1];
     const std::size_t other_first = state.node_items[other_slot];
     const std::size_t other_end = other_first + state.node_items[other_slot + 1];
-    const bool sub_sends =
-        state.sub.nodes[sub_index].entry.direction == ::foundation::algebra::transition::polarity::output;
+    const bool sub_sends = state.sub.nodes[sub_index].entry.direction == ::fixy::session::transition::polarity::output;
     const bool super_sends =
-        state.super.nodes[super_index].entry.direction == ::foundation::algebra::transition::polarity::output;
+        state.super.nodes[super_index].entry.direction == ::fixy::session::transition::polarity::output;
     if (sub_sends && !super_sends) {
         // Rule oi: every output of the subtype against every input of
         // the supertype.
@@ -1125,18 +1123,17 @@ consteval bool exchange(search& state, prefix sub_prefix, std::size_t sub_index,
 
 consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, std::size_t sub_bound,
                      prefix super_prefix, std::size_t super_index, std::size_t super_bound, std::size_t parent) {
-    using ::foundation::algebra::transition::shape_kind;
+    using ::fixy::session::transition::shape_kind;
     const std::size_t prefix_length = sub_prefix.length + super_prefix.length;
     const std::size_t rho_length = state.rho.top;
     if (!spend(state, 1 + prefix_length + rho_length + state.sigma.top * (1 + prefix_length))) return false;
     sub_index = to_binder(state.sub, sub_index);
     super_index = to_binder(state.super, super_index);
-    if (sub_index == ::foundation::algebra::transition::npos
-        || super_index == ::foundation::algebra::transition::npos) {
+    if (sub_index == ::fixy::session::transition::npos || super_index == ::fixy::session::transition::npos) {
         return false;
     }
-    const ::foundation::algebra::transition::graph_node& own = state.sub.nodes[sub_index];
-    const ::foundation::algebra::transition::graph_node& other = state.super.nodes[super_index];
+    const ::fixy::session::transition::graph_node& own = state.sub.nodes[sub_index];
+    const ::fixy::session::transition::graph_node& other = state.super.nodes[super_index];
     if (own.entry.kind == shape_kind::wrapper || other.entry.kind == shape_kind::wrapper) return false;
     // This call is a configuration of the derivation.  A caller whose
     // attempt fails drops it again.
@@ -1196,11 +1193,11 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
 // The graph lists its nodes in the order a depth-first walk reaches
 // them, so the wrappers at the top come first and every node from `top`
 // on is below them.
-[[nodiscard]] consteval bool is_outside_the_check(const ::foundation::algebra::transition::graph_view& graph,
+[[nodiscard]] consteval bool is_outside_the_check(const ::fixy::session::transition::graph_view& graph,
                                                   std::size_t top) {
     for (std::size_t index = top; index < graph.nodes.size(); ++index) {
-        const ::foundation::algebra::transition::graph_node& node = graph.nodes[index];
-        if (node.entry.kind == ::foundation::algebra::transition::shape_kind::wrapper) return true;
+        const ::fixy::session::transition::graph_node& node = graph.nodes[index];
+        if (node.entry.kind == ::fixy::session::transition::shape_kind::wrapper) return true;
         if (node.has_restricted_payload) return true;
     }
     return false;
@@ -1212,7 +1209,7 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
 // the graph of the supertype, must be able to end.  So the subtype never
 // removes an exit that the supertype offers where the derivation stands.
 // This is the condition of the synchronous relation (refines in
-// foundation/algebra/Transition.h), read on the derivation in place of
+// fixy/session/Refinement.h), read on the derivation in place of
 // the product.  Complexity: O(C·E) at worst for C configurations and E
 // edges, one pass per level of loop-back.
 [[nodiscard]] consteval bool keeps_exits(const search& state) {
@@ -1254,16 +1251,16 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
         return false;
     }
     search state{};
-    state.sub = ::foundation::algebra::transition::graph_of(protocol_registry, sub);
-    state.super = ::foundation::algebra::transition::graph_of(protocol_registry, super);
+    state.sub = ::fixy::session::transition::graph_of(protocol_registry, sub);
+    state.super = ::fixy::session::transition::graph_of(protocol_registry, super);
     state.axioms = ^^::fixy::session::payload_axioms;
     state.capacity = capacity;
     std::size_t sub_top = 0;
     std::size_t super_top = 0;
-    while (state.sub.nodes[sub_top].entry.kind == ::foundation::algebra::transition::shape_kind::wrapper
-           || state.super.nodes[super_top].entry.kind == ::foundation::algebra::transition::shape_kind::wrapper) {
-        const ::foundation::algebra::transition::graph_node& own = state.sub.nodes[sub_top];
-        const ::foundation::algebra::transition::graph_node& other = state.super.nodes[super_top];
+    while (state.sub.nodes[sub_top].entry.kind == ::fixy::session::transition::shape_kind::wrapper
+           || state.super.nodes[super_top].entry.kind == ::fixy::session::transition::shape_kind::wrapper) {
+        const ::fixy::session::transition::graph_node& own = state.sub.nodes[sub_top];
+        const ::fixy::session::transition::graph_node& other = state.super.nodes[super_top];
         if (own.entry.shape != other.entry.shape || own.value != other.value) return false;
         sub_top = own.next;
         super_top = other.next;
@@ -1275,9 +1272,9 @@ consteval bool prove(search& state, prefix sub_prefix, std::size_t sub_index, st
     make_room(state.node_moves, slot_count);
     state.node_items = state.node_moves.items;
     for (std::size_t slot = 0; slot < slot_count; ++slot)
-        state.node_items[slot] = ::foundation::algebra::transition::npos;
+        state.node_items[slot] = ::fixy::session::transition::npos;
     if (!prove(state, prefix{}, sub_top, capacity + 1, prefix{}, super_top, capacity + 1,
-               ::foundation::algebra::transition::npos)) {
+               ::fixy::session::transition::npos)) {
         return false;
     }
     return !checks_exits || keeps_exits(state);

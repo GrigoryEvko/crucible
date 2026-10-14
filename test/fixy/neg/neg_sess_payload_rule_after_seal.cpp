@@ -15,7 +15,7 @@ struct Opaque {};
 }  // namespace
 
 namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::payload_rule opaque{
+inline constexpr ::fixy::session::transition::payload_rule opaque{
     .shape = ^^::Opaque, .is_sendable = false, .is_label = false};
 }  // namespace fixy::session::combinators
 

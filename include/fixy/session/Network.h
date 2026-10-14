@@ -97,7 +97,8 @@
 #include <fixy/session/Payload.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
-#include <foundation/algebra/Transition.h>
+#include <fixy/session/Registry.h>
+#include <fixy/session/Wire.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/reflect/Anchor.h>
 
@@ -138,7 +139,7 @@ enum class NetworkRefusal : std::uint8_t {
 namespace detail::network {
 
 namespace g = ::fixy::session::global;
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 
 template <typename From, typename To>
 struct SenderReceiver {
@@ -203,7 +204,7 @@ struct hop {
 
 // The transmissions of the run, with the loop body two times, or the
 // first choice on the path.  The hops are a stack of
-// foundation/algebra/Transition.h, so the walk changes no vector.  A
+// fixy/session/Registry.h, so the walk changes no vector.  A
 // reader reads each hop through a pointer.  A stack has no copy, so
 // run_of fills the run of its caller.
 struct run {
@@ -235,7 +236,7 @@ void bag_walk_meets_an_unknown_node();
 // keyed Recv that projection writes for the message.
 consteval std::uint64_t receive_word(std::meta::info from, std::meta::info label, std::meta::info payload) {
     const std::meta::info message = std::meta::substitute(^^::fixy::session::PeerMsg, {from, label, payload});
-    const ::foundation::algebra::transition::wire_word word = ::foundation::algebra::transition::wire_word_of_step(
+    const ::fixy::session::transition::wire_word word = ::fixy::session::transition::wire_word_of_step(
         ::fixy::session::detail::protocol_registry,
         std::meta::substitute(^^::fixy::session::Recv, {message, ^^::fixy::session::End}));
     if (!word.is_wired) bag_walk_meets_an_unknown_node();

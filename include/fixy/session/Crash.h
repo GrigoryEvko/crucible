@@ -115,8 +115,10 @@
 // header claims more than that.
 
 #include <fixy/session/CrashCause.h>
+#include <fixy/session/Fold.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Protocol.h>
+#include <fixy/session/Registry.h>
 
 #include <foundation/contracts/Armed.h>
 
@@ -153,7 +155,7 @@ struct Crash {
 
 namespace detail::crash {
 
-namespace tr = ::foundation::algebra::transition;
+namespace tr = ::fixy::session::transition;
 
 [[nodiscard]] consteval bool is_crash_payload_type(std::meta::info type) {
     return std::meta::is_type(std::meta::dealias(type)) && tr::shape_of(type) == ^^Crash;
@@ -402,7 +404,7 @@ private:
     // branches trail.  Rule 7: one crash branch for each peer.  Rule 3: an
     // unreliable sender has a crash branch, and each crash branch names
     // the sender.  Rule 5: no crash branch names a reliable role.  The
-    // crashed peers are a stack of foundation/algebra/Transition.h, read
+    // crashed peers are a stack of fixy/session/Registry.h, read
     // through a pointer, so the walk changes no vector.  Complexity:
     // quadratic in the crash branches, linear in the others.
     template <class Child>
@@ -592,7 +594,7 @@ struct erase_algebra {
     consteval std::meta::info step(const crash::tr::node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {view.payload, child(view.next, ctx)});
     }
-    // The kept branches are a stack of foundation/algebra/Transition.h, so
+    // The kept branches are a stack of fixy/session/Registry.h, so
     // the walk changes no vector.
     template <class Child>
     consteval std::meta::info choice(const crash::tr::node& view, context ctx, const Child& child) const {

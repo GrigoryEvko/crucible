@@ -505,6 +505,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::session::config, "configurations of the reduction semantics: a model of a running system that the "
                                 "compiler reduces, and never a value in a signature"},
     {^^::fixy::session::projection_failure, "the reasons that a projection refuses, as types that a diagnostic names"},
+    {^^::fixy::session::transition, "the protocol algebra: registrations, graph nodes and verdicts computed "
+                                    "at compile time; nothing here is a value in a signature"},
     {^^::fixy::refined, kMachinery},
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
     {^^::fixy::collision, kMachinery},
@@ -519,8 +521,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::fixy::refined::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::foundation::algebra::modality, kGradeVocabulary},
-    {^^::foundation::algebra::transition, "the protocol algebra: registrations, graph nodes and verdicts computed "
-                                          "at compile time; nothing here is a value in a signature"},
     {^^::foundation::algebra::lattices, kGradeVocabulary},
     {^^::foundation::algebra::lattices::counter_tags, kGradeVocabulary},
     {^^::foundation::effects::cap, kGradeVocabulary},
