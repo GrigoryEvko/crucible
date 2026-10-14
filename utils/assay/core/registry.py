@@ -21,10 +21,10 @@ THE ROWS
                    the two thresholds and the unit of a measured rule.  A
                    rule has the three fields or none of them.  The unit is
                    one word: s, G (10^9 instructions), GB, MB, KB, bytes,
-                   %, operations, elements, x (a multiple), links, jobs or
-                   passes.  A rule of the holder `loop-evidence` holds a
-                   target: the quantity of evidence that the runs must get
-                   (assay.loop.evidence.targets)
+                   %, operations, elements, x (a multiple), links, jobs,
+                   passes or runs.  A rule of the holder `loop-evidence`
+                   holds a target: the quantity of evidence that the runs
+                   must get (assay.loop.evidence.targets)
       inputs       the paths that the rule reads and that its module does not
                    show
       doc          the section of CLAUDE.md that states the rule, such as XV,
@@ -126,7 +126,9 @@ TERM_CATEGORIES = frozenset(
 PACKAGE_OWNER = "assay."
 MASTER_OWNER = "bin."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
-UNITS = frozenset({"s", "G", "GB", "MB", "KB", "bytes", "%", "operations", "elements", "x", "links", "jobs", "passes"})
+UNITS = frozenset(
+    {"s", "G", "GB", "MB", "KB", "bytes", "%", "operations", "elements", "x", "links", "jobs", "passes", "runs"}
+)
 # The commands that read the thresholds of a measured rule with no module of its own.
 HOLDING_COMMANDS = frozenset(
     {
