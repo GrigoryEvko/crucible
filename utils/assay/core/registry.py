@@ -21,7 +21,8 @@ THE ROWS
                    the two thresholds and the unit of a measured rule.  A
                    rule has the three fields or none of them.  The unit is
                    one word: s, G (10^9 instructions), GB, MB, KB, bytes,
-                   %, operations, elements, x (a multiple), links or jobs
+                   %, operations, elements, x (a multiple), links, jobs or
+                   passes
       inputs       the paths that the rule reads and that its module does not
                    show
       doc          the section of CLAUDE.md that states the rule, such as XV,
@@ -33,9 +34,10 @@ THE ROWS
       held-by      the rule or the command that reads the thresholds of a
                    measured rule that has no module of its own: a rule ID,
                    or guard-warnings, loop-gauge, loop-history, loop-step,
-                   loop-test-step, loop-fixture or cmake.  A step meter
-                   (loop-step, loop-test-step or loop-fixture) can also hold
-                   a rule with no thresholds, which it judges for each step
+                   loop-test-step, loop-fixture, `loop-evidence` or cmake.  A
+                   step meter (loop-step, loop-test-step or loop-fixture) can
+                   also hold a rule with no thresholds, which it judges for
+                   each step
       holder       the function of the holder that judges a rule with
                    held-by, as MODULE:FUNCTION, such as
                    assay.loop.gauge:judged_record.  MODULE is a module of the
@@ -122,10 +124,19 @@ TERM_CATEGORIES = frozenset(
 PACKAGE_OWNER = "assay."
 MASTER_OWNER = "bin."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
-UNITS = frozenset({"s", "G", "GB", "MB", "KB", "bytes", "%", "operations", "elements", "x", "links", "jobs"})
+UNITS = frozenset({"s", "G", "GB", "MB", "KB", "bytes", "%", "operations", "elements", "x", "links", "jobs", "passes"})
 # The commands that read the thresholds of a measured rule with no module of its own.
 HOLDING_COMMANDS = frozenset(
-    {"guard-warnings", "loop-gauge", "loop-history", "loop-step", "loop-test-step", "loop-fixture", "cmake"}
+    {
+        "guard-warnings",
+        "loop-gauge",
+        "loop-history",
+        "loop-step",
+        "loop-test-step",
+        "loop-fixture",
+        "loop-evidence",
+        "cmake",
+    }
 )
 # The step meters, which judge each step that they run.  Such a meter can also hold a rule with no thresholds.
 STEP_METERS = frozenset({"loop-step", "loop-test-step", "loop-fixture"})

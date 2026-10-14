@@ -193,6 +193,7 @@ term main category=noun-19 | the name of the primary branch of the repository, a
 term match category=verb-2b | to agree with a pattern: a glob matches a path, and a regular expression matches a text
 term option category=noun-19 | an option of a command line, such as --write, or an option of the compiler
 term pack category=noun-19 | a parameter pack of C++: the list of the types or the values of a variadic template
+term pass category=noun-19 | a run of a test with the status 0, and the unit passes of a measured rule that counts such runs
 term program category=noun-19 | a program that a computer starts: an executable file or a script
 term raise category=verb-2c | to raise an exception in Python.  The heading Raises: of a docstring gives the exceptions of a function
 term reason category=noun-19 | the reason cell of a ledger row, and the reason text of an opt-out region
