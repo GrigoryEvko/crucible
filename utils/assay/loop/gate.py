@@ -174,6 +174,16 @@ THE FALLS
     ledgers.  A landing of more than one commit gets the ledgers in its last
     commit.  A row of THE GROWTH of assay.loop.land then names its first
     commit as before.
+
+    Before the fold, when a write changed a ledger, the gate runs `guard
+    write --rule history --root TREE` in the mode lower.  That write removes
+    each row of the ledger of the rule history that admits nothing
+    (assay.guard.engines.meta.history).  A fall can make a row of the kind
+    `grow` or `rebase` admit nothing.  The fall removes the rows of the
+    growth that such a row admits.  The ledger of the rule history then goes
+    into the new commit with the other ledgers.  A tree with no rule history
+    in its registry gets no such write.
+
     The warm tree moves to the new commit.  Each configuration of objects of
     the run then runs again.  A configuration of the full suite runs `loop
     test BUILD`, which runs each test with an input that changed, as the run
@@ -682,17 +692,42 @@ class Gate:
             problems = self._checked(configuration, rules, environment)
         return problems
 
-    def _fold(self, candidate: Candidate) -> tuple[str, tuple[str, ...]]:
-        """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
+    def _write_history(self, environment: Mapping[str, str]) -> None:
+        """Write the ledger of the rule history of the warm tree in the mode lower (THE FALLS).
 
-        The warm tree moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
+        The write removes each row that admits nothing.  A write that refuses a finding exits 1 and writes nothing, and
+        the test of the rule then keeps that finding as its error.  A tree with no rule history in its registry gets no
+        write.
 
         Raises:
+            GateError: If the registry of the warm tree does not read
+        """
+        from assay.guard.engines.meta import history
+
+        try:
+            registry = rule_registry.load(self.tree / rule_registry.REGISTRY_PATH)
+        except (OSError, ValueError) as problem:
+            raise GateError(f"the registry of {self.tree} does not read: {problem}") from None
+        if history.RULE not in registry.rules:
+            return
+        command = [*self._master("guard"), "write", "--rule", history.RULE, "--root", str(self.tree)]
+        status = self._run_logged(command, f"write-{history.RULE}.log", environment, proc.TOOL_S)
+        check_report.write_line(f"loop land: the write of {history.RULE} exits {status}")
+
+    def _fold(self, candidate: Candidate, environment: Mapping[str, str]) -> tuple[str, tuple[str, ...]]:
+        """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
+
+        A change of a ledger first gets the write of the ledger of the rule history (_write_history()).  The warm tree
+        moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
+
+        Raises:
+            GateError: If the registry of the warm tree does not read
             git.GitError: If a git command fails
         """
-        ledgers = tuple(sorted(git.work_changes(self.tree, "HEAD", [LEDGER_PREFIX])))
-        if not ledgers:
+        if not git.work_changes(self.tree, "HEAD", [LEDGER_PREFIX]):
             return candidate.commit, ()
+        self._write_history(environment)
+        ledgers = tuple(sorted(git.work_changes(self.tree, "HEAD", [LEDGER_PREFIX])))
         files = {name: (self.tree / name).read_bytes() if (self.tree / name).is_file() else None for name in ledgers}
         final = git.replaced_commit(self.root, candidate.commit, files)
         move_tree(self.root, self.tree, final)
@@ -1031,7 +1066,7 @@ class Gate:
         problems = step((last,), False, lambda: self.other_plan(candidate, others))
         if problems:
             return stopped(problems)
-        final, ledgers = self._fold(candidate)
+        final, ledgers = self._fold(candidate, environment)
         if ledgers:
             check_report.write_line(
                 f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit {final[:9]}, "

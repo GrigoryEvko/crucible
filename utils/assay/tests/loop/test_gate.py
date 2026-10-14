@@ -94,20 +94,27 @@ report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</test
 sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 """
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
-# apply.  `write` lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  The
-# write of slow-row raises the value 10 of its ledger to 12, as the write of a kept row does.
+# apply.  `write` lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  It
+# also removes the row of gone.h, as the write of a fall to 0 does.  The write of slow-row raises the value 10 of its
+# ledger to 12, as the write of a kept row does.  The write of the rule history runs the guard of this tree
+# (GUARD_MARK).
+GUARD_MARK = "@GUARD@"
 GUARD_MASTER = """import os
 import pathlib
+import subprocess
 import sys
 
 words = sys.argv[1:]
 if words[0] == "check":
     with open(pathlib.Path(words[4]) / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
+if words[:3] == ["write", "--rule", "history"]:
+    sys.exit(subprocess.run([sys.executable, "@GUARD@", *words], check=False).returncode)
 if words[0] == "write":
     name, old, new = ("slow-row", "| 10 |", "| 12 |") if words[2] == "slow-row" else ("door-unit", "| 2 |", "| 1 |")
     ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
-    ledger.write_text(ledger.read_text().replace(old, new))
+    lines = ledger.read_text().replace(old, new).splitlines(keepends=True)
+    ledger.write_text("".join(line for line in lines if "gone.h" not in line))
     with open(pathlib.Path(words[4]) / "writes.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]}\\n")
     sys.exit(0)
@@ -152,14 +159,17 @@ HISTORY_LEDGER = "utils/ledgers/history.txt"
 LEDGER_HEAD = "# a planted ledger\nformat 1\nrule {rule}\n"
 
 
-def planted_repository(root: Path) -> str:
-    """Plant the repository in root with one commit, and return the commit."""
+def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
+    """Plant the repository in root with one commit, and return the commit.
+
+    `files` replaces or adds some files of PLANTED.  The guard master runs the guard of this tree for the rule history.
+    """
     root.mkdir(parents=True, exist_ok=True)
     git.init(root)
-    for name, text in PLANTED.items():
+    for name, text in {**PLANTED, **(files or {})}.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text.replace(GUARD_MARK, str(paths.GUARD)), encoding="utf-8")
     return git.commit_all(root, "Add the planted tree")
 
 
@@ -592,6 +602,50 @@ def falls_cases(expect: testing.Expect) -> None:
         )
 
 
+def falls_history_cases(expect: testing.Expect) -> None:
+    """Hold THE FALLS with the rule history: a fall that makes a row of the kind `grow` admit nothing removes it."""
+    with tempfile.TemporaryDirectory(prefix="gate-falls-history-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        ledger = "utils/ledgers/door-unit.txt"
+        doors = (
+            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
+            "src/door.cpp | header-door | 2 | door.h | -\n"
+        )
+        planted_repository(root, {ledger: doors, rule_registry.REGISTRY_PATH: f"{REGISTRY}{HISTORY_RULE}\n"})
+        gone = "src/gone.cpp | header-door | 1 | gone.h | -\n"
+        grown = commit_change(root, ledger, doors + gone, "Count the door of gone.h")
+        grow_row = f"{ledger} | grow | admit | {grown[:9]} | the door of gone.h must stay\n"
+        rows = LEDGER_HEAD.format(rule="history") + grow_row
+        head = commit_change(root, HISTORY_LEDGER, rows, "Admit the door of gone.h")
+        commit = commit_change(root, "notes.txt", "a change that removes gone.h\n", "Remove gone.h\n\nThe body.")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, commit)
+        at_head = history_status(tree)
+        (tree / ledger).write_text(doors.replace("| 2 |", "| 1 |"), encoding="utf-8")
+        with_fall = history_status(tree)
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "falls")
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
+        folded = (git.show(root, verdict.final, HISTORY_LEDGER) or b"").decode()
+        at_final = history_status(tree)
+        holds = (
+            at_head == 0
+            and with_fall == 1
+            and verdict.is_accepted
+            and verdict.ledgers == (ledger, HISTORY_LEDGER)
+            and "| grow |" not in folded
+            and at_final == 0
+        )
+        label = (
+            f"a fall that makes a grow row admit nothing makes the gate write the ledger of the rule history, and the "
+            f"commit of the falls holds no such row: the rule history gives {at_head} at the commit, {with_fall} "
+            f"with the fall and the row, and {at_final} at the commit of the falls, and the gate folds "
+            f"{verdict.ledgers}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 def keep_cases(expect: testing.Expect) -> None:
     """Hold the kept rows: a red test of a rule of --keep gets the write of the rule, and the gate folds the ledger."""
     with tempfile.TemporaryDirectory(prefix="gate-keep-") as work_text:
@@ -760,6 +814,7 @@ def main(argv: list[str]) -> int:
             change_cases,
             run_cases,
             falls_cases,
+            falls_history_cases,
             keep_cases,
             changed_tests_cases,
             touched_cases,
