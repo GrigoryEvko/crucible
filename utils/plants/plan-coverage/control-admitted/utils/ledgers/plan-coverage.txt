@@ -1,3 +1,5 @@
 format 1
 rule plan-coverage
+utils/assay/loop/plan.py | no-target | admit | step gauge | No runner of `loop evidence` adds the runs of the step to a key at this time
+utils/assay/loop/plan.py | no-target | admit | step pgo | No runner of `loop evidence` adds the runs of the step to a key at this time
 utils/registry.txt | no-tier | admit | rule lonely | A person runs the rule on the files of a change, and no entry has a list of such files

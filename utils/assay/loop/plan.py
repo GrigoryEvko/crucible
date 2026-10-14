@@ -42,6 +42,21 @@ THE COVERS
     item with no cover runs nowhere.  A row of the ledger of the rule
     plan-coverage then gives the reason.
 
+THE SAMPLED ITEMS
+    A sampled item gives only a part of its evidence in one run, and `loop
+    evidence` adds the evidence of each run to its key.  Each class of
+    TARGETS of assay.loop.evidence.targets gives its items:
+      * each test preset with the field `repeat` (Builds.REPEATED)
+      * each test with the label of the class (Builds.FUZZ)
+      * each bench target (Builds.BENCH).
+    UNTARGETED gives the other sampled items: each item of a kind, or one
+    item of a kind and a name.  Such an item has no class at this time.
+    The target of an item is the rule of its class, which the registry must
+    hold with the holder HOLDER of assay.loop.evidence.targets.  Each
+    sampled item with no target is in untargeted() of the plan.  A row of
+    the ledger of plan-coverage admits such an item with the reason why it
+    has no target.
+
 THE BUILDS
     read_builds() reads the build directories that the call names.  With no
     name, it reads the build directory of each configure preset with a tier
@@ -94,7 +109,7 @@ Usage
 
 import ast
 import enum
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -107,6 +122,7 @@ from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.meta import test_registration
 from assay.loop import bench, fuzz, tiers
 from assay.loop import teststep as test_launcher
+from assay.loop.evidence import targets as evidence_targets
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import python as python_reader
@@ -251,6 +267,7 @@ class Plan:
     items: tuple[Item, ...]
     builds: tuple[Build, ...] = ()
     problems: tuple[Problem, ...] = ()
+    untargeted: tuple[Item, ...] = ()
 
     @property
     def uncovered(self) -> tuple[Item, ...]:
@@ -308,6 +325,15 @@ HOLDERS = {
     "loop-history": SUITE,
     "loop-test-step": SUITE,
 }
+# The sampled items with no class of assay.loop.evidence.targets: a kind, and a name or "" for each item of the kind
+# (THE SAMPLED ITEMS).
+UNTARGETED = (
+    (Kind.HARNESS, ""),
+    (Kind.STEP, "gauge"),
+    (Kind.STEP, "pgo"),
+    (Kind.DERIVE, "header-costs"),
+    (Kind.RULE, "gate-mutants"),
+)
 ENTRY_COMMANDS = ("land", "syntax", "test")
 TOOL_COMMANDS = ("heavy", "history", "plan")
 ITEM_COMMANDS = ("derive",)
@@ -545,10 +571,13 @@ def derive_items(
     return found
 
 
-def each_items(kind: Kind, names: Iterable[str], path: str) -> list[Item]:
-    """Return an item of a kind for each name, with the tier of each step that takes an item of that kind."""
+def each_items(kind: Kind, names: Iterable[str], path_of: Callable[[str], str]) -> list[Item]:
+    """Return an item of a kind for each name, with the tier of each step that takes an item of that kind.
+
+    `path_of` gives the file of the item of a name.
+    """
     covers = tuple(Cover(step.tier, f"the step {step.name}") for step in STEPS if step.each is kind)
-    return [Item(kind, name, path, 0, covers) for name in sorted(set(names))]
+    return [Item(kind, name, path_of(name), 0, covers) for name in sorted(set(names))]
 
 
 def harness_names(root: Path) -> tuple[str, ...]:
@@ -556,9 +585,55 @@ def harness_names(root: Path) -> tuple[str, ...]:
     return tuple(path.stem for path in paths.listing(root / fuzz.HARNESSES, "*.h"))
 
 
+def harness_file(name: str) -> str:
+    """Return the header of the boundary harness of a name, relative to the root of the tree."""
+    return (fuzz.HARNESSES / f"{name}.h").as_posix()
+
+
 def step_items() -> list[Item]:
     """Return an item for each step of STEPS, with its own tier."""
     return [Item(Kind.STEP, step.name, MODULE_PATH, 0, (Cover(step.tier, step.text),)) for step in STEPS]
+
+
+def sampled_rule(item: Item, repeat_presets: frozenset[str], labels: Mapping[str, frozenset[str]]) -> str | None:
+    """Return the rule of the class of a sampled item, "" for a sampled item with no class, or None (THE SAMPLED ITEMS).
+
+    Args:
+        item: An item of the plan
+        repeat_presets: The names of the test presets with the field `repeat`
+        labels: The labels of each test of the builds of the plan
+    """
+    for target in evidence_targets.TARGETS:
+        if target.builds is evidence_targets.Builds.REPEATED:
+            is_member = item.kind is Kind.TEST_PRESET and item.name in repeat_presets
+        elif target.builds is evidence_targets.Builds.FUZZ:
+            is_member = item.kind is Kind.TEST and target.label in labels.get(item.name, frozenset())
+        else:
+            is_member = item.kind is Kind.BENCH
+        if is_member:
+            return target.rule
+    return "" if (item.kind, item.name) in UNTARGETED or (item.kind, "") in UNTARGETED else None
+
+
+def untargeted_items(
+    items: Sequence[Item], presets: tiers.Tiers, builds: Sequence[Build], registry: rule_registry.Registry
+) -> tuple[Item, ...]:
+    """Return each sampled item with no target: no class, or a class rule with no row of HOLDER (THE SAMPLED ITEMS).
+
+    Complexity: linear in the items, the tests of the builds and the rules.
+    """
+    repeat_presets = frozenset(item.name for item in presets.tests if item.is_repeated)
+    labels: dict[str, frozenset[str]] = {}
+    for build in builds:
+        for test in build.tests:
+            labels[test.name] = labels.get(test.name, frozenset()) | frozenset(test.words_of(ctest_reader.LABELS))
+    held = {rule.id for rule in registry.rules.values() if rule.held_by == evidence_targets.HOLDER}
+    found: list[Item] = []
+    for item in items:
+        rule = sampled_rule(item, repeat_presets, labels)
+        if rule is not None and rule not in held:
+            found.append(item)
+    return tuple(found)
 
 
 # ── The problems ───────────────────────────────────────────────────────────
@@ -705,8 +780,8 @@ def plan(
         *preset_items(presets),
         *test_items(builds, root),
         *rules,
-        *each_items(Kind.BENCH, (name for build in builds for name in build.benches), "bench/CMakeLists.txt"),
-        *each_items(Kind.HARNESS, harness_names(root), fuzz.HARNESSES.as_posix()),
+        *each_items(Kind.BENCH, (name for build in builds for name in build.benches), lambda _: "bench/CMakeLists.txt"),
+        *each_items(Kind.HARNESS, harness_names(root), harness_file),
         *derive_items(root, registry, rules, targets),
         *step_items(),
     ]
@@ -717,7 +792,7 @@ def plan(
         *command_problems(commands),
         *configuration_problems(builds),
     ]
-    return Plan(tuple(items), tuple(builds), tuple(problems))
+    return Plan(tuple(items), tuple(builds), tuple(problems), untargeted_items(items, presets, builds, registry))
 
 
 def derive_targets(root: Path) -> tuple[Target, ...]:

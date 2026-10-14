@@ -4,8 +4,8 @@
 line.  Exit 0 when each case holds, else 1.
 
 The cases hold the tier of an item, and the covers of the tests and of the
-rules of planted builds.  They hold each problem of the plan, and the plan
-of this tree with a planted build.
+rules of planted builds.  They hold each problem of the plan, the sampled
+items with no target, and the plan of this tree with a planted build.
 """
 
 from pathlib import Path
@@ -13,6 +13,7 @@ from pathlib import Path
 from assay.core import paths, testing
 from assay.core import registry as rule_registry
 from assay.loop import derive, plan, tiers
+from assay.loop.evidence import targets as evidence_targets
 from assay.readers import ctest as ctest_reader
 
 GATE = tiers.Tier.GATE
@@ -166,6 +167,43 @@ def problem_cases(expect: testing.Expect) -> None:
     )
 
 
+def sampled_cases(expect: testing.Expect) -> None:
+    """Hold the sampled items with no target: a class rule that the registry does not hold, and UNTARGETED."""
+    labels = {ctest_reader.LABELS: (evidence_targets.PROPERTY.label,)}
+    labelled = ctest_reader.TestEntry("prop_one", ("prop_one",), labels)
+    build = plan.Build(preset_tier("fuzz", GATE), paths.REPO_ROOT / "build-fuzz", (labelled,), ("bench_one",))
+    presets = tiers.Tiers(
+        (preset_tier("fuzz", GATE),),
+        (tiers.PresetTier(tiers.PresetKind.TEST, "stress", NIGHTLY, configure="fuzz", is_repeated=True),),
+        (),
+    )
+    items = [
+        plan.Item(plan.Kind.TEST_PRESET, "stress", "x"),
+        plan.Item(plan.Kind.TEST, "prop_one", "x"),
+        plan.Item(plan.Kind.TEST, "test_plain", "x"),
+        plan.Item(plan.Kind.BENCH, "bench_one", "x"),
+        plan.Item(plan.Kind.STEP, "gauge", "x"),
+        plan.Item(plan.Kind.STEP, "bench", "x"),
+        plan.Item(plan.Kind.HARNESS, "region", "x"),
+    ]
+    bare = {item.entity for item in plan.untargeted_items(items, presets, (build,), planted_registry())}
+    expect(
+        f"with no class rule in the registry, each sampled item has no target: {sorted(bare)}",
+        bare == {"test-preset stress", "test prop_one", "bench bench_one", "step gauge", "harness region"},
+    )
+    held = "".join(
+        f"rule {target.rule} engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=loop-evidence "
+        f"doc=XV | a target | run it\n"
+        for target in evidence_targets.TARGETS
+    )
+    registry = rule_registry.examine(REGISTRY + held)[0]
+    targeted = {item.entity for item in plan.untargeted_items(items, presets, (build,), registry)}
+    expect(
+        f"with the class rules, only the items of UNTARGETED have no target: {sorted(targeted)}",
+        targeted == {"step gauge", "harness region"},
+    )
+
+
 def tree_cases(expect: testing.Expect) -> None:
     """Hold the plan of this tree with a planted build: no problem, each preset with a tier, and the covers."""
     registry = rule_registry.load(paths.REPO_ROOT / rule_registry.REGISTRY_PATH)
@@ -200,5 +238,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (tier_cases, test_cases, bench_cases, rule_cases, problem_cases, tree_cases),
+        (tier_cases, test_cases, bench_cases, rule_cases, problem_cases, sampled_cases, tree_cases),
     )

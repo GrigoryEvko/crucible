@@ -6,6 +6,9 @@ THE RULE
       no-tier        an item with no cover, which no tier runs.  A row of
                      the ledger admits such an item with the reason why it
                      runs nowhere, and what a person runs
+      no-target      a sampled item with no target of its evidence (THE
+                     SAMPLED ITEMS of assay.loop.plan).  A row of the ledger
+                     admits such an item with the reason why it has no class
       preset-block   a problem of the presets file or of the block of a
                      preset (assay.loop.tiers, THE PROBLEMS)
       stale-entry    a row of the plan that names no preset, rule, step or
@@ -15,12 +18,13 @@ THE RULE
       configuration  a build with a configuration that is not the
                      configuration of the block of its preset
       input          a master or a module that does not read
-    THE PROBLEMS of assay.loop.plan gives the four kinds after no-tier.  No
+    THE PROBLEMS of assay.loop.plan gives the four kinds after no-target.  No
     row of the ledger admits a finding of those kinds or of the kind input
     (REFUSED_KINDS).  Give the item a tier when an entry can run it.  A row
     is only for an item that no entry can run.  When the preset of the build
-    has no tier, the rule gives only the problems.  The problem of the preset
-    then explains each item of the build with no cover.
+    has no tier, the rule gives only the problems and the sampled items with
+    no target.  The problem of the preset then explains each item of the
+    build with no cover.
 
 THE INPUT
     The build of --build-dir gives the tests, the bench targets and the
@@ -43,10 +47,12 @@ from assay.core import report as check_report
 from assay.guard.engines.meta import test_registration
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_overlay
 from assay.loop import plan
+from assay.loop.evidence import targets as evidence_targets
 from assay.readers import python as python_reader
 
 RULE = plan.RULE
 NO_TIER = "no-tier"
+NO_TARGET = "no-target"
 INPUT = "input"
 REFUSED_KINDS = frozenset({*(str(kind) for kind in plan.ProblemKind), INPUT})
 LEDGER = f"utils/ledgers/{RULE}.txt"
@@ -73,6 +79,13 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         check_report.Finding("error", problem.path, problem.line, RULE, problem.message, problem.kind, problem.entity)
         for problem in found.problems
     ]
+    for item in found.untargeted:
+        message = (
+            f"the {item.kind} {item.name} is a sampled item with no target of its evidence.  Give its class a rule with "
+            f"the holder {evidence_targets.HOLDER} and a runner of `loop evidence run`, or give it a row of {LEDGER} with "
+            f"the reason why it has no class"
+        )
+        errors.append(check_report.Finding("error", item.path, item.line, RULE, message, NO_TARGET, item.entity))
     if any(build.preset.tier is None for build in found.builds):
         return errors
     for item in found.uncovered:

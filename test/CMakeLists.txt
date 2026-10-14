@@ -4937,7 +4937,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
 # of the import closure imports the module of each hidden subcommand of the
 # masters in a new interpreter.
-crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES admitted-audit decide-cite-ratio derived-files prose-bans)
+crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
+  TREES admitted-audit decide-cite-ratio derived-files plan-coverage prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its configured ledgers and of its
