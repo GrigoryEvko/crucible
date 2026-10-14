@@ -10,7 +10,8 @@ holds the refusals of a ledger.  This test holds what a plant cannot hold:
   * the configuration of a build that is not planted
   * the configuration rows of a write, and the write of a configuration that
     the ledger does not hold
-  * the head comment of a write (THE HEAD COMMENT).
+  * the head comment of a write (THE HEAD COMMENT)
+  * the rows of a file that the tree does not hold, which a write removes.
 Exit 0 when each case holds, else 1.
 """
 
@@ -23,6 +24,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import testing
+from assay.core.ruletable import BUILD_PREFIX
 from assay.guard.engines.buildsys import cost_totals, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 
@@ -299,6 +301,21 @@ def real_cases(expect: testing.Expect) -> None:
         )
 
 
+def held_cases(expect: testing.Expect) -> None:
+    """A write keeps the rows of each file that the tree holds, and of each file of the build directory."""
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        (root / "include").mkdir()
+        (root / "include" / "Kept.h").write_text("#pragma once\n", encoding="utf-8")
+        rows = {"include/Kept.h": 1, "include/Divided.h": 2, f"{BUILD_PREFIX}generated/Table.h": 3}
+        expect(
+            "a row of a file that the tree does not hold goes, and the other rows stay",
+            cost_totals.held_rows(root, rows) == {"include/Kept.h": 1, f"{BUILD_PREFIX}generated/Table.h": 3},
+        )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (policy_cases, write_cases, head_cases, real_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (policy_cases, write_cases, head_cases, real_cases, held_cases)
+    )

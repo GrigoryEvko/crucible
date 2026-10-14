@@ -300,6 +300,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             f"guard write: the ledger of {rule.id} is not written, because the build has a problem", is_error=True
         )
         return check_report.emit(problems, rule.id, None)
+    moves = git.change_moves(request.root)
     try:
         written = rule_ledger.write_counts(
             rule,
@@ -308,7 +309,8 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             None,
             request.mode,
             request.reason,
-            git.moves(request.root),
+            moves.renamed,
+            moves.flows,
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)

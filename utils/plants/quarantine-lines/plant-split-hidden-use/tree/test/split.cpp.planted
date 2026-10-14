@@ -1,0 +1,5 @@
+// The unit that reads the header.
+#include "split.h"
+#include "split_hidden.h"
+
+int split_first_value() { return lines_split::first_value; }

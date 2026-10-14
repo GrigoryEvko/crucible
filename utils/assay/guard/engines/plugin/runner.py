@@ -458,6 +458,7 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
         )
         return 2
     context = PluginContext(request.root, request.build_dir)
+    moves = git.change_moves(request.root)
     try:
         written = rule_ledger.write(
             rule,
@@ -465,7 +466,8 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
             context.findings_of(rule),
             mode=request.mode,
             reason=request.reason,
-            moved=git.moves(request.root),
+            moved=moves.renamed,
+            flows=moves.flows,
         )
     except NotApplicable as reason:
         check_report.write_line(f"guard write: the rule {rule.id} does not apply: {reason}", is_error=True)

@@ -53,7 +53,11 @@ THE WRITE
     with no such comment it keeps the head of the file.  It refuses a count more than its
     row, with two exceptions.  --raise permits each such count, and --admit
     permits a count of an admitted kind of the rule.  A file that git reports
-    as moved takes the rows of its earlier path.
+    as moved takes the rows of its earlier path.  A fall of a file that the
+    change moved lines from pays an increase of the same kind.  The entity of
+    the increase is the same entity or an entity that agrees (THE MOVE of
+    assay.core.ledger).  A change that divides a file then writes its rows
+    with no --raise.
     A write of the base removes the difference rows of each source file that
     the tree does not hold, because no build compiles it.  A file of the build
     directory keeps its rows.  `guard write --rule RULE --import LOG` puts the
@@ -280,16 +284,18 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     if isinstance(target, str):
         check_report.write_line(target, is_error=True)
         return 1
-    moves: dict[str, str] = {}
+    moves = git.Moves()
     if target.is_added:
         mode = rule_ledger.WriteMode.RAISE
     else:
-        moves = git.moves(request.root)
+        moves = git.change_moves(request.root)
         increased = increases_permitted(spec, target.ledger, target.name, counts, moves, request.mode)
         if increased is None:
             return 1
         mode = rule_ledger.WriteMode.RAISE if increased else rule_ledger.WriteMode.LOWER
-    written = rule_ledger.write_counts(rule, target.ledger, counts, target.name, mode, request.reason, moved=moves)
+    written = rule_ledger.write_counts(
+        rule, target.ledger, counts, target.name, mode, request.reason, moved=moves.renamed, flows=moves.flows
+    )
     if target.name is None or target.name == written.base_name:
         written = drop_gone_files(written, request.root, counts)
     if spec.comment:
@@ -307,21 +313,25 @@ def increases_permitted[Inputs](
     ledger: rule_ledger.Ledger,
     name: str | None,
     counts: Mapping[Key, int],
-    moves: Mapping[str, str],
+    moves: git.Moves,
     mode: rule_ledger.WriteMode,
 ) -> bool | None:
     """Write each count of the build that is more than its row, and tell if the mode of the write permits each one.
 
-    --raise permits each increase, and --admit permits an increase of a kind of the admitted kinds of the rule.
+    --raise permits each increase, and --admit permits an increase of a kind of the admitted kinds of the rule.  An
+    increase that a fall of a file that the change moved lines from pays is no increase (THE MOVE of assay.core.ledger).
 
     Returns:
         True when a count increased and the mode permits each increase.  False when no count increased.  None when
         the mode refuses an increase
     """
-    expected = rule_ledger.moved_counts(ledger.expected(name), moves)
+    expected = rule_ledger.moved_counts(ledger.expected(name), moves.renamed)
+    paid = rule_ledger.paid_counts(expected, counts, moves.flows)
     held_files = {key.path for key in expected}
     increases = sorted(
-        (key, count, expected.get(key, 0)) for key, count in counts.items() if count > expected.get(key, 0)
+        (key, count, expected.get(key, 0))
+        for key, count in counts.items()
+        if count > expected.get(key, 0) + paid.get(key, 0)
     )
     for key, count, admitted in increases:
         words = "a file that the ledger does not hold" if key.path not in held_files else f"rises from {admitted}"

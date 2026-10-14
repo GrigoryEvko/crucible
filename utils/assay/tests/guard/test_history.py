@@ -952,6 +952,106 @@ def move_quarantine_cases(expect: Expect, scratch: Path) -> None:
                                for item in errors_of(found)))
 
 
+SPLIT_HEADER = "inline std::vector<int> first_items{};\ninline std::vector<int> second_items{};\ninline int kept = 0;\n"
+SPLIT_REST = "#include \"part_a.h\"\n#include \"part_b.h\"\ninline int kept = 0;\n"
+COUNT_LEDGER = "utils/ledgers/count-row.txt"
+COUNT_RULE = "rule count-row engine=meta scope=tracked ledger=count doc=XV | a planted count | remove the finding"
+
+
+def split_tree(scratch: Path, name: str) -> Scratch:
+    """Return a planted repository with a last commit that holds a header with two objects of std::vector and counts."""
+    tree = Scratch(scratch / name)
+    rows = [rule_registry.measured_rule("slow-row", 10, 20, "s", "a time"),
+            rule_registry.measured_rule("size-row", 2, 4, "GB", "a size"), BASE_RULE, HISTORY_RULE, COUNT_RULE]
+    tree.write(rule_registry.REGISTRY_PATH, rule_registry.planted(sorted(rows)))
+    tree.write("test/split.h", SPLIT_HEADER)
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/split.h", "std::vector"): 2}))
+    tree.write(COUNT_LEDGER, ledger_text("count-row", ["test/split.h | kind | 2 | vector | -"]))
+    tree.commit("Add a header with two objects", "The first counts.")
+    return tree
+
+
+def split_commit(tree: Scratch, part_a: str, part_b: str, counts: dict[tuple[str, str], int],
+                 rest: str = SPLIT_REST) -> str:
+    """Divide the header of a tree of split_tree() into two parts with the texts and the counts, and commit them."""
+    tree.write("test/split.h", rest)
+    tree.write("test/part_a.h", part_a)
+    tree.write("test/part_b.h", part_b)
+    tree.write(QUARANTINE_LEDGER, rows_text(counts))
+    return tree.commit("Divide the header into two headers", "Each object moves with its line.")
+
+
+def count_grew(found: list[check_report.Finding]) -> list[check_report.Finding]:
+    """Return the warnings of the planted count ledger above its lowest count."""
+    return [item for item in found if item.path == COUNT_LEDGER and item.kind == "ledger-grew"]
+
+
+def split_cases(expect: Expect, scratch: Path) -> None:
+    """Check THE MOVE: a division that moves each finding increases no count, and a variant with a new finding does."""
+    first, second = "inline std::vector<int> first_items{};\n", "inline std::vector<int> second_items{};\n"
+    moved = {("test/part_a.h", "std::vector"): 1, ("test/part_b.h", "std::vector"): 1}
+    tree = split_tree(scratch, "split")
+    tree.write(COUNT_LEDGER, ledger_text("count-row", ["test/part_a.h | kind | 1 | vector | -",
+                                                        "test/part_b.h | kind | 1 | vector | -"]))
+    split = split_commit(tree, first, second, moved)
+    status, found = tree.run()
+    expect("a split that moves each finding to a new file raises no count of the quarantine ledger and gives no "
+           "warning", status == 0 and not errors_of(found) and not standing_of(found))
+    expect("the rows that a split adds to a count ledger are no growth", not count_grew(found))
+    tree.write(COUNT_LEDGER, ledger_text("count-row", ["test/part_a.h | kind | 1 | vector | -",
+                                                        "test/part_b.h | kind | 1 | vector | -",
+                                                        "test/part_b.h | kind | 1 | map | -"]))
+    later = tree.commit("Add a row of a new finding", "One more finding.")
+    status, found = tree.run()
+    expect("a row that no move pays stays growth of a count ledger, and the warning names only its commit",
+           len(count_grew(found)) == 1 and later[:9] in count_grew(found)[0].message
+           and split[:9] not in count_grew(found)[0].message)
+    added = split_tree(scratch, "split-added")
+    raised = split_commit(added, first + second.replace("second", "third"), second,
+                          {**moved, ("test/part_a.h", "std::vector"): 2})
+    status, found = added.run()
+    expect("a split with one more finding than it moves raises a count, and the error names the commit",
+           status == 1 and any(raised[:9] in item.message for item in errors_of(found)))
+    changed = split_tree(scratch, "split-changed")
+    changed_commit = split_commit(changed, first.replace("<int>", "<long>"), second.replace("<int>", "<long>"), moved)
+    status, found = changed.run()
+    expect("a split that changes the text of each moved line moves no line, so each rise stays a raise",
+           status == 1 and any(changed_commit[:9] in item.message for item in errors_of(found)))
+    kept = split_tree(scratch, "split-kept")
+    kept_commit = split_commit(kept, first, second, {**moved, ("test/split.h", "std::vector"): 2},
+                               rest=SPLIT_REST + "inline std::vector<int> more_items{};\n" * 2)
+    status, found = kept.run()
+    expect("a move from a file whose count did not fall pays nothing, so each rise stays a raise",
+           status == 1 and any(kept_commit[:9] in item.message for item in errors_of(found)))
+    armed = split_tree(scratch, "split-arm")
+    armed.write(QUARANTINE_LEDGER, rows_text({("test/split.h", "std::vector"): 2}, {"arm": {}}))
+    armed.commit("Add the configuration of a CI leg", "The leg counts the same findings.")
+    armed.write("test/split.h", SPLIT_REST)
+    armed.write("test/part_a.h", first)
+    armed.write("test/part_b.h", second)
+    armed.write(QUARANTINE_LEDGER, rows_text(moved, {"arm": {("test/part_b.h", "std::vector"): 1}}))
+    arm_commit = armed.commit("Divide the header and add a finding of the leg", "The leg counts one more finding.")
+    status, found = armed.run()
+    expect("a move pays only the moved part of a new difference of another configuration, and the rest is a raise",
+           status == 1 and any(arm_commit[:9] in item.message and "in arm from 1 to 2" in item.message
+                               for item in errors_of(found)))
+    renamed = Scratch(scratch / "split-namespace")
+    renamed.write("test/walk.h", "inline int walk = foundation::algebra::read();\n")
+    renamed.write(QUARANTINE_LEDGER, rows_text({("test/walk.h", "foundation::algebra::read"): 1}))
+    renamed.commit("Count the walk", "The first counts.")
+    renamed.write("test/walk.h", "inline int walk = fixy::session::read();\n")
+    renamed.write(QUARANTINE_LEDGER, rows_text({("test/walk.h", "fixy::session::read"): 1}))
+    renamed.commit("Move the read to fixy::session", "The entity of the finding changes with its namespace.")
+    status, found = renamed.run()
+    expect("a move of code to a different namespace of the tree raises no count, also in one file",
+           status == 0 and not errors_of(found) and not standing_of(found))
+    renamed.write(QUARANTINE_LEDGER, rows_text({("test/walk.h", "fixy::session::write"): 1}))
+    other = renamed.commit("Name a different function", "The last name changes.")
+    status, found = renamed.run()
+    expect("an entity with a different last name does not agree, and its count stays a raise",
+           status == 1 and any(other[:9] in item.message for item in errors_of(found)))
+
+
 def applicability_cases(expect: Expect, tree: Scratch, scratch: Path) -> None:
     """Check that the rule does not apply to a shallow history or to a tree that is not a git work tree."""
     shallow = scratch / "shallow"
@@ -995,6 +1095,7 @@ def main(argv: list[str]) -> int:
         writer_cases(expect, scratch)
         keep_cases(expect, scratch)
         quarantine_cases(expect, scratch)
+        split_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)
     if failures:
         print(f"tests.guard.test_history: FAILED, {len(failures)} case(s) did not hold")

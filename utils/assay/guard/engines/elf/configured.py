@@ -232,7 +232,7 @@ def write_inspection(
         target.name,
         rule_ledger.WriteMode.RAISE,
         request.reason,
-        git.moves(request.root),
+        git.change_moves(request.root).renamed,
     )
     rule_ledger.store(written, request.root)
     check_report.write_line(

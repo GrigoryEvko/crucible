@@ -123,7 +123,11 @@ THE FALLS
     below its row.  The gate then runs `guard write --rule RULE --build-dir
     BUILD` of each counted rule with a ledger that holds the configuration,
     in the mode lower.  That write refuses each count above its row and each
-    new row.  The check then keeps such a count as its error.  After the
+    new row, other than an increase that a move pays (THE MOVE of
+    assay.core.ledger).  The write gets the variable CRUCIBLE_CHANGE_BASE with
+    the commit that the composition started from.  Its moves are then those
+    of the full change, also after an earlier write changed a ledger of the
+    warm tree.  The check then keeps a refused count as its error.  After the
     last configuration, the gate folds each ledger that a write changed into
     a new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
@@ -622,19 +626,19 @@ class Gate:
         return problems
 
     def _write_falls(
-        self, configuration: Configuration, counted: Mapping[str, Sequence[str]], environment: Mapping[str, str]
+        self, configuration: Configuration, counted: Mapping[str, Sequence[str]], based: Mapping[str, str]
     ) -> bool:
         """Run `guard write` of each counted rule with a ledger that holds a configuration (THE FALLS).
 
-        A write that refuses a count above its row exits 1, and the check of the rule keeps that count as its error.
-        Return True when a rule holds the configuration.
+        `based` is the environment with the base of the change.  A write that refuses a count above its row exits 1,
+        and the check of the rule keeps that count as its error.  Return True when a rule holds the configuration.
         """
         build = build_directory(self.tree, configuration)
         rules = holding(counted, configuration)
         for rule in rules:
             log = f"{configuration.name}.write-{rule}.log"
             command = [*self._master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
-            status = self._run_logged(command, log, environment, proc.TOOL_S)
+            status = self._run_logged(command, log, based, proc.TOOL_S)
             check_report.write_line(f"loop land: {configuration.name}: the write of {rule} exits {status}")
         return bool(rules)
 
@@ -644,10 +648,11 @@ class Gate:
         rules: Sequence[str],
         counted: Mapping[str, Sequence[str]],
         environment: Mapping[str, str],
+        based: Mapping[str, str],
     ) -> list[str]:
         """Run the checks of some rules on a build, and after a failure THE FALLS and the checks again."""
         problems = self._checked(configuration, rules, environment)
-        if problems and self._write_falls(configuration, counted, environment):
+        if problems and self._write_falls(configuration, counted, based):
             problems = self._checked(configuration, rules, environment)
         return problems
 
@@ -701,7 +706,11 @@ class Gate:
         return red
 
     def _run_parse(
-        self, configuration: Configuration, counted: Mapping[str, Sequence[str]], environment: Mapping[str, str]
+        self,
+        configuration: Configuration,
+        counted: Mapping[str, Sequence[str]],
+        environment: Mapping[str, str],
+        based: Mapping[str, str],
     ) -> list[str]:
         """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
         problem = self._configure(configuration, environment)
@@ -712,7 +721,7 @@ class Gate:
         command = [*self._master("loop"), "syntax", str(build), "-j", str(self.jobs)]
         if self._run_logged(command, log, environment, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.logs / log}"]
-        return self._checked_falls(configuration, COUNTED_RULES, counted, environment)
+        return self._checked_falls(configuration, COUNTED_RULES, counted, environment, based)
 
     def _write_keeps(
         self,
@@ -766,6 +775,7 @@ class Gate:
         configuration: Configuration,
         counted: Mapping[str, Sequence[str]],
         environment: Mapping[str, str],
+        based: Mapping[str, str],
         is_retry: bool,
         keeps: Sequence[Keep] = (),
         kept: list[str] | None = None,
@@ -799,7 +809,7 @@ class Gate:
         if skipped:
             check_report.write_line(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         if red:
-            self._write_falls(configuration, counted, environment)
+            self._write_falls(configuration, counted, based)
             raised = self._write_keeps(configuration, keeps, red, environment)
             if kept is not None:
                 kept += raised
@@ -884,11 +894,12 @@ class Gate:
         def run_of(configuration: Configuration, is_again: bool) -> list[str]:
             """Run one configuration of the plan, or its tests again after THE FALLS, and give each problem."""
             if configuration.is_parse:
-                return self._run_parse(configuration, counted, environment)
+                return self._run_parse(configuration, counted, environment, based)
             problems = self._run_objects(
                 configuration,
                 {} if is_again else counted,
                 environment,
+                based,
                 is_retry or is_again or configuration not in selected,
                 () if is_again else candidate.keeps,
                 kept,

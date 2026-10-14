@@ -78,8 +78,6 @@ utils/assay/core/git.py | refused-word | 1 | init: outside | A text of today.  T
 utils/assay/core/git.py | refused-word | 1 | is_clean: track | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | is_clean: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | is_shallow: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/git.py | refused-word | 1 | moves: failed | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/git.py | refused-word | 1 | moves: old | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | path_history: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | path_history: whole | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/git.py | refused-word | 1 | run: past | A text of today.  The change that writes the text again in STE lowers the count

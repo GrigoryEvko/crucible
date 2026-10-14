@@ -24,6 +24,8 @@ WHAT THE RULE READS
       changed, and each file that git reports as moved in it.
     * The working-tree copy of each file, which can hold an edit that no
       commit holds yet.
+    * The moved lines of a commit that increased a count of a ledger, in the
+      files of its increases and its falls (THE MOVE).
     * The ledger of this rule, utils/ledgers/history.txt (policy admit): the
       rises of the past whose commit gives no measurement.  A row
       `utils/registry.txt | COLUMN | admit | COMMIT RULE | REASON` admits the
@@ -60,7 +62,8 @@ THE FINDINGS
     * A commit that raised a count of the quarantine ledger, and that changes
       neither the plugin of utils/tools/quarantine/ nor the rule table
       utils/rule-table.txt, gives an error, of the kind raise.  The rule table
-      was utils/scripts/layer-rules.txt before it moved.  A raised count of
+      was utils/scripts/layer-rules.txt before it moved.  An increase that a
+      move pays is no increase (THE MOVE).  A raised count of
       the kind opted-out or region is no error of the kind raise.  Only
       `guard write --rule quarantine --admit` writes it (THE ADMITTED COUNTS).
       Each raised count that stays above its count before the commit gives a
@@ -81,6 +84,30 @@ THE FINDINGS
       the rule, gives an error, of the kind of its field.
     A rise in the working tree gives a warning only, and the error comes when
     the rise lands without a measurement.
+
+THE MOVE
+    A change can move lines from one file to a different file, for example
+    when it divides a header into two new headers.  The counts of the
+    findings then fall in the first file and increase in the new files.  The
+    count in all the files of the change does not increase.  A commit can
+    move a line from A to B (THE MOVED LINES of assay.core.git, THE MOVE of
+    assay.core.ledger).  A fall of the key (A, KIND, ENTITY) then pays an
+    increase of the key (B, KIND, ENTITY) in the same configuration.  An
+    entity that agrees after a move to a different namespace of the tree
+    pays too, also in one file.  The
+    rule reads the moved lines of a commit only in the files of its
+    increases and its falls.
+    * The quarantine ledger: a paid increase gives no error of the kind
+      raise and no warning.  The rule judges each part of an increase that
+      no fall pays as before.  When a move pays each increase of a commit, a
+      `grow` row of the commit admits nothing.
+    * Each other ledger: the rows that a move adds are no growth, as the
+      rows of a `grow` row are.  The rule counts the rows of the ledger at
+      the commit again, with each paid increase back in the file of its
+      fall.  The difference of the two row counts is the rows that the move
+      adds.  The rule reads them for each increase after the newest lowest
+      state of the ledger, when the ledger is above that state.
+    No row of the ledger of this rule is necessary for a move.
 
 THE ADMITTED COUNTS
     An opt-out region covers the smallest span that its reason makes
@@ -404,11 +431,35 @@ class Rebased:
 
 @dataclass(slots=True)
 class History:
-    """The states of the watched files, and each path that each commit of the quarantine ledger changed."""
+    """The states of the watched files, and each path that each commit of the quarantine ledger changed.
+
+    `root` is the tree of the history, and `moved` keeps the pairs of files of THE MOVE of each commit and set of
+    paths.  A history with no root has no move.
+    """
 
     states: git.PathHistory
     ledgers: list[str] = field(default_factory=list)
     changes: dict[str, tuple[frozenset[str], dict[str, str]]] = field(default_factory=dict)
+    root: Path | None = None
+    moved: dict[tuple[str, tuple[str, ...]], frozenset[tuple[str, str]]] = field(default_factory=dict)
+
+    def flows(self, sha: str, paths: Sequence[str]) -> frozenset[tuple[str, str]]:
+        """Return each pair of files (A, B) of the paths where a commit moved a line from A to B (THE MOVE).
+
+        The commit "" is the working tree against HEAD.  A history with no root, a root commit and a git command that
+        does not succeed give no pair.  Complexity: one diff of the paths for each commit and set of paths.
+        """
+        if self.root is None or not paths:
+            return frozenset()
+        key = (sha, tuple(sorted(set(paths))))
+        if key not in self.moved:
+            try:
+                found = (git.diff_moves(self.root, f"{sha}^1", sha, key[1]) if sha
+                         else git.diff_moves(self.root, "HEAD", None, key[1]))
+                self.moved[key] = found.flows
+            except git.GitError:
+                self.moved[key] = frozenset()
+        return self.moved[key]
 
     def text(self, place: str, sha: str, paths: tuple[str, ...]) -> str | None:
         """Return the first of the paths that a state holds, at a commit ("at" or "before"), at HEAD or in the working tree."""
@@ -601,7 +652,7 @@ def read_history(root: Path) -> History:
                    else {})
     except git.GitError as problem:
         raise NotApplicable(str(problem)) from None
-    return History(states, ledgers, changes)
+    return History(states, ledgers, changes, root)
 
 
 def rises_after_lowest(states: list[float | None], rises: list[tuple[int, Rise]], current: float | None,
@@ -786,6 +837,113 @@ def since_text(applied: Sequence[Rebase]) -> str:
     return f" after {' and '.join(parts)}" if parts else ""
 
 
+def configuration_counts(ledger: rule_ledger.Ledger) -> dict[str, dict[rule_ledger.Key, int]]:
+    """Return the count of each key in each configuration of a version of a ledger, with the base first.
+
+    A ledger of the policy admit counts one for each row, and a ledger with no configuration has one table with the
+    name "".  A row with the value admit of a count ledger has no count.
+    """
+    if ledger.policy == rule_registry.Policy.ADMIT:
+        return {"": dict.fromkeys(ledger.base, 1)}
+    if not ledger.configurations:
+        return {"": ledger.expected()}
+    return {item.name: ledger.expected(item.name) for item in ledger.configurations}
+
+
+def counted_rows(tables: Mapping[str, Mapping[rule_ledger.Key, int]]) -> int:
+    """Return the row count of a ledger with the counts of each configuration.
+
+    The first table gives a base row for each count.  Each other table gives a difference row for each count that is
+    not the base count.
+    """
+    names = list(tables)
+    if not names:
+        return 0
+    base = tables[names[0]]
+    rows = sum(1 for count in base.values() if count > 0)
+    for name in names[1:]:
+        table = tables[name]
+        rows += sum(1 for key in set(table) | set(base) if table.get(key, 0) != base.get(key, 0))
+    return rows
+
+
+def moved_rows(history: History, commit: git.Commit, path: str, registry: rule_registry.Registry) -> int:
+    """Return the rows that a commit added to a ledger with a move (THE MOVE).
+
+    The function counts the rows of the ledger at the commit again, with each paid increase back in the file of its
+    fall.  The result is the difference of the two row counts.  A ledger of a policy other than count or admit, and a
+    version that does not read, give 0.
+    Complexity: one diff of the files with a changed count, and linear in the rows of the two versions.
+    """
+    rule = registry.rules.get(ledger_rule(path))
+    if rule is None or rule.policy not in (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT):
+        return 0
+    old_text, new_text = history.text("before", commit.sha, (path,)), history.text("at", commit.sha, (path,))
+    if old_text is None or new_text is None:
+        return 0
+    try:
+        before = rule_ledger.parse(old_text, f"{commit.short}^:{path}", rule.id, rule.policy)
+        after = rule_ledger.parse(new_text, f"{commit.short}:{path}", rule.id, rule.policy)
+    except rows_grammar.RowsError:
+        return 0
+    old_tables, new_tables = configuration_counts(before), configuration_counts(after)
+    files = sorted({key.path for name, table in new_tables.items() if name in old_tables
+                    for key in set(table) | set(old_tables[name])
+                    if key.path and table.get(key, 0) != old_tables[name].get(key, 0)})
+    flows = history.flows(commit.sha, files)
+    if not flows:
+        return 0
+    returned: dict[str, dict[rule_ledger.Key, int]] = {}
+    for name, table in new_tables.items():
+        counts = dict(table)
+        for payment in rule_ledger.move_payments(old_tables[name], table, flows) if name in old_tables else ():
+            counts[payment.target] -= payment.count
+            counts[payment.source] = counts.get(payment.source, 0) + payment.count
+        returned[name] = {key: count for key, count in counts.items() if count}
+    return max(0, counted_rows(new_tables) - counted_rows(returned))
+
+
+def moved_growth(
+    history: History, registry: rule_registry.Registry, path: str, rebased_rows: Rebased
+) -> dict[int, int]:
+    """Return the rows that a move added to each increase after the newest lowest state of a ledger (THE MOVE).
+
+    `rebased_rows` holds the states and the increases after the rebase rows and the `grow` rows.  A move only
+    increases an older state.  The newest lowest state with the moves is then not older than the one without them.
+    The increases before that state then hold each increase that a move can change.  The rows of an increase are at
+    most its growth after the rows of the ledger of this rule.
+    """
+    lowest = rebased_rows.lowest
+    if lowest is None:
+        return {}
+    newest = next(index for index, value in enumerate(rebased_rows.states) if value is not None and value == lowest)
+    commits = history.states.commits
+    found: dict[int, int] = {}
+    for index, rise in rebased_rows.rises:
+        if index < newest and (rows := min(moved_rows(history, commits[index], path, registry),
+                                           int(rise.new - rise.old))) > 0:
+            found[index] = rows
+    return found
+
+
+def after_moves(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]],
+                moved: Mapping[int, int]) -> tuple[list[float | None], list[tuple[int, Rise]]]:
+    """Return the states and the increases of a ledger with the rows of each move out of its growth (THE MOVE).
+
+    A move at a commit increases each older state by its rows.  The increase of its own commit decreases by the same
+    rows, as a `grow` row does (THE GROWTH).  Complexity: O(s * m) for s states and m moves.
+    """
+    shifted = list(states)
+    named = list(rises)
+    for index, rows in sorted(moved.items()):
+        for older in range(index + 1, len(shifted)):
+            state = shifted[older]
+            if state is not None:
+                shifted[older] = state + rows
+        named = [(item, replace(rise, old=rise.old + rows) if item == index else rise) for item, rise in named]
+    return shifted, [(item, rise) for item, rise in named if rise.new > rise.old]
+
+
 def ledger_findings(history: History, registry: rule_registry.Registry,
                     rebases: Mapping[str, Sequence[Rebase]]) -> list[check_report.Finding]:
     """Compare the row count of each ledger with its lowest committed count, after the rebase rows and the `grow` rows.
@@ -819,6 +977,11 @@ def ledger_findings(history: History, registry: rule_registry.Registry,
         value = float(current) if current is not None else None
         rows = list(rebases.get(path, ()))
         full = rebased(states, rises, rows)
+        if rises_after_lowest(list(full.states), list(full.rises), value, working_rise) is not None:
+            moves = moved_growth(history, registry, path, full)
+            if moves:
+                states, rises = after_moves(states, rises, moves)
+                full = rebased(states, rises, rows)
         for row in rows:
             without = rebased(states, rises, [other for other in rows if other is not row])
             if not changes_result(value, without, full):
@@ -929,7 +1092,8 @@ def quarantine_rises(history: History, commit: git.Commit) -> list[LedgerRise]:
     if not before.configurations or not after.configurations or not comparable(before, after):
         return []
     moves = history.changes.get(commit.sha, (frozenset(), {}))[1]
-    return [rise for rise in ledger_rises(before, after, moves, {}) if rise.file != TOTAL]
+    rises = paid_rises(history, commit.sha, before, after, ledger_rises(before, after, moves, {}))
+    return [rise for rise in rises if rise.file != TOTAL]
 
 
 def grow_cause(history: History, commit: git.Commit, path: str, changed: frozenset[str]) -> Cause | None:
@@ -1295,6 +1459,53 @@ def absolute_counts(ledger: QuarantineVersion, has_entity: bool = True) -> dict[
     return counts
 
 
+def renamed_counts(
+    before: QuarantineVersion, after: QuarantineVersion, has_entity: bool = True
+) -> dict[CountKey, int]:
+    """Return the absolute counts of the earlier version, and give its base the name of the base of the next version.
+
+    The base keeps its history when its name changes.
+    """
+    base = after.base or ""
+    return {(base if name == before.base else name, file, kind, entity): count
+            for (name, file, kind, entity), count in absolute_counts(before, has_entity).items()}
+
+
+def paid_rises(history: History, sha: str, before: QuarantineVersion, after: QuarantineVersion,
+               rises: Sequence[LedgerRise]) -> list[LedgerRise]:
+    """Return the increases of a commit less the part that a fall of a file that the commit moved lines from pays.
+
+    The fall and the increase are in the same configuration and have the same kind.  Their entities are equal or agree
+    (THE MOVE).  The counts of each increase and each fall are the absolute counts of the configuration.
+    An increase that a fall pays in full goes.  The commit "" is the working tree.  Complexity: one diff of the files
+    of the increases and the falls, and linear in the counts of the two versions.
+    """
+    counted = [rise for rise in rises if rise.file != TOTAL]
+    if not counted or not has_entities(before, after):
+        return list(rises)
+    old_counts, new_counts = renamed_counts(before, after), absolute_counts(after)
+    wanted = {(rise.configuration, rise.kind) for rise in counted}
+    files = {rise.file for rise in counted} | {
+        file for (name, file, kind, entity), count in old_counts.items()
+        if (name, kind) in wanted and count > new_counts.get((name, file, kind, entity), 0)}
+    flows = history.flows(sha, sorted(files))
+    paid: dict[str, dict[rule_ledger.Key, int]] = {}
+    for name in {rise.configuration for rise in counted}:
+        old_keys = {rule_ledger.Key(file, kind, entity): count
+                    for (row_name, file, kind, entity), count in old_counts.items() if row_name == name}
+        new_keys = {rule_ledger.Key(file, kind, entity): count
+                    for (row_name, file, kind, entity), count in new_counts.items() if row_name == name}
+        paid[name] = rule_ledger.paid_counts(old_keys, new_keys, flows)
+    kept: list[LedgerRise] = []
+    for rise in rises:
+        amount = paid.get(rise.configuration, {}).get(rule_ledger.Key(rise.file, rise.kind, rise.entity), 0)
+        if amount == 0:
+            kept.append(rise)
+        elif amount < rise.new - rise.old:
+            kept.append(replace(rise, old=rise.old + amount))
+    return kept
+
+
 def difference_of(ledger: QuarantineVersion, name: str, row: RowKey, has_entity: bool) -> int:
     """Return the difference of one row of a configuration from the base, or the sum for its file and kind."""
     deltas = ledger.deltas.get(name, {})
@@ -1348,8 +1559,7 @@ def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dic
                 for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
     keyed = has_entities(before, after)
     counts_opted_out = before.format >= OPTED_OUT_FORMAT
-    old_counts = {(after.base if name == before.base else name, file, kind, entity): count
-                  for (name, file, kind, entity), count in absolute_counts(before, keyed).items()}
+    old_counts = renamed_counts(before, after, keyed)
     counts_regions = any(kind == REGION for (_name, _file, kind, _entity) in old_counts)
     new_counts = absolute_counts(after, keyed)
     rises: list[LedgerRise] = []
@@ -1469,6 +1679,7 @@ def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> lis
             peaks = {}
         last = after
         rises = ledger_rises(before, after, moves, peaks) if before is not None else []
+        rises = paid_rises(history, sha, before, after, rises) if before is not None else rises
         for key, count in absolute_counts(after).items():
             peaks[key] = max(peaks.get(key, 0), count)
         standing += [(commit, rise) for rise in rises if rise.file != TOTAL]
@@ -1541,7 +1752,7 @@ def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> lis
             row.commit.short))
     head = parse(history.text("head", "", path), f"HEAD:{QUARANTINE_LEDGER}")
     if head is not None and comparable(head, current):
-        for rise in ledger_rises(head, current, {}, peaks):
+        for rise in paid_rises(history, "", head, current, ledger_rises(head, current, {}, peaks)):
             findings.append(check_report.Finding(
                 "warning", QUARANTINE_LEDGER, rise_line(current, rise), RULE,
                 f"{WORKING_TREE} (not committed) raises {rise.described()}.  The commit must change the plugin or the "

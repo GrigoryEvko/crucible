@@ -1,0 +1,11 @@
+# A change divides a header into two new headers, and it changes the text of one moved line of an object of a
+# library class.  That line is no moved line, because no removed line has its new text.  Its hunk adds the whole new
+# file and removes no line, so the rule quarantine-lines refuses it, although the count of the change stays.
+
+parent parent
+compile report test/split.cpp
+exit report pass
+finding report quarantine std-object test/split_first.h:9:26 | std::vector
+finding report quarantine std-object test/split_second.h:9:25 | std::vector
+judge report
+configuration witness

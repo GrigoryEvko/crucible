@@ -3,7 +3,6 @@
 format 1
 rule typed-data
 utils/assay/core/git.py | string-dict | 1 | changes | A record of today.  The change that makes it a frozen dataclass with slots, or that gives the dictionary a record or an enumeration, lowers the count
-utils/assay/core/git.py | string-dict | 1 | moves | A record of today.  The change that makes it a frozen dataclass with slots, or that gives the dictionary a record or an enumeration, lowers the count
 utils/assay/core/meter.py | string-dict | 1 | compiler_meter_environment | A record of today.  The change that makes it a frozen dataclass with slots, or that gives the dictionary a record or an enumeration, lowers the count
 utils/assay/core/meter.py | string-dict | 1 | measure | A record of today.  The change that makes it a frozen dataclass with slots, or that gives the dictionary a record or an enumeration, lowers the count
 utils/assay/core/proc.py | string-dict | 1 | Command.__init__ | A record of today.  The change that makes it a frozen dataclass with slots, or that gives the dictionary a record or an enumeration, lowers the count

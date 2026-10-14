@@ -1,0 +1,5 @@
+// The divided header: it includes its two parts.
+#pragma once
+
+#include "split_first.h"
+#include "split_second.h"

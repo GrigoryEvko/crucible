@@ -1,0 +1,12 @@
+// The second part of the divided header, with one more object in new code.
+#pragma once
+
+#include <vector>
+
+namespace lines_split {
+
+inline int second_value = 2;
+inline std::vector<int> second_items{};
+inline std::vector<int> third_items{};
+
+}  // namespace lines_split

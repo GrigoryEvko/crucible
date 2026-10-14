@@ -101,8 +101,9 @@ THE RULE parse-total
     file with no row counts as zero in the baseline.  `guard write --rule
     parse-total --build-dir DIR` writes the configuration rows and the rows of
     the configuration of the build again, and it keeps the rows of the other
-    configurations.  The write refuses a growth of more than the warning
-    threshold with no --reason TEXT.
+    configurations.  It removes each row of a file that the tree does not
+    hold, also in the other configurations (held_rows()).  The write refuses
+    a growth of more than the warning threshold with no --reason TEXT.
 
     Complexity: linear in the total length of the file lists, and O(f log f)
     for the sort of f files.
@@ -130,7 +131,8 @@ THE RULE header-fanout
                    Write the baseline again
     The entity is the header.  `guard write --rule header-fanout --build-dir
     DIR` writes the configuration rows and the rows of the configuration of
-    the build again, and it keeps the rows of the other configurations.
+    the build again, and it keeps the rows of the other configurations.  It
+    removes each row of a header that the tree does not hold (held_rows()).
 
     Complexity: linear in the total length of the file lists, and O(h log h)
     for the sort of h headers.
@@ -180,6 +182,7 @@ from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
+from assay.core.ruletable import BUILD_PREFIX
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -862,10 +865,20 @@ def parse_findings(context: BuildContext) -> list[check_report.Finding]:
     return found
 
 
+def held_rows[Row](root: Path, rows: Mapping[str, Row]) -> dict[str, Row]:
+    """Return the rows of each file that the tree holds, and of each file of the build directory.
+
+    A change that divides a file can remove the file from the tree.  A row of such a file names nothing that a build
+    can read again.  The rule ledger-owners refuses such a row in each configuration.  Complexity: one check of a file
+    for each row.
+    """
+    return {name: row for name, row in rows.items() if name.startswith(BUILD_PREFIX) or (root / name).is_file()}
+
+
 def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Write the configuration rows, the total rows and the file rows of the configuration of the build again.
 
-    The write keeps the rows of the other configurations.
+    The write keeps the rows of the other configurations, less the rows of a file that the tree does not hold.
 
     Raises:
         NotApplicable: If the census does not apply to the build
@@ -880,7 +893,8 @@ def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str
     totals = {**baseline.totals, frame.name: census_new_total(old, measure.objects, measure.fixtures, reason)}
     floor = measure.value * PARSE_FILE_FLOOR
     kept = {name: counts for name, counts in measure.files.items() if counts[0] * counts[1] >= floor}
-    files = {**baseline.files, frame.name: kept}
+    files = {name: held_rows(context.root, table) for name, table in baseline.files.items()}
+    files[frame.name] = kept
     entries = census_total_entries(totals)
     entries += [
         rule_ledger.Entry(census_key_of(name, configuration), f"{size}/{readers}", "")
@@ -1108,8 +1122,8 @@ def fanout_findings(context: BuildContext) -> list[check_report.Finding]:
 def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Write the configuration rows and the rows of the configuration of the build again from its largest costs.
 
-    The write keeps the rows of the other configurations.  A row has no reason.  The write then does not read the
-    reason of the call.
+    The write keeps the rows of the other configurations, less the rows of a header that the tree does not hold.  A
+    row has no reason.  The write then does not read the reason of the call.
 
     Raises:
         NotApplicable: If the census does not apply to the build
@@ -1117,7 +1131,7 @@ def fanout_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: st
     """
     frame = census_frame(context, ledger)
     configurations = census_written_configurations(context, frame)
-    rows: dict[str, dict[str, FanoutRow]] = fanout_baseline(frame)
+    rows = {name: held_rows(context.root, named) for name, named in fanout_baseline(frame).items()}
     headers = fanout_headers(census_read(context, frame, True), context.root)
     rows[frame.name] = {item.header: FanoutRow(0, item.alone, item.readers) for item in headers[:FANOUT_KEPT]}
     entries = [

@@ -115,8 +115,8 @@ THE WRITE
               commit.
       admit   it also writes a count above its row, and a row for a finding
               with no row, each with the reason of the call.
-    A file that git reports as moved (assay.core.git.moves) keeps the rows of
-    its old path.
+    A file that git reports as moved (THE MOVES of assay.core.git) keeps the
+    rows of its old path.
 
     A write changes only the counts of the configuration of its build.  Each
     configuration writes its counts in its own build.  A write of the base
@@ -127,6 +127,29 @@ THE WRITE
     the run of a configuration that the write did not cover gives the error
     of a count below its row.  Its own write in the mode lower records the
     fall.
+
+THE MOVE
+    A change can move lines from one file to a different file, for example
+    when it divides a header into two new headers.  assay.core.git gives each
+    pair of files (A, B) where the change moved a line from A to B (THE MOVED
+    LINES of assay.core.git).  For such a pair, a fall of the key (A, KIND,
+    ENTITY) pays an increase of the key (B, KIND, ENTITY).  Each fall pays
+    one time (move_payments()).  The count of findings in the files of the
+    change then does not increase.
+
+    A change can also move code to a different namespace of the tree, such
+    as from foundation::algebra to fixy::session.  The entity of a finding
+    then changes, and the finding does not.  Two entities agree when one
+    replacement of a qualifier of the tree gives the second from the first
+    (entities_agree()).  A qualifier of the tree starts with a root namespace
+    of TREE_NAMESPACES.  The keys with the same entity pay first.  Then a fall pays an
+    increase of the same kind with an entity that agrees, in its file or
+    along a pair.
+
+    A write in the mode lower writes a paid increase with no --raise.  A new
+    row gets the reason of the row of the fall that pays it.  An increase
+    that no fall pays stays an error.  For the policy admit, each row is a
+    count of one.
 
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
@@ -160,6 +183,10 @@ REASON_WORD = "reason"
 # The name of the rows with the largest count of each key over the configurations (THE MAXIMUM).  It is not a
 # lowercase word, and no configuration can have it.
 MAXIMUM = "*"
+# The root namespaces of the tree (CLAUDE.md section XV, "Namespace discipline"), and the mark after each name of a
+# qualifier.  A move of code to a different namespace of the tree changes an entity and not its finding (THE MOVE).
+TREE_NAMESPACES = ("foundation", "fixy", "crucible")
+SCOPE = "::"
 
 
 class LedgerError(ValueError):
@@ -932,6 +959,135 @@ def moved_entries(table: Mapping[Key, Entry], moved: Mapping[str, str]) -> dict[
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class Payment:
+    """The part of a fall of one key that pays an increase of a key with the same kind and entity (THE MOVE)."""
+
+    source: Key
+    target: Key
+    count: int
+
+
+def is_name_character(character: str) -> bool:
+    """Return True for a character of a C++ name: a letter, a digit or an underscore."""
+    return character.isalnum() or character == "_"
+
+
+def name_length(text: str, start: int) -> int:
+    """Return the length of the C++ name that starts at an index of a text, or 0 when no name starts there."""
+    end = start
+    while end < len(text) and is_name_character(text[end]):
+        end += 1
+    return end - start if end > start and not text[start].isdigit() else 0
+
+
+def tree_qualifiers(entity: str) -> frozenset[str]:
+    """Return each qualifier of an entity that starts with a root namespace of the tree, such as fixy::session:: (THE MOVE).
+
+    A qualifier is a sequence of names with SCOPE after each name.  Its first name is one of TREE_NAMESPACES, and no
+    character of a name comes before it.  Complexity: O(n * d) for n characters and d names in the longest qualifier.
+    """
+    found: set[str] = set()
+    for root in TREE_NAMESPACES:
+        marker = root + SCOPE
+        start = entity.find(marker)
+        while start >= 0:
+            if start == 0 or not is_name_character(entity[start - 1]):
+                end = start + len(marker)
+                found.add(entity[start:end])
+                while (length := name_length(entity, end)) > 0 and entity.startswith(SCOPE, end + length):
+                    end += length + len(SCOPE)
+                    found.add(entity[start:end])
+            start = entity.find(marker, start + 1)
+    return frozenset(found)
+
+
+def entities_agree(first: str, second: str) -> bool:
+    """Return True when two entities are equal, or when one replacement of a qualifier of the tree gives the second.
+
+    The replacement changes each copy of one qualifier of the first entity to one qualifier of the second entity.  A
+    move of code to a different namespace of the tree makes such a change (THE MOVE).  Complexity: O(q^2 * n) for q
+    qualifiers and n characters.
+    """
+    if first == second:
+        return True
+    return any(first.replace(old, new) == second for old in tree_qualifiers(first) for new in tree_qualifiers(second))
+
+
+def move_payments(
+    before: Mapping[Key, int], after: Mapping[Key, int], flows: Iterable[tuple[str, str]]
+) -> tuple[Payment, ...]:
+    """Return each payment of an increase by a fall of the same kind, in a file or along the pairs of files (THE MOVE).
+
+    `flows` holds each pair (A, B) where the change moved a line from A to B.  First, a fall of (A, KIND, ENTITY) pays
+    the increase of (B, KIND, ENTITY) of each such B, in the sequence of the paths.  Then a fall pays an increase of the
+    same kind with an entity that agrees (entities_agree()), in its own file or in each such B.  Each fall pays one
+    time.  Complexity: O(k log k + f * i) for k keys, f falls and i increases of one file and kind.
+    """
+    targets: dict[str, set[str]] = {}
+    for source, target in flows:
+        if source != target:
+            targets.setdefault(source, set()).add(target)
+    falls: dict[Key, int] = {}
+    increases: dict[Key, int] = {}
+    for key in set(before) | set(after):
+        difference = after.get(key, 0) - before.get(key, 0)
+        if difference < 0:
+            falls[key] = -difference
+        elif difference > 0:
+            increases[key] = difference
+    payments: list[Payment] = []
+
+    def pay(fall: Key, increase: Key) -> None:
+        """Pay as much of the increase as the remaining part of the fall can."""
+        count = min(falls[fall], increases.get(increase, 0))
+        if count > 0:
+            payments.append(Payment(fall, increase, count))
+            falls[fall] -= count
+            increases[increase] -= count
+
+    for fall in sorted(falls):
+        for path in sorted(targets.get(fall.path, ())):
+            pay(fall, Key(path, fall.kind, fall.entity))
+    by_file: dict[tuple[str, str], list[Key]] = {}
+    for key in sorted(increases):
+        by_file.setdefault((key.path, key.kind), []).append(key)
+    for fall in sorted(falls):
+        for path in (fall.path, *sorted(targets.get(fall.path, ()))):
+            for increase in by_file.get((path, fall.kind), ()):
+                if falls[fall] > 0 and increases[increase] > 0 and entities_agree(fall.entity, increase.entity):
+                    pay(fall, increase)
+    return tuple(payments)
+
+
+def paid_of(payments: Iterable[Payment]) -> dict[Key, int]:
+    """Return the part of the increase of each key that the payments pay.  Complexity: linear in the payments."""
+    paid: dict[Key, int] = {}
+    for payment in payments:
+        paid[payment.target] = paid.get(payment.target, 0) + payment.count
+    return paid
+
+
+def paid_counts(
+    before: Mapping[Key, int], after: Mapping[Key, int], flows: Iterable[tuple[str, str]]
+) -> dict[Key, int]:
+    """Return the part of the increase of each key that a fall along the pairs of files pays (THE MOVE).
+
+    Complexity: that of move_payments().
+    """
+    return paid_of(move_payments(before, after, flows))
+
+
+def carried_reasons(table: Mapping[Key, Entry], payments: Iterable[Payment]) -> dict[Key, str]:
+    """Return the reason of the row of the source of the first payment of each key, for each source with a reason."""
+    carried: dict[Key, str] = {}
+    for payment in payments:
+        source = table.get(payment.source)
+        if source is not None and source.reason:
+            carried.setdefault(payment.target, source.reason)
+    return carried
+
+
 def write(
     rule: Rule,
     ledger: Ledger,
@@ -940,6 +1096,7 @@ def write(
     mode: WriteMode = WriteMode.LOWER,
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
+    flows: Iterable[tuple[str, str]] = (),
 ) -> Ledger:
     """Return the ledger that admits the error findings of a rule (THE WRITE).
 
@@ -951,6 +1108,7 @@ def write(
         mode: The mode of the write
         reason: The reason of each new row and each raised count, necessary in the mode admit
         moved: The old path of each file that git reports as moved
+        flows: Each pair of files (A, B) where the change moved a line from A to B (THE MOVE)
 
     Raises:
         LedgerError: If the mode refuses a finding, the policy has no write here, or a necessary reason is missing
@@ -958,7 +1116,7 @@ def write(
     Complexity: O(f log f + r) for f findings and r rows.
     """
     counts = Counter(key_of(finding) for finding in findings if finding.level == "error")
-    return write_counts(rule, ledger, counts, configuration, mode, reason, moved)
+    return write_counts(rule, ledger, counts, configuration, mode, reason, moved, flows)
 
 
 def write_counts(
@@ -969,11 +1127,13 @@ def write_counts(
     mode: WriteMode = WriteMode.LOWER,
     reason: str | None = None,
     moved: Mapping[str, str] | None = None,
+    flows: Iterable[tuple[str, str]] = (),
 ) -> Ledger:
     """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
 
     A module that counts its findings itself, such as the rule quarantine,
-    writes its ledger with this function.
+    writes its ledger with this function.  An increase that a fall pays along
+    `flows` is no increase (THE MOVE).
 
     Raises:
         LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
@@ -985,17 +1145,21 @@ def write_counts(
     if mode == WriteMode.ADMIT and not reason:
         raise LedgerError("a write in the mode admit gives a reason with --reason TEXT")
     moved = dict(moved or {})
+    flows = frozenset(flows)
     counts = {key: count for key, count in counts.items() if count > 0}
     base = moved_entries(ledger.base, moved)
     deltas = {name: moved_entries(table, moved) for name, table in ledger.deltas.items()}
     if rule.policy == Policy.ADMIT:
-        new_keys = sorted(key for key in counts if key not in base)
+        payments = move_payments(dict.fromkeys(base, 1), dict.fromkeys(counts, 1), flows)
+        carried = {payment.target: base[payment.source].reason for payment in payments}
+        new_keys = sorted(key for key in counts if key not in base and key not in carried)
         if new_keys and mode != WriteMode.ADMIT:
             raise LedgerError(
                 f"{len(new_keys)} findings of {rule.id} have no row, such as {new_keys[0].path} "
                 f"({described(new_keys[0])}).  Fix them, or admit them with --admit --reason TEXT"
             )
         kept = {key: entry for key, entry in base.items() if key in counts}
+        kept.update({key: Entry(key, ADMIT_VALUE, text) for key, text in carried.items() if key not in base})
         kept.update({key: Entry(key, ADMIT_VALUE, reason or "") for key in new_keys})
         return needed_reasons(replace(ledger, base=kept))
     is_base = configuration is None or configuration == ledger.base_name or not ledger.configurations
@@ -1005,20 +1169,29 @@ def write_counts(
     kept_admits = {key: entry for key, entry in admits.items() if counts.get(key, 0) > 0}
     counts = {key: count for key, count in counts.items() if key not in admits}
     expected = moved_counts(ledger.expected(configuration), moved)
-    rises = sorted(key for key, count in counts.items() if count > expected.get(key, 0))
+    payments = move_payments(expected, counts, flows)
+    paid = paid_of(payments)
+    rises = sorted(key for key, count in counts.items() if count > expected.get(key, 0) + paid.get(key, 0))
     if rises and mode == WriteMode.LOWER:
         first = rises[0]
         raise LedgerError(
             f"{len(rises)} counts of {rule.id} rose, such as {first.path} ({described(first)}) from "
-            f"{expected.get(first, 0)} to {counts[first]}.  Remove the new findings.  Give --raise only "
-            f"when the checker changed what it reports, or --admit with a reason"
+            f"{expected.get(first, 0)} to {counts[first]}, and no fall of a file that the change moved lines from "
+            f"pays it.  Remove the new findings.  Give --raise only when the checker changed what it reports, or "
+            f"--admit with a reason"
         )
     if is_base:
+        carried = carried_reasons(base, payments)
         new_base = {
-            key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in counts.items()
+            key: Entry(key, count, base[key].reason if key in base else (carried.get(key) or reason or ""))
+            for key, count in counts.items()
         }
         return needed_reasons(
-            replace(ledger, base={**new_base, **kept_admits}, deltas=other_deltas(ledger, base, deltas, counts))
+            replace(
+                ledger,
+                base={**new_base, **kept_admits},
+                deltas=other_deltas(ledger, base, deltas, counts, payments),
+            )
         )
     # The difference rows are relative to the stored base rows, which keep the old path of a moved file until a write
     # of the base moves them.
@@ -1040,21 +1213,45 @@ def base_counts_rows(base: Mapping[Key, Entry]) -> dict[Key, Entry]:
 
 
 def other_deltas(
-    ledger: Ledger, base: Mapping[Key, Entry], deltas: Mapping[str, Mapping[Key, Entry]], counts: Mapping[Key, int]
+    ledger: Ledger,
+    base: Mapping[Key, Entry],
+    deltas: Mapping[str, Mapping[Key, Entry]],
+    counts: Mapping[Key, int],
+    payments: Iterable[Payment] = (),
 ) -> dict[str, dict[Key, Entry]]:
     """Return the difference rows of each other configuration after a write of the base counts `counts` (THE WRITE).
 
     `base` and `deltas` are the rows of the ledger with each moved file at
     its new path.  Each other configuration keeps its count of each key, and
-    its difference rows hold that count against the new base count.  A row
-    keeps its reason.  Complexity: linear in the rows times the
-    configurations.
+    its difference rows hold that count against the new base count.  Each
+    payment of the base write also moves its count in each other
+    configuration (THE MOVE).  The change moved the same lines in each
+    build.  Then the sequence of the writes of two configurations gives the
+    same ledger.  A row keeps its reason.  Complexity: linear in the rows
+    and the payments, times the configurations.
     """
     moved = replace(ledger, base=base, deltas=deltas)
+    payments = tuple(payments)
     return {
-        item.name: difference_table(moved.expected(item.name), counts, deltas.get(item.name, {}))
+        item.name: difference_table(paid_moves(moved.expected(item.name), payments), counts, deltas.get(item.name, {}))
         for item in ledger.configurations[1:]
     }
+
+
+def paid_moves(expected: Mapping[Key, int], payments: Iterable[Payment]) -> dict[Key, int]:
+    """Return the counts of a configuration after each payment moves its count from its source to its target (THE MOVE).
+
+    A configuration moves at most the count that it holds at the source.  A
+    count that a different arm gives only this configuration then stays at
+    the source.  Complexity: linear in the counts and the payments.
+    """
+    result = dict(expected)
+    for payment in payments:
+        count = min(payment.count, result.get(payment.source, 0))
+        if count > 0:
+            result[payment.source] -= count
+            result[payment.target] = result.get(payment.target, 0) + count
+    return result
 
 
 def rows_of_configuration(
