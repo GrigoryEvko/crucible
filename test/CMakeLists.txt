@@ -5011,9 +5011,11 @@ set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
 # each reader with the text output of the compiler of this build.  The tests of
 # the ELF reader, of the DWARF reader and of the reader of a disassembly read
 # the objects that the compiler of this build gives.  The test of the reader of
-# a link map reads the map of a link that the compiler of this build does.
+# a link map reads the map of a link that the compiler of this build does.  The
+# test of the reader of the statistics of ccache compiles through ccache with
+# the compiler of this build.
 foreach(_assay_test readers.test_sarif readers.test_include_trace readers.test_elf readers.test_objdump
-        readers.test_linkmap readers.test_dwarf)
+        readers.test_linkmap readers.test_dwarf readers.test_ccache)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

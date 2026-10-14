@@ -269,11 +269,6 @@ def comparison_cases(expect: testing.Expect) -> None:
         )
         == "a.cpp . ../outside/b.h {plugin} {repo}/include/x.h 'q'",
     )
-    expect(
-        "ccache_hit_count() adds the direct and the preprocessed hits",
-        witness.ccache_hit_count("direct_cache_hit\t2\npreprocessed_cache_hit\t3\ncache_miss\t9\n") == 5
-        and witness.ccache_hit_count("") == 0,
-    )
 
 
 def judgement_cases(expect: testing.Expect) -> None:

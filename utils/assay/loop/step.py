@@ -60,10 +60,11 @@ THE MEASURED RULES
     in the format of utils/assay/core/report.py.  A GB is 2^30 bytes.
 
 A CCACHE HIT
-    A compile sets CCACHE_STATSLOG to OBJECT.ccache-stats.  A hit counter in
-    that log means that ccache gave a stored object and the compiler did not
-    run.  The record then says "hit" and holds no time of its own.  A hit has
-    no memory to judge.
+    A compile sets CCACHE_STATSLOG to OBJECT.ccache-stats, and
+    assay.readers.ccache reads that log.  A hit counter in the log means that
+    ccache gave a stored object and the compiler did not run.  The record
+    then says "hit" and holds no time of its own.  A hit has no memory to
+    judge.
 
 THE COST STORE
     After each compile through ccache that ran the compiler, the subcommand
@@ -100,6 +101,7 @@ import sys
 from assay.core import budget as cost_budget
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
+from assay.readers import ccache
 
 STEP_ROWS = {"compile": ("compile-cpu", "compile-memory"), "link": ("link-time", "link-memory")}
 # The CPU limit of each process of a step, as a multiple of the error threshold of its time row (THE MEASURED RULES).
@@ -264,6 +266,32 @@ def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
     return tuple(counts)
 
 
+def is_ccache_hit(stats_path: str, outer_log: str | None) -> bool:
+    """Return True when ccache gave a stored object, from the stats log of one call, and remove the log (A CCACHE HIT).
+
+    Args:
+        stats_path: The stats log of the call
+        outer_log: The stats log that the environment of the build named, or None.  The
+            counters of the call go to it too, and that log then holds each call of the build
+
+    Returns:
+        True when assay.readers.ccache reads a hit counter in the log
+    """
+    try:
+        with open(stats_path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        return False
+    try:
+        os.unlink(stats_path)
+    except OSError:
+        pass
+    if outer_log:
+        with open(outer_log, "a", encoding="utf-8", errors="replace") as handle:
+            handle.write(text)
+    return ccache.parse_stats_log(text).is_hit
+
+
 def remembered_cost(output: str, command: list[str], result: str, run: cost_meter.Measurement,
                     counts: tuple[tuple[str, int], ...]) -> cost_record.Cost | None:
     """Write the cost of a compile through ccache into the cost store, or read the cost of a hit from it.
@@ -389,7 +417,7 @@ def main(argv: list[str]) -> int:
     try:
         if step == "compile":
             counts = compile_counts(run, is_ccache, count_path)
-        hit = stats_path is not None and cost_meter.ccache_hit(stats_path, outer_log)
+        hit = stats_path is not None and is_ccache_hit(stats_path, outer_log)
         result, line = judge(step, output, run, budget, hit)
         if is_ccache and result in (cost_record.HIT, "built"):
             last_cost = remembered_cost(output, arguments, result, run, counts)

@@ -206,7 +206,7 @@ from assay.core import rows as rows_grammar
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta import runner as meta_runner
-from assay.readers import compdb, sarif
+from assay.readers import ccache, compdb, sarif
 from assay.readers import sections as plugin_sections
 
 MANIFEST = "witness.txt"
@@ -1161,21 +1161,12 @@ CCACHE_IGNORED = f"-fplugin=* {PLUGIN_ARGUMENT}root=* {PLUGIN_ARGUMENT}build=* {
 
 
 def ccache_hits(cache: Cache) -> int:
-    """Return the hits that the statistics of CACHE count.
+    """Return the hits that the statistics of CACHE count (assay.readers.ccache).
 
     Raises:
-        proc.CannotStart: If ccache cannot start
+        ccache.CcacheError: If ccache cannot start, or it exits with a status that is not 0
     """
-    printed = proc.run(
-        proc.Command(["ccache", "--print-stats"], timeout_s=proc.QUICK_S, env=_cache_environment(cache))
-    ).out
-    return ccache_hit_count(printed)
-
-
-def ccache_hit_count(printed: str) -> int:
-    """Return the sum of the counts direct_cache_hit and preprocessed_cache_hit of the text of `ccache --print-stats`."""
-    counts = dict(line.split("\t", 1) for line in printed.splitlines() if "\t" in line)
-    return sum(int(counts.get(name, "0") or "0") for name in ("direct_cache_hit", "preprocessed_cache_hit"))
+    return ccache.statistics(_cache_environment(cache)).hits
 
 
 def is_swap(finding: plugin_sections.Finding) -> bool:

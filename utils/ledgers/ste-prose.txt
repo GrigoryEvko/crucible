@@ -138,9 +138,6 @@ utils/assay/core/meter.py | refused-word | 1 | budget_rows: both | A text of tod
 utils/assay/core/meter.py | refused-word | 1 | budget_rows: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/meter.py | refused-word | 1 | budget_rows: warn | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/meter.py | refused-word | 1 | build_dir_of: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/meter.py | refused-word | 1 | ccache_hit: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/meter.py | refused-word | 1 | ccache_hit: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/meter.py | refused-word | 2 | ccache_hit: whole | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/meter.py | refused-word | 1 | ci_verdict: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/meter.py | refused-word | 1 | compiler_meter_environment: already | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/meter.py | refused-word | 1 | is_build_kind: whether | A text of today.  The change that writes the text again in STE lowers the count

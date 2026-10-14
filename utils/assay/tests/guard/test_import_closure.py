@@ -106,6 +106,8 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
                 "assay.core.value",
                 "assay.loop",
                 "assay.loop.step",
+                "assay.readers",
+                "assay.readers.ccache",
             }
         ),
         STEP_METER,

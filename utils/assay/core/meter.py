@@ -605,37 +605,6 @@ def end_like(exit_code: int) -> None:
     os._exit(exit_code)
 
 
-def ccache_hit(stats_path: str, outer_log: str | None) -> bool:
-    """Tell whether ccache gave a stored output, from the stats log of one call, and remove the log.
-
-    ccache writes the counters of a call to the file that CCACHE_STATSLOG
-    names.  A counter direct_cache_hit or preprocessed_cache_hit means that
-    the compiler did not run.
-
-    Args:
-        stats_path: The stats log of the call
-        outer_log: The stats log that the environment of the build named, or None.  The
-            counters of the call go to it too, so a log of the whole build stays whole
-
-    Returns:
-        True when the log holds a hit counter
-    """
-    try:
-        with open(stats_path, encoding="utf-8", errors="replace") as handle:
-            text = handle.read()
-    except OSError:
-        return False
-    try:
-        os.unlink(stats_path)
-    except OSError:
-        pass
-    if outer_log:
-        with open(outer_log, "a", encoding="utf-8", errors="replace") as handle:
-            handle.write(text)
-    counters = {line.strip() for line in text.splitlines()}
-    return "direct_cache_hit" in counters or "preprocessed_cache_hit" in counters
-
-
 def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, tuple[float, float]]:
     """Read the warning threshold and the error threshold of some measured rules of the registry.
 
