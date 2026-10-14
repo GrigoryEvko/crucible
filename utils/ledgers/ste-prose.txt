@@ -393,7 +393,6 @@ utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_cpp_t
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_git_command: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_prose_read: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_python: whether | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_text_of_tsast: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | is_word_character: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | names_cpp_file: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/structured_reads.py | refused-word | 1 | names_cpp_file: whether | A text of today.  The change that writes the text again in STE lowers the count

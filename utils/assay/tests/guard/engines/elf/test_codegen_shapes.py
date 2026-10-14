@@ -133,22 +133,32 @@ def plain(*texts: str) -> list[Line]:
 def normalization_cases(expect: testing.Expect) -> None:
     """Hold the class of each register, the removal of the displacement of rip, and the text of a symbol."""
     cases = (
-        ("mov rax,QWORD PTR [rdi+0x8]", "mov g64,QWORD PTR [g64+0x8]"),
-        ("add r9d,ecx", "add g32,g32"),
-        ("movzx eax,dil", "movzx g32,g8"),
-        ("vpaddd ymm0,ymm1,ymm15", "vpaddd v256,v256,v256"),
-        ("kmovw k1,eax", "kmovw k,g32"),
-        ("mov QWORD PTR [rbp-0x8],rsi", "mov QWORD PTR [rbp-0x8],g64"),
-        ("lea rax,[rip+0x0]", "lea g64,[rip]"),
-        ("lea rax,[rip+0xffffffffffffffaa]", "lea g64,[rip]"),
-        ("mov eax,DWORD PTR [rax+rdi*4]", "mov g32,DWORD PTR [g64+g64*4]"),
+        ("mov", "rax,QWORD PTR [rdi+0x8]", "mov g64,QWORD PTR [g64+0x8]"),
+        ("add", "r9d,ecx", "add g32,g32"),
+        ("movzx", "eax,dil", "movzx g32,g8"),
+        ("vpaddd", "ymm0,ymm1,ymm15", "vpaddd v256,v256,v256"),
+        ("kmovw", "k1,eax", "kmovw k,g32"),
+        ("mov", "QWORD PTR [rbp-0x8],rsi", "mov QWORD PTR [rbp-0x8],g64"),
+        ("lea", "rax,[rip+0x0]", "lea g64,[rip]"),
+        ("lea", "rax,[rip+0xffffffffffffffaa]", "lea g64,[rip]"),
+        ("mov", "eax,DWORD PTR [rax+rdi*4]", "mov g32,DWORD PTR [g64+g64*4]"),
+        ("vmovdqu8", "zmm0{k1}{z},ZMMWORD PTR [rdi]", "vmovdqu8 v512{k}{z},ZMMWORD PTR [g64]"),
+        ("mov", "rax,QWORD PTR fs:0x28", "mov g64,QWORD PTR fs:0x28"),
+        ("shl", "eax,1", "shl g32,1"),
     )
-    for source, wanted in cases:
-        text = f"{source.split(' ', 1)[0]} {shapes.normalized_operands(source.split(' ', 1)[1])}"
-        expect(f"the operands of '{source}' become '{wanted}'", text == wanted)
+    for mnemonic, operands, wanted in cases:
+        text = f"{mnemonic} {shapes.normalized_operands(objdump.parse_operands(operands, mnemonic))}"
+        expect(f"the operands of '{mnemonic} {operands}' become '{wanted}'", text == wanted)
+    lea = objdump.parse_operands("rax,[rip+0x0]", "lea")
     for symbol, wanted in ((".LC12", " -> .LC"), (".rodata.CSWTCH.151", " -> .rodata"), ("memmove", " -> memmove")):
-        instruction = shapes.Instruction(0, (), "lea", "rax,[rip+0x0]", (), (), symbol, symbol)
+        instruction = shapes.Instruction(0, (), "lea", lea, (), symbol, symbol)
         expect(f"the symbol {symbol} becomes '{wanted}'", shapes.symbol_text(instruction) == wanted)
+    padding = shapes.Instruction(0, (), "xchg", objdump.parse_operands("ax,ax", "xchg"), ())
+    locked = shapes.Instruction(0, (), "xchg", objdump.parse_operands("QWORD PTR [rdi],rax", "xchg"), ())
+    expect(
+        "xchg ax,ax is a nop that aligns the code, and xchg with a memory operand is a locked instruction",
+        padding.is_padding and not padding.is_locked and locked.is_locked and not locked.is_padding,
+    )
 
 
 # ── The walk ───────────────────────────────────────────────────────
@@ -210,6 +220,19 @@ def walk_cases(expect: testing.Expect) -> None:
     expect("a jump into an earlier instruction marks the loop", marks == [False, False, True, True, True, True, False])
     padded = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "xchg ax,ax", "nop", "ret"))
     expect("a nop that aligns the code is no step", len(shapes.steps_of(padded)) == 3)
+    tls = code_of(
+        "probe",
+        [
+            *plain("endbr64", "lea rdi,[rip+0x0]"),
+            ("data16 rex.W call QWORD PTR [rip+0x0]", "R_X86_64_GOTPCRELX\t__tls_get_addr-0x4"),
+            *plain("mov eax,DWORD PTR [rax]", "ret"),
+        ],
+    )
+    steps = shapes.steps_of(tls)
+    expect(
+        "the call of a TLS access, with the prefixes data16 and rex.W, is a call of __tls_get_addr",
+        steps[2].kind is shapes.StepClass.CALL and steps[2].detail == "__tls_get_addr",
+    )
 
 
 # ── The verdict ────────────────────────────────────────────────────
@@ -267,6 +290,7 @@ def verdict_cases(expect: testing.Expect) -> None:
     )
     locked = code_of("probe", plain("endbr64", "lock add DWORD PTR [rdi],0x1", "ret"))
     unlocked = code_of("probe", plain("endbr64", "add DWORD PTR [rdi],0x1", "ret"))
+    opaque = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "vaddps zmm0,zmm1,zmm2,{rn-sae}", "ret"))
     fatal = shapes.Probe("probe", "c", checks=("fatal",))
     cases: tuple[tuple[str, shapes.Probe, shapes.Code, shapes.Code, bool, tuple[str, ...]], ...] = (
         ("a pair with the same instructions", ZERO_COST, load, load, False, ()),
@@ -288,6 +312,7 @@ def verdict_cases(expect: testing.Expect) -> None:
         ("a family-only lea with an index", ZERO_COST, swapped, swapped_raw, False, ()),
         ("family-only work in a loop", ZERO_COST, loop_work, loop_raw, False, ("work to a loop",)),
         ("a lost lock", ZERO_COST, unlocked, locked, False, ("locked instructions",)),
+        ("an operand that the reader cannot read", fatal, load, opaque, False, ("no typed operand",)),
     )
     for title, probe, family, raw, hardened, wanted in cases:
         problems = judged(probe, family, raw, hardened).problems
@@ -431,6 +456,25 @@ def wrapper_flag_cases(expect: testing.Expect) -> None:
         "the wrapper unit holds one wrapper for each primitive and width, and one for each static length",
         len(names) == len(shapes.WIDTHS) * 5 + len(shapes.STATIC_EQ_LENGTHS),
     )
+
+
+def wrapper_operand_cases(expect: testing.Expect) -> None:
+    """Hold the memory operands that a wrapper with no pointer can read, and refuse an operand that no record reads."""
+    cases = (
+        ("mov", "rax,QWORD PTR fs:0x28", False, ()),
+        ("mov", "eax,DWORD PTR [rsp+0x8]", False, ()),
+        ("mov", "eax,DWORD PTR [rip+0x0]", False, ()),
+        ("mov", "eax,DWORD PTR fs:[rax]", False, ("calculated address",)),
+        ("mov", "eax,DWORD PTR [rdi]", True, ()),
+        ("mov", "eax,DWORD PTR [rdi+rsi*4]", True, ("indexed load",)),
+        ("lea", "rax,[rdi+rsi*4]", False, ()),
+        ("vaddps", "zmm0,zmm1,zmm2,{rn-sae}", False, ("cannot read",)),
+    )
+    for mnemonic, operands, takes_pointers, wanted in cases:
+        instruction = objdump.Instruction(0, (), mnemonic, objdump.parse_operands(operands, mnemonic), "", (), ())
+        problems = shapes.wrapper_problems("wrapper", (instruction,), takes_pointers)
+        holds = all(any(part in problem for problem in problems) for part in wanted) and bool(problems) == bool(wanted)
+        expect(f"the wrapper instruction '{mnemonic} {operands}' gives {list(wanted) or 'no problem'}", holds)
 
 
 def planted_plan(compiler: str) -> shapes.Plan:
@@ -667,6 +711,7 @@ def main(argv: list[str]) -> int:
             flag_cases,
             probe_row_cases,
             wrapper_flag_cases,
+            wrapper_operand_cases,
             wrapper_cases,
             census_cases,
             build_probe_cases,

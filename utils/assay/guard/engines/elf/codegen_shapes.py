@@ -108,6 +108,8 @@ THE VERDICT
       - An instruction in a loop of NAME, when the probe does not declare
         branch=yes.  A loop is the instructions from the target of a jump "<-"
         to that jump.
+    An instruction of the two functions with an operand that the reader gives
+    as `Opaque` is an error, because its class is not known.
     The two functions must hold the same locked instructions (a lock prefix,
     or xchg with a memory operand).  The family side then does the same atomic
     work.  A probe that declares nothing must give NAME at most the count of
@@ -137,6 +139,8 @@ THE WRAPPERS
       - div or idiv: their latency changes with the operands
       - a memory operand with an index register: a load that a secret
         indexes shows the index through the cache
+      - an operand that the reader gives as `Opaque`: the rule cannot see what
+        it reads
     The eq of a dynamic length is no wrapper, because its loop branches on
     the length, which is public.  The taint tests of test/ct cover it.
 
@@ -258,6 +262,10 @@ INDIRECT_CALLEE = "<indirect>"
 JUMP_FIELD = 4
 # The register names of x86-64 that keep their names, because each one has a specified role (THE NORMALIZATION).
 FIXED_REGISTERS = frozenset({"rsp", "esp", "sp", "spl", "rbp", "ebp", "bp", "bpl", "rip", "fs", "gs"})
+# The base of an address that THE NORMALIZATION gives no displacement.
+RIP = "rip"
+# The operands of xchg ax,ax, the nop of two bytes that aligns the code.
+XCHG_PADDING = (objdump.Register("ax"), objdump.Register("ax"))
 # The four legacy registers with a high byte, the two with no high byte, and the vector classes.
 HIGH_BYTE_REGISTERS = ("a", "b", "c", "d")
 INDEX_REGISTERS = ("si", "di")
@@ -350,7 +358,7 @@ NAME_LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_i
 # The nodes of a name above its leaf node, up to the node that holds the full name.
 NAME_OWNERS = frozenset({"template_type", "template_function", "template_method"})
 # The registers of a memory operand that give no address from a secret.
-PUBLIC_REGISTERS = frozenset({"rsp", "rip", "ptr"})
+PUBLIC_REGISTERS = frozenset({"rsp", "rip"})
 
 
 class CompileFailed(RuntimeError):
@@ -520,19 +528,18 @@ def relocation_target(symbol: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Instruction:
-    """One instruction of a disassembled function, with its memory operands and its relocation.
+    """One instruction of a disassembled function, with its operands and its relocation.
 
-    `memory` holds the text of each memory operand.  `symbol` is the symbol of the relocation as objdump prints it,
-    such as the section symbol .text.unlikely.NAME, `name` is the name that c++filt gives for it with no parameter
-    list, and `addend` is the addend of the relocation.
+    `operands` holds the record of each operand that assay.readers.objdump gives.  `symbol` is the symbol of the
+    relocation as objdump prints it, such as the section symbol .text.unlikely.NAME, `name` is the name that c++filt
+    gives for it with no parameter list, and `addend` is the addend of the relocation.
     """
 
     offset: int
     prefixes: tuple[str, ...]
     mnemonic: str
-    operands: str
+    operands: tuple[objdump.Operand, ...]
     lines: tuple[str, ...]
-    memory: tuple[str, ...] = ()
     symbol: str | None = None
     name: str | None = None
     addend: int = 0
@@ -540,12 +547,19 @@ class Instruction:
     @property
     def is_padding(self) -> bool:
         """True when the instruction is a nop that aligns the code."""
-        return self.mnemonic.startswith("nop") or (self.mnemonic == "xchg" and self.operands == "ax,ax")
+        return self.mnemonic.startswith("nop") or (self.mnemonic == "xchg" and self.operands == XCHG_PADDING)
 
     @property
     def is_locked(self) -> bool:
         """True when the instruction is a locked read-modify-write: a lock prefix, or xchg with a memory operand."""
-        return "lock" in self.prefixes or (self.mnemonic == "xchg" and bool(self.memory))
+        return "lock" in self.prefixes or (
+            self.mnemonic == "xchg" and any(isinstance(operand, objdump.Memory) for operand in self.operands)
+        )
+
+    @property
+    def opaque(self) -> tuple[objdump.Opaque, ...]:
+        """The operands that the reader gives as `Opaque`, because no different record of the reader reads them."""
+        return tuple(operand for operand in self.operands if isinstance(operand, objdump.Opaque))
 
     @property
     def is_jump(self) -> bool:
@@ -630,7 +644,6 @@ def codes_of(functions: Sequence[objdump.Function], keeps_arguments: bool = Fals
                 item.mnemonic,
                 item.operands,
                 item.lines,
-                item.memory_operands,
                 None if item.relocation is None else item.relocation.symbol,
                 None if item.relocation is None else relocation_target(item.relocation.name),
                 0 if item.relocation is None else item.relocation.addend,
@@ -665,7 +678,8 @@ class Step:
     """One instruction on a returning path, after THE NORMALIZATION.
 
     `detail` is the kind of the failure path of a check, and the callee of a call.  `head` is the mnemonic with its
-    kept prefix, and `shown` is the line that objdump prints.
+    kept prefix, and `shown` is the line that objdump prints.  `is_opaque` is True when the reader gives an operand of
+    the instruction as `Opaque`, and the class of the instruction is then not known.
     """
 
     text: str
@@ -675,6 +689,7 @@ class Step:
     is_locked: bool
     is_in_loop: bool
     shown: str
+    is_opaque: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -720,16 +735,24 @@ def jump_target(
         if section is None:
             return None, True
         return place_at(offsets[section], section, instruction.addend + JUMP_FIELD), False
-    number = objdump.hex_number(instruction.operands.split(" ", 1)[0].removeprefix("0x"))
-    return (None, True) if number is None else (place_at(offsets[part], part, number), False)
+    address = target_address(instruction)
+    return (None, True) if address is None else (place_at(offsets[part], part, address), False)
+
+
+def target_address(instruction: Instruction) -> int | None:
+    """Return the address that the first operand of a jump or a call names in its section, or None.
+
+    A jump through a register or a memory operand names no address.
+    """
+    first = instruction.operands[0] if instruction.operands else None
+    return first.address if isinstance(first, objdump.Target) else None
 
 
 def callee_of(instruction: Instruction) -> str:
     """Return the callee of a call or of a jump out of the function: its name, or a mark with no name."""
     if instruction.name is not None:
         return instruction.name
-    number = objdump.hex_number(instruction.operands.split(" ", 1)[0].removeprefix("0x"))
-    return INDIRECT_CALLEE if number is None else LOCAL_CALLEE
+    return INDIRECT_CALLEE if target_address(instruction) is None else LOCAL_CALLEE
 
 
 def reachable(edges: Mapping[Place, Sequence[Place]], starts: Iterable[Place]) -> set[Place]:
@@ -856,37 +879,16 @@ def register_class(word: str) -> str:
     return MASK_CLASS if is_mask else word
 
 
-def operand_words(operands: str) -> list[str]:
-    """Return the operands as words and marks: a word is a run of letters, digits and "_", and each other character
-    is a mark.  Complexity: linear in the text."""
-    words: list[str] = []
-    current: list[str] = []
-    for character in operands:
-        if character.isalnum() or character == "_":
-            current.append(character)
-            continue
-        if current:
-            words.append("".join(current))
-            current = []
-        words.append(character)
-    if current:
-        words.append("".join(current))
-    return words
+def normalized_operand(operand: objdump.Operand) -> str:
+    """Return one operand with the class of each register, and with no displacement of rip (THE NORMALIZATION)."""
+    if isinstance(operand, objdump.Memory):
+        return operand.spelling(register_class, keeps_displacement=operand.base != RIP)
+    return operand.spelling(register_class)
 
 
-def normalized_operands(operands: str) -> str:
-    """Return the operands with the class of each register, and with no displacement of rip (THE NORMALIZATION)."""
-    words = operand_words(operands)
-    kept: list[str] = []
-    index = 0
-    while index < len(words):
-        word = words[index]
-        index += 1
-        kept.append(register_class(word))
-        has_displacement = index + 1 < len(words) and words[index] in ("+", "-") and words[index + 1].startswith("0x")
-        if word == "rip" and has_displacement:
-            index += 2
-    return "".join(kept)
+def normalized_operands(operands: Sequence[objdump.Operand]) -> str:
+    """Return the operands of an instruction after THE NORMALIZATION, as objdump divides them."""
+    return objdump.OPERAND_SEPARATOR.join(normalized_operand(operand) for operand in operands)
 
 
 def symbol_text(instruction: Instruction) -> str:
@@ -926,7 +928,9 @@ def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str,
     text = f"{head} {normalized_operands(instruction.operands)}".strip() + symbol_text(instruction)
     if instruction.mnemonic in DIVISIONS:
         return text, StepClass.DIVISION, "", None
-    if instruction.mnemonic not in ADDRESS_ONLY and any("*" in address for address in instruction.memory):
+    if instruction.mnemonic not in ADDRESS_ONLY and any(
+        isinstance(operand, objdump.Memory) and operand.index is not None for operand in instruction.operands
+    ):
         return text, StepClass.INDEXED, "", None
     return text, StepClass.PLAIN, "", None
 
@@ -953,7 +957,16 @@ def steps_of(code: Code) -> tuple[Step, ...]:
             in_loop.update(range(position[loop], number + 1))
         drafts.append((text, kind, detail, instruction))
     return tuple(
-        Step(text, kind, detail, instruction.head, instruction.is_locked, number in in_loop, instruction.shown)
+        Step(
+            text,
+            kind,
+            detail,
+            instruction.head,
+            instruction.is_locked,
+            number in in_loop,
+            instruction.shown,
+            bool(instruction.opaque),
+        )
         for number, (text, kind, detail, instruction) in enumerate(drafts)
     )
 
@@ -1042,7 +1055,12 @@ def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened:
     declares.
     """
     added = family_only(family, raw)
-    problems: list[str] = []
+    problems = [
+        f"the reader gives no typed operand of {step.shown}, so the class of the instruction is not known.  Give "
+        "assay.readers.objdump the spelling of the operand"
+        for step in (*family, *raw)
+        if step.is_opaque
+    ]
     declared = hardening_tests = 0
     for step in added:
         if hardened and step.kind is StepClass.CHECK and step.detail == TRAP and TRAP not in probe.checks:
@@ -1458,7 +1476,7 @@ def wrapper_source(cases: Mapping[str, tuple[tuple[str, bool, str], ...]]) -> tu
 
 def instruction_text(instruction: objdump.Instruction) -> str:
     """Return the mnemonic and the operands of an instruction, and the symbol of its relocation."""
-    base = f"{instruction.mnemonic} {instruction.operands}".strip()
+    base = " ".join(part for part in (instruction.mnemonic, instruction.operand_spelling()) if part)
     return base if instruction.relocation is None else f"{base} (relocation {instruction.relocation.symbol})"
 
 
@@ -1467,7 +1485,7 @@ def wrapper_problems(name: str, body: Sequence[objdump.Instruction], takes_point
 
     A function that takes no pointer has no public address to read.  Each memory operand of a general register then
     reads an address that a secret can make.  A function that takes pointers can read through them, but not with an
-    index register.
+    index register.  The rule refuses an operand that the reader gives as `Opaque`, because it cannot see what it reads.
     """
     problems: list[str] = []
     for instruction in body:
@@ -1475,6 +1493,8 @@ def wrapper_problems(name: str, body: Sequence[objdump.Instruction], takes_point
         text = instruction_text(instruction)
         if mnemonic.startswith("nop"):
             continue
+        if any(isinstance(operand, objdump.Opaque) for operand in instruction.operands):
+            problems.append(f"an operand that the reader cannot read: {text}")
         if (mnemonic.startswith("j") and mnemonic != "jmp") or mnemonic.startswith("loop"):
             problems.append(f"conditional branch: {text}")
         elif mnemonic == "call":
@@ -1486,11 +1506,10 @@ def wrapper_problems(name: str, body: Sequence[objdump.Instruction], takes_point
         # lea calculates an address and reads no memory.  It is arithmetic.
         if mnemonic == "lea":
             continue
-        for address in instruction.memory_operands:
-            registers = set(objdump.register_words(address)) - PUBLIC_REGISTERS
-            if "*" in address:
+        for memory in instruction.memories:
+            if memory.index is not None:
                 problems.append(f"indexed load or store: {text}")
-            elif registers and not takes_pointers:
+            elif set(memory.registers()) - PUBLIC_REGISTERS and not takes_pointers:
                 problems.append(f"load or store through a calculated address: {text}")
     return problems
 

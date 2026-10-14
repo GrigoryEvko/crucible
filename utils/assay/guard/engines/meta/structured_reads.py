@@ -25,6 +25,11 @@ THE KINDS
                         is admitted
     node-text-variable  the same reads of a local variable that holds the text of a tsast object.  A variable that a
                         text of a second variable gives holds a text too
+    disassembly-text    a regex function, a string method or an `in` test over the spelling of an operand of
+                        assay.readers.objdump.  A call .spelling(), .operand_spelling() or spelling_of() gives the
+                        spelling.  A text that node-text derives from a text is such a text too.  Each record of the
+                        reader gives the parts of its operand.  A spelling is then for a message or for a compare
+                        with == only
     source-text         a string method, an `in` test or a regex over the text of a C++ file.  The module reads the
                         text with read_text(), read_bytes() or open().  A path names a C++ file when it holds a
                         string constant with a C++ suffix, such as "include/a.h" or "*.cpp".  A variable of the
@@ -76,6 +81,8 @@ WHAT THE RULE CANNOT SEE
     node-text-variable and source-text read the local variables of one
     function and the variables of the module.  The rule does not see a text
     that goes through a parameter, a return value or an attribute.
+    disassembly-text sees a spelling only in the expression of the read, and
+    not through a variable.
     source-text sees a C++ path only when a constant with a C++ suffix names
     it, and not a path from a list or a parameter.  A shell argument that
     reaches a tool through a variable set elsewhere passes.  git-command
@@ -91,6 +98,7 @@ Complexity: linear in the size of the files of the scope.
 
 import ast
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TypeGuard
 
@@ -129,6 +137,11 @@ STRING_METHODS = frozenset({
 })
 TEXT_ATTRIBUTES = frozenset({"text", "source", "joined"})
 TEXT_CALLS = frozenset({"slice", "spelled"})
+TEXT_NAME_CALLS = frozenset({"spelled"})
+# The calls of assay.readers.objdump that give the spelling of an operand (the kind disassembly-text): the methods of
+# its records, and its module function.
+SPELLING_CALLS = frozenset({"spelling", "operand_spelling", "spelling_of"})
+SPELLING_NAME_CALLS = frozenset({"spelling_of"})
 # The string methods that give a text made from the text of their receiver.
 TEXT_RESULTS = frozenset({
     "strip", "lstrip", "rstrip", "lower", "upper", "casefold", "replace", "removeprefix", "removesuffix", "decode",
@@ -398,42 +411,65 @@ def shell_findings(path: str, script: shell_reader.ShellScript) -> Iterator[chec
 # ── The reads of a Python file ─────────────────────────────────────
 
 
-def is_text_of_tsast(node: ast.AST, variables: frozenset[str] = frozenset()) -> bool:
-    """Whether the value of an expression is the text of a tsast object, or a text that the expression makes from it.
+@dataclass(frozen=True, slots=True)
+class TextSource:
+    """The expressions that give a text of one reader: attributes, method calls and calls of module functions."""
 
-    These expressions give such a text: an attribute of TEXT_ATTRIBUTES, a call of TEXT_CALLS and a variable of
-    `variables`.  A slice of such a text, a string method of TEXT_RESULTS on it and str() of it give a text too.  A
+    attributes: frozenset[str]
+    calls: frozenset[str]
+    name_calls: frozenset[str]
+
+
+TSAST_TEXT = TextSource(TEXT_ATTRIBUTES, TEXT_CALLS, TEXT_NAME_CALLS)
+SPELLING_TEXT = TextSource(frozenset(), SPELLING_CALLS, SPELLING_NAME_CALLS)
+
+
+def is_text_from(node: ast.AST, source: TextSource, variables: frozenset[str] = frozenset()) -> bool:
+    """Return True when the value of an expression is a text of a source, or a text that the expression makes from it.
+
+    An attribute, a method call and a function call of the source give such a text.  A variable of `variables` gives
+    one too.  A slice of such a text, a string method of TEXT_RESULTS on it and str() of it give a text too.  A
     concatenation, an f-string and a conditional expression with such a text in it give a text too.  A text that a
-    call gives to a different function is no value of the expression: `users.setdefault(node.text, [])` gives a
-    list.  An admitted door gives no such text.  Complexity: linear in the number of nodes of the expression.
+    call gives to a different function is no value of the expression: `users.setdefault(node.text, [])` gives a list.
+    An admitted door gives no such text.  Complexity: linear in the number of nodes of the expression.
     """
     if isinstance(node, ast.Name):
         return node.id in variables
     if isinstance(node, ast.Attribute):
-        return node.attr in TEXT_ATTRIBUTES
+        return node.attr in source.attributes
     if isinstance(node, ast.Call):
         func = node.func
-        if isinstance(func, ast.Attribute) and func.attr in TEXT_CALLS:
+        if isinstance(func, ast.Attribute) and func.attr in source.calls:
             return True
-        if isinstance(func, ast.Name) and func.id == "spelled":
+        if isinstance(func, ast.Name) and func.id in source.name_calls:
             return True
         if isinstance(func, ast.Attribute) and func.attr in TEXT_RESULTS:
-            return is_text_of_tsast(func.value, variables)
+            return is_text_from(func.value, source, variables)
         if isinstance(func, ast.Name) and func.id == "str":
-            return any(is_text_of_tsast(argument, variables) for argument in node.args)
+            return any(is_text_from(argument, source, variables) for argument in node.args)
         return False
     if isinstance(node, (ast.Subscript, ast.NamedExpr)):
-        return is_text_of_tsast(node.value, variables)
+        return is_text_from(node.value, source, variables)
     if isinstance(node, ast.BinOp):
-        return is_text_of_tsast(node.left, variables) or is_text_of_tsast(node.right, variables)
+        return is_text_from(node.left, source, variables) or is_text_from(node.right, source, variables)
     if isinstance(node, ast.IfExp):
-        return is_text_of_tsast(node.body, variables) or is_text_of_tsast(node.orelse, variables)
+        return is_text_from(node.body, source, variables) or is_text_from(node.orelse, source, variables)
     if isinstance(node, ast.BoolOp):
-        return any(is_text_of_tsast(value, variables) for value in node.values)
+        return any(is_text_from(value, source, variables) for value in node.values)
     if isinstance(node, ast.JoinedStr):
-        return any(isinstance(value, ast.FormattedValue) and is_text_of_tsast(value.value, variables)
+        return any(isinstance(value, ast.FormattedValue) and is_text_from(value.value, source, variables)
                    for value in node.values)
     return False
+
+
+def is_text_of_tsast(node: ast.AST, variables: frozenset[str] = frozenset()) -> bool:
+    """Return True when the value of an expression is the text of a tsast object, or a text that it makes from it."""
+    return is_text_from(node, TSAST_TEXT, variables)
+
+
+def is_spelling(node: ast.AST) -> bool:
+    """Return True when the value of an expression is the spelling of an operand of objdump, or a text made from it."""
+    return is_text_from(node, SPELLING_TEXT)
 
 
 def is_prose_read(node: ast.AST) -> bool:
@@ -684,6 +720,10 @@ class PythonReads(ast.NodeVisitor):
             elif method in STRING_METHODS and self.is_text_variable(receiver):
                 self.add(node, "node-text-variable", f"a string {method}() on a variable that holds the text of a "
                          f"tsast node.  Read the answer from the children of the node")
+            if (method in STRING_METHODS and is_spelling(receiver)) or (
+                    method in RE_FUNCTIONS and any(is_spelling(argument) for argument in arguments)):
+                self.add(node, "disassembly-text", f"a {method}() on the spelling of an operand of objdump.  Read the "
+                         f"part of the operand from its record of assay.readers.objdump")
             if (method in STRING_METHODS and self.is_source_text(receiver)) or (
                     method in RE_FUNCTIONS and any(self.is_source_text(argument) for argument in arguments)):
                 self.add(node, "source-text", f"a {method}() on the text of a C++ file that the module reads as text.  "
@@ -711,6 +751,9 @@ class PythonReads(ast.NodeVisitor):
                 elif isinstance(operator, (ast.In, ast.NotIn)) and self.is_text_variable(right):
                     self.add(node, "node-text-variable", "an `in` test over a variable that holds the text of a tsast "
                              "node.  Read the answer from the children of the node")
+                if isinstance(operator, (ast.In, ast.NotIn)) and is_spelling(right):
+                    self.add(node, "disassembly-text", "an `in` test over the spelling of an operand of objdump.  Read "
+                             "the part of the operand from its record of assay.readers.objdump")
                 if isinstance(operator, (ast.In, ast.NotIn)) and self.is_source_text(right):
                     self.add(node, "source-text", "an `in` test over the text of a C++ file that the module reads as "
                              "text.  Read the file through assay.readers.tsast, and read the answer from the parse tree")
