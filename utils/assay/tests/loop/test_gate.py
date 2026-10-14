@@ -94,10 +94,10 @@ report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</test
 sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 """
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
-# apply.  `write` lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  It
-# also removes the row of gone.h, as the write of a fall to 0 does.  The write of slow-row raises the value 10 of its
-# ledger to 12, as the write of a kept row does.  The write of the rule history runs the guard of this tree
-# (GUARD_MARK).
+# apply.  In a build with the mode parse-falls, `check` gives findings after the fall of the planted ledger.  `write`
+# lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  It also removes the
+# row of gone.h, as the write of a fall to 0 does.  The write of slow-row raises the value 10 of its ledger to 12, as
+# the write of a kept row does.  The write of the rule history runs the guard of this tree (GUARD_MARK).
 GUARD_MARK = "@GUARD@"
 GUARD_MASTER = """import os
 import pathlib
@@ -106,8 +106,12 @@ import sys
 
 words = sys.argv[1:]
 if words[0] == "check":
-    with open(pathlib.Path(words[4]) / "checks.txt", "a", encoding="utf-8") as handle:
+    build = pathlib.Path(words[4])
+    with open(build / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
+    mode = (build / "mode.txt").read_text().strip() if (build / "mode.txt").is_file() else ""
+    if mode == "parse-falls" and "| 1 |" in pathlib.Path("utils/ledgers/door-unit.txt").read_text():
+        sys.exit(1)
 if words[:3] == ["write", "--rule", "history"]:
     sys.exit(subprocess.run([sys.executable, "@GUARD@", *words], check=False).returncode)
 if words[0] == "write":
@@ -598,7 +602,7 @@ def falls_cases(expect: testing.Expect) -> None:
         )
         expect(
             "after the fold, the tests run again on the new commit",
-            "folded into the commit" in printed and "of objects run again" in printed,
+            "folded into the commit" in printed and "each configuration of the run runs again" in printed,
         )
 
 
@@ -642,6 +646,36 @@ def falls_history_cases(expect: testing.Expect) -> None:
             f"commit of the falls holds no such row: the rule history gives {at_head} at the commit, {with_fall} "
             f"with the fall and the row, and {at_final} at the commit of the falls, and the gate folds "
             f"{verdict.ledgers}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def falls_parse_cases(expect: testing.Expect) -> None:
+    """Hold THE FALLS with the parse configurations: a folded ledger that makes their check red rejects the commit."""
+    with tempfile.TemporaryDirectory(prefix="gate-falls-parse-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        ledger = "utils/ledgers/door-unit.txt"
+        doors = (
+            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
+            "src/door.cpp | header-door | 2 | door.h | -\n"
+        )
+        head = planted_repository(root, {ledger: doors})
+        commit = commit_change(root, ledger, f"# the doors of the tree\n{doors}", "Note the doors")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        names = tuple(item.name for item in gate.CONFIGURATIONS if item.is_parse)
+        parses = {item.build: "parse-falls" for item in gate.CONFIGURATIONS if item.is_parse}
+        planted = planted_gate(work, root, tree, "falls", parses)
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
+        holds = (
+            not verdict.is_accepted
+            and verdict.configurations == (*names, gate.ALWAYS, names[0])
+            and verdict.problems[0].startswith(f"{names[0]}: the rule ")
+        )
+        label = (
+            f"after the fold, a parse configuration checks again, and a folded ledger that makes its check red rejects "
+            f"the commit: the gate runs {verdict.configurations} and gives {verdict.problems[:1]}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
@@ -815,6 +849,7 @@ def main(argv: list[str]) -> int:
             run_cases,
             falls_cases,
             falls_history_cases,
+            falls_parse_cases,
             keep_cases,
             changed_tests_cases,
             touched_cases,

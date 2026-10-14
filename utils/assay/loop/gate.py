@@ -184,14 +184,19 @@ THE FALLS
     into the new commit with the other ledgers.  A tree with no rule history
     in its registry gets no such write.
 
-    The warm tree moves to the new commit.  Each configuration of objects of
-    the run then runs again.  A configuration of the full suite runs `loop
-    test BUILD`, which runs each test with an input that changed, as the run
-    after a move of HEAD does.  The other configurations get the mode of THE
-    SELECTION again, with the ledgers in the change.  The verdict gives the
-    new commit and the ledgers, and the landing moves the branch to that
-    commit.  A change that lowers counts then lands with no manual write of
-    a ledger.
+    The warm tree moves to the new commit.  Each configuration of the run
+    then runs again.  A parse configuration runs `guard check --build-dir
+    BUILD` of each rule of COUNTED_RULES again, on the reports that it
+    keeps, with no write.  A ledger that the gate folded can make such a
+    check red, and the gate then rejects the commit.  A configuration of the
+    full suite runs `loop test BUILD`, which runs each test with an input
+    that changed, as the run after a move of HEAD does.  The other
+    configurations get the mode of THE SELECTION again, with the ledgers in
+    the change.
+
+    The verdict gives the new commit and the ledgers, and the landing moves
+    the branch to that commit.  A change that lowers counts then lands with
+    no manual write of a ledger.
 
 THE KEPT ROWS
     A measured rule of the policy max keeps an item over its warning
@@ -1005,6 +1010,8 @@ class Gate:
         def run_of(run: Run, is_again: bool) -> list[str]:
             """Run one configuration of the plan, or its tests again after THE FALLS, and give each problem."""
             configuration = run.configuration
+            if configuration.is_parse and is_again:
+                return self._checked(configuration, COUNTED_RULES, environment)
             if configuration.is_parse:
                 return self._run_parse(configuration, counted, environment, based)
             problems = self._run_objects(
@@ -1070,15 +1077,17 @@ class Gate:
         if ledgers:
             check_report.write_line(
                 f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit {final[:9]}, "
-                f"and the tests of each configuration of objects run again"
+                f"and each configuration of the run runs again"
             )
-            *first, last = (run for run in plan if not run.configuration.is_parse)
-            for run in first:
-                problems = step((run,), True)
+            # The checks of the parse configurations read kept reports, and they run in the first heavy step.
+            parses = tuple(run for run in plan if run.configuration.is_parse)
+            steps: list[tuple[Run, ...]] = [(run,) for run in plan if not run.configuration.is_parse]
+            steps[0] = (*parses, *steps[0])
+            for index, runs in enumerate(steps):
+                is_last = index == len(steps) - 1
+                problems = step(runs, True, (lambda: self.other_plan(candidate, others, ledgers)) if is_last else None)
                 if problems:
                     break
-            if not problems:
-                problems = step((last,), True, lambda: self.other_plan(candidate, others, ledgers))
         elapsed = time.monotonic() - started
         return Verdict(tuple(ran), tuple(problems), elapsed, tuple(spent), final, ledgers, str(self.logs), tuple(kept))
 
