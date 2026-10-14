@@ -246,7 +246,7 @@ static_assert(std::is_same_v<s::session_loop_ctx_rebind_inner_t<void, ReceivesFo
 static_assert(
     std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::session_brand<Region, ReceivesForever>>, NoPerms>);
 
-// The delta of one message comes from fixy/session/Payload.h.  A send of
+// The delta of one message comes from fixy/session/Flow.h.  A send of
 // a token takes its region from the set, and the matching receive adds
 // it.  A sender that does not hold the region cannot send the token, and
 // a receiver that holds it already cannot receive a second owner.  End

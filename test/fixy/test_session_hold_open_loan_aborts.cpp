@@ -4,7 +4,7 @@
 // Hinrichsen, Krebbers, POPL 2024) forbids.  The attack runs in a child
 // process, and the test passes only on that diagnostic.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 #include <csignal>
 #include <cstddef>

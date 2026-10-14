@@ -915,9 +915,9 @@ static_assert(fc::armed_cell_holds_v<sess::is_empty_choice>);
 static_assert(fc::armed_cell_holds_v<sess::is_terminal_state>);
 static_assert(fc::armed_cell_holds_v<sess::is_well_formed>);
 
-// The payload walk of fixy/session/Payload.h.  A token reached owned is
-// classified, and a token behind a pointer, in an optional, or a read
-// proof outside its marker is refused.
+// The payload walk of fixy/session/Classification.h.  A token reached
+// owned is classified, and a token behind a pointer, in an optional, or a
+// read proof outside its marker is refused.
 template <>
 struct foundation::contracts::armed_cell<sess::is_permission_classified> {
     using accepts = witnesses<int, sess::Transferable<int, fp::tag::HugePageTag>,

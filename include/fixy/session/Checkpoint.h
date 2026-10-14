@@ -69,13 +69,13 @@
 // So a payload that moves a permission cannot cross a checkpoint session.
 // After a rollback the protocol would ask for the token again, and the
 // receiver would still hold the first one.  The mint refuses every
-// payload that is not plain in the sense of fixy/session/Payload.h.
+// payload that is not plain in the sense of fixy/session/Flow.h.
 // A crash branch cannot appear either, because no paper types the two
 // together.  The mint refuses a Crash payload.
 
 #include <fixy/session/Crash.h>
+#include <fixy/session/Flow.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Payload.h>
 #include <fixy/session/Registry.h>
 
 #include <foundation/NoObject.h>

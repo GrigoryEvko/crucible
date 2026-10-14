@@ -2,7 +2,7 @@
 // once, so the second token would be a second owner of the region.  The
 // constraint on mint_permission_hold refuses the call.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

@@ -773,11 +773,11 @@
     },
     {
       "type": "fixy::session::PermHold<foundation::permissions::PermSet<foundation::permissions::tag::HugePageTag>>",
-      "header": "fixy/session/Payload.h"
+      "header": "fixy/session/Flow.h"
     },
     {
       "type": "fixy::session::HoldFactory",
-      "header": "fixy/session/Payload.h"
+      "header": "fixy/session/Flow.h"
     },
     {
       "type": "fixy::concurrent::PermissionedSpscChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ProducerHandle",

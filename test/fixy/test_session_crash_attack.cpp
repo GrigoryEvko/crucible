@@ -186,7 +186,7 @@ static_assert(!s::payload_conveys_delegation_v<int>);
 // ── Delegation, read by one query ───────────────────────────────────
 //
 // A crash session and a checkpoint session ask one question of each
-// payload: payload_conveys_delegation_v of fixy/session/Payload.h.  Each
+// payload: payload_conveys_delegation_v of fixy/session/Flow.h.  Each
 // carrier below hides an endpoint in a legal payload.  The query must see
 // each one, and it must say how it saw it.  A check that looked for the
 // hand-off marker alone would let each handle below travel.

@@ -14,8 +14,9 @@
 #include <fixy/Throws.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/concurrent/PayloadRow.h>
+#include <fixy/session/Classification.h>
+#include <fixy/session/Flow.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Payload.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>

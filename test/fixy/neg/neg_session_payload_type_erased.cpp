@@ -2,7 +2,7 @@
 // does not name what it holds, so a token inside it would move with no
 // set change.  The walk refuses the family by name.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

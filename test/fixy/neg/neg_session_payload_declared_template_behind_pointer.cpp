@@ -2,7 +2,7 @@
 // declared here.  A unit that defines the template would read what it
 // holds, so the public traits give no answer on it.  They stop the build.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 namespace sess = ::fixy::session;
 

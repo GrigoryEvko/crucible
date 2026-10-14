@@ -25,7 +25,7 @@
 // takes, and the matching receive adds them.  A Continue must see the PS
 // that the loop saw at its entry.  A handle cannot reach End while PS
 // holds an open loan.  The ownership delta of one message comes from
-// fixy/session/Payload.h, and this header reads it in one place,
+// fixy/session/Flow.h, and this header reads it in one place,
 // detail::perm_set_after_send_t and detail::perm_set_after_recv_t below.
 //
 // ── What the Policy parameter is for ────────────────────────────────
@@ -103,9 +103,10 @@
 #include <fixy/SelfContained.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
+#include <fixy/session/Classification.h>
 #include <fixy/session/ContentAddressed.h>
+#include <fixy/session/Flow.h>
 #include <fixy/session/NetworkModel.h>
-#include <fixy/session/Payload.h>
 #include <fixy/session/Registry.h>
 #include <fixy/session/Stepping.h>
 #include <fixy/session/Subtype.h>
@@ -546,10 +547,11 @@ namespace detail {
 // ── The ownership delta of one message ───────────────────────────────
 //
 // These names are the only place where the handle reads what a message
-// does to the permission set.  fixy/session/Payload.h computes the delta
-// with a walk over every component of the payload: a send needs what the
-// payload takes, and the matching receive gains it.  A payload that the
-// walk refuses, for example a token behind a pointer, is refused here.
+// does to the permission set.  fixy/session/Flow.h computes the delta
+// from the walk of fixy/session/Classification.h over every component of
+// the payload: a send needs what the payload takes, and the matching
+// receive gains it.  A payload that the walk refuses, for example a token
+// behind a pointer, is refused here.
 // Each name is a concept, so no user specialization changes a step.
 template <typename PS, typename T>
 concept handle_admits_send_v = SendablePayload<T, PS>;
@@ -898,9 +900,9 @@ template <typename T, typename Resource, typename Write, typename Taken>
 // of fixy/session/CrashTransport.h counts them as one message, and it
 // refuses a crash between them.  The label step does not change the
 // permission set.  The value step changes it, as each plain Send or Recv
-// of the payload does.  The payload walk of fixy/session/Payload.h reads
-// the payload of a keyed message, so the permission flow of the whole
-// protocol changes the set at the same message.
+// of the payload does.  The payload walk of fixy/session/Classification.h
+// reads the payload of a keyed message, so the permission flow of the
+// whole protocol changes the set at the same message.
 
 // The two metafunctions live in detail, so no program specializes them:
 // the handle, the crash transport and the checkpoint read the landing of
@@ -1062,7 +1064,7 @@ using branch_landing_t = typename decltype(detail::branch_landing_of<Choice, I>(
 namespace detail {
 
 // The number of distinct roles that some local types name as peers,
-// together.  The walk is collect_named_peers of fixy/session/Payload.h.
+// together.  The walk is collect_named_peers of fixy/session/Flow.h.
 // Complexity: quadratic in the number of peer names that the walk finds.
 [[nodiscard]] consteval std::size_t distinct_peer_count(std::initializer_list<std::meta::info> protocols) {
     stack<std::meta::info> distinct{};
@@ -1086,7 +1088,7 @@ concept NamesAtMostOnePeer = detail::distinct_peer_count({^^Proto}) <= 1;
 // comes first so that the refusal of such a protocol names that fault
 // and not the general one.  A protocol that hands an endpoint of a
 // session to a peer of that session is refused too
-// (DelegatesToNoOwnPeer in fixy/session/Payload.h).
+// (DelegatesToNoOwnPeer in fixy/session/Flow.h).
 template <typename Proto>
 concept WellFormedRunnableProtocol =
     !is_empty_choice_v<Proto> && is_well_formed_v<Proto> && DelegatesToNoOwnPeer<Proto> && NamesAtMostOnePeer<Proto>;
@@ -1398,8 +1400,8 @@ public:
                                        && std::is_nothrow_move_constructible_v<T>) {
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
-                      "message takes, or the payload walk of fixy/session/Payload.h refuses the message.  Hold each "
-                      "permission that the payload moves or lends before the send.");
+                      "message takes, or the payload walk of fixy/session/Classification.h refuses the message.  "
+                      "Hold each permission that the payload moves or lends before the send.");
         auto& core = core_(handle);
         detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
         const watch::session_ref session = core.session_();
@@ -1418,7 +1420,7 @@ public:
                                        && std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
-                      "message takes, or the payload walk of fixy/session/Payload.h refuses the message.");
+                      "message takes, or the payload walk of fixy/session/Classification.h refuses the message.");
         auto& core = core_(handle);
         std::size_t word = detail::step_wire_word_of(^^Send<T, R>);
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
@@ -1439,7 +1441,7 @@ public:
         static_assert(detail::handle_admits_recv_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message closes, the message gives a region that the set already holds, or the payload walk "
-                      "of fixy/session/Payload.h refuses the message.");
+                      "of fixy/session/Classification.h refuses the message.");
         auto& core = core_(handle);
         T value = detail::read_through<T>(transport, core.live_resource_(), core.session_().endpoint);
         const watch::session_ref session = core.session_();
@@ -1460,7 +1462,7 @@ public:
                                              Transport transport) {
         static_assert(detail::handle_admits_recv_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
-                      "message closes, or the payload walk of fixy/session/Payload.h refuses the message.");
+                      "message closes, or the payload walk of fixy/session/Classification.h refuses the message.");
         auto& core = core_(handle);
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
@@ -2091,13 +2093,13 @@ HandleFactory::enter_(Resource r, watch::session_ref session) noexcept(std::is_n
         if constexpr (is_select_v<Choice>) {
             static_assert(detail::handle_admits_send_v<PS, Message>,
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
-                          "the message of the branch takes, or the payload walk of fixy/session/Payload.h refuses "
-                          "the message.");
+                          "the message of the branch takes, or the payload walk of fixy/session/Classification.h "
+                          "refuses the message.");
         } else {
             static_assert(detail::handle_admits_recv_v<PS, Message>,
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
-                          "the message of the branch closes, or the payload walk of fixy/session/Payload.h refuses "
-                          "the message.");
+                          "the message of the branch closes, or the payload walk of fixy/session/Classification.h "
+                          "refuses the message.");
         }
         return step_<keyed_landing_t<Branch>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     } else {
@@ -2534,16 +2536,16 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 //     because its role is a name.
 //
 // A payload that the walk cannot classify stops the build, and the text
-// names it.  The walk stands here and not in fixy/session/Payload.h, so
-// a header that reads only the payload rules does not include the payload
-// walk.  Complexity: linear in the distinct types that the protocol and
-// its payloads reach.
+// names it.  The walk stands here and not in
+// fixy/session/Classification.h, so a header that reads only the payload
+// rules does not include the payload walk.  Complexity: linear in the
+// distinct types that the protocol and its payloads reach.
 //
 // A receive can also give the endpoint a permission: a token, a read loan
 // or a returned token of a region.  A touch of that region incurs the row
 // of its tag, so the row of the protocol also holds the permission row of
 // each region that the protocol delivers to the endpoint
-// (protocol_delivered_regions of fixy/session/Payload.h).  A mint checks
+// (protocol_delivered_regions of fixy/session/Flow.h).  A mint checks
 // the row of each token that it consumes.  This check covers each token
 // that arrives after the mint, in a message or in a delegated endpoint.
 
@@ -2644,7 +2646,7 @@ namespace detail {
 
 // The union of the permission rows of the regions that Proto can deliver
 // to the endpoint that runs it (protocol_delivered_regions of
-// fixy/session/Payload.h).  A delivered tag that declares no row stops
+// fixy/session/Flow.h).  A delivered tag that declares no row stops
 // the build, because no program can mint a token for it.
 template <class Proto>
 using protocol_delivered_permission_row_t = [:detail::permission_rows_of_set(^^protocol_delivered_regions_t<Proto>):];

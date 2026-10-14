@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: the specialization is refused, and it names the
 // concept.
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 namespace neg_sess_seal_is_plain_payload_types {
 struct Region {

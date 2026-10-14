@@ -476,6 +476,10 @@ include/fixy/session/EventLog.h | inlined | 1 | std::vector::size | -
 include/fixy/session/EventLog.h | inlined | 1 | std::vector::vector | -
 include/fixy/session/EventLog.h | inlined | 1 | std::vector::~vector | -
 include/fixy/session/EventLog.h | reference | 1 | stderr | -
+include/fixy/session/Flow.h | call | 2 | abort | -
+include/fixy/session/Flow.h | inlined | 1 | std::exchange | -
+include/fixy/session/Flow.h | inlined | 7 | std::pair::pair | -
+include/fixy/session/Flow.h | reference | 2 | stderr | -
 include/fixy/session/Handle.h | call | 5 | abort | -
 include/fixy/session/Handle.h | call | 2 | std::invoke | -
 include/fixy/session/Handle.h | call | 2 | std::optional::operator* | -
@@ -497,10 +501,6 @@ include/fixy/session/Handle.h | inlined | 4 | std::pair::pair | -
 include/fixy/session/Handle.h | inlined | 1 | std::source_location::column | -
 include/fixy/session/Handle.h | inlined | 1 | std::source_location::function_name | -
 include/fixy/session/Handle.h | reference | 8 | stderr | -
-include/fixy/session/Payload.h | call | 2 | abort | -
-include/fixy/session/Payload.h | inlined | 1 | std::exchange | -
-include/fixy/session/Payload.h | inlined | 7 | std::pair::pair | -
-include/fixy/session/Payload.h | reference | 2 | stderr | -
 include/fixy/session/Recording.h | call | 2 | std::optional::operator* | -
 include/fixy/session/Recording.h | inlined | 2 | std::array::operator[] | -
 include/fixy/session/Recording.h | inlined | 1 | std::invoke | -
@@ -894,6 +894,7 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -1 | std::span::operator[] | -
 @x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::span::size | -
 @x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::unexpected::unexpected | -
+@x86_64-debug-tsan | include/fixy/session/Flow.h | inlined | -7 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -1 | abort | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::invoke | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::source_location::file_name | -
@@ -907,7 +908,6 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | +2 | std::source_location::line | -
-@x86_64-debug-tsan | include/fixy/session/Payload.h | inlined | -7 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -3 | std::optional::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
@@ -1301,6 +1301,7 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/session/EventLog.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/session/EventLog.h | inlined | -1 | std::vector::operator[] | -
 @x86_64-release | include/fixy/session/EventLog.h | reference | -1 | stderr | -
+@x86_64-release | include/fixy/session/Flow.h | inlined | -7 | std::pair::pair | -
 @x86_64-release | include/fixy/session/Handle.h | call | -1 | abort | -
 @x86_64-release | include/fixy/session/Handle.h | call | -2 | std::invoke | -
 @x86_64-release | include/fixy/session/Handle.h | call | -2 | std::optional::operator* | -
@@ -1317,7 +1318,6 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | +2 | std::source_location::line | -
 @x86_64-release | include/fixy/session/Handle.h | reference | -7 | stderr | -
-@x86_64-release | include/fixy/session/Payload.h | inlined | -7 | std::pair::pair | -
 @x86_64-release | include/fixy/session/Recording.h | call | -2 | std::optional::operator* | -
 @x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::array::operator[] | -
 @x86_64-release | include/fixy/session/Recording.h | inlined | -3 | std::optional::operator (conversion) | -

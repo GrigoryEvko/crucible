@@ -4,7 +4,7 @@
 
 #include <fixy/Secret.h>
 #include <fixy/session/Classified.h>
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 #include <cstddef>
 #include <optional>

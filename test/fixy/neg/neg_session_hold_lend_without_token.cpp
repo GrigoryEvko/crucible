@@ -1,7 +1,7 @@
 // A loan of a region the hold does not have.  lend is gated by the set,
 // so a hold of Other cannot lend Region.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

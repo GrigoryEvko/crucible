@@ -4,7 +4,7 @@
 // loan is still out, so Released has no constructor that takes the value
 // alone.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

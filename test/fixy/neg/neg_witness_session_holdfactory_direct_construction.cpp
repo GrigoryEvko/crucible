@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 #include <cstddef>
 #include <cstdint>

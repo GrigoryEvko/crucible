@@ -17,9 +17,10 @@
 // diagnostic, so a lost wakeup fails the test and does not hang it.
 
 #include <fixy/Secret.h>
+#include <fixy/session/Classification.h>
 #include <fixy/session/Classified.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>

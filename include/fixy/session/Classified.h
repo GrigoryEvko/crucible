@@ -7,8 +7,9 @@
 // declassification needs a named policy.  For a value whose comparison
 // must take constant time, the channel must carry it in a form that
 // offers no comparison except the constant-time one.  This header gives
-// the two carriers, and the payload walk of fixy/session/Payload.h
-// refuses each value that travels without its carrier:
+// the two carriers, and the payload walk of
+// fixy/session/Classification.h refuses each value that travels without
+// its carrier:
 //
 //   DeclassifyOnSend<T, Policy>   a fixy::Secret<T> that leaves
 //                                 classification under Policy, at the

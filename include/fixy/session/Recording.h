@@ -50,10 +50,10 @@
 // recorder writes it as a plain Send and loses its two thresholds.
 
 #include <fixy/session/Checkpoint.h>
+#include <fixy/session/Classification.h>
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/EventLog.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Payload.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/reflect/Hash.h>
@@ -128,7 +128,8 @@ template <typename Next, typename T>
 struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {};
 
 // The payload families a recorder knows.  A delegated session is a
-// hand-off.  Every other payload that Payload.h accepts is a message.
+// hand-off.  Every other payload that Classification.h accepts is a
+// message.
 template <typename T>
 struct is_delegation_shape : std::false_type {};
 template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>

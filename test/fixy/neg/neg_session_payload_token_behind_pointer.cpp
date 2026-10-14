@@ -4,7 +4,7 @@
 // component and refuses a token that it reaches through a pointer.  The same pair with
 // the token by value compiles, and moves the region.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

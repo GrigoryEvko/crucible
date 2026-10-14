@@ -282,7 +282,7 @@ does not apply to the row.
 | `mint_delegated_session(T0_0, T0_1)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
-| `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 13 |

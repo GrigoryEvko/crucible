@@ -2,7 +2,7 @@
 // loan of a region the sender does not hold.  Borrowed has no constructor
 // that takes the value alone.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

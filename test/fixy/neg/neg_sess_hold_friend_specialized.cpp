@@ -9,7 +9,7 @@
 //
 // Expected diagnostic: the slots of the real hold are private in this
 // context.
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 namespace neg_sess_hold_friend_specialized_types {
 struct Region {

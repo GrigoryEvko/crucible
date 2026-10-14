@@ -33,14 +33,15 @@
 //      delegate either.
 //   4. The tags of the permission set of the endpoint move from the set of
 //      the sender to the set of the recipient, as the payload walk of
-//      fixy/session/Payload.h states for a hand-off.  The tokens of those
-//      tags travel in the DelegatedSession, so the recipient holds the
-//      tokens that its handle claims, and the sender holds none of them.
+//      fixy/session/Classification.h states for a hand-off.  The tokens
+//      of those tags travel in the DelegatedSession, so the recipient
+//      holds the tokens that its handle claims, and the sender holds none
+//      of them.
 //   5. The payload order is contravariant in the protocol of the endpoint
 //      (the axiom delegation_contravariant of fixy/session/Subtype.h).
 //   6. A protocol that sends an endpoint of a session to a peer of that
 //      session is refused at every mint (DelegatesToNoOwnPeer in
-//      fixy/session/Payload.h).
+//      fixy/session/Flow.h).
 //
 // Crash sessions and checkpoint sessions refuse a payload that delegates
 // (payload_conveys_delegation_v), because their theories have no
@@ -61,8 +62,8 @@
 // runs is a Send of a DelegatedSession.  The queries below read the
 // hand-off that a protocol type states.
 
+#include <fixy/session/Flow.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Payload.h>
 #include <fixy/session/Subtype.h>
 #include <foundation/NoObject.h>
 #include <foundation/contracts/Armed.h>

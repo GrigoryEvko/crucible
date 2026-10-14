@@ -2,7 +2,7 @@
 // can be absent at run time, and a set change cannot depend on a value,
 // so the walk refuses it.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

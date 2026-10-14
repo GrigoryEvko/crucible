@@ -2,7 +2,7 @@
 // reaches, at the point of the query.  An explicit specialization of the
 // same arguments after that point is ill-formed, and GCC reports it.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 namespace s = fixy::session;
 

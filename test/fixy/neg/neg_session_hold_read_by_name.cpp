@@ -3,7 +3,7 @@
 // spent.  A named hold stays with the caller, so read refuses it: the
 // member takes an rvalue only.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

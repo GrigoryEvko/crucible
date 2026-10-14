@@ -10,9 +10,9 @@
 format 1
 rule erased-brand
 include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
-include/fixy/session/Payload.h | erased-brand | 1 | foundation::permissions::LentPermission | -
-include/fixy/session/Payload.h | erased-brand | 6 | foundation::permissions::Permission | -
-include/fixy/session/Payload.h | erased-brand | 7 | foundation::permissions::ReadLoan | -
+include/fixy/session/Flow.h | erased-brand | 1 | foundation::permissions::LentPermission | -
+include/fixy/session/Flow.h | erased-brand | 6 | foundation::permissions::Permission | -
+include/fixy/session/Flow.h | erased-brand | 7 | foundation::permissions::ReadLoan | -
 include/foundation/permissions/Permission.h | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp | erased-brand | 1 | fixy::Borrowed | -
 test/fixy/neg/neg_borrowed_of_a_braced_list.cpp | erased-brand | 1 | fixy::Borrowed | -

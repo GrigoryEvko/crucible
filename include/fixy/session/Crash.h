@@ -114,9 +114,10 @@
 // Keeper starts a new session with a fresh endpoint.  No type in this
 // header claims more than that.
 
+#include <fixy/session/Classification.h>
 #include <fixy/session/CrashCause.h>
+#include <fixy/session/Flow.h>
 #include <fixy/session/Fold.h>
-#include <fixy/session/Payload.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Registry.h>
 
@@ -274,7 +275,7 @@ concept reliable_set_contains_v = detail::crash::holds_role(^^Reliable, ^^Role);
 // own, and no detector of this session watches them, so the crash of
 // such a peer leaves the holder waiting for ever.  A crash-aware session
 // refuses each payload that payload_conveys_delegation_v of
-// fixy/session/Payload.h accepts: the hand-off marker, a session handle
+// fixy/session/Flow.h accepts: the hand-off marker, a session handle
 // or a pointer to one, and a carrier with content that the query cannot
 // read.  Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) type delegation
 // with crashes, and this tree does not carry that system.

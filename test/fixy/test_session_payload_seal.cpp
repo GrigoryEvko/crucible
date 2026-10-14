@@ -1,7 +1,7 @@
 // The payload verdicts are sealed against a user specialization.
 //
-// fixy/session/Payload.h computes every verdict in one walk that is not a
-// template, and it caches the result in an alias template, so no
+// fixy/session/Classification.h computes every verdict in one walk that
+// is not a template, and it caches the result in an alias template, so no
 // specialization changes what a verdict reads.  Each predicate is a
 // concept, and a specialization of a concept does not compile (the
 // neg_sess_seal_* fixtures).  The class templates of the same names are

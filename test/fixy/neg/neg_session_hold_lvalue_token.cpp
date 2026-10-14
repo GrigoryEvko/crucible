@@ -3,7 +3,7 @@
 // now owns.  The copy of a Permission is deleted, so the call does not
 // compile.  The same call with std::move compiles.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 

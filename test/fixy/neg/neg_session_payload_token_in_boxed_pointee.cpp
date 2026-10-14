@@ -5,7 +5,7 @@
 // walk reads the pointee for its members, and refuses the token behind
 // the pointer.
 
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 #include <foundation/permissions/Permission.h>
 
 #include <memory>

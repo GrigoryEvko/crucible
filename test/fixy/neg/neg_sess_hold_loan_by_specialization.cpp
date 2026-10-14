@@ -8,7 +8,7 @@
 //
 // Expected diagnostic: the loan of the Borrowed is private in this
 // context.
-#include <fixy/session/Payload.h>
+#include <fixy/session/Flow.h>
 
 #include <utility>
 

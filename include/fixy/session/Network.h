@@ -91,10 +91,10 @@
 // The bag check is O(n² · r) for n transmissions in the run of G, with
 // the loop body counted twice, and r roles.  Both run at compile time.
 
+#include <fixy/session/Classification.h>
 #include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/NetworkModel.h>
-#include <fixy/session/Payload.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Registry.h>
