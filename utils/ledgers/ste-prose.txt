@@ -560,11 +560,10 @@ utils/assay/loop/affected.py | long-sentence | 10 | <module> | A text of today. 
 utils/assay/loop/affected.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: assume | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: decide | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 1 | <module>: exist | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 2 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: never | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 7 | <module>: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 3 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/affected.py | refused-word | 2 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 7 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: would | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | DigestCache.forget: so | A text of today.  The change that writes the text again in STE lowers the count

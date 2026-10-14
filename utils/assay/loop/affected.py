@@ -32,11 +32,12 @@ THE EXECUTABLE TEST
     - For a test behind the test launcher: the bytes of the master loop, of
       each module of the import closure of assay.loop.teststep, of the
       ledger utils/ledgers/RULE.txt of each rule of the launcher, and of
-      build-kind.txt in the build tree.  Also the text of the row of each
-      rule of the launcher in utils/registry.txt.  The launcher reads these
-      files and rows, and the result of a test changes with them.  A ledger
-      that does not exist is an input too, so a new ledger makes the test
-      run.
+      build-kind.txt and build-configuration.txt in the build tree.  Also
+      the text of the row of each rule of the launcher in
+      utils/registry.txt.  The launcher reads these files and rows, and the
+      result of a test changes with them.  A ledger that the tree does not
+      hold is an input too.  A new ledger then makes the test run.
+    - The environment of the test (THE ENVIRONMENT).
     The scan of an ELF file reads its section headers, so it finds a name in
     .rodata, .data or .dynstr, and it does not read the code or the debug
     information.
@@ -66,6 +67,16 @@ THE TESTS OF THE MASTER GUARD
     with the fixture of the parse trees then reads the tree cache of the
     last fill.  The parts of the rule parse-clean run only when a C++ file
     changes.
+
+THE ENVIRONMENT
+    The test launcher gives each test a clean environment
+    (assay.loop.teststep, THE ENVIRONMENT).  The fingerprint of a test
+    behind the launcher holds the clean environment that the launcher makes
+    from the environment of this script.  ctest gives the test the
+    environment of this script, and the property ENVIRONMENT of the test is
+    in its record.  A variable of the shell that the launcher drops then
+    changes no fingerprint.  The fingerprint of a test with no launcher holds
+    each variable of the environment of this script.
 
 THE TESTS THAT ALWAYS RUN
     The script cannot see each input of these tests, so they always run:
@@ -154,6 +165,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import git, proc
+from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
@@ -179,7 +191,10 @@ GUARD_MASTER = "guard"
 # The module of the test launcher, and the ledger of each rule of the launcher, relative to the root of its tree.
 LAUNCHER_MODULE = "assay.loop.teststep"
 LAUNCHER_LEDGERS = tuple(f"utils/ledgers/{rule}.txt" for rule in test_launcher.ROWS)
-BUILD_KIND_FILE = "build-kind.txt"
+# The files of the build tree that the judge of the launcher reads: the build kind and the name of the configuration.
+JUDGE_FILES = (cost_meter.KIND_FILE, cost_meter.CONFIGURATION_FILE)
+# The start of the text of the environment of a test in its fingerprint (environment_text()).
+ENVIRONMENT_TEXT = "environment"
 ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANUP", "REQUIRED_FILES")
 # The properties of a fixture.  A test of the master guard can hold the fixture of the parse trees.
 FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
@@ -466,6 +481,16 @@ class DigestCache:
         self._digests.clear()
 
 
+def environment_text(is_launched: bool) -> str:
+    """Return the text of the environment that a test gets, for its fingerprint (THE ENVIRONMENT).
+
+    Complexity: O(n log n) for n variables.
+    """
+    environment = proc.environment()
+    shown = test_launcher.canonical_environment(environment) if is_launched else tuple(sorted(environment.items()))
+    return f"{ENVIRONMENT_TEXT} {json.dumps(shown)}"
+
+
 def shared_libraries(directory: str) -> list[str]:
     """Return each shared library directly in `directory`, sorted."""
     try:
@@ -569,7 +594,7 @@ class Planner:
         files = sorted({real(item) for item in test.command[start:]
                         if os.path.isabs(item) and trees.is_in_build(real(item)) and not os.path.isdir(item)})
         inputs: set[str] = set(files) | {program}
-        texts: tuple[str, ...] = ()
+        texts: tuple[str, ...] = (environment_text(is_launched=False),)
         if launcher:
             launcher_files, texts = self.launcher_inputs(launcher)
             inputs.update(launcher_files)
@@ -622,6 +647,8 @@ class Planner:
             launcher_files, launcher_texts = self.launcher_inputs(launcher)
             files.update(launcher_files)
             texts += launcher_texts
+        else:
+            texts.append(environment_text(is_launched=False))
         files.update(path for path in named if path != master and os.path.isfile(path))
         return Decision(test, KIND_GUARD, "", fingerprint=self.fingerprint(test, files, set(), tuple(texts)))
 
@@ -629,10 +656,12 @@ class Planner:
         """Return the files and the texts that the test launcher reads.
 
         The files are the master, the modules of the import closure of
-        LAUNCHER_MODULE, the ledger of each rule of the launcher and
-        build-kind.txt.  The texts are the rows of the rules of the launcher
-        in the registry.  A change of a different row then changes no input.
-        One time for each call of the script.
+        LAUNCHER_MODULE, the ledger of each rule of the launcher,
+        build-kind.txt and build-configuration.txt.  The texts are the rows
+        of the rules of the launcher in the registry, and the clean
+        environment of the test (environment_text()).  A change of a
+        different row then changes no input.  One time for each call of the
+        script.
         """
         if launcher not in self.launcher_files:
             root = os.path.dirname(os.path.dirname(os.path.dirname(real(launcher))))
@@ -641,8 +670,9 @@ class Planner:
             files = [real(launcher), *(os.path.join(root, file) for name in modules
                                        if (file := deriver.module_file(name)) is not None)]
             files += [os.path.join(root, ledger) for ledger in LAUNCHER_LEDGERS]
-            files.append(os.path.join(self.trees.build_root, BUILD_KIND_FILE))
-            self.launcher_files[launcher] = (files, deriver.row_texts(test_launcher.ROWS))
+            files += [os.path.join(self.trees.build_root, name) for name in JUDGE_FILES]
+            texts = (*deriver.row_texts(test_launcher.ROWS), environment_text(is_launched=True))
+            self.launcher_files[launcher] = (files, texts)
         return self.launcher_files[launcher]
 
     def always_reason(self, test: ctest_reader.TestEntry, start: int, master: int = -1,
@@ -1017,9 +1047,10 @@ class SelfTest:
         ]
         (self.build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
 
-    def call(self, *extra: str, path: str | None = None) -> tuple[int, str]:
+    def call(self, *extra: str, path: str | None = None,
+             variables: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
         """Run the script on the fake build tree without a build, and return its exit code and output."""
-        return call_script(self.build_dir, *extra, path=path)
+        return call_script(self.build_dir, *extra, path=path, variables=variables)
 
     def skipped(self) -> list[str]:
         """Return the names in skipped.txt."""
@@ -1040,12 +1071,14 @@ def plant_launcher(source_dir: Path) -> Path:
     return launcher
 
 
-def call_script(build_dir: Path, *extra: str, path: str | None = None) -> tuple[int, str]:
+def call_script(build_dir: Path, *extra: str, path: str | None = None,
+                variables: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
     """Run the script on a fake build tree without a build, and return its exit code and output.
 
-    With `path`, the script runs with that PATH.
+    With `path`, the script runs with that PATH.  `variables` adds each pair to its environment.
     """
-    environment = proc.environment({"PATH": path}) if path is not None else None
+    overrides = dict(variables) | ({"PATH": path} if path is not None else {})
+    environment = proc.environment(overrides) if overrides else None
     result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(build_dir), "--no-build",
                                     f"-j{proc.DEFAULT_JOBS}", *extra], timeout_s=proc.TOOL_S, env=environment))
     return result.exit, result.out + result.err
@@ -1281,6 +1314,9 @@ def self_test(ctest: str) -> int:
                counts.get("skip_code") == 1 and counts.get("not_run") == 1
                and "1 failed, 1 gave their skip code, 1 did not run." in output, output)
 
+        # The first call had a different PATH, which the environment of each executable test holds.
+        status, output = fake.call()
+        expect("a different PATH makes each executable test run", fake.skipped() == [], output)
         status, output = fake.call()
         expect("an unchanged tree skips exactly the passed executable tests",
                status == 1 and sorted(fake.skipped()) == ["exe_diagnostic", "exe_launched", "exe_named", "exe_ok"],
@@ -1304,6 +1340,18 @@ def self_test(ctest: str) -> int:
         status, output = fake.call()
         expect("a ledger of a rule that the test launcher does not read leaves a launched test skipped",
                "exe_launched" in fake.skipped(), output)
+
+        dropped = (("PLANTED_HOST_VARIABLE", "1"),)
+        status, output = fake.call(variables=dropped)
+        expect("a variable that the launcher drops leaves a launched test skipped, and runs a test with no launcher",
+               "exe_launched" in fake.skipped() and "exe_named" not in fake.skipped(), output)
+        status, output = fake.call(variables=(*dropped, ("CRUCIBLE_PLANTED_VARIABLE", "1")))
+        expect("a variable that the launcher keeps makes a launched test run", "exe_launched" not in fake.skipped(),
+               output)
+        status, output = fake.call()
+        status, output = fake.call()
+        expect("the environment of the shell again skips each passed test",
+               "exe_launched" in fake.skipped() and "exe_named" in fake.skipped(), output)
 
         with open(fake.build_dir / "bin" / "ok", "ab") as handle:
             handle.write(b"\0")

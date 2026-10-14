@@ -21,7 +21,7 @@ WHAT THE SUBCOMMAND DOES
     It runs the command through utils/assay/core/meter.py, with the same
     standard streams.  It counts the user instructions of the command and of
     each process that the command starts (meter.py, THE INSTRUCTION COUNT).
-    The environment of the command gets
+    The command gets the clean environment of THE ENVIRONMENT, and
     CRUCIBLE_TEST_LAUNCHED with the name of the test.  A fixture driver in the
     command then gives the record and the judge to this subcommand.  It
     writes the record BUILD/test-records/NAME.test.cost (assay.core.record,
@@ -30,6 +30,25 @@ WHAT THE SUBCOMMAND DOES
     directory above the program with a build-kind.txt.  With no such
     directory, the subcommand writes no record.  A failure to measure, to
     read the registry or to write the record does not change the status.
+
+THE ENVIRONMENT
+    The subcommand runs the test in a clean environment
+    (canonical_environment()).  The result of a test then does not change
+    with a variable of the shell, such as LD_LIBRARY_PATH or a variable of a
+    git hook.  These are the rules:
+      * The subcommand keeps a variable of its environment when KEPT_NAMES
+        names it, or when its name starts with a word of KEPT_PREFIXES.  It
+        drops each other variable.
+      * It sets each variable of FIXED_VALUES to its value: the locale
+        C.UTF-8 and the time zone UTC.
+      * It keeps each absolute directory of PATH one time, in the same
+        sequence.  It drops an empty item and a relative item, because the
+        two name a directory that changes with the directory of the test.
+    `loop test` puts the same environment into the key of each test behind
+    the launcher (assay.loop.affected).  A variable that the launcher drops
+    then changes no result and no key.  A variable that a test gets from its
+    property ENVIRONMENT goes through the same rules.  The rule
+    test-registration refuses such a variable when the launcher drops it.
 
 CORE DUMPS
     A death test forks a child that aborts, and the parent waits for the
@@ -153,13 +172,14 @@ import os
 import sys
 
 from assay.core import budget as cost_budget
+from assay.core import cache_root
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 
 # The name Callable is only for the types, and a test does not pay the import of collections.abc.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 ROWS = ("test-time", "test-memory", "test-instructions")
 # The rule that holds the error level of a run with an accurate instruction count, and the instructions in one G.
@@ -174,6 +194,29 @@ CORES_ENV = "CRUCIBLE_TEST_CORES"
 CORES_KEEP = "keep"
 # The variable that tells a fixture driver in the command that this subcommand records and judges the test.
 LAUNCHED_ENV = "CRUCIBLE_TEST_LAUNCHED"
+# The variables that the test gets from the environment of the launcher (THE ENVIRONMENT).  The sanitizer options and
+# GITHUB_ACTIONS change a result.  HOME, TMPDIR and XDG_CACHE_HOME give the caches and the scratch directories.
+KEPT_NAMES = frozenset(
+    {
+        "ASAN_OPTIONS",
+        "GITHUB_ACTIONS",
+        "HOME",
+        "LOGNAME",
+        "LSAN_OPTIONS",
+        "PATH",
+        "TMPDIR",
+        "TSAN_OPTIONS",
+        "UBSAN_OPTIONS",
+        "USER",
+        cache_root.HOME_VARIABLE,
+    }
+)
+# The starts of the names of the other variables that the test gets.  They are the variables of the tree, of its tests,
+# of ccache and of the session oracle.
+KEPT_PREFIXES = ("ASSAY_", "CCACHE_", "CRUCIBLE_", "SESSION_ORACLE_")
+# The variables that the launcher gives each test, with their values.
+FIXED_VALUES = (("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"), ("TZ", "UTC"))
+SEARCH_PATH = "PATH"
 # The options before the command, each with one value.
 OPTIONS = ("--warnings-dir", "--build-dir", "--name")
 # The end of the path of the master, and the subcommand that this module is.  A test command can name the master of
@@ -229,6 +272,40 @@ def keeps_cores() -> bool:
     print(f"loop test-step: {CORES_ENV} is {value!r}, and only {CORES_KEEP!r} keeps the core dumps of the test",
           file=sys.stderr)
     return False
+
+
+def is_kept(name: str) -> bool:
+    """Return True for a variable that the test gets from the environment of the launcher (THE ENVIRONMENT)."""
+    return name in KEPT_NAMES or name.startswith(KEPT_PREFIXES)
+
+
+def search_path(value: str) -> str:
+    """Return each absolute directory of a search path one time, in the same sequence (THE ENVIRONMENT).
+
+    Complexity: linear in the length of the value.
+    """
+    directories: list[str] = []
+    for item in value.split(os.pathsep):
+        if os.path.isabs(item) and item not in directories:
+            directories.append(item)
+    return os.pathsep.join(directories)
+
+
+def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
+    """Return the clean environment of a test from the environment of the launcher, sorted by name (THE ENVIRONMENT).
+
+    The result holds no CRUCIBLE_TEST_LAUNCHED, because the launcher sets it
+    for each test.  Complexity: O(n log n) for n variables.
+    """
+    kept = {name: value for name, value in environment.items() if is_kept(name) and name != LAUNCHED_ENV}
+    if SEARCH_PATH in kept:
+        directories = search_path(kept[SEARCH_PATH])
+        if directories:
+            kept[SEARCH_PATH] = directories
+        else:
+            del kept[SEARCH_PATH]
+    kept.update(FIXED_VALUES)
+    return tuple(sorted(kept.items()))
 
 
 def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None,
@@ -592,8 +669,11 @@ def main(argv: list[str]) -> int:
     version = safely(lambda: version_of(command, command_files(command)), "")
     if not keeps_cores():
         stop_core_dumps()
-    # The launcher puts the variable in its own environment, which the test gets.  A copy of the environment for the
-    # child costs more.
+    # The launcher puts the clean environment and the variable in its own environment, which the test gets.  A copy of
+    # the environment for the child costs more.
+    clean = canonical_environment(os.environ)
+    os.environ.clear()
+    os.environ.update(clean)
     os.environ[LAUNCHED_ENV] = name
     try:
         run = cost_meter.measure(command, count_instructions=True)

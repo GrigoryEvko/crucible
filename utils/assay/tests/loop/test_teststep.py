@@ -212,6 +212,32 @@ class Planted:
             and frozenset(string.ascii_letters + string.digits + "_.-") == test_launcher.NAME_CHARACTERS,
         )
 
+    def environment_cases(self, expect: testing.Expect) -> None:
+        """Check that a test runs in the clean environment of the launcher (THE ENVIRONMENT)."""
+        self.budget((1000, 2000), (1000, 2000))
+        search = test_launcher.search_path(os.environ.get("PATH", ""))
+        check = (
+            'test -z "${LD_LIBRARY_PATH+set}" && test -z "${PLANTED_HOST+set}" && test "$CRUCIBLE_PLANTED" = kept '
+            f'&& test "$LANG" = C.UTF-8 && test "$TZ" = UTC && test "$PATH" = "{search}"'
+        )
+        status, _ = self.launch_script(
+            "planted_environment",
+            "sh",
+            "-c",
+            check,
+            LD_LIBRARY_PATH="/opt/lib:",
+            PLANTED_HOST="1",
+            CRUCIBLE_PLANTED="kept",
+            LANG="ru_RU.UTF-8",
+            TZ="Europe/Moscow",
+            PATH=f"{search}::relative/bin",
+        )
+        expect(
+            "the test gets the kept variables, the locale and the time zone of the launcher, the clean PATH, and no "
+            "other variable",
+            status == 0,
+        )
+
     def _walls_of(self, name: str) -> list[object]:
         """Return the window of the record of one test, or no wall time when the record has no window."""
         walls = self._record_of(name).get(cost_record.WALLS_FIELD)
@@ -703,6 +729,53 @@ def launched_cases(expect: testing.Expect) -> None:
     expect("the driver of a negative fixture is not the launcher", test_launcher.launched(fixture) == fixture)
 
 
+def environment_unit_cases(expect: testing.Expect) -> None:
+    """Check the clean environment that the launcher makes from its own environment (THE ENVIRONMENT)."""
+    host = {
+        "PATH": "/usr/bin::relative/bin:/bin:/usr/bin",
+        "HOME": "/home/planted",
+        "LD_LIBRARY_PATH": "/opt/lib:",
+        "GIT_DIR": "/repo/.git",
+        "LANG": "ru_RU.UTF-8",
+        "TZ": "Europe/Moscow",
+        "CRUCIBLE_PLANTED": "kept",
+        "ASSAY_TEST_CXX": "/opt/g++",
+        "SESSION_ORACLE_CACHE": "/cache",
+        "ASAN_OPTIONS": "detect_leaks=0",
+        test_launcher.LAUNCHED_ENV: "an_earlier_test",
+    }
+    fixed = dict(test_launcher.canonical_environment(host))
+    expect(
+        "the launcher keeps HOME, the sanitizer options and the variables of its prefixes",
+        fixed["HOME"] == "/home/planted"
+        and fixed["ASAN_OPTIONS"] == "detect_leaks=0"
+        and fixed["CRUCIBLE_PLANTED"] == "kept"
+        and fixed["ASSAY_TEST_CXX"] == "/opt/g++"
+        and fixed["SESSION_ORACLE_CACHE"] == "/cache",
+    )
+    expect(
+        "the launcher drops each other variable, and the name of the test that it sets itself",
+        not {"LD_LIBRARY_PATH", "GIT_DIR", test_launcher.LAUNCHED_ENV} & set(fixed),
+    )
+    expect(
+        "the launcher sets the locale and the time zone, also over the values of the shell",
+        fixed["LANG"] == "C.UTF-8" and fixed["LC_ALL"] == "C.UTF-8" and fixed["TZ"] == "UTC",
+    )
+    expect(
+        "PATH keeps each absolute directory one time, and drops an empty item and a relative item",
+        fixed["PATH"] == "/usr/bin:/bin",
+    )
+    expect(
+        "a PATH with no absolute directory goes, and the result is sorted by name",
+        "PATH" not in dict(test_launcher.canonical_environment({"PATH": ":relative"}))
+        and list(test_launcher.canonical_environment(host)) == sorted(test_launcher.canonical_environment(host)),
+    )
+    expect(
+        "a variable of FIXED_VALUES is not a kept variable, so a property cannot set it",
+        not any(test_launcher.is_kept(name) for name, _ in test_launcher.FIXED_VALUES),
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case in a scratch directory, and write one line for each."""
     with tempfile.TemporaryDirectory(prefix="test-step-") as work:
@@ -718,9 +791,11 @@ def main(argv: list[str]) -> int:
                 planted.ledger_cases,
                 planted.core_cases,
                 planted.version_cases,
+                planted.environment_cases,
                 unmeasured_cases,
                 window_cases,
                 version_unit_cases,
                 launched_cases,
+                environment_unit_cases,
             ),
         )

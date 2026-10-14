@@ -34,6 +34,10 @@ THE RULE
                     check` with no rule that has a module that reads the parse trees, or a test of `guard witness`.
                     A witness copies each plant to a scratch repository and reads only the plant.  Such a test waits
                     for the eight parts of the fill with no use
+      environment   a test behind the test launcher with a property ENVIRONMENT that sets a variable that the
+                    launcher drops (assay.loop.teststep, THE ENVIRONMENT).  The test does not get the variable.
+                    An item of ENVIRONMENT_MODIFICATION with such a variable is an error too, unless its operation
+                    is `unset` or `reset`
 
 Complexity: O(t * a) for t tests of a arguments, and linear in the size of the modules of the package.
 """
@@ -46,6 +50,7 @@ from assay.core import proc
 from assay.core import report as check_report
 from assay.core import registry as rule_registry
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_file, module_name_of
+from assay.loop import teststep as test_launcher
 from assay.readers import ctest as ctest_reader
 
 RULE = "test-registration"
@@ -58,6 +63,8 @@ FIXTURE = ("loop", "fixture")
 TREE_FIXTURE = "tsast_trees"
 TREE_READER = "assay.readers.tsast"
 CMAKE_TIMEOUT_S = 300.0
+# The operations of ENVIRONMENT_MODIFICATION that give the test no value of a variable.
+CLEARING_OPERATIONS = ("unset", "reset")
 
 
 def master_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
@@ -168,6 +175,36 @@ def unread_fixture(test: ctest_reader.TestEntry, path: str, line: int, why: str)
         test.name)
 
 
+def environment_findings(test: ctest_reader.TestEntry, root: Path) -> list[check_report.Finding]:
+    """Return an error for each variable that a property gives a test behind the launcher and the launcher drops.
+
+    THE RULE gives the kind environment.  Complexity: linear in the items of the two properties.
+    """
+    command = list(test.command)
+    if test_launcher.launched(command) == command:
+        return []
+    path, line = place_of(test, root)
+    found: list[check_report.Finding] = []
+    for item in test.words_of("ENVIRONMENT"):
+        name = item.partition("=")[0]
+        if not test_launcher.is_kept(name):
+            found.append(dropped_variable(test, path, line, "ENVIRONMENT", name))
+    for item in test.words_of("ENVIRONMENT_MODIFICATION"):
+        name, _, change = item.partition("=")
+        if change.partition(":")[0] not in CLEARING_OPERATIONS and not test_launcher.is_kept(name):
+            found.append(dropped_variable(test, path, line, "ENVIRONMENT_MODIFICATION", name))
+    return found
+
+
+def dropped_variable(test: ctest_reader.TestEntry, path: str, line: int, prop: str, name: str) -> check_report.Finding:
+    """Return the error of a variable that a property gives a test behind the launcher and the launcher drops."""
+    return check_report.Finding(
+        "error", path, line, RULE, f"the test {test.name} runs behind the test launcher, and its property {prop} "
+        f"gives it the variable {name}.  The launcher drops that variable (assay.loop.teststep, THE ENVIRONMENT), so "
+        f"the test does not get it.  Give the variable a name that the launcher keeps, such as CRUCIBLE_{name}",
+        "environment", f"{test.name}: {name}")
+
+
 def findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each test with a master and no label, each unknown rule, each rule with no test, and each missing or unread
     fixture."""
@@ -185,6 +222,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     module_imports: dict[str, frozenset[str]] = {}
     masters = 0
     for test in tests:
+        found += environment_findings(test, root)
         run = master_of(test, root)
         if run is None:
             continue
