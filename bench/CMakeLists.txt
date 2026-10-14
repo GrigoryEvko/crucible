@@ -50,7 +50,8 @@ function(crucible_bench name)
     set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_CAP_TARGETS ${name})
   endif()
   # The folder marks the target as a bench in the CMake file API.
-  # `loop pgo` (utils/assay/loop/pgo.py) reads the bench list from there.
+  # `loop bench` and `loop pgo` read the bench list from there, through
+  # bench_targets() of utils/assay/loop/bench.py.
   set_target_properties(${name} PROPERTIES FOLDER crucible_bench)
 
   # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
