@@ -91,6 +91,32 @@ THE TESTS OF THE MASTER GUARD
     last fill.  The parts of the rule parse-clean run only when a C++ file
     changes.
 
+THE TESTS THAT READ THE BUILD
+    The gate of `loop land` runs the full suite in some configurations.  In
+    each other configuration, it runs only the tests that the change can
+    change there (assay.loop.gate, THE SELECTION).  A test that reads no
+    build gives the same result in each configuration.  build_tests() gives
+    each test of the master guard of a build directory that reads the build.
+    It gives the inputs of the test in the source tree too (assay.loop.inputs,
+    THE BUILD).  These tests read the build:
+      * a test with a reason for the build from assay.loop.inputs
+      * a group test that names a directory of the build tree
+      * a test with an input file in the build tree, such as the compile
+        database of the witness of the engine plugin.
+
+    The model does not hold the inputs of a test with a different reason to
+    run on each call.  Each change touches such a test (Inputs.is_touched()).
+    An executable test reads the build too, and build_tests() does not give
+    it (assay.loop.gate, THE SELECTION).
+
+    meter_inputs() gives the inputs of the test launcher and of the fixture
+    driver (assay.loop.inputs, THE METERS OF A TEST).  These run in front of
+    each test.  A change of one of their inputs can then change each test of
+    each build.
+
+    `--only FILE` selects only the tests that FILE names, one name on each
+    line.  The script skips each other test with no change to its record.
+
 THE ENVIRONMENT
     The test launcher gives each test a clean environment
     (assay.loop.teststep, THE ENVIRONMENT).  The fingerprint of a test
@@ -195,11 +221,12 @@ THE PROGRAMS
     version.
 
 Usage:
-    loop test BUILD_DIR [-j N] [--no-build] [--all] [--plan] [-- CTEST_ARGUMENT...]
+    loop test BUILD_DIR [-j N] [--no-build] [--all] [--only FILE] [--plan] [-- CTEST_ARGUMENT...]
     guard selftest loop.affected [--ctest CTEST]
 
 --no-build  Do not build first.  Then a stale executable can look unchanged.
 --all       Run each executable test, and record each pass.
+--only      Select only the tests that FILE names (THE TESTS THAT READ THE BUILD).
 --plan      Print what the script would run, and run nothing.
 --ctest     The ctest of the fake build tree of the self-test.  The default
             is the ctest of PATH, when it gives the pinned version.
@@ -225,7 +252,7 @@ import sys
 import tempfile
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from assay.core import cache, cost_store, git, proc
@@ -260,9 +287,11 @@ FIXTURE_SUBCOMMAND = "fixture"
 LAUNCHER_SUBCOMMAND = "test-step"
 # The master of the checks.  A test that runs it can get its inputs from assay.loop.inputs.
 GUARD_MASTER = "guard"
-# The module of the test launcher, and the ledger of each rule of the launcher, relative to the root of its tree.
+# The module of the test launcher.  Then the module of the fixture driver, and the holding command of the rules that
+# the driver judges with the rules of the launcher (assay.core.registry, THE METERS OF A TEST of assay.loop.inputs).
 LAUNCHER_MODULE = "assay.loop.teststep"
-LAUNCHER_LEDGERS = tuple(f"utils/ledgers/{rule}.txt" for rule in test_launcher.ROWS)
+FIXTURE_MODULE = "assay.loop.fixture.store"
+FIXTURE_HOLDER = "loop-fixture"
 # The files of the build tree that the judge of the launcher reads: the build kind and the name of the configuration.
 JUDGE_FILES = (cost_meter.KIND_FILE, cost_meter.CONFIGURATION_FILE)
 # The start of the text of the environment of a test in its fingerprint (environment_text()).
@@ -273,9 +302,6 @@ FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
 TRUE_WORDS = frozenset({"1", "ON", "YES", "TRUE", "Y"})
-# A name in an ELF file with one of these suffixes is the text of a
-# diagnostic, such as __FILE__ or std::source_location, and not a data file.
-DIAGNOSTIC_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
 SHARED_LIBRARY = re.compile(r"\.so(\.[0-9]+)*$")
 PATH_BYTES = rb"[A-Za-z0-9_./+@-]"
 
@@ -284,6 +310,8 @@ KIND_SCRIPT = "script"
 KIND_ALWAYS = "always"
 KIND_GUARD = "guard"
 KIND_EXECUTABLE = "executable"
+# The kind of a test that --only does not name.  The script skips it, and it reads no input of it.
+KIND_UNNAMED = "unnamed"
 # The kinds of a test that a fingerprint judges.
 FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE)
 
@@ -298,6 +326,7 @@ REASON_STORE = "the shared store holds a pass with the same inputs"
 # The reason of each skip in the summary after the tests: REASON_SAME or REASON_STORE.
 REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
 REASON_FAILED = "the test failed in this build directory with the same inputs"
+REASON_UNNAMED = "--only does not name the test"
 REASON_READS = "the read set of the last traced run is not usable, and the launcher traces the test again"
 
 
@@ -345,6 +374,27 @@ class Decision:
     is_skipped: bool = False
     static: str = ""
     reads: readset.ReadSet | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GuardFacts:
+    """The facts of one test of the master guard (THE TESTS OF THE MASTER GUARD, THE TESTS THAT READ THE BUILD).
+
+    `found` holds the inputs that assay.loop.inputs gives.  `always` tells why the test runs on each call, `unknown`
+    tells why the inputs do not hold each file that the test reads, and `build` tells why it reads its build directory.
+    `start` is the index after the test launcher prefix, `launcher` is the master of the launcher or "", `master` is the
+    path of the master guard, and `named` holds each absolute path that the command or its environment names after the
+    launcher.
+    """
+
+    found: guard_inputs.Inputs
+    always: str
+    unknown: str
+    build: str
+    start: int
+    launcher: str
+    master: str
+    named: tuple[str, ...]
 
 
 @dataclass
@@ -546,7 +596,8 @@ def scan_elf(path: str, trees: Trees) -> Scan:
         candidate = os.path.normpath(name)
         if trees.is_in_build(candidate):
             (scan.directories if os.path.isdir(candidate) else scan.files).append(candidate)
-        elif candidate.endswith(DIAGNOSTIC_SUFFIXES):
+        elif guard_inputs.is_compiled_file(candidate):
+            # A C or C++ file is the text of a diagnostic, such as __FILE__ or std::source_location, and no data file.
             continue
         elif os.path.isfile(candidate):
             scan.files.append(candidate)
@@ -820,13 +871,11 @@ class Planner:
             return False
         return not any(word.upper() in TRUE_WORDS for word in test.words_of("WILL_FAIL"))
 
-    def guard_decision(self, test: ctest_reader.TestEntry, index: int) -> Decision | None:
-        """Return the decision of a test of the master guard with inputs, or None for each other test.
+    def guard_facts(self, test: ctest_reader.TestEntry, index: int) -> GuardFacts | None:
+        """Return the facts of a test of the master guard with inputs, or None for each other test.
 
-        `index` is the index of the program of the command.  THE TESTS OF THE
-        MASTER GUARD gives the rules.  Complexity: the cost of
-        assay.loop.inputs for the words of the test, and one digest of each
-        input that the digest cache does not hold.
+        `index` is the index of the program of the command.  THE TESTS OF THE MASTER GUARD and THE TESTS THAT READ THE
+        BUILD give the rules.  Complexity: the cost of assay.loop.inputs for the words of the test.
         """
         command = test.command
         if not os.path.basename(command[index]).startswith("python"):
@@ -844,47 +893,60 @@ class Planner:
         found = self.deriver(self.trees.source_root).test_inputs(words, variables)
         if found is None:
             return None
-        always = (found.always or self.property_reason(test, frozenset({guard_inputs.TREE_FIXTURE}))
-                  or self.source_reason(test, start, position))
         values = [*command[start:], *(item.split("=", 1)[1] for item in assignments if "=" in item)]
-        named = [real(value) for value in values if os.path.isabs(value)]
-        if not always and words[:1] == ("selftest",):
+        named = tuple(real(value) for value in values if os.path.isabs(value))
+        build = found.build
+        if not build and words[:1] == ("selftest",):
             directory = next((path for path in named if self.trees.is_in_build(path) and os.path.isdir(path)), "")
-            always = f"the group test reads the build directory {directory}" if directory else ""
-        if always:
-            return Decision(test, KIND_ALWAYS, always)
-        files = set(found.files)
-        texts = list(found.texts)
-        if launcher:
-            launcher_files, launcher_texts = self.launcher_inputs(launcher)
+            build = f"the group test reads the build directory {directory}" if directory else ""
+        unknown = (found.always or self.property_reason(test, frozenset({guard_inputs.TREE_FIXTURE}))
+                   or self.source_reason(test, start, position))
+        always = found.always or build or unknown
+        built = next((path for path in found.files if self.trees.is_in_build(path)), "")
+        if not build and built:
+            build = f"the test reads {built} of the build directory"
+        return GuardFacts(found, always, unknown, build, start, launcher, master, named)
+
+    def guard_decision(self, test: ctest_reader.TestEntry, index: int) -> Decision | None:
+        """Return the decision of a test of the master guard with inputs, or None for each other test.
+
+        `index` is the index of the program of the command.  THE TESTS OF THE
+        MASTER GUARD gives the rules.  Complexity: the cost of
+        assay.loop.inputs for the words of the test, and one digest of each
+        input that the digest cache does not hold.
+        """
+        facts = self.guard_facts(test, index)
+        if facts is None:
+            return None
+        if facts.always:
+            return Decision(test, KIND_ALWAYS, facts.always)
+        files = set(facts.found.files)
+        texts = list(facts.found.texts)
+        if facts.launcher:
+            launcher_files, launcher_texts = self.launcher_inputs(facts.launcher)
             files.update(launcher_files)
             texts += launcher_texts
         else:
             texts.append(environment_text(is_launched=False))
-        files.update(path for path in named if path != master and os.path.isfile(path))
+        files.update(path for path in facts.named if path != facts.master and os.path.isfile(path))
         fingerprint, shared = self.fingerprints(test, files, set(), tuple(texts))
         return Decision(test, KIND_GUARD, "", fingerprint=fingerprint, shared=shared, static=fingerprint)
 
     def launcher_inputs(self, launcher: str) -> tuple[list[str], tuple[str, ...]]:
         """Return the files and the texts that the test launcher reads.
 
-        The files are the master, the modules of the import closure of
-        LAUNCHER_MODULE, the ledger of each rule of the launcher,
-        build-kind.txt and build-configuration.txt.  The texts are the rows
-        of the rules of the launcher in the registry, and the clean
-        environment of the test (environment_text()).  A change of a
-        different row then changes no input.  One time for each call of the
+        The files are the inputs of the launcher (assay.loop.inputs, THE
+        METERS OF A TEST), build-kind.txt and build-configuration.txt.  The
+        texts are the rows of the rules of the launcher in the registry, and
+        the clean environment of the test (environment_text()).  A change of
+        a different row then changes no input.  One time for each call of the
         script.
         """
         if launcher not in self.launcher_files:
             root = os.path.dirname(os.path.dirname(os.path.dirname(real(launcher))))
-            deriver = self.deriver(root)
-            modules = sorted(deriver.closure([LAUNCHER_MODULE]))
-            files = [real(launcher), *(os.path.join(root, file) for name in modules
-                                       if (file := deriver.module_file(name)) is not None)]
-            files += [os.path.join(root, ledger) for ledger in LAUNCHER_LEDGERS]
-            files += [os.path.join(self.trees.build_root, name) for name in JUDGE_FILES]
-            texts = (*deriver.row_texts(test_launcher.ROWS), environment_text(is_launched=True))
+            meter = self.deriver(root).meter_inputs(LAUNCHER_MODULE, test_launcher.ROWS)
+            files = [*meter.files, *(os.path.join(self.trees.build_root, name) for name in JUDGE_FILES)]
+            texts = (*meter.texts, environment_text(is_launched=True))
             self.launcher_files[launcher] = (files, texts)
         return self.launcher_files[launcher]
 
@@ -965,16 +1027,21 @@ class Planner:
                 return mark + path[len(root):]
         return path
 
-    def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool) -> list[Decision]:
+    def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool,
+               only: frozenset[str] | None = None) -> list[Decision]:
         """Return the decision for each test (THE RECORD, THE SHARED STORE).
 
-        Complexity: classify() for each test.  For each test of FINGERPRINTED with no record of its own, one open of
-        one entry of the store.
+        With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (THE TESTS
+        THAT READ THE BUILD).  Complexity: classify() for each test that `only` names.  For each test of FINGERPRINTED
+        with no record of its own, one open of one entry of the store.
         """
         passed, failed = self.state["passed"], self.state["failed"]
         assert isinstance(passed, dict) and isinstance(failed, dict)
         decisions: list[Decision] = []
         for test in tests:
+            if only is not None and test.name not in only:
+                decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
+                continue
             decision = self.classify(test)
             if decision.kind in FINGERPRINTED:
                 recorded = passed.get(test.name)
@@ -996,6 +1063,46 @@ class Planner:
         return decisions
 
 
+# ── The tests that read the build ──────────────────────────────────────────
+
+
+def build_tests(build_dir: Path) -> dict[str, guard_inputs.Inputs]:
+    """Return the inputs in the source tree of each test of the master guard of a build that reads the build.
+
+    THE TESTS THAT READ THE BUILD gives the rules.  A test with a different reason to run on each call gets inputs with
+    that reason.  Complexity: the cost of assay.loop.inputs for the words of each test of the master guard, with no
+    digest of a file.
+
+    Raises:
+        RunnerError: If the build directory or its tests cannot be read
+    """
+    trees = read_trees(build_dir)
+    planner = Planner(trees, empty_state(trees), ResultStore())
+    found: dict[str, guard_inputs.Inputs] = {}
+    for test in list_tests(build_dir):
+        index = program_index(test.command)
+        facts = planner.guard_facts(test, index) if index is not None else None
+        if facts is None or not facts.build:
+            continue
+        sources = tuple(path for path in facts.found.files if not trees.is_in_build(path))
+        found[test.name] = replace(facts.found, files=sources, always=facts.unknown)
+    return found
+
+
+def meter_inputs(root: Path) -> tuple[guard_inputs.Inputs, ...]:
+    """Return the inputs of the test launcher and of the fixture driver of a tree (THE TESTS THAT READ THE BUILD).
+
+    The driver judges the rules of the launcher and the rules that FIXTURE_HOLDER holds.  Complexity: one parse of each
+    module of the two closures.
+    """
+    deriver = guard_inputs.Deriver(root)
+    held = [rule.id for rule in deriver.registry.rules.values() if rule.held_by == FIXTURE_HOLDER]
+    return (
+        deriver.meter_inputs(LAUNCHER_MODULE, test_launcher.ROWS),
+        deriver.meter_inputs(FIXTURE_MODULE, (*test_launcher.ROWS, *held)),
+    )
+
+
 # ── The run ────────────────────────────────────────────────────────────────
 
 
@@ -1004,7 +1111,7 @@ def print_plan(decisions: list[Decision], build_dir: Path) -> None:
     groups = Counter(("skip" if decision.is_skipped else "run", decision.kind, decision.reason)
                      for decision in decisions)
     print(f"loop test: {len(decisions)} tests in {build_dir}")
-    order = {KIND_FIXTURE: 0, KIND_SCRIPT: 1, KIND_ALWAYS: 2, KIND_GUARD: 3, KIND_EXECUTABLE: 4}
+    order = {KIND_FIXTURE: 0, KIND_SCRIPT: 1, KIND_ALWAYS: 2, KIND_GUARD: 3, KIND_EXECUTABLE: 4, KIND_UNNAMED: 5}
     for (action, kind, reason), count in sorted(groups.items(), key=lambda item: (item[0][0], order[item[0][1]])):
         print(f"  {action:4} {count:5}  {kind}: {reason}")
 
@@ -1100,7 +1207,8 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
 
     A run with the status 0 and with unchanged inputs gives the fingerprint to the state and the entry to the store.
     A failure gives the fingerprint to the failures of the state, and it removes the entry of the store (THE RECORD,
-    THE SHARED STORE).
+    THE SHARED STORE).  A test of the kind KIND_UNNAMED keeps its record, and the state keeps the scans that this call
+    did not read.
     """
     passed, failed = state["passed"], state["failed"]
     assert isinstance(passed, dict) and isinstance(failed, dict)
@@ -1109,8 +1217,11 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
         for name in [name for name in part if name not in names]:
             del part[name]
     planner.forget()
+    is_partial = any(decision.kind == KIND_UNNAMED for decision in decisions)
     for decision in decisions:
         name = decision.test.name
+        if decision.kind == KIND_UNNAMED:
+            continue
         if decision.kind not in FINGERPRINTED and not decision.static:
             passed.pop(name, None)
             failed.pop(name, None)
@@ -1136,7 +1247,8 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
             planner.store.remove(decision.shared)
         else:
             passed.pop(name, None)
-    state["scans"] = planner.used_scans
+    earlier = state["scans"] if is_partial and isinstance(state["scans"], dict) else {}
+    state["scans"] = {**earlier, **planner.used_scans}
 
 
 def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
@@ -1161,8 +1273,11 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
 
 
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,
-        ctest_arguments: list[str]) -> int:
-    """Build, decide, run and record.  Return the exit code of the script."""
+        ctest_arguments: list[str], only: frozenset[str] | None = None) -> int:
+    """Build, decide, run and record.  Return the exit code of the script.
+
+    With `only`, the script selects only the tests that it names (THE TESTS THAT READ THE BUILD).
+    """
     if not build_dir.is_dir():
         raise RunnerError(f"{build_dir} is not a directory.  Give the path of a configured build directory.")
     trees = read_trees(build_dir)
@@ -1194,7 +1309,8 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
         planner = Planner(trees, state, ResultStore())
-        decisions = planner.decide(tests, run_all)
+        decisions = planner.decide(tests, run_all, only)
+        unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
         write_list(state_dir / "skipped.txt", skipped)
@@ -1221,7 +1337,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
                                        "skip_code": skip_code, "not_run": not_run, "skipped": len(skipped)})
         print(f"loop test: {len(selected)} tests selected: {passed} passed, {failed} failed, {skip_code} gave their "
               f"skip code, {not_run} did not run.")
-        print(f"loop test: {len(skipped)} tests skipped, because {REASON_SKIPPED} "
+        if unnamed:
+            check_report.write_line(f"loop test: {unnamed} tests skipped, because --only does not name them.")
+        print(f"loop test: {len(skipped) - unnamed} tests skipped, because {REASON_SKIPPED} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
             print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
@@ -1501,6 +1619,28 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
         expect("a change of the ledger of alpha runs only the tests of alpha",
                ran == {"guard_alpha", "guard_alpha_witness", "guard_gamma"}, output)
         store_cases(fake, expect)
+        only_cases(fake, expect)
+
+
+def only_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
+    """Check build_tests() and --only (THE TESTS THAT READ THE BUILD) on the fake tree."""
+    found = build_tests(fake.build_dir)
+    gamma = found.get("guard_gamma")
+    module = str(fake.source_dir / "utils/assay/guard/engines/meta/gamma.py")
+    change = guard_inputs.Change(frozenset({module}), frozenset(), frozenset())
+    expect("build_tests gives only the test of the rule that reads the build, with its module and with no file of the "
+           "build", set(found) == {"guard_gamma"} and gamma is not None and module in gamma.files
+           and gamma.is_touched(change) and not any(path.startswith(str(fake.build_dir)) for path in gamma.files),
+           str(found))
+    fake.write("utils/plants/alpha/plant-one/input.txt", "four\n")
+    only = fake.build_dir / "only.txt"
+    only.write_text("guard_alpha\nguard_absent\n")
+    ran, output = fake.ran("--only", str(only))
+    expect("--only runs only the named test with a changed input, and skips each other test",
+           ran == {"guard_alpha"} and "because --only does not name them" in output, output)
+    ran, output = fake.ran()
+    expect("a test that --only skipped keeps its record, and a call with no --only runs it when its input changed",
+           ran == {"guard_alpha_witness", "guard_gamma"}, output)
 
 
 def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
@@ -1823,6 +1963,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--plan", action="store_true")
+    parser.add_argument("--only", type=Path, default=None, help="a file with one test name on each line: the script "
+                                                                "selects only those tests")
     parser.add_argument("--ctest", help="the ctest of the fake build tree of --self-test; the default is the ctest "
                                         "of PATH, when it gives the pinned version")
     parser.add_argument("--self-test", action="store_true")
@@ -1844,8 +1986,13 @@ def main(argv: list[str]) -> int:
         print("loop test: give a build directory, and give -j a positive number.")
         return 2
     try:
+        only = frozenset(options.only.read_text(encoding="utf-8").split()) if options.only is not None else None
+    except OSError as error:
+        check_report.write_line(f"loop test: the file of --only cannot be read: {error}")
+        return 2
+    try:
         return run(options.build_dir.resolve(), options.jobs, not options.no_build, options.all, options.plan,
-                   ctest_arguments)
+                   ctest_arguments, only)
     except RunnerError as error:
         print(f"loop test: {error}")
         return 2

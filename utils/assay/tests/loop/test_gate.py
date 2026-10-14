@@ -6,12 +6,15 @@ line.  Exit 0 when each case holds, else 1.
 The cases hold the selection of the configurations of a change.  They hold
 the table of the configurations against the ledgers and the presets of this
 tree, and the warm tree on a planted repository.  The planted repository
-holds a registry with two rules, the ledger of one of them, and two planted
-masters.  The planted master loop writes a JUnit report that a mode file of
-the build directory selects.  A planted ctest runs a red test again alone.
-The run of the gate then gives its verdict with no compiler and no CMake.  A
-change of a C++ file must run the tests of the changed inputs in each other
-configuration of a counted ledger.  A red test there must reject the commit.
+holds a registry with a rule that reads the build, the ledger of a counted
+rule, and two planted masters.  The planted master loop writes a JUnit
+report that a mode file of the build directory selects.  A planted ctest
+lists the test of the rule that reads the build.  It also runs a red test
+again alone.  The run of the gate then gives its verdict with no compiler
+and no CMake.  A change of a C++ file must run the tests of the changed
+inputs in each other configuration of objects.  A red test there must
+reject the commit.  A change of the module of the rule that reads the build
+must run that test in each other configuration of objects.
 """
 
 import json
@@ -25,16 +28,33 @@ from assay.core import git, paths, proc, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.loop import gate, syntax
+from assay.loop import inputs as guard_inputs
 from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
 
-# The registry of the planted repository: one measured rule and one rule with a ledger of configurations.
+# The registry of the planted repository: one measured rule, one rule with a ledger of configurations, and a rule that
+# reads the build.  It also holds the other rules that a parse configuration checks.
 REGISTRY = (
     "format 1\n"
     "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a time | "
     "lower the value\n"
     "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
+    "rule plan-check engine=meta scope=builddir ledger=none doc=XIII | a planted rule of the build | change nothing\n"
+    "rule quarantine engine=plugin scope=tracked ledger=count kinds=std-object doc=XXII | a finding | remove it\n"
+    "rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include doc=XV | a header | remove it\n"
+    "rule syscall-capability engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
 )
+# The module of the rule that reads the build, its test, and the module of the test launcher of the planted repository.
+BUILD_RULE_MODULE = "utils/assay/guard/engines/meta/plan_check.py"
+BUILD_RULE_TEST = "guard_plan_check"
+LAUNCHER_MODULE = "utils/assay/loop/teststep.py"
+# The build directory of each configuration of objects of the gate other than default, with the mode clean.
+OTHER_BUILDS = {
+    "build-release": "clean",
+    "build-tsan": "clean",
+    "build-ubsan-strict": "clean",
+    "build-bench-fuzz": "clean",
+}
 DOOR_LEDGER = (
     "format 1\nrule door-unit\n"
     "configuration x86_64-release kind x86_64-release\n"
@@ -93,12 +113,15 @@ if words[0] == "write":
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
-# The planted ctest: a test that runs alone is green, unless it is test_broken, or test_ledger or guard_slow_row
-# before its write.
+# The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
+# unless it is test_broken, or test_ledger or guard_slow_row before its write.
 CTEST = """import pathlib
 import sys
 
 words = sys.argv[1:]
+if "--show-only=json-v1" in words:
+    print(pathlib.Path(words[words.index("--test-dir") + 1], "tests.json").read_text())
+    sys.exit(0)
 names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
 report = pathlib.Path(words[words.index("--output-junit") + 1])
 ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
@@ -114,6 +137,7 @@ PLANTED = {
     "utils/ledgers/door-unit.txt": DOOR_LEDGER,
     "utils/bin/loop": LOOP_MASTER,
     "utils/bin/guard": GUARD_MASTER,
+    BUILD_RULE_MODULE: "VALUE = 1\n",
 }
 # A memory reader with much memory, and a pause that does not wait, for the heavy step of a run.
 MUCH_MEMORY_GB = 1e6
@@ -162,51 +186,44 @@ def select_cases(expect: testing.Expect) -> None:
     """Hold the selection of the configurations of a change (THE SELECTION)."""
     expect(
         "a change of a text file selects the default build only",
-        names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], [], False)) == ["default"],
+        names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], False)) == ["default"],
     )
     expect(
         "a change of a C++ test selects the default build, the release build and ThreadSanitizer",
-        names_of(gate.select(["test/test_arena.cpp"], [], [], False)) == ["default", "release", "tsan"],
+        names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release", "tsan"],
     )
     expect(
         "a change of include/ or of a top build file adds ThreadSanitizer and UBSan-strict",
-        names_of(gate.select(["include/foundation/Platform.h"], [], [], False))
-        == names_of(gate.select(["CMakeLists.txt"], [], [], False))
+        names_of(gate.select(["include/foundation/Platform.h"], [], False))
+        == names_of(gate.select(["CMakeLists.txt"], [], False))
         == ["default", "release", "tsan", "ubsan-strict"],
     )
     expect(
         "a change of bench/ or test/fuzz/ adds the bench and fuzz build",
-        names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], [], False))
-        == ["default", "release", "tsan", "bench-fuzz"],
+        names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], False)) == ["default", "release", "tsan", "bench-fuzz"],
     )
     expect(
-        "the parse presets of an arm and the configurations of a changed ledger join, in the sequence of the table",
-        names_of(gate.select(["notes.txt"], ["syntax-aarch64"], ["x86_64-debug-tsan", "aarch64-debug-asan"], False))
-        == ["syntax-aarch64", "default", "tsan"],
+        "the parse presets of an arm join, in the sequence of the table",
+        names_of(gate.select(["notes.txt"], ["syntax-aarch64"], False)) == ["syntax-aarch64", "default"],
     )
     every = names_of(gate.CONFIGURATIONS)
     expect(
         "a change of the plugin or of the rule table, and --all-configurations, select each configuration",
-        names_of(gate.select(["utils/tools/quarantine/unit.cpp"], [], [], False))
-        == names_of(gate.select(["utils/rule-table.txt"], [], [], False))
-        == names_of(gate.select(["notes.txt"], [], [], True))
+        names_of(gate.select(["utils/tools/quarantine/unit.cpp"], [], False))
+        == names_of(gate.select(["utils/rule-table.txt"], [], False))
+        == names_of(gate.select(["notes.txt"], [], True))
         == every,
     )
-    counted = {
-        "quarantine": ("x86_64-debug-asan", "x86_64-debug-asan-bench-fuzz", "aarch64-debug-asan-syntax"),
-        "artifact-links": ("x86_64-debug-asan", "x86_64-release", "aarch64-debug-asan"),
-    }
-    test_change = ["test/test_arena.cpp"]
+    others = tuple(item for item in gate.CONFIGURATIONS if not item.is_parse and item.name != gate.ALWAYS)
+    changed = gate.other_runs(others, True, ("guard_rule",))
+    touched = gate.other_runs(others, False, ("guard_rule",))
     expect(
-        "a change of a C++ file gives the tests of the changed inputs to each other configuration of a counted "
-        "ledger that the host builds",
-        names_of(gate.changed_test_configurations(test_change, counted, gate.select(test_change, [], [], False)))
-        == ["syntax-aarch64", "bench-fuzz"],
-    )
-    text_change = ["notes.txt", "utils/plants/rule/plant.txt"]
-    expect(
-        "a change with no C++ file and no build file gives no other configuration",
-        not gate.changed_test_configurations(text_change, counted, gate.select(text_change, [], [], False)),
+        "a change that can change each build runs the tests of the changed inputs in each other configuration of "
+        "objects, and another change runs only the touched tests there, or nothing",
+        [run.mode for run in changed] == [gate.Mode.CHANGED] * len(others)
+        and [(run.mode, run.names) for run in touched] == [(gate.Mode.TOUCHED, ("guard_rule",))] * len(others)
+        and gate.other_runs(others, False, ()) == ()
+        and len(others) == 4,
     )
 
 
@@ -386,48 +403,77 @@ def history_cases(expect: testing.Expect) -> None:
         )
 
 
-def rules_cases(expect: testing.Expect) -> None:
-    """Hold the changed rules of a change, and the configurations of their ledgers."""
-    with tempfile.TemporaryDirectory(prefix="gate-rules-") as work_text:
+def change_cases(expect: testing.Expect) -> None:
+    """Hold the change of a commit as the touch reads it, and the touch of the inputs of a test (THE TOUCH)."""
+    with tempfile.TemporaryDirectory(prefix="gate-change-") as work_text:
         work = Path(work_text)
         root = work / "repo"
         head = planted_repository(root)
+        (root / "notes.txt").unlink()
+        (root / rule_registry.REGISTRY_PATH).write_text(REGISTRY.replace("error=20", "error=21"), encoding="utf-8")
+        commit = git.commit_all(root, "Raise the slow row and remove the notes")
         tree = work / "warm"
-        module = "utils/assay/guard/engines/plugin/door_unit.py"
-        raised = REGISTRY.replace("error=20", "error=21")
-        cases: tuple[tuple[str, str, str, list[str]], ...] = (
-            ("a change of its ledger", "utils/ledgers/door-unit.txt", DOOR_LEDGER + "# a comment\n", ["door-unit"]),
-            ("a change of its row of the registry", "utils/registry.txt", raised, ["slow-row"]),
-            ("a change of its module", module, "# the planted module\n", ["door-unit"]),
-            ("a change of a different file", "notes.txt", "other notes\n", []),
-        )
-        previous = head
-        for name, path, text, expected in cases:
-            commit = commit_change(root, path, text)
-            gate.move_tree(root, tree, commit)
-            found = [rule.id for rule in gate.changed_rules(tree, previous, [path])]
-            expect(f"{name} changes the rules {expected}, and the gate finds {found}", found == expected)
-            previous = commit
-        door = rule_registry.load(tree / rule_registry.REGISTRY_PATH).rules["door-unit"]
-        names = gate.ledger_names(tree, [door])
+        gate.move_tree(root, tree, commit)
+        change = guard_inputs.read_change(tree, head, ["notes.txt", rule_registry.REGISTRY_PATH])
         expect(
-            "the ledger of a changed rule gives its configuration names, and the selection builds those that the "
-            "host can build",
-            names == ["aarch64-debug-asan", "x86_64-release"]
-            and names_of(gate.select(["notes.txt"], [], names, False)) == ["default", "release"],
+            "a change holds each changed path, each path that it deletes, and each rule whose row changed",
+            change.paths == {str(tree / "notes.txt"), str(tree / rule_registry.REGISTRY_PATH)}
+            and change.deleted == {str(tree / "notes.txt")}
+            and change.rows == {"slow-row"},
         )
+        item, gone, other = str(tree / "data" / "item.txt"), str(tree / "data" / "gone.txt"), str(tree / "other.txt")
+        read = guard_inputs.Inputs(files=(item,), directories=(str(tree / "data"),), rules=("plan-check",))
+        empty: frozenset[str] = frozenset()
+        expect(
+            "a change of a file of the inputs, a deleted file of a directory of the inputs, and a change of the row "
+            "of a rule of the inputs each touch the inputs",
+            read.is_touched(guard_inputs.Change(frozenset({item}), empty, empty))
+            and read.is_touched(guard_inputs.Change(frozenset({gone}), frozenset({gone}), empty))
+            and read.is_touched(guard_inputs.Change(empty, empty, frozenset({"plan-check"}))),
+        )
+        expect(
+            "a change of a different file and of a different row does not touch the inputs, and inputs with a reason "
+            "to run on each call are touched by each change",
+            not read.is_touched(guard_inputs.Change(frozenset({other}), frozenset({other}), frozenset({"slow-row"})))
+            and guard_inputs.Inputs(always="a planted reason").is_touched(guard_inputs.Change(empty, empty, empty)),
+        )
+
+
+def listing(tree: Path, build: Path) -> str:
+    """Return the ctest listing of a planted build: the test of the rule that reads the build, behind the launcher."""
+    source, built = tree.resolve(), str(build.resolve())
+    command = [
+        sys.executable,
+        "-S",
+        str(source / "utils/bin/loop"),
+        "test-step",
+        "--build-dir",
+        built,
+        "--name",
+        BUILD_RULE_TEST,
+        sys.executable,
+        str(source / "utils/bin/guard"),
+        "check",
+        "--rule",
+        "plan-check",
+        "--build-dir",
+        built,
+    ]
+    return json.dumps({"tests": [{"name": BUILD_RULE_TEST, "command": command, "properties": []}]})
 
 
 def plant_build(work: Path, tree: Path, name: str, mode: str) -> None:
-    """Plant one build directory of the warm tree with a mode and a planted ctest."""
+    """Plant one build directory of the warm tree with a mode, a planted ctest and the listing of its tests."""
     build = tree / name
     build.mkdir(parents=True, exist_ok=True)
     ninja_reader.plant_graph(build, "")
     (build / "mode.txt").write_text(f"{mode}\n", encoding="utf-8")
+    (build / "tests.json").write_text(listing(tree, build), encoding="utf-8")
     ctest = work / "ctest"
     ctest.write_text(f"#!{sys.executable}\n{CTEST}", encoding="utf-8")
     ctest.chmod(0o755)
-    cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": str(ctest)})
+    cmake_reader.cache_file(build).write_text("", encoding="utf-8")
+    cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": str(ctest), "CMAKE_HOME_DIRECTORY": str(tree)})
 
 
 def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[str, str] | None = None) -> gate.Gate:
@@ -595,7 +641,7 @@ def changed_tests_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         verdicts: dict[str, gate.Verdict] = {}
         for mode in ("broken", "keep"):
-            others = {"build-release": "clean", "build-tsan": "clean", "build-bench-fuzz": mode}
+            others = {**OTHER_BUILDS, "build-bench-fuzz": mode}
             planted = planted_gate(work, root, tree, "clean", others)
             keeps = (gate.Keep("slow-row", "the bench grows"),) if mode == "keep" else ()
             candidate = gate.Candidate(head, commit, ("test/a.cpp",), keeps)
@@ -610,8 +656,8 @@ def changed_tests_cases(expect: testing.Expect) -> None:
         }
         expect(
             "a change of a C++ test runs the suite of its configurations with --all, and the tests of the changed "
-            "inputs in the bench and fuzz build with no --all",
-            verdicts["broken"].configurations == ("default", "release", "tsan", "bench-fuzz")
+            "inputs in UBSan-strict and in the bench and fuzz build with no --all",
+            verdicts["broken"].configurations == ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
             and words["build"][0].endswith("--all")
             and not any(line.endswith("--all") for line in words["build-bench-fuzz"]),
         )
@@ -628,6 +674,46 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             and "| 12 | - | the bench grows" in kept
             and verdicts["keep"].kept == ("slow-row: @build/bench/a.o in x86_64-debug-asan-bench-fuzz from 10 to 12",),
         )
+
+
+def touched_cases(expect: testing.Expect) -> None:
+    """Hold the runs with no full suite of a change with no C++ file: the touched tests, nothing, or each test."""
+    with tempfile.TemporaryDirectory(prefix="gate-touched-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        previous = planted_repository(root)
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, previous)
+        objects = ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
+        cases = (
+            ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
+            ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
+            ("a module of the test launcher", LAUNCHER_MODULE, objects, "-j 1"),
+        )
+        for label, path, expected, shown in cases:
+            commit = commit_change(root, path, "VALUE = 2\n", f"Change {path}")
+            planted = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
+            candidate = gate.Candidate(previous, commit, (path,))
+
+            def run(planted: gate.Gate = planted, candidate: gate.Candidate = candidate) -> gate.Verdict:
+                return planted.check(candidate, False)
+
+            verdict, printed = testing.captured(run)
+            words = tree / "build-bench-fuzz" / "words.txt"
+            lines = words.read_text(encoding="utf-8").splitlines() if words.is_file() else []
+            words.unlink(missing_ok=True)
+            only = planted.logs / "bench-fuzz.only.txt"
+            last = lines[-1] if lines else ""
+            if last.startswith("-j 1 --only ") and only.is_file():
+                last = f"--only {only.read_text(encoding='utf-8').strip()}"
+            steps = printed.count("memwait: ")
+            holds = verdict.is_accepted and verdict.configurations == expected and last == shown and steps == 1
+            label_text = (
+                f"a change of {label} runs in {expected} with the words {shown!r} in the bench and fuzz build, in one "
+                f"heavy step, and the gate gives {verdict.configurations} and {last!r} in {steps} heavy steps"
+            )
+            expect(label_text if holds else f"{label_text}.  The output of the gate:\n{printed}", holds)
+            previous = commit
 
 
 def lock_cases(expect: testing.Expect) -> None:
@@ -671,11 +757,12 @@ def main(argv: list[str]) -> int:
             table_cases,
             tree_cases,
             history_cases,
-            rules_cases,
+            change_cases,
             run_cases,
             falls_cases,
             keep_cases,
             changed_tests_cases,
+            touched_cases,
             lock_cases,
         ),
     )

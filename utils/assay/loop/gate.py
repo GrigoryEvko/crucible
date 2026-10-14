@@ -22,44 +22,79 @@ THE COUNTED RULES
     writes the falls of each configuration that it builds (THE FALLS).
 
 THE SELECTION
-    select() gives the configurations of a change, in the sequence of
-    CONFIGURATIONS.  Each such configuration runs the suite:
-      * default for each change
-      * release and tsan for a change of a C++ file or of a build file.
-        ThreadSanitizer gives incorrect errors of -Wmaybe-uninitialized that
-        the other builds do not give, also for a change of a test
-      * tsan and ubsan-strict for a change of include/, src/ or cmake/, or of
-        a build file at the top of the tree
-      * bench-fuzz for a change of bench/ or test/fuzz/
-      * each parse configuration that `loop syntax --changed` of the warm
-        tree names, for a change of an arm
-      * each configuration that the ledger of a changed rule names.  A rule
-        changes with its ledger, its plants, its row of the registry or its
-        module (changed_rules())
-      * each configuration for a change of the quarantine plugin or of the
-        rule table, and for --all-configurations.
+    The gate holds one invariant: a landing cannot make a test red in a
+    configuration of the gate when the test can see the change.  Each
+    configuration of objects then runs for each change, in one of three
+    modes, in the sequence of CONFIGURATIONS (Mode):
+      * The full suite, `loop test BUILD --all`.  select() gives these
+        configurations:
+          - default for each change
+          - release and tsan for a change of a C++ file or of a build file.
+            ThreadSanitizer gives incorrect errors of -Wmaybe-uninitialized
+            that the other builds do not give, also for a change of a test
+          - tsan and ubsan-strict for a change of include/, src/ or cmake/,
+            or of a build file at the top of the tree
+          - bench-fuzz for a change of bench/ or test/fuzz/
+          - each configuration for a change of the quarantine plugin or of
+            the rule table, and for --all-configurations.
+      * The tests of the changed inputs, `loop test BUILD`, in each other
+        configuration of objects, when the change can change each build.
+        Such a change holds a C++ file or a build file.  It can also change
+        an input of the test launcher or of the fixture driver
+        (meter_inputs() of assay.loop.affected).  The build then compiles
+        again what the change touches.  `loop test` runs each test with a
+        changed input, each script test, each fixture, and each test that
+        reads the build.
+      * The touched tests, `loop test BUILD --only FILE`, in each other
+        configuration of objects, for each other change.  A touched test
+        reads the build, and the change touches one of its inputs.
+        build_tests() of assay.loop.affected gives the tests that read the
+        build from the build of default, after the run of default.  That run
+        configures the build with the change.  Inputs.is_touched() of
+        assay.loop.inputs judges each one (THE TOUCH).  A test that reads no
+        build gives the same result in each configuration, and default runs
+        it.  When the change touches no such test, these configurations do
+        not run.
     A build file is a file CMakeLists.txt, a file *.cmake or
-    CMakePresets.json.  A ledger can name a configuration that the host
-    cannot build, such as an aarch64 configuration of objects.  The gate
-    then writes a note and does not build it.
+    CMakePresets.json.
 
-    changed_test_configurations() gives each other configuration of a
-    counted ledger, for a change of a C++ file or of a build file.  Such a
-    configuration of objects runs `loop test BUILD` with no --all (THE RUN OF
-    A CONFIGURATION, step 3).  That command builds the target all, and it
-    runs each test with an input that changed.  It also runs each test of a
-    rule that reads a build, such as the test of a counted rule and the test
-    guard_object_text (assay.loop.affected).  A change then cannot make a
-    test red in a configuration that the gate builds and does not judge.
-    The rows of each counted ledger also hold the counts of each
-    configuration at each commit of main.  Each configuration compiles the
-    files of include/ and src/.  The bench targets also compile the arms of
-    CRUCIBLE_BENCH in them.  An arm in include/crucible/BackgroundThread.h is
-    an example.  An arm that only one configuration compiles then gets its
-    verdict in the landing of the change.  This applies to a count above its
-    row and to a count below it.  A change that no unit of a configuration
-    reads makes its build do nothing.  A parse build then keeps the report of
-    each unit (THE KEPT REPORTS of assay.loop.syntax).
+    A parse configuration runs when `loop syntax --changed` of the warm tree
+    names it for a change of an arm.  It also runs when a path of the change
+    touches the inputs of a rule of COUNTED_RULES of
+    assay.guard.engines.buildsys.parse_builds.  That path is no C or C++ file
+    and no build file.  A change of such a file changes the result of a parse
+    build only through an arm.  Each parse configuration also runs for a
+    change of the plugin or of the rule table, and for --all-configurations.
+
+    A ledger can name a configuration that the host cannot build, such as an
+    aarch64 configuration of objects.  The gate then writes a note and does
+    not build it.
+
+    The configurations of the last two modes run after the last
+    configuration of the full suite (THE RUN OF A CONFIGURATION).  The model
+    holds no inputs of a script test that reads a build, such as the parts of
+    the test of the fixture store.  Such a test runs only in the first two
+    modes.
+
+    An executable test reads the build too.  Its inputs in the source tree
+    are each file that its binary names and each key part of its read set
+    (assay.loop.readset).  build_tests() does not give such a test.  Such a
+    test then also runs only in the first two modes.  On 2026-10-14, one executable
+    test of the warm tree had such an input: bench/baselines/record_leaf.json
+    in the bench and fuzz build.  A change of bench/ selects the full suite
+    of that build.
+
+    The rows of each counted ledger hold the counts of each configuration at
+    each commit of main.  Each configuration compiles the files of include/
+    and src/.  The bench targets also compile the arms of CRUCIBLE_BENCH in
+    them.  An arm in include/crucible/BackgroundThread.h is an example.  An
+    arm that only one configuration compiles then gets its verdict in the
+    landing of the change.  This applies to a count above its row and to a
+    count below it.
+
+    A change that no unit of a configuration reads makes its build do
+    nothing.  A parse build then keeps the report of each unit (THE KEPT
+    REPORTS of assay.loop.syntax).
 
 THE WARM TREE
     One repository in the directory TREE of the work directory holds the
@@ -85,25 +120,30 @@ THE RUN OF A CONFIGURATION
     only the last commit.  For such a landing, the gate runs `guard check
     --rule quarantine-lines --build-dir BUILD` again, with the variable set
     to the commit that the composition started from.  `loop
-    syntax --changed` gets the variable too.  Each configuration runs as
-    one heavy step (assay.loop.heavy), with the lock of the repository of
-    the landing.  The landing holds the session of the gate (THE PRIORITY OF
-    THE GATE of assay.loop.heavy).  The step of the gate then does not wait
-    for it.  The parse configurations run first.  Then the tests
-    guard_parse_* of the debug build read current reports.
+    syntax --changed` gets the variable too.  Each configuration of the
+    full suite runs as one heavy step (assay.loop.heavy), with the lock of
+    the repository of the landing.  The configurations of the two other
+    modes run after the last configuration of the full suite, in its heavy
+    step.  Each heavy step waits for the memory, and this sequence saves one
+    wait for each landing.  The landing holds the
+    session of the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).  The
+    step of the gate then does not wait for it.  The parse configurations
+    run first.  Then the tests guard_parse_* of the debug build read current
+    reports.
       1. A build directory with no graph of Ninja gets its configure:
          `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
          assay.guard.engines.buildsys.parse_builds.  A check that fails
          gets THE FALLS, and then each check runs again.
-      3. A configuration of objects: `loop test BUILD --all`, which builds
-         the target all and runs each test (assay.loop.affected).  A retry
-         after a move of HEAD, each subsequent run of a batch, and each
-         configuration of changed_test_configurations() run `loop test
-         BUILD`.  That command runs only the tests with an input that
-         changed, and each test of a rule that reads a build.  A red test
-         gets THE FALLS first.
+      3. A configuration of objects: `loop test BUILD` with the words of its
+         mode, which builds the target all and runs the tests of the mode
+         (assay.loop.affected, THE SELECTION).  A retry after a move of HEAD
+         and each subsequent run of a batch run `loop test BUILD` in a
+         configuration of the full suite.  That command runs only the tests
+         with an input that changed, and each test of a rule that reads a
+         build.  The file of --only is in the directory of the logs.  A red
+         test gets THE FALLS first.
          Then each test that is red runs one more time, alone.  A test that
          is red alone too rejects the commit.
          An exit other than 0 with no red test rejects the commit too.  Then
@@ -135,10 +175,13 @@ THE FALLS
     commit.  A row of THE GROWTH of assay.loop.land then names its first
     commit as before.
     The warm tree moves to the new commit.  Each configuration of objects of
-    the run then runs `loop test BUILD`, which runs each test with an input
-    that changed, as the run after a move of HEAD does.  The verdict gives the new
-    commit and the ledgers, and the landing moves the branch to that commit.
-    A change that lowers counts then lands with no manual write of a ledger.
+    the run then runs again.  A configuration of the full suite runs `loop
+    test BUILD`, which runs each test with an input that changed, as the run
+    after a move of HEAD does.  The other configurations get the mode of THE
+    SELECTION again, with the ledgers in the change.  The verdict gives the
+    new commit and the ledgers, and the landing moves the branch to that
+    commit.  A change that lowers counts then lands with no manual write of
+    a ledger.
 
 THE KEPT ROWS
     A measured rule of the policy max keeps an item over its warning
@@ -183,11 +226,12 @@ THE LOCK OF THE TREE
 """
 
 import contextlib
+import enum
 import fcntl
 import shutil
 import sys
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
@@ -199,6 +243,7 @@ from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys.parse_builds import COUNTED_RULES
 from assay.guard.engines.meta import runner as meta_runner
 from assay.loop import affected, heavy, tiers
+from assay.loop import inputs as guard_inputs
 from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
@@ -212,16 +257,17 @@ LOGS = "logs"
 RUN_MARK = "run-"
 RUN_WIDTH = 6
 RUNS_KEPT = 24
-# The C++ suffixes of a change that selects the release build and ThreadSanitizer (THE SELECTION).
-CPP_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
+# The build files of a change that selects the release build and ThreadSanitizer, as a C or C++ file does (THE
+# SELECTION, COMPILED_SUFFIXES of assay.loop.inputs).
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
 BUILD_FILE_SUFFIX = ".cmake"
 SANITIZED_PREFIXES = ("include/", "src/", "cmake/")
 BENCH_PREFIXES = ("bench/", "test/fuzz/")
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
 LEDGER_PREFIX = "utils/ledgers/"
-PLANT_PREFIX = "utils/plants/"
-ENGINE_PREFIX = "utils/assay/guard/engines/"
+# The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
+# SELECTION).
+ALWAYS = "default"
 # The rule that judges the full change of a landing with two commits again (THE RUN OF A CONFIGURATION).
 STACKED_RULE = "quarantine-lines"
 # The engines of a counted rule (THE COUNTED RULES).
@@ -274,6 +320,24 @@ def configurations(root: Path) -> tuple[Configuration, ...]:
 
 class GateError(Exception):
     """The warm tree cannot hold the commit, or a step of the gate cannot start."""
+
+
+class Mode(enum.Enum):
+    """How one configuration runs (THE SELECTION).  The value is the words that the gate writes before its step."""
+
+    PARSE = "parse and check"
+    FULL = "build and test"
+    CHANGED = "build and test the changed inputs"
+    TOUCHED = "build and run the touched tests"
+
+
+@dataclass(frozen=True, slots=True)
+class Run:
+    """One configuration of a run of the gate, its mode, and the names of the tests of the mode TOUCHED."""
+
+    configuration: Configuration
+    mode: Mode
+    names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,22 +399,27 @@ def is_build_file(path: str) -> bool:
     return PurePosixPath(path).name in BUILD_FILE_NAMES or path.endswith(BUILD_FILE_SUFFIX)
 
 
-def select(
-    changed: Sequence[str], parse_presets: Sequence[str], ledger_names: Sequence[str], is_every: bool
-) -> tuple[Configuration, ...]:
-    """Return the configurations of a change, in the sequence of CONFIGURATIONS (THE SELECTION).
+def is_compiled_change(path: str) -> bool:
+    """Tell if a path of a change is a C or C++ file or a build file, which a build of a configuration can read."""
+    return guard_inputs.is_compiled_file(path) or is_build_file(path)
+
+
+def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool) -> tuple[Configuration, ...]:
+    """Return the configurations of the full suite and the parse configurations of a change (THE SELECTION).
+
+    The configurations are in the sequence of CONFIGURATIONS.
 
     Args:
         changed: The paths that the change touches
-        parse_presets: The parse presets that `loop syntax --changed` names
-        ledger_names: The configuration names of the ledgers of the changed rules
+        parse_presets: The parse presets that run: those that `loop syntax --changed` names, and each parse preset
+            when the change touches the inputs of a rule of COUNTED_RULES
         is_every: Select each configuration
 
     Complexity: linear in the paths and the names.
     """
-    names = {"default"}
+    names = {ALWAYS}
     for path in changed:
-        if path.endswith(CPP_SUFFIXES) or is_build_file(path):
+        if is_compiled_change(path):
             names.update(("release", "tsan"))
         is_top_build_file = is_build_file(path) and "/" not in path
         if path.startswith(SANITIZED_PREFIXES) or is_top_build_file:
@@ -360,34 +429,51 @@ def select(
         if path.startswith(EVERY_PREFIXES):
             is_every = True
     names.update(preset for preset in parse_presets if preset in BY_NAME)
-    names.update(BY_LEDGER_NAME[name].name for name in ledger_names if name in BY_LEDGER_NAME)
     return tuple(item for item in CONFIGURATIONS if is_every or item.name in names)
+
+
+def changes_each_build(tree: Path, change: guard_inputs.Change, changed: Sequence[str]) -> bool:
+    """Tell if a change can change each build: a C or C++ file, a build file, or an input of a meter of a test.
+
+    The meters are the test launcher and the fixture driver (meter_inputs() of assay.loop.affected, THE SELECTION).
+    Complexity: linear in the paths, and one parse of each module of the closures of the meters.
+    """
+    if any(is_compiled_change(path) for path in changed):
+        return True
+    return any(meter.is_touched(change) for meter in affected.meter_inputs(tree))
+
+
+def touches_parse_rules(tree: Path, change: guard_inputs.Change) -> bool:
+    """Tell if a change touches the inputs of a rule that a parse configuration checks (COUNTED_RULES, THE SELECTION).
+
+    The caller gives the change with no C or C++ file and no build file.  A change of such a file changes the result of
+    a parse build only through an arm, and `loop syntax --changed` names the parse configurations of an arm.
+
+    Raises:
+        git.GitError: If the tree is not a git work tree
+
+    Complexity: the cost of assay.loop.inputs for each rule of COUNTED_RULES.
+    """
+    deriver = guard_inputs.Deriver(tree)
+    return any(deriver.rule_inputs(rule_id, "check").is_touched(change) for rule_id in COUNTED_RULES)
+
+
+def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[str]) -> tuple[Run, ...]:
+    """Return the runs of the configurations of objects that do not run the full suite (THE SELECTION).
+
+    Args:
+        others: The configurations of objects that select() does not give
+        is_each: The change can change each build (changes_each_build())
+        names: The touched tests: each test that reads the build and that has an input that the change touches
+    """
+    if is_each:
+        return tuple(Run(item, Mode.CHANGED) for item in others)
+    return tuple(Run(item, Mode.TOUCHED, tuple(names)) for item in others) if names else ()
 
 
 def guard_test_name(rule_id: str) -> str:
     """Return the name of the test guard_ID of a rule, as cmake/Guards.cmake gives it: each - of the ID becomes _."""
     return "guard_" + rule_id.replace("-", "_")
-
-
-def is_compiled_change(path: str) -> bool:
-    """Tell if a path of a change is a C++ file or a build file, which a build of a configuration can read."""
-    return path.endswith(CPP_SUFFIXES) or is_build_file(path)
-
-
-def changed_test_configurations(
-    changed: Sequence[str], counted: Mapping[str, Sequence[str]], selected: Sequence[Configuration]
-) -> tuple[Configuration, ...]:
-    """Return each configuration of a counted ledger that runs the tests of the changed inputs (THE SELECTION).
-
-    The configurations are in the sequence of CONFIGURATIONS.  `counted` gives the configuration names of each
-    counted ledger (counted_ledgers()), and `selected` holds the configurations of the suite.  Complexity: linear in
-    the paths and the names.
-    """
-    if not any(is_compiled_change(path) for path in changed):
-        return ()
-    names = {name for listed in counted.values() for name in listed}
-    picked = {item.name for item in selected}
-    return tuple(item for item in CONFIGURATIONS if item.ledger_name in names and item.name not in picked)
 
 
 def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
@@ -419,66 +505,6 @@ def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
 def holding(counted: Mapping[str, Sequence[str]], configuration: Configuration) -> list[str]:
     """Return each counted rule with a ledger that holds a configuration, sorted."""
     return sorted(rule_id for rule_id, names in counted.items() if configuration.ledger_name in names)
-
-
-def rule_module_path(rule: rule_registry.Rule, tree: Path) -> str | None:
-    """Return the path of the module of a rule in a tree, or None when the rule has no module of its own."""
-    if not rule.has_module:
-        return None
-    return "utils/" + meta_runner.module_name_of(rule, tree).replace(".", "/") + ".py"
-
-
-def changed_rules(tree: Path, head: str, changed: Sequence[str]) -> list[rule_registry.Rule]:
-    """Return each rule that a change touches: its ledger, its plants, its row of the registry or its module.
-
-    The tree holds the commit of the change, and head is the commit that the change starts from.
-
-    Raises:
-        GateError: If the registry of the tree does not read
-
-    Complexity: one read of the registry at each commit.  A change of a module of an engine adds one search of the
-    module of each rule.
-    """
-    try:
-        current = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
-    except (OSError, ValueError) as problem:
-        raise GateError(f"the registry of the warm tree does not read: {problem}") from None
-    earlier_text = git.show(tree, head, rule_registry.REGISTRY_PATH)
-    earlier = rule_registry.examine(earlier_text.decode("utf-8"))[0].rules if earlier_text is not None else {}
-    paths = set(changed)
-    has_engine_change = any(path.startswith(ENGINE_PREFIX) for path in paths)
-    found: list[rule_registry.Rule] = []
-    for rule in current.rules.values():
-        plants = f"{PLANT_PREFIX}{rule.id}/"
-        old = earlier.get(rule.id)
-        is_changed = (
-            f"{LEDGER_PREFIX}{rule.id}.txt" in paths
-            or any(path.startswith(plants) for path in paths)
-            or old is None
-            or replace(old, line=0) != replace(rule, line=0)
-            or (has_engine_change and rule_module_path(rule, tree) in paths)
-        )
-        if is_changed:
-            found.append(rule)
-    return found
-
-
-def ledger_names(tree: Path, rules: Sequence[rule_registry.Rule]) -> list[str]:
-    """Return the configuration names of the ledgers of some rules in a tree, one time each, sorted.
-
-    Raises:
-        GateError: If a ledger does not read
-    """
-    names: set[str] = set()
-    for rule in rules:
-        if rule.policy == rule_registry.Policy.NONE:
-            continue
-        try:
-            ledger = rule_ledger.read(rule, tree)
-        except (OSError, ValueError) as problem:
-            raise GateError(f"the ledger of {rule.id} in the warm tree does not read: {problem}") from None
-        names.update(configuration.name for configuration in ledger.configurations)
-    return sorted(names)
 
 
 # ── The warm tree ──────────────────────────────────────────────────────────
@@ -776,14 +802,15 @@ class Gate:
         counted: Mapping[str, Sequence[str]],
         environment: Mapping[str, str],
         based: Mapping[str, str],
-        is_retry: bool,
+        words: Sequence[str],
         keeps: Sequence[Keep] = (),
         kept: list[str] | None = None,
     ) -> list[str]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
-        With no counted rule in `counted`, a red test gets no write (THE FALLS).  A red test of a rule of `keeps`
-        gets the write of THE KEPT ROWS, and `kept` receives each raised row.
+        `words` are the words of the mode after `loop test BUILD` (loop_words()).  With no counted rule in `counted`, a
+        red test gets no write (THE FALLS).  A red test of a rule of `keeps` gets the write of THE KEPT ROWS, and `kept`
+        receives each raised row.
         """
         problem = self._configure(configuration, environment)
         if problem is not None:
@@ -792,7 +819,7 @@ class Gate:
         report = build / affected.STATE_DIRECTORY / "junit.xml"
         report.unlink(missing_ok=True)
         log = f"{configuration.name}.test.log"
-        command = [*self._master("loop"), "test", str(build), "-j", str(self.jobs), *(() if is_retry else ("--all",))]
+        command = [*self._master("loop"), "test", str(build), "-j", str(self.jobs), *words]
         status = self._run_logged(command, log, environment, TEST_RUN_S)
         statuses: dict[str, ctest_reader.TestStatus] = {}
         if report.is_file():
@@ -860,6 +887,54 @@ class Gate:
             return tuple(problems)
         return (*problems, *(item.text() for item in found if item.level == "error"))
 
+    def loop_words(self, run: Run, is_plain: bool) -> list[str]:
+        """Return the words of the mode of a run after `loop test BUILD` (THE SELECTION).
+
+        A run of the full suite with `is_plain` runs the tests of the changed inputs.  The run of the touched tests
+        writes the file of --only into the directory of the logs.
+        """
+        if run.mode is Mode.TOUCHED:
+            self.logs.mkdir(parents=True, exist_ok=True)
+            only = self.logs / f"{run.configuration.name}.only.txt"
+            only.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
+            return ["--only", str(only)]
+        return ["--all"] if run.mode is Mode.FULL and not is_plain else []
+
+    def touched_names(self, change: guard_inputs.Change) -> tuple[str, ...]:
+        """Return each touched test of the build of ALWAYS, sorted: it reads the build, and the change touches its inputs.
+
+        The run of ALWAYS configures its build with the change first (THE SELECTION).
+
+        Raises:
+            GateError: If the build of ALWAYS or its tests cannot be read
+        """
+        build = build_directory(self.tree, BY_NAME[ALWAYS])
+        try:
+            tests = affected.build_tests(build)
+        except affected.RunnerError as problem:
+            raise GateError(f"the tests of {build} that read the build do not read: {problem}") from None
+        return tuple(sorted(name for name, found in tests.items() if found.is_touched(change)))
+
+    def other_plan(
+        self, candidate: Candidate, others: Sequence[Configuration], ledgers: Sequence[str] = ()
+    ) -> tuple[Run, ...]:
+        """Return the runs of the configurations of objects with no full suite, for the change and `ledgers`.
+
+        Raises:
+            GateError: If the build of ALWAYS or its tests cannot be read
+            git.GitError: If git cannot read the registry at the commit that the change starts from
+        """
+        if not others:
+            return ()
+        changed = (*candidate.changed, *ledgers)
+        change = guard_inputs.read_change(self.tree, candidate.head, changed)
+        if changes_each_build(self.tree, change, changed):
+            return other_runs(others, True, ())
+        names = self.touched_names(change)
+        shown = " ".join(names) if names else "none"
+        check_report.write_line(f"loop land: the touched tests of the other configurations of objects: {shown}")
+        return other_runs(others, False, names)
+
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
         """Give the warm tree the commit, select the configurations, and run each of them (THE RUN OF A CONFIGURATION).
 
@@ -872,27 +947,29 @@ class Gate:
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
         is_stacked = candidate.commit != candidate.head and git.parent(self.tree, candidate.commit) != candidate.head
-        rules = changed_rules(self.tree, candidate.head, candidate.changed)
         presets = self._parse_presets(based)
-        names = ledger_names(self.tree, rules)
+        uncompiled = [path for path in candidate.changed if not is_compiled_change(path)]
+        if touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled)):
+            presets += [item.name for item in CONFIGURATIONS if item.is_parse]
         counted = counted_ledgers(self.tree)
-        for name in sorted({*names, *(item for listed in counted.values() for item in listed)}):
+        for name in sorted({item for listed in counted.values() for item in listed}):
             if name not in BY_LEDGER_NAME:
                 check_report.write_line(f"loop land: the host does not build the configuration {name} of a ledger")
-        selected = select(candidate.changed, presets, names, self.is_every)
-        checks = changed_test_configurations(candidate.changed, counted, selected)
-        plan = tuple(item for item in CONFIGURATIONS if item in selected or item in checks)
+        selected = select(candidate.changed, presets, self.is_every)
+        plan = tuple(Run(item, Mode.PARSE if item.is_parse else Mode.FULL) for item in selected)
+        others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
         shown = " ".join(item.name for item in selected)
-        checked = f", and the tests of the changed inputs in {' '.join(item.name for item in checks)}" if checks else ""
+        rest = f", and then the tests of the change in {' '.join(item.name for item in others)}" if others else ""
         check_report.write_line(
-            f"loop land: the commit {candidate.commit[:9]} runs in {shown}{checked}, logs in {self.logs}"
+            f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest}, logs in {self.logs}"
         )
         ran: list[str] = []
         spent: list[float] = []
         kept: list[str] = []
 
-        def run_of(configuration: Configuration, is_again: bool) -> list[str]:
+        def run_of(run: Run, is_again: bool) -> list[str]:
             """Run one configuration of the plan, or its tests again after THE FALLS, and give each problem."""
+            configuration = run.configuration
             if configuration.is_parse:
                 return self._run_parse(configuration, counted, environment, based)
             problems = self._run_objects(
@@ -900,7 +977,7 @@ class Gate:
                 {} if is_again else counted,
                 environment,
                 based,
-                is_retry or is_again or configuration not in selected,
+                self.loop_words(run, is_retry or is_again),
                 () if is_again else candidate.keeps,
                 kept,
             )
@@ -908,43 +985,67 @@ class Gate:
                 problems = self._checked(configuration, (STACKED_RULE,), based)
             return problems
 
-        def step(configuration: Configuration, is_again: bool) -> list[str]:
-            """Run one configuration in a heavy step, and keep its name and its time."""
-            words = "build and test" if configuration in selected else "build and test the changed inputs"
-            if configuration.is_parse:
-                words = "parse and check"
-            check_report.write_line(f"loop land: {configuration.name}: {'test again' if is_again else words}")
-            with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root, read=self.read, pause=self.pause, is_gate_step=True):
+        def run_each(runs: Sequence[Run], is_again: bool) -> list[str]:
+            """Run some configurations in the heavy step of the caller, keep the name and the time of each, and give
+            each problem."""
+            for run in runs:
+                name = run.configuration.name
+                check_report.write_line(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
                 began = time.monotonic()
-                problems = run_of(configuration, is_again)
+                problems = run_of(run, is_again)
                 spent.append(round(time.monotonic() - began, 1))
-            check_report.write_line(f"loop land: {configuration.name}: {spent[-1]:.0f} s in the heavy step")
-            ran.append(configuration.name)
-            return problems
+                check_report.write_line(f"loop land: {name}: {spent[-1]:.0f} s in the heavy step")
+                ran.append(name)
+                if problems:
+                    return problems
+            return []
 
-        problems: list[str] = []
-        logs = str(self.logs)
-        for configuration in plan:
-            problems = step(configuration, False)
+        def step(runs: Sequence[Run], is_again: bool, tail: Callable[[], Sequence[Run]] | None = None) -> list[str]:
+            """Run some configurations in one heavy step, then the runs that `tail` gives, and give each problem.
+
+            The step calls `tail` after the configurations, because the plan of the other configurations reads the
+            build of ALWAYS after its run (THE SELECTION).
+            """
+            with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root, read=self.read, pause=self.pause, is_gate_step=True):
+                problems = run_each(runs, is_again)
+                return problems if problems or tail is None else run_each(tail(), is_again)
+
+        def stopped(problems: Sequence[str]) -> Verdict:
+            """Return the verdict of a run that a configuration with a problem stopped."""
+            elapsed = time.monotonic() - started
+            return Verdict(
+                tuple(ran),
+                tuple(problems),
+                elapsed,
+                tuple(spent),
+                candidate.commit,
+                logs=str(self.logs),
+                kept=tuple(kept),
+            )
+
+        *first, last = plan
+        for run in first:
+            problems = step((run,), False)
             if problems:
-                elapsed = time.monotonic() - started
-                return Verdict(
-                    tuple(ran), tuple(problems), elapsed, tuple(spent), candidate.commit, logs=logs, kept=tuple(kept)
-                )
+                return stopped(problems)
+        problems = step((last,), False, lambda: self.other_plan(candidate, others))
+        if problems:
+            return stopped(problems)
         final, ledgers = self._fold(candidate)
         if ledgers:
             check_report.write_line(
                 f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit {final[:9]}, "
                 f"and the tests of each configuration of objects run again"
             )
-            for configuration in plan:
-                if configuration.is_parse:
-                    continue
-                problems = step(configuration, True)
+            *first, last = (run for run in plan if not run.configuration.is_parse)
+            for run in first:
+                problems = step((run,), True)
                 if problems:
                     break
+            if not problems:
+                problems = step((last,), True, lambda: self.other_plan(candidate, others, ledgers))
         elapsed = time.monotonic() - started
-        return Verdict(tuple(ran), tuple(problems), elapsed, tuple(spent), final, ledgers, logs, tuple(kept))
+        return Verdict(tuple(ran), tuple(problems), elapsed, tuple(spent), final, ledgers, str(self.logs), tuple(kept))
 
 
 def next_run(work: Path) -> str:

@@ -54,6 +54,7 @@ FILES = {
     "data/unit.cpp": "int data;\n",
     "extra/notes.txt": "notes\n",
     "include/planted.h": "#pragma once\n",
+    "include/readme.txt": "a note that no compile reads\n",
     "other.txt": "other\n",
 }
 
@@ -213,8 +214,15 @@ def rule_cases(expect: testing.Expect) -> None:
         )
         gamma_check = deriver.test_inputs(["check", "--rule", "gamma", "--build-dir", "/b"], ())
         expect(
-            "a check of a rule that reads the build directory runs on each call",
-            gamma_check is not None and "build directory" in gamma_check.always,
+            "a check of a rule that reads the build directory gives the reason of the build and its inputs outside "
+            "the build, with the directory of its plants and its rule",
+            gamma_check is not None
+            and "build directory" in gamma_check.build
+            and not gamma_check.always
+            and "utils/registry.txt" not in relative(root, gamma_check)
+            and "utils/ledgers/gamma.txt" in relative(root, gamma_check)
+            and str(root / "utils/plants/gamma") in gamma_check.directories
+            and gamma_check.rules == ("gamma",),
         )
         gamma_witness = deriver.test_inputs(["witness", "--rule", "gamma"], ())
         expect(
@@ -231,7 +239,25 @@ def rule_cases(expect: testing.Expect) -> None:
             and str(compdb.database_file(Path("/b"))) in plugin.files,
         )
         engine = deriver.test_inputs(["check", "--engine", "plugin", "--build-dir", "/b"], ())
-        expect("a check of an engine runs on each call", engine is not None and "objects of the build" in engine.always)
+        expect(
+            "a check of an engine gives the reason of the build, and a scope of the engine plugin holds only the C and "
+            "C++ files, with no directory of its scope",
+            engine is not None
+            and "objects of the build" in engine.build
+            and not engine.always
+            and "include/planted.h" in relative(root, engine)
+            and "include/readme.txt" not in relative(root, engine)
+            and str(root / "include") not in engine.directories,
+        )
+        meter = deriver.meter_inputs("assay.guard.witness", ("alpha",))
+        expect(
+            "a meter reads the master loop, the closure of its module, and the ledger and the row of each rule that it "
+            "judges",
+            {"utils/bin/loop", "utils/assay/guard/witness.py", "utils/assay/guard/check.py", "utils/ledgers/alpha.txt"}
+            <= relative(root, meter)
+            and meter.rules == ("alpha",)
+            and sum("id='alpha'" in text for text in meter.texts) == 1,
+        )
         missing = deriver.test_inputs(["check", "--rule", "nothing"], ())
         expect("a rule that the registry does not hold runs on each call", missing is not None and bool(missing.always))
         expect("the words of a module test give no inputs", deriver.test_inputs(["selftest", "core.rows"], ()) is None)

@@ -10,10 +10,8 @@ THE TESTS
         GROUP of utils/assay/tests/.
     A test of the master with other words, such as `guard selftest MODULE`,
     gets no inputs.  `loop test` then runs it on each call.  A rule test
-    that reads a build gets a reason to run on each call.  These rule tests
-    read a build:
-      * a check of a rule with the scope word builddir
-      * a check of an engine, such as `guard check --engine plugin`.
+    that reads a build gets its inputs in the source tree, and the reason
+    that it reads the build (THE BUILD).
 
 THE INPUTS OF A RULE
     Each rule of a rule test gives these inputs:
@@ -30,6 +28,15 @@ THE INPUTS OF A RULE
       * the text of each row that the rule holds (the field held-by)
       * the texts and the files of git (THE TEXTS OF GIT).
     A change of the row of a different rule then changes no input of the rule.
+
+THE BUILD
+    A check of a rule with the scope word builddir reads the build directory
+    of its configuration.  A check of an engine, such as `guard check
+    --engine plugin`, reads the objects of the build.  The inputs of such a
+    test hold its files and its texts in the source tree.  The field build
+    tells why the test reads the build.  The files of a build are not
+    files of the source tree.  `loop test` then runs such a test on each
+    call.
 
 THE SEARCH
     A rule with no module of its own is a member of a family module.
@@ -108,8 +115,42 @@ THE SCOPE
     not match.  The runner of the engine of the rule gives the files of these
     that a scope can hold.  The runner of the engine tsast gives a rule only
     the C++ files that are not plants (is_candidate() of
-    assay.guard.engines.tsast.runner).  The context of each other engine
-    gives each file, also a plant.
+    assay.guard.engines.tsast.runner).  The runner of the engine plugin reads
+    the findings that the compile of a unit gives.  A scope of a rule of that
+    engine then names only the C and C++ files (COMPILED_SUFFIXES).  The
+    context of each other engine gives each file, also a plant.
+
+THE METERS OF A TEST
+    Two step meters of the master loop run in front of each test of a build:
+    the test launcher (assay.loop.teststep) and the fixture driver
+    (assay.loop.fixture.store).  meter_inputs() gives the inputs of one
+    meter.  These are the master loop and the files of the import closure of
+    its module.  The ledger and the row of each rule that it judges are
+    inputs too.
+
+THE TOUCH
+    The gate of `loop land` must know the tests of a build that a change can
+    change (assay.loop.gate, THE SELECTION).  read_change() reads the change
+    of a tree against a commit.  Inputs.is_touched() tells if the change
+    touches the inputs of a test.  It does when one of these facts holds:
+      * a changed path is a file of the inputs
+      * a path that the change deletes is in a directory of the inputs.
+        Each directory of the scope and of the field inputs is such a
+        directory.  The plants of the rule, the modules of its engine and a
+        data directory are such directories too.  The directory of a group,
+        and include/ for a test that compiles, are such directories too.  A
+        word of a scope names
+        files anywhere in the tree, and the word package names the files of
+        utils/.  A scope with the predicate of an engine gives no directory.
+        That engine reads only the C and C++ files of the scope, and a
+        change of such a file changes each build
+      * the change adds, removes or changes the row of a rule, and that row
+        is a text of the test
+      * the inputs hold a reason to run on each call.
+    The texts of git are no part of the touch.  The HEAD commit changes with
+    each change, and a rule reads the same history in each build.  A new
+    file of a scope is a file of the inputs, and a deleted one is in a
+    directory of the inputs.
 
 Complexity: one git listing of the tree, and one parse of each module of a closure.  O(f * s) for f files and s
 different items of the scopes.
@@ -126,8 +167,10 @@ from assay.core import rows as rows_grammar
 from assay.readers import compdb
 from assay.readers import python as python_reader
 
-# The masters of utils/bin/, relative to the root of the tree.
+# The masters of utils/bin/, relative to the root of the tree, and the master loop of the step meters (THE METERS OF A
+# TEST).
 MASTERS = ("utils/bin/guard", "utils/bin/loop", "utils/bin/setup")
+LOOP_MASTER = "utils/bin/loop"
 UTILS = "utils"
 PACKAGE = "assay"
 TESTS = "utils/assay/tests"
@@ -141,6 +184,8 @@ WITNESS = "assay.guard.witness"
 SELFTEST = "assay.guard.selftest"
 DISPATCH = frozenset({CHECK, WITNESS})
 ENGINES = "assay.guard.engines."
+# The directory of the modules of the engines, relative to the root of the tree (THE TOUCH).
+ENGINE_DIRECTORY = "utils/assay/guard/engines"
 META_RUNNER = "assay.guard.engines.meta.runner"
 PLUGIN_WITNESS = "assay.guard.engines.plugin.witness"
 # The module of the judge of the holder of a measured rule with a holder, which its witness runs.
@@ -176,6 +221,9 @@ TRACKED_SCOPE = "tracked"
 BASE_SCOPE = "base"
 QUARANTINED_SCOPE = "quarantined"
 PACKAGE_SCOPE = "package"
+# The suffixes of a C or C++ file.  A compile reads such a file, and a change of one can change each build (THE SCOPE,
+# THE TOUCH).
+COMPILED_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
 # The names of the files of the tree that git reads when it lists the files (THE TEXTS OF GIT).
 GIT_FILES = (".gitattributes", ".gitignore")
 # The words that start the texts of git and the text of the search (THE TEXTS OF GIT, THE SEARCH).
@@ -185,16 +233,99 @@ SEARCH_TEXT = "modules"
 
 
 @dataclass(frozen=True, slots=True)
+class Change:
+    """The change of a tree against a commit, as the touch reads it (THE TOUCH).
+
+    `paths` holds the absolute path of each changed file, also of a file that the change deletes.  `deleted` holds the
+    paths of `paths` that the tree does not hold.  `rows` holds each rule with a row of the registry that the change
+    adds, removes or changes.
+    """
+
+    paths: frozenset[str]
+    deleted: frozenset[str]
+    rows: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
 class Inputs:
     """The inputs of one test: the absolute paths of its files, its texts, and a reason to run on each call.
 
     `files` and `texts` are sorted.  A path that is not a file is an input too, and a new file changes the inputs.
-    `always` is empty for a test that the inputs judge.
+    `always` is empty for a test that the inputs judge.  `build` tells why the test reads the build directory of its
+    configuration, and it is empty for a test that reads no build (THE BUILD).  `directories` holds the absolute path of
+    each directory with files that the test reads, and `rules` holds each rule with a row that is a text (THE TOUCH).
     """
 
     files: tuple[str, ...] = ()
     texts: tuple[str, ...] = ()
     always: str = ""
+    build: str = ""
+    directories: tuple[str, ...] = ()
+    rules: tuple[str, ...] = ()
+
+    def is_touched(self, change: Change) -> bool:
+        """Tell if a change touches the inputs (THE TOUCH).
+
+        Complexity: linear in the files, and O(d * p) for d directories and p deleted paths.
+        """
+        if self.always or not change.paths.isdisjoint(self.files) or not change.rows.isdisjoint(self.rules):
+            return True
+        return any(path.startswith(f"{directory}/") for path in change.deleted for directory in self.directories)
+
+
+def row_text(rule: rule_registry.Rule | None, rule_id: str) -> str:
+    """Return the text of the row of a rule with no line number, or a text that tells that the rule has no row."""
+    return repr(replace(rule, line=0)) if rule is not None else f"no row of the rule {rule_id}"
+
+
+def is_compiled_file(path: str) -> bool:
+    """Tell if a path is a C or C++ file, which a compile reads (COMPILED_SUFFIXES)."""
+    return path.endswith(COMPILED_SUFFIXES)
+
+
+def directory_of(item: str) -> str | None:
+    """Return the directory, relative to the root, of the files that one item of a scope names, or None for one file.
+
+    A word names files anywhere in the tree, and its directory is the root, "".  The word package names the files of
+    utils/ (THE TOUCH).
+    """
+    if item == PACKAGE_SCOPE:
+        return UTILS
+    if item in rule_registry.SCOPE_WORDS:
+        return ""
+    return item.rstrip("/") if item.endswith("/") else None
+
+
+def read_change(root: Path, base: str, changed: Iterable[str]) -> Change:
+    """Return the change of some paths of a tree against the commit `base` (THE TOUCH).
+
+    Args:
+        root: The tree, which holds the change
+        base: The commit that the change starts from
+        changed: The paths that the change touches, relative to the root
+
+    Raises:
+        git.GitError: If git cannot read the registry at the base
+
+    Complexity: linear in the paths.  A change of the registry adds one read of the registry at the base and in the
+    tree, and the rows of the two.
+    """
+    relative = sorted(set(changed))
+    paths = frozenset(str(root / path) for path in relative)
+    deleted = frozenset(str(root / path) for path in relative if not (root / path).is_file())
+    rows: frozenset[str] = frozenset()
+    if rule_registry.REGISTRY_PATH in relative:
+        earlier_text = git.show(root, base, rule_registry.REGISTRY_PATH)
+        earlier = rule_registry.examine(earlier_text.decode("utf-8"))[0].rules if earlier_text is not None else {}
+        current_path = root / rule_registry.REGISTRY_PATH
+        current_text = current_path.read_text(encoding="utf-8") if current_path.is_file() else ""
+        current = rule_registry.examine(current_text)[0].rules
+        rows = frozenset(
+            rule_id
+            for rule_id in earlier.keys() | current.keys()
+            if row_text(earlier.get(rule_id), rule_id) != row_text(current.get(rule_id), rule_id)
+        )
+    return Change(paths, deleted, rows)
 
 
 @dataclass(frozen=True, slots=True)
@@ -536,6 +667,20 @@ class Deriver:
                 found += self.scope_files(item)
         return found
 
+    @staticmethod
+    def data_directories(modules: Iterable[str]) -> list[str]:
+        """Return the directory of each item of MODULE_DATA that the modules give and that names a directory."""
+        return [
+            directory
+            for name in modules
+            for item in MODULE_DATA.get(name, ())
+            if (directory := directory_of(item)) is not None
+        ]
+
+    def absolute(self, files: Iterable[str]) -> tuple[str, ...]:
+        """Return the absolute path of each path relative to the root, one time each, sorted."""
+        return tuple(sorted({str(self._root / file) for file in files}))
+
     def rule_modules(
         self, rule: rule_registry.Rule, subcommand: str
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
@@ -571,8 +716,11 @@ class Deriver:
     def scope_predicate(rule: rule_registry.Rule) -> Callable[[str], bool] | None:
         """Return the predicate of the files that the runner of the engine of a rule gives it, or None for each file.
 
-        Only the runner of the engine tsast gives a rule a part of the files of its scope (THE SCOPE).
+        The runner of the engine tsast gives a rule only the C++ files that are not plants.  The runner of the engine
+        plugin reads only the findings of the C and C++ files that a compile reads (THE SCOPE).
         """
+        if rule.engine == rule_registry.Engine.PLUGIN:
+            return is_compiled_file
         if rule.engine != rule_registry.Engine.TSAST:
             return None
         from assay.guard.engines.tsast import runner as tree_runner
@@ -588,35 +736,60 @@ class Deriver:
         rule = self.registry.rules.get(rule_id)
         if rule is None:
             return Inputs(always=f"the registry has no readable row of the rule {rule_id}")
+        build = ""
         if subcommand == "check" and BUILD_SCOPE in rule.scope:
-            return Inputs(always=f"the rule {rule_id} reads the build directory (the scope word {BUILD_SCOPE})")
+            build = f"the rule {rule_id} reads the build directory (the scope word {BUILD_SCOPE})"
         roots, searched, listed = self.rule_modules(rule, subcommand)
         modules = self.closure(roots)
         predicate = self.scope_predicate(rule)
         files = [*MASTERS, RULE_TABLE, f"{LEDGERS}/{rule_id}.txt", *searched]
         files += [file for name in modules if (file := self.module_file(name)) is not None]
         files += self.scope_files(f"{PLANTS}{rule_id}/")
+        directories = [f"{PLANTS}{rule_id}", f"{ENGINE_DIRECTORY}/{rule.engine.directory}"]
         for item in rule.scope:
             if item != BUILD_SCOPE:
                 files += self.scope_files(item, predicate)
+                directory = directory_of(item) if predicate is None else None
+                directories += [directory] if directory is not None else []
         for item in rule.inputs:
             files += self.scope_files(item)
+            directories += [directory] if (directory := directory_of(item)) is not None else []
         files += self.data_files(modules)
+        directories += self.data_directories(modules)
         texts, read_by_git = self.git_texts(modules, roots)
         files += read_by_git
         held = [other.id for other in self.registry.rules.values() if other.held_by == rule_id]
         texts += self.row_texts([rule_id, *held])
         if listed:
             texts.append(f"{SEARCH_TEXT} {rule.engine.directory}: {' '.join(listed)}")
-        return Inputs(tuple(sorted({str(self._root / file) for file in files})), tuple(sorted(texts)))
+        return Inputs(
+            self.absolute(files),
+            tuple(sorted(texts)),
+            build=build,
+            directories=self.absolute(directories),
+            rules=tuple(sorted({rule_id, *held})),
+        )
 
     def row_texts(self, rule_ids: Iterable[str]) -> tuple[str, ...]:
         """Return the text of the row of each rule with no line number, or a text that tells that the rule has no row."""
-        texts: list[str] = []
-        for rule_id in rule_ids:
-            rule = self.registry.rules.get(rule_id)
-            texts.append(repr(replace(rule, line=0)) if rule is not None else f"no row of the rule {rule_id}")
-        return tuple(sorted(texts))
+        return tuple(sorted(row_text(self.registry.rules.get(rule_id), rule_id) for rule_id in rule_ids))
+
+    def meter_inputs(self, module: str, rule_ids: Iterable[str]) -> Inputs:
+        """Return the inputs of a step meter of the master loop that runs in front of each test (THE METERS OF A TEST).
+
+        Args:
+            module: The module of the meter, such as assay.loop.teststep
+            rule_ids: The rules that the meter judges
+
+        Complexity: one parse of each module of the closure, one time for each call of `loop test`.
+        """
+        rules = tuple(sorted(set(rule_ids)))
+        files = [
+            LOOP_MASTER,
+            *(file for name in self.closure([module]) if (file := self.module_file(name)) is not None),
+        ]
+        files += [f"{LEDGERS}/{rule_id}.txt" for rule_id in rules]
+        return Inputs(self.absolute(files), self.row_texts(rules), rules=rules)
 
     def call_inputs(self, call: Call) -> Inputs:
         """Return the inputs of a rule test: the union of the inputs of its rules (THE TESTS).
@@ -626,8 +799,9 @@ class Deriver:
         """
         if call.has_root:
             return Inputs(always="the call reads the tree of the option --root")
+        build = ""
         if call.subcommand == "check" and call.engines:
-            return Inputs(always=f"a check of the engine {call.engines[0]} reads the objects of the build")
+            build = f"a check of the engine {call.engines[0]} reads the objects of the build"
         rule_ids = list(call.rules)
         for engine in call.engines:
             rule_ids += [
@@ -639,17 +813,29 @@ class Deriver:
             return Inputs(always="the call names no rule")
         files: set[str] = set()
         texts: set[str] = set()
+        directories: set[str] = set()
+        rules: set[str] = set()
         for rule_id in rule_ids:
             found = self.rule_inputs(rule_id, call.subcommand)
             if found.always:
                 return found
+            build = build or found.build
             files.update(found.files)
             texts.update(found.texts)
+            directories.update(found.directories)
+            rules.update(found.rules)
         if call.runs_compiler:
-            files.update(str(self._root / file) for file in self.scope_files(INCLUDE))
+            files.update(self.absolute(self.scope_files(INCLUDE)))
+            directories.update(self.absolute([INCLUDE.rstrip("/")]))
         if call.subcommand == "witness" and call.build_dir:
             files.add(str(compdb.database_file(Path(call.build_dir))))
-        return Inputs(tuple(sorted(files)), tuple(sorted(texts)))
+        return Inputs(
+            tuple(sorted(files)),
+            tuple(sorted(texts)),
+            build=build,
+            directories=tuple(sorted(directories)),
+            rules=tuple(sorted(rules)),
+        )
 
     def group_inputs(self, group: str, runs_compiler: bool) -> Inputs:
         """Return the inputs of a group test (THE INPUTS OF A GROUP).
@@ -667,13 +853,15 @@ class Deriver:
         modules = self.closure(roots)
         files = [*MASTERS, *(file for name in modules if (file := self.module_file(name)) is not None)]
         files += self.data_files(modules)
+        directories = [tests.rstrip("/"), *self.data_directories(modules)]
         if REGISTRY_MODULE in modules:
             files.append(rule_registry.REGISTRY_PATH)
         if runs_compiler:
             files += self.scope_files(INCLUDE)
+            directories.append(INCLUDE.rstrip("/"))
         texts, read_by_git = self.git_texts(modules, roots)
         files += read_by_git
-        return Inputs(tuple(sorted({str(self._root / file) for file in files})), tuple(sorted(texts)))
+        return Inputs(self.absolute(files), tuple(sorted(texts)), directories=self.absolute(directories))
 
     def test_inputs(self, words: Sequence[str], variables: Collection[str]) -> Inputs | None:
         """Return the inputs of a test of the master guard, or None when the words are no rule test and no group test.

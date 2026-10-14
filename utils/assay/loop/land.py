@@ -371,6 +371,7 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.loop import gate, heavy
 from assay.loop import history as loop_history
+from assay.loop import inputs as guard_inputs
 
 # The refusals of the compare-and-swap before the batch stops, and the range of the random pause after one (THE
 # COMPARE-AND-SWAP).
@@ -1129,7 +1130,7 @@ def cut_point(links: Sequence[Link]) -> int:
     """
     seen: set[str] = set()
     for index, link in enumerate(links):
-        files = {path for path in link.changed if path.endswith(gate.CPP_SUFFIXES)}
+        files = {path for path in link.changed if guard_inputs.is_compiled_file(path)}
         if files & seen:
             return index
         seen |= files
