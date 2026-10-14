@@ -6,13 +6,18 @@ line.  Exit 0 when each case holds, else 1.
 The cases read a planted file of the memory.  They give the wait a planted
 reader and a pause that does not sleep.  They make sure that a linked work
 tree of a planted repository finds the lock of the main work tree.  They also
-make sure that the lock is exclusive while a step holds it.
+make sure that the lock is exclusive while a step holds it.  A session of the
+gate must let a step of the gate go first.  A different step must wait for
+the session, also when it gets the lock after the session starts.
 """
 
 import fcntl
 import tempfile
-from collections.abc import Iterator
+import threading
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import IO
 
 from assay.core import git, proc, testing
 from assay.loop import heavy
@@ -98,6 +103,78 @@ def lock_cases(expect: testing.Expect) -> None:
             fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
             held.append(True)
         expect("a heavy step holds the lock exclusively, and the lock is free after the step", held == [True, True])
+        expect(
+            "the main work tree, a directory of it and a linked work tree find the one lock of a session of the gate",
+            heavy.gate_path(linked) == main_tree.resolve() / heavy.GATE_FILE
+            and heavy.gate_path(main_tree / "sub") == main_tree.resolve() / heavy.GATE_FILE,
+        )
+
+
+def is_free(path: Path) -> bool:
+    """Tell if a different holder can take the exclusive lock of a file at this time."""
+    return not heavy.is_held(path)
+
+
+def wait_until(condition: Callable[[], bool], limit_s: float = 10.0) -> bool:
+    """Wait in steps of 10 ms until a condition holds, at most for the limit, and tell if it holds."""
+    waited = 0.0
+    while not condition() and waited < limit_s:
+        time.sleep(0.01)
+        waited += 0.01
+    return condition()
+
+
+def gate_cases(expect: testing.Expect) -> None:
+    """Hold a session of the gate: a step of the gate goes first, and each other step waits."""
+    with tempfile.TemporaryDirectory(prefix="heavy-gate-") as work_text:
+        root = Path(work_text)
+        entered = threading.Event()
+        # The check after the lock found a session: the step held the lock of the heavy steps at that time.
+        found_session = threading.Event()
+
+        def no_pause(_seconds: float) -> None:
+            """A pause that does not wait."""
+
+        def is_session(gate_handle: IO[str]) -> bool:
+            """Tell if a session runs, as the step does after it gets the lock, and mark a session that runs."""
+            is_running = heavy.is_gate_running(gate_handle)
+            if is_running:
+                found_session.set()
+            return is_running
+
+        def other_step() -> None:
+            """Run a heavy step that is not a step of the gate, and mark the entry into its block."""
+            with heavy.heavy_step(16.0, root, reader([32.0]), no_pause, is_session=is_session):
+                entered.set()
+
+        with heavy.gate_session(root):
+            with heavy.heavy_step(16.0, root, reader([32.0]), no_pause, is_gate_step=True):
+                expect("a step of the gate takes the lock while its session runs", not is_free(heavy.lock_path(root)))
+            worker = threading.Thread(target=other_step, daemon=True)
+            worker.start()
+            expect(
+                "a different step waits while a session of the gate runs, and it holds no lock of the heavy steps",
+                not entered.wait(0.3) and is_free(heavy.lock_path(root)),
+            )
+        worker.join(10.0)
+        expect("the step goes on after the session ends", entered.is_set())
+        entered.clear()
+        with open(heavy.lock_path(root), "a", encoding="ascii") as busy:
+            fcntl.flock(busy, fcntl.LOCK_EX)
+            worker = threading.Thread(target=other_step, daemon=True)
+            worker.start()
+            expect("a step waits for the lock of a step that runs", not entered.wait(0.3))
+            with heavy.gate_session(root):
+                fcntl.flock(busy, fcntl.LOCK_UN)
+                expect(
+                    "a step that gets the lock after a session started finds the session, frees the lock for the "
+                    "gate, and waits",
+                    found_session.wait(10.0)
+                    and wait_until(lambda: is_free(heavy.lock_path(root)))
+                    and not entered.wait(0.3),
+                )
+            worker.join(10.0)
+        expect("that step goes on after the session ends", entered.is_set())
 
 
 def exit_cases(expect: testing.Expect) -> None:
@@ -121,4 +198,4 @@ def exit_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
-    return testing.run(__name__.removeprefix("assay."), argv, (memory_cases, lock_cases, exit_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (memory_cases, lock_cases, gate_cases, exit_cases))

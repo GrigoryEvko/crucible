@@ -13,6 +13,32 @@ THE LOCK
     other apart.  The kernel removes the lock when the process ends, also on
     a signal.
 
+THE PRIORITY OF THE GATE
+    The gate of `loop land` is the one serial path of each landing
+    (assay.loop.land).  All work trees of the host wait for it, because no
+    change gets on main before the gate accepts it.  A heavy step of a work
+    tree only makes its own work shorter.  For this reason, the gate goes
+    first.  A session of the gate holds an exclusive lock of flock(2) on the
+    file GATE_FILE for all of its batch (gate_session()).  That file is
+    adjacent to LOCK_FILE.  A heavy step that is not a step of the gate
+    takes that lock in the shared mode and frees it immediately.  Then it
+    waits for LOCK_FILE, and it holds nothing while it waits.  The session
+    then gets its lock with no wait.  When the step gets LOCK_FILE, it looks
+    again.  When a session started while it waited, it frees LOCK_FILE and
+    waits for the session to end.  A step that started before the session
+    continues to its end, and the gate waits for it.  The steps of the gate
+    do not look at GATE_FILE.  The kernel frees the lock of a session that
+    ends, also on a signal.
+
+THE COMMAND OF A STEP
+    `loop heavy` holds the lock in its own process, on a descriptor that the
+    command does not get.  A process that the command starts and that
+    continues after it then does not keep the lock.  The command gets the
+    variable STEP_VARIABLE in its environment.  The gate of `loop land` takes
+    LOCK_FILE for each of its steps.  A landing in a heavy step then waits
+    for itself, and `loop land` refuses to run with that variable
+    (assay.loop.land, THE LOCK OF A HEAVY STEP).
+
 THE MEMORY
     While the step holds the lock, it waits until the host keeps a level of
     memory available for SAMPLES samples in sequence, INTERVAL_S seconds
@@ -36,6 +62,7 @@ import fcntl
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import IO
 
 from assay.core import cli, git, proc
 from assay.core import report as check_report
@@ -44,6 +71,8 @@ from assay.core.paths import REPO_ROOT
 
 # The lock file of the heavy steps, relative to the main work tree of the repository (THE LOCK).
 LOCK_FILE = Path(".worktrees/.grun/heavy.lock")
+# The lock file of a session of the gate, relative to the main work tree of the repository (THE PRIORITY OF THE GATE).
+GATE_FILE = Path(".worktrees/.grun/gate.lock")
 # The levels of the available memory, in GB, and the samples of the wait (THE MEMORY).
 NAMED_LEVEL_GB = 8.0
 FULL_LEVEL_GB = 16.0
@@ -54,9 +83,14 @@ MEMORY_FIELD = "MemAvailable:"
 KB_PER_GB = 1024 * 1024
 # The exit of a command that ends on a signal: this base plus the number of the signal, as a shell gives it.
 SIGNAL_EXIT_BASE = 128
+# The variable that the command of a step gets, and its value (THE COMMAND OF A STEP).
+STEP_VARIABLE = "CRUCIBLE_HEAVY_STEP"
+STEP_VALUE = "1"
 
 type Reader = Callable[[], float | None]
 type Pause = Callable[[float], None]
+# The check after the lock: it takes the open file of GATE_FILE, and it tells if a session of the gate runs.
+type SessionCheck = Callable[[IO[str]], bool]
 
 
 def available_gb(path: Path = MEMORY_FILE) -> float | None:
@@ -85,6 +119,60 @@ def main_work_tree(root: Path) -> Path:
 def lock_path(root: Path) -> Path:
     """Return the lock file of the heavy steps of the repository of a tree (THE LOCK)."""
     return main_work_tree(root) / LOCK_FILE
+
+
+def gate_path(root: Path) -> Path:
+    """Return the lock file of a session of the gate of the repository of a tree (THE PRIORITY OF THE GATE)."""
+    return main_work_tree(root) / GATE_FILE
+
+
+@contextlib.contextmanager
+def gate_session(root: Path = REPO_ROOT) -> Iterator[None]:
+    """Hold the lock of a session of the gate exclusively for the block (THE PRIORITY OF THE GATE).
+
+    The block waits only while a different session holds the lock, because a heavy step holds no shared lock while
+    it waits.
+    """
+    path = gate_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="ascii") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def is_locked(handle: IO[str], mode: int) -> bool:
+    """Tell if a different open file holds a lock of flock(2) that keeps the lock of a mode from an open file."""
+    try:
+        fcntl.flock(handle, mode | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    fcntl.flock(handle, fcntl.LOCK_UN)
+    return False
+
+
+def is_held(path: Path) -> bool:
+    """Tell if a different open file holds a lock of flock(2) on a file.  A missing file gives False."""
+    try:
+        with open(path, encoding="ascii") as handle:
+            return is_locked(handle, fcntl.LOCK_EX)
+    except FileNotFoundError:
+        return False
+
+
+def is_gate_running(handle: IO[str]) -> bool:
+    """Tell if a session of the gate holds its lock: the shared mode is not free (THE PRIORITY OF THE GATE)."""
+    return is_locked(handle, fcntl.LOCK_SH)
+
+
+def wait_for_gate(handle: IO[str]) -> None:
+    """Wait while a session of the gate holds its lock, and hold nothing after the wait (THE PRIORITY OF THE GATE)."""
+    if is_gate_running(handle):
+        check_report.write_line("heavy: a session of the gate runs, and the step waits for it")
+        fcntl.flock(handle, fcntl.LOCK_SH)
+        fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def wait_for_memory(
@@ -117,20 +205,36 @@ def wait_for_memory(
 
 @contextlib.contextmanager
 def heavy_step(
-    level_gb: float, root: Path = REPO_ROOT, read: Reader = available_gb, pause: Pause = time.sleep
+    level_gb: float,
+    root: Path = REPO_ROOT,
+    read: Reader = available_gb,
+    pause: Pause = time.sleep,
+    is_gate_step: bool = False,
+    is_session: SessionCheck = is_gate_running,
 ) -> Iterator[None]:
     """Hold the lock of the heavy steps for the block, and wait for the memory first (THE LOCK, THE MEMORY).
+
+    A step that is not a step of the gate also waits while a session of the gate runs (THE PRIORITY OF THE GATE).
 
     Args:
         level_gb: The level of the available memory, in GB
         root: A tree of the repository
         read: The reader of the available memory
         pause: The function that waits one interval
+        is_gate_step: True for a step of the gate, which does not wait for a session of the gate
+        is_session: The check after the lock, which tells if a session of the gate started.  A step of the gate
+            does not call it
     """
     path = lock_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="ascii") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+    with open(path, "a", encoding="ascii") as handle, open(gate_path(root), "a", encoding="ascii") as gate_handle:
+        while True:
+            if not is_gate_step:
+                wait_for_gate(gate_handle)
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            if is_gate_step or not is_session(gate_handle):
+                break
+            fcntl.flock(handle, fcntl.LOCK_UN)
         try:
             waited, value = wait_for_memory(level_gb, read, pause)
             if value is None:
@@ -180,6 +284,7 @@ def main(argv: list[str]) -> int:
                     command,
                     timeout_s=proc.BUILD_S,
                     cwd=options.directory,
+                    env=proc.environment({STEP_VARIABLE: STEP_VALUE}),
                     stdout=proc.Output.INHERIT,
                     stderr=proc.Output.INHERIT,
                 )
