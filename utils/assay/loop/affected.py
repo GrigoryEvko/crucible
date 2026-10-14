@@ -48,8 +48,11 @@ THE TESTS OF THE MASTER GUARD
     ID` or `guard witness --engine plugin`.  A group test runs `guard
     selftest GROUP`.  The inputs are the modules of the import closure, the
     ledger, the plants, the files of the scope, the rule table and the row
-    of the rule.  The HEAD commit and the list of the files of the tree are
-    inputs too.
+    of the rule.  The files that the search of the module of the rule reads
+    are inputs too.  Only a test that can read the history gets the HEAD
+    commit.  Only a test that can list the files of the tree gets the list
+    of the files, and each .gitignore and .gitattributes (assay.loop.inputs,
+    THE TEXTS OF GIT).
 
     The fingerprint is a hash of the ctest record of the test, of these
     inputs and of the inputs of the test launcher.  It also holds the bytes
@@ -1053,21 +1056,28 @@ def skipped_tests(build_dir: Path) -> list[str]:
     return (build_dir / STATE_DIRECTORY / "skipped.txt").read_text().split()
 
 
-# The rows of the planted rules of the guard tests: two rules with a scope of their own, and a rule of the build.
+# The rows of the planted rules of the guard tests: three rules with a scope of their own, and a rule of the build.
 GUARD_RULES = (
     "rule alpha engine=meta scope=data/alpha/ ledger=none doc=XV | a planted rule | change nothing",
     "rule beta engine=meta scope=data/beta/ ledger=none doc=XV | a planted rule | change nothing",
     "rule gamma engine=meta scope=builddir ledger=none doc=XV | a planted rule of the build | change nothing",
+    "rule delta engine=meta scope=data/delta/ ledger=none doc=XV | a planted rule of the history | change nothing",
 )
-# The files of the fake tree of the guard tests.  The module of the rule alpha imports a shared module, the test
-# module of the group imports a helper, and a third module is in no closure.
+# The files of the fake tree of the guard tests.  The module of the rule alpha imports a shared module.  The module of
+# beta lists the files of the tree, and the module of delta reads the history.  The test module of the group imports a
+# helper.  A fourth module is in no closure.
 GUARD_FILES = {
     ".gitignore": "build/\n",
     f"utils/bin/{GUARD_MASTER}": "import sys\nsys.exit(0)\n",
     "utils/registry.txt": rule_registry.planted(GUARD_RULES),
     "utils/assay/guard/engines/meta/alpha.py": "from assay.fake import shared\n",
-    "utils/assay/guard/engines/meta/beta.py": "VALUE = 1\n",
+    "utils/assay/guard/engines/meta/beta.py": (
+        "from assay.core import git\ndef listed(root):\n    return git.tracked_files(root)\n"
+    ),
     "utils/assay/guard/engines/meta/gamma.py": "VALUE = 1\n",
+    "utils/assay/guard/engines/meta/delta.py": (
+        "from assay.core import git\ndef changed(root):\n    return git.path_history(root, [])\n"
+    ),
     "utils/assay/fake/shared.py": "VALUE = 1\n",
     "utils/assay/fake/helper.py": "VALUE = 1\n",
     "utils/assay/fake/other.py": "VALUE = 1\n",
@@ -1076,6 +1086,7 @@ GUARD_FILES = {
     "utils/plants/beta/plant-one/input.txt": "one\n",
     "data/alpha/item.txt": "alpha\n",
     "data/beta/item.txt": "beta\n",
+    "data/delta/item.txt": "delta\n",
 }
 # The tests of the fake tree: the words of the master guard after the launcher.
 GUARD_TESTS = (
@@ -1083,6 +1094,7 @@ GUARD_TESTS = (
     ("guard_alpha_witness", ("witness", "--rule", "alpha")),
     ("guard_beta", ("check", "--rule", "beta", "--build-dir", "{build}")),
     ("guard_gamma", ("check", "--rule", "gamma", "--build-dir", "{build}")),
+    ("guard_delta", ("check", "--rule", "delta", "--build-dir", "{build}")),
     ("selftest_fakegroup", ("selftest", "fakegroup")),
 )
 
@@ -1147,12 +1159,18 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
             [*GUARD_RULES[:1], GUARD_RULES[1].replace("change nothing", "change one thing"), *GUARD_RULES[2:]]))
         ran, output = fake.ran()
         expect("a change of the row of beta runs only the test of beta", ran == {"guard_beta", "guard_gamma"}, output)
-        fake.write("utils/ledgers/alpha.txt", "# a planted ledger\n")
+        fake.write("notes.txt", "a new file\n")
         ran, output = fake.ran()
-        expect("a new file of the tree runs each guard test", len(ran) == len(GUARD_TESTS), output)
+        expect("a new file of the tree runs only the tests whose modules list the files",
+               ran == {"guard_beta", "guard_gamma"}, output)
         git.commit_all(fake.source_dir, "a second commit")
         ran, output = fake.ran()
-        expect("a commit runs each guard test", len(ran) == len(GUARD_TESTS), output)
+        expect("a commit runs only the tests whose modules read the history", ran == {"guard_delta", "guard_gamma"},
+               output)
+        fake.write("utils/ledgers/alpha.txt", "# a planted ledger\n")
+        ran, output = fake.ran()
+        expect("a new ledger of alpha runs the tests of alpha and the tests that list the files",
+               ran == {"guard_alpha", "guard_alpha_witness", "guard_beta", "guard_gamma"}, output)
         fake.write("utils/ledgers/alpha.txt", "# a planted ledger with a second line\n")
         ran, output = fake.ran()
         expect("a change of the ledger of alpha runs only the tests of alpha",

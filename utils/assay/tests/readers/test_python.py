@@ -43,6 +43,18 @@ def function() -> str:
 '''
 
 
+# A source with code that runs at the import: an assignment, a decorator and a default of a function.
+AT_IMPORT = """from assay.core import git
+
+LISTED = git.tracked_files
+
+
+@decorate
+def planted(value=compute()):
+    return helper(value)
+"""
+
+
 def parsed() -> python_reader.Source:
     """Parse the planted source."""
     return python_reader.parse(SOURCE, SHOWN)
@@ -164,6 +176,27 @@ def import_cases(expect: testing.Expect) -> None:
         "dotted() keeps a name that no import makes, and gives None for an expression that is not a name",
         python_reader.dotted(ast.parse("print", mode="eval").body, table) == "print"
         and python_reader.dotted(ast.parse("f().x", mode="eval").body, table) is None,
+    )
+    expect(
+        "references() gives the longest chain of names that starts with a name of an import, and no local name",
+        python_reader.references(source) == ("os.path.join", "subprocess.run"),
+    )
+    shaped = python_reader.shape(source)
+    expect(
+        "shape() gives each top-level function and class with the references and the names of its code",
+        set(shaped.definitions) == {"Holder", "function"}
+        and shaped.definitions["function"].references == ("os.path.join", "subprocess.run")
+        and "value" in shaped.definitions["Holder"].names
+        and shaped.module.references == ()
+        and shaped.imports.target("sp") == "subprocess",
+    )
+    at_import = python_reader.shape(python_reader.parse(AT_IMPORT, SHOWN))
+    expect(
+        "the code that runs at the import holds each other statement, and the decorators and defaults of a function",
+        at_import.module.references == ("assay.core.git.tracked_files",)
+        and {"compute", "decorate"} <= set(at_import.module.names)
+        and "helper" not in at_import.module.names
+        and {"compute", "decorate", "helper"} <= set(at_import.definitions["planted"].names),
     )
 
 

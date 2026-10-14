@@ -1234,31 +1234,3 @@ def key_path(key: tuple[str, ...]) -> str:
     if len(key) == 4:
         return path_of_head(key[1])
     return path_of_head(key[0]) if len(key) == 3 else ""
-
-
-def history(rule: Rule, root: Path = REPO_ROOT, earlier: Iterable[str] = ()) -> list[tuple[str, str, int | None]]:
-    """Return the row count of the ledger of a rule at each commit that changed it, newest first.
-
-    Each item is the commit, its subject and the count after the commit.
-    `earlier` gives the earlier paths of the ledger: a version of an earlier
-    path counts at a commit where the ledger file does not exist.
-
-    Raises:
-        assay.core.git.GitError: If git fails
-    """
-    from assay.core import git
-
-    paths = [shown_path(rule.id), *earlier]
-    states = git.path_history(root, paths)
-    result: list[tuple[str, str, int | None]] = []
-    for commit in states.commits:
-        text = next(
-            (
-                data.decode("utf-8", "replace")
-                for path in paths
-                if (data := states.at.get((commit.sha, path))) is not None
-            ),
-            None,
-        )
-        result.append((commit.sha, commit.subject, count_rows(text)))
-    return result

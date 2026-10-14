@@ -34,13 +34,21 @@ THE IMPORTS
     attributes through that table, such as subprocess.run for `sp.run` after
     `import subprocess as sp`.
 
+THE REFERENCES
+    references() gives the dotted name of each chain of names of a source
+    that starts with a name of an import.  shape() gives each top-level
+    function and class of a source with the references and the other names
+    that its code reads.  It gives the same facts for the code that runs at
+    the import of the module.  `loop test` follows these names from function
+    to function (assay.loop.inputs, THE CALLS).
+
 `guard selftest tests.readers.test_python` does a test of the module.
 """
 
 import ast
 import io
 import tokenize
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -250,6 +258,101 @@ def dotted(node: ast.expr, table: Bindings) -> str | None:
         return None
     parts.append(table.target(current.id) or current.id)
     return ".".join(reversed(parts))
+
+
+@dataclass(frozen=True, slots=True)
+class Definition:
+    """A top-level function or class of a source, or the import code of its module, with the names that its code reads.
+
+    `references` holds the dotted name of each chain of names that starts with
+    a name of an import (THE REFERENCES).  `names` holds each other name that
+    the code reads, such as a function of the same module.  It also holds the
+    first name of a chain of attributes on such a name.
+    """
+
+    name: str
+    references: tuple[str, ...]
+    names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Shape:
+    """The top-level functions and classes of a source by their names, the import code of its module, and its imports."""
+
+    definitions: Mapping[str, Definition]
+    module: Definition
+    imports: Bindings
+
+
+def used_names(nodes: Sequence[ast.AST], table: Bindings) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return the references and the other names that the code of the nodes reads, each sorted (Definition).
+
+    Only the longest chain counts: `git.tracked_files` gives
+    assay.core.git.tracked_files, and not assay.core.git too.  A chain that
+    starts with a name of no import gives its first name.  A name that the
+    code writes is no name that it reads.  Complexity: linear in the number
+    of the nodes.
+    """
+    # ast.walk() gives a node before its children.  A chain then marks its inner part before the walk gets to it.
+    inner: set[int] = set()
+    references: set[str] = set()
+    names: set[str] = set()
+    for root in nodes:
+        for node in ast.walk(root):
+            if isinstance(node, ast.Attribute):
+                inner.add(id(node.value))
+            if id(node) in inner or not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            first: ast.expr = node
+            while isinstance(first, ast.Attribute):
+                first = first.value
+            if not isinstance(first, ast.Name):
+                continue
+            if table.target(first.id) is not None:
+                found = dotted(node, table)
+                if found is not None:
+                    references.add(found)
+            elif isinstance(first.ctx, ast.Load):
+                names.add(first.id)
+    return tuple(sorted(references)), tuple(sorted(names))
+
+
+def references(source: Source) -> tuple[str, ...]:
+    """Return the dotted name of each chain of names of a source that starts with a name of an import, sorted.
+
+    `git.tracked_files(root)` after `from assay.core import git` gives
+    assay.core.git.tracked_files (used_names()).  Complexity: linear in the
+    number of the nodes of the tree.
+    """
+    return used_names([source.tree], bindings(source))[0]
+
+
+def shape(source: Source) -> Shape:
+    """Return the top-level functions and classes of a source, the import code of its module, and its import table.
+
+    The import code of the module is the code that runs at the import of the
+    module.  It holds each other top-level statement, and the decorators and
+    the defaults of each top-level function.  It also holds the bases, the
+    decorators and each statement that is not a function of each top-level
+    class.  The code of a function, and of each method of a class, is part of
+    its definition.  Complexity: linear in the number of the nodes of the tree.
+    """
+    table = bindings(source)
+    found: dict[str, Definition] = {}
+    at_import: list[ast.AST] = []
+    functions = (ast.FunctionDef, ast.AsyncFunctionDef)
+    for node in source.tree.body:
+        if isinstance(node, functions):
+            at_import += [*node.decorator_list, *node.args.defaults]
+            at_import += [default for default in node.args.kw_defaults if default is not None]
+        elif isinstance(node, ast.ClassDef):
+            at_import += [*node.decorator_list, *node.bases, *(keyword.value for keyword in node.keywords)]
+            at_import += [item for item in node.body if not isinstance(item, functions)]
+        else:
+            at_import.append(node)
+            continue
+        found[node.name] = Definition(node.name, *used_names([node], table))
+    return Shape(found, Definition(MODULE_SCOPE, *used_names(at_import, table)), table)
 
 
 def imports(source: Source) -> tuple[str, ...]:

@@ -5,6 +5,7 @@ line.  Exit 0 when each case holds, else 1.  Each case runs in a throwaway
 repository.
 """
 
+import inspect
 import os
 import sys
 from collections.abc import Callable
@@ -321,6 +322,29 @@ def isolation_cases(expect: Callable[[str, bool], None]) -> None:
         )
 
 
+def kind_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check that each function of the module has a kind, and that a function of no reads has no second kind."""
+    functions = {
+        name for name, value in vars(git).items() if inspect.isfunction(value) and value.__module__ == git.__name__
+    }
+    kinds = git.READS_HISTORY | git.READS_NAMES | git.READS_NEITHER
+    expect(
+        f"each function of the module has a kind, and these have none: {sorted(functions - kinds)}", functions <= kinds
+    )
+    expect(
+        f"each name of a kind is a function of the module, and these are not: {sorted(kinds - functions)}",
+        kinds <= functions,
+    )
+    expect(
+        "a function of READS_NEITHER has no second kind",
+        not (git.READS_NEITHER & (git.READS_HISTORY | git.READS_NAMES)),
+    )
+    expect(
+        "a function that calls new_files() reads the names of the files",
+        {"change_base", "changed_files"} <= git.READS_NAMES,
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -345,6 +369,7 @@ def main(argv: list[str]) -> int:
     file_change_cases(expect)
     replaced_cases(expect)
     isolation_cases(expect)
+    kind_cases(expect)
     if failures:
         print(f"tests.core.test_git: FAILED, {len(failures)} case(s) did not hold")
         return 1

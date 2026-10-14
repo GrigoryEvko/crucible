@@ -265,22 +265,62 @@ def declared_rules(path: Path) -> tuple[bool, list[str]]:
     return has_function, keys
 
 
+@dataclass(frozen=True, slots=True)
+class ModuleSearch:
+    """The result of the search of the module of a rule, and what the search read (module_search()).
+
+    `read` holds the path of each file that the search opened or tried,
+    relative to the root, in the sequence of the search.  `listed` holds the
+    names of the modules of the engine directory that the search compared,
+    up to the match.  A search that found the own module of the rule lists
+    no name.
+    """
+
+    name: str
+    read: tuple[str, ...]
+    listed: tuple[str, ...]
+
+
+def module_search(
+    rule: rule_registry.Rule,
+    root: Path = REPO_ROOT,
+    declared: Callable[[Path], tuple[bool, list[str]]] = declared_rules,
+) -> ModuleSearch:
+    """Return the module of a rule, and each file and each name that the search read.
+
+    The search tries the own module of the rule, ID.py with underscores.
+    With no such file, it parses the modules of the engine directory in the
+    sequence of the names.  It stops at the module that names the rule in
+    its table RULES.  When the engine directory holds no such module, the result is the name of
+    the own module of the rule.  Then the import fails with the name of the
+    missing file.  `loop test` takes the files and the names of the search as
+    the inputs of a test of the rule (assay.loop.inputs).  `declared` reads
+    the table of one module.  `loop test` gives a reader that keeps each
+    result for its call.
+    Complexity: one parse of each module of the engine directory up to the match, for a rule of a family.
+    """
+    own = module_name(rule.id, rule.engine.directory)
+    relative = f"{ENGINES}/{rule.engine.directory}"
+    own_file = f"{relative}/{rule.id.replace('-', '_')}.py"
+    if (root / own_file).is_file():
+        return ModuleSearch(own, (own_file,), ())
+    read = [own_file]
+    listed: list[str] = []
+    for path in sorted((root / relative).glob("*.py")):
+        read.append(f"{relative}/{path.name}")
+        listed.append(path.name)
+        if rule.id in declared(path)[1]:
+            return ModuleSearch(f"assay.guard.engines.{rule.engine.directory}.{path.stem}", tuple(read), tuple(listed))
+    return ModuleSearch(own, tuple(read), tuple(listed))
+
+
 def module_name_of(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> str:
     """Return the dotted name of the module of a rule: its own module, else the family module that names it.
 
-    When the engine directory holds no such module, the function gives the
-    name of the own module of the rule.  Then the import fails with the name
-    of the missing file.
-    Complexity: one parse of each module of the engine directory, for a rule of a family.
+    module_search() gives the rules of the search.  Complexity: one parse of each module of the engine directory up to
+    the match, for a rule of a family.
     """
-    own = module_name(rule.id, rule.engine.directory)
-    directory = root / ENGINES / rule.engine.directory
-    if (directory / f"{rule.id.replace('-', '_')}.py").is_file():
-        return own
-    for path in sorted(directory.glob("*.py")):
-        if rule.id in declared_rules(path)[1]:
-            return f"assay.guard.engines.{rule.engine.directory}.{path.stem}"
-    return own
+    return module_search(rule, root).name
 
 
 @dataclass(frozen=True, slots=True)

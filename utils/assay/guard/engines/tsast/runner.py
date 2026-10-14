@@ -80,6 +80,14 @@ def has_directory(path: str, names: frozenset[str]) -> bool:
     return any(part in names for part in PurePosixPath(path).parts[:-1])
 
 
+def is_candidate(path: str) -> bool:
+    """Return True for a file of the tree that a scope can hold: a C++ file that is not a plant (THE SCOPE).
+
+    `loop test` reads the files of the scope of a tsast rule with this predicate (assay.loop.inputs).
+    """
+    return path.endswith(tsast.CPP_SUFFIXES) and not path.startswith(f"{meta_runner.PLANTS}/")
+
+
 class TsastContext:
     """The tree that the tsast rules of one call read: its root, its build directory, its C++ files and their trees.
 
@@ -125,9 +133,7 @@ class TsastContext:
                 names = git.tracked_files(self.root, with_new=True)
             except git.GitError as problem:
                 raise meta_runner.NotApplicable(f"the tree {self.root} is not a git work tree: {problem}") from None
-            plants = f"{meta_runner.PLANTS}/"
-            self._listed = tuple(name for name in names
-                                 if name.endswith(tsast.CPP_SUFFIXES) and not name.startswith(plants))
+            self._listed = tuple(name for name in names if is_candidate(name))
         return self._listed
 
     def is_base(self, path: str) -> bool:

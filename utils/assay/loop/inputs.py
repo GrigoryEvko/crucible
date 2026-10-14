@@ -19,27 +19,62 @@ THE INPUTS OF A RULE
     Each rule of a rule test gives these inputs:
       * the three masters of utils/bin/
       * the modules of the import closure (THE IMPORT CLOSURE)
+      * each file that the search of the module of the rule reads, and the
+        names of the modules that it compares (THE SEARCH)
       * the ledger utils/ledgers/ID.txt, also when it is not a file
       * each file of the plants utils/plants/ID/
       * the rule table utils/rule-table.txt
       * the files of the scope and of the field inputs of the row (THE SCOPE)
       * the data files of the modules of the closure (MODULE_DATA)
       * the text of the row of the rule, with no line number
-      * the text of each row that the rule holds (the field held-by).
+      * the text of each row that the rule holds (the field held-by)
+      * the texts and the files of git (THE TEXTS OF GIT).
     A change of the row of a different rule then changes no input of the rule.
+
+THE SEARCH
+    A rule with no module of its own is a member of a family module.
+    module_search() of assay.guard.engines.meta.runner finds that module.  It
+    parses the modules of the engine directory in the sequence of the names,
+    and it stops at the module that names the rule.  The runner of each rule
+    runs the search, also for a rule with the field legacy or held-by.  Each
+    file that the search reads is an input, and the module that it finds is a
+    root of the closure.  The names that the search compares are a text.  A
+    new module that sorts before the match then changes the inputs.  A module
+    after the match is no input.
 
 THE INPUTS OF A GROUP
     The inputs of a group test are the masters and the modules of the import
     closure of its test modules and of assay.guard.selftest.  The data files
     of the modules of the closure are inputs too.  When the closure holds
-    assay.core.registry, the registry is an input too.
+    assay.core.registry, the registry is an input too.  The texts and the
+    files of git apply as for a rule.
 
-THE TEXTS OF EACH TEST
-    Each rule test and each group test also gets two texts.  The first text
-    is the HEAD commit, because some rules read the git history.  The second
-    text is the list of the files of the tree, because some rules read the
-    names of the files.  A commit, a new file and a file that goes then
-    change the inputs of each such test.
+THE TEXTS OF GIT
+    Two texts of a test come from the functions of assay.core.git that the
+    test can call (THE CALLS).  A function of assay.core.git.READS_HISTORY
+    reads the history.  A test that can call one gets the HEAD commit as a
+    text.  A function of assay.core.git.READS_NAMES lists the files of the
+    tree.  A test that can call one gets the list of the files as a text.  It
+    also gets each file .gitignore and .gitattributes of the tree as inputs,
+    because git reads them.  A commit then runs again only the tests that
+    read the history.  A new file runs again only the tests that list the
+    files.
+
+THE CALLS
+    The calls of a test are the top-level functions and classes of the
+    modules of its closure that its code can call.  The walk starts at the
+    code that runs at the import of each module of the closure.  It also
+    starts at each function and class of the root modules of the test.  The
+    roots of a rule test are the subcommand, the runners and the module of
+    the rule.  The roots of a group test are its test modules.  From a
+    function or a class, the walk follows each name of the same module.  It
+    also follows each reference to a different module of the closure (shape()
+    of assay.readers.python).  A class is one unit, and each of its methods
+    is a call of the test with the class.  A name that a module imports from
+    a second module names the function of the second module.  A module that
+    the code uses as a value makes each of its functions and classes a call.
+    An attribute of an object, such as context.tracked, gives nothing.  The
+    class of the object is a call when a code makes such an object.
 
 THE PROGRAMS
     A test that runs a compiler gets each file of include/ too, because a
@@ -63,22 +98,25 @@ THE IMPORT CLOSURE
     that runner.
 
 THE SCOPE
-    A path of a scope names each file in it.  The word `tracked` names each
-    file of the tree.  The word base names each file that a layer row of the
-    rule table holds.  The word quarantined names each file that a
-    quarantine row holds.  The word package names each module of the package
-    and each master.  The files are the files that git holds and the new
-    files that .gitignore does not match.  No scope holds a plant of
-    utils/plants/, as in the runners of the engines.  A path in utils/plants/
-    of a scope or of the field inputs names its plants.  A scope of a rule of
-    the engine tsast holds only its C++ files.
+    A path of a scope that ends with "/" names each file in it.  A path with
+    no "/" at its end names one file, whatever its suffix, because the rule
+    reads that file by its name.  The word `tracked` names each file of the
+    tree.  The word base names each file that a layer row of the rule table
+    holds.  The word quarantined names each file that a quarantine row holds.
+    The word package names each module of the package and each master.  The
+    files are the files that git holds and the new files that .gitignore does
+    not match.  The runner of the engine of the rule gives the files of these
+    that a scope can hold.  The runner of the engine tsast gives a rule only
+    the C++ files that are not plants (is_candidate() of
+    assay.guard.engines.tsast.runner).  The context of each other engine
+    gives each file, also a plant.
 
 Complexity: one git listing of the tree, and one parse of each module of a closure.  O(f * s) for f files and s
 different items of the scopes.
 """
 
 import hashlib
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
@@ -86,6 +124,7 @@ from assay.core import git, ruletable
 from assay.core import registry as rule_registry
 from assay.core import rows as rows_grammar
 from assay.readers import compdb
+from assay.readers import python as python_reader
 
 # The masters of utils/bin/, relative to the root of the tree.
 MASTERS = ("utils/bin/guard", "utils/bin/loop", "utils/bin/setup")
@@ -137,6 +176,12 @@ TRACKED_SCOPE = "tracked"
 BASE_SCOPE = "base"
 QUARANTINED_SCOPE = "quarantined"
 PACKAGE_SCOPE = "package"
+# The names of the files of the tree that git reads when it lists the files (THE TEXTS OF GIT).
+GIT_FILES = (".gitattributes", ".gitignore")
+# The words that start the texts of git and the text of the search (THE TEXTS OF GIT, THE SEARCH).
+HEAD_TEXT = "head"
+FILES_TEXT = "files"
+SEARCH_TEXT = "modules"
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +267,19 @@ def absolute_import(name: str, imported: str, is_package: bool) -> str:
 class Deriver:
     """The inputs of the tests of the master guard in one tree, read one time for each call of `loop test`."""
 
-    __slots__ = ("_closures", "_files", "_imports", "_registry", "_root", "_scopes", "_table", "_texts", "_tracked")
+    __slots__ = (
+        "_closures",
+        "_declared",
+        "_files",
+        "_git_files",
+        "_git_texts",
+        "_parsed",
+        "_registry",
+        "_root",
+        "_scopes",
+        "_table",
+        "_tracked",
+    )
 
     def __init__(self, root: Path) -> None:
         """Keep the root of the tree.  Each other fact is read on its first use."""
@@ -230,11 +287,16 @@ class Deriver:
         self._registry: rule_registry.Registry | None = None
         self._table: ruletable.RuleTable | None = None
         self._tracked: tuple[str, ...] | None = None
-        self._texts: tuple[str, ...] = ()
-        self._imports: dict[str, tuple[str, ...]] = {}
+        # The text of the HEAD commit and the text of the list of the files, by the word that starts each one.
+        self._git_texts: dict[str, str] = {}
+        self._git_files: tuple[str, ...] | None = None
+        # The facts of the table RULES of each module that a search of a module read (THE SEARCH).
+        self._declared: dict[Path, tuple[bool, list[str]]] = {}
+        # The modules of the package that each module imports, and its shape (assay.readers.python), or None.
+        self._parsed: dict[str, tuple[tuple[str, ...], python_reader.Shape | None]] = {}
         # The file of each module that a closure read, as a tuple of one path, or of no path for a module with no file.
         self._files: dict[str, tuple[str, ...]] = {}
-        self._scopes: dict[tuple[str, bool], tuple[str, ...]] = {}
+        self._scopes: dict[tuple[str, Callable[[str], bool] | None], tuple[str, ...]] = {}
         self._closures: dict[frozenset[str], frozenset[str]] = {}
 
     @property
@@ -256,16 +318,40 @@ class Deriver:
             self._tracked = git.tracked_files(self._root, with_new=True)
         return self._tracked
 
-    def texts(self) -> tuple[str, ...]:
-        """Return the HEAD commit and the digest of the list of the files of the tree (THE TEXTS OF EACH TEST).
+    def head_text(self) -> str:
+        """Return the text of the HEAD commit of the tree (THE TEXTS OF GIT).
 
         Raises:
             git.GitError: If the root is not a git work tree, or it has no commit
         """
-        if not self._texts:
+        if HEAD_TEXT not in self._git_texts:
+            self._git_texts[HEAD_TEXT] = f"{HEAD_TEXT} {git.head(self._root)}"
+        return self._git_texts[HEAD_TEXT]
+
+    def files_text(self) -> str:
+        """Return the text of the digest of the list of the files of the tree (THE TEXTS OF GIT).
+
+        Raises:
+            git.GitError: If the root is not a git work tree
+        """
+        if FILES_TEXT not in self._git_texts:
             listing = hashlib.sha256("\n".join(self.tracked()).encode("utf-8", "surrogateescape")).hexdigest()
-            self._texts = (f"head {git.head(self._root)}", f"files {listing}")
-        return self._texts
+            self._git_texts[FILES_TEXT] = f"{FILES_TEXT} {listing}"
+        return self._git_texts[FILES_TEXT]
+
+    def git_files(self) -> list[str]:
+        """Return each file of the tree that git reads when it lists the files: each .gitignore and .gitattributes.
+
+        The two files at the root are inputs also when the tree does not hold them.  A new one then changes the inputs.
+        One time for each call of `loop test`.
+
+        Raises:
+            git.GitError: If the root is not a git work tree
+        """
+        if self._git_files is None:
+            named = (path for path in self.tracked() if path.rpartition("/")[2] in GIT_FILES)
+            self._git_files = tuple(sorted({*GIT_FILES, *named}))
+        return list(self._git_files)
 
     def module_file(self, name: str) -> str | None:
         """Return the file of a module of the package relative to the root, or None when the module has no file."""
@@ -273,25 +359,108 @@ class Deriver:
             self._files[name] = tuple(place for place in module_path(name) if (self._root / place).is_file())[:1]
         return self._files[name][0] if self._files[name] else None
 
-    def imports_of(self, name: str, file: str) -> tuple[str, ...]:
-        """Return the dotted name of each module of the package that a module imports, also in a function.
+    def parsed(self, name: str, file: str) -> tuple[tuple[str, ...], python_reader.Shape | None]:
+        """Return the modules of the package that a module imports, also in a function, and the shape of the module.
 
-        A module that does not parse gives no import.  The run of the module then fails, and its test runs.
+        A module that does not parse gives no import and no shape.  The run of the module then fails, and its test
+        runs.
         """
-        if name not in self._imports:
-            from assay.readers import python as python_reader
-
+        if name not in self._parsed:
             is_package = file.endswith("/__init__.py")
             try:
                 source = python_reader.read(self._root / file, file)
             except OSError, python_reader.PythonError:
-                self._imports[name] = ()
-                return ()
+                self._parsed[name] = ((), None)
+                return self._parsed[name]
             resolved = (absolute_import(name, item, is_package) for item in python_reader.imports(source))
-            self._imports[name] = tuple(
-                sorted({item for item in resolved if item == PACKAGE or item.startswith(f"{PACKAGE}.")})
-            )
-        return self._imports[name]
+            imports = tuple(sorted({item for item in resolved if item == PACKAGE or item.startswith(f"{PACKAGE}.")}))
+            self._parsed[name] = (imports, python_reader.shape(source))
+        return self._parsed[name]
+
+    def imports_of(self, name: str, file: str) -> tuple[str, ...]:
+        """Return the dotted name of each module of the package that a module imports, also in a function (parsed())."""
+        return self.parsed(name, file)[0]
+
+    def shape_of(self, name: str) -> python_reader.Shape | None:
+        """Return the shape of a module of the package, or None for a module with no file or a file that does not parse."""
+        file = self.module_file(name)
+        return None if file is None else self.parsed(name, file)[1]
+
+    def targets(
+        self, reference: str, modules: frozenset[str], depth: int = 0
+    ) -> tuple[list[tuple[str, str]], set[str]]:
+        """Return the functions and the classes of the closure that a reference names, and the functions of git (THE CALLS).
+
+        The function of assay.core.git is a name of the second item, also when the closure does not hold that module.
+        A name that a module imports from a second module names the definition of the second module, at most 8 steps.
+        """
+        prefix = f"{git.__name__}."
+        if reference.startswith(prefix):
+            return [], {reference.removeprefix(prefix).split(".", 1)[0]}
+        parts = reference.split(".")
+        module = next(
+            (".".join(parts[:end]) for end in range(len(parts), 0, -1) if ".".join(parts[:end]) in modules), ""
+        )
+        shape = self.shape_of(module) if module else None
+        if shape is None:
+            return [], set()
+        attributes = parts[len(module.split(".")) :]
+        if not attributes:
+            return [(module, name) for name in shape.definitions], set()
+        if attributes[0] in shape.definitions:
+            return [(module, attributes[0])], set()
+        imported = shape.imports.target(attributes[0])
+        if imported is None or depth >= 8:
+            return [], set()
+        return self.targets(".".join([imported, *attributes[1:]]), modules, depth + 1)
+
+    def git_functions(self, modules: frozenset[str], roots: Iterable[str]) -> set[str]:
+        """Return each function of assay.core.git that a test can call (THE CALLS).
+
+        Complexity: linear in the names of the definitions of the closure, with one parse of each module.
+        """
+        pending: list[tuple[str, str]] = [(module, python_reader.MODULE_SCOPE) for module in modules]
+        for root in roots:
+            shape = self.shape_of(root) if root in modules else None
+            pending += [(root, name) for name in shape.definitions] if shape is not None else []
+        seen: set[tuple[str, str]] = set()
+        used: set[str] = set()
+        while pending:
+            node = pending.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            module, name = node
+            shape = self.shape_of(module)
+            if shape is None:
+                continue
+            definition = shape.module if name == python_reader.MODULE_SCOPE else shape.definitions.get(name)
+            if definition is None:
+                continue
+            pending += [(module, plain) for plain in definition.names if plain in shape.definitions]
+            for reference in definition.references:
+                found, functions = self.targets(reference, modules)
+                pending += found
+                used |= functions
+        return used
+
+    def git_texts(self, modules: frozenset[str], roots: Iterable[str]) -> tuple[list[str], list[str]]:
+        """Return the texts and the files of git of a test with a closure and the modules that it starts with.
+
+        THE TEXTS OF GIT gives the rules.  Complexity: the cost of git_functions().
+
+        Raises:
+            git.GitError: If the root is not a git work tree, or it has no commit
+        """
+        used = self.git_functions(modules, roots)
+        texts: list[str] = []
+        files: list[str] = []
+        if used & git.READS_HISTORY:
+            texts.append(self.head_text())
+        if used & git.READS_NAMES:
+            texts.append(self.files_text())
+            files += self.git_files()
+        return texts, files
 
     def closure(self, roots: Iterable[str]) -> frozenset[str]:
         """Return the modules of the import closure of the roots that have a file (THE IMPORT CLOSURE).
@@ -326,25 +495,25 @@ class Deriver:
             self._table = ruletable.load(self._root / RULE_TABLE)
         return self._table.class_of(path)[0]
 
-    def scope_files(self, item: str, cpp_only: bool) -> tuple[str, ...]:
+    def scope_files(self, item: str, predicate: Callable[[str], bool] | None = None) -> tuple[str, ...]:
         """Return the files of the tree that one item of a scope or of the field inputs names (THE SCOPE).
 
-        Complexity: O(f) for f files of the tree, one time for each different item.
+        A path with no "/" at its end names its one file, also when the tree does not hold it.  For a directory and a
+        word, `predicate` gives the files that the runner of the engine of the rule gives it, and None gives each file.
+        Complexity: O(f) for f files of the tree, one time for each different item and predicate.
 
         Raises:
             git.GitError: If the root is not a git work tree
         """
-        key = (item, cpp_only)
+        if not item.endswith("/") and item not in rule_registry.SCOPE_WORDS:
+            return (item,)
+        key = (item, predicate)
         if key not in self._scopes:
             from assay.guard.engines.meta import package
-            from assay.readers import tsast
 
-            is_plant_item = item.startswith(PLANTS)
             found: list[str] = []
             for path in self.tracked():
-                if path.startswith(PLANTS) and not is_plant_item:
-                    continue
-                if cpp_only and not path.endswith(tsast.CPP_SUFFIXES):
+                if predicate is not None and not predicate(path):
                     continue
                 if item == TRACKED_SCOPE:
                     holds = True
@@ -364,11 +533,18 @@ class Deriver:
         found: list[str] = []
         for name in modules:
             for item in MODULE_DATA.get(name, ()):
-                found += self.scope_files(item, False) if item.endswith("/") else [item]
+                found += self.scope_files(item)
         return found
 
-    def rule_modules(self, rule: rule_registry.Rule, subcommand: str) -> list[str]:
-        """Return the roots of the closure of a rule: the subcommand, the runners and the module of the rule."""
+    def rule_modules(
+        self, rule: rule_registry.Rule, subcommand: str
+    ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+        """Return the roots of the closure of a rule, and the files and the names that the search of its module read.
+
+        The roots are the subcommand, the runners and the module that the search finds.  The module of the field legacy
+        or the witness of a holder is a root too.  The runner of each rule runs the search, also for a rule with the
+        field legacy or held-by (THE SEARCH).
+        """
         from assay.guard.engines.meta import runner as meta_runner
 
         roots = [CHECK if subcommand == "check" else WITNESS, META_RUNNER]
@@ -379,34 +555,60 @@ class Deriver:
             roots.append(rule.legacy.qualified)
         elif rule.held_by is not None:
             roots.append(HELD_WITNESS)
-        else:
-            roots.append(meta_runner.module_name_of(rule, self._root))
-        return roots
+        search = meta_runner.module_search(rule, self._root, self.declared)
+        roots.append(search.name)
+        return roots, search.read, search.listed
+
+    def declared(self, path: Path) -> tuple[bool, list[str]]:
+        """Return the facts of the table RULES of one module (declared_rules() of the runner of meta), one time for each call."""
+        if path not in self._declared:
+            from assay.guard.engines.meta import runner as meta_runner
+
+            self._declared[path] = meta_runner.declared_rules(path)
+        return self._declared[path]
+
+    @staticmethod
+    def scope_predicate(rule: rule_registry.Rule) -> Callable[[str], bool] | None:
+        """Return the predicate of the files that the runner of the engine of a rule gives it, or None for each file.
+
+        Only the runner of the engine tsast gives a rule a part of the files of its scope (THE SCOPE).
+        """
+        if rule.engine != rule_registry.Engine.TSAST:
+            return None
+        from assay.guard.engines.tsast import runner as tree_runner
+
+        return tree_runner.is_candidate
 
     def rule_inputs(self, rule_id: str, subcommand: str) -> Inputs:
         """Return the inputs of one rule for the subcommand check or witness (THE INPUTS OF A RULE).
 
         Raises:
-            git.GitError: If the root is not a git work tree
+            git.GitError: If the root is not a git work tree, or it has no commit
         """
         rule = self.registry.rules.get(rule_id)
         if rule is None:
             return Inputs(always=f"the registry has no readable row of the rule {rule_id}")
         if subcommand == "check" and BUILD_SCOPE in rule.scope:
             return Inputs(always=f"the rule {rule_id} reads the build directory (the scope word {BUILD_SCOPE})")
-        modules = self.closure(self.rule_modules(rule, subcommand))
-        cpp_only = rule.engine == rule_registry.Engine.TSAST
-        files = [*MASTERS, RULE_TABLE, f"{LEDGERS}/{rule_id}.txt"]
+        roots, searched, listed = self.rule_modules(rule, subcommand)
+        modules = self.closure(roots)
+        predicate = self.scope_predicate(rule)
+        files = [*MASTERS, RULE_TABLE, f"{LEDGERS}/{rule_id}.txt", *searched]
         files += [file for name in modules if (file := self.module_file(name)) is not None]
-        files += self.scope_files(f"{PLANTS}{rule_id}/", False)
+        files += self.scope_files(f"{PLANTS}{rule_id}/")
         for item in rule.scope:
             if item != BUILD_SCOPE:
-                files += self.scope_files(item, cpp_only)
+                files += self.scope_files(item, predicate)
         for item in rule.inputs:
-            files += self.scope_files(item, False) if item.endswith("/") else [item]
+            files += self.scope_files(item)
         files += self.data_files(modules)
+        texts, read_by_git = self.git_texts(modules, roots)
+        files += read_by_git
         held = [other.id for other in self.registry.rules.values() if other.held_by == rule_id]
-        return Inputs(tuple(sorted({str(self._root / file) for file in files})), self.row_texts([rule_id, *held]))
+        texts += self.row_texts([rule_id, *held])
+        if listed:
+            texts.append(f"{SEARCH_TEXT} {rule.engine.directory}: {' '.join(listed)}")
+        return Inputs(tuple(sorted({str(self._root / file) for file in files})), tuple(sorted(texts)))
 
     def row_texts(self, rule_ids: Iterable[str]) -> tuple[str, ...]:
         """Return the text of the row of each rule with no line number, or a text that tells that the rule has no row."""
@@ -436,7 +638,7 @@ class Deriver:
         if not rule_ids:
             return Inputs(always="the call names no rule")
         files: set[str] = set()
-        texts: set[str] = set(self.texts())
+        texts: set[str] = set()
         for rule_id in rule_ids:
             found = self.rule_inputs(rule_id, call.subcommand)
             if found.always:
@@ -444,7 +646,7 @@ class Deriver:
             files.update(found.files)
             texts.update(found.texts)
         if call.runs_compiler:
-            files.update(str(self._root / file) for file in self.scope_files(INCLUDE, False))
+            files.update(str(self._root / file) for file in self.scope_files(INCLUDE))
         if call.subcommand == "witness" and call.build_dir:
             files.add(str(compdb.database_file(Path(call.build_dir))))
         return Inputs(tuple(sorted(files)), tuple(sorted(texts)))
@@ -453,22 +655,25 @@ class Deriver:
         """Return the inputs of a group test (THE INPUTS OF A GROUP).
 
         Raises:
-            git.GitError: If the root is not a git work tree
+            git.GitError: If the root is not a git work tree, or it has no commit
         """
         tests = f"{TESTS}/{group}/"
         names = [
             ".".join(PurePosixPath(path).with_suffix("").parts[1:])
-            for path in self.scope_files(tests, False)
+            for path in self.scope_files(tests)
             if PurePosixPath(path).name.startswith("test_") and path.endswith(".py")
         ]
-        modules = self.closure([SELFTEST, *names])
+        roots = [SELFTEST, *names]
+        modules = self.closure(roots)
         files = [*MASTERS, *(file for name in modules if (file := self.module_file(name)) is not None)]
         files += self.data_files(modules)
         if REGISTRY_MODULE in modules:
             files.append(rule_registry.REGISTRY_PATH)
         if runs_compiler:
-            files += self.scope_files(INCLUDE, False)
-        return Inputs(tuple(sorted({str(self._root / file) for file in files})), self.texts())
+            files += self.scope_files(INCLUDE)
+        texts, read_by_git = self.git_texts(modules, roots)
+        files += read_by_git
+        return Inputs(tuple(sorted({str(self._root / file) for file in files})), tuple(sorted(texts)))
 
     def test_inputs(self, words: Sequence[str], variables: Collection[str]) -> Inputs | None:
         """Return the inputs of a test of the master guard, or None when the words are no rule test and no group test.

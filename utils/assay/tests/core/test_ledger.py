@@ -11,7 +11,6 @@ from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
-from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -643,33 +642,6 @@ def other_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rul
     )
 
 
-def history_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check history(): the row count at each commit, also of an earlier path."""
-    with tempfile.TemporaryDirectory(prefix="test-ledger-history-") as scratch:
-        root = Path(scratch)
-        git.init(root)
-        old = root / "utils" / "scripts" / "count-rule-ledger.txt"
-        old.parent.mkdir(parents=True)
-        old.write_text("# head\na | 1\nb | 2\n", encoding="utf-8")
-        git.commit_all(root, "Add the old ledger")
-        old.unlink()
-        ledger = rule_ledger.write(
-            table["count-rule"],
-            rule_ledger.empty(table["count-rule"]),
-            [finding("a.py")],
-            mode=rule_ledger.WriteMode.ADMIT,
-            reason="moved",
-        )
-        rule_ledger.ledger_path("count-rule", root).parent.mkdir(parents=True)
-        rule_ledger.store(ledger, root)
-        git.commit_all(root, "Move the ledger")
-        counts = [
-            count
-            for _, _, count in rule_ledger.history(table["count-rule"], root, ["utils/scripts/count-rule-ledger.txt"])
-        ]
-        expect("history() gives the count at each commit, newest first, also of the earlier path", counts == [1, 2])
-
-
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -693,7 +665,6 @@ def main(argv: list[str]) -> int:
     write_cases(expect, table)
     no_configuration_cases(expect, table)
     other_configuration_cases(expect, table)
-    history_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")
         return 1

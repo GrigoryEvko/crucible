@@ -11,6 +11,19 @@ THE COMMAND
     a use of the value of run() or run_any_exit() in a different module.
     Each question of a caller then gets a function here with a typed answer.
 
+THE KINDS OF THE FUNCTIONS
+    READS_HISTORY names each function that reads a commit or a ref: the log,
+    an object of a revision, HEAD or a branch.  READS_NAMES names each
+    function that reads the names of the files of a tree, which .gitignore
+    can change.  A function can be in the two sets.  READS_NEITHER names each
+    other function.  A function also has the kinds of each function of this
+    module that it calls, because a caller sees only the name that it calls.
+    `loop test` gives the HEAD commit only to a test that can call a function
+    of READS_HISTORY (assay.loop.inputs).  It gives the list of the files of
+    the tree only to a test that can call a function of READS_NAMES.  The
+    test of this module refuses a function with no kind, and a function of
+    READS_NEITHER with a second kind.
+
 THE OBJECTS
     write_tree(), hash_object(), commit_tree(), tree_entry(),
     index_object(), set_index_entry(), tree_changes(), index_changes() and
@@ -119,6 +132,22 @@ BRANCH_OID = "# branch.oid "
 INITIAL_COMMIT = "(initial)"
 # The object name that removes a path from the index in `git update-index --index-info`.
 NULL_OBJECT = "0" * 40
+# The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
+READS_HISTORY = frozenset({
+    "archive", "author_date", "blobs", "change_base", "changed_files", "changed_paths", "changes", "commit_subject",
+    "commits", "dated_commits", "file_changes", "has_no_change", "head", "index_changes", "index_patch",
+    "is_clean", "is_index_clean", "is_shallow", "message_of", "moves", "parent", "patch", "path_history",
+    "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head", "tree_changes",
+    "tree_entry", "work_changes",
+})
+READS_NAMES = frozenset({
+    "change_base", "changed_files", "has_no_change", "listed_files", "listed_paths", "new_files", "tracked_files",
+})
+READS_NEITHER = frozenset({
+    "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "hash_files", "hash_object",
+    "holds_patch", "hunk_of", "index_object", "init", "null_separated", "run", "run_any_exit", "scratch_repository",
+    "set_index_entries", "set_index_entry", "side_path", "swap_ref", "toplevel", "write_tree",
+})
 
 
 class NotIsolated(Exception):
