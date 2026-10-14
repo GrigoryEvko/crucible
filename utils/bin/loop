@@ -57,6 +57,7 @@ SUBCOMMANDS = {
     "fuzz": ("assay.loop.fuzz", "run an AFL++ campaign: loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS"),
     "land": ("assay.loop.land", "land a change on main by compare-and-swap: loop land -m TEXT --patch FILE --"),
     "heavy": ("assay.loop.heavy", "run one command under the lock of the heavy steps: loop heavy -- COMMAND..."),
+    "plan": ("assay.loop.plan", "print each item of the plan with its tier and its entry: loop plan [--build-dir DIR]"),
     "step": ("assay.loop.step", None),
     "meter-compiler": ("assay.loop.meter_compiler", None),
     "test-step": ("assay.loop.teststep", None),
