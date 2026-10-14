@@ -245,6 +245,35 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
     }
 
+    // The search run of prop_content_hash_recipe_disambiguates with the seed
+    // 0x3934336a14cbd76a drew the recipe whose eight semantic bytes are zero,
+    // at the iteration 25152948.  The pool interns it, and a region hashes
+    // under it.  The content hash refuses a recipe hash of 0, so the hash of
+    // the interned recipe must not be 0.
+    {
+        Arena arena{};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
+        const NumericalRecipe zero_bytes{
+            .accum_dtype = crucible::ScalarType::Byte,
+            .out_dtype = crucible::ScalarType::Byte,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding = crucible::RoundingMode::RN,
+            .scale_policy = crucible::ScalePolicy::NONE,
+            .softmax = crucible::SoftmaxRecurrence::NAIVE,
+            .determinism = crucible::ReductionDeterminism::UNORDERED,
+            .flags = {},
+            .hash = {},
+        };
+        TraceEntry entry{};
+        entry.schema_hash = SchemaHash{0xAA01};
+
+        const ContentHash with_recipe =
+            crucible::make_region(alloc_cap(), arena, &entry, 1, pool.intern(alloc_cap(), zero_bytes))->content_hash;
+        const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, &entry, 1)->content_hash;
+        assert(with_recipe != with_no_recipe);
+        assert(with_recipe.raw() != 0);
+    }
+
     crucible::test::pass("test_recipe_integration: all tests passed\n");
     return 0;
 }

@@ -171,6 +171,30 @@ int main() {
         }
     }
 
+    // The search run of prop_content_hash_recipe_disambiguates with the
+    // seed 0x3934336a14cbd76a drew this recipe at the iteration 25152948.
+    // Each of its eight semantic bytes is zero, and the finalizer maps the
+    // zero word to zero.  A hash of 0 is the hash of a recipe that no pool
+    // interned, so the content hash refused the recipe.  Its hash is pinned
+    // for the reason that the three hashes above are pinned.
+    {
+        constexpr NumericalRecipe r_zero_bytes = crucible::hashed(NumericalRecipe{
+            .accum_dtype = ScalarType::Byte,
+            .out_dtype = ScalarType::Byte,
+            .reduction_algo = ReductionAlgo::PAIRWISE,
+            .rounding = RoundingMode::RN,
+            .scale_policy = ScalePolicy::NONE,
+            .softmax = SoftmaxRecurrence::NAIVE,
+            .determinism = ReductionDeterminism::UNORDERED,
+            .flags = {},
+            .hash = {},
+        });
+        assert(r_zero_bytes.hash.raw() != 0);
+        assert(!r_zero_bytes.hash.is_sentinel());
+        assert(crucible::hashed(r_zero_bytes).hash == r_zero_bytes.hash);
+        assert(r_zero_bytes.hash.raw() == 0x9b8c23f44f03a121ULL);
+    }
+
     // Recipes that differ in any semantic field must hash apart.  A
     // chance collision within a set this small is so unlikely that one
     // here means the hash is wrong, not that the draw was unlucky.

@@ -7,6 +7,8 @@
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
 
 #include <bit>
 #include <cstdint>
@@ -134,6 +136,15 @@ template <typename E>
                                   "hash fold");
     return std::bit_cast<uint8_t>(e);
 }
+
+// The finalizer is a bijection, and it maps the zero word to zero.  The recipe
+// whose eight bytes are zero then gets the hash 0, which is the hash of a
+// recipe that no pool interned.  One other word gets UINT64_MAX, the sentinel.
+// A finalizer result of 0 or UINT64_MAX takes the finalizer result of its XOR
+// with this salt.  The accumulator byte of the salt and of its complement names
+// no ScalarType.  No recipe then packs to either word, and no two recipes share
+// a hash.  The check file of this header does a check of these facts.
+inline constexpr uint64_t kReservedSalt = 0x5245434950454944ULL;  // "RECIPEID"
 }  // namespace detail_recipe
 
 [[nodiscard, gnu::pure]] constexpr RecipeHash compute_recipe_hash(const NumericalRecipe& r) noexcept {
@@ -142,7 +153,11 @@ template <typename E>
                           | (uint64_t(enum_byte(r.reduction_algo)) << 16) | (uint64_t(enum_byte(r.rounding)) << 24)
                           | (uint64_t(enum_byte(r.scale_policy)) << 32) | (uint64_t(enum_byte(r.softmax)) << 40)
                           | (uint64_t(enum_byte(r.determinism)) << 48) | (uint64_t(r.flags.raw()) << 56);
-    return RecipeHash{detail_recipe::fmix64(packed)};
+    const uint64_t mixed = detail_recipe::fmix64(packed);
+    const bool is_reserved = mixed == 0 || mixed == RecipeHash::sentinel().raw();
+    const RecipeHash result{is_reserved ? detail_recipe::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
+    CRUCIBLE_POST(result, ::foundation::decide::is_non_zero(result) && ::foundation::decide::not_sentinel_hash(result));
+    return result;
 }
 
 [[nodiscard, gnu::pure]] constexpr NumericalRecipe hashed(NumericalRecipe r) noexcept {
