@@ -21,6 +21,10 @@ THE COVERS
         preset with no tier gives a problem and no item
       * A test and a fixture get the tier of the preset of each build that
         registers them with no property DISABLED
+      * A test can run a file of a bench target of its build.  Such a test
+        also gets the covers of that bench target, also with the property
+        DISABLED.  The program of a test behind the test launcher is the
+        program after the launcher
       * A rule gets the tier of the build of each test that runs `guard check
         --rule ID`, or `guard check --engine E` for a rule of E with a module
         (assay.guard.engines.meta.test_registration).  A rule with a holder
@@ -43,8 +47,9 @@ THE BUILDS
     name, it reads the build directory of each configure preset with a tier
     and with no parse option, when CMake configured that directory.  A build
     gives its tests, the bench targets of its code model, and the name of its
-    configuration from build-configuration.txt (assay.core.meter).  A build
-    directory of no configure preset is an error.
+    configuration from build-configuration.txt (assay.core.meter).  It also
+    gives the files of each bench target.  A build directory of no configure
+    preset is an error.
 
 THE STEPS
     STEPS gives each step that an entry runs and that is no preset.  A step
@@ -101,6 +106,7 @@ from assay.core.exit import ExitCode
 from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.meta import test_registration
 from assay.loop import bench, fuzz, tiers
+from assay.loop import teststep as test_launcher
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import python as python_reader
@@ -190,13 +196,17 @@ class Problem:
 
 @dataclass(frozen=True, slots=True)
 class Build:
-    """One build of a configure preset: its tests, its bench targets and the name of its configuration (THE BUILDS)."""
+    """One build of a configure preset: its tests, its bench targets and the name of its configuration (THE BUILDS).
+
+    `bench_programs` holds the resolved path of each file of each bench target, with the name of its target.
+    """
 
     preset: tiers.PresetTier
     directory: Path
     tests: tuple[ctest_reader.TestEntry, ...] = ()
     benches: tuple[str, ...] = ()
     configuration: str | None = None
+    bench_programs: tuple[tuple[str, str], ...] = ()
 
     @property
     def name(self) -> str:
@@ -311,11 +321,27 @@ def read_build(preset: tiers.PresetTier, directory: Path) -> Build:
         tests = ctest_reader.tests(directory)
     except ctest_reader.CtestError as problem:
         raise PlanError(f"the tests of the build {directory} of the preset {preset.name}: {problem}") from None
+    configuration = meter.read_configuration(str(directory))
     try:
-        benches = bench.bench_targets(cmake_reader.codemodel(directory))
+        model = cmake_reader.codemodel(directory)
     except cmake_reader.CmakeError:
-        benches = ()
-    return Build(preset, directory, tests, benches, meter.read_configuration(str(directory)))
+        return Build(preset, directory, tests, (), configuration)
+    benches = bench.bench_targets(model)
+    return Build(preset, directory, tests, benches, configuration, bench_program_paths(model, benches))
+
+
+def bench_program_paths(model: cmake_reader.CodeModel, benches: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """Return the resolved path of each file of each bench target of a code model, with the name of its target.
+
+    Complexity: linear in the targets and in their files.
+    """
+    names = set(benches)
+    return tuple(
+        (str(Path(path).resolve()), target.name)
+        for target in model.targets
+        if target.name in names
+        for path in target.artifacts
+    )
 
 
 def read_builds(presets: tiers.Tiers, directories: Sequence[Path] = ()) -> tuple[Build, ...]:
@@ -376,14 +402,24 @@ def is_fixture(test: ctest_reader.TestEntry, root: Path) -> bool:
     return run is not None and (run[0], run[1][:1]) == (test_registration.FIXTURE[0], [test_registration.FIXTURE[1]])
 
 
+def bench_target_of(test: ctest_reader.TestEntry, programs: Mapping[str, str]) -> str | None:
+    """Return the bench target that has the program of a test as a file, or None (THE COVERS)."""
+    command = test_launcher.launched(list(test.command))
+    if not command or not programs:
+        return None
+    return programs.get(str(Path(command[0]).resolve()))
+
+
 def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
     """Return an item for each test of the builds, with the tier of each build that runs it (THE COVERS).
 
     Complexity: linear in the tests of the builds.
     """
+    bench_steps = [step for step in STEPS if step.each is Kind.BENCH]
     covers: dict[str, list[Cover]] = {}
     first: dict[str, tuple[Kind, str, int]] = {}
     for build in builds:
+        programs = dict(build.bench_programs)
         for test in build.tests:
             path, line = test_registration.place_of(test, root)
             first.setdefault(test.name, (Kind.FIXTURE if is_fixture(test, root) else Kind.TEST, path, line))
@@ -391,6 +427,13 @@ def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
             if build.preset.tier is not None and DISABLED not in test.properties:
                 entry = tiers.ENTRIES.get(build.preset.tier, "a person")
                 listed.append(Cover(build.preset.tier, f"{entry} runs it in {build.name}"))
+            target = bench_target_of(test, programs)
+            if target is None:
+                continue
+            for step in bench_steps:
+                cover = Cover(step.tier, f"the step {step.name} runs its program, the bench target {target}")
+                if cover not in listed:
+                    listed.append(cover)
     return [Item(kind, name, path, line, tuple(covers[name])) for name, (kind, path, line) in first.items()]
 
 

@@ -87,6 +87,34 @@ def test_cases(expect: testing.Expect) -> None:
     expect("a disabled test gets no cover", not items["off"].covers)
 
 
+def bench_cases(expect: testing.Expect) -> None:
+    """Hold the covers of a test that runs a file of a bench target of its build, also when the test is disabled."""
+    program = (paths.REPO_ROOT / "build-gate" / "bench" / "bench_leaf").resolve()
+    properties = {plan.DISABLED: ("ON",)}
+    direct = ctest_reader.TestEntry("bench_leaf", (str(program),), properties)
+    launched = ctest_reader.TestEntry(
+        "bench_leaf_launched", ("python3", "-S", str(paths.LOOP), "test-step", "--name", "x", str(program)), properties
+    )
+    build = plan.Build(
+        preset_tier("gate", GATE),
+        paths.REPO_ROOT / "build-gate",
+        (direct, launched, guard_test("off", "check", disabled=True)),
+        ("bench_leaf",),
+        bench_programs=((str(program), "bench_leaf"),),
+    )
+    items = {item.name: item for item in plan.test_items((build, build), paths.REPO_ROOT)}
+    bench_cover = plan.Cover(NIGHTLY, "the step bench runs its program, the bench target bench_leaf")
+    expect(
+        "a disabled test that runs a file of a bench target gets the cover of the step bench, one time",
+        items["bench_leaf"].covers == (bench_cover,),
+    )
+    expect(
+        "the program of a test behind the test launcher is the program after it",
+        items["bench_leaf_launched"].covers == (bench_cover,),
+    )
+    expect("a disabled test of no bench target stays with no cover", not items["off"].covers)
+
+
 def rule_cases(expect: testing.Expect) -> None:
     """Hold the covers of the rules: a test, each kind of holder, a step, and a rule with no cover."""
     build = plan.Build(
@@ -170,5 +198,7 @@ def tree_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (tier_cases, test_cases, rule_cases, problem_cases, tree_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (tier_cases, test_cases, bench_cases, rule_cases, problem_cases, tree_cases),
     )
