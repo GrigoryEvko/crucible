@@ -1,5 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
+#include <fixy/session/Mint.h>
 
 // The new resource must be a SessionResource, as for any session mint.  An
 // lvalue reference to a type that is not Pinned is refused: a later move of

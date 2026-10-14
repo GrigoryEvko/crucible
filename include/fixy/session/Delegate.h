@@ -52,12 +52,12 @@
 // fixy/session/Protocol.h defines Delegate<T, K> and Accept<T, K>, two
 // heads that state a hand-off in the protocol type.  They stand beside
 // the other combinators, because the payload walk of
-// fixy/session/Handle.h reads the registry when that header is read.  A
+// fixy/session/Admission.h reads the registry when that header is read.  A
 // head that this header registered would be a head that the walk cannot
 // classify.
 //
 // No mint admits a protocol that holds one of the two heads.  The
-// permission-flow walk of fixy/session/Handle.h refuses a head that it
+// permission-flow walk of fixy/session/Admission.h refuses a head that it
 // does not know, and no handle has a step for them.  A hand-off that
 // runs is a Send of a DelegatedSession.  The queries below read the
 // hand-off that a protocol type states.

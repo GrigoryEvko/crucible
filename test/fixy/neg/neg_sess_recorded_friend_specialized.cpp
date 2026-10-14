@@ -7,6 +7,7 @@
 // the inner handle of another.
 //
 // Expected diagnostic: the member is private in this context.
+#include <fixy/session/Mint.h>
 #include <fixy/session/Recording.h>
 
 namespace neg_sess_recorded_friend_specialized_types {

@@ -2,6 +2,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <foundation/Pinned.h>
 #include <foundation/reflect/EnumName.h>
 

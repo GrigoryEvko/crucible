@@ -9,6 +9,7 @@
 // Expected diagnostic: no form of the mint accepts the handle alone.
 #include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <foundation/effects/Row.h>
 
 #include <utility>

@@ -10,6 +10,7 @@
 #include <fixy/Tags.h>
 #include <fixy/os/SpinLock.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

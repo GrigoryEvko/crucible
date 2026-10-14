@@ -9,6 +9,7 @@
 // SessionResource clause can refuse this call.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = ::fixy::session;
 

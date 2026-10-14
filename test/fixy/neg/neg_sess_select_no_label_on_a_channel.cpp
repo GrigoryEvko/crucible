@@ -4,6 +4,7 @@
 // so the select over this end of a channel is refused.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>

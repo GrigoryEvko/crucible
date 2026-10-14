@@ -7,6 +7,7 @@
 // asking "can this be minted" needs an answer rather than a hard error.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

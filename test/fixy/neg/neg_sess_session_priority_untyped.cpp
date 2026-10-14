@@ -4,6 +4,7 @@
 // it rather than read it as an order.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

@@ -5,6 +5,7 @@
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

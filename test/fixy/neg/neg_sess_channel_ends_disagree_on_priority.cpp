@@ -5,6 +5,7 @@
 // across the channel.  The channel mint refuses the pair.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Watch.h>
 
 #include <foundation/effects/Ctx.h>

@@ -21,6 +21,7 @@
 
 #include <fixy/channels/SubstrateSessionBridge.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/effects/Ctx.h>

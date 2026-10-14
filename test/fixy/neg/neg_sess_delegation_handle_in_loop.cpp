@@ -3,6 +3,7 @@
 // DelegatedSession.
 
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 
 namespace neg_sess_delegation_handle_in_loop_types {
 

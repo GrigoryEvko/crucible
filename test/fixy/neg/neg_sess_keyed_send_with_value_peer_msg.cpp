@@ -4,6 +4,7 @@
 // refused.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 #include <cstddef>

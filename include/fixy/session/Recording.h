@@ -194,7 +194,7 @@ template <typename Branch>
 // The operations of the inner handle that the recorder forwards with no
 // transport.  Each such member of Recorded exists only when the inner
 // handle has it.  A member that takes a transport exists when the
-// transport has a shape of fixy/session/Handle.h, and a shape that the
+// transport has a shape of fixy/session/Transport.h, and a shape that the
 // inner handle refuses reaches the refusal of the inner handle.
 template <typename Inner>
 concept inner_can_detect_crash = requires(Inner&& inner) { std::move(inner).recv(); };

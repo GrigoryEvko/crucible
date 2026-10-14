@@ -3,6 +3,7 @@
 // there is no End handle to close.  The body gate refuses it.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

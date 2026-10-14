@@ -3,6 +3,7 @@
 // threads.
 
 #include "session_subtype_attack.h"
+#include <fixy/session/Mint.h>
 
 #include <array>
 #include <atomic>

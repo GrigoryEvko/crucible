@@ -2,6 +2,7 @@
 // positional branch, because the protocol is not well-formed.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;

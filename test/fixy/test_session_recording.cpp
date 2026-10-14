@@ -24,6 +24,7 @@
 
 #include "session_recording.h"
 
+#include <fixy/session/Mint.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>

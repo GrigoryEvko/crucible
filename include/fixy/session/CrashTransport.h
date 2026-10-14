@@ -110,6 +110,7 @@
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
@@ -430,8 +431,8 @@ struct sender_of {
 // that holds the label and not yet the payload is inside a message.  A
 // keyed label word and the value of its payload are one message too, so
 // a handle at the value step of a keyed message is inside a message
-// (fixy/session/Handle.h).  A keyed message with a payload of void is its
-// label word alone.
+// (fixy/session/Transport.h).  A keyed message with a payload of void is
+// its label word alone.
 struct between_messages {};
 
 // This endpoint picked a label whose branch opens with a send, or it sent
@@ -532,7 +533,7 @@ template <typename Position, typename Peer, typename Sender, typename Read, type
 }
 
 // True when the word names a message branch of the Offer P: a label
-// branch, in the reading of fixy/session/Handle.h.  Message branches
+// branch, in the reading of fixy/session/Transport.h.  Message branches
 // stand before the crash branches, so their indices are the first ones.
 template <typename P>
 [[nodiscard]] constexpr bool names_message_branch(std::size_t word) noexcept {
@@ -554,7 +555,7 @@ concept CrashSessionAdmissible =
 
 // The whole gate of mint_crash_session: an admissible crash session, a
 // Resource that a mint admits, and a context that admits the effect row of
-// the protocol (CtxAdmitsProtocolRow of fixy/session/Handle.h), as the
+// the protocol (CtxAdmitsProtocolRow of fixy/session/Admission.h), as the
 // context of mint_session does.  The decorator keeps a copy of the
 // context, and enters each crash branch with it through
 // HandleFactory::recover, so the context has a copy that cannot fail.
@@ -1116,10 +1117,10 @@ public:
     //
     // The decorator polls the word and gives it to branch_indexed of the
     // inner handle, which enters the branch that the word names
-    // (branch_of_wire_word in fixy/session/Handle.h).  A crash branch is no
-    // label, so no word names it.  On a crash the decorator enters the crash
-    // branch through HandleFactory::recover, with the context of the mint,
-    // and no word is read.  A positional branch that
+    // (branch_of_wire_word in fixy/session/Transport.h).  A crash branch is
+    // no label, so no word names it.  On a crash the decorator enters the
+    // crash branch through HandleFactory::recover, with the context of the
+    // mint, and no word is read.  A positional branch that
     // opens with a reception waits for the payload of the label, from the
     // sender of the Offer.  A keyed branch whose payload is not void waits
     // for the value of its payload, from the same sender.

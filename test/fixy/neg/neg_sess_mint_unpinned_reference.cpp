@@ -8,6 +8,7 @@
 // only through the SessionResource clause.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

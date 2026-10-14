@@ -7,6 +7,7 @@
 //
 // Expected diagnostic: Protocol_Specialized_Combinator.
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace neg_sess_combinator_specialized_member_types {
 using Receives = ::fixy::session::Recv<int, ::fixy::session::Continue>;

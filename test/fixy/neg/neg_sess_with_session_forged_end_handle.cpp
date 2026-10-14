@@ -5,6 +5,7 @@
 // body was given cannot be replaced.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

@@ -1,5 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
+#include <fixy/session/Mint.h>
 
 // A commit is a background transition.  The foreground context owns no Bg,
 // so it cannot move a live session handle to a new transport resource.

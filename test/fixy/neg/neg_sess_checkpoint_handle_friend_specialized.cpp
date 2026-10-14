@@ -8,6 +8,7 @@
 //
 // Expected diagnostic: the constructor is private in this context.
 #include <fixy/session/Checkpoint.h>
+#include <fixy/session/Mint.h>
 
 namespace neg_sess_checkpoint_handle_friend_specialized_types {
 struct Tag {};

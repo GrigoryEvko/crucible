@@ -58,7 +58,7 @@
 //
 // ── Every wait goes through the watch ───────────────────────────────
 //
-// A transport of fixy/session/Handle.h never waits in secret.  A read
+// A transport of fixy/session/Transport.h never waits in secret.  A read
 // either polls, and returns no value while no message is there, or it
 // takes a wait_scope that the handle opened before the call.  A write
 // either tries, and returns false while it cannot take the value, or it

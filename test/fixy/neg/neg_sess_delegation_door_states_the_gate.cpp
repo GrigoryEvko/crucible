@@ -7,6 +7,7 @@
 //
 // Expected diagnostic: the door does not accept the handle.
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

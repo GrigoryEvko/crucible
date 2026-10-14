@@ -12,6 +12,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <foundation/effects/Row.h>
 
 #include <csignal>

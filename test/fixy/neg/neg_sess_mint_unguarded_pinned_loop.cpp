@@ -4,6 +4,7 @@
 // inside the handle.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

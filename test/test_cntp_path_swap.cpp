@@ -1,5 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
+#include <fixy/session/Mint.h>
 
 #include <atomic>
 #include "test_assert.h"

@@ -4,6 +4,7 @@
 // public path that the hatch leaves closed.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 

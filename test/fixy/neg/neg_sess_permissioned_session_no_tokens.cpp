@@ -4,6 +4,7 @@
 // session has one mint for each shape of its start.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 

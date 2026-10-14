@@ -4,6 +4,7 @@
 // channel is never made.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>

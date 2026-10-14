@@ -9,7 +9,7 @@
 // The table holds the SPSC and the MPSC channel of fixy/concurrent.  Those
 // are the only permissioned channels of fixy/concurrent.
 //
-// fixy/session/Handle.h refuses a raw pointer to a channel handle as a
+// fixy/session/Admission.h refuses a raw pointer to a channel handle as a
 // session resource, because the handle can move or die first.  So the
 // session takes the handle by move.  The gate does not ask that the
 // footprint of one call fits a residency tier, because a context carries

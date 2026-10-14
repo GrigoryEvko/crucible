@@ -8,6 +8,7 @@
 //
 // Expected diagnostic: the constructor is private in this context.
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Mint.h>
 
 namespace neg_sess_crash_watched_friend_specialized_types {
 struct Tag {};

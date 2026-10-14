@@ -5,6 +5,7 @@
 // walks the whole protocol with it.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>

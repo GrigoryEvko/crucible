@@ -22,6 +22,7 @@
 // The handles use check::Off, so an endpoint may stop before End.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <sys/wait.h>
 #include <unistd.h>

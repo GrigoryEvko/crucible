@@ -4,6 +4,7 @@
 // holds.  The gate refuses the protocol before the first send runs.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>

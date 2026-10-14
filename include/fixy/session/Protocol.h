@@ -681,7 +681,7 @@ consteval bool require_registered_spine(std::meta::info protocol) {
 namespace detail {
 
 // The loop context of a handle that an owning entry point lends to a
-// body.  fixy/session/Handle.h states what the brand closes.  Each form
+// body.  fixy/session/Admission.h states what the brand closes.  Each form
 // is read from its template arguments, so no form has a member.
 template <typename Brand, typename InnerLoopCtx = void>
 struct session_brand {};
@@ -824,7 +824,7 @@ using protocol_inner_t = typename detail::vendor_view<P>::protocol;
 // A Send or a Recv whose payload names a label key, a PeerMsg or a
 // Labelled.  Outside a choice it is the Select or the Offer of that one
 // branch.  Its message is the label word below, and then the value of its
-// payload when the payload is not void (fixy/session/Handle.h).
+// payload when the payload is not void (fixy/session/Transport.h).
 template <typename P>
 concept is_keyed_step_v = ::fixy::session::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
 
@@ -1176,7 +1176,7 @@ using compose_at_branch_t = typename detail::compose_at_branch_view<P, I, Q>::ty
 //
 // A Send or a Recv of a PeerMsg or a Labelled is keyed.  Outside a choice
 // it is the Select or the Offer of that one branch, and the handle puts
-// its label word on the wire (fixy/session/Handle.h).
+// its label word on the wire (fixy/session/Transport.h).
 //
 // LoopCtx is void outside a loop.  A Loop type as LoopCtx, the form the
 // handle carries, means inside one loop after its first step.

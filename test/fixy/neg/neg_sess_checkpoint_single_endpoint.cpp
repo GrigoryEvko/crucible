@@ -3,6 +3,7 @@
 // take a rollback decision that its peer never checked.
 
 #include <fixy/session/Checkpoint.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

@@ -11,6 +11,7 @@
 // sealed shape of a passkey, so only its one door makes it.
 
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 
 #include <sys/wait.h>
 #include <unistd.h>

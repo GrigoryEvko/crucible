@@ -9,6 +9,7 @@
 // Expected diagnostic: the mint has no match, and the failed clause is
 // the permission flow of the carrier protocol.
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace neg_sess_payload_bare_endpoint_mint_types {
 struct Region {

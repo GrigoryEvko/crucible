@@ -4,6 +4,7 @@
 // copied, so the call is refused at the copy of the token.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>

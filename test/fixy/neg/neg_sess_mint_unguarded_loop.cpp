@@ -4,6 +4,7 @@
 // inside the handle unroll with an error that names no rule.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

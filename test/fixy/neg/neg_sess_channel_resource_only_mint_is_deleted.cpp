@@ -4,6 +4,7 @@
 // deleted, and the reason names the fork-shaped mint.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace {
 namespace s = ::fixy::session;

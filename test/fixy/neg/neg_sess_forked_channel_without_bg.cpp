@@ -3,6 +3,7 @@
 // fork, and so the channel.  The bodies here are correct.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>

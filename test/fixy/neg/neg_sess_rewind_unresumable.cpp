@@ -7,6 +7,7 @@
 //
 // Expected diagnostic: no rewind accepts the position.
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

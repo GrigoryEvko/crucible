@@ -3,6 +3,7 @@
 // refuses it at the gate.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

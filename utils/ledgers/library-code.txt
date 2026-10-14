@@ -481,21 +481,16 @@ include/fixy/session/Flow.h | inlined | 1 | std::exchange | -
 include/fixy/session/Flow.h | inlined | 7 | std::pair::pair | -
 include/fixy/session/Flow.h | reference | 2 | stderr | -
 include/fixy/session/Handle.h | call | 5 | abort | -
-include/fixy/session/Handle.h | call | 2 | std::invoke | -
-include/fixy/session/Handle.h | call | 2 | std::optional::operator* | -
 include/fixy/session/Handle.h | call | 2 | std::source_location::file_name | -
 include/fixy/session/Handle.h | call | 2 | std::source_location::line | -
 include/fixy/session/Handle.h | inlined | 8 | fprintf | -
-include/fixy/session/Handle.h | inlined | 3 | std::array::operator[] | -
 include/fixy/session/Handle.h | inlined | 5 | std::basic_string_view::data | -
 include/fixy/session/Handle.h | inlined | 1 | std::basic_string_view::empty | -
 include/fixy/session/Handle.h | inlined | 5 | std::basic_string_view::size | -
-include/fixy/session/Handle.h | inlined | 15 | std::invoke | -
+include/fixy/session/Handle.h | inlined | 5 | std::invoke | -
 include/fixy/session/Handle.h | inlined | 1 | std::optional::emplace | -
-include/fixy/session/Handle.h | inlined | 4 | std::optional::operator (conversion) | -
-include/fixy/session/Handle.h | inlined | 1 | std::optional::operator* | -
-include/fixy/session/Handle.h | inlined | 1 | std::optional::operator= | -
-include/fixy/session/Handle.h | inlined | 4 | std::optional::~optional | -
+include/fixy/session/Handle.h | inlined | 1 | std::optional::operator (conversion) | -
+include/fixy/session/Handle.h | inlined | 1 | std::optional::~optional | -
 include/fixy/session/Handle.h | inlined | 1 | std::pair::operator= | -
 include/fixy/session/Handle.h | inlined | 4 | std::pair::pair | -
 include/fixy/session/Handle.h | inlined | 1 | std::source_location::column | -
@@ -509,6 +504,14 @@ include/fixy/session/Recording.h | inlined | 2 | std::optional::operator* | -
 include/fixy/session/Recording.h | inlined | 4 | std::optional::optional | -
 include/fixy/session/Recording.h | inlined | 2 | std::pair::pair | -
 include/fixy/session/Recording.h | inlined | 2 | std::pair::~pair | -
+include/fixy/session/Transport.h | call | 2 | std::invoke | -
+include/fixy/session/Transport.h | call | 2 | std::optional::operator* | -
+include/fixy/session/Transport.h | inlined | 3 | std::array::operator[] | -
+include/fixy/session/Transport.h | inlined | 10 | std::invoke | -
+include/fixy/session/Transport.h | inlined | 3 | std::optional::operator (conversion) | -
+include/fixy/session/Transport.h | inlined | 1 | std::optional::operator* | -
+include/fixy/session/Transport.h | inlined | 1 | std::optional::operator= | -
+include/fixy/session/Transport.h | inlined | 3 | std::optional::~optional | -
 include/fixy/session/VigilModeCell.h | inlined | 1 | std::atomic::compare_exchange_strong | -
 include/fixy/session/VigilModeCell.h | inlined | 1 | std::atomic::load | -
 include/fixy/session/VigilModeCell.h | inlined | 2 | std::atomic::store | -
@@ -896,14 +899,12 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/session/EventLog.h | inlined | -2 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/session/Flow.h | inlined | -7 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -1 | abort | -
-@x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::invoke | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::source_location::file_name | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | call | -2 | std::source_location::line | -
-@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -3 | std::array::operator[] | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::data | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::size | -
-@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::optional::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::optional::~optional | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | -1 | std::pair::pair | -
 @x86_64-debug-tsan | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
@@ -913,6 +914,9 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -2 | std::optional::optional | -
 @x86_64-debug-tsan | include/fixy/session/Recording.h | inlined | -1 | std::pair::~pair | -
+@x86_64-debug-tsan | include/fixy/session/Transport.h | call | -2 | std::invoke | -
+@x86_64-debug-tsan | include/fixy/session/Transport.h | inlined | -3 | std::array::operator[] | -
+@x86_64-debug-tsan | include/fixy/session/Transport.h | inlined | -1 | std::optional::operator (conversion) | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::data | -
 @x86_64-debug-tsan | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::size | -
 @x86_64-debug-tsan | include/foundation/AlignedBuffer.h | inlined | -1 | std::span::data | -
@@ -1303,16 +1307,12 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/session/EventLog.h | reference | -1 | stderr | -
 @x86_64-release | include/fixy/session/Flow.h | inlined | -7 | std::pair::pair | -
 @x86_64-release | include/fixy/session/Handle.h | call | -1 | abort | -
-@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::invoke | -
-@x86_64-release | include/fixy/session/Handle.h | call | -2 | std::optional::operator* | -
 @x86_64-release | include/fixy/session/Handle.h | call | -2 | std::source_location::file_name | -
 @x86_64-release | include/fixy/session/Handle.h | call | -2 | std::source_location::line | -
-@x86_64-release | include/fixy/session/Handle.h | inlined | -3 | std::array::operator[] | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::data | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | -5 | std::basic_string_view::size | -
-@x86_64-release | include/fixy/session/Handle.h | inlined | -2 | std::optional::operator (conversion) | -
-@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::optional::operator (conversion) | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::optional::~optional | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | -1 | std::pair::pair | -
 @x86_64-release | include/fixy/session/Handle.h | inlined | +2 | std::source_location::file_name | -
@@ -1324,6 +1324,11 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::optional::operator* | -
 @x86_64-release | include/fixy/session/Recording.h | inlined | -2 | std::optional::optional | -
 @x86_64-release | include/fixy/session/Recording.h | inlined | -1 | std::pair::~pair | -
+@x86_64-release | include/fixy/session/Transport.h | call | -2 | std::invoke | -
+@x86_64-release | include/fixy/session/Transport.h | call | -2 | std::optional::operator* | -
+@x86_64-release | include/fixy/session/Transport.h | inlined | -3 | std::array::operator[] | -
+@x86_64-release | include/fixy/session/Transport.h | inlined | -1 | std::optional::operator (conversion) | -
+@x86_64-release | include/fixy/session/Transport.h | inlined | -1 | std::optional::operator* | -
 @x86_64-release | include/fixy/session/Watch.h | inlined | -2 | std::array::operator[] | -
 @x86_64-release | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::data | -
 @x86_64-release | include/fixy/session/Watch.h | inlined | -1 | std::basic_string_view::size | -

@@ -19,6 +19,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
+#include <fixy/session/Mint.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

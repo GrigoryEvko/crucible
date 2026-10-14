@@ -6,6 +6,7 @@
 // token are all correct, so only the row clause can refuse the call.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>

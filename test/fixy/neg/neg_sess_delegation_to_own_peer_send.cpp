@@ -2,6 +2,7 @@
 // hold the two ends of the inner session, so the mint refuses the protocol.
 
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace neg_sess_delegation_to_own_peer_send_types {

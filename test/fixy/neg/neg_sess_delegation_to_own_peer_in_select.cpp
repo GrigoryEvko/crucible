@@ -3,6 +3,7 @@
 // Carol would hold the two ends of it, and the mint refuses the protocol.
 
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace neg_sess_delegation_to_own_peer_in_select_types {

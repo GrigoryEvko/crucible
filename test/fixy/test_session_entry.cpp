@@ -4,6 +4,7 @@
 
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>

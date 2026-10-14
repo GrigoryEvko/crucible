@@ -3,6 +3,7 @@
 // foreground thread cannot get the two endpoints of one channel.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 

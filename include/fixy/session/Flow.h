@@ -416,7 +416,7 @@ consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::in
 template <class Proto>
 concept delegates_to_own_peer_v = detail::delegates_to_own_peer(^^Proto);
 
-// The gate that each mint of fixy/session/Handle.h reads.
+// The gate that each mint of fixy/session/Mint.h reads.
 template <class Proto>
 concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 
@@ -429,7 +429,7 @@ concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 // touch of the region incurs (foundation/permissions/Permission.h).  So
 // the context of the receiver must admit that row, as the context of a
 // mint admits the row of each token that the mint consumes.  The context
-// gate of fixy/session/Handle.h reads the set below for that check.
+// gate of fixy/session/Admission.h reads the set below for that check.
 //
 // The walk visits each Recv of the protocol, on each branch and in each
 // loop body.  A received DelegatedSession gives the receiver an endpoint,
@@ -596,7 +596,7 @@ struct delivery_gate {
 // The regions that Proto can deliver to the endpoint that runs it: each
 // region that a Recv of Proto, or of a protocol that Proto receives in a
 // DelegatedSession, moves, lends or releases to the receiver.  The alias
-// is the spelling that the context gate of fixy/session/Handle.h reads.
+// is the spelling that the context gate of fixy/session/Admission.h reads.
 // The class of the same name is the view for a reader.
 template <class Proto>
 using protocol_delivered_regions_t = [:detail::delivered_regions_if(detail::delivery_gate<Proto>::holds, ^^Proto):];

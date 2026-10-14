@@ -7,15 +7,15 @@
 //
 // ── The gate ────────────────────────────────────────────────────────
 //
-// CtxFitsSession is CtxFitsSessionFrom of fixy/session/Handle.h with no
+// CtxFitsSession is CtxFitsSessionFrom of fixy/session/Admission.h with no
 // tag, so it is the gate of mint_permissioned_session at the empty set.
 // The two mints cannot drift apart, because they read one concept.  With
 // no tag, the context part of the gate asks only that the context is an
 // execution context: no tag brings a permission row for the context to
 // admit.
 //
-// The gate also asks that the context holds each effect that a payload
-// of the protocol carries (CtxAdmitsProtocolRow of fixy/session/Handle.h).
+// The gate also asks that the context holds each effect that a payload of
+// the protocol carries (CtxAdmitsProtocolRow of fixy/session/Admission.h).
 // A context with no Alloc capability cannot start a session whose
 // messages carry an Alloc computation, in either direction, or in a
 // protocol that the session delegates.  The context must also admit the
@@ -48,6 +48,7 @@
 // run time each step moves the Resource once.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>

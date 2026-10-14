@@ -2,6 +2,7 @@
 // the end of the statement, so the recorder would write to a dead
 // object.  The log parameter takes an lvalue only.
 
+#include <fixy/session/Mint.h>
 #include <fixy/session/Recording.h>
 
 namespace s = fixy::session;

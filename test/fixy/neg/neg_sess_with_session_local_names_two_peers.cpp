@@ -3,6 +3,7 @@
 // traffic of two peers, and the entry point refuses it.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;

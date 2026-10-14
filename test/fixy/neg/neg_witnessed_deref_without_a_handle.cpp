@@ -6,6 +6,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>

@@ -4,6 +4,7 @@
 // room, or it takes the wait_scope that the handle opened for it.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <utility>
 

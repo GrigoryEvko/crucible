@@ -1,5 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
+#include <fixy/session/Mint.h>
 
 // A value resource that can be copied must be self-contained.  A resource
 // that holds a raw pointer reaches outside itself, so a copy of it is a

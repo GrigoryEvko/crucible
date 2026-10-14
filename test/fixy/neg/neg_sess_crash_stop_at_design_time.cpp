@@ -2,6 +2,7 @@
 // protocol written at design time never contains it.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

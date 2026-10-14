@@ -11,6 +11,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>

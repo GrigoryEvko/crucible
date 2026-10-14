@@ -9,6 +9,7 @@
 // Expected diagnostic: CtxAdmitsChannelRow is not satisfied.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>

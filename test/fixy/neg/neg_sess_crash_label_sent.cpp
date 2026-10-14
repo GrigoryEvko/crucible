@@ -3,6 +3,7 @@
 // the handle factory refuses that dual.  The peer uses crash_dual_t.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

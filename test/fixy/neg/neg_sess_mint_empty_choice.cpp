@@ -7,6 +7,7 @@
 // and then fails at the eventual select<I>() that has no branch to reach.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 

@@ -4,6 +4,7 @@
 // The mint refuses a local type that names two peers.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;

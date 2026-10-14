@@ -4,6 +4,7 @@
 // refuses the protocol anyway.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>

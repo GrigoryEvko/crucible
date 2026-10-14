@@ -27,7 +27,7 @@
 //   VendorPinned  the same vendor on both sides.
 //
 // The relation matches a label branch by the word that the handle sends
-// for it (fixy/session/Handle.h).  In a keyed choice, where each label
+// for it (fixy/session/Transport.h).  In a keyed choice, where each label
 // branch names a label key (a PeerMsg or a Labelled payload), the word is
 // the label word, and the branches match by label in any order.  A
 // Select of the subtype sends a subset of the labels of the supertype,

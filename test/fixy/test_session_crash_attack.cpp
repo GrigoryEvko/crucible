@@ -30,6 +30,7 @@
 //                              cell, and a crash against a write
 
 #include "session_crash_attack.h"
+#include <fixy/session/Mint.h>
 
 #include <sys/wait.h>
 #include <unistd.h>

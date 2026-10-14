@@ -67,6 +67,7 @@
 #include <fixy/ScopedView.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>

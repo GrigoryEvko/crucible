@@ -3,6 +3,7 @@
 // the label step is refused, and the diagnostic names the form to call.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 #include <cstddef>

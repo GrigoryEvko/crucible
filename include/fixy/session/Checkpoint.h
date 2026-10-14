@@ -76,6 +76,7 @@
 #include <fixy/session/Crash.h>
 #include <fixy/session/Flow.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 #include <fixy/session/Registry.h>
 
 #include <foundation/NoObject.h>
@@ -563,8 +564,8 @@ concept CheckpointSessionAdmissible =
 // The whole gate of mint_checkpoint_session: a compliant pair, a Resource
 // that a mint admits, and a context that admits the effect row of the
 // protocol that the plain handle runs (CtxAdmitsProtocolRow of
-// fixy/session/Handle.h).  The erasure keeps each payload, so that row is
-// the row of Proto.
+// fixy/session/Admission.h).  The erasure keeps each payload, so that row
+// is the row of Proto.
 template <typename Ctx, typename Proto, typename PeerProto, typename Resource>
 concept CtxFitsCheckpointSession = CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
                                 && CtxAdmitsProtocolRow<Ctx, checkpoint_erase_t<Proto>>;
@@ -721,7 +722,7 @@ public:
     }
 
     // A keyed message is its label word and then the value of its payload
-    // (fixy/session/Handle.h).  The step moves the word, and the handle
+    // (fixy/session/Transport.h).  The step moves the word, and the handle
     // then stands at the value step, or past the message when the payload
     // is void (keyed_landing_t).
     template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
@@ -744,7 +745,7 @@ public:
     // effect here, on this side, in the same call.  A keyed choice enters
     // its branch past the label word, and a checkpoint primitive is never a
     // keyed branch, so the landing is the branch that take_branch_ reads
-    // (branch_landing_t in fixy/session/Handle.h).
+    // (branch_landing_t in fixy/session/Transport.h).
     template <std::size_t I, typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
         requires is_select_v<Head> && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
     [[nodiscard]] static constexpr auto select(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
@@ -758,8 +759,8 @@ public:
     // effect before the call.  Every branch must give the handler the
     // same return type.  The word is the word of the erased protocol that
     // the plain handle runs, so the branch comes from that protocol
-    // (branch_of_wire_word in fixy/session/Handle.h).  The erasure keeps
-    // the count and the order of the branches.
+    // (branch_of_wire_word in fixy/session/Transport.h).  The erasure
+    // keeps the count and the order of the branches.
     template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport, typename Handler>
         requires is_offer_v<Head> && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
     static constexpr auto branch(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle, Transport transport,

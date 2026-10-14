@@ -117,6 +117,8 @@ include/fixy/os/OwnedMmap.h | open-read | 2 | fixy::atom_pack::has_row | -
 include/fixy/os/OwnedMmap.h | open-read | 1 | fixy::atom_pack::names_tag | -
 include/fixy/os/Socket.h | open-read | 1 | fixy::atom_pack::has_row | -
 include/fixy/os/ThreadName.h | open-read | 1 | fixy::detail::thread_name_extract::is_thread_named_v | -
+include/fixy/session/Admission.h | open-read | 1 | fixy::concurrent::payload_row_under | -
+include/fixy/session/Admission.h | open-read | 3 | fixy::session::detail::dual_view | -
 include/fixy/session/AsyncChannel.h | open-read | 1 | fixy::session::detail::dual_view | -
 include/fixy/session/Classification.h | open-read | 1 | fixy::session::detail::payload_readable_gate | -
 include/fixy/session/ContentAddressed.h | open-read | 1 | fixy::session::is_content_addressed_v | -
@@ -130,10 +132,8 @@ include/fixy/session/Flow.h | open-read | 1 | fixy::session::detail::delegation_
 include/fixy/session/Flow.h | open-read | 1 | fixy::session::detail::payload_readable_gate | -
 include/fixy/session/Global.h | open-read | 21 | fixy::session::global::detail::is_crashed_v | -
 include/fixy/session/Global.h | open-read | 2 | fixy::session::global::is_global_type_v | -
-include/fixy/session/Handle.h | open-read | 1 | fixy::concurrent::payload_row_under | -
-include/fixy/session/Handle.h | open-read | 4 | fixy::session::detail::dual_view | -
-include/fixy/session/Handle.h | open-read | 1 | fixy::session::detail::keyed_value | -
 include/fixy/session/Handle.h | open-read | 1 | fixy::session::protocol_is_at_v | -
+include/fixy/session/Mint.h | open-read | 1 | fixy::session::detail::dual_view | -
 include/fixy/session/Network.h | open-read | 1 | fixy::session::is_implementable_on | -
 include/fixy/session/Projection.h | open-read | 1 | fixy::session::detail::proj::peer_walk | -
 include/fixy/session/Projection.h | open-read | 2 | fixy::session::global::detail::is_crashed_v | -
@@ -150,6 +150,7 @@ include/fixy/session/Semantics.h | open-read | 4 | fixy::session::global::is_rel
 include/fixy/session/Semantics.h | open-read | 2 | fixy::session::global::is_transition_label_v | -
 include/fixy/session/Stepping.h | open-read | 1 | fixy::session::type_display_name_v | -
 include/fixy/session/Subtype.h | open-read | 1 | fixy::session::detail::dual_view | -
+include/fixy/session/Transport.h | open-read | 1 | fixy::session::detail::keyed_value | -
 include/foundation/algebra/ClaimOrientation.h | open-read | 1 | foundation::algebra::claim_orientation_v | -
 include/foundation/algebra/ClaimOrientation.h | open-read | 1 | foundation::algebra::claim_subject_v | -
 include/foundation/algebra/Lattice.h | open-read | 1 | foundation::algebra::detail::lattice_laws::laws_hold | -

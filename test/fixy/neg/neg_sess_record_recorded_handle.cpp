@@ -7,6 +7,7 @@
 //
 // Expected diagnostic: the handle does not satisfy RecordableHandle.
 
+#include <fixy/session/Mint.h>
 #include <fixy/session/Recording.h>
 
 namespace neg_sess_record_recorded_handle_types {

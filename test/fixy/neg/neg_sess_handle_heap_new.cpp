@@ -4,6 +4,7 @@
 // deletes its class-scope operator new, so the expression is refused.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 namespace {
 namespace s = ::fixy::session;

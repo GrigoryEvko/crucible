@@ -3,6 +3,7 @@
 // select refuses it.
 
 #include <fixy/session/Handle.h>
+#include <fixy/session/Mint.h>
 
 #include <cstddef>
 #include <utility>
