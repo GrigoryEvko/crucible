@@ -98,7 +98,7 @@ static_assert(s::is_subtype_async_v<early<4>, late<4>, ring<4>> && !s::is_subtyp
 // neg_sess_payload_rule_before_seal are that attack.
 
 // The implication chain was an entry here.  The implication relation of
-// fixy/Refined.h is transitive.  The payload order now joins the two ends
+// fixy/Predicates.h is transitive.  The payload order now joins the two ends
 // of a chain, and the order stays one way.
 using Narrow = ::fixy::Refined<::fixy::in_range<5, 9>, int>;
 using Middle = ::fixy::Refined<::fixy::bounded_above<9>, int>;

@@ -46,7 +46,7 @@ include/fixy/Fn.h | open-read | 1 | fixy::detail::role::is_accepted_fn | -
 include/fixy/Fn.h | open-read | 3 | fixy::is_fn_v | -
 include/fixy/Machine.h | open-read | 1 | fixy::machine_transition_v | -
 include/fixy/OwnedRegion.h | open-read | 1 | fixy::is_owned_region_v | -
-include/fixy/Refined.h | open-read | 1 | fixy::refined::bound_fits | -
+include/fixy/Predicates.h | open-read | 1 | fixy::refined::bound_fits | -
 include/fixy/Reject.h | open-read | 1 | fixy::collision::rules_of | -
 include/fixy/Reject.h | open-read | 1 | fixy::corpus::is_in_corpus_v | -
 include/fixy/Reject.h | open-read | 1 | fixy::detail::reject::first_duplicated_axis_ | -

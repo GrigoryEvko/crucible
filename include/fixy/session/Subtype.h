@@ -168,7 +168,7 @@
 // build at the next query of the order, so each translation unit that
 // compiles reads the same order.
 //
-// The implication is the relation of fixy/Refined.h, which is transitive:
+// The implication is the relation of fixy/Predicates.h, which is transitive:
 // P implies Q when a chain of admitted steps joins them.  A predicate
 // implies itself here, because the order is reflexive.
 //
@@ -285,7 +285,7 @@ using refinement_value_t = typename refinement_parts<T>::value_type;
 
 template <typename T, typename U>
 inline constexpr bool refinement_weakens_v = false;
-// The relation of fixy/Refined.h reads its admitted steps where that
+// The relation of fixy/Predicates.h reads its admitted steps where that
 // header defines them, so an edge that a later header adds does not
 // change this order.  A step of that relation holds on a value type only
 // where its two predicates are defined, so each predicate must evaluate

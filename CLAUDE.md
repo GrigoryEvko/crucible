@@ -2655,7 +2655,7 @@ interaction, brands, `permission_row_t` and the splits, which is a real
 multi-concern header. The two headers have a similar size and deserve opposite
 verdicts, so the instrument that ranks them equal is the wrong one.
 
-For scale, `fixy/Collision.h` is 2,523 lines and `fixy/Refined.h` is 1,879. The
+For scale, `fixy/Collision.h` is 2,227 lines and `fixy/Predicates.h` is 1,046. The
 headers of `include/foundation/` and `include/fixy/` are 29% comment, so their
 size is code and not prose. Header size is a review question about concerns, not
 a gate. `Permission.h` is

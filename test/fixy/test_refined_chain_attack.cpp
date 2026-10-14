@@ -1,5 +1,5 @@
 // An adversarial campaign against the implication closure of
-// fixy/Refined.h.  Each attack uses only what a caller can write: new
+// fixy/Predicates.h.  Each attack uses only what a caller can write: new
 // predicates, new namespaces, derived types, aliases, bounds of mixed
 // signedness, and declarations added after the header.  The file
 // asserts in place that each attack fails.
@@ -135,7 +135,7 @@ static_assert(fixy::PredicateImplies<fixy::in_range<1, 9>, fixy::non_null>,
 // ── Attack 7: declarations after the header ──────────────────────────
 //
 // The relation holds one seal, which counts its members at the foot of
-// fixy/Refined.h.  Each implication query reads the seal first.  A family
+// fixy/Predicates.h.  Each implication query reads the seal first.  A family
 // or an edge that a file adds later stops the build at the next query,
 // and the fixtures neg_refined_edge_after_the_header and
 // neg_refined_family_after_the_header show the refusal.  Here the seal

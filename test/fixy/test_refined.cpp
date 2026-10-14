@@ -274,7 +274,7 @@ static_assert(fixy::detail::refined_edge_walk::every_edge_holds());
     }
     return count;
 }
-static_assert(rule_count() == 15, "one rule per parameterised family: four from Refined.h's own families, "
+static_assert(rule_count() == 15, "one rule per parameterised family: four from Predicates.h's own families, "
                                   "the two combinator rules, and nine from the algebra.  A chain reaches four "
                                   "bridges that the namespace does not state.");
 

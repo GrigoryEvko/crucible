@@ -389,7 +389,7 @@ home trait-guard fixy::retag_policy | a fail-closed relation: a specialization a
 home trait-guard admitted_retags include/fixy/Tagged.h | a fail-closed namespace: each edge of the retag relation stands in the header of the relation
 home trait-guard admitted_policies include/fixy/Secret.h | a fail-closed namespace: each declassification policy stands in the header of the relation
 home trait-guard admitted_transitions | a fail-closed namespace: each state-machine edge stands in the header of its machine, and no production header holds one at this time
-home trait-guard admitted_implications include/fixy/Refined.h | a fail-closed namespace: each implication between refinements stands in the header of the relation
+home trait-guard admitted_implications include/fixy/Predicates.h | a fail-closed namespace: each implication between refinements stands in the header of the relation
 home trait-guard permission_rows include/foundation/permissions/Permission.h | a fail-closed namespace: a tag of a different header states its row with a permission_row member of its own definition
 home trait-guard foundation::contracts::armed_cell include/foundation/ include/fixy/ | an extension point: a cell holds the witnesses that a gate predicate accepts and refuses, beside the predicate.  It adds a check and gives no authority
 home trait-guard foundation::contracts::armed_instances include/foundation/ include/fixy/ | an extension point: the instances of a templated gate that the armed roster walks, beside the gate

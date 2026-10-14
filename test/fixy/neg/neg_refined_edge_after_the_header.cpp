@@ -1,4 +1,4 @@
-// An implication edge added to the relation after fixy/Refined.h.
+// An implication edge added to the relation after fixy/Predicates.h.
 //
 // Zero is non-negative and not positive, so the edge is unsound.  The
 // file opens admitted_implications again and declares it, as a file
@@ -8,7 +8,7 @@
 // ask, so it stops the build rather than reach the late edge through
 // the chain from the range to non_negative.
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 namespace fixy::refined::admitted_implications {
 

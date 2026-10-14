@@ -17,7 +17,7 @@ struct not_a_rule {};
 
 }  // namespace fixy::refined::admitted_implications
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 

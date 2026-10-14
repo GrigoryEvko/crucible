@@ -1,4 +1,4 @@
-// A rule added to the relation after fixy/Refined.h.
+// A rule added to the relation after fixy/Predicates.h.
 //
 // The rule decides non_negative ⇒ non_zero, which zero refutes.  It is a
 // function and not an edge, so a count of edges alone would not see it.
@@ -6,7 +6,7 @@
 // reads the seal.  The query below asks a pair that the header does not
 // ask, so it stops the build.
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 #include <meta>
 

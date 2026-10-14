@@ -1,7 +1,7 @@
 // Two distinct predicates that imply each other through edges that do
 // not narrow are two names for one predicate.  The closure refuses the
 // cycle where a search from either name meets it, and the walk of
-// fixy/Refined.h runs that search from every edge.
+// fixy/Predicates.h runs that search from every edge.
 //
 // The fixture plants the edges before the header, because the relation
 // reads the namespace as it stands where the header defines it.  Then
@@ -30,7 +30,7 @@ inline constexpr ::foundation::fail_closed::edge<std::remove_cv_t<decltype(plant
 
 }  // namespace fixy::refined::admitted_implications
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 

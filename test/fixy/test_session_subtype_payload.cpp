@@ -64,7 +64,7 @@ static_assert(s::is_payload_subsort_v<Refined<::fixy::in_range<10, 20>, int>, Re
 static_assert(s::is_payload_subsort_v<Refined<::fixy::aligned<64>, void*>, Refined<::fixy::aligned<8>, void*>>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::positive, int*>, Refined<::fixy::non_null, int*>>,
               "positive implies non_zero, and non_zero implies non_null: the order closes the chain that "
-              "fixy/Refined.h does not close");
+              "fixy/Predicates.h does not close");
 
 using BitexactTile = ::fixy::NumericalTier<Tolerance::BITEXACT, TensorTile>;
 using Fp32Tile = ::fixy::NumericalTier<Tolerance::ULP_FP32, TensorTile>;

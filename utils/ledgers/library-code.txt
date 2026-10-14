@@ -187,10 +187,10 @@ include/fixy/OwnedRegion.h | inlined | 8 | std::exchange | -
 include/fixy/OwnedRegion.h | inlined | 1 | std::get | -
 include/fixy/OwnedRegion.h | inlined | 2 | std::span::span | -
 include/fixy/OwnedRegion.h | inlined | 1 | std::tuple::tuple | -
+include/fixy/Predicates.h | inlined | 1 | std::cmp_less_equal | -
+include/fixy/Predicates.h | inlined | 1 | std::span::empty | -
 include/fixy/Qtt.h | inlined | 1 | std::unique_ptr::unique_ptr | -
-include/fixy/Refined.h | inlined | 1 | std::cmp_less_equal | -
 include/fixy/Refined.h | inlined | 2 | std::expected::expected | -
-include/fixy/Refined.h | inlined | 1 | std::span::empty | -
 include/fixy/Refined.h | inlined | 1 | std::unexpected::unexpected | -
 include/fixy/SelfContained.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator* | -
 include/fixy/SelfContained.h | inlined | 2 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -748,9 +748,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -2 | std::exchange | -
 @x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -1 | std::get | -
 @x86_64-debug-tsan | include/fixy/OwnedRegion.h | inlined | -2 | std::span::span | -
+@x86_64-debug-tsan | include/fixy/Predicates.h | inlined | -1 | std::span::empty | -
 @x86_64-debug-tsan | include/fixy/Qtt.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::expected::expected | -
-@x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
 @x86_64-debug-tsan | include/fixy/Refined.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-debug-tsan | include/fixy/SelfContained.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
 @x86_64-debug-tsan | include/fixy/SelfContained.h | inlined | -3 | __gnu_cxx::operator== | -
@@ -1001,7 +1001,7 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/Mutation.h | call | -1 | std::vector::emplace_back | -
 @x86_64-debug-ubsan-strict | include/fixy/Mutation.h | inlined | -4 | std::less::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Mutation.h | inlined | +1 | std::vector::emplace_back | -
-@x86_64-debug-ubsan-strict | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
+@x86_64-debug-ubsan-strict | include/fixy/Predicates.h | inlined | -1 | std::span::empty | -
 @x86_64-debug-ubsan-strict | include/fixy/SelfContained.h | inlined | +1 | __gnu_cxx::operator== | -
 @x86_64-debug-ubsan-strict | include/fixy/SelfContained.h | inlined | -2 | std::bit_cast | -
 @x86_64-debug-ubsan-strict | include/fixy/SharedRegion.h | inlined | -1 | std::optional::operator* | -
@@ -1136,9 +1136,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/fixy/OwnedRegion.h | inlined | -2 | std::exchange | -
 @x86_64-release | include/fixy/OwnedRegion.h | inlined | -1 | std::get | -
 @x86_64-release | include/fixy/OwnedRegion.h | inlined | -2 | std::span::span | -
+@x86_64-release | include/fixy/Predicates.h | inlined | -1 | std::span::empty | -
 @x86_64-release | include/fixy/Qtt.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-release | include/fixy/Refined.h | inlined | -1 | std::expected::expected | -
-@x86_64-release | include/fixy/Refined.h | inlined | -1 | std::span::empty | -
 @x86_64-release | include/fixy/Refined.h | inlined | -1 | std::unexpected::unexpected | -
 @x86_64-release | include/fixy/SelfContained.h | inlined | -2 | __gnu_cxx::__normal_iterator::operator* | -
 @x86_64-release | include/fixy/SelfContained.h | inlined | -3 | __gnu_cxx::operator== | -

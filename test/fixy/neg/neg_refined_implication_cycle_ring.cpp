@@ -4,7 +4,7 @@
 //
 // The fixture plants the edges before the header, because the relation
 // reads the namespace as it stands where the header defines it.  Then
-// the fixture calls the walk of fixy/Refined.h, which runs the search
+// the fixture calls the walk of fixy/Predicates.h, which runs the search
 // from every edge.  The planted edges also stand outside the seal of the
 // relation, so each query of the walk also stops at the seal.
 
@@ -32,7 +32,7 @@ inline constexpr ::foundation::fail_closed::edge<planted::not_below_four_t, plan
 
 }  // namespace fixy::refined::admitted_implications
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 

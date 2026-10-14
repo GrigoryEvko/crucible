@@ -4,7 +4,7 @@
 // it writes an explicit specialization of the rule for ceilings.  No
 // specialization matches a function that is not a template.
 
-#include <fixy/Refined.h>
+#include <fixy/Predicates.h>
 
 #include <meta>
 
