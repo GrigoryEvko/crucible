@@ -555,7 +555,7 @@ utils/assay/guard/listing.py | refused-word | 1 | <module>: whose | A text of to
 utils/assay/guard/selftest.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/write.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/write.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | long-sentence | 10 | <module> | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/affected.py | long-sentence | 9 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: assume | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: decide | A text of today.  The change that writes the text again in STE lowers the count
@@ -580,8 +580,6 @@ utils/assay/loop/affected.py | refused-word | 1 | run: decide | A text of today.
 utils/assay/loop/affected.py | refused-word | 1 | run_inherited: past | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | save_state: never | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | save_state: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 1 | update_state: pass | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 1 | update_state: rest | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 3 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | <module>: noisy | A text of today.  The change that writes the text again in STE lowers the count

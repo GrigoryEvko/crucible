@@ -107,14 +107,51 @@ THE LOOP HISTORY
     utils/assay/loop/history.py gives the rules.
 
 THE RECORD
-    After an executable test passes, the script records its fingerprint in
-    BUILD_DIR/affected-tests/state.json.  A test that fails, a test that ctest
-    does not run, and a test whose inputs changed while it ran get no record,
-    and they run on the next call.  The script never reports a test as passed
-    that it did not run.  It prints the number of tests that it skipped and
-    the reason, and it writes their names to BUILD_DIR/affected-tests/skipped.txt.
-    A lock on BUILD_DIR/affected-tests/lock keeps two calls on one build
-    directory apart.
+    After a test of FINGERPRINTED passes, the script records its fingerprint
+    in BUILD_DIR/affected-tests/state.json.  A test that ctest does not run
+    gets no record, and a test whose inputs changed while it ran gets none.
+    The two run on the next call.  A test that fails gets its fingerprint in
+    the failures of the state.  The script never reports a test as passed that it did not
+    run.  It prints the number of tests that it skipped and the reason, and
+    it writes their names to BUILD_DIR/affected-tests/skipped.txt.  A lock on
+    BUILD_DIR/affected-tests/lock keeps two calls on one build directory
+    apart.
+
+THE SHARED STORE
+    The result of each run with the status 0 also goes into one store: the
+    cache STORE_NAME of assay.core.cache.  The warm trees of the gate of `loop land`, the copy of
+    `loop gauge` and each build directory of a developer then share them.  A
+    test of FINGERPRINTED with no such run in its own state is skipped when
+    the store holds a result for its shared key.  These are the rules:
+      * The shared key is the fingerprint with ROOT_MARK for the source root
+        and BUILD_MARK for the build directory.  The marks replace the roots
+        in each word of the record, each path and each text (relocated() of
+        assay.core.cost_store).  The files build-kind.txt and
+        build-configuration.txt are not in the key, because only the judge of
+        the budget of the launcher reads them.
+      * An entry is the file KEY in the directory of the first two digits of
+        KEY.  It holds the format, the verdict and the SHA-256 of the record of
+        the run (assay.core.record).  The script writes an entry only after a
+        run with the status 0 and with unchanged inputs.  It removes the entry
+        of a test after a run with a different status.
+      * A test runs again when its last run in this build directory had a
+        status that is not 0 with the same fingerprint.  It runs also when the
+        store holds a result for its key.  A failure of this build directory
+        then stays in the output.
+      * A skip through the store writes no record of the test into this build
+        directory.  The judges of the budgets, such as the rule test-time, read
+        the records of their own build directory.  A test with no record keeps
+        its row.
+      * --all runs each test, and it writes the store after each run with the
+        status 0.
+      * hold_bound() of assay.core.cache keeps the store in its row of LIMITS
+        after each call.
+    The judge of the launcher is lenient in a build of a kind with tsan.  A
+    ledger row keeps a test only in its configuration.  The result of such a
+    build then stands for each build directory with the same key.  The key of
+    an executable test holds the bytes of its program.  The build writes the
+    paths of the checkout into the program.  Two work trees then seldom share
+    the result of an executable test.
 
     The script assumes that an executable test reads no file of the source
     tree, unless its command, its environment or its ELF file names that
@@ -164,8 +201,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import git, proc
+from assay.core import cache, cost_store, git, proc
+from assay.core import cache_root as cache_rule
 from assay.core import meter as cost_meter
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
@@ -179,8 +218,13 @@ from assay.setup import pins as cmake_pin
 
 # ── Constants ──────────────────────────────────────────────────────────────
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 STATE_DIRECTORY = "affected-tests"
+# The name of the shared store in the root of the caches and in LIMITS of assay.core.cache.  Then the format of an
+# entry and of a key, and the verdict of an entry (THE SHARED STORE).
+STORE_NAME = "test-results"
+STORE_FORMAT = "crucible-test-result 1"
+VERDICT_PASSED = "passed"
 # The file name of the master loop, and its subcommands that ctest starts: the
 # driver of a negative fixture and the test launcher.
 LOOP_MASTER = "loop"
@@ -220,6 +264,10 @@ REASON_CHANGED = "an input changed since the last pass"
 REASON_NO_RECORD = "no pass on record"
 REASON_ALL = "--all"
 REASON_SAME = "each input is the same as at the last pass"
+REASON_STORE = "the shared store holds a pass with the same inputs"
+# The reason of each skip in the summary after the tests: REASON_SAME or REASON_STORE.
+REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
+REASON_FAILED = "the test failed in this build directory with the same inputs"
 
 
 # ── Exceptions ─────────────────────────────────────────────────────────────
@@ -257,6 +305,7 @@ class Decision:
     kind: str
     reason: str
     fingerprint: str = ""
+    shared: str = ""
     is_skipped: bool = False
 
 
@@ -500,13 +549,87 @@ def shared_libraries(directory: str) -> list[str]:
     return sorted(os.path.join(directory, name) for name in names if SHARED_LIBRARY.search(name))
 
 
+# ── The shared store ───────────────────────────────────────────────────────
+
+
+class ResultStore:
+    """The results of the runs with the status 0 that each build directory and each work tree share (THE SHARED STORE).
+
+    With the caches off, the store holds nothing and writes nothing.
+    """
+
+    def __init__(self) -> None:
+        """Find the directory of the store in the root of the caches, and make it."""
+        self.directory = cache.cache_root(STORE_NAME)
+
+    def entry(self, key: str) -> Path | None:
+        """Return the file of the entry of a key, or None when the caches are off."""
+        return None if self.directory is None else self.directory / key[:2] / key
+
+    def holds_pass(self, key: str) -> bool:
+        """Return True when the store holds the result of a run with the status 0 for a key, and touch the entry.
+
+        Complexity: one open of one file.
+        """
+        path = self.entry(key)
+        if path is None:
+            return False
+        try:
+            used = path.stat().st_mtime
+            found = json.loads(path.read_bytes())
+        except (OSError, ValueError):
+            return False
+        is_pass = isinstance(found, dict) and found.get("format") == STORE_FORMAT and found.get("verdict") == (
+            VERDICT_PASSED
+        )
+        if is_pass:
+            cache.mark_used(path, used)
+        return is_pass
+
+    def put(self, key: str, record_digest: str) -> None:
+        """Write the result of a run with the status 0 for a key, with the SHA-256 of the record of the run.
+
+        A failure of the write changes nothing.
+        """
+        path = self.entry(key)
+        if path is None:
+            return
+        text = json.dumps({"format": STORE_FORMAT, "verdict": VERDICT_PASSED, "record": record_digest})
+        with contextlib.suppress(OSError):
+            cache.write_atomic(path, text.encode("ascii"))
+
+    def remove(self, key: str) -> None:
+        """Remove the entry of a key, when the store holds one."""
+        path = self.entry(key)
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+    def hold_bound(self) -> bool:
+        """Keep the store in its row of LIMITS of assay.core.cache, at its turn.  Return True when this call evicted."""
+        return self.directory is not None and cache.hold_bound(self.directory, cache.LIMITS[STORE_NAME])
+
+
+def text_digest(text: str) -> str:
+    """Return the SHA-256 of a text, with each byte of a surrogate escape kept."""
+    return hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def record_digest(build_root: str, name: str) -> str:
+    """Return the SHA-256 of the record of the last run of a test (assay.core.record), or "" with no record."""
+    try:
+        with open(cost_record.test_record_file(build_root, name), "rb") as handle:
+            return hashlib.file_digest(handle, "sha256").hexdigest()
+    except OSError:
+        return ""
+
+
 # ── The state file ─────────────────────────────────────────────────────────
 
 
 def empty_state(trees: Trees) -> dict[str, object]:
     """Return a state with no record."""
     return {"version": STATE_VERSION, "source": trees.source_root, "build": trees.build_root, "passed": {},
-            "scans": {}}
+            "failed": {}, "scans": {}}
 
 
 def load_state(path: Path, trees: Trees) -> tuple[dict[str, object], str]:
@@ -518,8 +641,10 @@ def load_state(path: Path, trees: Trees) -> tuple[dict[str, object], str]:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         return empty_state(trees), f"the state file {path} is damaged ({error}): each executable test runs"
     is_valid = (isinstance(state, dict) and state.get("version") == STATE_VERSION
-                and isinstance(state.get("passed"), dict) and isinstance(state.get("scans"), dict)
-                and all(isinstance(key, str) and isinstance(value, str) for key, value in state["passed"].items()))
+                and isinstance(state.get("scans"), dict)
+                and all(isinstance(state.get(part), dict)
+                        and all(isinstance(key, str) and isinstance(value, str) for key, value in state[part].items())
+                        for part in ("passed", "failed")))
     if not is_valid:
         return empty_state(trees), f"the state file {path} is not in format {STATE_VERSION}: each executable test runs"
     if state.get("source") != trees.source_root or state.get("build") != trees.build_root:
@@ -540,14 +665,19 @@ def save_state(path: Path, state: dict[str, object]) -> None:
 class Planner:
     """Decides for each test if it runs, and computes the fingerprint of each executable test."""
 
-    def __init__(self, trees: Trees, state: dict[str, object]) -> None:
-        """Keep the trees and the state, and start with an empty digest cache."""
+    def __init__(self, trees: Trees, state: dict[str, object], store: ResultStore) -> None:
+        """Keep the trees, the state and the shared store, and start with an empty digest cache."""
         self.trees = trees
         self.state = state
+        self.store = store
         self.digests = DigestCache()
         self.used_scans: dict[str, object] = {}
         self.launcher_files: dict[str, tuple[list[str], tuple[str, ...]]] = {}
         self.derivers: dict[str, guard_inputs.Deriver] = {}
+        # The roots of the shared key, the longest first.  A build directory in the source tree then gets its own mark.
+        given = ((trees.build_root, cost_store.BUILD_MARK), (trees.source_root, cost_store.ROOT_MARK))
+        self.marks = tuple(sorted(given, key=lambda item: -len(item[0])))
+        self.judge_files = frozenset(os.path.join(trees.build_root, name) for name in JUDGE_FILES)
 
     def forget(self) -> None:
         """Forget each digest and each fact of a tree.  The next decision then reads each input again."""
@@ -607,7 +737,8 @@ class Planner:
                 return Decision(test, KIND_ALWAYS, scan.always_reason)
             inputs.update(scan.files)
             directories.update(scan.directories)
-        return Decision(test, KIND_EXECUTABLE, "", fingerprint=self.fingerprint(test, inputs, directories, texts))
+        fingerprint, shared = self.fingerprints(test, inputs, directories, texts)
+        return Decision(test, KIND_EXECUTABLE, "", fingerprint=fingerprint, shared=shared)
 
     def guard_decision(self, test: ctest_reader.TestEntry, index: int) -> Decision | None:
         """Return the decision of a test of the master guard with inputs, or None for each other test.
@@ -650,7 +781,8 @@ class Planner:
         else:
             texts.append(environment_text(is_launched=False))
         files.update(path for path in named if path != master and os.path.isfile(path))
-        return Decision(test, KIND_GUARD, "", fingerprint=self.fingerprint(test, files, set(), tuple(texts)))
+        fingerprint, shared = self.fingerprints(test, files, set(), tuple(texts))
+        return Decision(test, KIND_GUARD, "", fingerprint=fingerprint, shared=shared)
 
     def launcher_inputs(self, launcher: str) -> tuple[list[str], tuple[str, ...]]:
         """Return the files and the texts that the test launcher reads.
@@ -706,23 +838,49 @@ class Planner:
                 return f"the working directory {directory} is in the source tree"
         return ""
 
-    def fingerprint(self, test: ctest_reader.TestEntry, inputs: set[str], directories: set[str],
-                    texts: tuple[str, ...] = ()) -> str:
-        """Return the SHA-256 of the record of a test, of the bytes of each of its inputs and of its texts.
+    def fingerprints(self, test: ctest_reader.TestEntry, inputs: set[str], directories: set[str],
+                     texts: tuple[str, ...] = ()) -> tuple[str, str]:
+        """Return the fingerprint of a test in this build directory, and its key in the shared store.
 
-        Complexity: O(n log n) for n input files, with one digest of each file that the digest cache does not hold.
+        The fingerprint is the SHA-256 of the record of the test, of the bytes of each of its inputs and of its texts.
+        THE SHARED STORE gives the rules of the key.  Complexity: O(n log n) for n input files, with one digest of each
+        file that the digest cache does not hold.
         """
         files = set(inputs)
         for directory in directories:
             files.update(shared_libraries(directory))
-        payload = json.dumps([canonical(test), sorted((path, self.digests.digest(path)) for path in files),
-                              sorted(directories), sorted(texts)])
-        return hashlib.sha256(payload.encode("utf-8", "surrogateescape")).hexdigest()
+        digests = sorted((path, self.digests.digest(path)) for path in files)
+        local = json.dumps([canonical(test), digests, sorted(directories), sorted(texts)])
+        shared_record = {
+            "name": test.name,
+            "command": [cost_store.relocated(word, self.marks) for word in test.command],
+            "properties": {name: [cost_store.relocated(word, self.marks) for word in words]
+                           for name, words in test.properties.items()},
+        }
+        shared = json.dumps([
+            STORE_FORMAT,
+            json.dumps(shared_record, sort_keys=True),
+            sorted((self.moved(path), digest) for path, digest in digests if path not in self.judge_files),
+            sorted(self.moved(directory) for directory in directories),
+            sorted(cost_store.relocated(text, self.marks) for text in texts),
+        ])
+        return text_digest(local), text_digest(shared)
+
+    def moved(self, path: str) -> str:
+        """Return a path with the mark of its root, the build directory or the source root, for the root."""
+        for root, mark in self.marks:
+            if path == root or path.startswith(root + "/"):
+                return mark + path[len(root):]
+        return path
 
     def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool) -> list[Decision]:
-        """Return the decision for each test."""
-        passed = self.state["passed"]
-        assert isinstance(passed, dict)
+        """Return the decision for each test (THE RECORD, THE SHARED STORE).
+
+        Complexity: classify() for each test.  For each test of FINGERPRINTED with no record of its own, one open of
+        one entry of the store.
+        """
+        passed, failed = self.state["passed"], self.state["failed"]
+        assert isinstance(passed, dict) and isinstance(failed, dict)
         decisions: list[Decision] = []
         for test in tests:
             decision = self.classify(test)
@@ -730,11 +888,16 @@ class Planner:
                 recorded = passed.get(test.name)
                 if run_all:
                     decision.reason = REASON_ALL
-                elif recorded is None:
-                    decision.reason = REASON_NO_RECORD
                 elif recorded == decision.fingerprint:
                     decision.reason = REASON_SAME
                     decision.is_skipped = True
+                elif failed.get(test.name) == decision.fingerprint:
+                    decision.reason = REASON_FAILED
+                elif self.store.holds_pass(decision.shared):
+                    decision.reason = REASON_STORE
+                    decision.is_skipped = True
+                elif recorded is None:
+                    decision.reason = REASON_NO_RECORD
                 else:
                     decision.reason = REASON_CHANGED
             decisions.append(decision)
@@ -841,25 +1004,40 @@ def parse_arms(source_root: Path, jobs: int) -> int:
 
 def update_state(state: dict[str, object], planner: Planner, decisions: list[Decision],
                  statuses: dict[str, ctest_reader.TestStatus], tests: tuple[ctest_reader.TestEntry, ...]) -> None:
-    """Record the fingerprint of each test of FINGERPRINTED that passed with unchanged inputs, and drop the rest."""
-    passed = state["passed"]
-    assert isinstance(passed, dict)
+    """Record the result of each run of a test of FINGERPRINTED, in the state and in the shared store.
+
+    A run with the status 0 and with unchanged inputs gives the fingerprint to the state and the entry to the store.
+    A failure gives the fingerprint to the failures of the state, and it removes the entry of the store (THE RECORD,
+    THE SHARED STORE).
+    """
+    passed, failed = state["passed"], state["failed"]
+    assert isinstance(passed, dict) and isinstance(failed, dict)
     names = {test.name for test in tests}
-    for name in list(passed):
-        if name not in names:
-            del passed[name]
+    for part in (passed, failed):
+        for name in [name for name in part if name not in names]:
+            del part[name]
     planner.forget()
     for decision in decisions:
-        if decision.kind not in FINGERPRINTED or decision.is_skipped:
-            if decision.kind not in FINGERPRINTED:
-                passed.pop(decision.test.name, None)
+        name = decision.test.name
+        if decision.kind not in FINGERPRINTED:
+            passed.pop(name, None)
+            failed.pop(name, None)
+            continue
+        if decision.is_skipped:
             continue
         after = planner.classify(decision.test)
         is_same = after.kind == decision.kind and after.fingerprint == decision.fingerprint
-        if statuses.get(decision.test.name) == ctest_reader.TestStatus.RUN and is_same:
-            passed[decision.test.name] = decision.fingerprint
+        status = statuses.get(name)
+        if status == ctest_reader.TestStatus.RUN and is_same:
+            passed[name] = decision.fingerprint
+            failed.pop(name, None)
+            planner.store.put(decision.shared, record_digest(planner.trees.build_root, name))
+        elif status == ctest_reader.TestStatus.FAIL:
+            passed.pop(name, None)
+            failed[name] = decision.fingerprint
+            planner.store.remove(decision.shared)
         else:
-            passed.pop(decision.test.name, None)
+            passed.pop(name, None)
     state["scans"] = planner.used_scans
 
 
@@ -917,7 +1095,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if note:
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
-        planner = Planner(trees, state)
+        planner = Planner(trees, state, ResultStore())
         decisions = planner.decide(tests, run_all)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
@@ -936,6 +1114,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             return 2
         update_state(state, planner, decisions, statuses, tests)
         save_state(state_path, state)
+        planner.store.hold_bound()
         counts = Counter(statuses.get(name, ctest_reader.TestStatus.NOTRUN) for name in selected)
         passed, failed = counts[ctest_reader.TestStatus.RUN], counts[ctest_reader.TestStatus.FAIL]
         skip_code = counts[ctest_reader.TestStatus.SKIPPED]
@@ -944,7 +1123,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
                                        "skip_code": skip_code, "not_run": not_run, "skipped": len(skipped)})
         print(f"loop test: {len(selected)} tests selected: {passed} passed, {failed} failed, {skip_code} gave their "
               f"skip code, {not_run} did not run.")
-        print(f"loop test: {len(skipped)} tests skipped, because {REASON_SAME} "
+        print(f"loop test: {len(skipped)} tests skipped, because {REASON_SKIPPED} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
             print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
@@ -1096,12 +1275,20 @@ GUARD_RULES = (
     "rule gamma engine=meta scope=builddir ledger=none doc=XV | a planted rule of the build | change nothing",
     "rule delta engine=meta scope=data/delta/ ledger=none doc=XV | a planted rule of the history | change nothing",
 )
+# The file of a build directory that gives a test with that build directory the status 1 from the stand-in master
+# guard.  The command names only the directory.  The file then changes no fingerprint.
+PLANTED_FAILURE = "planted-failure"
 # The files of the fake tree of the guard tests.  The module of the rule alpha imports a shared module.  The module of
 # beta lists the files of the tree, and the module of delta reads the history.  The test module of the group imports a
 # helper.  A fourth module is in no closure.
 GUARD_FILES = {
-    ".gitignore": "build/\n",
-    f"utils/bin/{GUARD_MASTER}": "import sys\nsys.exit(0)\n",
+    ".gitignore": "build/\nbuild-second/\n",
+    f"utils/bin/{GUARD_MASTER}": (
+        "import os, sys\n"
+        "words = sys.argv[1:]\n"
+        "build = words[words.index('--build-dir') + 1] if '--build-dir' in words else ''\n"
+        f"sys.exit(1 if build and os.path.exists(os.path.join(build, {PLANTED_FAILURE!r})) else 0)\n"
+    ),
     "utils/registry.txt": rule_registry.planted(GUARD_RULES),
     "utils/assay/guard/engines/meta/alpha.py": "from assay.fake import shared\n",
     "utils/assay/guard/engines/meta/beta.py": (
@@ -1138,23 +1325,29 @@ class GuardFake:
     def __init__(self, root: Path, ctest: str) -> None:
         """Make the trees in `root`, commit the source tree, and write the tests.  The cache names `ctest`."""
         self.source_dir = root / "src"
-        self.build_dir = self.source_dir / "build"
-        self.build_dir.mkdir(parents=True)
-        cmake.cache_file(self.build_dir).write_text("")
-        cmake.plant(self.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(self.source_dir), "CMAKE_CTEST_COMMAND": ctest})
-        launcher = plant_launcher(self.source_dir)
+        self.ctest = ctest
+        self.launcher = plant_launcher(self.source_dir)
         for name, text in GUARD_FILES.items():
             self.write(name, text)
         git.init(self.source_dir)
         git.commit_all(self.source_dir, "a planted tree")
+        self.build_dir = self.add_build("build")
+
+    def add_build(self, name: str) -> Path:
+        """Make a build tree of the source tree with the tests of GUARD_TESTS, and return it."""
+        build_dir = self.source_dir / name
+        build_dir.mkdir(parents=True)
+        cmake.cache_file(build_dir).write_text("")
+        cmake.plant(build_dir, cache={"CMAKE_HOME_DIRECTORY": str(self.source_dir), "CMAKE_CTEST_COMMAND": self.ctest})
         master = self.source_dir / "utils" / "bin" / GUARD_MASTER
         lines = []
-        for name, words in GUARD_TESTS:
-            spelled = " ".join(f'"{word.format(build=self.build_dir)}"' for word in words)
-            lines.append(f'add_test([=[{name}]=] "{sys.executable}" "-S" "{launcher}" "{LAUNCHER_SUBCOMMAND}" '
-                         f'"--build-dir" "{self.build_dir}" "--name" "{name}" "{sys.executable}" "{master}" '
-                         f'{spelled})')
-        (self.build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
+        for test_name, words in GUARD_TESTS:
+            spelled = " ".join(f'"{word.format(build=build_dir)}"' for word in words)
+            lines.append(f'add_test([=[{test_name}]=] "{sys.executable}" "-S" "{self.launcher}" '
+                         f'"{LAUNCHER_SUBCOMMAND}" "--build-dir" "{build_dir}" "--name" "{test_name}" '
+                         f'"{sys.executable}" "{master}" {spelled})')
+        (build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
+        return build_dir
 
     def write(self, name: str, text: str) -> None:
         """Write one file of the source tree."""
@@ -1162,10 +1355,11 @@ class GuardFake:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    def ran(self, *extra: str) -> tuple[set[str], str]:
+    def ran(self, *extra: str, build_dir: Path | None = None) -> tuple[set[str], str]:
         """Run the script, and return the names of the guard tests that it did not skip, and its output."""
-        _status, output = call_script(self.build_dir, *extra)
-        return {name for name, _words in GUARD_TESTS} - set(skipped_tests(self.build_dir)), output
+        chosen = self.build_dir if build_dir is None else build_dir
+        _status, output = call_script(chosen, *extra)
+        return {name for name, _words in GUARD_TESTS} - set(skipped_tests(chosen)), output
 
 
 def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
@@ -1208,6 +1402,29 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
         ran, output = fake.ran()
         expect("a change of the ledger of alpha runs only the tests of alpha",
                ran == {"guard_alpha", "guard_alpha_witness", "guard_gamma"}, output)
+        store_cases(fake, expect)
+
+
+def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
+    """Check THE SHARED STORE with a second build tree of the fake tree, after a run of each guard test in the first."""
+    second = fake.add_build("build-second")
+    ran, output = fake.ran(build_dir=second)
+    expect("a second build directory with the same inputs runs only the test that reads its build directory",
+           ran == {"guard_gamma"} and REASON_STORE in output, output)
+    fake.write("utils/plants/alpha/plant-one/input.txt", "three\n")
+    (second / PLANTED_FAILURE).write_text("")
+    ran, output = fake.ran(build_dir=second)
+    expect("a test of alpha fails in the second build directory", "guard_alpha" in ran, output)
+    ran, output = fake.ran()
+    expect("the first build directory passes the test of alpha with the same inputs", "guard_alpha" in ran, output)
+    ran, output = fake.ran(build_dir=second)
+    expect("a test that failed in this build directory runs again, also when the shared store holds its pass",
+           "guard_alpha" in ran and REASON_FAILED in output, output)
+    (second / PLANTED_FAILURE).unlink()
+    ran, output = fake.ran(build_dir=second)
+    expect("the test passes after the failure goes", "guard_alpha" in ran, output)
+    ran, output = fake.ran(build_dir=second)
+    expect("the pass in this build directory skips the test again", "guard_alpha" not in ran, output)
 
 
 # The presets of the fake tree of the parse cases: one binaryDir for each parse build, and no build is configured.
@@ -1322,7 +1539,7 @@ def self_test(ctest: str) -> int:
                status == 1 and sorted(fake.skipped()) == ["exe_diagnostic", "exe_launched", "exe_named", "exe_ok"],
                output)
         expect("the summary gives the count of skipped tests and the reason",
-               "4 tests skipped, because each input is the same as at the last pass" in output, output)
+               f"4 tests skipped, because {REASON_SKIPPED}" in output, output)
 
         fake.plant_registry(5, 20)
         status, output = fake.call()
@@ -1388,9 +1605,10 @@ def self_test(ctest: str) -> int:
         expect("a source directory in an ELF file makes the test always run",
                "always: " in output and "which is not a file of the source tree" in output, output)
 
+        # The caches are off for this call.  The shared store then skips no test.
         state_path = fake.build_dir / STATE_DIRECTORY / "state.json"
         state_path.write_text("{damaged")
-        status, output = fake.call()
+        status, output = fake.call(variables=((cache_rule.ROOT_VARIABLE, cache_rule.OFF),))
         expect("a damaged state file makes each executable test run", fake.skipped() == [], output)
         expect("the script names the damaged state file", "is damaged" in output, output)
 
@@ -1456,7 +1674,10 @@ def main(argv: list[str]) -> int:
     options = parser.parse_args(arguments[:separator])
     if options.self_test:
         try:
-            return self_test(options.ctest or cmake_pin.pinned_program("ctest"))
+            ctest = options.ctest or cmake_pin.pinned_program("ctest")
+            # The self-test starts with an empty shared store, and it writes nothing into the store of the user.
+            with cache.scratch_root():
+                return self_test(ctest)
         except (RunnerError, cmake_pin.PinError) as error:
             print(f"loop test --self-test: {error}")
             return 2

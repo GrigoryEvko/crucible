@@ -154,6 +154,10 @@ LIMITS: dict[str, int] = {
     # each object and command.  A cold Debug build of all wrote 1054 entries, 4.1 MB, on 2026-10-10.  The limit holds
     # approximately 250 such builds.
     "compile-cost": 1 << 30,
+    # The results of the runs of `loop test` with the status 0 (utils/assay/loop/affected.py, THE SHARED STORE).  Each
+    # test and set of inputs has one file of one 4 KB block.  The limit holds 32,768 results: 64 sets of inputs of each
+    # of the 506 tests with a key of the Debug build on 2026-10-14.
+    "test-results": 128 << 20,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = "pycache"
