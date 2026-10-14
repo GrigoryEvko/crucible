@@ -154,6 +154,11 @@
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/diag/Runtime.h>
+#include <foundation/diag/Tag.h>
+#include <foundation/diag/tags/Aborts.h>
+#include <foundation/diag/tags/Rows.h>
+#include <foundation/diag/tags/Tiers.h>
+#include <foundation/diag/tags/Wrappers.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Concurrent.h>

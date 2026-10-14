@@ -1,6 +1,6 @@
 #include <foundation/permissions/Permission.h>
 
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/tags/Aborts.h>
 
 #include <cstdio>
 #include <cstdlib>

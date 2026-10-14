@@ -2,7 +2,7 @@
 // diagnostic tag, so mint_diagnostic has no candidate for it.  The gate
 // asks for the lineage, not only for a class type.
 
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 
 struct LooksLikeADiagnosticTag {};
 

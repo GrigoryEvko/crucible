@@ -22,7 +22,7 @@
 // The runtime test is test/foundation/test_row_mismatch.cpp.
 
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>

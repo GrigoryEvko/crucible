@@ -304,7 +304,7 @@ does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_diagnostic` | `include/foundation/diag/Catalog.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_diagnostic` | `include/foundation/diag/Tag.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 
 ## include/foundation/effects/
 

@@ -32,7 +32,7 @@
 #include <fixy/Collision.h>
 #include <fixy/Corpus.h>
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/reflect/Anchor.h>
 
 #include <cstddef>

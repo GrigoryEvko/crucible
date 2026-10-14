@@ -2,6 +2,9 @@
 
 #include <foundation/diag/RowMismatch.h>
 
+#include <foundation/diag/tags/Rows.h>
+#include <foundation/diag/tags/Tiers.h>
+
 namespace foundation::diag {
 
 namespace detail::row_mismatch_self_test {

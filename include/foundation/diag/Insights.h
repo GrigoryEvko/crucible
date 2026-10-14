@@ -5,11 +5,11 @@
 // and what the compliant line looks like beside the violating one, so
 // the reader does not have to go and ask.
 //
-// This header reads that content off the tag. Each tag in
-// foundation/diag/Catalog.h states its own severity and its own four
+// This header reads that content off the tag. Each tag in a domain file
+// of foundation/diag/tags/ states its own severity and its own four
 // prose fields, beside the name and the description it already carries,
-// and the authoring rule for them is stated there. So the prose stays
-// in the file of the tag that it describes.
+// and foundation/diag/Tag.h states the authoring rule for them. So the
+// prose stays in the file of the tag that it describes.
 //
 // A tag that states none of the five reads as empty fields and an Error
 // severity. The builder skips an empty field, so such a tag degrades to
@@ -17,7 +17,7 @@
 // field is therefore always additive.
 
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/reflect/Enumerate.h>
 
 #include <cstddef>
@@ -28,7 +28,7 @@
 
 namespace foundation::diag {
 
-// Severity is declared in Catalog.h, beside the tags it grades.
+// Severity is declared in Tag.h, beside the base class of the tags it grades.
 
 // The name is the enumerator's own, read by reflection, so a new
 // severity needs no arm here.  A value no enumerator carries, which

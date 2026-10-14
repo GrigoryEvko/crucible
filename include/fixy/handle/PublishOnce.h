@@ -8,7 +8,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/tags/Aborts.h>
 
 #include <atomic>
 #include <cstdio>

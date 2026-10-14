@@ -11,7 +11,7 @@
 // before the process starts.
 
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 
 #include <source_location>
 #include <string_view>

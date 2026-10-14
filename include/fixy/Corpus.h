@@ -46,7 +46,7 @@
 #include <fixy/Collision.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>

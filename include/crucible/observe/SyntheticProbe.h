@@ -6,7 +6,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/Pinned.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 

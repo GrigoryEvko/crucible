@@ -9,7 +9,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/Saturate.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Instance.h>

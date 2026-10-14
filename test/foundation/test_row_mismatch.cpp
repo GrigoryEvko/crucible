@@ -3,6 +3,8 @@
 // the consteval message builder with non-constant arguments.
 
 #include <foundation/diag/RowMismatch.h>
+#include <foundation/diag/tags/Rows.h>
+#include <foundation/diag/tags/Tiers.h>
 
 #include <cstddef>
 #include <cstdio>

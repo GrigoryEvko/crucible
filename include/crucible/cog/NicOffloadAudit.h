@@ -11,7 +11,7 @@
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Bits.h>
 #include <fixy/Refined.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 
 #include <cstdint>
 #include <string_view>

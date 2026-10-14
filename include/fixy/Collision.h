@@ -85,7 +85,6 @@
 #include <fixy/Secret.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Modality.h>
-#include <foundation/diag/Catalog.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>

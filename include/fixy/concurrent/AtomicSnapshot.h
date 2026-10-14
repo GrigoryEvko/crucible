@@ -46,7 +46,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
-#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Tag.h>
 #include <foundation/diag/Runtime.h>
 
 #include <array>

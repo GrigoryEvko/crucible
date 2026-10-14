@@ -155,11 +155,11 @@ include/foundation/algebra/Lattice.h | open-read | 1 | foundation::algebra::deta
 include/foundation/algebra/Lattice.h | open-read | 1 | foundation::algebra::detail::lattice_laws::semiring_laws_hold | -
 include/foundation/algebra/lattices/MonotoneLattice.h | open-read | 1 | foundation::algebra::lattices::monotone_bounds | -
 include/foundation/core/Choice.h | open-read | 1 | foundation::core::niche | a payload type states its empty value with a specialization beside its definition, so the trait is an extension point by design.  HasNiche selects only the storage form of an Option, and a payload equal to the empty value fails the precondition of the slot
-include/foundation/diag/Catalog.h | open-read | 2 | foundation::diag::is_diagnostic_class_v | -
 include/foundation/diag/Insights.h | open-read | 1 | foundation::diag::has_insights_v | -
 include/foundation/diag/Insights.h | open-read | 1 | foundation::diag::has_substantive_insights_v | -
 include/foundation/diag/Insights.h | open-read | 2 | foundation::diag::is_diagnostic_class_v | -
 include/foundation/diag/RowMismatch.h | open-read | 1 | foundation::diag::is_diagnostic_class_v | -
+include/foundation/diag/Tag.h | open-read | 2 | foundation::diag::is_diagnostic_class_v | -
 include/foundation/effects/Capability.h | open-read | 1 | foundation::effects::cap_permitted_row | -
 include/foundation/effects/Capability.h | open-read | 1 | foundation::effects::detail::bare_tag_info_ | -
 include/foundation/effects/Computation.h | open-read | 8 | foundation::effects::detail::extract_admits_payload_v | -

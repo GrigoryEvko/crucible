@@ -2646,14 +2646,17 @@ rule, and the rule `layer-boundary` of the quarantine plugin and the rule
 names anything below it.
 
 **There is no line cap**, because a line count cannot tell a table from a
-god-header. Measured 2026-09-29: `foundation/diag/Catalog.h` is 1,918 lines at
-5% comment, and it is a catalog. It is long by nature, and a split on a line
-count would cut a table in an arbitrary place. `foundation/permissions/Permission.h`
+god-header. A split follows the concerns of a header, and each closed rule set
+stays in one header, so that no answer depends on which headers a file includes.
+The diagnostic catalog has two concerns. `foundation/diag/Tag.h` holds the
+vocabulary of a tag, and the domain files of `foundation/diag/tags/` hold the
+prose of the tags. `foundation/diag/Catalog.h` includes each domain file and
+derives the closed set of the tags. A header that names a category or one tag
+includes `Tag.h` or the domain file of the tag. `foundation/permissions/Permission.h`
 is 1,730 lines, with 1,111 lines of code and 24 includes, 12 of them project
 headers. It spans `Permission`, `SharedPermission`, the pool, the `ReadView`
 interaction, brands, `permission_row_t` and the splits, which is a real
-multi-concern header. The two headers have a similar size and deserve opposite
-verdicts, so the instrument that ranks them equal is the wrong one.
+multi-concern header.
 
 For scale, `fixy/Collision.h` is 1,497 lines and `fixy/Predicates.h` is 1,046. The
 headers of `include/foundation/` and `include/fixy/` are 29% comment, so their

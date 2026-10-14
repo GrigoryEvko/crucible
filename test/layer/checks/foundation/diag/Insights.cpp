@@ -2,6 +2,8 @@
 
 #include <foundation/diag/Insights.h>
 
+#include <foundation/diag/Catalog.h>
+
 namespace foundation::diag {
 
 namespace detail::insights_self_test {
