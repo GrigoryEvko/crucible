@@ -37,7 +37,7 @@ def round_cases(expect: testing.Expect) -> None:
         chosen = repetition.selection(keys, store, 2.0, NAMES)
         expect("the names select only the named tests", sorted(item.test.name for item in chosen) == sorted(NAMES))
         outcome = repetition.run_rounds(keys, store, chosen, 600.0, 4)
-        by_name = {item.name: item for item in evidence_items.stress_items(keys)}
+        by_name = {item.name: item for item in evidence_items.class_items(keys, targets.STRESS)}
         passed = store.read(RULE, by_name["exe_ok"].key)
         failed = store.read(RULE, by_name["exe_bad"].key)
         expect(

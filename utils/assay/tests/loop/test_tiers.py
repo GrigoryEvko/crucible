@@ -42,6 +42,26 @@ PLANTED_CONFIGURE: list[dict[str, object]] = [
         "vendor": {"crucible": {"tier": "gate", "configuration": "x86_64-debug-asan"}},
     },
     {"name": "orphan", "vendor": {"crucible": {"tier": "nightly"}}},
+    {
+        "name": "bench",
+        "binaryDir": "out/bench",
+        "cacheVariables": {"CRUCIBLE_BENCH": "ON"},
+        "vendor": {"crucible": {"tier": "nightly"}},
+    },
+    {
+        "name": "bench-counters",
+        "inherits": "bench",
+        "binaryDir": "out/bench-counters",
+        "cacheVariables": {"CRUCIBLE_PGO": "generate"},
+        "vendor": {"crucible": {"tier": "release"}},
+    },
+    {
+        "name": "bench-fuzz",
+        "inherits": "bench",
+        "binaryDir": "out/bench-fuzz",
+        "cacheVariables": {"CRUCIBLE_FUZZ": "ON"},
+        "vendor": {"crucible": {"tier": "nightly"}},
+    },
 ]
 PLANTED_TESTS: list[dict[str, object]] = [
     {"name": "base", "configurePreset": "base"},
@@ -124,6 +144,14 @@ def read_cases(expect: testing.Expect) -> None:
         and configure["child"].reason == "a person runs it"
         and configure["child"].is_parse
         and configure["child"].build == Path("build-parse"),
+    )
+    expect(
+        "only a preset that builds the benches with no fuzzers and no profile counters builds them for a measurement",
+        configure["bench"].is_bench
+        and not configure["bench-counters"].is_bench
+        and not configure["bench-fuzz"].is_bench
+        and configure["bench-fuzz"].is_fuzz
+        and not configure["base"].is_bench,
     )
     expect(
         "a preset with no block has a problem and no tier",

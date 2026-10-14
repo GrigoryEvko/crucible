@@ -4965,7 +4965,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.buildsys.test_runner
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
         readers.test_compdb readers.test_python
-        readers.test_tool_reports
+        readers.test_tool_reports readers.test_bench
         readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
@@ -4975,7 +4975,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
         loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset
-        loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status)
+        loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status
+        loop.evidence.test_measurement)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
@@ -4983,7 +4984,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
 endforeach()
 # The tests of the items of the evidence and of the runner of the kind repetition run the ctest of this build on the
 # fake build tree of `loop test`.
-foreach(_assay_test loop.evidence.test_items loop.evidence.test_repetition)
+foreach(_assay_test loop.evidence.test_items loop.evidence.test_repetition loop.evidence.test_search)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

@@ -163,6 +163,22 @@ def pin_core(isolated_text: str | None, fallback: str) -> tuple[str, bool]:
     return first, True
 
 
+def bench_core(fallback: str) -> tuple[str, bool, str]:
+    """Return the core of the runs, True when the kernel isolates it, and the isolated cores of the host.
+
+    `loop evidence run measurement` runs each bench on the same core (assay.loop.evidence.measurement).
+
+    Args:
+        fallback: The core when the kernel isolates no core
+    """
+    try:
+        isolated_text = ISOLATED.read_text(encoding="ascii")
+    except OSError:
+        isolated_text = ""
+    core, is_isolated = pin_core(isolated_text, fallback)
+    return core, is_isolated, isolated_text.strip()
+
+
 def apply_capabilities(binary: Path) -> None:
     """Give a bench binary the capabilities of bench-caps, unless it has them, with `sudo -n setcap`."""
     current = proc.run(proc.Command(["getcap", str(binary)], timeout_s=proc.QUICK_S)).out
@@ -206,13 +222,9 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         for name in bench_targets(model):
             print(name)
         return 0
-    try:
-        isolated_text: str | None = ISOLATED.read_text(encoding="ascii")
-    except OSError:
-        isolated_text = None
-    core, is_isolated = pin_core(isolated_text, settings.core)
+    core, is_isolated, isolated_text = bench_core(settings.core)
     if is_isolated:
-        log(f"isolated partition active: [{(isolated_text or '').strip()}] → pinning to cpu{core}")
+        log(f"isolated partition active: [{isolated_text}] → pinning to cpu{core}")
         sibling = Path(f"/sys/devices/system/cpu/cpu{int(core) + SIBLING_DISTANCE}/online")
         try:
             if sibling.read_text(encoding="ascii").strip() == "0":

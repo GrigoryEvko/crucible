@@ -86,7 +86,7 @@ THE MEASURED RULES
     edit-test-wall hold the gate at WALL_JOBS jobs, so they are judged only
     in a measurement at that job count.  They are judged only when the host
     was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
-    the host CPU time in the step, in each run.  Else the report gives the
+    the host CPU time in the step, in each run (assay.loop.history).  Else the report gives the
     wall time and the reason, and no finding.
     Four rules give warnings only: configure-time for the first and the
     second configure less the plugin build of each, plugin-build-time for
@@ -154,7 +154,6 @@ MARK_BITS = 62
 LONGEST_MARK = (1 << MARK_BITS) - 1
 # The IndentWidth of the .clang-format of the tree: the indent step of a statement in its block.
 INDENT_WIDTH = 4
-QUIET_OTHERS_PCT = 10.0
 # The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.  The default
 # job count is lower (THE JOB COUNT of assay.core.proc).  A default run judges the instructions and the CPU time,
 # and it gives the wall times with no finding.  Give --jobs 192 for the wall gate.  Also at this job count, the copy runs
@@ -531,12 +530,12 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
         if jobs != WALL_JOBS:
             notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: the measurement ran {jobs} jobs, and "
                          f"{wall_row} holds the gate at {WALL_JOBS} jobs")
-        elif share is not None and share <= QUIET_OTHERS_PCT:
+        elif share is not None and share <= loop_history.QUIET_OTHERS_PCT:
             compare(wall_row, median.wall_s, "s")
         else:
             shown = "an unknown share" if share is None else f"{share:g} %"
             notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: other processes used {shown} of the "
-                         f"host CPU time in one run, more than {QUIET_OTHERS_PCT:g} %")
+                         f"host CPU time in one run, more than {loop_history.QUIET_OTHERS_PCT:g} %")
     return findings, notes
 
 

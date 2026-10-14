@@ -160,6 +160,9 @@ WORKDIR_PREFIX = "{cmake_ninja_workdir}"
 # system, irq, softirq and steal.  The time of a guest is part of user.
 BUSY_FIELDS = (1, 2, 3, 6, 7, 8)
 KB_PER_GB = 1024 * 1024
+# A host is quiet in a step when other processes used at most this share of its CPU time, in percent
+# (others_share()).  `loop gauge` judges a wall time, and `loop evidence` counts a measurement, only on a quiet host.
+QUIET_OTHERS_PCT = 10.0
 
 
 # ── The host load ──────────────────────────────────────────────────────────

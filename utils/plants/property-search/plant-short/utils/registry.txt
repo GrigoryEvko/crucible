@@ -1,0 +1,4 @@
+# A planted registry: the target of the CPU seconds of a property search is 60 for the nightly entry and 600 for the
+# release entry.
+format 1
+rule property-search engine=build scope=builddir ledger=none warn=60 error=600 unit=s held-by=loop-evidence holder=assay.loop.evidence.status:judged doc=XV | the CPU seconds of the search of a property test | run the search again

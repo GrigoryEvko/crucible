@@ -185,7 +185,7 @@ KB_PER_GB = 1024 * 1024
 # of utils/assay/core/report.py holds this set equal to the rules of unit s.
 TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu", "edit-build-cpu", "edit-test-cpu",
                        "edit-build-wall", "edit-test-wall", "configure-time", "plugin-build-time",
-                       "noop-build-time"})
+                       "noop-build-time", "property-search"})
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")

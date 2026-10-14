@@ -22,6 +22,17 @@ THE SAMPLED CHECKS
 
     A row of TARGETS is data only.  assay.loop.evidence.items gives the items
     of each class and their keys, and the runner of each kind adds evidence.
+
+THE ITEMS OF A CLASS
+    The items of a class of tests are the tests with its label in its builds:
+      Builds.REPEATED  the build of each test preset with the field `repeat`
+      Builds.FUZZ      the build of each configure preset that builds the
+                       fuzzers (assay.loop.tiers, PresetTier)
+    A class with no label takes each test of its builds.  The items of the
+    class of the benches are the bench targets of its builds:
+      Builds.BENCH     the build of each configure preset that builds the
+                       benches for a measurement: with no fuzzers and no
+                       profile counters (assay.loop.tiers, PresetTier)
 """
 
 import enum
@@ -40,14 +51,25 @@ class Kind(enum.StrEnum):
     COVERAGE = "coverage"
 
 
+class Builds(enum.StrEnum):
+    """The builds that give the items of a class (THE ITEMS OF A CLASS)."""
+
+    REPEATED = "repeated"
+    FUZZ = "fuzz"
+    BENCH = "bench"
+
+
 @dataclass(frozen=True, slots=True)
 class Target:
-    """One class of sampled checks: the measured rule of its target, its kind of evidence and what the class holds."""
+    """One class of sampled checks: the measured rule of its target, its kind of evidence, its builds and its label."""
 
     rule: str
     kind: Kind
-    text: str
+    builds: Builds
+    label: str = ""
 
 
-STRESS = Target("stress-passes", Kind.REPETITION, "each test of the build of a test preset with the field repeat")
-TARGETS = (STRESS,)
+STRESS = Target("stress-passes", Kind.REPETITION, Builds.REPEATED)
+PROPERTY = Target("property-search", Kind.SEARCH, Builds.FUZZ, "fuzz_property")
+MEASUREMENT = Target("bench-runs", Kind.MEASUREMENT, Builds.BENCH)
+TARGETS = (STRESS, PROPERTY, MEASUREMENT)

@@ -19,12 +19,18 @@ THE SUBCOMMANDS
             the findings of THE JUDGMENT of that module.
     run     Add evidence of one kind in a time budget.  The kind repetition
             runs each test of a build again (assay.loop.evidence.repetition).
-            The builds share the budget, in their sequence.  After the runs,
-            the store goes back to its row of LIMITS of assay.core.cache.
+            The kind search runs each property test of a build with new
+            seeds (assay.loop.evidence.search).  The kind measurement runs
+            each bench of a build, one at a time
+            (assay.loop.evidence.measurement).  The builds of the kind share
+            the budget, in their sequence.  After the runs, the store goes
+            back to its row of LIMITS of assay.core.cache.
 
 Usage
     loop evidence status [--build-dir DIR]... [--json] [--release]
-    loop evidence run repetition --budget-s SECONDS [--build-dir DIR]... [--item NAME]... [--release] [-j N]
+    loop evidence run KIND --budget-s SECONDS [--build-dir DIR]... [--item NAME]... [--release] [-j N]
+
+    KIND         repetition, search or measurement
 
     --build-dir  A build directory that replaces the builds of the presets
                  file (assay.loop.evidence.items, THE BUILDS)
@@ -43,8 +49,8 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 
 PROGRAM = "loop evidence"
-# The kinds that `loop evidence run` runs, with the rule of the target of each one.
-RUNNERS = ("repetition",)
+# The kinds that `loop evidence run` runs.
+RUNNERS = ("repetition", "search", "measurement")
 
 
 def status_main(directories: list[Path], as_json: bool, is_release: bool) -> int:
@@ -81,18 +87,23 @@ def run_main(kind: str, directories: list[Path], budget_s: float, is_release: bo
     from assay.core import cache
     from assay.loop import tiers
     from assay.loop.evidence import items as evidence_items
-    from assay.loop.evidence import repetition, targets
+    from assay.loop.evidence import measurement, repetition, search, targets
     from assay.loop.evidence import store as evidence_store
 
+    sampled, run_build = {
+        "repetition": (targets.STRESS, repetition.run),
+        "search": (targets.PROPERTY, search.run),
+        "measurement": (targets.MEASUREMENT, measurement.run),
+    }[kind]
     try:
-        budget = check_report.read_budgets().get(targets.STRESS.rule)
+        budget = check_report.read_budgets().get(sampled.rule)
     except (OSError, ValueError) as problem:
         check_report.write_line(f"{PROGRAM}: the registry cannot be read: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
     if budget is None:
-        check_report.write_line(f"{PROGRAM}: the registry has no measured rule {targets.STRESS.rule}", is_error=True)
+        check_report.write_line(f"{PROGRAM}: the registry has no measured rule {sampled.rule}", is_error=True)
         return ExitCode.MISSING_INPUT
-    builds = directories or [build for _, build in evidence_items.repeated_builds(tiers.read(paths.REPO_ROOT))]
+    builds = directories or [build for _, build in evidence_items.class_builds(sampled, tiers.read(paths.REPO_ROOT))]
     target = budget.error if is_release else budget.warn
     status = ExitCode.OK
     started = time.monotonic()
@@ -101,7 +112,7 @@ def run_main(kind: str, directories: list[Path], budget_s: float, is_release: bo
         if remaining_s <= 0:
             check_report.write_line(f"{PROGRAM}: the budget has no time for the build {build}")
             break
-        status = max(status, repetition.run(build, remaining_s, is_release, names, jobs, target))
+        status = max(status, run_build(build, remaining_s, is_release, names, jobs, target))
     store = evidence_store.EvidenceStore()
     if store.directory is not None:
         cache.hold_bound(store.directory, cache.LIMITS[evidence_store.STORE_NAME])

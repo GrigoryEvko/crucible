@@ -1,0 +1,34 @@
+{
+ "format": "crucible-evidence-status 1",
+ "problems": [],
+ "rows": [
+  {
+   "build": "build-bench-fuzz",
+   "failure": null,
+   "item": "prop_at_the_nightly_target",
+   "key": "a-planted-key",
+   "kind": "search",
+   "nightly": 60.0,
+   "reason": "",
+   "release": 600.0,
+   "rule": "property-search",
+   "unit": "s",
+   "unit_wall_s": 1.0,
+   "value": 60.0
+  },
+  {
+   "build": "build-bench-fuzz",
+   "failure": null,
+   "item": "prop_at_the_release_target",
+   "key": "a-second-planted-key",
+   "kind": "search",
+   "nightly": 60.0,
+   "reason": "",
+   "release": 600.0,
+   "rule": "property-search",
+   "unit": "s",
+   "unit_wall_s": 1.0,
+   "value": 600.0
+  }
+ ]
+}

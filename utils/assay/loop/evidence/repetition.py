@@ -1,14 +1,9 @@
 """repetition — run each test of a build again in a time budget, and add each pass to the evidence of its key.
 
 THE SELECTION
-    run() reads the items of the class stress-passes of one build
-    (assay.loop.evidence.items).  It selects each item with a key and with
-    less evidence than its target: the nightly target, or with is_release the
-    release target.  It does not select an item with a kept failure, because
-    a failure stays until its key changes (assay.loop.evidence.store, THE
-    FAILURE).  With names, it selects only the named items, also an item with
-    a kept failure.  The passes of such an item add to its record, and its
-    failure stays.
+    run() reads the items of the class stress-passes of one build.  It
+    selects the pending items (assay.loop.evidence.items, THE PENDING ITEMS)
+    of the nightly target, or with is_release of the release target.
 
 THE ROUNDS
     A round runs each selected test one time with the ctest of the build, as
@@ -109,30 +104,25 @@ def record_wall_s(build_dir: Path, name: str) -> float:
 
 
 def selection(
-    keys: evidence_items.TestKeys,
-    store: evidence_store.EvidenceStore,
-    target: float,
-    names: Sequence[str],
-    rule: str = targets.STRESS.rule,
+    keys: evidence_items.TestKeys, store: evidence_store.EvidenceStore, target: float, names: Sequence[str]
 ) -> list[Selected]:
     """Return each test that the rounds run (THE SELECTION).
 
     Complexity: the planner of assay.loop.affected for each test, and one read of the store for each item with a key.
     """
-    wanted = set(names)
     by_name = {test.name: test for test in keys.tests}
-    chosen: list[Selected] = []
-    for item in evidence_items.stress_items(keys, rule):
-        if not item.key or (wanted and item.name not in wanted):
-            continue
-        record = store.read(rule, item.key)
-        value = 0.0 if record is None else record.value
-        has_failure = record is not None and record.failure is not None
-        if value >= target or (has_failure and item.name not in wanted):
-            continue
-        unit_wall_s = None if record is None else record.unit_wall_s
-        chosen.append(Selected(by_name[item.name], item.key, value, target, has_failure, unit_wall_s))
-    return chosen
+    found = evidence_items.class_items(keys, targets.STRESS)
+    return [
+        Selected(
+            by_name[candidate.item.name],
+            candidate.item.key,
+            candidate.value,
+            target,
+            candidate.has_failure,
+            None if candidate.record is None else candidate.record.unit_wall_s,
+        )
+        for candidate in evidence_items.pending(found, store, target, names)
+    ]
 
 
 def rerun_words(build_dir: Path, name: str, repetitions: int) -> tuple[str, ...]:
@@ -146,34 +136,29 @@ def record_round(
     chosen: Sequence[Selected],
     statuses: dict[str, ctest_reader.TestStatus],
     number: int,
-    rule: str = targets.STRESS.rule,
 ) -> tuple[int, list[str]]:
     """Add the pass or keep the failure of each test of one round (THE ROUNDS), and return the passes and the failures.
 
     Complexity: the planner of assay.loop.affected for each test of the round.
     """
     keys.forget()
+    rule = targets.STRESS.rule
     passes, failures = 0, []
     for selected in chosen:
         name = selected.test.name
         status = statuses.get(name)
         if status not in (ctest_reader.TestStatus.RUN, ctest_reader.TestStatus.FAIL):
             continue
-        after = keys.decision(selected.test)
-        is_usable = after.kind in affected.FINGERPRINTED and bool(after.shared)
-        is_current = is_usable and (after.reads is None or after.reads.is_current())
+        after, is_current = keys.key_after_run(selected.test)
         if status == ctest_reader.TestStatus.RUN and is_current:
-            if after.shared != selected.key:
-                earlier = store.read(rule, after.shared)
-                selected.value = 0.0 if earlier is None else earlier.value
-                selected.key = after.shared
+            selected.key = after
             sample = evidence_store.Sample(
                 evidence_store.now(), 1.0, record_wall_s(keys.build_dir, name), (("round", str(number)),)
             )
             selected.value = store.add(rule, name, selected.key, sample).value
             passes += 1
         elif status == ctest_reader.TestStatus.FAIL:
-            key = after.shared if is_usable else selected.key
+            key = after or selected.key
             repetition = int(selected.value) + 1
             failure = evidence_store.Failure(
                 evidence_store.now(),

@@ -76,6 +76,12 @@ TIER_FIELD = "tier"
 REASON_FIELD = "reason"
 CONFIGURATION_FIELD = "configuration"
 FIELDS = (TIER_FIELD, REASON_FIELD, CONFIGURATION_FIELD)
+# The cache variables that build the fuzzers, the benches and the profile counters (PresetTier, is_fuzz and
+# is_bench).  The profile option builds the counters with the value COUNTERS_VALUE.
+FUZZ_OPTION = dict(build_config.NAME_OPTIONS)["fuzz"]
+BENCH_OPTION = dict(build_config.NAME_OPTIONS)["bench"]
+PROFILE_OPTION = "CRUCIBLE_PGO"
+COUNTERS_VALUE = "generate"
 
 
 class Tier(enum.StrEnum):
@@ -108,7 +114,10 @@ class PresetTier:
     `tier` is None when the preset has a problem, and `problem` is "" when it
     has none.  `build` is the build directory of a configure preset, and
     `is_parse` tells that the preset sets CRUCIBLE_SYNTAX_ONLY, itself or
-    through a parent.  `configure` is the configure preset of a test preset,
+    through a parent.  `is_fuzz` tells the same of CRUCIBLE_FUZZ, which
+    builds the fuzzers.  `is_bench` tells that the preset builds the benches
+    for a measurement: it sets CRUCIBLE_BENCH, and it builds no fuzzers and
+    no profile counters.  `configure` is the configure preset of a test preset,
     and `is_inherited` tells that a plain test preset gets the tier of its
     configure preset.  `is_repeated` tells that a test preset runs each test
     again (assay.readers.cmake, TestPreset).
@@ -125,6 +134,8 @@ class PresetTier:
     is_inherited: bool = False
     problem: str = ""
     is_repeated: bool = False
+    is_fuzz: bool = False
+    is_bench: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,9 +214,19 @@ def read_configure(root: Path, configure: Sequence[cmake.Preset]) -> list[Preset
         except cmake.CmakeError as problem:
             found.append(PresetTier(PresetKind.CONFIGURE, preset.name, None, problem=str(problem)))
             continue
-        syntax = effective.cache_variables.get(build_config.SYNTAX_OPTION) or ""
-        is_parse = build_config.normalized("BOOL", syntax) == "on"
-        item = PresetTier(PresetKind.CONFIGURE, preset.name, None, build=build, is_parse=is_parse)
+        variables = effective.cache_variables
+        is_fuzz = build_config.normalized("BOOL", variables.get(FUZZ_OPTION) or "") == "on"
+        has_benches = build_config.normalized("BOOL", variables.get(BENCH_OPTION) or "") == "on"
+        has_counters = (variables.get(PROFILE_OPTION) or "") == COUNTERS_VALUE
+        item = PresetTier(
+            PresetKind.CONFIGURE,
+            preset.name,
+            None,
+            build=build,
+            is_parse=build_config.normalized("BOOL", variables.get(build_config.SYNTAX_OPTION) or "") == "on",
+            is_fuzz=is_fuzz,
+            is_bench=has_benches and not is_fuzz and not has_counters,
+        )
         if isinstance(block, str):
             found.append(replace(item, problem=block))
             continue
