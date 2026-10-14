@@ -1,0 +1,68 @@
+# The six ordered layers of foundation against the rule table of the
+# repository, in a tree with the paths of the repository.  From the lowest
+# rank to the highest, they are algebra, lattices, diag, effects,
+# permissions and rest.  An include of a higher layer is a finding of the
+# kind upward-include, also between two directories of foundation.  So a
+# lattice that includes an effects header, a diag header that includes an
+# effects header and an effects header that includes a permissions header
+# are each refused.  With no plant, each file has no finding.
+
+compile algebra-clean include/foundation/algebra/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit algebra-clean pass
+
+compile lattice-clean include/foundation/algebra/lattices/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit lattice-clean pass
+
+compile diag-clean include/foundation/diag/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit diag-clean pass
+
+compile effect-clean include/foundation/effects/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit effect-clean pass
+
+compile permission-clean include/foundation/permissions/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit permission-clean pass
+
+compile report-algebra include/foundation/algebra/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-algebra -DPLANT_UPWARD
+exit report-algebra pass
+finding report-algebra quarantine upward-include include/foundation/algebra/Plant.cpp:2:0 | include/foundation/algebra/lattices/PlantLattice.h (the layer F1_lattices) from the layer F1_algebra
+
+compile report-lattice-effect include/foundation/algebra/lattices/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-lattice-effect -DPLANT_UPWARD
+exit report-lattice-effect pass
+finding report-lattice-effect quarantine upward-include include/foundation/algebra/lattices/Plant.cpp:2:0 | include/foundation/effects/PlantEffect.h (the layer F1_effects) from the layer F1_lattices
+
+compile report-lattice-diag include/foundation/algebra/lattices/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-lattice-diag -DPLANT_UPWARD_DIAG
+exit report-lattice-diag pass
+finding report-lattice-diag quarantine upward-include include/foundation/algebra/lattices/Plant.cpp:5:0 | include/foundation/diag/PlantDiag.h (the layer F1_diag) from the layer F1_lattices
+
+compile report-diag include/foundation/diag/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-diag -DPLANT_UPWARD
+exit report-diag pass
+finding report-diag quarantine upward-include include/foundation/diag/Plant.cpp:2:0 | include/foundation/effects/PlantEffect.h (the layer F1_effects) from the layer F1_diag
+
+compile report-effect include/foundation/effects/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-effect -DPLANT_UPWARD
+exit report-effect pass
+finding report-effect quarantine upward-include include/foundation/effects/Plant.cpp:2:0 | include/foundation/permissions/PlantPermission.h (the layer F1_permissions) from the layer F1_effects
+
+compile report-permission include/foundation/permissions/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-permission -DPLANT_UPWARD
+exit report-permission pass
+finding report-permission quarantine upward-include include/foundation/permissions/Plant.cpp:2:0 | include/foundation/PlantRest.h (the layer F1_rest) from the layer F1_permissions
+
+compile error-lattice-effect include/foundation/algebra/lattices/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-lattice-effect -DPLANT_UPWARD
+exit error-lattice-effect fail
+error error-lattice-effect include/foundation/algebra/lattices/Plant.cpp:2 | quarantine: upward-include include/foundation/effects/PlantEffect.h (the layer F1_effects) from the layer F1_lattices;
+
+compile error-diag include/foundation/diag/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-diag -DPLANT_UPWARD
+exit error-diag fail
+error error-diag include/foundation/diag/Plant.cpp:2 | quarantine: upward-include include/foundation/effects/PlantEffect.h (the layer F1_effects) from the layer F1_diag;
+
+compile error-effect include/foundation/effects/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+flag error-effect -DPLANT_UPWARD
+exit error-effect fail
+error error-effect include/foundation/effects/Plant.cpp:2 | quarantine: upward-include include/foundation/permissions/PlantPermission.h (the layer F1_permissions) from the layer F1_effects;

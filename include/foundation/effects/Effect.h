@@ -39,9 +39,12 @@
 //     error types apart, and never through a row.  fixy/Collision.h
 //     reads both spellings.
 
+#include <foundation/diag/RowHash.h>
 #include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/Hash.h>
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -467,4 +470,86 @@ struct TestWitness {
 
 }  // namespace testing
 
+// The carriers of the effect layer.  Each one has its definition in its
+// own header, and that header includes this one.
+template <Effect... Es>
+struct Row;
+template <typename R, typename T>
+class Computation;
+template <class Cap, class R>
+class ExecCtx;
+template <Effect Cap, class Source>
+class Capability;
+
 }  // namespace foundation::effects
+
+// ── The row hash of each effect carrier ─────────────────────────────
+//
+// foundation/diag/RowHash.h names no effect, so this header gives the fold
+// of each carrier of the effect layer.  Each header that declares such a
+// carrier includes this header.  So the fold of a carrier is in each unit
+// that can name the carrier.  A unit without the fold of a carrier gets the
+// zero of the primary template, and no diagnostic.
+//
+// The two identities keep the names that the published hashes fold, so a
+// change of their namespace moves each hash of an execution context and of
+// a capability.
+namespace foundation::diag {
+
+namespace row_discipline {
+template <class Cap>
+struct exec_ctx;
+template <class Source>
+struct capability;
+}  // namespace row_discipline
+
+// A row is a set of atoms, and the fold reads the underlying value of each
+// atom (atom_set_row_hash_v).
+template <::foundation::effects::Effect... Es>
+struct row_hash_contribution<::foundation::effects::Row<Es...>> {
+    static constexpr std::uint64_t value = atom_set_row_hash_v<static_cast<std::uint64_t>(Es)...>;
+};
+
+// The carrier folds its row and then its payload, and the combiner is
+// sensitive to that order.  Three properties follow, and
+// test/foundation/test_row_hash.cpp pins them:
+//   - A carrier and its own bare row have different hashes, because the
+//     combiner of a row and a zero payload does not give the row
+//   - A bare payload does not change the hash.  The identity of a payload
+//     is in the content hash, the other half of the cache key
+//   - A carrier nested in a carrier keeps the inner row in the outer hash,
+//     so a nested form and its flat form have different hashes.
+template <typename R, typename T>
+struct row_hash_contribution<::foundation::effects::Computation<R, T>> {
+    static constexpr std::uint64_t value =
+        ::foundation::reflect::combine_ids(row_hash_contribution_v<R>, row_hash_contribution_v<T>);
+};
+
+// A context has no payload, so it is its own identity, and its payload is
+// the row that it permits.  Two contexts that permit one row are two
+// claims, because one of them names the background thread.
+template <typename C>
+    requires ::foundation::effects::IsContext<C>
+struct row_hash_contribution<C> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<C, typename C::template permitted_as<::foundation::effects::Row>>;
+};
+
+// An execution context claims a capability source and a row under it.
+// The source changes the claim, so it is in the identity, and the row is
+// the payload.
+template <class Cap, class R>
+struct row_hash_contribution<::foundation::effects::ExecCtx<Cap, R>> {
+    static constexpr std::uint64_t value = discipline_row_hash_v<row_discipline::exec_ctx<Cap>, R>;
+};
+
+// A capability is a linear token for one effect, minted from a source.
+// The effect folds as the row of one atom that it grants, so a capability
+// and a context that permit the same atom agree on that half.
+template <::foundation::effects::Effect E, class Source>
+struct row_hash_contribution<::foundation::effects::Capability<E, Source>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<row_discipline::capability<Source>, ::foundation::effects::Row<E>>;
+};
+
+}  // namespace foundation::diag

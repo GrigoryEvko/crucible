@@ -14,6 +14,7 @@
 #include <fixy/Budgeted.h>
 #include <fixy/EpochVersioned.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
 #include <array>
 #include <cstddef>
@@ -77,7 +78,7 @@ typename L::element_type count_at(std::uint64_t count) {
         image[i] = static_cast<std::byte>((L::image_axis() >> (8 * i)) & 0xFFu);
         image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
     }
-    auto const read = L::mint_from_image(ctx, image);
+    auto const read = fe::mint_from_image<L>(ctx, image);
     if (!read) std::abort();
     return *read;
 }

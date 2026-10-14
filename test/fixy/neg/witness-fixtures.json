@@ -12,6 +12,11 @@
       "constructor": "\\bGraded\\("
     },
     {
+      "name": "neg_witness_algebra_lattices_countimagekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCountImageKey\\("
+    },
+    {
       "name": "neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\belement_type\\("
@@ -230,6 +235,11 @@
       "name": "neg_witness_effects_execctx_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bExecCtx\\("
+    },
+    {
+      "name": "neg_witness_effects_host_imagereader_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bImageReader\\("
     },
     {
       "name": "neg_witness_effects_host_producerclaim_direct_construction",
@@ -674,6 +684,10 @@
       "header": "foundation/effects/Ctx.h"
     },
     {
+      "type": "foundation::effects::host::ImageReader",
+      "header": "foundation/effects/ImageRead.h"
+    },
+    {
       "type": "foundation::permissions::perm_mint_key",
       "header": "foundation/permissions/Permission.h"
     },
@@ -888,6 +902,10 @@
     {
       "type": "foundation::algebra::lattices::HappensBeforeLattice<2>::element_type",
       "header": "foundation/algebra/lattices/HappensBefore.h"
+    },
+    {
+      "type": "foundation::algebra::lattices::CountImageKey",
+      "header": "foundation/algebra/lattices/StrongCounterLattice.h"
     },
     {
       "type": "fixy::VersionSource",

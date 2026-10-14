@@ -1,0 +1,6 @@
+#include <foundation/algebra/PlantAlgebra.h>
+#include <foundation/algebra/lattices/PlantLattice.h>
+#include <foundation/diag/PlantDiag.h>
+#include <foundation/effects/PlantEffect.h>
+#include <foundation/permissions/PlantPermission.h>
+int plant_rest_value() { return plant_algebra + plant_lattice + plant_diag + plant_effect + plant_permission; }

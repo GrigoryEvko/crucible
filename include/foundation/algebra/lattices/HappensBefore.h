@@ -13,8 +13,10 @@
 // event history and no other.  bottom() is the empty history, successor_at()
 // is a local event, causal_merge() is a receive, join() and meet() combine
 // two clocks that exist, and top() is the witness a bounded lattice needs.
-// mint_from_image() is the checked read of a clock that crossed a wire, and
-// it needs a context that owns IO.  No door takes an array of integers, so
+// mint_from_image() of foundation/effects/ImageRead.h is the checked read of
+// a clock that crossed a wire, and it needs a context that owns IO.  It
+// calls read_image() here with the key that only it gets.  No door takes an
+// array of integers, so
 // a clock cannot claim a history nobody recorded.  The element is closed to
 // std::bit_cast and to a lifetime start over bytes for the reasons given in
 // StrongCounterLattice.h, and at the same cost, which is none.
@@ -39,7 +41,6 @@
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -238,13 +239,14 @@ struct HappensBeforeLattice {
         return image;
     }
 
-    // The checked read of an image.  The context must own IO, the tag must
-    // have a source path, and the image must name this lattice.
-    template <typename Ctx>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
-              && ClockWireProtocol<Tag>
+    // The checked read of an image.  The key comes only from
+    // mint_from_image of foundation/effects/ImageRead.h, whose context must
+    // own IO.  The tag must have a source path, and the image must name this
+    // lattice.
     [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
-    mint_from_image(Ctx const&, image_type const& image) noexcept {
+    read_image(CountImageKey, image_type const& image) noexcept
+        requires ClockWireProtocol<Tag>
+    {
         if (detail::count_image::read_word(image, 0) != image_axis())
             return std::unexpected(CountImageError::OtherAxis);
         std::array<std::uint64_t, N> slots{};

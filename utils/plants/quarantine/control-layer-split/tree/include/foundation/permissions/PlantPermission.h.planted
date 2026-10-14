@@ -1,0 +1,4 @@
+#pragma once
+#include <foundation/algebra/lattices/PlantLattice.h>
+#include <foundation/effects/PlantEffect.h>
+inline int plant_permission = plant_effect + plant_lattice;

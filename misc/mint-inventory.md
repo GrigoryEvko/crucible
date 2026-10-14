@@ -294,13 +294,6 @@ does not apply to the row.
 | `mint_witnessed_at` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_witnessed_under` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
-## include/foundation/algebra/
-
-| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
-|---|---|---|---|---|---|---|---|---|
-| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-
 ## include/foundation/core/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -326,6 +319,7 @@ does not apply to the row.
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_from_image` | `include/foundation/effects/ImageRead.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 
 ## include/foundation/permissions/
 
@@ -346,4 +340,4 @@ does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 43 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 116 | 56 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 115 | 55 | 57 | 3 | 0 | 4 |

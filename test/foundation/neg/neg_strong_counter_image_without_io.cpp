@@ -4,11 +4,12 @@
 
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
 int main() {
     namespace fl = ::foundation::algebra::lattices;
     ::foundation::effects::ExecCtx<> const foreground = ::foundation::effects::testing::foreground();
-    auto const read =
-        fl::EpochLattice::mint_from_image(foreground, fl::EpochLattice::image_of(fl::EpochLattice::top()));
+    auto const read = ::foundation::effects::mint_from_image<fl::EpochLattice>(
+        foreground, fl::EpochLattice::image_of(fl::EpochLattice::top()));
     return read.has_value() ? 0 : 1;
 }

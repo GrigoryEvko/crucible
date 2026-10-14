@@ -1,0 +1,4 @@
+#pragma once
+#include <foundation/algebra/lattices/PlantLattice.h>
+#include <foundation/diag/PlantDiag.h>
+inline int plant_effect = plant_diag + plant_lattice;

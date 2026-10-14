@@ -1,0 +1,11 @@
+# The control of plant-layer-split.  Each header of the six ordered layers
+# of foundation includes only headers of lower layers, and a file of the
+# layer F1_rest includes a header of each of the five layers below it.  Each
+# include goes down, so the unit has no finding in the mode report and
+# passes in the mode error.
+
+compile report-down include/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+exit report-down pass
+
+compile error-down include/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
+exit error-down pass

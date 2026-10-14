@@ -688,6 +688,7 @@ test/fixy/neg/neg_weak_ref_value_of_a_span.cpp | std-entity | 1 | std::span | -
 test/fixy/neg/neg_witness_algebra_grade_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_graded_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_graded_direct_construction.cpp | detail-use | 1 | main(): foundation::algebra::detail | the fixture constructs a type with a private constructor directly, and its probe shows that the build refuses it
+test/fixy/neg/neg_witness_algebra_lattices_countimagekey_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction.cpp | std-entity | 1 | std::array | -
 test/fixy/neg/neg_witness_algebra_lattices_strongcounterlattice_element_type_direct_construction.cpp | c-library-call | 2 | abort | -
@@ -754,6 +755,7 @@ test/fixy/neg/neg_witness_effects_detail_ctx_mint_init_key_direct_construction.c
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_test_key_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_detail_ctx_mint_test_key_direct_construction.cpp | detail-use | 1 | main(): foundation::effects::detail | the fixture forges or builds a key of a context, and its probe shows that only the door can make the key
 test/fixy/neg/neg_witness_effects_execctx_direct_construction.cpp | c-library-call | 2 | abort | -
+test/fixy/neg/neg_witness_effects_host_imagereader_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_host_producerclaim_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_init_direct_construction.cpp | c-library-call | 2 | abort | -
 test/fixy/neg/neg_witness_effects_test_direct_construction.cpp | c-library-call | 2 | abort | -

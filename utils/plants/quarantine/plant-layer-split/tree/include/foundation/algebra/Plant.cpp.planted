@@ -1,0 +1,4 @@
+#if defined(PLANT_UPWARD)
+#include <foundation/algebra/lattices/PlantLattice.h>
+#endif
+int plant_algebra_value() { return 1; }

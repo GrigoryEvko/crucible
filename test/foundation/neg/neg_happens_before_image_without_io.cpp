@@ -4,12 +4,13 @@
 
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
 int main() {
     namespace fe = ::foundation::effects;
     namespace fl = ::foundation::algebra::lattices;
     using HB = fl::HappensBeforeLattice<2>;
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test>> const scope{fe::testing::test()};
-    auto const read = HB::mint_from_image(scope, HB::image_of(HB::bottom()));
+    auto const read = fe::mint_from_image<HB>(scope, HB::image_of(HB::bottom()));
     return read.has_value() ? 0 : 1;
 }

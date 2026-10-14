@@ -1,0 +1,4 @@
+#if defined(PLANT_UPWARD)
+#include <foundation/permissions/PlantPermission.h>
+#endif
+int plant_effect_value() { return 1; }

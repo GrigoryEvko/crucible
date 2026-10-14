@@ -1,5 +1,5 @@
 # A plant of each row kind against the rule table of the repository, in a
-# tree with the paths of the repository: a base file of the layer F1_algebra,
+# tree with the paths of the repository: a base file of the layer F1_rest,
 # a header of the higher layer X1_wrappers and a quarantined file.  In the
 # mode report, the section of the object holds the one finding of the plant,
 # and the file with no plant has no finding.  In the mode error, the plant
@@ -15,7 +15,7 @@ exit report-quarantined pass
 compile report-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag report-layer-header -DPLANT_LAYER_HEADER
 exit report-layer-header pass
-finding report-layer-header quarantine layer-header src/foundation/Plant.cpp:2:0 | <cmath> in the layer F1_algebra
+finding report-layer-header quarantine layer-header src/foundation/Plant.cpp:2:0 | <cmath> in the layer F1_rest
 
 compile report-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag report-door-header -DPLANT_DOOR_HEADER
@@ -25,7 +25,7 @@ finding report-door-header quarantine door-header src/foundation/Plant.cpp:5:0 |
 compile report-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag report-upward -DPLANT_UPWARD_INCLUDE
 exit report-upward pass
-finding report-upward quarantine upward-include src/foundation/Plant.cpp:8:0 | include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_algebra
+finding report-upward quarantine upward-include src/foundation/Plant.cpp:8:0 | include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_rest
 
 compile report-std-name test/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag report-std-name -DPLANT_STD_NAME
@@ -41,7 +41,7 @@ exit error-quarantined pass
 compile error-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-layer-header -DPLANT_LAYER_HEADER
 exit error-layer-header fail
-error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F1_algebra;
+error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F1_rest;
 
 compile error-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-door-header -DPLANT_DOOR_HEADER
@@ -51,7 +51,7 @@ error error-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <sy
 compile error-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-upward -DPLANT_UPWARD_INCLUDE
 exit error-upward fail
-error error-upward src/foundation/Plant.cpp:8 | quarantine: upward-include include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_algebra;
+error error-upward src/foundation/Plant.cpp:8 | quarantine: upward-include include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_rest;
 
 compile error-std-name test/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-std-name -DPLANT_STD_NAME

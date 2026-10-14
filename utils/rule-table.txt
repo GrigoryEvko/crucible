@@ -239,12 +239,17 @@ layer F0_core 1 include/foundation/reflect/ include/foundation/contracts/ includ
 layer F0_os 2 include/foundation/os/Syscall.h include/foundation/os/KernelFloor.h include/foundation/os/OpenFlags.h include/foundation/os/FutexWords.h include/foundation/os/MapWords.h src/foundation/os/Syscall.cpp src/foundation/os/Intercepted.h src/foundation/os/Intercepted.cpp
 layer F0_primitives 3 include/foundation/core/ include/foundation/Simd.h include/foundation/Saturate.h include/foundation/AlignedBuffer.h include/foundation/SwissTableBuffer.h include/foundation/ThreadLocalRef.h include/foundation/ChannelBinding.h src/foundation/core/
 layer F0_doors 4 include/foundation/os/ src/foundation/os/
-layer F1_algebra 5 include/foundation/ src/foundation/
-layer X1_wrappers 6 include/fixy/ src/fixy/
-layer X2_binding 7 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
-layer X3_os 8 include/fixy/os/ src/fixy/os/
-layer X4_concurrent 9 include/fixy/concurrent/ include/fixy/handle/
-layer X5_session 10 include/fixy/session/ src/fixy/session/
+layer F1_algebra 5 include/foundation/algebra/
+layer F1_lattices 6 include/foundation/algebra/lattices/
+layer F1_diag 7 include/foundation/diag/
+layer F1_effects 8 include/foundation/effects/
+layer F1_permissions 9 include/foundation/permissions/
+layer F1_rest 10 include/foundation/ src/foundation/
+layer X1_wrappers 11 include/fixy/ src/fixy/
+layer X2_binding 12 include/fixy/Fn.h include/fixy/Axis.h include/fixy/Atom.h include/fixy/atoms/ include/fixy/Collision.h include/fixy/Corpus.h include/fixy/Reject.h include/fixy/Insights.h include/fixy/Role.h include/fixy/Throws.h include/fixy/Federation.h
+layer X3_os 13 include/fixy/os/ src/fixy/os/
+layer X4_concurrent 14 include/fixy/concurrent/ include/fixy/handle/
+layer X5_session 15 include/fixy/session/ src/fixy/session/
 layer X6_channels 16 include/fixy/channels/
 
 allow F0_floor <cstddef>
@@ -359,6 +364,7 @@ home host-owners foundation::effects::host::BackgroundOwner include/foundation/e
 home host-owners foundation::effects::host::InitOwner include/foundation/effects/Effect.h | the owner of the init key, whose one member is the door to the init context
 home host-owners foundation::effects::host::ForegroundOwner include/foundation/effects/Ctx.h | the builder of the foreground key, whose only friends are the producer claims
 home host-owners foundation::effects::host::ProducerClaim include/foundation/effects/Ctx.h | the producer claim that brands the foreground context, so a specialization elsewhere forges one
+home host-owners foundation::effects::host::ImageReader include/foundation/effects/ImageRead.h | the owner of the key of an image read of a counter or a clock, whose one friend is mint_from_image, the door that asks for a context that owns IO
 home federation-admission foundation::permissions::FederationAdmission include/fixy/Federation.h | the federation door: the key of a federation peer token befriends this class template, and its definition builds the key only after a handshake verifies
 
 home no-combine-ids-duplicate foundation::reflect::combine_ids include/foundation/reflect/Hash.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
@@ -484,6 +490,9 @@ witness <foundation/effects/Capability.h> no-match | foundation::effects::Capabi
 # every constructor private.
 witness <foundation/effects/Effect.h> private | foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg> | foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg>{}
 witness <foundation/effects/Ctx.h> private | foundation::effects::host::ProducerClaim<forge::brand> | foundation::effects::host::ProducerClaim<forge::brand>{}
+# The owner of the key of an image read befriends mint_from_image, and no
+# code builds an owner.
+witness <foundation/effects/ImageRead.h> private | foundation::effects::host::ImageReader | foundation::effects::host::ImageReader{}
 
 # -- Permissions -----------------------------------------------------
 witness <foundation/permissions/Permission.h> private | foundation::permissions::perm_mint_key | foundation::permissions::perm_mint_key{}
@@ -592,6 +601,7 @@ witness <foundation/algebra/Graded.h> no-match | foundation::algebra::Graded<fou
 # source, and a budget only from an authority, each minted under Init.
 witness <foundation/algebra/lattices/StrongCounterLattice.h> private | foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type | foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type{forge::rvalue<unsigned long>()}
 witness <foundation/algebra/lattices/HappensBefore.h> private | foundation::algebra::lattices::HappensBeforeLattice<2>::element_type | foundation::algebra::lattices::HappensBeforeLattice<2>::element_type{forge::lvalue<const std::array<unsigned long, 2>>()}
+witness <foundation/algebra/lattices/StrongCounterLattice.h> private | foundation::algebra::lattices::CountImageKey | foundation::algebra::lattices::CountImageKey{}
 witness <fixy/EpochVersioned.h> private | fixy::VersionSource | fixy::VersionSource{}
 witness <fixy/EpochVersioned.h> private | fixy::VersionStamp | fixy::VersionStamp{forge::rvalue<foundation::algebra::lattices::Epoch>(), forge::rvalue<foundation::algebra::lattices::Generation>()}
 witness <fixy/Budgeted.h> private | fixy::BudgetAuthority | fixy::BudgetAuthority{forge::lvalue<const foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::IO>>>()}

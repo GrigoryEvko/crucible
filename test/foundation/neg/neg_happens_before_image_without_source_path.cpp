@@ -5,6 +5,7 @@
 
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
 namespace {
 struct HiddenClock {};
@@ -16,6 +17,6 @@ int main() {
     using HB = fl::HappensBeforeLattice<2, HiddenClock>;
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>> const scope{fe::testing::test()};
     HB::image_type const image{};
-    auto const read = HB::mint_from_image(scope, image);
+    auto const read = fe::mint_from_image<HB>(scope, image);
     return read.has_value() ? 0 : 1;
 }

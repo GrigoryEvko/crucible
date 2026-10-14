@@ -54,6 +54,7 @@
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -168,7 +169,7 @@ private:
         typename L::image_type image{};
         ::foundation::algebra::lattices::detail::count_image::write_word(image, 0, L::image_axis());
         ::foundation::algebra::lattices::detail::count_image::write_word(image, 8, count);
-        return *L::mint_from_image(ctx, image);
+        return *::foundation::effects::mint_from_image<L>(ctx, image);
     }
 
     AuthorityCtx ctx_;

@@ -305,10 +305,10 @@ foundation_neg_compile_test(neg_strong_counter_start_as_array
   "no matching function for call to .start_as_array<foundation::algebra::lattices::Epoch>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type.")
 foundation_neg_compile_test(neg_strong_counter_image_without_io
-  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::mint_from_image"
+  "no matching function for call to .mint_from_image<foundation::algebra::lattices::EpochLattice>\\("
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 foundation_neg_compile_test(neg_strong_counter_image_in_test_scope_without_io
-  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::mint_from_image"
+  "no matching function for call to .mint_from_image<foundation::algebra::lattices::GenerationLattice>\\("
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >.")
 foundation_neg_compile_test(neg_strong_counter_sum_on_version
   "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::saturating_sum"
@@ -362,12 +362,12 @@ foundation_neg_compile_test(neg_happens_before_clock_from_integers
   "element_type::element_type\\(const std::array<long unsigned int, N>&\\) .with long unsigned int N = 2. Tag = void.* is private within this context"
   "HappensBeforeLattice<N, Tag>::element_type::element_type")
 foundation_neg_compile_test(neg_happens_before_image_without_io
-  "no matching function for call to .foundation::algebra::lattices::HappensBeforeLattice<2>::mint_from_image"
+  "no matching function for call to .mint_from_image<HB>\\(.*foundation::algebra::lattices::HappensBeforeLattice<2>::image_type\\)"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >.")
 # A clock over a tag with no source path has no image door, even under IO.
 foundation_neg_compile_test(neg_happens_before_image_without_source_path
-  "no matching function for call to .foundation::algebra::lattices::HappensBeforeLattice<2, \\{anonymous\\}::HiddenClock>::mint_from_image"
-  "required for the satisfaction of .ClockWireProtocol<Tag>. .with Tag = <unnamed>::HiddenClock.")
+  "no matching function for call to .mint_from_image<HB>\\(.*foundation::algebra::lattices::HappensBeforeLattice<2, \\{anonymous\\}::HiddenClock>::image_type&\\)"
+  "required for the satisfaction of .ImageLattice<Lattice>. .with Lattice = foundation::algebra::lattices::HappensBeforeLattice<2, <unnamed>::HiddenClock>.")
 foundation_neg_compile_test(neg_happens_before_bit_cast
   "no matching function for call to .bit_cast<foundation::algebra::lattices::HappensBeforeLattice<2>::element_type>"
   "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::HappensBeforeLattice<2, void>::element_type.. evaluated to .false.")

@@ -19,8 +19,9 @@
 //   - saturating_sum(), the use of two stages in sequence, on a use axis
 //     only, where a sum of two measured uses is itself a measured use;
 //   - top(), the witness that a bounded lattice must have;
-//   - mint_from_image(), the checked read of a count that crossed a wire
-//     or came back from storage.
+//   - mint_from_image() of foundation/effects/ImageRead.h, the checked
+//     read of a count that crossed a wire or came back from storage.  It
+//     calls read_image() here with the key that only it gets.
 //
 // No door takes an integer.  raw() gives the count back as a plain
 // integer, and that integer builds no count of any axis, so an epoch
@@ -77,7 +78,6 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -92,6 +92,12 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+
+// The owner of the key below.  foundation/effects/ImageRead.h defines it,
+// and the rule host-owners admits its definition only in that header.
+namespace foundation::effects::host {
+struct ImageReader;
+}  // namespace foundation::effects::host
 
 namespace foundation::algebra::lattices {
 
@@ -109,6 +115,28 @@ enum class CountImageError : std::uint8_t {
     // The image names another axis, so it is a count of that axis and
     // not of this one.
     OtherAxis = 1,
+};
+
+// The key of the read of an image, for the counters here and the clocks of
+// HappensBefore.h.  A lattice is below the effect layer and cannot name a
+// context, so its read takes this key, and the image reader of
+// foundation/effects/ImageRead.h is the one class that builds a key.  The
+// reader gives the key only to mint_from_image, which asks for a context
+// that owns IO.
+//
+// Each constructor is user-provided, and not defaulted.  A key with a
+// trivial copy is trivially copyable, and std::bit_cast then builds one
+// from any byte.  A key with a trivial constructor is an implicit-lifetime
+// type, and std::start_lifetime_as then builds one over a buffer.  The copy
+// stays public, so a holder can pass a key to a read.
+class CountImageKey {
+private:
+    constexpr CountImageKey() noexcept {}
+
+    friend struct ::foundation::effects::host::ImageReader;
+
+public:
+    constexpr CountImageKey(CountImageKey const&) noexcept {}
 };
 
 namespace detail::count_image {
@@ -294,13 +322,14 @@ struct StrongCounterLattice {
         return image;
     }
 
-    // The checked read of an image.  The context must own IO, because the
-    // read occurs where storage or a socket is read.  The tag must have a
-    // source path, and the image must name this axis.
-    template <typename Ctx>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO> && WireTag<Tag>
+    // The checked read of an image.  The key comes only from
+    // mint_from_image of foundation/effects/ImageRead.h, whose context must
+    // own IO, because the read occurs where storage or a socket is read.
+    // The tag must have a source path, and the image must name this axis.
     [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
-    mint_from_image(Ctx const&, image_type const& image) noexcept {
+    read_image(CountImageKey, image_type const& image) noexcept
+        requires WireTag<Tag>
+    {
         if (detail::count_image::read_word(image, 0) != image_axis())
             return std::unexpected(CountImageError::OtherAxis);
         return element_type{detail::count_image::read_word(image, 8)};

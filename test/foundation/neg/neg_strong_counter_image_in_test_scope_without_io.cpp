@@ -4,12 +4,13 @@
 
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
 int main() {
     namespace fe = ::foundation::effects;
     namespace fl = ::foundation::algebra::lattices;
     fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test>> const scope{fe::testing::test()};
-    auto const read =
-        fl::GenerationLattice::mint_from_image(scope, fl::GenerationLattice::image_of(fl::GenerationLattice::top()));
+    auto const read = fe::mint_from_image<fl::GenerationLattice>(
+        scope, fl::GenerationLattice::image_of(fl::GenerationLattice::top()));
     return read.has_value() ? 0 : 1;
 }

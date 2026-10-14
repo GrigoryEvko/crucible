@@ -1,0 +1,3 @@
+#pragma once
+#include <foundation/algebra/lattices/PlantLattice.h>
+inline int plant_diag = plant_lattice;

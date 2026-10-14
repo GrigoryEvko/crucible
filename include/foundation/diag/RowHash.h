@@ -30,8 +30,12 @@
 // pinned grade of the lattice, and the payload is the recursion of the
 // fold. A new wrapper adds nothing here.
 //
-// Two types have their own salt, because they are not Graded: the effect
-// row itself and the computation carrier.
+// Two types have their own fold, because they are not Graded: the effect
+// row itself and the computation carrier.  The effect layer holds these
+// two folds, and the folds of its contexts, execution contexts and
+// capabilities, in foundation/effects/Effect.h, beside the atoms.  So the
+// fold of an effect carrier is in each unit that can name the carrier, and
+// this header names no effect.
 //
 // Not every carrier that holds a discipline is a one-axis grade, so two
 // more shapes reach a fold of their own. A session handle carries a
@@ -46,11 +50,12 @@
 // Portability bound, and it is not one bound but three. The arithmetic,
 // the effect enum values and the salts are portable. A lattice identity
 // comes from a reflected name, and that name is implementation-specific.
-// So each specialisation below owns its own answer. A consumer that
-// reads one blanket answer guards the wrong half.
+// So each specialisation owns its own answer. A consumer that reads one
+// blanket answer guards the wrong half.
 //
-// The row specialisation is portable. It folds the underlying values of
-// an append-only enum through pure arithmetic, and it reaches no
+// The row specialisation of foundation/effects/Effect.h is portable. It
+// folds the underlying values of an append-only enum through
+// atom_set_row_hash_v, pure arithmetic, and it reaches no
 // reflected name at all. A peer on another toolchain computes the same
 // value for the same row.
 //
@@ -82,8 +87,6 @@
 // see a reflected name move underneath it.
 
 #include <foundation/algebra/Modality.h>
-#include <foundation/effects/Effect.h>
-#include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -92,23 +95,8 @@
 #include <cstdint>
 #include <type_traits>
 
-// The carriers are forward-declared rather than included. A partial
-// specialization only has to deduce its template parameters, and pulling
-// the definitions in would drag the graded substrate, the whole lattice
-// family and the reflection paths into every consumer of this header. A
-// translation unit that names a carrier as an argument includes its own
-// header for it.
-//
-// Graded needs no declaration at all, because the fold matches on the
-// shape a wrapper publishes rather than on the template itself.
-namespace foundation::effects {
-template <typename R, typename T>
-class Computation;
-template <class Cap, class R>
-class ExecCtx;
-template <Effect Cap, class Source>
-class Capability;
-}  // namespace foundation::effects
+// Graded needs no declaration, because the fold matches on the shape a
+// wrapper publishes rather than on the template itself.
 
 namespace foundation::diag {
 
@@ -342,57 +330,33 @@ struct lattice_canonical_id {
 template <typename L>
 inline constexpr std::uint64_t lattice_canonical_id_v = lattice_canonical_id<L>::value;
 
-// A row denotes a set of effect atoms, and union, intersection and
-// difference over rows are all set-shaped, so hash equality has to match
-// set equality. Composing two policies that each declare one effect can
-// hand this a pack with a repeat, and without the dedup that pack would
+// A row denotes a set of atoms, and union, intersection and difference
+// over rows are all set-shaped, so hash equality has to match set
+// equality. Composing two policies that each declare one atom can hand
+// the fold a pack with a repeat, and without the dedup that pack would
 // take a slot of its own for a row the type system already treats as
 // equal.
-
-template <::foundation::effects::Effect... Es>
-struct row_hash_contribution<::foundation::effects::Row<Es...>> {
-    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
-        constexpr std::size_t N = sizeof...(Es);
-        if constexpr (N == 0) {
-            return detail::cardinality_seed(0);
-        } else {
-            std::array<std::uint64_t, N> const raw_vals{
-                static_cast<std::uint64_t>(static_cast<std::underlying_type_t<::foundation::effects::Effect>>(Es))...};
-            auto const sorted = detail::sorted_uints(raw_vals);
-            // The seed takes the number of distinct atoms, never the
-            // pack size, and it is mixed before any atom. That also
-            // keeps the atom whose underlying value is zero from folding
-            // into the seed unchanged.
-            std::size_t const unique_n = detail::unique_count_sorted(sorted);
-            std::uint64_t const seed = detail::cardinality_seed(unique_n);
-            return detail::fmix64_fold_unique_sorted(sorted, seed);
-        }
-    }();
-};
-
-// Combining the row with the payload contribution satisfies three
-// properties this carrier owes the cache, and the self-tests pin all
-// three.
 //
-// A carrier is distinct from its own bare row. A row is metadata and a
-// carrier is a value, and the combiner returns something other than X
-// when folding X with a zero payload contribution.
-//
-// A carrier is blind to a bare payload. Payload identity belongs to the
-// content hash, the other half of the key, so a kernel returning one
-// scalar type shares a row signature with a kernel returning another.
-//
-// A carrier does not collapse over a payload that carries a row of its
-// own. A carrier nested inside a carrier keeps the inner row in the
-// outer hash, so nesting cannot alias the flattened form.
-//
-// The row folds first and the payload second. That order is fixed, not
-// incidental, because the combiner is order-sensitive.
-
-template <typename R, typename T>
-struct row_hash_contribution<::foundation::effects::Computation<R, T>> {
-    static constexpr std::uint64_t value = detail::combine_ids(row_hash_contribution_v<R>, row_hash_contribution_v<T>);
-};
+// The fold reads the underlying value of each atom.  The fold of a row of
+// effects in foundation/effects/Effect.h gives these values, and this
+// header names no effect.
+template <std::uint64_t... Atoms>
+inline constexpr std::uint64_t atom_set_row_hash_v = []() consteval -> std::uint64_t {
+    constexpr std::size_t N = sizeof...(Atoms);
+    if constexpr (N == 0) {
+        return detail::cardinality_seed(0);
+    } else {
+        std::array<std::uint64_t, N> const raw_vals{Atoms...};
+        auto const sorted = detail::sorted_uints(raw_vals);
+        // The seed takes the number of distinct atoms, never the pack
+        // size, and it is mixed before any atom. That also keeps the atom
+        // whose underlying value is zero from folding into the seed
+        // unchanged.
+        std::size_t const unique_n = detail::unique_count_sorted(sorted);
+        std::uint64_t const seed = detail::cardinality_seed(unique_n);
+        return detail::fmix64_fold_unique_sorted(sorted, seed);
+    }
+}();
 
 // The shape the fold reads. A wrapper reaches the fold by publishing a
 // modality, a lattice and a payload type, and those three names are the
@@ -441,10 +405,10 @@ inline constexpr std::uint64_t graded_row_hash_v = detail::combine_ids(
 // instance. A consumer that needs to tell two instances apart folds the
 // grade in on top of this value rather than in place of it.
 //
-// The computation carrier above is graded-backed and so answers this
-// concept too. Its own specialisation is the more specialised of the
-// two, so it wins the partial order and keeps the row-first fold that
-// its published hashes were built from.
+// The computation carrier is graded-backed and so answers this concept
+// too. Its own specialisation in foundation/effects/Effect.h is the more
+// specialised of the two, so it wins the partial order and keeps the
+// row-first fold that its published hashes were built from.
 //
 // A graded wrapper can make a claim its lattice does not see. A sealed
 // refinement is one: it grades on the same predicate lattice as the open
@@ -566,46 +530,6 @@ struct row_hash_contribution<W> {
         detail::combine_ids(detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
                                                 lattice_canonical_id_v<typename W::protocol_type>),
                             row_hash_contribution_v<typename W::resource_type>);
-};
-
-// ── The effect layer's own carriers ─────────────────────────────────
-//
-// These three live here beside the row, for the reason the computation
-// carrier does: they are the effect layer's own types, and each one
-// carries a row that the fold has to see.
-
-namespace row_discipline {
-template <class Cap>
-struct exec_ctx;
-template <class Source>
-struct capability;
-}  // namespace row_discipline
-
-// A capability context is its own identity, since it has no payload, and
-// its payload is the row it permits. Two contexts that permit one row
-// are still two claims, because one of them names the background thread.
-template <typename C>
-    requires ::foundation::effects::IsContext<C>
-struct row_hash_contribution<C> {
-    static constexpr std::uint64_t value =
-        discipline_row_hash_v<C, typename C::template permitted_as<::foundation::effects::Row>>;
-};
-
-// An execution context claims a capability source and a row under it.
-// The source changes the claim, so it is in the identity, and the row is
-// the payload.
-template <class Cap, class R>
-struct row_hash_contribution<::foundation::effects::ExecCtx<Cap, R>> {
-    static constexpr std::uint64_t value = discipline_row_hash_v<row_discipline::exec_ctx<Cap>, R>;
-};
-
-// A capability is a linear token for one effect, minted from a source.
-// The effect folds as the one-atom row it grants, so a capability and a
-// context that permit the same atom agree on that half.
-template <::foundation::effects::Effect E, class Source>
-struct row_hash_contribution<::foundation::effects::Capability<E, Source>> {
-    static constexpr std::uint64_t value =
-        discipline_row_hash_v<row_discipline::capability<Source>, ::foundation::effects::Row<E>>;
 };
 
 template <typename T>

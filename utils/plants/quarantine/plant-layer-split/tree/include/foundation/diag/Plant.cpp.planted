@@ -1,0 +1,4 @@
+#if defined(PLANT_UPWARD)
+#include <foundation/effects/PlantEffect.h>
+#endif
+int plant_diag_value() { return 1; }

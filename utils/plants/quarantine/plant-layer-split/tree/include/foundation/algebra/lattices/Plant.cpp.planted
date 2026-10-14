@@ -1,0 +1,7 @@
+#if defined(PLANT_UPWARD)
+#include <foundation/effects/PlantEffect.h>
+#endif
+#if defined(PLANT_UPWARD_DIAG)
+#include <foundation/diag/PlantDiag.h>
+#endif
+int plant_lattice_value() { return 1; }
