@@ -1,0 +1,10 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default",
+      "binaryDir": "${sourceDir}/elsewhere",
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan" } }
+    }
+  ]
+}

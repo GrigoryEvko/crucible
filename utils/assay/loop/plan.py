@@ -67,9 +67,7 @@ THE PROBLEMS
     These are the problems of a plan (ProblemKind):
       preset-block   a problem of the presets file or of the block of a preset
       stale-entry    a row of STEPS, HOLDERS or of a class of THE COMMANDS
-                     that names no preset, rule, step or subcommand.  A parse
-                     preset that PARSE_PRESETS of assay.loop.syntax does not
-                     name, and a name of PARSE_PRESETS that is no parse preset
+                     that names no preset, rule, step or subcommand
       no-class       a holder of a rule with no row of HOLDERS, and a
                      subcommand of utils/bin/loop with no class
       configuration  a build with a configuration that is not the
@@ -102,7 +100,7 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.meta import test_registration
-from assay.loop import bench, fuzz, syntax, tiers
+from assay.loop import bench, fuzz, tiers
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import python as python_reader
@@ -524,16 +522,6 @@ def preset_problems(presets: tiers.Tiers) -> list[Problem]:
         for item in (*presets.configure, *presets.tests)
         if item.problem
     ]
-    parse = {item.name for item in presets.configure if item.is_parse}
-    for name in sorted(parse ^ set(syntax.PARSE_PRESETS)):
-        is_named = name in syntax.PARSE_PRESETS
-        message = (
-            f"PARSE_PRESETS of assay.loop.syntax names {name}, and the presets file has no parse preset {name}"
-            if is_named
-            else f"the parse preset {name} is not in PARSE_PRESETS of assay.loop.syntax, and `loop syntax --changed` "
-            f"does not name it"
-        )
-        found.append(Problem(ProblemKind.STALE_ENTRY, tiers.PRESETS_FILE, 0, name, message))
     return found
 
 

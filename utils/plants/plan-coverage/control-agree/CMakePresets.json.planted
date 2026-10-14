@@ -1,0 +1,39 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default",
+      "binaryDir": "${sourceDir}/build",
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan" } }
+    },
+    {
+      "name": "bench",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-bench",
+      "vendor": { "crucible": { "tier": "nightly" } }
+    },
+    {
+      "name": "pgo-generate",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-pgo-generate",
+      "vendor": { "crucible": { "tier": "release" } }
+    },
+    {
+      "name": "syntax-x86-64-v3",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-syntax-x86-64-v3",
+      "cacheVariables": { "CRUCIBLE_SYNTAX_ONLY": "ON" },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan-syntax" } }
+    },
+    {
+      "name": "syntax-aarch64",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-syntax-aarch64",
+      "cacheVariables": { "CRUCIBLE_SYNTAX_ONLY": "ON" },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "aarch64-debug-asan-syntax" } }
+    }
+  ],
+  "testPresets": [
+    { "name": "default", "configurePreset": "default" }
+  ]
+}

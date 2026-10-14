@@ -415,7 +415,6 @@ utils/assay/guard/engines/meta/test_registration.py | refused-word | 2 | <module
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 2 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | imports_of: inside | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | plant_context: absent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | reads_trees: size | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/meta/test_registration.py | refused-word | 1 | reads_trees: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/guard/engines/tsast/decide_catalog.py | refused-word | 2 | <module>: decide | A text of today.  The change that writes the text again in STE lowers the count

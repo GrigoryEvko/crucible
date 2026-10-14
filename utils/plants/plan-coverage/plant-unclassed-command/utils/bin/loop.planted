@@ -1,0 +1,17 @@
+"""A planted master: the subcommand brand-new has no class in the plan."""
+
+SUBCOMMANDS = {
+    "test": ("assay.loop.affected", "run each test"),
+    "land": ("assay.loop.land", "land a change"),
+    "syntax": ("assay.loop.syntax", "parse each unit"),
+    "heavy": ("assay.loop.heavy", "run one heavy command"),
+    "history": ("assay.loop.history", "print the history"),
+    "plan": ("assay.loop.plan", "print the plan"),
+    "derive": ("assay.loop.derive", "write each generated file"),
+    "gauge": ("assay.loop.gauge", "measure the edit loop"),
+    "bench": ("assay.loop.bench", "run the benches"),
+    "fuzz": ("assay.loop.fuzz", "run a campaign"),
+    "pgo": ("assay.loop.pgo", "collect a profile"),
+    "brand-new": ("assay.loop.brand_new", "do a new thing that no entry runs"),
+    "step": ("assay.loop.step", None),
+}

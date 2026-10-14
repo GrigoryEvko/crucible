@@ -1,0 +1,6 @@
+# The ledger of the rule plan-coverage.  `python3 utils/bin/guard explain plan-coverage` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule plan-coverage` writes this file.
+format 1
+rule plan-coverage
+utils/assay/loop/derive/aten_ops.py | no-tier | admit | derive aten-ops | The target reads a PyTorch tree with the dispatch key of Crucible from TORCH_DIR, and no host of an entry has such a tree.  A person runs it with TORCH_DIR set
+utils/registry.txt | no-tier | admit | rule gate-mutants | The rule runs only on the headers that a call names with --path, and no entry has a list of such headers.  A person runs it on the headers of a change

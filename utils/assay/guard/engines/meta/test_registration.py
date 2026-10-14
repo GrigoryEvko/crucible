@@ -283,12 +283,22 @@ def plant_context(plant: Path, scratch: Path) -> MetaContext:
     """Copy a planted CMake project, configure it with the pinned cmake, and give its context with its build directory.
 
     Raises:
-        NotApplicable: If the pinned cmake is absent, or the project does not configure
+        NotApplicable: If the pinned cmake is missing, or the project does not configure
+    """
+    return configured(copy_tree(plant, scratch), scratch)
+
+
+def configured(context: MetaContext, scratch: Path) -> MetaContext:
+    """Configure the planted CMake project of a copied plant in SCRATCH/build, and give the context with that build.
+
+    The plant of a different rule that reads the tests of a build uses it too, after its own copy of the plant.
+
+    Raises:
+        NotApplicable: If the pinned cmake is missing, or the project does not configure
     """
     from assay.readers import cmake as cmake_reader
     from assay.setup import pins
 
-    context = copy_tree(plant, scratch)
     build = scratch / "build"
     try:
         cmake = pins.pinned_program("cmake")
