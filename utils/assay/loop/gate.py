@@ -1,12 +1,14 @@
 """gate — build and test the commit of a landing in a warm tree, in each configuration that the change selects.
 
 THE CONFIGURATIONS
-    CONFIGURATIONS gives each configuration of the gate.  A configuration has
-    a name, a configure preset and a build directory in the warm tree.  It
-    also has the cache variables that its configure adds, and its name in a
-    ledger (assay.core.configuration).  A parse configuration is a parse
-    build of PARSE_PRESETS of assay.loop.syntax.  The ledger names are the
-    names of an x86_64 host, the build host of the tree.
+    CONFIGURATIONS gives each configuration of the gate: each configure
+    preset with the tier gate (assay.loop.tiers), the parse presets first.  A
+    configuration has the name of its preset and its build directory in the
+    warm tree.  The block of the preset gives its name in a ledger
+    (assay.core.configuration).  A parse configuration is a preset that sets
+    CRUCIBLE_SYNTAX_ONLY.  The ledger names are the names of an x86_64 host,
+    the build host of the tree.  The gate reads the presets of the tree of
+    the package, and it refuses presets with a problem.
 
 THE COUNTED RULES
     A counted rule is a rule of the engine plugin or elf with the policy
@@ -22,7 +24,7 @@ THE COUNTED RULES
 THE SELECTION
     select() gives the configurations of a change, in the sequence of
     CONFIGURATIONS.  Each such configuration runs the suite:
-      * debug for each change
+      * default for each change
       * release and tsan for a change of a C++ file or of a build file.
         ThreadSanitizer gives incorrect errors of -Wmaybe-uninitialized that
         the other builds do not give, also for a change of a test
@@ -90,7 +92,7 @@ THE RUN OF A CONFIGURATION
     for it.  The parse configurations run first.  Then the tests
     guard_parse_* of the debug build read current reports.
       1. A build directory with no graph of Ninja gets its configure:
-         `cmake --preset PRESET -B BUILD` with its cache variables.
+         `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
          assay.guard.engines.buildsys.parse_builds.  A check that fails
@@ -192,7 +194,7 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys.parse_builds import COUNTED_RULES
 from assay.guard.engines.meta import runner as meta_runner
-from assay.loop import affected, heavy
+from assay.loop import affected, heavy, tiers
 from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
@@ -231,36 +233,39 @@ ALONE_S = 1500.0
 
 @dataclass(frozen=True, slots=True)
 class Configuration:
-    """One configuration of the gate (THE CONFIGURATIONS)."""
+    """One configuration of the gate: a configure preset with the tier gate (THE CONFIGURATIONS).
+
+    `build` is the build directory of the preset, relative to the tree.
+    """
 
     name: str
-    preset: str
     build: str
-    cache: tuple[str, ...]
     ledger_name: str
     is_parse: bool
 
 
-CONFIGURATIONS = (
-    Configuration(
-        "syntax-x86-64-v3", "syntax-x86-64-v3", "build-syntax-x86-64-v3", (), "x86_64-debug-asan-syntax", True
-    ),
-    Configuration("syntax-aarch64", "syntax-aarch64", "build-syntax-aarch64", (), "aarch64-debug-asan-syntax", True),
-    Configuration("debug", "default", "build", (), "x86_64-debug-asan", False),
-    Configuration("release", "release", "build-release", (), "x86_64-release", False),
-    Configuration("tsan", "tsan", "build-tsan", (), "x86_64-debug-tsan", False),
-    Configuration("ubsan-strict", "ubsan-strict", "build-ubsan-strict", (), "x86_64-debug-ubsan-strict", False),
-    Configuration(
-        "bench-fuzz",
-        "default",
-        "build-bench-fuzz",
-        ("-DCRUCIBLE_BENCH=ON", "-DCRUCIBLE_FUZZ=ON"),
-        "x86_64-debug-asan-bench-fuzz",
-        False,
-    ),
-)
-BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
-BY_LEDGER_NAME = {configuration.ledger_name: configuration for configuration in CONFIGURATIONS}
+def configurations(root: Path) -> tuple[Configuration, ...]:
+    """Return each configure preset of a tree with the tier gate, the parse presets first (THE CONFIGURATIONS).
+
+    Complexity: one read of the presets file, and linear in the presets.
+
+    Raises:
+        GateError: If a preset has a problem, a build directory is not in the tree, or no preset has the tier gate
+    """
+    read = tiers.read(root)
+    if read.each_problem:
+        raise GateError(f"the gate refuses the presets of {root}: {'; '.join(read.each_problem)}")
+    found: list[Configuration] = []
+    for preset in read.configure:
+        if preset.tier is not tiers.Tier.GATE or preset.build is None:
+            continue
+        if not preset.build.is_relative_to(root):
+            raise GateError(f"the build directory {preset.build} of the preset {preset.name} is not in the tree {root}")
+        build = preset.build.relative_to(root).as_posix()
+        found.append(Configuration(preset.name, build, preset.configuration, preset.is_parse))
+    if not found:
+        raise GateError(f"no configure preset of {root / tiers.PRESETS_FILE} has the tier gate")
+    return tuple(sorted(found, key=lambda item: not item.is_parse))
 
 
 class GateError(Exception):
@@ -316,6 +321,10 @@ class Verdict:
 
 # ── The selection ──────────────────────────────────────────────────────────
 
+CONFIGURATIONS = configurations(paths.REPO_ROOT)
+BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
+BY_LEDGER_NAME = {configuration.ledger_name: configuration for configuration in CONFIGURATIONS}
+
 
 def is_build_file(path: str) -> bool:
     """Tell if a path is a build file (THE SELECTION)."""
@@ -335,7 +344,7 @@ def select(
 
     Complexity: linear in the paths and the names.
     """
-    names = {"debug"}
+    names = {"default"}
     for path in changed:
         if path.endswith(CPP_SUFFIXES) or is_build_file(path):
             names.update(("release", "tsan"))
@@ -500,9 +509,8 @@ def build_directory(tree: Path, configuration: Configuration) -> Path:
 
 
 def configure_words(tree: Path, configuration: Configuration) -> list[str]:
-    """Return the words of the configure of the build directory of a configuration in a tree, with its cache variables."""
-    build = build_directory(tree, configuration)
-    return ["cmake", "--preset", configuration.preset, "-B", str(build), *configuration.cache]
+    """Return the words of the configure of the build directory of a configuration in a tree."""
+    return ["cmake", "--preset", configuration.name, "-B", str(build_directory(tree, configuration))]
 
 
 def build_words(tree: Path, configuration: Configuration, jobs: int) -> list[str]:

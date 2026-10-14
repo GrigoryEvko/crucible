@@ -18,8 +18,8 @@ THE STEPS
     For each configuration, the command does these steps:
       1. The build directory of the configuration in the tree is the build
          directory of the gate, such as build, build-release or
-         build-syntax-aarch64.  A directory with no graph of Ninja gets its
-         configure, with the cache variables of the configuration.
+         build-syntax-aarch64.  A directory with no graph of Ninja gets the
+         configure of the preset of the configuration.
       2. A configuration of objects builds the target all, and a parse
          configuration runs `loop syntax`.  The configure and the build run
          in one heavy step of assay.loop.heavy.  That step takes the shared

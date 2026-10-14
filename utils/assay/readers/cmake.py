@@ -39,6 +39,7 @@ THE VENDOR ENTRIES
     object.  Each key of that object names the data of one vendor.  The
     reader gives each entry as the values of its fields, as a text or None,
     as it gives the cache variables.  An entry that is no object gives None.
+    assay.loop.tiers reads the entry of the tree.
 
 THE INHERITANCE
     A configure preset gets each field that it does not give from the presets
@@ -69,7 +70,7 @@ import os
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
     from pathlib import Path
 
 CACHE_NAME = "CMakeCache.txt"
@@ -901,18 +902,20 @@ def effective(configure: Iterable[Preset], name: str) -> Preset:
     return resolve(name, ())
 
 
-def build_directory(root: Path, name: str) -> Path:
+def build_directory(root: Path, name: str, configure: Sequence[Preset] | None = None) -> Path:
     """Return the build directory of a configure preset of the presets files of a tree (THE INHERITANCE).
 
     The function expands the macros of BINARY_MACROS in the field binaryDir.  A relative directory is relative to the
-    root.  Complexity: one read of each presets file.
+    root.  `configure` holds the configure presets of each presets file of the tree, which a caller that read them
+    gives.  With no presets, the function reads each presets file of the tree.  Complexity: linear in the presets.
 
     Raises:
         CmakeError: If no presets file gives the preset, no parent gives a binaryDir, or the field names an other macro
     """
     from pathlib import Path
 
-    configure = [preset for presets_file in presets(root) for preset in presets_file.configure]
+    if configure is None:
+        configure = [preset for presets_file in presets(root) for preset in presets_file.configure]
     if not any(preset.name == name for preset in configure):
         raise CmakeError(f"no presets file of {root} gives the configure preset {name}")
     text = effective(configure, name).binary_dir

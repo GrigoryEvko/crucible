@@ -14,6 +14,7 @@ change of a C++ file must run the tests of the changed inputs in each other
 configuration of a counted ledger.  A red test there must reject the commit.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -160,28 +161,28 @@ def names_of(configurations: tuple[gate.Configuration, ...]) -> list[str]:
 def select_cases(expect: testing.Expect) -> None:
     """Hold the selection of the configurations of a change (THE SELECTION)."""
     expect(
-        "a change of a text file selects the debug build only",
-        names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], [], False)) == ["debug"],
+        "a change of a text file selects the default build only",
+        names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], [], False)) == ["default"],
     )
     expect(
-        "a change of a C++ test selects the debug build, the release build and ThreadSanitizer",
-        names_of(gate.select(["test/test_arena.cpp"], [], [], False)) == ["debug", "release", "tsan"],
+        "a change of a C++ test selects the default build, the release build and ThreadSanitizer",
+        names_of(gate.select(["test/test_arena.cpp"], [], [], False)) == ["default", "release", "tsan"],
     )
     expect(
         "a change of include/ or of a top build file adds ThreadSanitizer and UBSan-strict",
         names_of(gate.select(["include/foundation/Platform.h"], [], [], False))
         == names_of(gate.select(["CMakeLists.txt"], [], [], False))
-        == ["debug", "release", "tsan", "ubsan-strict"],
+        == ["default", "release", "tsan", "ubsan-strict"],
     )
     expect(
         "a change of bench/ or test/fuzz/ adds the bench and fuzz build",
         names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], [], False))
-        == ["debug", "release", "tsan", "bench-fuzz"],
+        == ["default", "release", "tsan", "bench-fuzz"],
     )
     expect(
         "the parse presets of an arm and the configurations of a changed ledger join, in the sequence of the table",
         names_of(gate.select(["notes.txt"], ["syntax-aarch64"], ["x86_64-debug-tsan", "aarch64-debug-asan"], False))
-        == ["syntax-aarch64", "debug", "tsan"],
+        == ["syntax-aarch64", "default", "tsan"],
     )
     every = names_of(gate.CONFIGURATIONS)
     expect(
@@ -218,16 +219,76 @@ def table_cases(expect: testing.Expect) -> None:
             named.update(item.name for item in rule_ledger.read(rule, paths.REPO_ROOT).configurations)
     unknown = sorted(name for name in named if name not in gate.BY_LEDGER_NAME)
     expect(f"each configuration that a ledger of this tree names is in the table of the gate: {unknown}", not unknown)
-    wrong: list[str] = []
-    for configuration in gate.CONFIGURATIONS:
+    parse = [configuration.name for configuration in gate.CONFIGURATIONS if configuration.is_parse]
+    expect(
+        f"the parse configurations of the gate are the parse presets of loop syntax, in their sequence: {parse}",
+        parse == list(syntax.PARSE_PRESETS),
+    )
+    presets_cases(expect)
+
+
+# The configure presets of a planted presets file: two presets with the tier gate, one of them a parse preset.
+PLANTED_BASE: dict[str, object] = {
+    "name": "base",
+    "binaryDir": "${sourceDir}/build",
+    "vendor": {"crucible": {"tier": "gate", "configuration": "x86_64-debug-asan"}},
+}
+PLANTED_NIGHT: dict[str, object] = {
+    "name": "night",
+    "binaryDir": "out/night",
+    "vendor": {"crucible": {"tier": "nightly"}},
+}
+PLANTED_PARSE: dict[str, object] = {
+    "name": "parse",
+    "inherits": "base",
+    "binaryDir": "${sourceDir}/build-parse",
+    "cacheVariables": {"CRUCIBLE_SYNTAX_ONLY": "ON"},
+    "vendor": {"crucible": {"tier": "gate", "configuration": "x86_64-debug-asan-syntax"}},
+}
+
+
+def planted_configurations(configure: list[object]) -> tuple[gate.Configuration, ...] | str:
+    """Return the configurations of the gate of a planted presets file, or the text of the refusal of the gate.
+
+    `configure` holds the configure presets of the file, each a JSON object.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-presets-") as root_text:
+        root = Path(root_text)
+        text = json.dumps({"version": 6, "configurePresets": configure})
+        (root / "CMakePresets.json").write_text(text, encoding="utf-8")
         try:
-            build = syntax.build_directory(paths.REPO_ROOT, configuration.preset)
-        except syntax.ParseError as problem:
-            wrong.append(str(problem))
-            continue
-        if configuration.is_parse and build != gate.build_directory(paths.REPO_ROOT, configuration):
-            wrong.append(f"{configuration.name}: {build}")
-    expect(f"each preset of the table is in the presets, and each parse build is at its binaryDir: {wrong}", not wrong)
+            return gate.configurations(root)
+        except gate.GateError as problem:
+            return str(problem)
+
+
+def presets_cases(expect: testing.Expect) -> None:
+    """Hold the configurations that the gate reads from the tiers of a planted presets file (THE CONFIGURATIONS)."""
+    found = planted_configurations([PLANTED_BASE, PLANTED_NIGHT, PLANTED_PARSE])
+    expect(
+        f"the presets with the tier gate are the configurations, the parse presets first: {found}",
+        found
+        == (
+            gate.Configuration("parse", "build-parse", "x86_64-debug-asan-syntax", True),
+            gate.Configuration("base", "build", "x86_64-debug-asan", False),
+        ),
+    )
+    refusal = planted_configurations([PLANTED_BASE, {"name": "loose", "binaryDir": "out/loose"}])
+    expect(
+        f"a preset with no tier makes the gate refuse the presets: {refusal}",
+        isinstance(refusal, str) and "the configure preset loose gives no tier" in refusal,
+    )
+    away = {**PLANTED_BASE, "binaryDir": "${sourceParentDir}/away-build"}
+    refusal = planted_configurations([away])
+    expect(
+        f"a gate preset with a build directory outside the tree is a refusal: {refusal}",
+        isinstance(refusal, str) and "is not in the tree" in refusal,
+    )
+    refusal = planted_configurations([PLANTED_NIGHT])
+    expect(
+        f"presets with no tier gate are a refusal: {refusal}",
+        isinstance(refusal, str) and "has the tier gate" in refusal,
+    )
 
 
 def tree_cases(expect: testing.Expect) -> None:
@@ -353,7 +414,7 @@ def rules_cases(expect: testing.Expect) -> None:
             "the ledger of a changed rule gives its configuration names, and the selection builds those that the "
             "host can build",
             names == ["aarch64-debug-asan", "x86_64-release"]
-            and names_of(gate.select(["notes.txt"], [], names, False)) == ["debug", "release"],
+            and names_of(gate.select(["notes.txt"], [], names, False)) == ["default", "release"],
         )
 
 
@@ -370,7 +431,7 @@ def plant_build(work: Path, tree: Path, name: str, mode: str) -> None:
 
 
 def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[str, str] | None = None) -> gate.Gate:
-    """Plant the debug build of the warm tree with a mode, and each other build with its mode, and return a gate.
+    """Plant the default build of the warm tree with a mode, and each other build with its mode, and return a gate.
 
     `others` maps the name of a build directory, such as build-bench-fuzz, to its mode.
     """
@@ -399,12 +460,12 @@ def run_cases(expect: testing.Expect) -> None:
 
             verdicts[mode], outputs[mode] = testing.captured(run)
         expect(
-            "a change of a text file runs the debug build, and the gate accepts a run with no red test",
-            verdicts["clean"].configurations == ("debug",) and verdicts["clean"].is_accepted,
+            "a change of a text file runs the default build, and the gate accepts a run with no red test",
+            verdicts["clean"].configurations == ("default",) and verdicts["clean"].is_accepted,
         )
         expect(
             "a test that gives a skip does not reject the commit, and the gate writes its name",
-            "debug: 1 skipped: test_skips" in outputs["clean"],
+            "default: 1 skipped: test_skips" in outputs["clean"],
         )
         expect(
             "a red test that is green alone does not reject the commit",
@@ -465,7 +526,7 @@ def falls_cases(expect: testing.Expect) -> None:
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
         expect(
             "the gate accepts a commit whose suite is red only on a fall of a counted ledger",
-            verdict.is_accepted and verdict.configurations == ("debug", "debug"),
+            verdict.is_accepted and verdict.configurations == ("default", "default"),
         )
         expect(
             "the counted rule writes its fall, the gate folds the ledger into a new commit with the parents and the "
@@ -550,7 +611,7 @@ def changed_tests_cases(expect: testing.Expect) -> None:
         expect(
             "a change of a C++ test runs the suite of its configurations with --all, and the tests of the changed "
             "inputs in the bench and fuzz build with no --all",
-            verdicts["broken"].configurations == ("debug", "release", "tsan", "bench-fuzz")
+            verdicts["broken"].configurations == ("default", "release", "tsan", "bench-fuzz")
             and words["build"][0].endswith("--all")
             and not any(line.endswith("--all") for line in words["build-bench-fuzz"]),
         )

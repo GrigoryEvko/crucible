@@ -13,7 +13,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CRUCIBLE_BENCH": "OFF",
         "CRUCIBLE_WERROR": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan" } }
     },
     {
       "name": "analyzer",
@@ -26,7 +27,8 @@
         "CRUCIBLE_TSAN": "OFF",
         "CRUCIBLE_BENCH": "OFF",
         "CRUCIBLE_WERROR": "OFF"
-      }
+      },
+      "vendor": { "crucible": { "tier": "nightly" } }
     },
     {
       "name": "release",
@@ -36,7 +38,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_CXX_FLAGS": "-O1 -march=native -DNDEBUG -g"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-release" } }
     },
     {
       "name": "bench",
@@ -45,7 +48,8 @@
       "binaryDir": "${sourceDir}/build-bench",
       "cacheVariables": {
         "CRUCIBLE_BENCH": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "nightly" } }
     },
     {
       "name": "pgo-generate",
@@ -55,7 +59,8 @@
       "cacheVariables": {
         "CRUCIBLE_PGO": "generate",
         "CRUCIBLE_BENCH": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "release" } }
     },
     {
       "name": "pgo",
@@ -65,7 +70,8 @@
       "cacheVariables": {
         "CRUCIBLE_PGO": "use",
         "CRUCIBLE_BENCH": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "release" } }
     },
     {
       "name": "pgo-release",
@@ -76,7 +82,8 @@
         "CRUCIBLE_PGO": "use",
         "CRUCIBLE_PGO_STRICT": "ON",
         "CRUCIBLE_BENCH": "OFF"
-      }
+      },
+      "vendor": { "crucible": { "tier": "release" } }
     },
     {
       "name": "tsan",
@@ -86,7 +93,8 @@
       "cacheVariables": {
         "CRUCIBLE_SANITIZE": "OFF",
         "CRUCIBLE_TSAN": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-tsan" } }
     },
     {
       "name": "syntax-x86-64-v3",
@@ -96,7 +104,8 @@
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
         "CRUCIBLE_SYNTAX_ONLY": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan-syntax" } }
     },
     {
       "name": "syntax-aarch64",
@@ -108,7 +117,8 @@
         "_comment_bpf": "include/crucible/perf/bpf/vmlinux.h holds the kernel types of x86_64, and clang cannot compile a BPF program of aarch64 with it",
         "CRUCIBLE_HAVE_BPF": "OFF",
         "CRUCIBLE_SYNTAX_ONLY": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "aarch64-debug-asan-syntax" } }
     },
     {
       "name": "ubsan-strict",
@@ -119,7 +129,19 @@
         "CRUCIBLE_SANITIZE": "OFF",
         "CRUCIBLE_TSAN": "OFF",
         "CRUCIBLE_UBSAN_STRICT": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-ubsan-strict" } }
+    },
+    {
+      "name": "bench-fuzz",
+      "inherits": "default",
+      "displayName": "GCC 16 + ASan, with the benches and the fuzz harnesses",
+      "binaryDir": "${sourceDir}/build-bench-fuzz",
+      "cacheVariables": {
+        "CRUCIBLE_BENCH": "ON",
+        "CRUCIBLE_FUZZ": "ON"
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan-bench-fuzz" } }
     },
     {
       "name": "verify",
@@ -130,7 +152,8 @@
         "CMAKE_CXX_FLAGS": "-O1 -march=native -g",
         "CMAKE_CXX_FLAGS_RELEASE": "-O3",
         "CRUCIBLE_VERIFY": "ON"
-      }
+      },
+      "vendor": { "crucible": { "tier": "nightly" } }
     }
   ],
   "buildPresets": [
@@ -143,6 +166,7 @@
     { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 16 },
     { "name": "tsan",    "configurePreset": "tsan", "jobs": 16 },
     { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 16 },
+    { "name": "bench-fuzz", "configurePreset": "bench-fuzz", "jobs": 16 },
     { "name": "verify",  "configurePreset": "verify", "jobs": 16 }
   ],
   "testPresets": [
@@ -189,6 +213,12 @@
       "execution": { "jobs": 16, "timeout": 600 }
     },
     {
+      "name": "bench-fuzz",
+      "configurePreset": "bench-fuzz",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 16, "timeout": 300 }
+    },
+    {
       "name": "verify",
       "configurePreset": "verify",
       "output": { "outputOnFailure": true },
@@ -198,6 +228,7 @@
       "name": "stress",
       "configurePreset": "default",
       "displayName": "Repeat-until-fail ×50 (race condition detector)",
+      "vendor": { "crucible": { "tier": "nightly" } },
       "output": { "outputOnFailure": true },
       "execution": {
         "jobs": 16,
