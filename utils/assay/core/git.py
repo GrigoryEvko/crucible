@@ -31,6 +31,8 @@ THE OBJECTS
     a scratch repository that shares the object store of the repository.
     symbolic_head(), swap_ref() and set_index_entries() move a branch by
     compare-and-swap, and they give the index the entries of the commit.
+    is_ancestor() tells if a branch holds a commit, and git_dir() gives the
+    git directory of one work tree.
 
 THE ISOLATION
     A repository variable in the environment of the caller wins over
@@ -136,17 +138,17 @@ NULL_OBJECT = "0" * 40
 READS_HISTORY = frozenset({
     "archive", "author_date", "blobs", "change_base", "changed_files", "changed_paths", "changes", "commit_subject",
     "commits", "dated_commits", "file_changes", "has_no_change", "head", "index_changes", "index_patch",
-    "is_clean", "is_index_clean", "is_shallow", "message_of", "moves", "parent", "patch", "path_history",
-    "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head", "tree_changes",
-    "tree_entry", "work_changes",
+    "is_ancestor", "is_clean", "is_index_clean", "is_shallow", "message_of", "moves", "parent", "patch",
+    "path_history", "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head",
+    "tree_changes", "tree_entry", "work_changes",
 })
 READS_NAMES = frozenset({
     "change_base", "changed_files", "has_no_change", "listed_files", "listed_paths", "new_files", "tracked_files",
 })
 READS_NEITHER = frozenset({
-    "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "hash_files", "hash_object",
-    "holds_patch", "hunk_of", "index_object", "init", "null_separated", "run", "run_any_exit", "scratch_repository",
-    "set_index_entries", "set_index_entry", "side_path", "swap_ref", "toplevel", "write_tree",
+    "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files",
+    "hash_object", "holds_patch", "hunk_of", "index_object", "init", "null_separated", "run", "run_any_exit",
+    "scratch_repository", "set_index_entries", "set_index_entry", "side_path", "swap_ref", "toplevel", "write_tree",
 })
 
 
@@ -658,6 +660,31 @@ def parent(root: Path, commit: str) -> str:
         GitError: If the commit has no parent, or git fails
     """
     return run(root, "rev-parse", f"{commit}^").decode().strip()
+
+
+def is_ancestor(root: Path, commit: str, revision: str) -> bool:
+    """Tell if the history of a revision holds a commit, as `git merge-base --is-ancestor` does.
+
+    The commit itself is in its own history.
+
+    Raises:
+        GitError: If git cannot start, or a name is not a commit
+    """
+    completed = run_any_exit(root, "merge-base", "--is-ancestor", commit, revision)
+    if completed.exit in (0, 1):
+        return completed.exit == 0
+    raise GitError(f"`git merge-base --is-ancestor {commit} {revision}` failed in {root}: {completed.err.strip()}")
+
+
+def git_dir(root: Path) -> Path:
+    """Return the git directory of the work tree of a tree, as an absolute path.
+
+    A linked work tree has a git directory of its own in the shared git directory.
+
+    Raises:
+        GitError: If root is not in a git work tree
+    """
+    return Path(run(root, "rev-parse", "--absolute-git-dir").decode().strip())
 
 
 def short_name(root: Path, revision: str) -> str:

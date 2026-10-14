@@ -128,6 +128,16 @@ def object_cases(expect: Callable[[str, bool], None]) -> None:
             and git.head(root) == third,
         )
         expect(
+            "is_ancestor tells if the history of a revision holds a commit, and the commit holds itself",
+            git.is_ancestor(root, second, "HEAD")
+            and git.is_ancestor(root, third, third)
+            and not git.is_ancestor(root, third, second),
+        )
+        expect(
+            "git_dir gives the git directory of the work tree as an absolute path",
+            git.git_dir(root) == (root / ".git").resolve(),
+        )
+        expect(
             "set_index_entries gives the index the entries of a commit",
             git.set_index_entries(root, [(git.tree_entry(root, third, "sub/b.txt"), "sub/b.txt")])
             and git.is_index_clean(root, third),
