@@ -2,8 +2,9 @@
 
 `loop test-step` (assay.loop.teststep) traces a test with a program in the build
 directory, and it writes the read set of the run in the directory of the record
-of the test.  The read set also holds a file that the test opens by a path
-that it makes at run time.  assay.loop.tracer holds the
+of the test.  `loop test` (assay.loop.affected) puts the files of the read set
+into the key of the test.  A test that opens a file by a path that it makes at
+run time then runs again when that file changes.  assay.loop.tracer holds the
 trace: the seccomp filter, the calls that it stops and the supervisor that
 answers them.  This module holds the read set: the classes of a read, the
 signatures, the record and the decision to trace.
@@ -41,7 +42,7 @@ THE SIGNATURE
     its first stop, before the kernel does the call.  The launcher takes it
     again at the end of the run.  When the two signatures of a key part are not
     equal, the file changed while the test ran.  The read set is then not
-    settled.
+    settled, and `loop test` records no result of the run.
 
 THE RECORD
     The read set of the test NAME is BUILD_DIR/test-records/NAME.test.reads.
@@ -73,10 +74,11 @@ THE RETRACE
     also holds the length, the time and the inode of each file that the
     command names (assay.loop.teststep, THE VERSION).  A new build of the
     program then makes the next run a traced run.  A change of a file that the
-    test read has the same effect.  On 2026-10-13, three traced runs of each
-    of 355 executable tests gave the same read set.  A host with no trace (assay.loop.tracer, THE TRACE)
-    gets no plan.  The launcher then removes the read set of an earlier run,
-    because that read set can be stale.
+    test read has the same effect.  On 2026-10-14, three traced runs of each
+    of 349 tests of the build directory gave the same key parts.  A host with
+    no trace (assay.loop.tracer, THE TRACE) gets no plan.  The launcher then
+    removes the read set of an earlier run, because that read set can be
+    stale.
 
 `guard selftest tests.loop.test_readset` does a test of the module.
 """

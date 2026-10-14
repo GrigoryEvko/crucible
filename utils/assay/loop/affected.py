@@ -38,9 +38,32 @@ THE EXECUTABLE TEST
       result of a test changes with them.  A ledger that the tree does not
       hold is an input too.  A new ledger then makes the test run.
     - The environment of the test (THE ENVIRONMENT).
+    - The key parts of the read set of the test (THE READ SET), or a mark
+      that the test has no read set.
     The scan of an ELF file reads its section headers, so it finds a name in
     .rodata, .data or .dynstr, and it does not read the code or the debug
     information.
+
+THE READ SET
+    The test launcher can trace a run of a test with a program in the build
+    tree.  It then writes the read set of the run (assay.loop.readset).  The
+    read set holds each file that the test and its children opened for read,
+    ran or listed.  It also holds a file that the test opened by a path that
+    it made at run time.  The fingerprint holds these items of the key parts:
+    - The bytes of each key part that is a file
+    - The names in each key part that is a directory
+    - The mark "missing" of each key part with no file.
+    A read set is usable when it is settled, and its command is the command
+    of the test after the launcher.  Its run must also have the status 0,
+    unless the property PASS_REGULAR_EXPRESSION or WILL_FAIL gives the
+    verdict.  The launcher traces each run with a different status again.
+    The read set of such a test then comes from its last run.  A test with a
+    read set that is not usable always runs, and the launcher then traces it
+    again.  A test with no read set has the fingerprint of the
+    other items only.  After a run with the status 0, the script records the
+    fingerprint with the read set of that run.  It records nothing when a key
+    part has a different signature than at the end of the run.  The file then
+    changed after the test read it.
 
 THE TESTS OF THE MASTER GUARD
     A test can start the master guard of the source tree with a Python
@@ -80,13 +103,17 @@ THE ENVIRONMENT
 
 THE TESTS THAT ALWAYS RUN
     The script cannot see each input of these tests, so they always run:
-    - A test whose command, environment or working directory names a path of
-      the source tree that is not in the build tree.
     - A test with the property FIXTURES_REQUIRED, FIXTURES_SETUP,
       FIXTURES_CLEANUP or REQUIRED_FILES.
+    - A test whose ELF file the script cannot read as an ELF64 file.
+    - A test with a read set that is not usable (THE READ SET).
+    These tests always run too, unless they have a usable read set:
+    - A test whose command, environment or working directory names a path of
+      the source tree that is not in the build tree.
     - A test whose ELF file names a directory of the source tree, or a path of
       the source tree that is not a file.
-    - A test whose ELF file the script cannot read as an ELF64 file.
+    The read set holds each file of the source tree that such a test opened,
+    and the key of the test then holds those files.
 
 THE PARSE BUILDS
     After the build, the script runs `loop syntax` on each configured parse
@@ -153,10 +180,10 @@ THE SHARED STORE
     paths of the checkout into the program.  Two work trees then seldom share
     the result of an executable test.
 
-    The script assumes that an executable test reads no file of the source
-    tree, unless its command, its environment or its ELF file names that
-    file.  The tests of this tree write their scratch files in the build tree
-    or in /tmp, and they read /proc and /sys.
+    With no read set, the script assumes that an executable test reads no
+    file of the source tree, unless its command, its environment or its ELF
+    file names that file.  The tests of this tree write their scratch files
+    in the build tree or in /tmp, and they read /proc and /sys.
 
 The script is for the inner loop only.  CI and the checks before a landing
 run the full suite.
@@ -210,6 +237,7 @@ from assay.core import report as check_report
 from assay.core.paths import LOOP
 from assay.loop import history as loop_history
 from assay.loop import inputs as guard_inputs
+from assay.loop import readset
 from assay.loop import teststep as test_launcher
 from assay.readers import cmake
 from assay.readers import ctest as ctest_reader
@@ -218,7 +246,7 @@ from assay.setup import pins as cmake_pin
 
 # ── Constants ──────────────────────────────────────────────────────────────
 
-STATE_VERSION = 2
+STATE_VERSION = 3
 STATE_DIRECTORY = "affected-tests"
 # The name of the shared store in the root of the caches and in LIMITS of assay.core.cache.  Then the format of an
 # entry and of a key, and the verdict of an entry (THE SHARED STORE).
@@ -243,6 +271,8 @@ ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANU
 # The properties of a fixture.  A test of the master guard can hold the fixture of the parse trees.
 FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
+# The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
+TRUE_WORDS = frozenset({"1", "ON", "YES", "TRUE", "Y"})
 # A name in an ELF file with one of these suffixes is the text of a
 # diagnostic, such as __FILE__ or std::source_location, and not a data file.
 DIAGNOSTIC_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
@@ -268,6 +298,7 @@ REASON_STORE = "the shared store holds a pass with the same inputs"
 # The reason of each skip in the summary after the tests: REASON_SAME or REASON_STORE.
 REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
 REASON_FAILED = "the test failed in this build directory with the same inputs"
+REASON_READS = "the read set of the last traced run is not usable, and the launcher traces the test again"
 
 
 # ── Exceptions ─────────────────────────────────────────────────────────────
@@ -299,7 +330,12 @@ class Trees:
 
 @dataclass
 class Decision:
-    """What the script does with one test, and why."""
+    """What the script does with one test, and why.
+
+    `static` is the fingerprint with no read set (THE READ SET).  An executable test and a test of the master guard
+    have it.  A test that always runs for a reason that a read set can lift has it too.  `reads` is the usable read set
+    of an executable test, or None.
+    """
 
     test: ctest_reader.TestEntry
     kind: str
@@ -307,31 +343,46 @@ class Decision:
     fingerprint: str = ""
     shared: str = ""
     is_skipped: bool = False
+    static: str = ""
+    reads: readset.ReadSet | None = None
 
 
 @dataclass
 class Scan:
-    """The names that one ELF file holds: input files, input directories, or a reason to always run."""
+    """The names that one ELF file holds: input files, input directories, and the reasons to always run.
+
+    `always_reason` holds a reason that no read set lifts, and `source_reason` holds a name of the source tree that
+    is not a file, which a usable read set lifts (THE TESTS THAT ALWAYS RUN).
+    """
 
     files: list[str] = field(default_factory=list)
     directories: list[str] = field(default_factory=list)
     always_reason: str = ""
+    source_reason: str = ""
 
     def to_json(self) -> dict[str, object]:
         """Return the scan as a JSON object for the state file."""
-        return {"files": self.files, "directories": self.directories, "always": self.always_reason}
+        return {
+            "files": self.files,
+            "directories": self.directories,
+            "always": self.always_reason,
+            "source": self.source_reason,
+        }
 
     @staticmethod
     def from_json(value: object) -> Scan | None:
         """Return the scan of a JSON object, or None when the object is not a scan."""
         if not isinstance(value, dict):
             return None
-        files, directories, always = value.get("files"), value.get("directories"), value.get("always")
-        if not (isinstance(files, list) and isinstance(directories, list) and isinstance(always, str)):
+        files, directories = value.get("files"), value.get("directories")
+        always, source = value.get("always"), value.get("source")
+        if not (isinstance(files, list) and isinstance(directories, list)):
+            return None
+        if not (isinstance(always, str) and isinstance(source, str)):
             return None
         if not all(isinstance(item, str) for item in files + directories):
             return None
-        return Scan(files=files, directories=directories, always_reason=always)
+        return Scan(files=files, directories=directories, always_reason=always, source_reason=source)
 
 
 def real(path: str) -> str:
@@ -499,8 +550,8 @@ def scan_elf(path: str, trees: Trees) -> Scan:
             continue
         elif os.path.isfile(candidate):
             scan.files.append(candidate)
-        else:
-            return Scan(always_reason=f"{path} names {candidate}, which is not a file of the source tree")
+        elif not scan.source_reason:
+            scan.source_reason = f"{path} names {candidate}, which is not a file of the source tree"
     return scan
 
 
@@ -718,7 +769,7 @@ class Planner:
         if os.path.exists(program) and not elf_file.is_elf(program):
             return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
         start, launcher = launcher_prefix(test.command)
-        always = self.always_reason(test, start)
+        always = self.property_reason(test)
         if always:
             return Decision(test, KIND_ALWAYS, always)
         files = sorted({real(item) for item in test.command[start:]
@@ -729,16 +780,45 @@ class Planner:
             launcher_files, texts = self.launcher_inputs(launcher)
             inputs.update(launcher_files)
         directories: set[str] = set()
+        lifted = self.source_reason(test, start)
         for item in sorted(inputs):
             if not elf_file.is_elf(item):
                 continue
             scan = self.scan(item)
             if scan.always_reason:
                 return Decision(test, KIND_ALWAYS, scan.always_reason)
+            lifted = lifted or scan.source_reason
             inputs.update(scan.files)
             directories.update(scan.directories)
-        fingerprint, shared = self.fingerprints(test, inputs, directories, texts)
-        return Decision(test, KIND_EXECUTABLE, "", fingerprint=fingerprint, shared=shared)
+        static, _ = self.fingerprints(test, inputs, directories, texts)
+        is_usable, reads = self.read_set(test, start)
+        if not is_usable or (lifted and reads is None):
+            return Decision(test, KIND_ALWAYS, lifted if is_usable else REASON_READS, static=static)
+        fingerprint, shared = self.fingerprints(test, inputs, directories, texts, reads)
+        return Decision(test, KIND_EXECUTABLE, "", fingerprint=fingerprint, shared=shared, static=static, reads=reads)
+
+    def read_set(self, test: ctest_reader.TestEntry, start: int) -> tuple[bool, readset.ReadSet | None]:
+        """Return True when a test has no read set or a usable one, and its usable read set or None (THE READ SET).
+
+        `start` is the index of the command after the test launcher.  Complexity: one read of the read set.
+        """
+        path = readset.read_set_file(self.trees.build_root, test.name)
+        found = readset.read(path)
+        if found is None:
+            return not os.path.exists(path), None
+        is_pass = found.status == 0 or not self.is_pass_at_zero(test)
+        is_usable = is_pass and found.is_settled and found.command == tuple(test.command[start:])
+        return is_usable, found if is_usable else None
+
+    @staticmethod
+    def is_pass_at_zero(test: ctest_reader.TestEntry) -> bool:
+        """Return True when ctest accepts a run of a test only with the exit status 0 (THE READ SET).
+
+        The property PASS_REGULAR_EXPRESSION, or the value yes of WILL_FAIL, gives the verdict of a test.
+        """
+        if test.words_of("PASS_REGULAR_EXPRESSION"):
+            return False
+        return not any(word.upper() in TRUE_WORDS for word in test.words_of("WILL_FAIL"))
 
     def guard_decision(self, test: ctest_reader.TestEntry, index: int) -> Decision | None:
         """Return the decision of a test of the master guard with inputs, or None for each other test.
@@ -764,7 +844,8 @@ class Planner:
         found = self.deriver(self.trees.source_root).test_inputs(words, variables)
         if found is None:
             return None
-        always = found.always or self.always_reason(test, start, position, frozenset({guard_inputs.TREE_FIXTURE}))
+        always = (found.always or self.property_reason(test, frozenset({guard_inputs.TREE_FIXTURE}))
+                  or self.source_reason(test, start, position))
         values = [*command[start:], *(item.split("=", 1)[1] for item in assignments if "=" in item)]
         named = [real(value) for value in values if os.path.isabs(value)]
         if not always and words[:1] == ("selftest",):
@@ -782,7 +863,7 @@ class Planner:
             texts.append(environment_text(is_launched=False))
         files.update(path for path in named if path != master and os.path.isfile(path))
         fingerprint, shared = self.fingerprints(test, files, set(), tuple(texts))
-        return Decision(test, KIND_GUARD, "", fingerprint=fingerprint, shared=shared)
+        return Decision(test, KIND_GUARD, "", fingerprint=fingerprint, shared=shared, static=fingerprint)
 
     def launcher_inputs(self, launcher: str) -> tuple[list[str], tuple[str, ...]]:
         """Return the files and the texts that the test launcher reads.
@@ -807,16 +888,10 @@ class Planner:
             self.launcher_files[launcher] = (files, texts)
         return self.launcher_files[launcher]
 
-    def always_reason(self, test: ctest_reader.TestEntry, start: int, master: int = -1,
-                      fixtures: frozenset[str] = frozenset()) -> str:
-        """Return why a test always runs, or an empty string.
+    def property_reason(self, test: ctest_reader.TestEntry, fixtures: frozenset[str] = frozenset()) -> str:
+        """Return the property that makes a test always run, or an empty string (THE TESTS THAT ALWAYS RUN).
 
-        `start` is the index after the test launcher prefix.  The launcher is
-        a file of the source tree by design, and its files are inputs of the
-        fingerprint, so the check of the command starts after it.  The word
-        at `master`, the master guard of a test of that master, is an input
-        too.  A property of a fixture with only the names of `fixtures` gives
-        no reason.
+        A property of a fixture with only the names of `fixtures` gives no reason.
         """
         for name in ALWAYS_RUN_PROPERTIES:
             if name not in test.properties:
@@ -824,6 +899,16 @@ class Planner:
             if name in FIXTURE_PROPERTIES and fixtures and set(test.words_of(name)) <= fixtures:
                 continue
             return f"the test has the property {name}"
+        return ""
+
+    def source_reason(self, test: ctest_reader.TestEntry, start: int, master: int = -1) -> str:
+        """Return the path of the source tree that makes a test always run, or an empty string.
+
+        A usable read set lifts this reason for an executable test (THE TESTS THAT ALWAYS RUN).  `start` is the index
+        after the test launcher prefix.  The launcher is a file of the source tree by design, and its files are
+        inputs of the fingerprint.  The check of the command then starts after it.  The word at `master` is an input
+        too: the master guard of a test of that master.
+        """
         for position, item in enumerate(test.command[start:], start):
             found = source_paths_in(item, self.trees) if position != master else []
             if found:
@@ -839,18 +924,24 @@ class Planner:
         return ""
 
     def fingerprints(self, test: ctest_reader.TestEntry, inputs: set[str], directories: set[str],
-                     texts: tuple[str, ...] = ()) -> tuple[str, str]:
+                     texts: tuple[str, ...] = (), reads: readset.ReadSet | None = None) -> tuple[str, str]:
         """Return the fingerprint of a test in this build directory, and its key in the shared store.
 
         The fingerprint is the SHA-256 of the record of the test, of the bytes of each of its inputs and of its texts.
-        THE SHARED STORE gives the rules of the key.  Complexity: O(n log n) for n input files, with one digest of each
-        file that the digest cache does not hold.
+        It also holds the key parts of the read set of the test (THE READ SET).  THE SHARED STORE gives the rules of
+        the key.  Complexity: O(n log n) for n input files and key parts, with one digest of each file that the
+        digest cache does not hold.
         """
         files = set(inputs)
         for directory in directories:
             files.update(shared_libraries(directory))
         digests = sorted((path, self.digests.digest(path)) for path in files)
-        local = json.dumps([canonical(test), digests, sorted(directories), sorted(texts)])
+        read_parts = None if reads is None else sorted(
+            (entry.kind, entry.path, readset.signature(entry.path) if entry.kind == readset.LIST
+             else self.digests.digest(entry.path))
+            for entry in reads.key_parts()
+        )
+        local = json.dumps([canonical(test), digests, sorted(directories), sorted(texts), read_parts])
         shared_record = {
             "name": test.name,
             "command": [cost_store.relocated(word, self.marks) for word in test.command],
@@ -863,6 +954,7 @@ class Planner:
             sorted((self.moved(path), digest) for path, digest in digests if path not in self.judge_files),
             sorted(self.moved(directory) for directory in directories),
             sorted(cost_store.relocated(text, self.marks) for text in texts),
+            None if read_parts is None else sorted((kind, self.moved(path), value) for kind, path, value in read_parts),
         ])
         return text_digest(local), text_digest(shared)
 
@@ -1019,20 +1111,26 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
     planner.forget()
     for decision in decisions:
         name = decision.test.name
-        if decision.kind not in FINGERPRINTED:
+        if decision.kind not in FINGERPRINTED and not decision.static:
             passed.pop(name, None)
             failed.pop(name, None)
             continue
         if decision.is_skipped:
             continue
         after = planner.classify(decision.test)
-        is_same = after.kind == decision.kind and after.fingerprint == decision.fingerprint
+        # The run can give a new read set.  The script then compares the inputs with no read set.  It compares the
+        # read set with the signatures at the end of the run (THE READ SET).
+        is_same = (
+            after.kind in FINGERPRINTED
+            and after.static == decision.static
+            and (after.reads is None or after.reads.is_current())
+        )
         status = statuses.get(name)
         if status == ctest_reader.TestStatus.RUN and is_same:
-            passed[name] = decision.fingerprint
+            passed[name] = after.fingerprint
             failed.pop(name, None)
-            planner.store.put(decision.shared, record_digest(planner.trees.build_root, name))
-        elif status == ctest_reader.TestStatus.FAIL:
+            planner.store.put(after.shared, record_digest(planner.trees.build_root, name))
+        elif status == ctest_reader.TestStatus.FAIL and decision.kind in FINGERPRINTED:
             passed.pop(name, None)
             failed[name] = decision.fingerprint
             planner.store.remove(decision.shared)
@@ -1427,6 +1525,62 @@ def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> No
     expect("the pass in this build directory skips the test again", "guard_alpha" not in ran, output)
 
 
+def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
+    """Check the keys of the read set (THE READ SET) with the test launcher of the tree, on a fake build tree.
+
+    The program of each test is a copy of sh.  exe_traced reads a file by a path that its script makes at run time.
+    exe_named names a file of the source tree, and it always runs with no read set.  exe_verdict exits with the status
+    1, and its property PASS_REGULAR_EXPRESSION makes ctest accept that status.  The trees are in the work root of
+    assay.core.cache.  A path in /tmp is a fact of a read set and not a key part.  On a host that refuses the filter
+    of the trace, the launcher writes no read set.  The function then writes a note and checks nothing.
+    """
+    names = {"exe_traced", "exe_named", "exe_verdict"}
+    work = cache.work_root()
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="affected-traced-", dir=work) as directory:
+        source_dir = Path(directory) / "src"
+        build_dir = source_dir / "build"
+        (build_dir / "bin").mkdir(parents=True)
+        (build_dir / "data").mkdir()
+        (source_dir / "data").mkdir()
+        cmake.cache_file(build_dir).write_text("")
+        cmake.plant(build_dir, cache={"CMAKE_HOME_DIRECTORY": str(source_dir), "CMAKE_CTEST_COMMAND": ctest})
+        (build_dir / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
+        target, golden = build_dir / "data" / "target.txt", source_dir / "data" / "golden.csv"
+        target.write_text("one\n")
+        golden.write_text("1,2\n")
+        launched = f'"{sys.executable}" "-S" "{LOOP}" "{LAUNCHER_SUBCOMMAND}" "--build-dir" "{build_dir}"'
+        lines = []
+        for name, script, extra in (
+            ("exe_traced", 'read -r line < "${0%/*}/../data/target.txt"', ""),
+            ("exe_named", 'read -r line < "$1"', f' "x" "{golden}"'),
+            ("exe_verdict", "echo verdict-marker; exit 1", ""),
+        ):
+            program = build_dir / "bin" / name
+            shutil.copyfile(shutil.which("sh") or "/bin/sh", program)
+            program.chmod(0o755)
+            lines.append(f'add_test([=[{name}]=] {launched} "{program}" "-c" [=[{script}]=]{extra})')
+        lines.append("set_tests_properties([=[exe_verdict]=] PROPERTIES PASS_REGULAR_EXPRESSION [=[verdict-marker]=])")
+        (build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
+        _status, output = call_script(build_dir)
+        if not (build_dir / "test-records" / f"exe_traced{readset.SUFFIX}").is_file():
+            check_report.write_line("loop test --self-test: note: the host refused the filter of the trace, so the "
+                                    "cases of the read set check nothing")
+            return
+        _status, output = call_script(build_dir)
+        expect("a test with a usable read set is skipped when each key part is the same, also a test that ctest "
+               "accepts with a status other than 0", set(skipped_tests(build_dir)) == names, output)
+        target.write_text("two\n")
+        golden.write_text("1,3\n")
+        _status, output = call_script(build_dir)
+        skipped = skipped_tests(build_dir)
+        expect("a change of a file that a test opens by a path that it makes at run time makes the test run, and so "
+               "does a change of a file of the source tree that a test names", skipped == ["exe_verdict"], output)
+        _status, output = call_script(build_dir)
+        expect("the tests are skipped again after their passes with the new key parts",
+               set(skipped_tests(build_dir)) == names, output)
+
+
 # The presets of the fake tree of the parse cases: one binaryDir for each parse build, and no build is configured.
 PARSE_PRESETS_TEXT = (
     '{"version": 6, "configurePresets": ['
@@ -1636,6 +1790,7 @@ def self_test(ctest: str) -> int:
     expect("a missing build directory gives exit code 2", status == 2, output)
     guard_cases(ctest, expect)
     parse_cases(expect)
+    traced_cases(ctest, expect)
 
     for failure in failures:
         print(f"loop test --self-test: FAILED: {failure}")

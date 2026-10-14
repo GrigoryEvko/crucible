@@ -165,7 +165,8 @@ THE READ SET
     build directory (assay.loop.tracer).  The trace gives the read set of the
     run: each file that the test and its children open for read, run or list.
     The launcher writes it to BUILD/test-records/NAME.test.reads
-    (assay.loop.readset).
+    (assay.loop.readset).  `loop test` puts its key parts into the key of
+    the test (assay.loop.affected, THE READ SET).
     The launcher traces a run when the test has no current read set
     (assay.loop.readset, THE RETRACE).  The version of a trace is the version
     of the run (THE VERSION) with the clean environment.  Each other run has
