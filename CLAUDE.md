@@ -74,6 +74,16 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` 
 
 **Verification harness.** `test/fixy/test_wrapper_verification.cpp` is a single TU that asserts the cross-wrapper properties of the fixy wrappers: the diagnostic surface, sizeof and triviality per storage regime, cross-composition, and distinct nesting orders. `test/fixy/test_cheat_probe.cpp` runs 56 adversarial cheats against the concept. The build succeeds only when the concept rejects each cheat, or when the file documents the cheat as admitted.
 
+**The linear marker.** `include/foundation/Linear.h`, in namespace `foundation::linear`, gives the marker of a linear class: the P3394 annotation `[[= ::foundation::linear::linear{}]]`. Reflection reads the annotation, and the quarantine plugin can read the same annotation in the tree of GCC, so no macro writes it. The rules of the plugin that read it come in phase A of `misc/12_10_2026_linear.md`. A class is linear when it has the annotation, or when it can move and holds a linear base or member by value. A class that cannot move, such as a `Pinned` class, is not linear by its members, because its destructor is the door at the end of its scope. `is_linear_v<T>` refuses a marked class that is trivially copyable or copy constructible, or whose move constructor or destructor can throw. The annotations `authority`, `drop_door`, `detach_door` and `scope_end_door` name the doors, and `drop()` ends a linear value with no report.
+
+These classes have the annotation:
+- `Linear<T>` and `Permission<Tag, Brand>`
+- The loan `ReadLoan`, the parked token `LentPermission` and the receipt `Disjoint`
+- The session markers that hold a token or a loan
+- Each handle or owner that holds a token.
+
+The move constructor and the destructor of a token are trivial, so the ABI passes a token in a register. The move assignment is user-provided, so `std::bit_cast` cannot make a token from bytes. A token is an implicit-lifetime type, and the annotation `foundation::lifetime::no_start_over_bytes` refuses the checked lifetime start. A handle or an owner that holds a token gives the token back through its door `release()`. The `Option` and the `Result` of `include/foundation/core/Choice.h` give a linear payload or a linear error only through a consumer that takes them as an rvalue. Phase A of `misc/12_10_2026_linear.md` gives the plan of the checker that reads the marker.
+
 **Soundness via measurement, not proof.** In the design, numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance will fail the build. The `BITEXACT_TC` tier has a hardware limit, and §L2 states it: FP16 and BF16 tensor-core fragments are not bit-identical across vendors. No compute backend exists at this time, so the matrix does not run.
 
 **No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. At this time, the `verify` CMake preset builds Release code with every contract family armed. An internal small-SMT solver for that preset is deferred. It will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Its planned budget is 5 ms per query, not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems for the planned cross-vendor CI harness (MIMIC.md §41), not theorem proving.
@@ -2149,7 +2159,7 @@ return compile_kernel(bg, arena, node, caps).match(
     });
 ```
 
-A `Result` is a union and a tag. Its error is a scoped enum or a trivially copyable class of at most 16 bytes, so an error never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
+A `Result` is a union and a tag. Its error is a scoped enum, a trivially copyable class of at most 16 bytes, or a linear class that gives a resource back to the caller of a failed operation. An error that copies never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
 
 ### Assertion macro quartet
 
@@ -2603,7 +2613,7 @@ These library types make the axioms from §II true at compile time. They are in 
 
 | Header | Axioms it enforces | Role |
 |---|---|---|
-| `fixy/Qtt.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
+| `fixy/Qtt.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. `Linear<T>` has the linear marker of `foundation/Linear.h`. Its move assignment is user-provided, so it is not trivially copyable. |
 | `fixy/Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>`. The mint `mint_refined` checks the predicate with a precondition that obeys the contract semantic. Downstream bodies trust the invariant. |
 | `fixy/Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
 | `fixy/Tagged.h` | TypeSafe | Phantom tags in `fixy::tags` for provenance (`source::FromUser`, `source::FromDb`, `source::FromInternal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
@@ -2670,7 +2680,7 @@ concerns rather than lines is owed.
 - `Linear<>`'s deleted copy constructor refuses a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move` (it rejects `-Werror=use-after-move` as an unknown option), so the language does not see a second `std::move` of one local. The rule `use-after-move` (`utils/assay/guard/engines/tsast/use_after_move.py`, the test `guard_use_after_move`) is the enforcement: it refuses any use of a local after `std::move`, on any path, across the tree. It catches `Permission<Tag>` double-use after split/fork. The controls `control-known-miss-*` of `utils/plants/use-after-move/` hold what it cannot see: a use through a pointer or through a reference that a call gives, a move inside a callee that takes `T&`, and a `try_` call that moves its argument when it does not succeed. The rule refuses a fifth known miss. A lambda in a local that captures a name by reference reads that name at each call that can run it, because the grammar gives a simple capture the node `lambda_capture` with the field `reference`.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (Debug) and `semantic=observe` (Release, through a handler that aborts). Under `semantic=ignore` (CRUCIBLE_CONTRACT_IGNORE_OPTIONS) they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
-- Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `SessionHandle<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
+- A deleted copy constructor on `Linear<>`, `Secret<>`, `SessionHandle<>` and `Permission<Tag>` makes the compiler refuse an accidental copy. The move constructor of `Linear<>` and of `Permission<Tag>` is trivial, and their move assignment is user-provided, so neither class is trivially copyable.
 - `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n` and `mint_permission_combine_n` have a `static_assert` on `can_split_into_v` or `can_split_into_pack_v` in their bodies. `mint_permission_fork` has `can_split_into_pack_v` in its constraint `CtxFitsPermissionFork`. A split into subregions that no manifest declares is a compile error.
 - A contract violation ends the process: the handler in `src/foundation/ContractHandler.cpp` calls `std::abort()`. A violation never causes undefined behavior (P1494R5).
 
