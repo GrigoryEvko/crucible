@@ -16,7 +16,8 @@ THE RULE
     A pointer or a reference member holds no token of its own, and it is
     none.  The rule reads the lines in the scope of its row of
     utils/registry.txt.  include/foundation/permissions/Permission.h gives the
-    token and its pool, and it gives no finding.
+    token, and include/foundation/permissions/SharedPermission.h gives its
+    pool.  The two headers give no finding.
 
     The rule has no ledger, and each finding is an error.  Each problem of the
     census of the runner is an error too.
@@ -31,8 +32,13 @@ from assay.core import report as check_report
 from assay.guard.engines.plugin import declarations, runner
 
 RULE = "permission-storage"
-# The header that gives the token and its pool.
-SUBSTRATE = frozenset({"include/foundation/permissions/Permission.h"})
+# The header that gives the token, and the header that gives its pool.
+SUBSTRATE = frozenset(
+    {
+        "include/foundation/permissions/Permission.h",
+        "include/foundation/permissions/SharedPermission.h",
+    }
+)
 ACTIONS = {
     "permission-member": "holds a Permission with no [[no_unique_address]].  Make the member the "
     "[[no_unique_address]] member of a handle",

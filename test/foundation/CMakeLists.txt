@@ -1453,7 +1453,7 @@ foundation_neg_compile_test(neg_permission_root_ctx_refuses_federated_peer
 # Only an admission builds the key of the federation peer token.
 foundation_neg_compile_test(neg_federation_admission_key_outside_admission
   ".constexpr foundation::permissions::federation_admission_key::federation_admission_key\\(\\). is private within this context"
-  "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: note: declared private here")
+  "foundation/permissions/FederationDoor\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # The admission and the handoff each refuse a context that does not
 # admit the tag's row, at their own door.

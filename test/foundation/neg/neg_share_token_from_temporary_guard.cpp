@@ -8,7 +8,7 @@
 //
 // Expected diagnostic: the deleted const&& token(), with its reason.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

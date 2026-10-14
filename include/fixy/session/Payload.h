@@ -196,6 +196,7 @@
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <fixy/session/Classified.h>

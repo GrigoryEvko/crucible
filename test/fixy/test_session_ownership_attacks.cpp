@@ -24,6 +24,7 @@
 #include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <any>
 #include <array>

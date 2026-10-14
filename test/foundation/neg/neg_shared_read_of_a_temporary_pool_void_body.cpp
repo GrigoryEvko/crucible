@@ -8,7 +8,7 @@
 // Expected diagnostic: with_shared_read has no viable candidate, and the
 // note names WithSharedReadArgs.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

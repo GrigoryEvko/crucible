@@ -8,7 +8,7 @@
 // Expected diagnostic: no conversion from the branded share to the erased
 // share, at the call of the function that takes the erased share.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

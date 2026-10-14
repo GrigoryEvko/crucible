@@ -705,7 +705,7 @@
     },
     {
       "type": "foundation::permissions::federation_admission_key",
-      "header": "foundation/permissions/Permission.h"
+      "header": "foundation/permissions/FederationDoor.h"
     },
     {
       "type": "fixy::concurrent::PermissionForkThreads",
@@ -717,11 +717,11 @@
     },
     {
       "type": "foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>",
-      "header": "foundation/permissions/Permission.h"
+      "header": "foundation/permissions/SharedPermission.h"
     },
     {
       "type": "foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>",
-      "header": "foundation/permissions/Permission.h"
+      "header": "foundation/permissions/SharedPermission.h"
     },
     {
       "type": "foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>",
@@ -737,7 +737,7 @@
     },
     {
       "type": "foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>",
-      "header": "foundation/permissions/Permission.h"
+      "header": "foundation/permissions/SharedPermission.h"
     },
     {
       "type": "foundation::permissions::detail::row_cell",

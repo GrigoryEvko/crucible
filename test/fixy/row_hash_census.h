@@ -173,6 +173,7 @@
 #include <foundation/permissions/PermissionFork.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/reflect/Enumerate.h>

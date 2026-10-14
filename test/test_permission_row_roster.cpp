@@ -127,14 +127,6 @@ constexpr RosterEntry kEmptyRowRoster[] = {
      "a witness tag of fixy/channels/SwmrSession.h"},
     {"fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag",
      "a witness tag of fixy/channels/SwmrSession.h"},
-    {"foundation::permissions::detail::seplog_test_tag", "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_test_left", "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_test_right", "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_combine_n_parent",
-     "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_combine_n_a", "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_combine_n_b", "a self-test tag of foundation/permissions/Permission.h"},
-    {"foundation::permissions::detail::seplog_combine_n_c", "a self-test tag of foundation/permissions/Permission.h"},
     {"foundation::permissions::detail::read_view_test_tag", "a self-test tag of foundation/permissions/ReadView.h"},
 };
 
@@ -200,7 +192,7 @@ consteval bool tag_found_with_row(std::string_view name, bool is_empty) {
 
 // The walk is not vacuous: it finds the tags of the canonical namespace,
 // which have rows that name effects.
-static_assert(kTags.size() > 20, "the walk found almost no permission tag, so the roster check proves nothing");
+static_assert(kTags.size() > 12, "the walk found almost no permission tag, so the roster check proves nothing");
 static_assert(tag_found_with_row("foundation::permissions::tag::HugePageTag", false));
 static_assert(tag_found_with_row("crucible::warden::quarantine_tag::OperatorOverride", false),
               "the operator override is an authority, so its row names an effect");

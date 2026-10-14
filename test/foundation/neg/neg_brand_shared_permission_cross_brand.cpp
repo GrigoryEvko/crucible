@@ -2,7 +2,7 @@
 // two regions of one tag are two types and a callee that wants two
 // shares of one region refuses the pair by deduction.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

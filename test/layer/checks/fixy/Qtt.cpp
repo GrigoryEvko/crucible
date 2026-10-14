@@ -6,6 +6,7 @@
 #include <foundation/Linear.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <memory>
 

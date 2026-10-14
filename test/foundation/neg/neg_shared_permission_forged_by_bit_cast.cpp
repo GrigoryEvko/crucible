@@ -6,7 +6,7 @@
 // candidate.  The copy constructor stays trivial, so a copy of a share
 // costs nothing.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <bit>
 

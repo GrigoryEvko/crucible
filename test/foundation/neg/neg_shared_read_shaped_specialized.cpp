@@ -4,7 +4,7 @@
 // with_shared_read_shaped is a function at namespace scope that is not a
 // template, so no specialization matches it.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <initializer_list>
 #include <meta>

@@ -596,28 +596,28 @@ include/foundation/effects/Ctx.h | inlined | 4 | std::__atomic_base::store | -
 include/foundation/effects/Ctx.h | inlined | 1 | std::atomic_flag::clear | -
 include/foundation/effects/Ctx.h | inlined | 1 | std::atomic_flag::test_and_set | -
 include/foundation/effects/Ctx.h | inlined | 1 | std::bit_cast | -
-include/foundation/permissions/Permission.h | call | 1 | abort | -
-include/foundation/permissions/Permission.h | call | 1 | std::optional::operator* | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::compare_exchange_weak | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::fetch_sub | -
-include/foundation/permissions/Permission.h | inlined | 4 | std::__atomic_base::load | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::__atomic_base::store | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::atomic::atomic | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::exchange | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::forward_as_tuple | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::has_value | -
-include/foundation/permissions/Permission.h | inlined | 2 | std::optional::operator (conversion) | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator* | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator-> | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::operator= | -
-include/foundation/permissions/Permission.h | inlined | 3 | std::optional::optional | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::reset | -
-include/foundation/permissions/Permission.h | inlined | 1 | std::optional::~optional | -
-include/foundation/permissions/Permission.h | reference | 1 | stderr | -
 include/foundation/permissions/PermissionFork.h | inlined | 3 | std::get | -
 include/foundation/permissions/PermissionFork.h | inlined | 1 | std::tuple::tuple | -
 include/foundation/permissions/ReadView.h | inlined | 1 | std::pair::pair | -
+include/foundation/permissions/SharedPermission.h | call | 1 | abort | -
+include/foundation/permissions/SharedPermission.h | call | 1 | std::optional::operator* | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::compare_exchange_weak | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::fetch_sub | -
+include/foundation/permissions/SharedPermission.h | inlined | 4 | std::__atomic_base::load | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::store | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::atomic::atomic | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::exchange | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::forward_as_tuple | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::has_value | -
+include/foundation/permissions/SharedPermission.h | inlined | 2 | std::optional::operator (conversion) | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::operator* | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::operator-> | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::operator= | -
+include/foundation/permissions/SharedPermission.h | inlined | 3 | std::optional::optional | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::reset | -
+include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::~optional | -
+include/foundation/permissions/SharedPermission.h | reference | 1 | stderr | -
 include/foundation/reflect/EnumName.h | inlined | 2 | std::basic_string_view::empty | -
 include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA12_KcLS_100ELS_112ELS_117ELS_45ELS_111ELS_102ELS_102ELS_108ELS_111ELS_97ELS_100EEE | -
 include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA14_KcLS_115ELS_111ELS_99ELS_107ELS_101ELS_116ELS_45ELS_111ELS_114ELS_97ELS_99ELS_108ELS_101EEE | -
@@ -694,9 +694,9 @@ src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::file_name |
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::function_name | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::line | -
 src/foundation/DiagRuntime.cpp | reference | 3 | stderr | -
-src/foundation/Permission.cpp | call | 1 | abort | -
-src/foundation/Permission.cpp | inlined | 1 | fprintf | -
-src/foundation/Permission.cpp | reference | 1 | stderr | -
+src/foundation/SharedPermission.cpp | call | 1 | abort | -
+src/foundation/SharedPermission.cpp | inlined | 1 | fprintf | -
+src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/Checked.h | inlined | +7 | std::optional::optional | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/Tagged.h | call | +3 | std::filesystem::path::~path | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/concurrent/SpscRing.h | inlined | +2 | std::array::data | -
@@ -953,13 +953,13 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
 @x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
-@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::forward_as_tuple | -
-@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -2 | std::optional::operator (conversion) | -
-@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
-@x86_64-debug-tsan | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::optional | -
 @x86_64-debug-tsan | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
 @x86_64-debug-tsan | include/foundation/permissions/PermissionFork.h | inlined | -1 | std::tuple::tuple | -
 @x86_64-debug-tsan | include/foundation/permissions/ReadView.h | inlined | -1 | std::pair::pair | -
+@x86_64-debug-tsan | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::forward_as_tuple | -
+@x86_64-debug-tsan | include/foundation/permissions/SharedPermission.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-debug-tsan | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-debug-tsan | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::optional | -
 @x86_64-debug-tsan | include/foundation/reflect/EnumName.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-debug-tsan | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | call | +2 | std::pair::pair | -
@@ -1061,9 +1061,9 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::size | -
 @x86_64-debug-ubsan-strict | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
 @x86_64-debug-ubsan-strict | include/foundation/effects/Ctx.h | inlined | -2 | std::__atomic_base::load | -
-@x86_64-debug-ubsan-strict | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator (conversion) | -
-@x86_64-debug-ubsan-strict | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
 @x86_64-debug-ubsan-strict | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
+@x86_64-debug-ubsan-strict | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::operator (conversion) | -
+@x86_64-debug-ubsan-strict | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::operator-> | -
 @x86_64-debug-ubsan-strict | include/foundation/reflect/EnumName.h | inlined | -2 | std::basic_string_view::empty | -
 @x86_64-debug-ubsan-strict | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | call | +2 | std::basic_string::basic_string | -
@@ -1373,15 +1373,15 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
 @x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::unique_ptr | -
 @x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
-@x86_64-release | include/foundation/permissions/Permission.h | call | -1 | std::optional::operator* | -
-@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::forward_as_tuple | -
-@x86_64-release | include/foundation/permissions/Permission.h | inlined | -2 | std::optional::operator (conversion) | -
-@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator* | -
-@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::operator-> | -
-@x86_64-release | include/foundation/permissions/Permission.h | inlined | -1 | std::optional::optional | -
 @x86_64-release | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
 @x86_64-release | include/foundation/permissions/PermissionFork.h | inlined | -1 | std::tuple::tuple | -
 @x86_64-release | include/foundation/permissions/ReadView.h | inlined | -1 | std::pair::pair | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | call | -1 | std::optional::operator* | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::forward_as_tuple | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | inlined | -2 | std::optional::operator (conversion) | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::operator* | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::operator-> | -
+@x86_64-release | include/foundation/permissions/SharedPermission.h | inlined | -1 | std::optional::optional | -
 @x86_64-release | include/foundation/reflect/EnumName.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-release | include/foundation/reflect/Enumerate.h | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-release | src/fixy/os/Topology.cpp | call | -3 | std::vector::push_back | -
@@ -1407,4 +1407,4 @@ src/foundation/Permission.cpp | reference | 1 | stderr | -
 @x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-release | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
 @x86_64-release | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
-@x86_64-release | src/foundation/Permission.cpp | reference | -1 | stderr | -
+@x86_64-release | src/foundation/SharedPermission.cpp | reference | -1 | stderr | -

@@ -8,6 +8,7 @@
 // share still out.
 
 #include <fixy/os/Mmap.h>
+#include <foundation/permissions/SharedPermission.h>
 
 namespace eff = foundation::effects;
 namespace perm = foundation::permissions;

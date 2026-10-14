@@ -9,6 +9,7 @@
 // above zero, and the upgrade fails exactly then. These tests pin that.
 
 #include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <cstdio>
 #include <optional>

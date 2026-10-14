@@ -54,6 +54,7 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <cstddef>
 #include <cstdint>

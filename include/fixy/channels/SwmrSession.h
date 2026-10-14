@@ -37,6 +37,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <concepts>
 #include <cstdint>

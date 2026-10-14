@@ -6,6 +6,7 @@
 // process, and the test passes only on that diagnostic.
 
 #include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <csignal>
 #include <cstddef>

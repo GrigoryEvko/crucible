@@ -9,7 +9,7 @@
 // names PoolCtx.
 
 #include <foundation/effects/Ctx.h>
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 namespace {
 struct NeedsIo {

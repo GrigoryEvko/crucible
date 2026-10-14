@@ -8,7 +8,7 @@
 // Expected diagnostic: the IsSharedPermission constraint is not
 // satisfied.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

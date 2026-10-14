@@ -47,7 +47,7 @@ Crucible has no proof-assistant source of truth. Correctness is won by three com
 | `Monotonic<T, Cmp>` (`fixy/Mutation.h`) | `Graded<Absolute, MonotoneLattice<T, Cmp>, T>` | grade is the value |
 | `AppendOnly<T, Storage>` (`fixy/Mutation.h`) | `Graded<Absolute, SeqPrefixLattice<T>, Storage<T>>` | grade derived from the container |
 | `Stale<T>` (`fixy/Stale.h`) | `Graded<Absolute, StalenessSemiring, T>` | grade stored per instance |
-| `SharedPermission<Tag, Brand>` (`foundation/permissions/Permission.h`) | `Graded<Absolute, DualLattice<FractionalLattice>, Tag>` (façade — atomic state in `SharedPermissionPool`) | none: the token is empty, and the pool holds the share count |
+| `SharedPermission<Tag, Brand>` (`foundation/permissions/SharedPermission.h`) | `Graded<Absolute, DualLattice<FractionalLattice>, Tag>` (façade — atomic state in `SharedPermissionPool`) | none: the token is empty, and the pool holds the share count |
 
 The doc-block of `include/foundation/algebra/Graded.h` gives four storage regimes:
 - The grade lives in the type and collapses under `[[no_unique_address]]`
@@ -1746,7 +1746,7 @@ Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of z
 | Separating conjunction `*` | `mint_permission_split<L,R>(Permission<In>&&)` | `foundation/permissions/Permission.h` | Splitting a region into disjoint subregions |
 | Frame rule | Linearity (move-only `Permission<Tag>`) | `foundation/permissions/Permission.h` | Every exclusive ownership claim |
 | Parallel composition rule | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `fixy/concurrent/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
-| Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `foundation/permissions/Permission.h` | Multi-reader / single-writer with mode upgrade |
+| Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `foundation/permissions/SharedPermission.h` | Multi-reader / single-writer with mode upgrade |
 | Lifetime-bound borrow | `with_read_view(source, body)` gives the body a `ReadView<Tag, Brand> const&` of the brand of the source. `mint_read_loan` parks the token while a `ReadLoan` travels | `foundation/permissions/ReadView.h` | Scoped read borrow: the view exists only for the body's call |
 | Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
 | Logical atomicity (TaDA) | Implicit — every consume-and-return cycle | (free) | All Permission-typed operations |
@@ -2251,7 +2251,7 @@ Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `
 ### Abort path
 
 ```cpp
-// include/foundation/permissions/Permission.h
+// include/foundation/permissions/SharedPermission.h
 [[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_outlived_abort_() noexcept {
     std::fputs("crucible: fatal contract violation: a SharedPermissionPool ended while shares were out.  ...\n",
                stderr);
@@ -2621,13 +2621,15 @@ These library types make the axioms from §II true at compile time. They are in 
 | `fixy/Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `saturating_add` / `saturating_sub` / `saturating_mul` call `foundation::sat::add_sat` / `sub_sat` / `mul_sat`, which call `std::saturating_*` only on overflow. |
 | `fixy/Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
 | `fixy/ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
-| `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`, `mint_permission_combine_n` and `mint_permission_share`. |
+| `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. The tag tree, the rows of the tags and the split manifests. `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n` and `mint_permission_combine_n`. |
+| `foundation/permissions/SharedPermission.h` | BorrowSafe, ThreadSafe, MemSafe | `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade), the guard of one share, `with_shared_read` and `mint_permission_share`. |
+| `foundation/permissions/FederationDoor.h` | BorrowSafe | The tag of a federation peer and `federation_admission_key`, the key of the one constructor of its token, which only the admission of `fixy/Federation.h` makes. |
 | `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | The `WriteView` that a fork lends a body, and its one door `with_write_view`, which lends a token to a body and gives the token back. `mint_permission_fork_inline<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule with the bodies inline in child order. Its constraint `CtxFitsPermissionForkInline<Ctx, Parent, Children...>` asks for `can_split_into_pack_v<Parent, Children...>`. Foundation starts no thread. |
 | `fixy/concurrent/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the same rule as a fork-join with one thread for each child, which the thread door of `fixy/os/ThreadTasks.h` starts and joins. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, the inline fit and a context that has `Effect::Bg`. Each mint gives back the parent permission after all bodies complete. |
 
 Every header is self-contained. Two cold bodies are in the library `foundation`, so
-that an includer does not compile them: the abort of `Permission.h` in
-`src/foundation/Permission.cpp`, and the formatter of the Report family. Three
+that an includer does not compile them: the abort of `SharedPermission.h` in
+`src/foundation/SharedPermission.cpp`, and the formatter of the Report family. Three
 cold bodies are in the library `fixy`: the sysfs probe of
 `fixy/os/Topology.h` in `src/fixy/os/Topology.cpp`, the door of
 `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`, and the hooks and the
@@ -2652,18 +2654,18 @@ The diagnostic catalog has two concerns. `foundation/diag/Tag.h` holds the
 vocabulary of a tag, and the domain files of `foundation/diag/tags/` hold the
 prose of the tags. `foundation/diag/Catalog.h` includes each domain file and
 derives the closed set of the tags. A header that names a category or one tag
-includes `Tag.h` or the domain file of the tag. `foundation/permissions/Permission.h`
-is 1,730 lines, with 1,111 lines of code and 24 includes, 12 of them project
-headers. It spans `Permission`, `SharedPermission`, the pool, the `ReadView`
-interaction, brands, `permission_row_t` and the splits, which is a real
-multi-concern header.
+includes `Tag.h` or the domain file of the tag. The permission tokens have
+three concerns. `foundation/permissions/Permission.h` holds the token, the tag
+tree, the rows and the split and combine mints.
+`foundation/permissions/SharedPermission.h` holds the share, the guard and the
+pool, and `foundation/permissions/FederationDoor.h` holds the key of a
+federation peer token. The check file of `Permission.h` holds the fixture tags
+of the checks, so no includer reads them.
 
 For scale, `fixy/Collision.h` is 1,497 lines and `fixy/Predicates.h` is 1,046. The
 headers of `include/foundation/` and `include/fixy/` are 29% comment, so their
 size is code and not prose. Header size is a review question about concerns, not
-a gate. `Permission.h` is
-the one header whose growth is a standing concern, and a split decided on
-concerns rather than lines is owed.
+a gate.
 
 ### Usage rules
 

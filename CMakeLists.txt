@@ -420,8 +420,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
-  src/foundation/Permission.cpp
   src/foundation/Platform.cpp
+  src/foundation/SharedPermission.cpp
   src/foundation/core/Report.cpp
   src/foundation/os/Auxiliary.cpp
   src/foundation/os/Directory.cpp

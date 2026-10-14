@@ -16,6 +16,7 @@
 // last share ends.
 
 #include <fixy/os/Mmap.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <sys/mman.h>
 #include <unistd.h>

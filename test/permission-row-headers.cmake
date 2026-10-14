@@ -20,6 +20,7 @@ set(CRUCIBLE_PERMISSION_ROW_HEADERS
     fixy/concurrent/PermissionedMpscChannel.h
     fixy/concurrent/PermissionedSpscChannel.h
     fixy/os/OwnedMmap.h
+    foundation/permissions/FederationDoor.h
     foundation/permissions/Permission.h
     foundation/permissions/ReadView.h
 )

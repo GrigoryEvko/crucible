@@ -9,7 +9,7 @@
 // Expected diagnostic: the static_assert in mint_permission_share that
 // asks for a row.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <utility>
 

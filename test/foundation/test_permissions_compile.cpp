@@ -8,6 +8,7 @@
 #include <foundation/permissions/PermissionFork.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <cstdio>
 #include <cstdlib>

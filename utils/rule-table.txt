@@ -508,11 +508,11 @@ witness <foundation/permissions/Permission.h> no-match | foundation::permissions
 witness <foundation/permissions/PermissionFork.h> private | foundation::permissions::WriteView<foundation::permissions::tag::HugePageTag, foundation::permissions::tag::MmapRegionTag> | foundation::permissions::WriteView<foundation::permissions::tag::HugePageTag, foundation::permissions::tag::MmapRegionTag>{}
 # Only an admission builds the key of a federation peer token, after a
 # handshake verifies.
-witness <foundation/permissions/Permission.h> private | foundation::permissions::federation_admission_key | foundation::permissions::federation_admission_key{}
+witness <foundation/permissions/FederationDoor.h> private | foundation::permissions::federation_admission_key | foundation::permissions::federation_admission_key{}
 witness <fixy/concurrent/PermissionFork.h> deleted | fixy::concurrent::PermissionForkThreads | fixy::concurrent::PermissionForkThreads{}
 witness <fixy/concurrent/Spawn.h> deleted | fixy::spawn::ParallelForRunner | fixy::spawn::ParallelForRunner{}
-witness <foundation/permissions/Permission.h> private | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{}
-witness <foundation/permissions/Permission.h> private | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()}
+witness <foundation/permissions/SharedPermission.h> private | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{}
+witness <foundation/permissions/SharedPermission.h> private | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()}
 witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{}
 # A read loan comes only from mint_read_loan, which parks the token, and
 # the parked token comes back only with its loan.
@@ -520,7 +520,7 @@ witness <foundation/permissions/ReadView.h> private | foundation::permissions::R
 witness <foundation/permissions/ReadView.h> private | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()}
 # The pool's only constructor consumes the exclusive permission it
 # parks: there is no pool without the evidence.
-witness <foundation/permissions/Permission.h> no-match | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{}
+witness <foundation/permissions/SharedPermission.h> no-match | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{}
 # Only the walk of a tag builds the cell that holds its row, so a
 # specialization of row_cell_at cannot give a tag a lighter row.  The
 # cell holds a reflection, and a runtime variable of it is a second

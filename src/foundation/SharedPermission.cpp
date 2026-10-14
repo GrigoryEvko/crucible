@@ -1,4 +1,4 @@
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <foundation/diag/tags/Aborts.h>
 
@@ -8,8 +8,8 @@
 namespace foundation::permissions {
 
 // The cold path of a lend that found the share count at its maximum.  It
-// is in a source file, so a translation unit that includes Permission.h
-// does not read the diagnostic catalog.
+// is in a source file, so a translation unit that includes
+// SharedPermission.h does not read the diagnostic tag.
 void shared_permission_pool_saturated_abort_() noexcept {
     using Tag = ::foundation::diag::SharedPermissionPoolSaturated;
     std::fprintf(stderr,

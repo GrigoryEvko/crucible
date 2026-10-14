@@ -10,6 +10,7 @@
 
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <csignal>
 #include <cstddef>

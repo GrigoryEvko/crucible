@@ -1,11 +1,73 @@
-// The compile-time checks of foundation/permissions/Permission.h.
+// The compile-time checks of foundation/permissions/Permission.h and of
+// foundation/permissions/SharedPermission.h.  The checks of the two headers
+// read one set of fixture tags and one probe of the heap, so they are in
+// one file.
 
 #include <foundation/permissions/Permission.h>
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/permissions/SharedPermission.h>
+
+#include <optional>
 
 namespace foundation::permissions {
+
+// The fixture tags of the checks below.  Each one declares its row as a
+// member, so permission_rows holds only the edges of the canonical tags.
+// They are in this file and not in a header, so no includer reads them.
+namespace detail {
+struct seplog_test_tag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_test_left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_test_right {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_io_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+};
+struct seplog_block_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
+};
+struct seplog_multi_effect_tag {
+    using permission_row =
+        ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+};
+// Declared and never given a row, so the relation's answer for it is a
+// negative control.
+struct seplog_undeclared_tag {};
+// A second tag whose member names one effect.
+struct seplog_member_row_tag {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
+};
+// A tag derived from another, which has its parent's row.
+struct seplog_derived_tag {
+    using parent_type = seplog_io_tag;
+};
+struct seplog_combine_n_parent {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_a {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_b {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct seplog_combine_n_c {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace detail
+
+template <>
+struct can_split_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,
+                           detail::seplog_combine_n_c> : std::true_type {};
+
+template <>
+struct has_split_pack_authoring_witness<detail::seplog_combine_n_parent, detail::seplog_combine_n_a,
+                                        detail::seplog_combine_n_b, detail::seplog_combine_n_c> : std::true_type {};
 
 // No route builds the key without a constructor.  std::bit_cast builds
 // any trivially copyable type from bytes, and std::start_lifetime_as

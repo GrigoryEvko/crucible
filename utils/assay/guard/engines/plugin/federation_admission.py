@@ -1,7 +1,7 @@
 """federation-admission — FederationAdmission and each part of it stand only in fixy/Federation.h.
 
 THE RULE
-    foundation/permissions/Permission.h declares the class template
+    foundation/permissions/FederationDoor.h declares the class template
     FederationAdmission and the key of a federation peer token.  The one
     friend of the key is that template.  fixy/Federation.h holds the
     definition of the admission, and that definition builds the key only

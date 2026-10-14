@@ -9,7 +9,7 @@
 // Expected diagnostic: the static_assert in SharedPermission that asks
 // for IsBrand<Brand>.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 namespace {
 struct Region {

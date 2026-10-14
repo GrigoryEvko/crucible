@@ -3,7 +3,7 @@
 // when it ends.  SharedPermissionGuard deletes its class-scope operator
 // new, so the expression is refused.
 
-#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 
 #include <type_traits>
 #include <utility>

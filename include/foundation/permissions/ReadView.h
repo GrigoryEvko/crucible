@@ -44,6 +44,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/permissions/SharedPermission.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
