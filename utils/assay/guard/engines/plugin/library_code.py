@@ -26,7 +26,8 @@ THE COUNTS
     (assay.guard.engines.plugin.declarations, THE SCOPE).  A record of a base
     header counts also when a quarantined unit compiles the header.  The key
     of a count is the file, the kind and the name of the library function
-    or variable (name_of).  The symbol stays out of the key, because each
+    or variable.  The record of assay.readers.sections gives the name in its
+    field name (THE ENTITIES OF THE RECORDS).  The symbol stays out of the key, because each
     template instance has a symbol of its own.  A count is the number of the
     locations of the file with a record of that kind and name.  A record
     symbol is no count.  The rule artifact-symbols reads it (THE HIDDEN
@@ -82,16 +83,14 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.plugin import counted, declarations, quarantine, runner
+from assay.readers import sections as plugin_sections
 
 RULE = "library-code"
 INLINED = "inlined"
 CALL = "call"
 REFERENCE = "reference"
-SYMBOL = "symbol"
 # The kinds of a record that the rule counts (THE COUNTS).
 COUNTED_KINDS = frozenset({INLINED, CALL, REFERENCE})
-# The kinds of a record with the symbol before the name in its entity.
-SYMBOL_KINDS = frozenset({CALL, REFERENCE, SYMBOL})
 REFUSAL = (
     "Remove the new library code from the base file: use a type of fixy or foundation.  Give --raise only for a new "
     "toolchain, or when the plugin changed what it records"
@@ -99,16 +98,6 @@ REFUSAL = (
 PARSE_REASON = "the build only parses, and a parse compiles no function and gives no record"
 
 Key = rule_ledger.Key
-
-
-def name_of(kind: str, entity: str) -> str:
-    """Return the name of the entity of a record: the entity with no symbol, with one space between its words.
-
-    The entity of a record call or reference is the symbol and the name, and the name can hold a space, as in
-    operator new.  The symbol holds no space.
-    """
-    words = entity.split()
-    return " ".join(words[1:] if kind in SYMBOL_KINDS else words)
 
 
 def is_parse(build_dir: Path | None) -> bool:
@@ -140,7 +129,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     for item in census.of_rule(RULE):
         if item.kind not in COUNTED_KINDS or not declarations.in_scope(rule, item.file, table):
             continue
-        name = name_of(item.kind, item.entity)
+        name = plugin_sections.library_record(item.kind, item.entity).name
         places.setdefault(
             (item.file, item.line, item.column, item.kind, name),
             check_report.Finding("error", item.file, item.line, RULE, item.text(), item.kind, name),

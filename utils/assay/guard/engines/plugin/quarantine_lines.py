@@ -185,7 +185,7 @@ def refused(lines: KeyLines, taken_away: int) -> list[tuple[quarantine_sections.
 
 def message(item: quarantine_sections.Finding, hunk: git.Hunk, removes: bool, taken_away: int, base: str) -> str:
     """Return the message of one added finding that no removed finding pays for."""
-    what = f"{item.kind} {item.entity}".rstrip()
+    what = f"{item.kind} {item.entity}" if item.entity else item.kind
     if not removes:
         cause = (
             f"the hunk at line {hunk.new_start} removes no line, and a new line holds only types and entities of the "

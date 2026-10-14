@@ -29,14 +29,15 @@ THE RULE
     A list of fewer or the same number of elements gives no line, and in the
     mode error no error.  The entity of a line is `DECLARATION: ELEMENT |
     count=N holes=H`, with the element count and the padding bits of one
-    element.  The rule keeps each line in the scope of its row.  The entity
-    of its finding is `DECLARATION: ELEMENT`, and a change of the count
-    changes no key.  A list has one finding, at its first position
-    (assay.guard.engines.plugin.declarations, THE POSITION OF AN ENTITY).  A
-    line that the rule cannot read is an error.  A line of a list at or below
-    the threshold is an error of the kind threshold.  Such a line comes from a
-    build with a different threshold, and no ledger row admits it
-    (REFUSED_KINDS).  Each problem of the census of the runner is an error
+    element, and the reader gives its parts (assay.readers.sections, THE
+    ENTITIES OF THE RECORDS).  The rule keeps each line in the scope of its
+    row.  The entity of its finding is `DECLARATION: ELEMENT`, and a change
+    of the count changes no key.  A list has one finding, at its first
+    position (assay.guard.engines.plugin.declarations, THE POSITION OF AN
+    ENTITY).  A line that the rule cannot read is an error.  A line of a list
+    at or below the threshold is an error of the kind threshold.  Such a line
+    comes from a build with a different threshold, and no ledger row admits
+    it (REFUSED_KINDS).  Each problem of the census of the runner is an error
     too.
 
 THE LEDGER
@@ -56,56 +57,17 @@ Usage
 Complexity: linear in the lines of the rule.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from assay.core import report as check_report
 from assay.guard.engines.plugin import declarations, runner
 from assay.readers import sections as plugin_sections
 
 RULE = "padded-list"
-# The text between the declaration and the element type, and between the entity of a line and its facts.
-ELEMENT_SEPARATOR = ": "
-FACTS_SEPARATOR = " | "
-FACTS = ("count", "holes")
 # The kind of a line of a list at or below the threshold.  No ledger row admits it (assay.guard.engines.meta.runner,
 # THE REFUSED KINDS), because the object comes from a build with a different threshold.
 THRESHOLD_KIND = "threshold"
 REFUSED_KINDS = frozenset({THRESHOLD_KIND})
-
-
-class LineError(ValueError):
-    """A line of the rule does not have the format `DECLARATION: ELEMENT | count=N holes=H`."""
-
-
-@dataclass(frozen=True, slots=True)
-class PaddedList:
-    """One padded list, as a line of the plugin gives it.
-
-    `entity` is `DECLARATION: ELEMENT`, the key of the list.  `count` is the element count of the list, and `holes`
-    is the number of the padding bits of one element.
-    """
-
-    entity: str
-    count: int
-    holes: int
-
-
-def parse_line(item: plugin_sections.Finding) -> PaddedList:
-    """Return the padded list of one line of the rule.
-
-    Raises:
-        LineError: If the entity of the line does not have the format of THE RULE
-    """
-    entity, separator, facts = item.entity.rpartition(FACTS_SEPARATOR)
-    declaration, element_separator, element = entity.partition(ELEMENT_SEPARATOR)
-    values: dict[str, int] = {}
-    for word in facts.split(" "):
-        key, equal, value = word.partition("=")
-        if equal and key in FACTS and key not in values and value.isdigit():
-            values[key] = int(value)
-    if not separator or not element_separator or not declaration or not element or set(values) != set(FACTS):
-        raise LineError(f"{item.text()!r}: a line of {RULE} is 'DECLARATION: ELEMENT | count=N holes=H'")
-    return PaddedList(entity, values["count"], values["holes"])
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
@@ -119,11 +81,11 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     limit = rule.threshold.error if rule.threshold is not None else 0.0
     found = context.census().errors(RULE)
     kept: list[plugin_sections.Finding] = []
-    lists: dict[tuple[str, str], PaddedList] = {}
+    lists: dict[tuple[str, str], plugin_sections.PaddedList] = {}
     for item in declarations.lines_of(rule, context):
         try:
-            padded = parse_line(item)
-        except LineError as problem:
+            padded = plugin_sections.padded_list(item.entity, repr(item.text()))
+        except plugin_sections.EntityError as problem:
             found.append(check_report.Finding("error", item.file, item.line, RULE, str(problem)))
             continue
         if padded.count <= limit:

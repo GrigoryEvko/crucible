@@ -26,7 +26,9 @@ THE OPT-OUT REGIONS
 THE ENTITY
     The ledger counts the findings of each file, kind and entity.  The entity
     of a row is the part of the entity of a finding that names what the
-    plugin refuses (entity_key):
+    plugin refuses (entity_key).  The reader gives the parts of each entity
+    (assay.readers.sections, THE ENTITIES OF THE RECORDS), and each part has
+    one space between each two words:
       * raw-pointer-object, raw-function-pointer and c-array-object: no
         entity.  The plugin gives the name of the declaration, and the row
         counts the findings of the file and the kind
@@ -204,10 +206,6 @@ REGION = quarantine_sections.REGION
 ADMITTED_KINDS = frozenset((OPTED_OUT, REGION))
 # The kinds with the name of a declaration as the entity: a row has no entity (THE ENTITY).
 DECLARATION_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
-# The kinds of an include.  Each kind gives the text after the header or the target in its entity, and the start of
-# that text that the key keeps.  The plugin writes "<HEADER> in ALLOWANCE" and "TARGET (LAYER) from the layer LAYER"
-# (utils/tools/quarantine/include.cpp).
-INCLUDE_KIND_ENDS = {"layer-header": ("> in ", ">"), "upward-include": (" (", "")}
 # The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
 REASON_SEPARATOR = " | "
 # The rule table of a tree, relative to its root.
@@ -336,35 +334,42 @@ def joined(*fields: str) -> str:
     return " ".join(fields).rstrip(" ")
 
 
+def row_entity(kind: str, parsed: quarantine_sections.FindingEntity) -> str:
+    """Return the entity of the row of one finding from the record of its entity (THE ENTITY)."""
+    if kind in DECLARATION_KINDS:
+        return ""
+    if isinstance(parsed, quarantine_sections.LayerHeader):
+        return parsed.header
+    if isinstance(parsed, quarantine_sections.UpwardInclude):
+        return parsed.target
+    return parsed.text
+
+
 def include_key(kind: str, entity: str) -> str:
     """Return the entity of the row of an include: the header or the target with no layer.  Each other kind keeps it.
 
     The function keeps an entity that holds no layer.  A row that it wrote then reads back as the same key.  The rule
     history reads each earlier version of the ledger through it.
     """
-    end = INCLUDE_KIND_ENDS.get(kind)
-    if end is None:
-        return entity
-    after, kept = end
-    head, separator, _ = entity.partition(after)
-    return f"{head}{kept}" if separator else entity
+    parsed = quarantine_sections.quarantine_entity(kind, entity)
+    return entity if isinstance(parsed, quarantine_sections.Words) else row_entity(kind, parsed)
 
 
 def entity_key(kind: str, entity: str) -> str:
     """Return the entity of the row of one finding: the part of its entity that names what the plugin refuses.
 
-    THE ENTITY in the head comment gives the rule for each kind.  The text has one space between its words.
+    THE ENTITY in the head comment gives the rule for each kind.
     """
-    text = " ".join(entity.split())
-    if kind in INCLUDE_KIND_ENDS:
-        return include_key(kind, text)
-    return "" if kind in DECLARATION_KINDS else text
+    return row_entity(kind, quarantine_sections.quarantine_entity(kind, entity))
 
 
 def opted_out_key(reason: str, entity: str) -> str:
-    """Return the entity of the row of an opted-out finding: the reason of its region, the inner kind and entity."""
-    inner, _, rest = " ".join(entity.split()).partition(" ")
-    return joined(f"{' '.join(reason.split())}{REASON_SEPARATOR}{inner}", entity_key(inner, rest))
+    """Return the entity of the row of an opted-out finding: the reason of its region, the inner kind and entity.
+
+    `reason` is the reason of the region as the reader gives it, with one space between each two words.
+    """
+    parsed = quarantine_sections.opted_out(entity)
+    return joined(f"{reason}{REASON_SEPARATOR}{parsed.kind}", row_entity(parsed.kind, parsed.inner))
 
 
 def directory_rows(table: ruletable.RuleTable) -> list[str]:

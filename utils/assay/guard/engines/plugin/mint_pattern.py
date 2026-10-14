@@ -39,6 +39,7 @@ Complexity: linear in the lines of the rule, and O(r log r) for r records.
 
 from assay.core import report as check_report
 from assay.guard.engines.plugin import declarations, runner
+from assay.readers import sections as plugin_sections
 
 RULE = declarations.MINT_RULE
 # The action for each kind of finding (CLAUDE.md section XXI).
@@ -65,7 +66,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     found = census.errors(RULE)
     try:
         chosen = declarations.chosen_mints(item for item in lines if item.kind == declarations.MINT_RECORD)
-    except declarations.RecordError as problem:
+    except plugin_sections.EntityError as problem:
         return [*found, check_report.Finding("error", context.build_shown(), 0, RULE, str(problem))]
     seen: set[tuple[str, str]] = set()
     for item in lines:

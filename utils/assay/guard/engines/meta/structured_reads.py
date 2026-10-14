@@ -7,8 +7,8 @@ THE SCOPE
     reader of assay.readers.python reads each Python file, and the reader of
     assay.readers.shell reads each shell script with the bash grammar of the
     pinned ast-grep.  A module of utils/assay/readers/ is a reader: the kinds
-    node-text, node-text-variable, source-text, regex-call, diagnostic-text
-    and format-read do not read it.
+    node-text, node-text-variable, disassembly-text, entity-text,
+    source-text, regex-call, diagnostic-text and format-read do not read it.
 
 THE KINDS
     lexer               a file named cxx_lex.py, an import of a module named cxx_lex, or a word, a string or a heredoc
@@ -30,6 +30,11 @@ THE KINDS
                         spelling.  A text that node-text derives from a text is such a text too.  Each record of the
                         reader gives the parts of its operand.  A spelling is then for a message or for a compare
                         with == only
+    entity-text         a regex function, a string method or an `in` test over the entity of a record of the
+                        quarantine plugin, in a module that imports assay.readers.sections.  An attribute .entity
+                        gives the entity.  A text that node-text derives from a text is such a text too.  The
+                        functions of the reader give the parts of each entity (THE ENTITIES OF THE RECORDS of
+                        assay.readers.sections).  An entity is then for a key, a message or a compare with == only
     source-text         a string method, an `in` test or a regex over the text of a C++ file.  The module reads the
                         text with read_text(), read_bytes() or open().  A path names a C++ file when it holds a
                         string constant with a C++ suffix, such as "include/a.h" or "*.cpp".  A variable of the
@@ -82,7 +87,10 @@ WHAT THE RULE CANNOT SEE
     function and the variables of the module.  The rule does not see a text
     that goes through a parameter, a return value or an attribute.
     disassembly-text sees a spelling only in the expression of the read, and
-    not through a variable.
+    not through a variable.  entity-text sees an entity the same way, and
+    only in a module that imports assay.readers.sections.  A finding of
+    assay.core.report also has an attribute .entity.  The rule does not read
+    that attribute in a module that does not import the reader.
     source-text sees a C++ path only when a constant with a C++ suffix names
     it, and not a path from a list or a parameter.  A shell argument that
     reaches a tool through a variable set elsewhere passes.  git-command
@@ -142,6 +150,10 @@ TEXT_NAME_CALLS = frozenset({"spelled"})
 # its records, and its module function.
 SPELLING_CALLS = frozenset({"spelling", "operand_spelling", "spelling_of"})
 SPELLING_NAME_CALLS = frozenset({"spelling_of"})
+# The reader of the records of the quarantine plugin, and the attribute that gives the entity of a record (the kind
+# entity-text).
+SECTIONS_READER = "assay.readers.sections"
+ENTITY_ATTRIBUTES = frozenset({"entity"})
 # The string methods that give a text made from the text of their receiver.
 TEXT_RESULTS = frozenset({
     "strip", "lstrip", "rstrip", "lower", "upper", "casefold", "replace", "removeprefix", "removesuffix", "decode",
@@ -422,6 +434,7 @@ class TextSource:
 
 TSAST_TEXT = TextSource(TEXT_ATTRIBUTES, TEXT_CALLS, TEXT_NAME_CALLS)
 SPELLING_TEXT = TextSource(frozenset(), SPELLING_CALLS, SPELLING_NAME_CALLS)
+ENTITY_TEXT = TextSource(ENTITY_ATTRIBUTES, frozenset(), frozenset())
 
 
 def is_text_from(node: ast.AST, source: TextSource, variables: frozenset[str] = frozenset()) -> bool:
@@ -470,6 +483,11 @@ def is_text_of_tsast(node: ast.AST, variables: frozenset[str] = frozenset()) -> 
 def is_spelling(node: ast.AST) -> bool:
     """Return True when the value of an expression is the spelling of an operand of objdump, or a text made from it."""
     return is_text_from(node, SPELLING_TEXT)
+
+
+def is_entity(node: ast.AST) -> bool:
+    """Return True when the value of an expression is the entity of a record of the plugin, or a text made from it."""
+    return is_text_from(node, ENTITY_TEXT)
 
 
 def is_prose_read(node: ast.AST) -> bool:
@@ -525,12 +543,18 @@ def docstring_nodes(tree: ast.Module) -> set[int]:
 class PythonReads(ast.NodeVisitor):
     """Collect the findings of one Python file, with the function that holds each one."""
 
-    def __init__(self, path: str, is_reader: bool, docstrings: set[int], bindings: python_reader.Bindings) -> None:
-        """Keep the place of the file, its import table and the state of the walk."""
+    def __init__(
+        self, path: str, is_reader: bool, docstrings: set[int], bindings: python_reader.Bindings, reads_sections: bool
+    ) -> None:
+        """Keep the place of the file, its import table and the state of the walk.
+
+        `reads_sections` is True when the file imports assay.readers.sections (the kind entity-text).
+        """
         self.path = path
         self.is_reader = is_reader
         self.docstrings = docstrings
         self.bindings = bindings
+        self.reads_sections = reads_sections
         self.scopes: list[str] = []
         self.text_variables: list[set[str]] = [set()]
         # The variables of each scope that name a C++ file, that hold its text, and that hold an open C++ file.
@@ -724,6 +748,10 @@ class PythonReads(ast.NodeVisitor):
                     method in RE_FUNCTIONS and any(is_spelling(argument) for argument in arguments)):
                 self.add(node, "disassembly-text", f"a {method}() on the spelling of an operand of objdump.  Read the "
                          f"part of the operand from its record of assay.readers.objdump")
+            if self.reads_sections and ((method in STRING_METHODS and is_entity(receiver)) or (
+                    method in RE_FUNCTIONS and any(is_entity(argument) for argument in arguments))):
+                self.add(node, "entity-text", f"a {method}() on the entity of a record of the quarantine plugin.  "
+                         f"Read the part of the entity from its record of {SECTIONS_READER}")
             if (method in STRING_METHODS and self.is_source_text(receiver)) or (
                     method in RE_FUNCTIONS and any(self.is_source_text(argument) for argument in arguments)):
                 self.add(node, "source-text", f"a {method}() on the text of a C++ file that the module reads as text.  "
@@ -754,6 +782,9 @@ class PythonReads(ast.NodeVisitor):
                 if isinstance(operator, (ast.In, ast.NotIn)) and is_spelling(right):
                     self.add(node, "disassembly-text", "an `in` test over the spelling of an operand of objdump.  Read "
                              "the part of the operand from its record of assay.readers.objdump")
+                if isinstance(operator, (ast.In, ast.NotIn)) and self.reads_sections and is_entity(right):
+                    self.add(node, "entity-text", "an `in` test over the entity of a record of the quarantine plugin.  "
+                             f"Read the part of the entity from its record of {SECTIONS_READER}")
                 if isinstance(operator, (ast.In, ast.NotIn)) and self.is_source_text(right):
                     self.add(node, "source-text", "an `in` test over the text of a C++ file that the module reads as "
                              "text.  Read the file through assay.readers.tsast, and read the answer from the parse tree")
@@ -848,7 +879,8 @@ def python_findings(path: str, file: Path) -> list[check_report.Finding]:
         return [check_report.Finding("error", path, 0, RULE, f"the file is not UTF-8, and its reads are unknown: "
                                      f"{problem}", "parse", path)]
     tree = source.tree
-    visitor = PythonReads(path, path.startswith(READERS), docstring_nodes(tree), python_reader.bindings(source))
+    visitor = PythonReads(path, path.startswith(READERS), docstring_nodes(tree), python_reader.bindings(source),
+                          SECTIONS_READER in python_reader.imports(source))
     visitor.visit(tree)
     found = visitor.found
     if path != GIT_IMPLEMENTATION:

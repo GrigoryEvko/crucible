@@ -11,7 +11,9 @@ THE FAMILY
 
 THE FINDINGS
     Each finding line of a rule is one error at its file and its line.  Its
-    kind and its entity are the key of a ledger row.  A line of the kind
+    kind and its entity are the key of a ledger row.  The entity is a name
+    with the names of its scopes, as the reader gives it
+    (assay.readers.sections, THE ENTITIES OF THE RECORDS).  A line of the kind
     at-home is no finding: it says that a path of a home row admitted a
     site.  Each problem of the census of the runner is an error too.
 
@@ -149,7 +151,13 @@ def site_findings(
     """Give one error for each finding line of the rule, with its kind and its entity (THE FINDINGS)."""
     return [
         check_report.Finding(
-            "error", item.file, item.line, rule_id, message(item, homes), item.kind, " ".join(item.entity.split())
+            "error",
+            item.file,
+            item.line,
+            rule_id,
+            message(item, homes),
+            item.kind,
+            quarantine_sections.qualified_name(item.entity).text,
         )
         for item in census.of_rule(rule_id)
         if item.kind != AT_HOME
@@ -166,7 +174,7 @@ def stale_findings(
     sites: dict[str, list[str]] = {}
     for item in census.of_rule(rule_id):
         if item.kind == AT_HOME:
-            sites.setdefault(" ".join(item.entity.split()), []).append(read_as(item.file))
+            sites.setdefault(quarantine_sections.qualified_name(item.entity).text, []).append(read_as(item.file))
     found: list[check_report.Finding] = []
     for home in homes:
         for path in home.paths:

@@ -10,10 +10,12 @@ THE CENSUS
     kinds of THE SCOPE, each finding one time.  The entity of a row is the
     entity of the rule quarantine (THE ENTITY of
     assay.guard.engines.plugin.quarantine).  The census holds each region of
-    the source, with its first line and its reason.  The region of an
-    opted-out finding is the region with the last first line at or before its
-    line.  The row of the finding holds the reason of that region, as in the
-    rule quarantine (THE OPT-OUT REGIONS of that module).
+    the source, with its first line and its reason.  The reason has one
+    space between each two words (assay.readers.sections, THE ENTITIES OF THE
+    RECORDS).  The region of an opted-out finding is the region with the last
+    first line at or before its line.  The row of the finding holds the reason
+    of that region, as in the rule quarantine (THE OPT-OUT REGIONS of that
+    module).
 
 THE SCOPE
     The rule counts each kind of the rule quarantine of the registry, and the
@@ -141,6 +143,7 @@ from assay.guard.engines.plugin import counted, quarantine
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import census as build_census
 from assay.readers import compdb
+from assay.readers import sections as plugin_sections
 
 RULE = "fixture-quarantine"
 # The rule with the kinds that the census counts (THE SCOPE).
@@ -430,7 +433,11 @@ def census_of(fixtures: Sequence[FixtureFacts], kinds: frozenset[str], build_sho
             found.append(check_report.Finding("error", item.source, 0, RULE, problem))
             continue
         census = item.census or ()
-        starts = sorted((line, entity) for kind, line, _, entity in census if kind == quarantine.REGION)
+        starts = sorted(
+            (line, plugin_sections.quarantine_entity(kind, entity).text)
+            for kind, line, _, entity in census
+            if kind == quarantine.REGION
+        )
         for kind, line, column, entity in census:
             if kind.partition(":")[0] not in kinds:
                 continue

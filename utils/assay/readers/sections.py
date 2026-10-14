@@ -20,13 +20,55 @@ THE OBJECT
     the package names the section, and the rule structured-reads refuses each
     other read of it.
 
+THE ENTITIES OF THE RECORDS
+    The plugin writes the entity of some kinds in a grammar of its own, and
+    the writer of each kind gives the grammar.  A function of this module
+    reads such an entity into a typed record, and a rule reads the fields of
+    the record.  No other module reads the entity of a finding as text.  The
+    kind entity-text of the rule structured-reads refuses such a read.  In a
+    record of library-code, quarantine and the family home, a field that
+    holds words has one space between each two words.  The plugin can write
+    more spaces:
+      library-code   The writer is utils/tools/quarantine/body.cpp (THE
+                     RECORDS).  inlined: NAME.  call and reference: SYMBOL
+                     NAME.  symbol: SYMBOL.  SYMBOL is an assembler name with
+                     no space, and NAME can hold a space, as in operator new.
+                     library_record() gives a LibraryRecord
+      quarantine     The writers are report() of plugin.cpp and
+                     check_include() of include.cpp.  `layer-header`:
+                     <HEADER> in ALLOWANCE.  `upward-include`: TARGET
+                     (TARGET_LAYER) from the layer LAYER.  quarantine_entity()
+                     gives a LayerHeader, an UpwardInclude, or Words for each
+                     other kind and for a text that does not have the grammar
+                     of its kind.  opted-out: KIND ENTITY, the kind and the
+                     entity of the finding in the region.  opted_out() gives
+                     an OptedOut.  region: the reason of the region, as Words
+      padded-list    The writer is record_padded_lists() of declaration.cpp.
+                     DECLARATION: ELEMENT | count=N holes=H.  padded_list()
+                     gives a PaddedList
+      mint-pattern   The writers are check_mint() and check_mint_alias() of
+                     declaration.cpp.  mint: SIGNATURE | name=NAME static=F
+                     shape=SHAPE template=F nodiscard=F constexpr=F
+                     noexcept=F constrained=F gated=F projection=F defined=F
+                     class=NAME owner=CLASS, with each flag F 0 or 1, and "-"
+                     for no class and no owner.  The owner comes last, because
+                     the name of a class can hold a space.  mint-alias: ALIAS
+                     | alias=NAME owner=CLASS.  mint_record() and mint_alias()
+                     give a MintRecord and a MintAlias
+      the family home  The writer is record_site() of home.cpp.  A name with
+                     the names of its scopes, such as a::b::c.
+                     `qualified_name()` gives a `QualifiedName`.
+    Each fact of a record of padded-list or mint-pattern is necessary to its
+    rule.  When such a record does not have its grammar, its function raises
+    EntityError.
+
 THE SYMBOLS OF THE LIBRARY CODE
-    The rule library-code has four kinds of records (the head comment of
-    body.cpp, THE RECORDS).  The entity of a record call, reference or symbol
-    starts with the assembler name of a symbol that an instruction of the
-    unit names.  Section.symbols() gives these names with the first record of
-    each.  The rule artifact-symbols explains the imports of a member of an
-    archive with them, and `guard bom` gives each import a line of the source.
+    The rule library-code has four kinds of records.  The entity of a record
+    call, reference or symbol starts with the assembler name of a symbol that
+    an instruction of the unit names.  Section.symbols() gives these names
+    with the first record of each.  The rule artifact-symbols explains the
+    imports of a member of an archive with them, and `guard bom` gives each
+    import a line of the source.
 
 THE REPORT OF A PARSE BUILD
     A build of a configuration that only parses has no object (`loop syntax`,
@@ -70,10 +112,45 @@ REPORT_SUFFIX = ".quarantine"
 # THE LIBRARY CODE).
 LIBRARY_RULE = "library-code"
 SYMBOL_RECORDS = frozenset({"call", "reference", "symbol"})
+# The two kinds of the rule quarantine with an include grammar, and the texts that divide their parts (THE ENTITIES OF
+# THE RECORDS).
+LAYER_HEADER = "layer-header"
+UPWARD_INCLUDE = "upward-include"
+HEADER_END = "> in "
+TARGET_LAYER_START = " ("
+TARGET_LAYER_END = ") from the layer "
+# The texts that divide the parts of a record of padded-list and of mint-pattern, and their facts.
+FACTS_SEPARATOR = " | "
+ELEMENT_SEPARATOR = ": "
+PADDED_FACTS = ("count", "holes")
+OWNER_FACT = " owner="
+ALIAS_FACT = "alias="
+MINT_TEXT_FACTS = ("name", "shape", "class")
+# The flags of a mint record, in the sequence of the record.
+MINT_FLAG_FACTS = (
+    "static",
+    "template",
+    "nodiscard",
+    "constexpr",
+    "noexcept",
+    "constrained",
+    "gated",
+    "projection",
+    "defined",
+)
+MINT_SHAPES = frozenset({"ctx", "token", "member"})
+# The class and the owner of a mint that is no member.
+NO_OWNER = "-"
+# The text between the name of a scope and the name in it (the family home).
+SCOPE_SEPARATOR = "::"
 
 
 class SectionError(ValueError):
     """An object or a section does not have the format that this module reads."""
+
+
+class EntityError(SectionError):
+    """The entity of a record does not have the grammar of its kind (THE ENTITIES OF THE RECORDS)."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True, order=True)
@@ -106,8 +183,11 @@ class Section:
         """
         found: dict[str, Finding] = {}
         for item in self.findings:
-            if item.rule == LIBRARY_RULE and item.kind in SYMBOL_RECORDS and item.entity.strip():
-                found.setdefault(item.entity.split(maxsplit=1)[0], item)
+            if item.rule != LIBRARY_RULE or item.kind not in SYMBOL_RECORDS:
+                continue
+            symbol = library_record(item.kind, item.entity).symbol
+            if symbol:
+                found.setdefault(symbol, item)
         return found
 
 
@@ -225,6 +305,284 @@ def read_report_file(path: Path) -> tuple[Finding, ...]:
         for number, line in enumerate(lines, start=1)
         if line and not line.startswith("#")
     )
+
+
+# ── The entities of the records ────────────────────────────────────
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LibraryRecord:
+    """The entity of a record of the rule library-code (THE ENTITIES OF THE RECORDS).
+
+    `symbol` is the assembler name of a record call, reference or symbol, and empty for a record inlined.  `name` is
+    the name of the library function or variable, and empty for a record symbol.
+    """
+
+    symbol: str
+    name: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Words:
+    """An entity of the rule quarantine with no parts: its words with one space between each two."""
+
+    text: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LayerHeader:
+    """The entity `<HEADER> in ALLOWANCE` of a finding layer-header.
+
+    `text` is the full entity, `header` is the header with its angle brackets, and `allowance` names the layers of the
+    headers that the file can include.
+    """
+
+    text: str
+    header: str
+    allowance: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class UpwardInclude:
+    """The entity `TARGET (TARGET_LAYER) from the layer LAYER` of a finding `upward-include`.
+
+    `text` is the full entity.  `target` is the file that the include names, `target_layer` is "the layer NAME" or
+    "no layer", and `layer` is the layer of the file that holds the include.
+    """
+
+    text: str
+    target: str
+    target_layer: str
+    layer: str
+
+
+# The entity of a finding of the rule quarantine that is not opted out.
+type FindingEntity = Words | LayerHeader | UpwardInclude
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class OptedOut:
+    """The entity `KIND ENTITY` of a finding opted-out: the kind and the entity of the finding in the region.
+
+    `text` is the full entity, and `inner` is the entity of the finding in the region.
+    """
+
+    text: str
+    kind: str
+    inner: FindingEntity
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PaddedList:
+    """The entity `DECLARATION: ELEMENT | count=N holes=H` of a line of the rule padded-list.
+
+    `entity` is `DECLARATION: ELEMENT`, as the plugin wrote it.  `count` is the element count of the list, and `holes`
+    is the number of the padding bits of one element.
+    """
+
+    entity: str
+    declaration: str
+    element: str
+    count: int
+    holes: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MintRecord:
+    """The entity of a record mint of the rule mint-pattern.
+
+    `entity` is the signature of the mint: its full name with its namespaces, and the types of its parameters.
+    `parameters` is the part of the signature after the name, from its opening parenthesis.  `class_name` is the name
+    of the class of a member with no namespace, and `owner` is the full name of the class, each NO_OWNER for no
+    member.  Each flag is a fact of the record.
+    """
+
+    entity: str
+    parameters: str
+    name: str
+    shape: str
+    class_name: str
+    owner: str
+    is_static: bool
+    is_template: bool
+    is_nodiscard: bool
+    is_constexpr: bool
+    is_noexcept: bool
+    is_constrained: bool
+    is_gated: bool
+    is_projection: bool
+    is_defined: bool
+
+    @property
+    def has_owner(self) -> bool:
+        """Return True for a member of a class: a mint with an owner."""
+        return self.owner != NO_OWNER
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MintAlias:
+    """The entity `ALIAS | alias=NAME owner=CLASS` of a record mint-alias of the rule mint-pattern.
+
+    `entity` is the full name of the alias, `name` is its name with no namespace, and `owner` is the full name of the
+    class that it names.
+    """
+
+    entity: str
+    name: str
+    owner: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class QualifiedName:
+    """The entity of a line of a rule of the family home: a name with the names of its scopes.
+
+    `text` is the name, and `simple_name` is its last part, after the last `::`.
+    """
+
+    text: str
+    simple_name: str
+
+
+def words_of(text: str) -> str:
+    """Return the words of a text with one space between each two (THE ENTITIES OF THE RECORDS)."""
+    return " ".join(text.split())
+
+
+def library_record(kind: str, text: str) -> LibraryRecord:
+    """Return the record of the entity of a line of the rule library-code (THE ENTITIES OF THE RECORDS).
+
+    A record of a kind of SYMBOL_RECORDS gives its first word as the symbol and its other words as the name.  Each
+    other kind gives its words as the name.
+    """
+    words = text.split()
+    if kind not in SYMBOL_RECORDS:
+        return LibraryRecord("", " ".join(words))
+    return LibraryRecord(words[0] if words else "", " ".join(words[1:]))
+
+
+def quarantine_entity(kind: str, text: str) -> FindingEntity:
+    """Return the record of the entity of a finding of the rule quarantine (THE ENTITIES OF THE RECORDS).
+
+    A finding `layer-header` gives a LayerHeader and a finding `upward-include` an UpwardInclude, when the text has
+    the grammar of the kind.  Each other entity gives its Words.  The function takes the kind and the text, because the
+    census of a fixture holds the same entities with no section.
+    """
+    words = words_of(text)
+    if kind == LAYER_HEADER:
+        head, separator, allowance = words.partition(HEADER_END)
+        if separator and head.startswith("<"):
+            return LayerHeader(words, f"{head}>", allowance)
+    elif kind == UPWARD_INCLUDE:
+        target, separator, rest = words.partition(TARGET_LAYER_START)
+        target_layer, layer_separator, layer = rest.partition(TARGET_LAYER_END)
+        if target and separator and layer_separator:
+            return UpwardInclude(words, target, target_layer, layer)
+    return Words(words)
+
+
+def opted_out(text: str) -> OptedOut:
+    """Return the record of the entity of a finding opted-out of the rule quarantine (THE ENTITIES OF THE RECORDS).
+
+    The first word is the kind of the finding in the region, and the other words are its entity.
+    """
+    words = words_of(text)
+    kind, _, entity = words.partition(" ")
+    return OptedOut(words, kind, quarantine_entity(kind, entity))
+
+
+def _facts_of(text: str, where: str) -> dict[str, str]:
+    """Return the value of each fact of a text of facts `KEY=VALUE KEY=VALUE ...`, in the sequence of the text.
+
+    Raises:
+        EntityError: If a word is not KEY=VALUE, or a key is there two times
+    """
+    values: dict[str, str] = {}
+    for word in text.split(" "):
+        key, equal, value = word.partition("=")
+        if not equal or not key or key in values:
+            raise EntityError(f"{where}: the fact {word!r} is not KEY=VALUE, or its key is there two times")
+        values[key] = value
+    return values
+
+
+def is_number(text: str) -> bool:
+    """Return True for a run of ASCII decimal digits."""
+    return text.isascii() and text.isdigit()
+
+
+def padded_list(text: str, where: str) -> PaddedList:
+    """Return the record of the entity of a line of the rule padded-list (THE ENTITIES OF THE RECORDS).
+
+    `where` names the line in a message.
+
+    Raises:
+        EntityError: If the entity is not `DECLARATION: ELEMENT | count=N holes=H`
+    """
+    entity, separator, facts = text.rpartition(FACTS_SEPARATOR)
+    declaration, element_separator, element = entity.partition(ELEMENT_SEPARATOR)
+    shape = f"{where}: a line of padded-list is 'DECLARATION: ELEMENT | count=N holes=H'"
+    if not separator or not element_separator or not declaration or not element:
+        raise EntityError(shape)
+    values = _facts_of(facts, where)
+    if tuple(values) != PADDED_FACTS or not all(is_number(value) for value in values.values()):
+        raise EntityError(shape)
+    return PaddedList(entity, declaration, element, int(values["count"]), int(values["holes"]))
+
+
+def mint_record(text: str, where: str) -> MintRecord:
+    """Return the record of the entity of a record mint of the rule mint-pattern (THE ENTITIES OF THE RECORDS).
+
+    `where` names the line in a message.
+
+    Raises:
+        EntityError: If the entity is not `SIGNATURE | FACTS` with each fact of a mint record, the owner last
+    """
+    entity, separator, facts = text.rpartition(FACTS_SEPARATOR)
+    head, marker, owner = facts.partition(OWNER_FACT)
+    if not separator or not entity or not marker or not owner:
+        raise EntityError(f"{where}: a mint record is 'SIGNATURE | FACTS', and its last fact is the owner")
+    values = _facts_of(head, where)
+    flags = [values.get(key) for key in MINT_FLAG_FACTS]
+    if set(values) != {*MINT_TEXT_FACTS, *MINT_FLAG_FACTS} or any(value not in ("0", "1") for value in flags):
+        raise EntityError(
+            f"{where}: a mint record gives {', '.join(MINT_TEXT_FACTS)} and the flags {', '.join(MINT_FLAG_FACTS)}, "
+            f"each flag 0 or 1"
+        )
+    if values["shape"] not in MINT_SHAPES:
+        raise EntityError(f"{where}: the shape {values['shape']!r} is not one of {', '.join(sorted(MINT_SHAPES))}")
+    name = values["name"]
+    _, opening, after = entity.rpartition(f"{name}(")
+    return MintRecord(
+        entity,
+        f"({after}" if opening else "",
+        name,
+        values["shape"],
+        values["class"],
+        owner,
+        *(flag == "1" for flag in flags),
+    )
+
+
+def mint_alias(text: str, where: str) -> MintAlias:
+    """Return the record of the entity of a record mint-alias of the rule mint-pattern (THE ENTITIES OF THE RECORDS).
+
+    `where` names the line in a message.
+
+    Raises:
+        EntityError: If the entity is not `ALIAS | alias=NAME owner=CLASS`
+    """
+    entity, separator, facts = text.rpartition(FACTS_SEPARATOR)
+    head, marker, owner = facts.partition(OWNER_FACT)
+    name = head.removeprefix(ALIAS_FACT)
+    if not separator or not entity or not marker or not owner or not head.startswith(ALIAS_FACT) or " " in name:
+        raise EntityError(f"{where}: an alias record is 'ALIAS | alias=NAME owner=CLASS'")
+    return MintAlias(entity, name, owner)
+
+
+def qualified_name(text: str) -> QualifiedName:
+    """Return the record of the entity of a line of a rule of the family home (THE ENTITIES OF THE RECORDS)."""
+    words = words_of(text)
+    return QualifiedName(words, words.rpartition(SCOPE_SEPARATOR)[2])
 
 
 def print_objects(paths: list[str]) -> ExitCode:

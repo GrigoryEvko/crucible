@@ -62,6 +62,7 @@ from assay.core import ruletable
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.plugin import declarations, runner
+from assay.readers import sections as plugin_sections
 from assay.readers import tsast
 
 PROGRAM = "loop derive mint-inventory"
@@ -106,16 +107,13 @@ class Row:
     @property
     def name(self) -> str:
         """Return `Class::name` for a member mint, or the bare name."""
-        return (
-            f"{self.mint.class_name}::{self.mint.name}" if self.mint.owner != declarations.NO_OWNER else self.mint.name
-        )
+        record = self.mint.record
+        return f"{record.class_name}::{record.name}" if record.has_owner else record.name
 
     @property
     def label(self) -> str:
         """Return the name, with the parameter types when the header overloads the mint."""
-        if not self.is_overloaded:
-            return self.name
-        return f"{self.name}({self.mint.entity.rpartition(f'{self.mint.name}(')[2]}"
+        return f"{self.name}{self.mint.record.parameters}" if self.is_overloaded else self.name
 
 
 def family_of(path: str) -> str:
@@ -172,10 +170,11 @@ def fixture_count(
 
     Complexity: linear in the fixtures.
     """
-    if mint.owner != declarations.NO_OWNER and carriers > 1:
-        spellings = {mint.class_name} | aliases.get(mint.owner, frozenset())
-        return sum(1 for spelled in names if mint.name in spelled and spellings & spelled)
-    return sum(1 for spelled in names if mint.name in spelled)
+    record = mint.record
+    if record.has_owner and carriers > 1:
+        spellings = {record.class_name} | aliases.get(record.owner, frozenset())
+        return sum(1 for spelled in names if record.name in spelled and spellings & spelled)
+    return sum(1 for spelled in names if record.name in spelled)
 
 
 def carved(root: Path, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
@@ -205,7 +204,7 @@ def rows_of(context: runner.PluginContext) -> list[Row]:
         rule = declarations.rule_of(context, declarations.MINT_RULE)
         mints = declarations.mints(context, rule)
         aliases = declarations.aliases(context, rule)
-    except (runner.BuildError, declarations.RecordError, ruletable.TableError) as problem:
+    except (runner.BuildError, plugin_sections.EntityError, ruletable.TableError) as problem:
         raise InventoryError(str(problem)) from None
     carve_outs = carved(context.root, rule)
     files = fixture_files(context.root)
@@ -214,27 +213,29 @@ def rows_of(context: runner.PluginContext) -> list[Row]:
     # The mints of one name in one class, or with no class, of one header: the overloads of the name.
     sites: dict[tuple[str, str, str], int] = {}
     for mint in mints:
-        carriers.setdefault((family_of(mint.path), mint.name), set()).add(mint.owner)
-        site = (mint.path, mint.owner, mint.name)
+        carriers.setdefault((family_of(mint.path), mint.record.name), set()).add(mint.record.owner)
+        site = (mint.path, mint.record.owner, mint.record.name)
         sites[site] = sites.get(site, 0) + 1
     rows = [
         Row(
             mint,
             group_of(mint.path),
             family_of(mint.path),
-            fixture_count(mint, len(carriers[(family_of(mint.path), mint.name)]), names[family_of(mint.path)], aliases),
-            sites[(mint.path, mint.owner, mint.name)] > 1,
-            mint.entity in carve_outs[CARVE_CX],
-            mint.entity in carve_outs[CARVE_RQ],
+            fixture_count(
+                mint, len(carriers[(family_of(mint.path), mint.record.name)]), names[family_of(mint.path)], aliases
+            ),
+            sites[(mint.path, mint.record.owner, mint.record.name)] > 1,
+            mint.record.entity in carve_outs[CARVE_CX],
+            mint.record.entity in carve_outs[CARVE_RQ],
         )
         for mint in mints
     ]
-    return sorted(rows, key=lambda row: (row.group, row.name, row.mint.path, row.mint.entity))
+    return sorted(rows, key=lambda row: (row.group, row.name, row.mint.path, row.mint.record.entity))
 
 
 def cells(row: Row) -> list[str]:
     """Return the cells of one row: mint, site, nd, cx, ne, rq, cb, fit and HS14."""
-    mint = row.mint
+    mint = row.mint.record
     if mint.is_constexpr:
         cx = "Y"
     elif mint.is_projection:
@@ -251,7 +252,7 @@ def cells(row: Row) -> list[str]:
     hs14 = f"HS14: {row.hs14}" + (" ⚠" if row.hs14 < HS14_FLOOR else "")
     return [
         f"`{row.label}`",
-        f"`{mint.path}`",
+        f"`{row.mint.path}`",
         "Y" if mint.is_nodiscard else "-",
         cx,
         "Y" if mint.is_noexcept else "-",
@@ -324,8 +325,8 @@ def render(rows: Sequence[Row]) -> str:
         (SUBSTRATE, "substrate (`include/foundation/`, `include/fixy/`)"),
     ):
         mine = [row for row in rows if row.family == family]
-        shapes = {shape: sum(row.mint.shape == shape for row in mine) for shape in ("ctx", "token", "member")}
-        unfit = sum(1 for row in mine if row.mint.shape == "ctx" and not row.mint.is_gated)
+        shapes = {shape: sum(row.mint.record.shape == shape for row in mine) for shape in ("ctx", "token", "member")}
+        unfit = sum(1 for row in mine if row.mint.record.shape == "ctx" and not row.mint.record.is_gated)
         under = sum(1 for row in mine if row.hs14 < HS14_FLOOR)
         out.append(
             f"| {label} | {len(mine)} | {shapes['ctx']} | {shapes['token']} | {shapes['member']} | {unfit} | {under} |\n"

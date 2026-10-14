@@ -566,6 +566,11 @@ def entity_of(symbol: str, version: str) -> str:
     return f"{symbol}{VERSION_MARK}{version}" if version else symbol
 
 
+def symbol_of(entity: str) -> str:
+    """Return the symbol of the entity of an import that entity_of() wrote, with no version (THE VERSIONS)."""
+    return entity.partition(VERSION_MARK)[0]
+
+
 def is_linker_name(symbol: str) -> bool:
     """Return True for a name that the linker makes itself (THE PROVIDERS)."""
     return symbol in LINKER_NAMES or symbol.startswith(LINKER_PREFIXES)
@@ -1096,7 +1101,7 @@ def import_message(
     if mark == RATCHET:
         return (
             f"{archive} uses the libstdc++ symbol {shown} in {used} ({entity}), of the class "
-            f"{classify(entity.partition(VERSION_MARK)[0])}.  A change can only remove a libstdc++ use (rule R5): use a "
+            f"{classify(symbol_of(entity))}.  A change can only remove a libstdc++ use (rule R5): use a "
             f"type of fixy or foundation"
         )
     if mark in (LIBC_ALLOW, CRT_ALLOW):
@@ -1227,9 +1232,7 @@ def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
     for path in sorted({item.path for item in symbols}):
         marks = Counter(item.kind for item in symbols if item.path == path)
         classes = Counter(
-            classify(item.entity.partition(VERSION_MARK)[0])
-            for item in symbols
-            if item.path == path and item.kind == RATCHET
+            classify(symbol_of(item.entity)) for item in symbols if item.path == path and item.kind == RATCHET
         )
         shown = ", ".join(f"{name} {classes[name]}" for name in CLASSES if classes[name]) or "none"
         counted = ", ".join(f"{marks[mark]} {mark}" for mark in MARKS if marks[mark] and mark != RATCHET)

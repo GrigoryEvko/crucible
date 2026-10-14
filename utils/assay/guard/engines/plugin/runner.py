@@ -9,7 +9,9 @@ THE SECTIONS
     finding is one finding line.  The same line from two objects counts one
     time, for example a finding of a header that two units include.  A line
     of the kind region is no finding: the census keeps the first line and the
-    reason of each opt-out region of each file.
+    reason of each opt-out region of each file.  The reason has one space
+    between each two words (assay.readers.sections, THE ENTITIES OF THE
+    RECORDS).
 
     A build of a configuration that only parses has no object
     (assay.core.configuration.is_parse_build).  `loop syntax` parses each
@@ -270,7 +272,8 @@ def census_of(items: Sequence[ObjectSection], commands: Sequence[str] = ()) -> C
         else:
             for found in item.section.findings:
                 if found.kind == quarantine_sections.REGION:
-                    regions.add((found.file, found.line, " ".join(found.entity.split())))
+                    reason = quarantine_sections.quarantine_entity(found.kind, found.entity).text
+                    regions.add((found.file, found.line, reason))
                 else:
                     findings.add(found)
     grouped: dict[str, list[tuple[int, str]]] = {}

@@ -49,10 +49,11 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     for row in rows:
         if row.hs14 >= mint_inventory.HS14_FLOOR:
             continue
+        entity = row.mint.record.entity
         message = (
-            f"the mint {row.mint.entity} has {row.hs14} negative-compile fixture(s) of the {row.family} layer, and "
-            f"HS14 asks for {mint_inventory.HS14_FLOOR}.  Write a fixture that its constraint refuses, in a fixture "
-            f"directory of its layer, or add a ledger row with the reason"
+            f"the mint {entity} has {row.hs14} negative-compile fixture(s) of the {row.family} layer, and HS14 asks "
+            f"for {mint_inventory.HS14_FLOOR}.  Write a fixture that its constraint refuses, in a fixture directory of "
+            f"its layer, or add a ledger row with the reason"
         )
-        found.append(check_report.Finding("error", row.mint.path, row.mint.line, RULE, message, "", row.mint.entity))
+        found.append(check_report.Finding("error", row.mint.path, row.mint.line, RULE, message, "", entity))
     return found

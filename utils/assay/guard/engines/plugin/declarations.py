@@ -24,8 +24,10 @@ THE POSITION OF AN ENTITY
 
 THE MINTS
     A record of the kind mint holds the facts of one mint (declaration.cpp,
-    THE RULE mint-pattern).  mints() gives one mint for each entity: the
-    record with the body of the mint, and else the record at the first
+    THE RULE mint-pattern).  The reader gives these facts
+    (assay.readers.sections, THE ENTITIES OF THE RECORDS).  mints() gives one
+    mint for each entity:
+    the record with the body of the mint, and else the record at the first
     position.  A record of the kind mint-alias names an alias of a class
     with a member mint.  aliases() gives the names of the aliases of each
     class.  The rule mint-pattern, the rule mint-floor and the inventory of
@@ -49,28 +51,6 @@ MINT_RECORD = "mint"
 ALIAS_RECORD = "mint-alias"
 # The kinds of the lines of the rule mint-pattern that are records and no findings.
 RECORD_KINDS = frozenset({MINT_RECORD, ALIAS_RECORD})
-# The separator between the entity of a mint and its facts, in a record.
-FACTS_SEPARATOR = " | "
-# The fact that a record gives last, because the name of a class can hold a space.
-OWNER_FACT = " owner="
-# The facts of a record with a text value, other than the owner.
-TEXT_FACTS = ("name", "shape", "class")
-ALIAS_FACT = "alias="
-# The facts of a record with the value 0 or 1, in the sequence of the record.
-FLAG_FACTS = (
-    "static",
-    "template",
-    "nodiscard",
-    "constexpr",
-    "noexcept",
-    "constrained",
-    "gated",
-    "projection",
-    "defined",
-)
-SHAPES = frozenset({"ctx", "token", "member"})
-# The owner of a mint that is no member.
-NO_OWNER = "-"
 SCOPE_TRACKED = "tracked"
 # The scope words that a class of the rule table gives (ruletable.RuleTable.class_of).
 CLASS_WORDS = frozenset({"base", "quarantined"})
@@ -78,35 +58,13 @@ CLASS_WORDS = frozenset({"base", "quarantined"})
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 
 
-class RecordError(ValueError):
-    """A record line of the plugin does not have the format of its kind."""
-
-
 @dataclass(frozen=True, slots=True)
 class Mint:
-    """One mint, as its record gives it (declaration.cpp, THE RULE mint-pattern).
+    """One mint of the build: the position of its selected record and the facts of that record (THE MINTS)."""
 
-    `entity` is the full name of the mint, with its namespaces and the types of its parameters.  `class_name` is the
-    name of the class of a member with no namespace, and `owner` is its full name, each "-" for no member.  Each flag
-    is a fact of the record.
-    """
-
-    entity: str
     path: str
     line: int
-    name: str
-    shape: str
-    class_name: str
-    owner: str
-    is_static: bool
-    is_template: bool
-    is_nodiscard: bool
-    is_constexpr: bool
-    is_noexcept: bool
-    is_constrained: bool
-    is_gated: bool
-    is_projection: bool
-    is_defined: bool
+    record: plugin_sections.MintRecord
 
 
 def rule_of(context: runner.PluginContext, rule_id: str) -> rule_registry.Rule:
@@ -198,68 +156,18 @@ def rule_findings(
     return found
 
 
-def parse_mint(item: plugin_sections.Finding) -> Mint:
-    """Return the mint of one record line.
-
-    Raises:
-        RecordError: If the entity of the line is not `ENTITY | FACTS` with each fact of a mint record
-    """
-    entity, separator, facts = item.entity.rpartition(FACTS_SEPARATOR)
-    head, marker, owner = facts.partition(OWNER_FACT)
-    if not separator or not entity or not marker or not owner:
-        raise RecordError(f"{item.text()!r}: a mint record is 'ENTITY | FACTS', and its last fact is the owner")
-    values: dict[str, str] = {}
-    for word in head.split(" "):
-        key, equal, value = word.partition("=")
-        if not equal or key in values:
-            raise RecordError(f"{item.text()!r}: the fact {word!r} is not KEY=VALUE, or its key is there two times")
-        values[key] = value
-    flags = {key: values.get(key) for key in FLAG_FACTS}
-    if set(values) != {*TEXT_FACTS, *FLAG_FACTS} or any(value not in ("0", "1") for value in flags.values()):
-        raise RecordError(
-            f"{item.text()!r}: a mint record gives {', '.join(TEXT_FACTS)} and the flags {', '.join(FLAG_FACTS)}, each "
-            f"flag 0 or 1"
-        )
-    if values["shape"] not in SHAPES:
-        raise RecordError(f"{item.text()!r}: the shape {values['shape']!r} is not one of {', '.join(sorted(SHAPES))}")
-    return Mint(
-        entity,
-        item.file,
-        item.line,
-        values["name"],
-        values["shape"],
-        values["class"],
-        owner,
-        *(flags[key] == "1" for key in FLAG_FACTS),
-    )
-
-
-def parse_alias(item: plugin_sections.Finding) -> tuple[str, str]:
-    """Return the owner and the name of the alias of one record of the kind mint-alias.
-
-    Raises:
-        RecordError: If the entity of the line is not `ALIAS | alias=NAME owner=CLASS`
-    """
-    entity, separator, facts = item.entity.rpartition(FACTS_SEPARATOR)
-    head, marker, owner = facts.partition(OWNER_FACT)
-    name = head.removeprefix(ALIAS_FACT)
-    if not separator or not entity or not marker or not owner or not head.startswith(ALIAS_FACT) or " " in name:
-        raise RecordError(f"{item.text()!r}: an alias record is 'ALIAS | alias=NAME owner=CLASS'")
-    return owner, name
-
-
 def owner_aliases(records: Iterable[plugin_sections.Finding]) -> dict[str, frozenset[str]]:
     """Return the names of the aliases of each class, by the full name of the class (THE MINTS).
 
     Complexity: linear in the records.
 
     Raises:
-        RecordError: If a record does not have the format of an alias record
+        EntityError: If a record does not have the grammar of an alias record
     """
     names: dict[str, set[str]] = {}
     for item in records:
-        owner, name = parse_alias(item)
-        names.setdefault(owner, set()).add(name)
+        alias = plugin_sections.mint_alias(item.entity, repr(item.text()))
+        names.setdefault(alias.owner, set()).add(alias.name)
     return {owner: frozenset(found) for owner, found in names.items()}
 
 
@@ -269,15 +177,15 @@ def chosen_mints(records: Iterable[plugin_sections.Finding]) -> dict[str, Mint]:
     Complexity: O(r log r) for r records.
 
     Raises:
-        RecordError: If a record does not have the format of a mint record
+        EntityError: If a record does not have the grammar of a mint record
     """
-    chosen: dict[str, tuple[bool, plugin_sections.Finding, Mint]] = {}
+    chosen: dict[str, Mint] = {}
     for item in sorted(records):
-        mint = parse_mint(item)
-        held = chosen.get(mint.entity)
-        if held is None or (mint.is_defined and not held[0]):
-            chosen[mint.entity] = (mint.is_defined, item, mint)
-    return {entity: mint for entity, (_, _, mint) in chosen.items()}
+        record = plugin_sections.mint_record(item.entity, repr(item.text()))
+        held = chosen.get(record.entity)
+        if held is None or (record.is_defined and not held.record.is_defined):
+            chosen[record.entity] = Mint(item.file, item.line, record)
+    return chosen
 
 
 def mints(context: runner.PluginContext, rule: rule_registry.Rule) -> list[Mint]:
@@ -286,11 +194,11 @@ def mints(context: runner.PluginContext, rule: rule_registry.Rule) -> list[Mint]
     Raises:
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
-        RecordError: If a record does not have the format of a mint record
+        EntityError: If a record does not have the grammar of a mint record
         ruletable.TableError: If the rule table does not obey its grammar
     """
     records = [item for item in lines_of(rule, context) if item.kind == MINT_RECORD]
-    return sorted(chosen_mints(records).values(), key=lambda mint: (mint.path, mint.line, mint.entity))
+    return sorted(chosen_mints(records).values(), key=lambda mint: (mint.path, mint.line, mint.record.entity))
 
 
 def aliases(context: runner.PluginContext, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
@@ -299,7 +207,7 @@ def aliases(context: runner.PluginContext, rule: rule_registry.Rule) -> dict[str
     Raises:
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
-        RecordError: If a record does not have the format of an alias record
+        EntityError: If a record does not have the grammar of an alias record
         ruletable.TableError: If the rule table does not obey its grammar
     """
     return owner_aliases(item for item in lines_of(rule, context) if item.kind == ALIAS_RECORD)

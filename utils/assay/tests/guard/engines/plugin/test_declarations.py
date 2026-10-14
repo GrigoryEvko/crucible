@@ -6,7 +6,7 @@ THE CASES
     The cases hold:
       * The scope of a rule: a path, the scope word `tracked` and the class words
       * One position for each kind and entity
-      * The facts of a mint record, and each record that does not read
+      * The position and the facts of a mint, and each record that does not read
       * The aliases of each class, from the records of the kind mint-alias
       * The record with the body of a mint, before the first position
       * The findings of the rule mint-pattern at the position of the chosen record
@@ -111,25 +111,15 @@ def place_cases(expect: testing.Expect) -> None:
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Hold the facts of a mint record, the owner with a space, and each record that does not read."""
-    mint = declarations.parse_mint(record("include/fixy/A.h", 4, 1, "fixy::Cell<int, char>", class_name="Cell"))
+    """Hold the mint of a record with its position and its facts, and each record that does not read."""
+    item = record("include/fixy/A.h", 4, 1, "fixy::Cell<int, char>", class_name="Cell")
+    mint = declarations.chosen_mints([item])[ENTITY]
+    expect("a mint has the position of its record", (mint.path, mint.line) == ("include/fixy/A.h", 4))
     expect(
-        "a record gives the entity, the name, the shape and the class",
-        (mint.entity, mint.name, mint.shape, mint.class_name) == (ENTITY, "mint_cell", "ctx", "Cell"),
+        "a mint has the facts that the reader gives",
+        mint.record == plugin_sections.mint_record(item.entity, "planted")
+        and (mint.record.name, mint.record.owner) == ("mint_cell", "fixy::Cell<int, char>"),
     )
-    expect(
-        "a record gives each flag",
-        mint.is_template
-        and mint.is_nodiscard
-        and not mint.is_constexpr
-        and mint.is_noexcept
-        and mint.is_constrained
-        and mint.is_gated
-        and not mint.is_projection
-        and mint.is_defined
-        and not mint.is_static,
-    )
-    expect("the owner is the last fact, also with a space in it", mint.owner == "fixy::Cell<int, char>")
     broken = [
         plugin_sections.Finding("include/fixy/A.h", 4, 1, RULE, declarations.MINT_RECORD, f"{ENTITY} {FACTS}"),
         record("include/fixy/A.h", 4, 2),
@@ -137,15 +127,19 @@ def record_cases(expect: testing.Expect) -> None:
         record("include/fixy/A.h", 4, 1, facts=FACTS.replace(" gated=1", "")),
         record("include/fixy/A.h", 4, 1, facts=f"{FACTS} name=again"),
     ]
-    refused = 0
-    for item in broken:
+    messages: list[str] = []
+    for broken_item in broken:
         try:
-            declarations.parse_mint(item)
-        except declarations.RecordError:
-            refused += 1
+            declarations.chosen_mints([broken_item])
+        except plugin_sections.EntityError as problem:
+            messages.append(str(problem))
     expect(
         "a record with no facts, a flag of 2, an unknown shape, a missing flag and a second name do not read",
-        refused == len(broken),
+        len(messages) == len(broken),
+    )
+    expect(
+        "the error names the line of the record",
+        all(message.startswith(repr(line.text())) for message, line in zip(messages, broken, strict=True)),
     )
 
 
@@ -173,7 +167,7 @@ def alias_cases(expect: testing.Expect) -> None:
     for item in broken:
         try:
             declarations.owner_aliases([item])
-        except declarations.RecordError:
+        except plugin_sections.EntityError:
             refused += 1
     expect(
         "a record with no facts, no fact alias, no owner or a name with a space does not read",

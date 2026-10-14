@@ -134,24 +134,10 @@ def fixture_cases(expect: testing.Expect) -> None:
 def count_cases(expect: testing.Expect) -> None:
     """Hold the count of a member mint of a name that two classes have, through its class and an alias of it."""
     names = [frozenset({"Holder", "mint_member"}), frozenset({"Kept", "mint_member"}), frozenset({"mint_member"})]
-    keeper = declarations.Mint(
-        entity="fixy::Keeper::mint_member()",
-        path="include/fixy/A.h",
-        line=1,
-        name="mint_member",
-        shape="member",
-        class_name="Keeper",
-        owner="fixy::Keeper",
-        is_static=False,
-        is_template=False,
-        is_nodiscard=True,
-        is_constexpr=True,
-        is_noexcept=True,
-        is_constrained=False,
-        is_gated=False,
-        is_projection=False,
-        is_defined=True,
-    )
+    keeper_text = record(
+        "fixy::Keeper::mint_member()", "mint_member", "member", class_name="Keeper", owner="fixy::Keeper"
+    ).entity
+    keeper = declarations.Mint("include/fixy/A.h", 1, plugin_sections.mint_record(keeper_text, "planted"))
     aliases = {"fixy::Keeper": frozenset({"Kept"})}
     expect(
         "a fixture counts for the class of a mint through an alias of the class",
@@ -169,7 +155,7 @@ def row_cases(expect: testing.Expect) -> None:
         root = Path(scratch_text)
         scratch_tree(root)
         context = context_of(root)
-        rows = {row.mint.entity: row for row in inventory.rows_of(context)}
+        rows = {row.mint.record.entity: row for row in inventory.rows_of(context)}
         expect("each mint record gives one row", len(rows) == 5)
         expect("a mint named by two fixtures of its layer has the count two", rows["fixy::mint_cell(int)"].hs14 == 2)
         expect(

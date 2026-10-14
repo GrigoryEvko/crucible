@@ -396,7 +396,7 @@ def unit_cases(expect: testing.Expect) -> None:
     )
     expect(
         "the entity of an opted-out row holds the reason of its region, and the inner kind and entity",
-        quarantine.opted_out_key("PROBE:  a  region", "std-object std::vector")
+        quarantine.opted_out_key("PROBE: a region", "std-object  std::vector")
         == "PROBE: a region | std-object std::vector"
         and quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )

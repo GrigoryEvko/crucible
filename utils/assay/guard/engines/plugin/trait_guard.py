@@ -79,7 +79,8 @@ def message(item: quarantine_sections.Finding, homes: Sequence[ruletable.Home]) 
             f"the gate reads the open template {item.entity}: a unit can specialize it, and the specialization "
             f"changes what the gate admits.  Read a concept, or a consteval function that is not a template"
         )
-    row = home.row_of(item.entity.rsplit("::", 1)[-1], homes) or home.row_of(item.entity, homes)
+    name = quarantine_sections.qualified_name(item.entity)
+    row = home.row_of(name.simple_name, homes) or home.row_of(name.text, homes)
     where = (
         f"its home row admits only {home.paths_text(row)}"
         if row is not None
