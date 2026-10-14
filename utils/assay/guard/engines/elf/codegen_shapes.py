@@ -462,6 +462,10 @@ PROBES: tuple[Probe, ...] = (
         "path, these flags add a copy of the value and a second bounds compare of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
+    Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
+    Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
+    Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),
+    Probe("token_assign", "the user-provided move assignment of a token moves no byte"),
 )
 
 

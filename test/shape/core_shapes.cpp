@@ -1,11 +1,13 @@
-// The probes of the shape check of the core families.
+// The probes of the shape check of the core families and of the linear
+// values.
 //
 // The rule codegen-shapes (utils/assay/guard/engines/elf/codegen_shapes.py) reads the disassembly of this unit.  Each
 // probe is a pair of functions.  The first function does one hot operation of a
-// family of include/foundation/core.  The second function does the same work in
-// the raw form that the family replaces: a std::atomic operation, a raw pointer
-// loop, memcpy or memset, a std::unique_ptr or std::optional access, or
-// std::unreachable.  The check compares the instructions of the two functions
+// family of include/foundation/core, of fixy::Linear or of a permission token.
+// The second function does the same work in the raw form that the family
+// replaces: a std::atomic operation, a raw pointer loop, memcpy or memset, a
+// std::unique_ptr or std::optional access, std::unreachable, a plain value or
+// an empty class.  The check compares the instructions of the two functions
 // of each pair, and the probe of the pair in the rule declares the
 // differences that the family function can add.
 //
@@ -20,7 +22,10 @@
 // is the reference for the shape of its family operation, so it must stay raw.
 
 #include <fixy/Core.h>
+#include <fixy/Qtt.h>
 #include <foundation/Quarantine.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -164,6 +169,32 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
     }
 }
 
+// ── Linear and the permission tokens ────────────────────────────────────────
+
+struct ProbeRegion final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct ProbeBrand final {};
+using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand>;
+
+// The move constructor and the destructor of a Linear are trivial, so the
+// ABI passes a Linear in a register, as it passes its value.
+[[gnu::used]] int linear_consume(fixy::Linear<int> value) noexcept { return std::move(value).consume(); }
+
+// The move assignment of a Linear is user-provided, so the class is not
+// trivially copyable.  It stores the value, as the assignment of the value
+// does.
+[[gnu::used]] void linear_assign(fixy::Linear<int>& target, fixy::Linear<int>& source) noexcept {
+    target = std::move(source);
+}
+
+// A token is empty, and its move constructor is trivial, so a pass and a
+// return move no byte.
+[[gnu::used]] ProbeToken token_pass(ProbeToken token) noexcept { return token; }
+
+// The move assignment of a token is user-provided, and it moves no byte.
+[[gnu::used]] void token_assign(ProbeToken& target, ProbeToken& source) noexcept { target = std::move(source); }
+
 // ── The raw forms ───────────────────────────────────────────────────────────
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the raw form that the shape of each family probe is compared with")
@@ -274,6 +305,18 @@ struct RawWindow final {
             std::unreachable();
     }
 }
+
+// The raw form of a token is an empty class that the ABI passes in no
+// register.
+struct RawToken final {};
+
+[[gnu::used]] int linear_consume_raw(int value) noexcept { return value; }
+
+[[gnu::used]] void linear_assign_raw(int& target, int& source) noexcept { target = source; }
+
+[[gnu::used]] RawToken token_pass_raw(RawToken token) noexcept { return token; }
+
+[[gnu::used]] void token_assign_raw(RawToken& target, RawToken& source) noexcept { target = source; }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
