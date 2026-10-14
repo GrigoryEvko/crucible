@@ -90,6 +90,7 @@ utils/assay/loop/teststep.py | print | 1 | keeps_cores | A use of today.  The ch
 utils/assay/loop/teststep.py | print | 2 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/teststep.py | print | 1 | report | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/teststep.py | repository-root | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
+utils/assay/loop/tracer.py | subprocess | 2 | Tracer.start | The traced start of loop test-step: the child installs the seccomp filter between the fork and the exec, which no start of assay.core.proc can do (the docstring of assay.core.proc, THE THREE STARTS OUTSIDE THIS MODULE)
 utils/assay/mutation/run.py | print | 1 | run_header | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/oracle/runner.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/readers/tsast.py | print | 3 | _self_test | A use of today.  The change that calls the owner of the job lowers the count

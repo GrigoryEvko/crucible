@@ -4931,7 +4931,9 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # rule test-registration, the counted rules of the
 # engine plugin, the writer of the walk list, the writer of the header
 # costs, the writer of the row-hash golden and the driver of a parse build
-# plant their input in throwaway trees.  The tests of the reader of
+# plant their input in throwaway trees.  The tests of the read set of a test
+# and of the tracer of its calls plant test programs in the work root of the
+# caches.  The tests of the reader of
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
 # of the import closure imports the module of each hidden subcommand of the
 # masters in a new interpreter.
@@ -4971,7 +4973,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.plugin.test_counted loop.derive.test_walk_units loop.derive.test_header_lists
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
-        loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan)
+        loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset
+        loop.test_tracer)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

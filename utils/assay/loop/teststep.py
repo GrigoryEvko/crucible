@@ -156,8 +156,21 @@ THE VERSION
         package assay, because the master runs them.
     The fixture driver gives the version of its compile: the command of the
     compile and each file that the compile read.  A run with no version is
-    judged alone, and the record keeps it alone.  The launcher reads no other
-    input of a test, such as a data file that the test opens.
+    judged alone, and the record keeps it alone.  The version holds no other
+    input of a test, such as a data file that the test opens.  The read set
+    holds such a file (THE READ SET).
+
+THE READ SET
+    The launcher can trace the system calls of a test with a program in the
+    build directory (assay.loop.tracer).  The trace gives the read set of the
+    run: each file that the test and its children open for read, run or list.
+    The launcher writes it to BUILD/test-records/NAME.test.reads
+    (assay.loop.readset).
+    The launcher traces a run when the test has no current read set
+    (assay.loop.readset, THE RETRACE).  The version of a trace is the version
+    of the run (THE VERSION) with the clean environment.  Each other run has
+    no trace and costs no import of the tracer.  A failure of the trace or of
+    the write of the read set does not change the status of the test.
 
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
 registry and another directory of ledgers, which holds RULE.txt for each
@@ -180,6 +193,8 @@ from assay.core import record as cost_record
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from assay.loop.readset import Plan
 
 ROWS = ("test-time", "test-memory", "test-instructions")
 # The rule that holds the error level of a run with an accurate instruction count, and the instructions in one G.
@@ -637,6 +652,23 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     return status
 
 
+def traced_run(build_dir: str, name: str, command: Sequence[str], version: str,
+               clean: Iterable[tuple[str, str]]) -> Plan | None:
+    """Return the plan of a traced run of a test, or None when its read set is current (THE READ SET).
+
+    Args:
+        build_dir: The build directory of the test
+        name: The name of the test
+        command: The command of the test
+        version: The version of the run (THE VERSION)
+        clean: The clean environment of the test
+    """
+    from assay.loop import readset
+
+    words = [version, *(f"{key}={value}" for key, value in clean)]
+    return readset.plan(build_dir, name, command, version_of(words, ()))
+
+
 def main(argv: list[str]) -> int:
     """Run the test of the command line, and end as it ended.
 
@@ -675,11 +707,15 @@ def main(argv: list[str]) -> int:
     os.environ.clear()
     os.environ.update(clean)
     os.environ[LAUNCHED_ENV] = name
+    traced_dir = build_dir if is_built else None
+    plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     try:
-        run = cost_meter.measure(command, count_instructions=True)
+        run = cost_meter.measure(command, count_instructions=True, supervisor=None if plan is None else plan.tracer)
     except OSError as error:
         print(f"loop test-step: the test {command[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)
+    if plan is not None:
+        safely(lambda: plan.save(run.exit_code), None)
     status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget, version=version)
     stop_core_dumps()
     cost_meter.end_like(status)

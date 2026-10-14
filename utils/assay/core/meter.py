@@ -27,6 +27,15 @@ MEASURE
     measurement also holds the user instructions of the command (THE
     INSTRUCTION COUNT below).
 
+A TRACED RUN
+    With a supervisor, measure() starts the command with supervisor.start(),
+    and with no spawn.  It calls supervisor.serve() until the command ends,
+    waits for the command, reads the counter, and calls supervisor.finish().
+    The tracer of assay.loop.tracer is such a supervisor, and `loop test-step`
+    gives it for a traced run of a test.  The wall time and the count end at
+    the wait.  The answers to the processes that outlive the command are then
+    not in the measure.
+
 THE OWN RUN
     A process that is a test itself, such as the fixture driver `loop
     fixture`, measures its own run: start_self() at the start of its work,
@@ -149,6 +158,25 @@ THE REGISTRY AND THE LEDGERS
 import os
 import sys
 import time
+
+# The names are only for the types, and a step meter does not pay the import of typing.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Protocol
+
+    class Supervisor(Protocol):
+        """The start of a command that a supervisor monitors, such as the tracer of assay.loop.tracer (A TRACED RUN)."""
+
+        def start(self, command: list[str], environment: Mapping[str, str]) -> int:
+            """Start the command, and return its process ID."""
+
+        def serve(self, child: int) -> None:
+            """Monitor the command until it ends."""
+
+        def finish(self) -> None:
+            """Stop the monitor after the wait for the command, and raise OSError when the command did not start."""
+
 
 KIND_FILE = "build-kind.txt"
 CONFIGURATION_FILE = "build-configuration.txt"
@@ -383,7 +411,7 @@ def read_instruction_counter(descriptor: int) -> int | None:
 
 
 def measure(command: list[str], environment: dict[str, str] | None = None, cpu_limit_s: float | None = None,
-            count_instructions: bool = False) -> Measurement:
+            count_instructions: bool = False, supervisor: Supervisor | None = None) -> Measurement:
     """Run one command, wait for it, and return its status and its resource use.
 
     From the call on, this process ignores SIGINT (the module docstring tells why).
@@ -393,6 +421,7 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
         environment: The environment of the command, or None for the environment of the caller
         cpu_limit_s: The CPU limit of each process of the command, or None for no limit
         count_instructions: Whether to count the user instructions of the command
+        supervisor: The start of a traced run, or None for a spawn (A TRACED RUN)
 
     Returns:
         The measurement.  An exit code of 127 means that the command did not start
@@ -409,17 +438,24 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
     applied_limit = limit_cpu(cpu_limit_s) if cpu_limit_s is not None else None
     counter = open_instruction_counter() if count_instructions else None
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    chosen = os.environ if environment is None else environment
     started = time.perf_counter()
     try:
-        child = os.posix_spawnp(command[0], command, os.environ if environment is None else environment,
-                                setsigdef=(signal.SIGINT,))
+        if supervisor is None:
+            child = os.posix_spawnp(command[0], command, chosen, setsigdef=(signal.SIGINT,))
+        else:
+            child = supervisor.start(command, chosen)
     except OSError:
         if counter is not None:
             os.close(counter)
         raise
+    if supervisor is not None:
+        supervisor.serve(child)
     _, status, usage = os.wait4(child, 0)
     wall_s = time.perf_counter() - started
     instructions = read_instruction_counter(counter) if counter is not None else None
+    if supervisor is not None:
+        supervisor.finish()
     exit_code = -os.WTERMSIG(status) if os.WIFSIGNALED(status) else os.WEXITSTATUS(status)
     return Measurement(exit_code, usage.ru_utime, usage.ru_stime, wall_s, usage.ru_maxrss, load, time.time(),
                        applied_limit, instructions)

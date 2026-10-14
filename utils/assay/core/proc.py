@@ -74,7 +74,7 @@ A LONG RUN
     5.3) tells the loop the end of the command, and the loop reaps the
     command only at the end.
 
-THE TWO STARTS OUTSIDE THIS MODULE
+THE THREE STARTS OUTSIDE THIS MODULE
     loop step, loop test-step and loop meter-compiler put a meter in front of
     one compile, one link or one test.  measure() of assay.core.meter starts
     that command with os.posix_spawnp and reads its usage with os.wait4, and
@@ -89,6 +89,11 @@ THE TWO STARTS OUTSIDE THIS MODULE
     interrupt the process group of a job.  They have no time limit, because
     the build tool or ctest owns the life of the step, and RLIMIT_CPU of the
     meter stops a step that runs away.
+    The third start is the traced start of a test (Tracer.start() of
+    assay.loop.tracer), which measure() calls for loop test-step.  It forks,
+    and the child installs a seccomp filter before the exec.  No start of this
+    module can install the filter between the fork and the exec.  It keeps
+    the environment and the process group of the meter, as the spawn does.
 
 THE JOB COUNT
     DEFAULT_JOBS is the one default count of the parallel work of the package.

@@ -80,9 +80,10 @@ THE WRITE
     assay.core.value.
     write() makes the text of
     a record with no JSON module, and quote() escapes each character that is
-    not printable ASCII.  write() writes a scratch file and renames it.  A
-    reader then sees the full record or the earlier record.  The write makes
-    the directory of the record only when it finds no directory.
+    not printable ASCII.  write_text() writes a scratch file and renames it,
+    for each record and for the read set of a test (assay.loop.readset).  A
+    reader then sees the full file or the earlier file.  The write makes the
+    directory of the file only when it finds no directory.
 
 THE READ
     A reader imports json.  read() raises MissingRecord when the output has
@@ -534,6 +535,18 @@ def write(path: str | os.PathLike[str], record: CostRecord | TestRecord | Fixtur
         text = test_text(record)
     else:
         text = fixture_text(record)
+    write_text(target, text)
+
+
+def write_text(path: str | os.PathLike[str], text: str) -> None:
+    """Write a text at a path, through a scratch file and a rename (THE WRITE).
+
+    write() writes each record with this function.  The read set of a test (assay.loop.readset) uses it too.
+
+    Raises:
+        OSError: If the text cannot be written
+    """
+    target = os.fspath(path)
     data = text.encode("utf-8", "surrogateescape")
     staging = f"{target}.{os.getpid()}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
