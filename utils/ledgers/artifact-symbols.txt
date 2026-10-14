@@ -302,11 +302,8 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/libfixy.a | libc-allow | 1 | sigaction@GLIBC_2.2.5 | -
 @build/libfixy.a | libc-allow | 1 | sigaltstack@GLIBC_2.2.5 | -
 @build/libfixy.a | libc-allow | 1 | sigemptyset@GLIBC_2.2.5 | -
-@build/libfixy.a | libc-ratchet | 1 | __errno_location@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | libc-ratchet | 1 | __fprintf_chk@GLIBC_2.3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | libc-ratchet | 1 | memchr@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
-@build/libfixy.a | libc-ratchet | 1 | syscall@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
-@build/libfixy.a | libc-ratchet | 1 | sysconf@GLIBC_2.2.5 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | ratchet | 1 | _ZSt19__throw_logic_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | ratchet | 1 | _ZSt20__throw_length_errorPKc@GLIBCXX_3.4 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION
 @build/libfixy.a | ratchet | 1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import and SYMBOL@VERSION

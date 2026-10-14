@@ -83,6 +83,8 @@ enum class Syscall : std::uint8_t {
     sched_setscheduler,
     sched_setattr,
     setpriority,
+    mbind,
+    move_pages,
 };
 
 // True when the call can wait with no bound for another thread or process,

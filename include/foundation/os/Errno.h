@@ -169,4 +169,29 @@ inline constexpr long kLargestErrno = 4095;
     return static_cast<std::uint64_t>(word);
 }
 
+// The error of a result, or the unit for a value.  A door whose call gives no
+// value that the caller reads, such as a call that gives zero on success,
+// returns this result.
+template <class T>
+[[nodiscard]] constexpr core::Result<core::Unit, Errno> unit_of(core::Result<T, Errno> const& result) noexcept {
+    return result.match(
+        [](T const&) noexcept -> core::Result<core::Unit, Errno> { return core::Unit{}; },
+        [](Errno const& error) noexcept -> core::Result<core::Unit, Errno> { return core::err(error); });
+}
+
+// The error or the unit of a word that raw_syscall returned.
+[[nodiscard]] constexpr core::Result<core::Unit, Errno> unit_of(long word) noexcept { return unit_of(result_of(word)); }
+
+// The error number of the kernel, as the int of a std::error_code.  A door
+// that gives a std::error_code to its caller reads the number here.
+[[nodiscard]] constexpr int error_number(Errno error) noexcept { return static_cast<int>(error); }
+
+// The error number of the kernel in a result of a door, or 0 for a value.
+// No error number of the kernel is 0.
+template <class T>
+[[nodiscard]] constexpr int error_number_of(core::Result<T, Errno> const& result) noexcept {
+    return result.match([](T const&) noexcept { return 0; },
+                        [](Errno const& error) noexcept { return error_number(error); });
+}
+
 }  // namespace foundation::os

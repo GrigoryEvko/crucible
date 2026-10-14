@@ -3,18 +3,19 @@
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
-// <linux/fcntl.h>, <linux/futex.h>, <linux/mman.h>, <linux/resource.h>,
-// <linux/sched.h>, <linux/sched/types.h>, <linux/time_types.h> and
-// <linux/utsname.h>.  It includes no header of the C library, because some
-// declarations of the two kinds of header conflict.  In a build with
-// ThreadSanitizer, the primitive gives a read or a write that can block to
-// src/foundation/os/Intercepted.cpp, which is the one door of the floor that
-// calls the C library.  It issues a futex call raw, between the hooks of that
-// file.
+// <linux/fcntl.h>, <linux/futex.h>, <linux/mempolicy.h>, <linux/mman.h>,
+// <linux/resource.h>, <linux/sched.h>, <linux/sched/types.h>,
+// <linux/time_types.h> and <linux/utsname.h>.  It includes no header of the
+// C library, because some declarations of the two kinds of header conflict.
+// In a build with ThreadSanitizer, the primitive gives a read or a write that
+// can block to src/foundation/os/Intercepted.cpp, which is the one door of the
+// floor that calls the C library.  It issues a futex call raw, between the
+// hooks of that file.
 
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
 #include <foundation/os/MapWords.h>
+#include <foundation/os/MemoryPolicyWords.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/SchedWords.h>
 #include <foundation/os/Syscall.h>
@@ -23,6 +24,7 @@
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
 #include <linux/futex.h>
+#include <linux/mempolicy.h>
 #include <linux/mman.h>
 #include <linux/resource.h>
 #include <linux/sched.h>
@@ -80,6 +82,13 @@ static_assert(kAdviseNoHugePage == MADV_NOHUGEPAGE, "kAdviseNoHugePage is not MA
 static_assert(kAdviseDontDump == MADV_DONTDUMP, "kAdviseDontDump is not MADV_DONTDUMP of <linux/mman.h>");
 static_assert(kAdviseWipeOnFork == MADV_WIPEONFORK, "kAdviseWipeOnFork is not MADV_WIPEONFORK of <linux/mman.h>");
 static_assert(kAdviseCollapse == MADV_COLLAPSE, "kAdviseCollapse is not MADV_COLLAPSE of <linux/mman.h>");
+
+// The argument words of foundation/os/MemoryPolicyWords.h are the words of the
+// kernel header.
+static_assert(kMemoryPolicyBind == MPOL_BIND, "kMemoryPolicyBind is not MPOL_BIND of <linux/mempolicy.h>");
+static_assert(kMemoryPolicyStrict == MPOL_MF_STRICT,
+              "kMemoryPolicyStrict is not MPOL_MF_STRICT of <linux/mempolicy.h>");
+static_assert(kMemoryPolicyMove == MPOL_MF_MOVE, "kMemoryPolicyMove is not MPOL_MF_MOVE of <linux/mempolicy.h>");
 
 // The argument words of foundation/os/FutexWords.h are the words of the
 // kernel headers.
@@ -185,6 +194,10 @@ constexpr long kNoCall = -1;
             return __NR_sched_setattr;
         case Syscall::setpriority:
             return __NR_setpriority;
+        case Syscall::mbind:
+            return __NR_mbind;
+        case Syscall::move_pages:
+            return __NR_move_pages;
         default:
             return kNoCall;
     }
@@ -306,15 +319,21 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // The release in which a call came to the architecture of the build, with the
 // operations that the doors give it: the later of the first release of the
 // architecture and the release that added the call.  openat and renameat
-// came in 2.6.16.  futex came in 2.6.0, and the futex door uses
-// FUTEX_WAIT_BITSET, which came in 2.6.25.  sched_setattr came in 3.14,
-// renameat2 in 3.15, copy_file_range in 4.5 and io_uring_setup in 5.1.
+// came in 2.6.16.  mbind came in 2.6.7, and the memory policy door uses
+// MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
+// in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
+// sched_setattr came in 3.14, renameat2 in 3.15, copy_file_range in 4.5 and
+// io_uring_setup in 5.1.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
         case Syscall::openat:
         case Syscall::renameat:
+        case Syscall::mbind:
             added = KernelVersion{2, 6, 16};
+            break;
+        case Syscall::move_pages:
+            added = KernelVersion{2, 6, 18};
             break;
         case Syscall::futex:
             added = KernelVersion{2, 6, 25};

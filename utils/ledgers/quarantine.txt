@@ -2422,8 +2422,6 @@ include/fixy/os/Mmap.h | base-std-entity | 4 | std::unexpected | -
 include/fixy/os/Mmap.h | base-std-object | 5 | std::expected | -
 include/fixy/os/Mmap.h | layer-header | 1 | <expected> | -
 include/fixy/os/Mmap.h | layer-header | 1 | <system_error> | -
-include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | __errno_location | -
-include/fixy/os/NumaPlacement.h | base-c-library-call | 1 | syscall | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 3 | std::error_code | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 2 | std::exchange | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 2 | std::expected | -
@@ -2431,11 +2429,8 @@ include/fixy/os/NumaPlacement.h | base-std-entity | 1 | std::make_error_code | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 1 | std::system_category | -
 include/fixy/os/NumaPlacement.h | base-std-entity | 2 | std::unexpected | -
 include/fixy/os/NumaPlacement.h | base-std-object | 2 | std::expected | -
-include/fixy/os/NumaPlacement.h | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <cerrno> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <climits> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <expected> | -
-include/fixy/os/NumaPlacement.h | layer-header | 1 | <sys/syscall.h> | -
 include/fixy/os/NumaPlacement.h | layer-header | 1 | <system_error> | -
 include/fixy/os/OwnedFile.h | base-c-library-call | 3 | __errno_location | -
 include/fixy/os/OwnedFile.h | base-c-library-call | 3 | fclose | -
@@ -3712,9 +3707,6 @@ src/cog/SrIov.cpp | std-entity | 1 | std::expected::has_value | -
 src/cog/SrIov.cpp | std-entity | 11 | std::unexpected | -
 src/cog/SrIov.cpp | std-object | 8 | std::expected | -
 src/cog/SrIov.cpp | std-object | 2 | std::span | -
-src/fixy/os/NumaPlacement.cpp | base-c-library-call | 2 | __errno_location | -
-src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | syscall | -
-src/fixy/os/NumaPlacement.cpp | base-c-library-call | 1 | sysconf | -
 src/fixy/os/Topology.cpp | base-c-library-call | 1 | fprintf | -
 src/fixy/os/Topology.cpp | base-c-library-object | 1 | _IO_FILE | -
 src/fixy/os/Topology.cpp | base-std-entity | 3 | __gnu_cxx::__normal_iterator | -
@@ -4853,7 +4845,7 @@ test/fixy/test_os_numa_placement.cpp | c-library-call | 1 | printf | -
 test/fixy/test_os_numa_placement.cpp | c-library-call | 16 | stderr | -
 test/fixy/test_os_numa_placement.cpp | c-library-call | 2 | syscall | -
 test/fixy/test_os_numa_placement.cpp | c-library-call | 1 | sysconf | -
-test/fixy/test_os_numa_placement.cpp | door-header | 1 | <linux/mempolicy.h> has the door include/fixy/os/NumaPlacement.h | -
+test/fixy/test_os_numa_placement.cpp | door-header | 1 | <linux/mempolicy.h> has the door src/foundation/os/Syscall.cpp | -
 test/fixy/test_os_numa_placement.cpp | door-header | 1 | <unistd.h> has the door src/foundation/os/Intercepted.cpp | -
 test/fixy/test_os_numa_placement.cpp | raw-pointer-object | 4 | - | -
 test/fixy/test_os_numa_placement.cpp | std-entity | 3 | std::basic_string::c_str | -

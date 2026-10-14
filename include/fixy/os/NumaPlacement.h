@@ -52,14 +52,11 @@
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/NumaNodeLattice.h>
+#include <foundation/core/Choice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
 
-#include <linux/mempolicy.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
@@ -118,23 +115,21 @@ namespace detail {
 inline constexpr std::size_t numa_mask_bits = 256;
 inline constexpr std::size_t numa_mask_word_bits = sizeof(unsigned long) * CHAR_BIT;
 
+// THE MEMORY POLICY DOOR.  Each function issues its system call through
+// foundation::os::raw_syscall, and gives the error of the kernel.  The bodies
+// are in src/fixy/os/NumaPlacement.cpp, which includes no header of the
+// kernel and no header of the C library.  A function that issues one system
+// call NAME out of line has the name NAME_sys (THE AFFINITY DOOR of
+// fixy/os/CpuPinned.h).
+
 // Binds the pages of the range to one concrete node, and moves the pages
-// that the range holds.  Returns 0 on success and the errno otherwise.
+// that the range holds.
 //
 // This helper is reachable, and that is deliberate: a call binds memory
-// and gives back an int.  It mints nothing.  mint_numa_placement builds
+// and gives back a result.  It mints nothing.  mint_numa_placement builds
 // the proof on the success of this helper, and nothing else builds one.
-//
-// The kernel decrements the node count that it receives before it reads
-// the mask, so the call passes one more than the width of the mask.
-[[nodiscard]] inline int bind_range_to_node(void* address, std::size_t length, NumaNodeId node) noexcept {
-    unsigned long mask[numa_mask_bits / numa_mask_word_bits]{};
-    std::size_t const bit = std::to_underlying(node);
-    mask[bit / numa_mask_word_bits] = 1UL << (bit % numa_mask_word_bits);
-    long const status =
-        ::syscall(SYS_mbind, address, length, MPOL_BIND, mask, numa_mask_bits + 1, MPOL_MF_STRICT | MPOL_MF_MOVE);
-    return status == 0 ? 0 : errno;
-}
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+mbind_sys(void* address, std::size_t length, NumaNodeId node) noexcept;
 
 }  // namespace detail
 
@@ -153,7 +148,7 @@ private:
     NumaPlacement(region_type region, NumaNodeId node) noexcept : region_{std::move(region)}, node_{node} {}
 
     // The sole friend, and the whole gate.  It builds a proof only after
-    // detail::bind_range_to_node returned 0 for this region and this node.
+    // detail::mbind_sys succeeded for this region and this node.
     //
     // Keep this friend a function that MAKES AND CHECKS the call.  A friend
     // that only forwards its arguments proves nothing.  The trailing return
@@ -220,7 +215,9 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
     if (!is_concrete_numa_node(node) || !owned.is_mapped()) {
         return std::unexpected{std::make_error_code(std::errc::invalid_argument)};
     }
-    if (int const error = ::fixy::detail::bind_range_to_node(owned.data(), owned.size(), node); error != 0) {
+    if (int const error =
+            ::foundation::os::error_number_of(::fixy::detail::mbind_sys(owned.data(), owned.size(), node));
+        error != 0) {
         return std::unexpected{std::error_code{error, std::system_category()}};
     }
     return ::fixy::NumaPlacement<Tag, Prot, Brand>{std::move(owned), node};
@@ -261,10 +258,10 @@ class PageNodeCensus;
 namespace detail {
 
 // Counts into census the node of each page that holds one of the `bytes`
-// bytes that start at `first`.  Returns 0, or the errno of the query that
-// the kernel refused.  The body is in src/fixy/os/NumaPlacement.cpp, and
-// census_page_nodes is its caller.
-[[nodiscard]] int census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensus& census) noexcept;
+// bytes that start at `first`, or gives the error of the query that the
+// kernel refused (THE MEMORY POLICY DOOR).  census_page_nodes is its caller.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensus& census) noexcept;
 
 }  // namespace detail
 
@@ -308,7 +305,8 @@ public:
     }
 
 private:
-    friend int detail::census_page_nodes_(void const*, std::size_t, PageNodeCensus&) noexcept;
+    friend auto detail::census_page_nodes_(void const*, std::size_t, PageNodeCensus&) noexcept
+        -> ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>;
 
     // Counts one page with the status that move_pages gave it: the node
     // of the page, or a negative errno when the page has no node.
@@ -344,8 +342,8 @@ template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaQuery<Ctx>
 [[nodiscard]] Result<PageNodeCensus, NumaQueryError> census_page_nodes(Ctx const&, View<T, Extent> range) noexcept {
     PageNodeCensus census{};
-    int const error = ::fixy::detail::census_page_nodes_(::foundation::core::detail::first_of_(range),
-                                                         range.size() * sizeof(T), census);
+    int const error = ::foundation::os::error_number_of(::fixy::detail::census_page_nodes_(
+        ::foundation::core::detail::first_of_(range), range.size() * sizeof(T), census));
     if (error != 0) {
         return err(NumaQueryError{NumaQueryStep::PageQuery, error});
     }

@@ -9,8 +9,6 @@
 # the rule, and `python3 utils/bin/guard write --rule door-unit` writes this file.
 format 1
 rule door-unit
-include/fixy/os/NumaPlacement.h | header-door | 1 | <linux/mempolicy.h> | the memory policy door is in the header, so each unit that includes fixy/os/NumaPlacement.h gets the kernel declarations of the memory policy.  The slice Os results (4.1) moves the door into src/fixy/os/NumaPlacement.cpp.
-include/fixy/os/NumaPlacement.h | mixed-headers | 1 | <linux/mempolicy.h> and <sys/syscall.h> | the door includes <linux/mempolicy.h> and the glibc headers <sys/syscall.h> and <unistd.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/NumaPlacement.cpp and makes its system calls with foundation::os::raw_syscall.
 include/fixy/os/Socket.h | header-door | 1 | <linux/netlink.h> | the netlink socket door is in the header, so each unit that includes fixy/os/Socket.h gets the kernel declarations of netlink.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
 include/fixy/os/Socket.h | header-door | 1 | <sys/socket.h> | the socket calls of the netlink door are in the header, so each unit that includes fixy/os/Socket.h gets the socket declarations of glibc.  The slice Os results (4.1) moves the door into a source file of src/fixy/os/.
 include/fixy/os/Socket.h | mixed-headers | 1 | <linux/netlink.h> and <sys/socket.h> | the door includes <linux/netlink.h> and the glibc header <sys/socket.h>.  In the slice Os results (4.1), the door moves into src/fixy/os/ and makes its socket calls with foundation::os::raw_syscall.

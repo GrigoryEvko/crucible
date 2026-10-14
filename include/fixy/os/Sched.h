@@ -122,18 +122,6 @@ sched_setattr_sys(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::uint
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 setpriority_sys(int nice) noexcept;
 
-// The error number of the kernel, in the int of the results of this header.
-[[nodiscard]] constexpr int error_number(::foundation::os::Errno error) noexcept { return static_cast<int>(error); }
-
-// The error number of the kernel in a result of a door, or 0 for a value.
-// No error number of the kernel is 0.
-template <class T>
-[[nodiscard]] constexpr int
-error_number_of(::foundation::core::Result<T, ::foundation::os::Errno> const& result) noexcept {
-    return result.match([](T const&) noexcept { return 0; },
-                        [](::foundation::os::Errno const& error) noexcept { return error_number(error); });
-}
-
 template <SchedulerPolicy_v Policy>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns, std::uint64_t deadline_ns,
@@ -198,7 +186,7 @@ template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> pin_event =
         sf::detail::sched_setaffinity_sys(Mask);
     for (::foundation::os::Errno const error : pin_event.err()) {
-        return std::unexpected(detail::error_number(error));
+        return std::unexpected(::foundation::os::error_number(error));
     }
     return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, std::move(pin_event).expect("the pin succeeded above")};
 }
@@ -263,7 +251,7 @@ template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t Deadl
     requires CtxFitsSchedPolicyMint<Ctx, Policy>
 [[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
 mint_scheduler_policy(Ctx const&, int rt_priority) noexcept {
-    if (int const error = detail::error_number_of(
+    if (int const error = ::foundation::os::error_number_of(
             detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs));
         error != 0) {
         return std::unexpected(error);
@@ -276,7 +264,7 @@ mint_scheduler_policy(Ctx const&, int rt_priority) noexcept {
 template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
 [[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
-    if (int const error = detail::error_number_of(detail::setpriority_sys(Nice)); error != 0) {
+    if (int const error = ::foundation::os::error_number_of(detail::setpriority_sys(Nice)); error != 0) {
         return std::unexpected(error);
     }
     return SchedProofDoor::priority_proof_<Nice>();
@@ -329,7 +317,7 @@ public:
     [[nodiscard]] bool is_held() const noexcept { return is_held_; }
 
     [[nodiscard]] std::expected<void, int> restore() && noexcept {
-        if (int const error = detail::error_number_of(restore_mask_()); error != 0) {
+        if (int const error = ::foundation::os::error_number_of(restore_mask_()); error != 0) {
             return std::unexpected(error);
         }
         return {};
@@ -377,10 +365,10 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int> {
     if (mask == AffinityMask{}) return PriorAffinity{};
     ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> prior = sf::detail::sched_getaffinity_sys();
-    if (int const error = detail::error_number_of(prior); error != 0) {
+    if (int const error = ::foundation::os::error_number_of(prior); error != 0) {
         return std::unexpected(error);
     }
-    if (int const error = detail::error_number_of(sf::detail::sched_setaffinity_sys(mask)); error != 0) {
+    if (int const error = ::foundation::os::error_number_of(sf::detail::sched_setaffinity_sys(mask)); error != 0) {
         return std::unexpected(error);
     }
     return PriorAffinity{std::move(prior).expect("the read of the prior mask succeeded above")};
@@ -393,7 +381,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] auto apply_affinity_to_cpu(Ctx const& ctx, int cpu) noexcept -> std::expected<PriorAffinity, int> {
     if (cpu < 0) return apply_affinity_to_mask(ctx, AffinityMask{});
     if (static_cast<unsigned>(cpu) > AffinityMask::kMaxCore) [[unlikely]] {
-        return std::unexpected(detail::error_number(::foundation::os::Errno::einval));
+        return std::unexpected(::foundation::os::error_number(::foundation::os::Errno::einval));
     }
     return apply_affinity_to_mask(ctx, AffinityMask::single(static_cast<std::uint16_t>(cpu)));
 }
