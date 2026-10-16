@@ -101,6 +101,11 @@ def plan_cases(expect: testing.Expect) -> None:
         [item.ledger_name for item in configurations] == ["x86_64-debug-asan", "x86_64-debug-tsan", "x86_64-release"]
         and unbuilt == ("aarch64-debug-asan",),
     )
+    configurations, unbuilt = write_configurations.planned({"trait-guard": ()}, ["trait-guard"])
+    expect(
+        "a ledger with no configuration row takes the configuration of the build default of the gate",
+        configurations == (gate.BY_NAME[gate.ALWAYS],) and unbuilt == (),
+    )
 
 
 def write_cases(expect: testing.Expect) -> None:

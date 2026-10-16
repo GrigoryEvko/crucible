@@ -12,14 +12,27 @@ THE CONFIGURATIONS
 
 THE COUNTED RULES
     A counted rule is a rule of the engine plugin or elf with the policy
-    count and a ledger of configurations (counted_ledgers()).  Each one reads
-    the objects of the target all of a build, or the reports of a parse
-    build.  A write in the build of a configuration changes only the counts
-    of that configuration (THE WRITE of assay.core.ledger).  The writes of the
-    configurations then give one ledger in each sequence.  `guard write
-    --all-configurations` writes each configuration of a counted ledger in
-    its build directory (assay.guard.write_configurations), and the gate
-    writes the falls of each configuration that it builds (THE FALLS).
+    count or admit and a ledger with a row (counted_ledgers()).  Each one
+    reads the objects of the target all of a build, or the reports of a
+    parse build.  A ledger holds each configuration that its configuration
+    rows name.  A ledger with no configuration row has one set of rows, and
+    these rows judge each build of the rule.  Such a ledger holds each
+    configuration that checks its rule in its run.  The run of a
+    configuration of objects checks each rule.  The run of a parse
+    configuration checks only the rules of COUNTED_RULES of
+    assay.guard.engines.buildsys.parse_builds.  A parse configuration holds
+    no ledger of a different rule (holding()).
+
+    A write in the build of a configuration changes only the counts of that
+    configuration (THE WRITE of assay.core.ledger).  The writes of the
+    configurations then give one ledger in each sequence.  A write of a
+    ledger with no configuration row measures each of its rows, or it keeps
+    a row that the build does not judge.  A second write in a different
+    build then finds no fall to move, and a move applies one time.  `guard
+    write --all-configurations` writes each configuration of a counted
+    ledger in its build directory (assay.guard.write_configurations), and
+    the gate writes the falls of each configuration that it builds (THE
+    FALLS).
 
 THE SELECTION
     The gate holds one invariant: a landing cannot make a test red in a
@@ -160,14 +173,16 @@ THE RUN OF A CONFIGURATION
 
 THE FALLS
     A count that falls makes the check of its counted rule fail with a count
-    below its row.  The gate then runs `guard write --rule RULE --build-dir
-    BUILD` of each counted rule with a ledger that holds the configuration,
-    in the mode lower.  That write refuses each count above its row and each
-    new row, other than an increase that a move pays (THE MOVE of
-    assay.core.ledger).  The write gets the variable CRUCIBLE_CHANGE_BASE with
-    the commit that the composition started from.  Its moves are then those
-    of the full change, also after an earlier write changed a ledger of the
-    warm tree.  The check then keeps a refused count as its error.  After the
+    below its row.  A row of the policy admit that admits no finding makes
+    the check fail too.  The gate then runs `guard write --rule RULE
+    --build-dir BUILD` of each counted rule with a ledger that holds the
+    configuration, in the mode lower.  That write refuses each count above
+    its row and each new row, other than an increase that a move pays (THE
+    MOVE of assay.core.ledger).  The write gets the variable
+    CRUCIBLE_CHANGE_BASE with the commit that the composition started from.
+    Its moves are then those of the full change, also after an earlier write
+    changed a ledger of the warm tree.  The check then keeps a refused count
+    as its error.  After the
     last configuration, the gate folds each ledger that a write changed into
     a new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
@@ -285,8 +300,9 @@ LEDGER_PREFIX = "utils/ledgers/"
 ALWAYS = "default"
 # The rule that judges the full change of a landing with two commits again (THE RUN OF A CONFIGURATION).
 STACKED_RULE = "quarantine-lines"
-# The engines of a counted rule (THE COUNTED RULES).
+# The engines and the policies of a counted rule (THE COUNTED RULES).
 COUNTED_ENGINES = frozenset({rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF})
+COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT})
 # The statuses of a test that count as red, and the status of a skip.
 RED = frozenset({ctest_reader.TestStatus.FAIL, ctest_reader.TestStatus.NOTRUN})
 SKIPPED = ctest_reader.TestStatus.SKIPPED
@@ -494,11 +510,14 @@ def guard_test_name(rule_id: str) -> str:
 def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
     """Return the configuration names of the ledger of each counted rule of a tree (THE COUNTED RULES).
 
+    A ledger with no configuration row gives no name.  A ledger with no row gives a write no fall and no move, and its
+    rule is not counted.
+
     Raises:
         GateError: If the registry or the ledger of a counted rule does not read
 
-    Complexity: one read of the registry, and one read of the ledger of each rule of the engine plugin or elf with
-    the policy count.
+    Complexity: one read of the registry, and one read of the ledger of each rule of COUNTED_ENGINES and
+    COUNTED_POLICIES.
     """
     try:
         registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
@@ -506,20 +525,33 @@ def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
         raise GateError(f"the registry of {tree} does not read: {problem}") from None
     counted: dict[str, tuple[str, ...]] = {}
     for rule_id, rule in sorted(registry.rules.items()):
-        if rule.engine not in COUNTED_ENGINES or rule.policy != rule_registry.Policy.COUNT:
+        if rule.engine not in COUNTED_ENGINES or rule.policy not in COUNTED_POLICIES:
             continue
         try:
             ledger = rule_ledger.read(rule, tree)
         except (OSError, ValueError) as problem:
             raise GateError(f"the ledger of {rule_id} in {tree} does not read: {problem}") from None
-        if ledger.configurations:
+        if ledger.configurations or ledger.base:
             counted[rule_id] = tuple(item.name for item in ledger.configurations)
     return counted
 
 
+def is_checked(configuration: Configuration, rule_id: str) -> bool:
+    """Tell if the run of a configuration checks a rule: each run of objects, and a parse run for COUNTED_RULES."""
+    return not configuration.is_parse or rule_id in COUNTED_RULES
+
+
 def holding(counted: Mapping[str, Sequence[str]], configuration: Configuration) -> list[str]:
-    """Return each counted rule with a ledger that holds a configuration, sorted."""
-    return sorted(rule_id for rule_id, names in counted.items() if configuration.ledger_name in names)
+    """Return each counted rule with a ledger that holds a configuration, sorted (THE COUNTED RULES).
+
+    A ledger holds each configuration that it names.  A ledger that names no configuration holds each configuration
+    that checks its rule (is_checked()).  Complexity: linear in the rules and their names.
+    """
+    return sorted(
+        rule_id
+        for rule_id, names in counted.items()
+        if is_checked(configuration, rule_id) and (configuration.ledger_name in names or not names)
+    )
 
 
 # ── The warm tree ──────────────────────────────────────────────────────────

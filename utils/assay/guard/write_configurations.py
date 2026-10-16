@@ -4,15 +4,16 @@ usage: guard write --all-configurations [--rule ID]... [--root DIR] [--jobs N] [
 
 THE CONFIGURATIONS
     A counted rule is a rule of the engine plugin or elf with the policy
-    count and a ledger of configurations.  THE COUNTED RULES of
+    count or admit and a ledger with a row.  THE COUNTED RULES of
     assay.loop.gate gives them.  With no --rule, the command writes each
     counted rule.
     It takes each configuration of their ledgers that the table of
-    assay.loop.gate holds.  The base configuration of a ledger comes first,
-    and then the sequence of that table applies.  A configuration that the
-    host cannot build gets a note, such as an aarch64 configuration of
-    objects.  Its rows come from the log of its CI leg (`guard write --rule
-    ID --import LOG`).
+    assay.loop.gate holds.  A ledger with no configuration row takes the
+    configuration of the build default of the gate.  The base configuration
+    of a ledger comes first, and then the sequence of that table applies.
+    A configuration that the host cannot build gets a note, such as an
+    aarch64 configuration of objects.  Its rows come from the log of its CI
+    leg (`guard write --rule ID --import LOG`).
 
 THE STEPS
     For each configuration, the command does these steps:
@@ -28,9 +29,9 @@ THE STEPS
          does no configure and no build.  Each build directory must then
          have its graph.
       3. `guard write --rule ID --build-dir BUILD` of each chosen rule with a
-         ledger that holds the configuration, in the mode lower.  That write
-         refuses a count above its row and a new row, as each plain write
-         does.
+         ledger that holds the configuration (holding() of assay.loop.gate),
+         in the mode lower.  That write refuses a count above its row and a
+         new row, as each plain write does.
     A write in the build of a configuration changes only the counts of that
     configuration (THE WRITE of assay.core.ledger).  The writes of the
     configurations then give one ledger.  The first step that fails stops
@@ -125,10 +126,13 @@ def planned(
 ) -> tuple[tuple[gate.Configuration, ...], tuple[str, ...]]:
     """Return the configurations of the ledgers of some rules, the bases first, and the names that the host cannot build.
 
+    A ledger with no configuration row takes the configuration of the build default of the gate (THE CONFIGURATIONS).
     Complexity: linear in the names times the configurations of the table.
     """
-    names = {name for rule in rules for name in counted[rule]}
-    bases = {counted[rule][0] for rule in rules if counted[rule]}
+    always = gate.BY_NAME[gate.ALWAYS].ledger_name
+    listed = [tuple(counted[rule]) or (always,) for rule in rules]
+    names = {name for item in listed for name in item}
+    bases = {item[0] for item in listed}
     table = list(gate.CONFIGURATIONS)
     found = sorted(
         (item for item in table if item.ledger_name in names),
@@ -165,7 +169,7 @@ def run(root: Path, rules: Sequence[str], jobs: int, steps: Steps = STEPS) -> in
     if unknown:
         check_report.write_line(
             f"guard write: {', '.join(unknown)} is not a counted rule.  --all-configurations writes a rule of the "
-            f"engine plugin or elf with the policy count and a ledger of configurations: {', '.join(sorted(counted))}",
+            f"engine plugin or elf with the policy count or admit and a ledger with a row: {', '.join(sorted(counted))}",
             is_error=True,
         )
         return ExitCode.USAGE

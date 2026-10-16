@@ -14,7 +14,9 @@ again alone.  The run of the gate then gives its verdict with no compiler
 and no CMake.  A change of a C++ file must run the tests of the changed
 inputs in each other configuration of objects.  A red test there must
 reject the commit.  A change of the module of the rule that reads the build
-must run that test in each other configuration of objects.
+must run that test in each other configuration of objects.  A moved row of
+a counted ledger with no configuration row must land with the write of the
+gate.
 """
 
 import json
@@ -33,7 +35,8 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
 
 # The registry of the planted repository: one measured rule, one rule with a ledger of configurations, and a rule that
-# reads the build.  It also holds the other rules that a parse configuration checks.
+# reads the build.  It also holds the other rules that a parse configuration checks.  The rule trait-guard is there too,
+# for a ledger with no configuration row.
 REGISTRY = (
     "format 1\n"
     "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a time | "
@@ -43,6 +46,7 @@ REGISTRY = (
     "rule quarantine engine=plugin scope=tracked ledger=count kinds=std-object doc=XXII | a finding | remove it\n"
     "rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include doc=XV | a header | remove it\n"
     "rule syscall-capability engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
+    "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The module of the rule that reads the build, its test, and the module of the test launcher of the planted repository.
 BUILD_RULE_MODULE = "utils/assay/guard/engines/meta/plan_check.py"
@@ -59,6 +63,19 @@ DOOR_LEDGER = (
     "format 1\nrule door-unit\n"
     "configuration x86_64-release kind x86_64-release\n"
     "configuration aarch64-debug-asan kind aarch64-debug-asan\n"
+)
+# The ledger of the rule trait-guard.  It has no configuration row.
+TRAIT_LEDGER = "utils/ledgers/trait-guard.txt"
+# The registry of the counted rules.  It holds a count ledger with configurations and a count ledger with no
+# configuration row.  It also holds an admit ledger, a count rule with no ledger file and a count rule of a different
+# engine.
+COUNTED_REGISTRY = (
+    "format 1\n"
+    "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
+    "rule erased-brand engine=tsast scope=tracked ledger=count doc=XXII | a brand | name the brand\n"
+    "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint doc=XXI | a mint | shape the mint\n"
+    "rule padded-list engine=plugin scope=include/ ledger=count kinds=padded-member doc=XV.7 | a list | add a member\n"
+    "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
 # build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.
@@ -86,6 +103,9 @@ if mode == "falls":
 if mode == "keep":
     ledger = pathlib.Path("utils/ledgers/slow-row.txt").read_text()
     statuses["guard_slow_row"] = "fail" if "| 10 |" in ledger else "run"
+if mode == "moves":
+    ledger = pathlib.Path("utils/ledgers/trait-guard.txt").read_text()
+    statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
 cases = "".join(f'<testcase name="{name}" status="{status}"/>' for name, status in statuses.items())
 cases += '<testcase name="test_skips" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>'
 report = build / "affected-tests" / "junit.xml"
@@ -97,7 +117,9 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # apply.  In a build with the mode parse-falls, `check` gives findings after the fall of the planted ledger.  `write`
 # lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  It also removes the
 # row of gone.h, as the write of a fall to 0 does.  The write of slow-row raises the value 10 of its ledger to 12, as
-# the write of a kept row does.  The write of the rule history runs the guard of this tree (GUARD_MARK).
+# the write of a kept row does.  The write of trait-guard moves the row of include/old.h to include/new.h, as the
+# write of a divided header does (THE MOVE of assay.core.ledger).  The write of the rule history runs the guard of this
+# tree (GUARD_MARK).
 GUARD_MARK = "@GUARD@"
 GUARD_MASTER = """import os
 import pathlib
@@ -115,7 +137,10 @@ if words[0] == "check":
 if words[:3] == ["write", "--rule", "history"]:
     sys.exit(subprocess.run([sys.executable, "@GUARD@", *words], check=False).returncode)
 if words[0] == "write":
-    name, old, new = ("slow-row", "| 10 |", "| 12 |") if words[2] == "slow-row" else ("door-unit", "| 2 |", "| 1 |")
+    name, old, new = {
+        "slow-row": ("slow-row", "| 10 |", "| 12 |"),
+        "trait-guard": ("trait-guard", "include/old.h", "include/new.h"),
+    }.get(words[2], ("door-unit", "| 2 |", "| 1 |"))
     ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
     lines = ledger.read_text().replace(old, new).splitlines(keepends=True)
     ledger.write_text("".join(line for line in lines if "gone.h" not in line))
@@ -125,7 +150,7 @@ if words[0] == "write":
 sys.exit(0 if words[0] == "warnings" else 77)
 """
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
-# unless it is test_broken, or test_ledger or guard_slow_row before its write.
+# unless it is test_broken, or test_ledger or guard_slow_row before the write of its ledger.
 CTEST = """import pathlib
 import sys
 
@@ -137,6 +162,8 @@ names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().sp
 report = pathlib.Path(words[words.index("--output-junit") + 1])
 ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
 red = {"test_broken"} | ({"test_ledger"} if "| 2 |" in ledger else set())
+traits = pathlib.Path("utils/ledgers/trait-guard.txt")
+red |= {"test_ledger"} if traits.is_file() and "include/old.h" in traits.read_text() else set()
 slow = pathlib.Path("utils/ledgers/slow-row.txt")
 red |= {"guard_slow_row"} if slow.is_file() and "| 10 |" in slow.read_text() else set()
 cases = "".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
@@ -606,6 +633,70 @@ def falls_cases(expect: testing.Expect) -> None:
         )
 
 
+def falls_move_cases(expect: testing.Expect) -> None:
+    """Hold THE FALLS of a ledger with no configuration row: the gate writes the move of its row and folds it."""
+    with tempfile.TemporaryDirectory(prefix="gate-falls-move-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        traits = "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n"
+        head = commit_change(root, TRAIT_LEDGER, traits, "Count two open reads")
+        commit = commit_change(
+            root, "notes.txt", "a change that divides include/old.h\n", "Divide a header\n\nThe body."
+        )
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "moves")
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
+        writes = tree / "build" / "writes.txt"
+        holds = (
+            verdict.is_accepted
+            and verdict.ledgers == (TRAIT_LEDGER,)
+            and git.show(root, verdict.final, TRAIT_LEDGER) == traits.replace("include/old.h", "include/new.h").encode()
+            and writes.is_file()
+            and writes.read_text(encoding="utf-8") == "trait-guard\n"
+        )
+        label = (
+            f"a commit whose suite is red only on a moved row of a ledger with no configuration row lands: the base "
+            f"build writes the move one time, and the gate folds the ledger.  The gate gives {verdict.problems[:1]} "
+            f"and folds {verdict.ledgers}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def counted_cases(expect: testing.Expect) -> None:
+    """Hold THE COUNTED RULES: the ledgers that THE FALLS write, and the configurations that each ledger holds."""
+    with tempfile.TemporaryDirectory(prefix="gate-counted-") as work_text:
+        root = Path(work_text)
+        files = {
+            rule_registry.REGISTRY_PATH: COUNTED_REGISTRY,
+            "utils/ledgers/door-unit.txt": DOOR_LEDGER,
+            TRAIT_LEDGER: "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n",
+            "utils/ledgers/mint-pattern.txt": (
+                "format 1\nrule mint-pattern\ninclude/a.h | mint | admit | a::mint_a | a hatch\n"
+            ),
+            "utils/ledgers/erased-brand.txt": "format 1\nrule erased-brand\nc.h | - | 1 | z | -\n",
+        }
+        for name, text in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(text, encoding="utf-8")
+        counted = gate.counted_ledgers(root)
+        expect(
+            f"a ledger of a rule of the engine plugin or elf with the policy count or admit and a row is counted, also "
+            f"with no configuration row, and an empty ledger and a rule of a different engine are not: {counted}",
+            counted == {"door-unit": ("x86_64-release", "aarch64-debug-asan"), "mint-pattern": (), "trait-guard": ()},
+        )
+    parse = next(item for item in gate.CONFIGURATIONS if item.is_parse)
+    named = {"door-unit": (), "quarantine": (parse.ledger_name,), "trait-guard": ()}
+    expect(
+        "a ledger with no configuration row holds each configuration of objects, and a parse configuration only for a "
+        "rule that the run of the parse configuration checks",
+        gate.holding(named, gate.BY_NAME[gate.ALWAYS]) == ["door-unit", "trait-guard"]
+        and gate.holding(named, gate.BY_NAME["release"]) == ["door-unit", "trait-guard"]
+        and gate.holding(named, parse) == ["door-unit", "quarantine"],
+    )
+
+
 def falls_history_cases(expect: testing.Expect) -> None:
     """Hold THE FALLS with the rule history: a fall that makes a row of the kind `grow` admit nothing removes it."""
     with tempfile.TemporaryDirectory(prefix="gate-falls-history-") as work_text:
@@ -848,6 +939,8 @@ def main(argv: list[str]) -> int:
             change_cases,
             run_cases,
             falls_cases,
+            falls_move_cases,
+            counted_cases,
             falls_history_cases,
             falls_parse_cases,
             keep_cases,
