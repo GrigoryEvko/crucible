@@ -17,12 +17,13 @@ import tempfile
 from pathlib import Path
 
 from assay.core import cache, proc, testing
+from assay.loop import bench
 from assay.loop.evidence import measurement, targets
 from assay.loop.evidence import store as evidence_store
 from assay.readers import bench as bench_reader
 
 RULE = targets.MEASUREMENT.rule
-CORE_FACTS = (("core", "0"), ("isolated", "no"))
+CORE_FACTS = (("core", "0"), ("reserved", "no"), ("slice", "none"))
 REPORT = {"name": "try_push", "n": 100, "p50": 7.0, "p99": 9.0, "max": 20.0, "cv": 0.01, "wall_ns": 1e6, "drift_pct": 0}
 
 
@@ -120,15 +121,16 @@ def run_cases(expect: testing.Expect) -> None:
         quiet = planted_bench(root, "bench_quiet", f"printf '{output}'", shell)
         failing = planted_bench(root, "bench_fail", "exit 3", shell)
 
-        def quiet_run(path: Path, chosen_core: str, cwd: Path, limit_s: float) -> measurement.Ran:
-            return dataclasses.replace(measurement.run_once(path, chosen_core, cwd, limit_s), others_pct=1.0)
+        def quiet_run(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> measurement.Ran:
+            return dataclasses.replace(measurement.run_once(path, where, cwd, limit_s), others_pct=1.0)
 
         chosen = [
             measurement.Measured("bench_quiet", quiet, "key-quiet", 0.0, 2.0, 0.1),
             measurement.Measured("bench_fail", failing, "key-fail", 0.0, 2.0, 0.1),
             measurement.Measured("bench_long", quiet, "key-long", 0.0, 2.0, 1000.0),
         ]
-        outcome = measurement.run_benches(store, chosen, 60.0, core, CORE_FACTS, root, quiet_run)
+        where = bench.Placement(core, bench.Reserved(), ("taskset", "-c", core))
+        outcome = measurement.run_benches(store, chosen, 60.0, where, root, quiet_run)
         passed = store.read(RULE, "key-quiet")
         failed = store.read(RULE, "key-fail")
         expect(

@@ -8,9 +8,12 @@ THE SELECTION
     (THE PENDING ITEMS of that module).
 
 THE RUN
-    A run is one run of the program of a bench with taskset, on the core
-    that bench_core() of assay.loop.bench gives.  The program gets the clean
-    environment of a test (assay.loop.teststep).  It also gets the variable
+    A run is one run of the program of a bench on the placement that
+    placement() of assay.loop.bench gives (THE RESERVED CPUS of that module).
+    The placement is taskset on a core of the reserved CPUs of the host.
+    When the host reserves its CPUs with a partition, the run also starts in
+    the slice of the partition.  The program gets the clean environment of a
+    test (assay.loop.teststep).  It also gets the variable
     JSON_VARIABLE of assay.readers.bench, and it then prints its reports as a
     JSON tail.  The runner reads the load of the host before and after the
     run (assay.loop.history, others_share()).  Only one run occurs at a time,
@@ -28,8 +31,8 @@ THE RUN
         that does not read.  The failure holds the command, the status and
         the last line of the error output.
     Each sample holds the largest variation of the reports, the share of the
-    other processes and the core.  It also tells if the kernel isolates the
-    core.
+    other processes and the core.  It also tells how the host reserves the
+    core, and the slice of its partition.
 
 THE BUDGET
     A run starts only when the time that the call used, with the time of one
@@ -137,11 +140,11 @@ def run_time(record: evidence_store.Record | None) -> float:
     return sum(sample.wall_s for sample in record.samples) / len(record.samples)
 
 
-def run_once(path: Path, core: str, cwd: Path, limit_s: float) -> Ran:
-    """Run the program of a bench one time on the core, and read the load of the host around it (THE RUN)."""
+def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> Ran:
+    """Run the program of a bench one time on its placement, and read the load of the host around it (THE RUN)."""
     environment = dict(test_launcher.canonical_environment(proc.environment()))
     environment[bench_reader.JSON_VARIABLE] = "1"
-    words = ("taskset", "-c", core, str(path))
+    words = where.command((str(path),))
     before = loop_history.sample_host()
     started = time.monotonic()
     try:
@@ -235,10 +238,9 @@ def run_benches(
     store: evidence_store.EvidenceStore,
     chosen: list[Measured],
     budget_s: float,
-    core: str,
-    core_facts: Sequence[tuple[str, str]],
+    where: bench.Placement,
     cwd: Path,
-    run_one: Callable[[Path, str, Path, float], Ran] = run_once,
+    run_one: Callable[[Path, bench.Placement, Path, float], Ran] = run_once,
 ) -> Outcome:
     """Run the selected benches one at a time until each one gets its target or a failure, or the budget ends.
 
@@ -256,8 +258,8 @@ def run_benches(
             if any(item.is_pending for item in chosen):
                 reason = f"the budget of {budget_s:g} s has no room for one more run"
             break
-        ran = run_one(measured.path, core, cwd, max(LIMIT_FLOOR_S, LIMIT_FACTOR * measured.run_s))
-        verdict = judged(ran, core_facts)
+        ran = run_one(measured.path, where, cwd, max(LIMIT_FLOOR_S, LIMIT_FACTOR * measured.run_s))
+        verdict = judged(ran, where.facts())
         measured.runs_now += 1
         runs += 1
         counted += int(verdict.quantity > 0)
@@ -287,14 +289,17 @@ def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str]
         return ExitCode.MISSING_INPUT
     store = evidence_store.EvidenceStore()
     chosen = selection(programs, store, target, names)
-    core, is_isolated, _ = bench.bench_core(bench.Settings.from_environment().core)
-    core_facts = (("core", core), ("isolated", "yes" if is_isolated else "no"))
+    try:
+        where = bench.placement(bench.Settings.from_environment())
+    except bench.BenchError as problem:
+        check_report.write_line(f"{PROGRAM}: the reserved CPUs of the host cannot be read: {problem}", is_error=True)
+        return ExitCode.MISSING_INPUT
     entry = "release" if is_release else "nightly"
     check_report.write_line(
         f"{PROGRAM}: {len(chosen)} benches of {build_dir} have less evidence than the {entry} target {target:g} runs.  "
-        f"The budget is {budget_s:g} s, and each run occurs on the core {core}"
+        f"The budget is {budget_s:g} s, and each run occurs on the core {where.core or 'of no pin'}"
     )
-    outcome = run_benches(store, chosen, budget_s, core, core_facts, build_dir)
+    outcome = run_benches(store, chosen, budget_s, where, build_dir)
     check_report.write_line(
         f"{PROGRAM}: {outcome.runs} runs, {outcome.counted} of them count, and {len(outcome.failures)} failures.  The "
         f"runs stopped because {outcome.reason}"

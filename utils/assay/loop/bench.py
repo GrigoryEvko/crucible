@@ -3,30 +3,47 @@
 THE STEPS FOR EACH BENCH
     1. The command builds the bench in the build directory of the bench preset,
        with the job count of assay.core.proc (DEFAULT_JOBS).  The build is
-       incremental, so a bench that is current builds nothing.  --no-build
+       incremental.  A bench that is current builds nothing.  --no-build
        omits the step.
-    2. It gives the binary the capabilities of the CMake target bench-caps of
-       bench/CMakeLists.txt again, after each build: a link writes a new file
-       with no file capabilities.  With them, the eBPF lines of the bench
-       harness (SenseHub and SchedSwitch) attach.  This host has
-       perf_event_paranoid 2 and unprivileged_bpf_disabled 2, so the
-       capabilities are necessary.  Without them, the harness omits those
+    2. After each build, it gives the binary the capabilities of the CMake
+       target bench-caps of bench/CMakeLists.txt again.  A link writes a new
+       file with no file capabilities.  With them, the eBPF lines of the bench
+       harness (SenseHub and SchedSwitch) attach.  A host with
+       perf_event_paranoid 2 and unprivileged_bpf_disabled 2 attaches them
+       only with the capabilities.  Without them, the harness omits those
        lines, and the times and the percentiles do not change.
          cap_bpf              bpf_prog_load of a tracepoint
          cap_perfmon          perf_event_open on a tracepoint ID
          cap_dac_read_search  a read of /sys/kernel/tracing/events/*/id and of the BTF, which only root can read
-    3. It runs the bench on one isolated core with taskset: the first core of
-       /sys/devices/system/cpu/isolated.  When the kernel isolates no core,
-       it uses CRUCIBLE_BENCH_CORE and warns that the results are noisy.
+    3. It runs the bench with taskset on one core of the reserved CPUs of the
+       host (THE RESERVED CPUS).  When the host reserves no CPU, it uses the
+       core of CRUCIBLE_BENCH_CORE, or no pin when that variable is not set.
+       It then warns that the results are noisy.
 
-    The command does not change the clocks of a GPU or the global boost of
-    cpufreq.  crucible-benchtune.service sets the governor of each core, the
-    offline SMT siblings and isolcpus at boot, and the command only uses them.
+    The command does not change the clocks of a GPU or of a CPU.  The host
+    sets the clocks, the reservation and the interrupt routing at boot, and the
+    command only uses them.
+
+THE RESERVED CPUS
+    The host reserves CPUs for dedicated work in one of two ways.
+    read_reserved() reads the first one that the host gives:
+      1. /sys/devices/system/cpu/isolated, which isolcpus=domain fills.  A
+         process can run on these CPUs with taskset alone.
+      2. One cgroup cpuset partition: a cgroup below the root with the value
+         "root" or "isolated" in its cpuset.cpus.partition.  A partition that
+         the kernel refuses does not count.  A process of a different cgroup
+         cannot run on the CPUs of the partition.  The command then starts
+         each bench in the systemd slice of the partition, with `sudo -n
+         systemd-run --scope`, as the calling user.  When the host has two
+         partitions, CRUCIBLE_BENCH_SLICE must name one of them.
+    The core of the runs is the lowest CPU of the first SMT group that holds
+    only reserved CPUs.  The SMT sibling of the core then stays idle.
 
 THE ENVIRONMENT
     CRUCIBLE_BENCH_BUILD   The build directory of the bench preset, relative to the tree.  The default is build-bench
     CRUCIBLE_BENCH_PRESET  The preset that configures it.  The default is bench
-    CRUCIBLE_BENCH_CORE    The core when the kernel isolates no core.  The default is 88
+    CRUCIBLE_BENCH_CORE    The core when the host reserves no CPU.  Not set: the bench runs with no pin
+    CRUCIBLE_BENCH_SLICE   The slice of the partition when the host has more than one
 
 Usage
     loop bench [--no-build] [TARGET]... [-- ARG...]   build and run each TARGET, or the default set
@@ -37,13 +54,14 @@ Usage
     latency set: bench_trace_ring, bench_arena, bench_swiss_table,
     bench_philox and bench_pool_allocator.
 
-Exit 0 when each bench passed, the exit status of the first bench that failed, 1 when a step failed, 2 on a usage
-error or a failed self-test.
+Exit 0 when each bench passed, or the exit status of the first bench that failed.  Exit 1 when a step failed, and 2 on
+a usage error or a failed self-test.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -56,14 +74,18 @@ from assay.setup import pins as cmake_pin
 
 DEFAULT_BUILD = "build-bench"
 DEFAULT_PRESET = "bench"
-DEFAULT_CORE = "88"
 # The capabilities of the target bench-caps of bench/CMakeLists.txt.
 CAPABILITIES = "cap_bpf,cap_perfmon,cap_dac_read_search=eip"
 # The hot-path latency set.  bench_dispatch and bench_meta_log are not in it, because their builds drift.
 DEFAULT_TARGETS = ("bench_trace_ring", "bench_arena", "bench_swiss_table", "bench_philox", "bench_pool_allocator")
-ISOLATED = Path("/sys/devices/system/cpu/isolated")
-# The distance from a core to its SMT sibling on this host.
-SIBLING_DISTANCE = 192
+# The CPU directory of sysfs and the root of the cgroup v2 hierarchy (THE RESERVED CPUS).
+CPU_ROOT = Path("/sys/devices/system/cpu")
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+# The values of cpuset.cpus.partition of a valid partition.  The kernel writes "root invalid (REASON)" for a partition
+# that it refuses.
+PARTITION_TYPES = frozenset({"root", "isolated"})
+# The program that starts a command in a slice, by its full path.  sudo can give the command a different PATH.
+SYSTEMD_RUN = "/usr/bin/systemd-run"
 # The type and the FOLDER property of a bench target in the code model of CMake.  The function crucible_bench() of
 # bench/CMakeLists.txt sets the folder.
 TARGET_TYPE = "EXECUTABLE"
@@ -86,18 +108,57 @@ class Request:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """The values of THE ENVIRONMENT: the build directory relative to the tree, the preset and the core."""
+    """The values of THE ENVIRONMENT: the build directory relative to the tree, the preset, the core and the slice.
+
+    An empty core or slice is a variable that is not set.
+    """
 
     build: str
     preset: str
-    core: str
+    core: str = ""
+    slice_name: str = ""
 
     @classmethod
     def from_environment(cls) -> Settings:
         """Read the settings from the environment, with the default of each variable that is not set."""
         return cls(os.environ.get("CRUCIBLE_BENCH_BUILD", DEFAULT_BUILD),
                    os.environ.get("CRUCIBLE_BENCH_PRESET", DEFAULT_PRESET),
-                   os.environ.get("CRUCIBLE_BENCH_CORE", DEFAULT_CORE))
+                   os.environ.get("CRUCIBLE_BENCH_CORE", ""),
+                   os.environ.get("CRUCIBLE_BENCH_SLICE", ""))
+
+
+@dataclass(frozen=True, slots=True)
+class Reserved:
+    """The CPUs that the host reserves, the source of the reservation and the slice of a partition (THE RESERVED CPUS).
+
+    source is "isolated", "partition" or "" when the host reserves no CPU.  slice_name is empty unless the source is a
+    partition.
+    """
+
+    cpus: tuple[int, ...] = ()
+    source: str = ""
+    slice_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Placement:
+    """Where each bench runs: the core of the runs, the reservation that holds it, and the words before the program.
+
+    core is empty when the bench runs with no pin.  prefix holds the words that start the program on the core.
+    """
+
+    core: str
+    reserved: Reserved
+    prefix: tuple[str, ...]
+
+    def command(self, words: tuple[str, ...]) -> tuple[str, ...]:
+        """Return the words that run a program and its arguments on the core of the placement."""
+        return (*self.prefix, *words)
+
+    def facts(self) -> tuple[tuple[str, str], ...]:
+        """Return the facts of the placement for a sample of the evidence store: the core and the reservation."""
+        return (("core", self.core or "none"), ("reserved", self.reserved.source or "no"),
+                ("slice", self.reserved.slice_name or "none"))
 
 
 def log(text: str) -> None:
@@ -146,37 +207,114 @@ def bench_targets(model: cmake_reader.CodeModel) -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
-def pin_core(isolated_text: str | None, fallback: str) -> tuple[str, bool]:
-    """Return the core of the runs and whether the kernel isolates it.
+def parse_cpu_list(text: str) -> tuple[int, ...]:
+    """Read a CPU list of the kernel, such as "0-3,8,10-11", as the sorted CPUs.  An empty text gives no CPU.
 
-    Args:
-        isolated_text: The text of /sys/devices/system/cpu/isolated, or None when it cannot be read
-        fallback: The core when the kernel isolates no core
+    Complexity: linear in the number of CPUs of the list.
 
-    Returns:
-        The first isolated core, and True; or the fallback, and False
+    Raises:
+        BenchError: If an item is not a CPU number or a range of two CPU numbers, or if a range ends before it starts
     """
-    text = (isolated_text or "").strip()
-    if not text:
-        return fallback, False
-    first = text.split(",", 1)[0].split("-", 1)[0]
-    return first, True
+    cpus: set[int] = set()
+    for item in text.strip().split(","):
+        if not item:
+            continue
+        low_text, _, high_text = item.partition("-")
+        if not low_text.isdigit() or (high_text and not high_text.isdigit()):
+            raise BenchError(f"the CPU list {text.strip()!r} holds the item {item!r}, which is not a CPU or a range")
+        low = int(low_text)
+        high = int(high_text) if high_text else low
+        if high < low:
+            raise BenchError(f"the CPU list {text.strip()!r} holds the range {item!r}, and its end is less than its start")
+        cpus.update(range(low, high + 1))
+    return tuple(sorted(cpus))
 
 
-def bench_core(fallback: str) -> tuple[str, bool, str]:
-    """Return the core of the runs, True when the kernel isolates it, and the isolated cores of the host.
-
-    `loop evidence run measurement` runs each bench on the same core (assay.loop.evidence.measurement).
-
-    Args:
-        fallback: The core when the kernel isolates no core
-    """
+def read_text(path: Path) -> str:
+    """Return the text of a sysfs or cgroupfs file, or an empty text when the file cannot be read."""
     try:
-        isolated_text = ISOLATED.read_text(encoding="ascii")
+        return path.read_text(encoding="ascii")
     except OSError:
-        isolated_text = ""
-    core, is_isolated = pin_core(isolated_text, fallback)
-    return core, is_isolated, isolated_text.strip()
+        return ""
+
+
+def read_reserved(slice_name: str = "", cpu_root: Path = CPU_ROOT, cgroup_root: Path = CGROUP_ROOT) -> Reserved:
+    """Return the reserved CPUs of the host (THE RESERVED CPUS).
+
+    Args:
+        slice_name: The slice of the partition when the host has more than one, or empty
+        cpu_root: The CPU directory of sysfs
+        cgroup_root: The root of the cgroup v2 hierarchy
+
+    Complexity: linear in the number of cgroups of the first two levels below the root.
+
+    Raises:
+        BenchError: If the host has two partitions and slice_name names none of them
+    """
+    isolated = parse_cpu_list(read_text(cpu_root / "isolated"))
+    if isolated:
+        return Reserved(isolated, "isolated")
+    partitions: dict[str, tuple[int, ...]] = {}
+    for depth in ("*", "*/*"):
+        for marker in sorted(cgroup_root.glob(f"{depth}/cpuset.cpus.partition")):
+            if read_text(marker).strip() not in PARTITION_TYPES:
+                continue
+            cpus = parse_cpu_list(read_text(marker.parent / "cpuset.cpus.exclusive.effective")
+                                  or read_text(marker.parent / "cpuset.cpus.effective"))
+            if cpus:
+                partitions[marker.parent.name] = cpus
+    if slice_name:
+        if slice_name not in partitions:
+            raise BenchError(f"CRUCIBLE_BENCH_SLICE names {slice_name}, and the partitions of the host are "
+                             f"{sorted(partitions) or 'none'}")
+        return Reserved(partitions[slice_name], "partition", slice_name)
+    if len(partitions) > 1:
+        raise BenchError(f"the host has the partitions {sorted(partitions)}.  Set CRUCIBLE_BENCH_SLICE to the slice "
+                         "of the benches")
+    if not partitions:
+        return Reserved()
+    (name, cpus), = partitions.items()
+    return Reserved(cpus, "partition", name)
+
+
+def core_of(reserved: Reserved, cpu_root: Path = CPU_ROOT) -> int | None:
+    """Return the lowest CPU of the first SMT group that holds only reserved CPUs, or None when no group does.
+
+    When sysfs gives no SMT group for a CPU, the CPU is a group of one CPU.  Complexity: linear in the number of
+    reserved CPUs, times one sysfs read each.
+    """
+    reserved_set = frozenset(reserved.cpus)
+    for cpu in reserved.cpus:
+        group_text = read_text(cpu_root / f"cpu{cpu}" / "topology" / "thread_siblings_list")
+        group = parse_cpu_list(group_text) if group_text.strip() else (cpu,)
+        if reserved_set.issuperset(group) and cpu == min(group):
+            return cpu
+    return None
+
+
+def placement(settings: Settings, cpu_root: Path = CPU_ROOT, cgroup_root: Path = CGROUP_ROOT) -> Placement:
+    """Return where each bench runs: a core of the reserved CPUs, the fallback core, or no pin (THE RESERVED CPUS).
+
+    `loop evidence run measurement` runs each bench with the same placement (assay.loop.evidence.measurement).
+
+    Raises:
+        BenchError: If read_reserved() refuses, or if taskset is not on PATH
+    """
+    reserved = read_reserved(settings.slice_name, cpu_root, cgroup_root)
+    core = core_of(reserved, cpu_root)
+    if core is None:
+        if not settings.core:
+            return Placement("", reserved, ())
+        return Placement(settings.core, reserved, ("taskset", "-c", settings.core))
+    taskset = shutil.which("taskset")
+    if taskset is None:
+        raise BenchError("taskset is not on PATH, and the benches run on a reserved core with it (util-linux)")
+    pin = (taskset, "-c", str(core))
+    if reserved.source != "partition":
+        return Placement(str(core), reserved, pin)
+    scope = ("sudo", "-n", "--preserve-env", SYSTEMD_RUN, "--quiet", "--scope", f"--slice={reserved.slice_name}",
+             f"--uid={os.getuid()}", f"--gid={os.getgid()}", "--")
+    return Placement(str(core), reserved, (*scope, *pin))
 
 
 def apply_capabilities(binary: Path) -> None:
@@ -222,18 +360,22 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         for name in bench_targets(model):
             print(name)
         return 0
-    core, is_isolated, isolated_text = bench_core(settings.core)
-    if is_isolated:
-        log(f"isolated partition active: [{isolated_text}] → pinning to cpu{core}")
-        sibling = Path(f"/sys/devices/system/cpu/cpu{int(core) + SIBLING_DISTANCE}/online")
-        try:
-            if sibling.read_text(encoding="ascii").strip() == "0":
-                log(f"  (SMT sibling offline — cpu{core} runs single-threaded)")
-        except OSError:
-            pass
-    else:
-        warn("no isolated CPUs advertised (bench partition not active — reboot pending?).")
-        warn(f"falling back to cpu{core}; results will be NOISY (shared, tick-active core).")
+    where = placement(settings)
+    reserved = where.reserved
+    if reserved.source == "partition":
+        log(f"reserved partition {reserved.slice_name} on cpus {reserved.cpus[0]}-{reserved.cpus[-1]}: each bench runs "
+            f"in the slice on cpu{where.core}, and its SMT sibling stays idle")
+    elif reserved.source == "isolated" and where.core:
+        log(f"isolated cpus {reserved.cpus[0]}-{reserved.cpus[-1]}: each bench runs on cpu{where.core}")
+    elif reserved.cpus:
+        warn(f"the reserved cpus {reserved.cpus[0]}-{reserved.cpus[-1]} hold no full SMT group: the SMT sibling of "
+             "the core can run other work")
+    if not where.core:
+        warn("the host reserves no cpu, and CRUCIBLE_BENCH_CORE is not set: each bench runs with no pin, and its "
+             "results are NOISY")
+    elif not reserved.source:
+        warn(f"the host reserves no cpu: each bench runs on cpu{where.core} of CRUCIBLE_BENCH_CORE, a shared cpu with "
+             "a tick, and its results are NOISY")
     for target in request.targets:
         binary = build_dir / "bench" / target
         if request.should_build:
@@ -246,8 +388,8 @@ def run(root: Path, request: Request, settings: Settings) -> int:
         if not os.access(binary, os.X_OK):
             raise BenchError(f"missing binary: {binary} (build it first, drop --no-build)")
         apply_capabilities(binary)
-        log(f"run  {target}   (taskset -c {core})")
-        status = proc.run(proc.Command(["taskset", "-c", core, str(binary), *request.bench_args],
+        log(f"run  {target}   (cpu {where.core or 'not pinned'})")
+        status = proc.run(proc.Command(list(where.command((str(binary), *request.bench_args))),
                                        timeout_s=proc.BUILD_S, stdout=proc.Output.INHERIT,
                                        stderr=proc.Output.INHERIT)).exit
         if status != 0:
@@ -292,13 +434,56 @@ def self_test() -> int:
         cmake_reader.Target("bench_philox", TARGET_TYPE, folder=BENCH_FOLDER)))
     expect("the code model gives each executable of the bench folder one time, and no library and no other target",
            bench_targets(model) == ("bench_arena", "bench_philox", "bench_trace_ring"))
-    expect("the first isolated core is the core of the runs",
-           pin_core("90-95\n", "88") == ("90", True) and pin_core("92,94\n", "88") == ("92", True))
-    expect("with no isolated core, the fallback core and a warning",
-           pin_core("\n", "88") == ("88", False) and pin_core(None, "88") == ("88", False))
-    with tempfile.TemporaryDirectory(prefix="loop-bench-") as work:
+    expect("a CPU list gives its sorted CPUs, and an empty list gives none",
+           parse_cpu_list("8,0-3\n") == (0, 1, 2, 3, 8) and parse_cpu_list("\n") == ())
+    for bad in ("3-1", "a", "1-b"):
         try:
-            run(Path(work), parse([]), Settings("absent", DEFAULT_PRESET, DEFAULT_CORE))
+            parse_cpu_list(bad)
+            expect(f"the CPU list {bad!r} is refused", False)
+        except BenchError:
+            expect(f"the CPU list {bad!r} is refused", True)
+    with tempfile.TemporaryDirectory(prefix="loop-bench-") as work:
+        cpu_root, cgroup_root = Path(work, "cpu"), Path(work, "cgroup")
+
+        def plant(path: Path, text: str) -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="ascii")
+
+        for cpu in range(220, 256):
+            plant(cpu_root / f"cpu{cpu}" / "topology" / "thread_siblings_list", f"{cpu & ~1}-{cpu | 1}\n")
+        plant(cpu_root / "isolated", "\n")
+        expect("with no reservation and no CRUCIBLE_BENCH_CORE, no pin",
+               placement(Settings("b", "p"), cpu_root, cgroup_root) == Placement("", Reserved(), ()))
+        expect("with no reservation, CRUCIBLE_BENCH_CORE is the core",
+               placement(Settings("b", "p", "5"), cpu_root, cgroup_root).prefix == ("taskset", "-c", "5"))
+        plant(cgroup_root / "bad.slice" / "cpuset.cpus.partition", "root invalid (Cpu list in cpuset.cpus not exclusive)\n")
+        plant(cgroup_root / "bad.slice" / "cpuset.cpus.effective", "0-3\n")
+        plant(cgroup_root / "reserved.slice" / "cpuset.cpus.partition", "root\n")
+        plant(cgroup_root / "reserved.slice" / "cpuset.cpus.exclusive.effective", "224-255\n")
+        where = placement(Settings("b", "p", "5"), cpu_root, cgroup_root)
+        expect("a valid partition is the reservation, and the kernel's invalid one is not",
+               where.reserved == Reserved(tuple(range(224, 256)), "partition", "reserved.slice"))
+        expect("a partition starts the bench in its slice, on the lowest CPU of a full SMT group",
+               where.core == "224" and "--slice=reserved.slice" in where.prefix and where.prefix[-2:] == ("-c", "224")
+               and where.command(("bench",))[-1] == "bench")
+        plant(cgroup_root / "reserved.slice" / "cpuset.cpus.exclusive.effective", "225-255\n")
+        expect("a half SMT group is skipped, so the core has an idle sibling",
+               core_of(read_reserved("", cpu_root, cgroup_root), cpu_root) == 226)
+        plant(cgroup_root / "other.slice" / "cpuset.cpus.partition", "isolated\n")
+        plant(cgroup_root / "other.slice" / "cpuset.cpus.exclusive.effective", "220-223\n")
+        try:
+            read_reserved("", cpu_root, cgroup_root)
+            expect("two partitions with no CRUCIBLE_BENCH_SLICE are refused", False)
+        except BenchError as problem:
+            expect("two partitions with no CRUCIBLE_BENCH_SLICE are refused", "CRUCIBLE_BENCH_SLICE" in str(problem))
+        expect("CRUCIBLE_BENCH_SLICE chooses one of two partitions",
+               read_reserved("other.slice", cpu_root, cgroup_root).cpus == (220, 221, 222, 223))
+        plant(cpu_root / "isolated", "220-223\n")
+        where = placement(Settings("b", "p"), cpu_root, cgroup_root)
+        expect("isolcpus comes first, and taskset alone puts the bench on its core",
+               where.reserved.source == "isolated" and where.core == "220" and "sudo" not in where.prefix)
+        try:
+            run(Path(work), parse([]), Settings("absent", DEFAULT_PRESET))
             expect("a build directory that is not configured is refused", False)
         except BenchError as problem:
             expect("a build directory that is not configured is refused", "not configured" in str(problem))

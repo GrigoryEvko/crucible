@@ -567,21 +567,17 @@ utils/assay/loop/affected.py | refused-word | 1 | run: decide | A text of today.
 utils/assay/loop/affected.py | refused-word | 1 | run_inherited: past | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | save_state: never | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | save_state: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/bench.py | long-sentence | 2 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 3 | <module>: failed | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | <module>: noisy | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/bench.py | refused-word | 1 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | <module>: warn | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | BenchError: failed | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 2 | Request: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | Settings.from_environment: setting | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/bench.py | refused-word | 1 | pin_core: whether | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | run: setting | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | self_test: absent | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | self_test: choice | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | self_test: every | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/bench.py | refused-word | 1 | self_test: otherwise | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/bench.py | semicolon | 1 | pin_core | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/__init__.py | long-sentence | 3 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/__init__.py | refused-word | 4 | <module>: generate | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/derive/__init__.py | refused-word | 1 | <module>: leave | A text of today.  The change that writes the text again in STE lowers the count
