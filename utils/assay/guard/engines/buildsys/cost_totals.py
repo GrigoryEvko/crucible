@@ -101,8 +101,9 @@ THE RULE parse-total
     file with no row counts as zero in the baseline.  `guard write --rule
     parse-total --build-dir DIR` writes the configuration rows and the rows of
     the configuration of the build again, and it keeps the rows of the other
-    configurations.  It removes each row of a file that the tree does not
-    hold, also in the other configurations (held_rows()).  The write refuses
+    configurations.  It removes each row of a file of the tree that the tree
+    does not hold, also in the other configurations.  It keeps each row of an
+    external file, such as a system header (held_rows()).  The write refuses
     a growth of more than the warning threshold with no --reason TEXT.
 
     Complexity: linear in the total length of the file lists, and O(f log f)
@@ -182,7 +183,6 @@ from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.core.ruletable import BUILD_PREFIX
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -497,6 +497,16 @@ def census_name_of(key: rule_ledger.Key) -> str:
     return key.path if key.path else key.entity
 
 
+def census_is_tree_name(name: str) -> bool:
+    """Tell if a name of build_census.file_key names a file of the tree, and not an external file.
+
+    The name of a file of the build directory starts with <build>/, and the
+    name of a system header with <system>/.  A different external file has
+    its absolute path as its name.
+    """
+    return not name.startswith("<") and not Path(name).is_absolute()
+
+
 def census_key_of(name: str, kind: str) -> rule_ledger.Key:
     """Return the key of the row of a file of build_census.file_key.
 
@@ -506,8 +516,8 @@ def census_key_of(name: str, kind: str) -> rule_ledger.Key:
     """
     if name.startswith(CENSUS_BUILD_NAME):
         return rule_ledger.Key(CENSUS_BUILD_PATH + name.removeprefix(CENSUS_BUILD_NAME), kind, "")
-    is_outside = name.startswith("<") or Path(name).is_absolute()
-    return rule_ledger.Key("" if is_outside else name, kind, name if is_outside else "")
+    is_tree = census_is_tree_name(name)
+    return rule_ledger.Key(name if is_tree else "", kind, "" if is_tree else name)
 
 
 def census_file_row(frame: CensusFrame, entry: rule_ledger.Entry, shape: str) -> tuple[str, int, int]:
@@ -866,19 +876,21 @@ def parse_findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def held_rows[Row](root: Path, rows: Mapping[str, Row]) -> dict[str, Row]:
-    """Return the rows of each file that the tree holds, and of each file of the build directory.
+    """Return the rows of each external file, and of each file of the tree that the tree holds.
 
-    A change that divides a file can remove the file from the tree.  A row of such a file names nothing that a build
-    can read again.  The rule ledger-owners refuses such a row in each configuration.  Complexity: one check of a file
-    for each row.
+    The rows have the names of build_census.file_key.  A file of the build directory, a system header and a different
+    external file keep their rows (census_is_tree_name()).  A change that divides a file can remove the file
+    from the tree.  A row of such a file names nothing that a build can read again.  The rule ledger-owners refuses
+    such a row in each configuration.  Complexity: one check of a file for each row of a file of the tree.
     """
-    return {name: row for name, row in rows.items() if name.startswith(BUILD_PREFIX) or (root / name).is_file()}
+    return {name: row for name, row in rows.items() if not census_is_tree_name(name) or (root / name).is_file()}
 
 
 def parse_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Write the configuration rows, the total rows and the file rows of the configuration of the build again.
 
-    The write keeps the rows of the other configurations, less the rows of a file that the tree does not hold.
+    The write keeps the rows of the other configurations, less the rows of a file of the tree that the tree does not
+    hold (held_rows()).
 
     Raises:
         NotApplicable: If the census does not apply to the build

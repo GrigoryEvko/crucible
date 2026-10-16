@@ -11,7 +11,10 @@ holds the refusals of a ledger.  This test holds what a plant cannot hold:
   * the configuration rows of a write, and the write of a configuration that
     the ledger does not hold
   * the head comment of a write (THE HEAD COMMENT)
-  * the rows of a file that the tree does not hold, which a write removes.
+  * the rows of a file of the tree that the tree does not hold, which a
+    write removes
+  * the rows of an external file, which a write keeps in each
+    configuration.
 Exit 0 when each case holds, else 1.
 """
 
@@ -24,7 +27,6 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import testing
-from assay.core.ruletable import BUILD_PREFIX
 from assay.guard.engines.buildsys import cost_totals, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 
@@ -69,6 +71,24 @@ configuration {KIND} kind {KIND}
 include/Base.h | {KIND} | 1000/4 | - | -
 """,
 }
+# A file of the build directory, its name and the name of a system header, as assay.readers.census.file_key gives them.
+BUILD_FILE = "generated/Table.h"
+BUILD_NAME = f"{cost_totals.CENSUS_BUILD_NAME}{BUILD_FILE}"
+SYSTEM_NAME = "<system>/c++/16.2.1/tuple"
+# The rows of the ledger of parse-total with a second configuration, its facts and its totals.  The second configuration
+# also holds three file rows: a system header, a file of the build directory and a removed file of the tree.
+BENCH_LEDGER_ROWS = f"""\
+configuration {KIND} kind {KIND}
+configuration {KIND}-bench kind {KIND}
+configuration {KIND}-bench CRUCIBLE_BENCH on
+- | {KIND} | 2100 | fixtures | the measure of the planted build
+- | {KIND} | 2200 | objects | the measure of the planted build
+- | {KIND}-bench | 2100 | fixtures | the measure of the planted build
+- | {KIND}-bench | 2200 | objects | the measure of the planted build
+- | {KIND}-bench | 900/2 | {SYSTEM_NAME} | -
+{cost_totals.CENSUS_BUILD_PATH}{BUILD_FILE} | {KIND}-bench | 300/2 | - | -
+include/Divided.h | {KIND}-bench | 200/2 | - | -
+"""
 # A head comment that a different writer wrote, with an incorrect fact.
 STALE_HEAD = "# The rows count the last real compile of each unit.\n"
 # The output of -Q --help=target of a planted compiler: x86-64 with no flag, and znver5 with -march=native.
@@ -302,20 +322,43 @@ def real_cases(expect: testing.Expect) -> None:
 
 
 def held_cases(expect: testing.Expect) -> None:
-    """A write keeps the rows of each file that the tree holds, and of each file of the build directory."""
+    """A write keeps the rows of each file that the tree holds, and of each external file."""
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
         (root / "include").mkdir()
         (root / "include" / "Kept.h").write_text("#pragma once\n", encoding="utf-8")
-        rows = {"include/Kept.h": 1, "include/Divided.h": 2, f"{BUILD_PREFIX}generated/Table.h": 3}
+        outside = {
+            BUILD_NAME: 3,
+            SYSTEM_NAME: 4,
+            str(root.parent / "test-cost-totals-away" / "lib.h"): 5,
+        }
+        rows = {"include/Kept.h": 1, "include/Divided.h": 2, **outside}
         expect(
-            "a row of a file that the tree does not hold goes, and the other rows stay",
-            cost_totals.held_rows(root, rows) == {"include/Kept.h": 1, f"{BUILD_PREFIX}generated/Table.h": 3},
+            "a row of a file of the tree that the tree does not hold goes, and the rows of a file of the build "
+            "directory, of a system header and of an absolute path stay",
+            cost_totals.held_rows(root, rows) == {"include/Kept.h": 1, **outside},
+        )
+
+
+def held_write_cases(expect: testing.Expect) -> None:
+    """A write of one configuration keeps the rows of the external files of each other configuration."""
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        plant(root, BUILD_ROWS, "parse-total", BENCH_LEDGER_ROWS)
+        text = written_text("parse-total", root, planted_configuration())
+        expect(
+            "a write of the base keeps the rows of a system header and of a file of the build directory of a "
+            "different configuration, and it removes the row of a file of the tree that the tree does not hold",
+            f"| {SYSTEM_NAME} |" in text
+            and f"{cost_totals.CENSUS_BUILD_PATH}{BUILD_FILE} | {KIND}-bench |" in text
+            and "include/Divided.h" not in text,
         )
 
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (policy_cases, write_cases, head_cases, real_cases, held_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (policy_cases, write_cases, head_cases, real_cases, held_cases, held_write_cases),
     )
