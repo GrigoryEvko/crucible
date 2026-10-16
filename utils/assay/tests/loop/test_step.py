@@ -397,7 +397,7 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
            and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory"
            and "no row of" in found_line.message)
-    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | the test admits it\n")
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.05 | - | the test admits it\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a ledger row with a reason admits the compile, with a warning that names the row",
@@ -410,22 +410,22 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     expect("a row with a kept value under the peak memory with its noise does not admit the compile",
            result.exit == 1 and found_line is not None and "keeps it only up to" in found_line.message)
     (bench.root / "build-configuration.txt").write_text(f"{KIND}-bench\n", encoding="utf-8")
-    bench.ledger("compile-memory", f"@build/out/source.o | {KIND}-bench | 0.01 | - | the bench build admits it\n")
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND}-bench | 0.05 | - | the bench build admits it\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a row of the name of the configuration admits the compile",
            result.exit == 0 and found_line is not None and "the bench build admits it" in found_line.message)
     (bench.root / "build-configuration.txt").unlink()
-    bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.01 | - | another kind\n")
+    bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.05 | - | another kind\n")
     result = bench.launch(bench.tool)
     expect("a row of another kind does not admit the compile", result.exit == 1)
-    bench.ledger("compile-memory", f"out/source.o | {KIND} | 0.01 | - | not an output of the build directory\n")
+    bench.ledger("compile-memory", f"out/source.o | {KIND} | 0.05 | - | not an output of the build directory\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a row whose PATH does not name an output of the build directory does not admit the compile, and the "
            "error gives the line of the row",
            result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
-    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.01 | - | -\n")
+    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.05 | - | -\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a row with no reason does not admit the compile, and the error gives the line of the row",

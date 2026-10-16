@@ -429,16 +429,16 @@ class Planted:
         """Check the rows of a ledger, and a test that cannot start."""
         program = self.program
         self.budget((1000, 2000), (0, 0))
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
+        self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
             "a ledger row of the kind admits the test, with a warning",
             status == 0 and ": warning: [test-memory] " in said and "a planted reason" in said,
         )
-        self.ledger("test-memory", "- | x86_64-release | 0.01 | test_planted | a planted reason\n")
+        self.ledger("test-memory", "- | x86_64-release | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row of another kind admits nothing", status == 1)
-        self.ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.01 | - | a planted reason\n")
+        self.ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.05 | - | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row that names a file and not a test admits nothing", status == 1)
         self.ledger("test-memory", "- | x86_64-debug-asan | 0.000001 | test_planted | a planted reason\n")
@@ -448,21 +448,21 @@ class Planted:
             status == 1 and ": error: [test-memory] " in said and "more than the row" in said,
         )
         self.budget((1000, 2000), (0, 1000))
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a planted reason\n")
+        self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
             "a ledger row keeps a test over the warning threshold only, with a warning that names its kept value",
-            status == 0 and ": warning: [test-memory] " in said and "keeps it up to 0.01 GB" in said,
+            status == 0 and ": warning: [test-memory] " in said and "keeps it up to 0.05 GB" in said,
         )
         self.budget((1000, 2000), (0, 0))
         (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
-        self.ledger("test-memory", "- | x86_64-debug-asan-bench | 0.01 | test_planted | a row of the bench build\n")
+        self.ledger("test-memory", "- | x86_64-debug-asan-bench | 0.05 | test_planted | a row of the bench build\n")
         status, said = self.launch(program)
         expect(
             "a ledger row of the name of the configuration keeps the test",
             status == 0 and "a row of the bench build" in said,
         )
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.01 | test_planted | a row of the build kind\n")
+        self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a row of the build kind\n")
         status, said = self.launch(program)
         expect(
             "a ledger row of the build kind keeps the test of a build with options",

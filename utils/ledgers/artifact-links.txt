@@ -20,8 +20,6 @@ format 1
 rule artifact-links
 configuration x86_64-debug-asan kind x86_64-debug-asan
 configuration x86_64-debug-asan tier x86-64-eb53fd1c
-configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier znver5-f612fd24
 configuration x86_64-debug-tsan kind x86_64-debug-tsan
 configuration x86_64-debug-tsan tier x86-64-eb53fd1c
 configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
@@ -30,7 +28,9 @@ configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
 configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
-@build/tests | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+configuration x86_64-release kind x86_64-release
+configuration x86_64-release tier znver4-3c439563
+@build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tests | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -154,7 +154,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/tools | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tools | init | 1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -246,7 +246,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.26 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | comment | 1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack
+@build/vessel | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/vessel | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | _ITM_deregisterTMCloneTable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -500,7 +500,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.26 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.1.1 20260515 (Red Hat 16.1.1-2) | a new build kind or target
+@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260829 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | elf-type | +1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _GLOBAL__sub_I__ZN23pipeline_dispatch_bench10small_dataE | a new build kind or target
@@ -868,146 +868,146 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 @x86_64-debug-ubsan-strict | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.11 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | init | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | init | -1 | _sub_I_00099_0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | needed | +1 | ld-linux-x86-64.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | needed | -1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | needed | -1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | section | -1 | .preinit_array | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | +1 | ld-linux-x86-64.so.2 GLIBC_2.3 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | +1 | libc.so.6 GLIBC_2.16 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | -1 | libc.so.6 GLIBC_2.7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | -1 | libgcc_s.so.1 GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | +1 | libstdc++.so.6 CXXABI_1.3.11 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tests | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | init | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | init | -1 | _sub_I_00099_0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | needed | -1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | needed | -1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | section | -1 | .preinit_array | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | +1 | libc.so.6 GLIBC_2.14 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | -1 | libgcc_s.so.1 GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | -1 | libm.so.6 GLIBC_2.27 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | -1 | libm.so.6 GLIBC_2.43 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 CXXABI_1.3.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 GLIBCXX_3.4.22 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE15_M_replace_coldEPcmPKcmm@GLIBCXX_3.4.31 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | _ZdlPvm | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | _ZdlPvm@CXXABI_1.3.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | _ZdlPvmSt11align_val_t | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | _ZdlPvmSt11align_val_t@CXXABI_1.3.11 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | _Znwm | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | _Znwm@GLIBCXX_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | _ZnwmSt11align_val_t | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | _ZnwmSt11align_val_t@CXXABI_1.3.11 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_handle_no_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_option_detect_stack_use_after_return | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_poison_memory_region | -
-@x86_64-release | @build/vessel | import | -1 | __asan_poison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_register_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load16 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_load_n | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store16 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_report_store_n | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_3 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_7 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_unpoison_memory_region | -
-@x86_64-release | @build/vessel | import | -1 | __asan_unpoison_stack_memory | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_unregister_globals | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __asan_version_mismatch_check_v8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __cxa_atexit | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | __cxa_atexit@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __cxa_throw | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | __cxa_throw@CXXABI_1.3 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __fprintf_chk | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | __fprintf_chk@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __memset_chk@GLIBC_2.3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __popcountdi2@GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __sanitizer_annotate_contiguous_container | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | __tls_get_addr | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | __tls_get_addr@GLIBC_2.3 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | aligned_alloc | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | aligned_alloc@GLIBC_2.16 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | calloc | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | calloc@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | clock_gettime | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | clock_gettime@GLIBC_2.17 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | fclose | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | fclose@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | fopen | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | fopen@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | free | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | free@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | fwrite | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | fwrite@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | malloc | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | malloc@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | memchr | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | memchr@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | memcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | memcmp@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | memcpy | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | memcpy@GLIBC_2.14 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | memmove | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | memmove@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | memset | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | memset@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | pthread_create | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | pthread_create@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | pthread_join | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | pthread_setname_np | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | sigaltstack | -
-@x86_64-release | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | -
-@x86_64-release | @build/vessel | import | -1 | strcmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | strcmp@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | strerror | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | strerror@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | strlen | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | strlen@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | strncmp | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | strncmp@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | -1 | strnlen | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | import | +1 | strnlen@GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | init | -1 | _sub_I_00099_0 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | init | -1 | _sub_I_00099_1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | needed | +1 | ld-linux-x86-64.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | needed | -1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | ld-linux-x86-64.so.2 GLIBC_2.3 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.14 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.16 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.17 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | -1 | libgcc_s.so.1 GCC_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.11 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@x86_64-release | @build/tests | init | -1 | __asan_init | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | init | -1 | _sub_I_00099_0 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | init | -1 | _sub_I_00099_1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | needed | +1 | ld-linux-x86-64.so.2 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | needed | -1 | libasan.so.8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | needed | -1 | libubsan.so.1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | section | -1 | .preinit_array | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | +1 | ld-linux-x86-64.so.2 GLIBC_2.3 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | +1 | libc.so.6 GLIBC_2.16 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | -1 | libc.so.6 GLIBC_2.7 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | -1 | libgcc_s.so.1 GCC_3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | +1 | libstdc++.so.6 CXXABI_1.3.11 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tests | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | init | -1 | __asan_init | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | init | -1 | _sub_I_00099_0 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | init | -1 | _sub_I_00099_1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | needed | -1 | libasan.so.8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | needed | -1 | libm.so.6 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | section | -1 | .preinit_array | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | +1 | libc.so.6 GLIBC_2.14 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | -1 | libgcc_s.so.1 GCC_3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | -1 | libm.so.6 GLIBC_2.27 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | -1 | libm.so.6 GLIBC_2.43 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 CXXABI_1.3.9 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 GLIBCXX_3.4.22 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/tools | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE15_M_replace_coldEPcmPKcmm@GLIBCXX_3.4.31 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | _ZSt21__glibcxx_assert_failPKciS0_S0_@GLIBCXX_3.4.30 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | _ZdlPvm | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | _ZdlPvm@CXXABI_1.3.9 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | _ZdlPvmSt11align_val_t | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | _ZdlPvmSt11align_val_t@CXXABI_1.3.11 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | _Znwm | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | _Znwm@GLIBCXX_3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | _ZnwmSt11align_val_t | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | _ZnwmSt11align_val_t@CXXABI_1.3.11 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_handle_no_return | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_init | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_option_detect_stack_use_after_return | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_poison_memory_region | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_poison_stack_memory | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_register_globals | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load16 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load2 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_load_n | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store16 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store2 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_report_store_n | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_6 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_7 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_free_9 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_0 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_2 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_3 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_6 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_7 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_stack_malloc_9 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_unpoison_memory_region | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_unpoison_stack_memory | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_unregister_globals | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __asan_version_mismatch_check_v8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __cxa_atexit | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | __cxa_atexit@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __cxa_throw | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | __cxa_throw@CXXABI_1.3 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __fprintf_chk | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | __fprintf_chk@GLIBC_2.3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __memset_chk@GLIBC_2.3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __popcountdi2@GCC_3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __sanitizer_annotate_contiguous_container | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | __tls_get_addr | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | __tls_get_addr@GLIBC_2.3 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | aligned_alloc | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | aligned_alloc@GLIBC_2.16 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | calloc | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | calloc@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | clock_gettime | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | clock_gettime@GLIBC_2.17 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | fclose | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | fclose@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | fopen | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | fopen@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | free | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | free@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | fwrite | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | fwrite@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | malloc | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | malloc@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | memchr | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | memchr@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | memcmp | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | memcmp@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | memcpy | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | memcpy@GLIBC_2.14 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | memmove | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | memmove@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | memset | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | memset@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | pthread_create | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | pthread_create@GLIBC_2.34 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | pthread_join | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | pthread_join@GLIBC_2.34 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | pthread_setname_np | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | pthread_setname_np@GLIBC_2.34 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | sigaltstack | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | sigaltstack@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | strcmp | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | strcmp@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | strerror | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | strerror@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | strlen | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | strlen@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | strncmp | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | strncmp@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | -1 | strnlen | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | import | +1 | strnlen@GLIBC_2.2.5 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | init | -1 | _sub_I_00099_0 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | init | -1 | _sub_I_00099_1 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | needed | +1 | ld-linux-x86-64.so.2 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | needed | -1 | libasan.so.8 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | ld-linux-x86-64.so.2 GLIBC_2.3 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.14 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.16 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libc.so.6 GLIBC_2.17 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | -1 | libgcc_s.so.1 GCC_3.4 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.11 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 CXXABI_1.3.9 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | -1 | libstdc++.so.6 GLIBCXX_3.4.30 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
+@x86_64-release | @build/vessel | version | +1 | libstdc++.so.6 GLIBCXX_3.4.31 | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
