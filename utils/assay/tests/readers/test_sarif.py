@@ -376,6 +376,58 @@ def stored_cases(expect: testing.Expect) -> None:
     expect("texts() gives three texts for each record", len(sarif.texts(log)) == 3 * len(sarif.records(log)))
 
 
+def _internal_error_log(level: str) -> dict[str, object]:
+    """Return a log with one error and one notification of the level `level`, in the shape of an internal error.
+
+    GCC 16.2.1 wrote this shape when SIGSEGV stopped cc1plus in a constant
+    evaluation with no earlier error (THE INTERNAL COMPILER ERROR).
+    """
+    notification = {
+        "locations": [_location("/w/probe.cpp", 3, 64, "    total += index % 7;")],
+        "message": {"text": "Segmentation fault"},
+        "level": level,
+    }
+    invocation = {
+        "arguments": ["/usr/libexec/gcc/cc1plus", "-quiet"],
+        "executionSuccessful": False,
+        "toolExecutionNotifications": [notification],
+    }
+    result = {
+        "ruleId": "error",
+        "level": "error",
+        "message": {"text": "a planted error"},
+        "locations": [_location("/w/probe.cpp", 6, 20)],
+    }
+    return {"version": "2.1.0", "runs": [{"invocations": [invocation], "results": [result]}]}
+
+
+def internal_error_cases(expect: testing.Expect) -> None:
+    """Check the record of an internal compiler error, which GCC writes as a notification of the invocation."""
+    log = parsed(_internal_error_log("error"))
+    last = log.diagnostics[-1]
+    expect(
+        "a notification gives a record of the kind internal compiler error after the results, with its message and "
+        "the start of its region",
+        [record.kind for record in log.diagnostics] == [sarif.Kind.ERROR, sarif.Kind.ICE]
+        and (last.path, last.line, last.column, last.message, last.snippet)
+        == ("/w/probe.cpp", 3, 64, "Segmentation fault", "    total += index % 7;"),
+    )
+    rendering = sarif.render(log)
+    expect(
+        "render() gives the line of the internal compiler error last, and the record is no error head",
+        rendering.lines[-1] == "/w/probe.cpp:3:64: internal compiler error: Segmentation fault"
+        and len(rendering.errors) == 1,
+    )
+    expect(
+        "from_json(to_json(log)) keeps the record of the internal compiler error",
+        sarif.from_json(json.loads(json.dumps(sarif.to_json(log)))) == log,
+    )
+    expect(
+        "a notification of a level other than error is refused",
+        refuses(lambda: parsed(_internal_error_log("note")), "only for an internal compiler error"),
+    )
+
+
 def compile_with_log(cxx: str, work: Path, name: str, text: str) -> tuple[list[str], sarif.Log]:
     """Compile one source with the SARIF log and no caret display, and return the text lines and the log."""
     source = work / name
@@ -435,5 +487,14 @@ def compile_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    groups = (parse_cases, render_cases, plugin_cases, refusal_cases, column_cases, stored_cases, compile_cases)
+    groups = (
+        parse_cases,
+        render_cases,
+        plugin_cases,
+        refusal_cases,
+        column_cases,
+        stored_cases,
+        internal_error_cases,
+        compile_cases,
+    )
     return testing.run(__name__.removeprefix("assay."), argv, groups)

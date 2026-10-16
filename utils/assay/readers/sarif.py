@@ -19,6 +19,23 @@ THE FILE
     starts with `gcc/`.  In the log of a compiler without that patch, a nested
     diagnostic has no `gcc/kind`, and parse() refuses the log.
 
+THE INTERNAL COMPILER ERROR
+    GCC writes an internal compiler error as a notification of the
+    invocation (`toolExecutionNotifications`), and not as a result.  The
+    notification has the level `error`, a message such as "Segmentation
+    fault", and the location of the internal compiler error.  parse() gives
+    each notification as a record of the kind `internal compiler error`,
+    after the records of the results.  The text output prints the internal
+    compiler error last too.  The record has the location of the start of
+    the region, because a notification has no gcc/textLocation.  parse()
+    refuses a notification of a different level, because GCC writes no
+    other notification.
+    After an earlier error, GCC writes no notification.  It prints
+    "confused by earlier errors, bailing out", and the log then holds only
+    the earlier error.  The exit status of the compiler is then the only
+    sign of the internal compiler error (assay.loop.fixture.store, The
+    internal compiler error).
+
 THE MESSAGE
     A SARIF message writes each literal "{" and "}" two times, and it writes a
     hyperlink as "[TEXT](URL)" (SARIF 2.1.0, sections 3.11.5 and 3.11.6).  The
@@ -524,8 +541,41 @@ def _tool(run: Mapping[str, object], where: str) -> str:
     return _text(arguments[0], f"{where}.arguments[0]").rsplit("/", 1)[-1] if arguments else "cc1plus"
 
 
+def _notifications(run: Mapping[str, object], bases: Mapping[str, str], where: str) -> list[Diagnostic]:
+    """Return a record of the kind `internal compiler error` for each notification of each invocation of a run.
+
+    THE INTERNAL COMPILER ERROR gives the rules.
+
+    Raises:
+        SarifError: If a notification does not have the level `error`, or it has no message
+    """
+    records: list[Diagnostic] = []
+    for number, invocation_value in enumerate(_list(run.get("invocations"), f"{where}.invocations")):
+        invocation_where = f"{where}.invocations[{number}]"
+        invocation = _object(invocation_value, invocation_where)
+        notes = _list(invocation.get("toolExecutionNotifications"), f"{invocation_where}.toolExecutionNotifications")
+        for index, value in enumerate(notes):
+            note_where = f"{invocation_where}.toolExecutionNotifications[{index}]"
+            notification = _object(value, note_where)
+            level = _text(notification.get("level"), f"{note_where}.level")
+            if level != "error":
+                raise SarifError(
+                    f"{note_where}: the level {level!r} of a notification is not error.  GCC writes a notification "
+                    f"only for an internal compiler error"
+                )
+            locations = _list(notification.get("locations"), f"{note_where}.locations")
+            place = ("", 0, 0, "")
+            if locations:
+                place = _place(_object(locations[0], f"{note_where}.locations[0]"), bases, note_where)
+            message = _message(notification, note_where)
+            records.append(
+                Diagnostic(Kind.ICE, None, place[0], place[1], place[2], 0, message, "", 0, False, place[3], ())
+            )
+    return records
+
+
 def parse(data: bytes, where: str) -> Log:
-    """Read the records of a SARIF log of GCC.
+    """Read the records of a SARIF log of GCC: the results, then each internal compiler error.
 
     Complexity: linear in the bytes of the log.
 
@@ -549,7 +599,7 @@ def parse(data: bytes, where: str) -> Log:
         _result(_object(value, f"{where}.results[{index}]"), bases, f"{where}.results[{index}]")
         for index, value in enumerate(results)
     )
-    return Log(_tool(run, where), tuple(parsed))
+    return Log(_tool(run, where), (*parsed, *_notifications(run, bases, where)))
 
 
 def read(path: Path) -> Log:

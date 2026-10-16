@@ -95,6 +95,10 @@ EXTRA_SEARCH = {"neg/neg_parent.cpp": "include/sub", "neg/neg_linked.cpp": "root
 # Each symbolic link of the tree, and its target relative to the root.
 LINKS = {"roots/c": "real/c", "include/d/D.h": "real/d/D.h"}
 CONVERTING_B = "#pragma once\nstruct B { B(int) {} };\n"
+# The option of the driver of GCC that gives the exit status of cc1plus, and the status of cc1plus for an internal
+# compiler error.  GCC 16.2.1 exited with this status when SIGSEGV stopped cc1plus, also after an earlier error.
+GCC_PASS_EXIT_CODES = "-pass-exit-codes"
+GCC_ICE_EXIT_CODE = 4
 
 # The fixtures of a planted tree that the quarantine plugin of the build checks
 # (StoreTest.plant_plugin_tree).  Each one fails for its own reason, the static
@@ -516,6 +520,21 @@ class StoreTest:
         self.expect(stored[0] == 0 and self.has(stored[3], "stored") and CONVERT[0] in stored[1],
                     f"with LC_ALL={chosen} and LANGUAGE=de the diagnostics are English: {stored[0]} {stored[3]}")
 
+    def plant_compiler(self, name: str, text: str) -> None:
+        """Write the wrapper compiler `name` with the script `text`, and make it the compiler of each fixture.
+
+        The check then waits for the settle period of the store.  The store
+        can then keep the result of a compile with the wrapper.
+        """
+        wrapper = self.root / name
+        wrapper.write_text(text)
+        wrapper.chmod(0o755)
+        rows = self.database_rows()
+        for row in rows:
+            row["arguments"] = [str(wrapper), *row["arguments"][1:]]
+        compdb.plant(self.build, rows)
+        self.settle()
+
     def check_identity_change(self) -> None:
         """A compiler that changes during the compile stores no result.
 
@@ -524,15 +543,8 @@ class StoreTest:
         dependency, so only the key that the driver computes again after the
         compile sees the change.
         """
-        wrapper = self.root / "wrapper.sh"
-        wrapper.write_text(f'#!/bin/sh\ncase " $* " in *" -c "*) echo "# a change" >> "$0";; esac\n'
-                           f'exec "{self.cxx}" "$@"\n')
-        wrapper.chmod(0o755)
-        rows = self.database_rows()
-        for row in rows:
-            row["arguments"] = [str(wrapper), *row["arguments"][1:]]
-        compdb.plant(self.build, rows)
-        self.settle()
+        self.plant_compiler("wrapper.sh", f'#!/bin/sh\ncase " $* " in *" -c "*) echo "# a change" >> "$0";; esac\n'
+                                          f'exec "{self.cxx}" "$@"\n')
         changed = self.run("neg_convert", *CONVERT)
         self.expect(changed[0] == 0 and self.has(changed[3], "not stored (the compiler identity changed during the "
                                                              "compile"),
@@ -544,23 +556,41 @@ class StoreTest:
         A wrapper compiler removes the option of the SARIF log from each
         command.  The compile then writes the text output only.
         """
-        wrapper = self.root / "no_log.sh"
-        wrapper.write_text("#!/bin/sh\n"
-                           'for argument; do shift; case "$argument" in -fdiagnostics-add-output=*) ;; '
-                           '*) set -- "$@" "$argument" ;; esac; done\n'
-                           f'exec "{self.cxx}" "$@"\n')
-        wrapper.chmod(0o755)
-        rows = self.database_rows()
-        for row in rows:
-            row["arguments"] = [str(wrapper), *row["arguments"][1:]]
-        compdb.plant(self.build, rows)
-        self.settle()
+        self.plant_compiler("no_log.sh", "#!/bin/sh\n"
+                                         'for argument; do shift; case "$argument" in -fdiagnostics-add-output=*) ;; '
+                                         '*) set -- "$@" "$argument" ;; esac; done\n'
+                                         f'exec "{self.cxx}" "$@"\n')
         missing = self.run("neg_convert", *CONVERT)
         self.expect(missing[0] == 1 and "wrote no SARIF log" in missing[2] and CONVERT[0] in missing[1],
                     f"a compile with no SARIF log fails, and the driver prints its text output: {missing[0]} "
                     f"{missing[2]}")
         self.expect(self.has(missing[3], "not stored (the compile wrote no SARIF log"),
                     f"the store keeps no result of a compile with no SARIF log: {missing[3]}")
+
+    def check_internal_compiler_error(self) -> None:
+        """A compile that ends in an internal compiler error fails its fixture, and the store keeps no result of it.
+
+        A wrapper compiler runs the compiler.  After a compile that fails, it
+        exits as the driver of GCC exits after an internal compiler error of
+        cc1plus that follows an earlier error.  The status is GCC_ICE_EXIT_CODE
+        when the command has the option GCC_PASS_EXIT_CODES, else 1.  The log
+        then holds the earlier error only, as GCC writes it after "confused by
+        earlier errors, bailing out".
+        """
+        self.plant_compiler("internal_error.sh",
+                            f'#!/bin/sh\n"{self.cxx}" "$@"\nstatus=$?\nif [ "$status" = 1 ]; then\n'
+                            f'  for argument; do [ "$argument" = "{GCC_PASS_EXIT_CODES}" ] && exit '
+                            f'{GCC_ICE_EXIT_CODE}; done\nfi\nexit "$status"\n')
+        first = self.run("neg_convert", *CONVERT)
+        self.expect(first[0] == 1 and "ended in an internal compiler error" in first[2] and CONVERT[0] in first[1],
+                    f"a compile that ends in an internal compiler error fails its fixture, also when each regex matches "
+                    f"its earlier error: {first[0]} {first[2]}")
+        self.expect(self.has(first[3], "not stored (the compile ended in an internal compiler error"),
+                    f"the store keeps no result of an internal compiler error: {first[3]}")
+        second = self.run("neg_convert", *CONVERT)
+        self.expect(second[0] == 1 and self.has(second[3], "compiled (no entry)"),
+                    f"the next run compiles again, and it does not give the internal compiler error from the store: "
+                    f"{second[0]} {second[3]}")
 
     def check_store_off(self) -> None:
         """With CRUCIBLE_NEG_CACHE=0 or CRUCIBLE_CACHE_DIR=off, the driver compiles and writes no entry."""
@@ -1482,6 +1512,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_message_language,
     StoreTest.check_identity_change,
     StoreTest.check_missing_log,
+    StoreTest.check_internal_compiler_error,
     StoreTest.check_store_off,
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
@@ -1654,6 +1685,34 @@ def check_parsers(failures: list[str]) -> None:
     check_kernel_time(failures)
     check_unmatched_errors(failures)
     check_census_words(failures)
+    check_internal_errors(failures)
+
+
+def check_internal_errors(failures: list[str]) -> None:
+    """Check the signs of an internal compiler error, and the verdict of the fixture on such a compile."""
+    argv = store.compile_argv(["g++", "-c", "/w/a.cpp"], Path("/w/a.o"), Path("/w/a.d"), Path("/w/a.sarif"))
+    if store.PASS_EXIT_CODES not in argv:
+        failures.append(f"each compile gets {store.PASS_EXIT_CODES}: {argv}")
+    error = planted_record(sarif.Kind.ERROR, None, "/w/neg/neg_ice.cpp", 2, 3, "an earlier error")
+    internal = planted_record(sarif.Kind.ICE, None, "/w/include/a.h", 7, 9, "Segmentation fault")
+    cases = (
+        (store.CompileResult(1, "", 0.1, 0.0, None, log=sarif.Log("cc1plus", (error, internal))),
+         "an internal compiler error at /w/include/a.h:7:9: Segmentation fault"),
+        (store.CompileResult(store.ICE_EXIT_CODE, "", 0.1, 0.0, None, log=sarif.Log("cc1plus", (error,))),
+         f"the exit status {store.ICE_EXIT_CODE}"),
+        (store.CompileResult(-9, "", 0.1, 0.0, None), "the signal 9 stopped the compiler driver"),
+        (store.CompileResult(1, "", 0.1, 0.0, None, log=sarif.Log("cc1plus", (error,))), ""),
+    )
+    for result, text in cases:
+        found = store.internal_error(result)
+        if (text and text not in found) or (not text and found):
+            failures.append(f"the internal compiler error of exit status {result.returncode} is {found!r}")
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(printed):
+        verdict = store.evaluate("neg_ice", Path("/w/neg/neg_ice.cpp"), ["an earlier error"], cases[0][0])
+    if verdict != (1, None) or "Segmentation fault" not in printed.getvalue():
+        failures.append(f"a fixture whose compile ends in an internal compiler error fails, also when each regex "
+                        f"matches, and the message names the error: {verdict} {printed.getvalue()!r}")
 
 
 def check_census_words(failures: list[str]) -> None:

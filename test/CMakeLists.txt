@@ -780,7 +780,8 @@ endfunction()
 # hold the census of the plugin, from a compile and from the store, and the
 # census must show the region macros.  The census of a fixture that compiles
 # must come from the section of its object.  A compile that writes no SARIF
-# log must fail its fixture.
+# log must fail its fixture.  A compile that ends in an internal compiler
+# error must fail its fixture, and the store must keep no result of it.
 # Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
@@ -788,7 +789,7 @@ endfunction()
 # count of checks, so each part runs one check.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 34)
+set(FIXTURE_STORE_SELF_TEST_PARTS 35)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   crucible_script_test(NAME fixture_store_self_test_${part}

@@ -96,6 +96,29 @@ holds the bytes of the plugin (item 1 below).  A new build of the plugin then
 compiles each fixture again.  A second compile for the census costs as much
 as the compile of the fixture, after each edit of a header.
 
+The internal compiler error
+---------------------------
+An internal compiler error of GCC can come from a defect that does not occur
+in each run.  An example is a defect of the quarantine plugin.  A stored
+result of such a compile gives the same error on each run, also in each work
+tree that shares the store.  The store then keeps no such result
+(`internal_error`).
+
+The driver gives each compile the option `-pass-exit-codes`.  The driver of
+GCC then exits with the status of cc1plus: 1 for an error, and
+ICE_EXIT_CODE for an internal compiler error.  With no such option, it exits
+with 1 for the two.  After an earlier error, GCC prints "confused by earlier
+errors, bailing out", and its SARIF log holds no record of the internal
+compiler error.  The exit status is then the only sign of the internal
+compiler error.  With no earlier error, the log holds a record of it
+(assay.readers.sarif, THE INTERNAL COMPILER ERROR), and the message of the
+fixture gives its text.  A signal that stops the driver of a compile is the
+same case.
+
+Such a compile fails its fixture, and the message names the internal
+compiler error.  The store keeps no such result, and a stored result of it
+is a miss.  The next run then compiles again.
+
 The result store
 ----------------
 Without the store, CTest compiles each fixture again on each run, and these
@@ -278,8 +301,9 @@ its directory again.
 
 The driver stores no result in these conditions:
 
-- The exit code is not 0 or 1.  A signal or an internal error of the compiler
-  can give a different output on the next run.
+- The compile ends in an internal compiler error, or a signal stops its
+  driver (The internal compiler error).  Each other exit code that is not 0
+  or 1 can also give a different output on the next run.
 - An input changed in the settle period of item 7, or the key changed during
   the compile (item 6).
 - The driver cannot read a root or a probed path.
@@ -673,6 +697,32 @@ _SECTION_CENSUS_RULE = "quarantine"
 # Why the store keeps no compile that succeeds: the census reads the object of the compile, and the store keeps no
 # object (The quarantine plugin).
 _SUCCEEDED = "the compile succeeded, and its census reads the object of a new compile"
+# The option that makes the driver of GCC exit with the status of cc1plus (The internal compiler error).
+PASS_EXIT_CODES = "-pass-exit-codes"
+# The status of cc1plus for an internal compiler error: ICE_EXIT_CODE of gcc/system.h.
+ICE_EXIT_CODE = 4
+
+
+def internal_error(result: CompileResult) -> str:
+    """Return the text that names the internal compiler error of a compile, or an empty text when it had none.
+
+    A compile has an internal compiler error when it gives one of three signs
+    (The internal compiler error).  The signs are the exit status
+    ICE_EXIT_CODE, a signal that stopped the driver, and a record of the kind
+    internal compiler error in the log.  The text gives the message of the
+    first such record, and else the exit status.  The cost is O(n) in the
+    records of the log.
+    """
+    records = result.log.diagnostics if result.log is not None else ()
+    record = next((item for item in records if item.kind is sarif.Kind.ICE), None)
+    if record is not None:
+        place = f" at {record.path}:{record.line}:{record.column}" if record.path else ""
+        return f"the compile ended in an internal compiler error{place}: {record.message}"
+    if result.returncode == ICE_EXIT_CODE:
+        return f"the compile ended in an internal compiler error (the exit status {ICE_EXIT_CODE} of {PASS_EXIT_CODES})"
+    if result.returncode < 0:
+        return f"the signal {-result.returncode} stopped the compiler driver"
+    return ""
 
 
 def _report_mode(argv: list[str]) -> list[str]:
@@ -751,7 +801,8 @@ def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Pat
     """Return the command that compiles the fixture.
 
     The command keeps the quarantine plugin of the build in the mode report
-    (The quarantine plugin).  The object file goes to `output`, GCC writes the
+    (The quarantine plugin).  It also gets PASS_EXIT_CODES (The internal
+    compiler error).  The object file goes to `output`, GCC writes the
     SARIF log of its diagnostics to `sarif_log`, and it writes the list of the
     files that it read to `depfile`.  The last two arguments are `-MF` and
     `depfile`.
@@ -771,6 +822,11 @@ def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Pat
     # contracts are already enabled on the replayed command.
     if any(arg.startswith("-fcontract") for arg in argv):
         argv.append("-fcontract-evaluation-semantic=enforce")
+
+    # The driver of GCC then exits with the status of cc1plus.  An internal
+    # compiler error then gets a status of its own (the module text, The
+    # internal compiler error).
+    argv.append(PASS_EXIT_CODES)
 
     # A fixture that refuses a target other than the host gets the flags of
     # that target from CRUCIBLE_NEG_EXTRA_FLAGS, which the test sets.  The
@@ -2871,7 +2927,9 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     A stored result whose compile is over the error threshold of the rule that
     holds the error level is a miss, so the driver measures again.  A stored
     result of a compile with no error is a miss too.  The store keeps no such
-    compile, because its census reads the object (The quarantine plugin).
+    compile, because its census reads the object (The quarantine plugin).  The
+    store keeps no compile that ends in an internal compiler error, and a
+    stored result of one is a miss (The internal compiler error).
     """
     depfile = Path(argv[-1])
     env = compile_environment(os.environ)
@@ -2888,6 +2946,9 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             stored, reason = None, f"the stored compile {budget.excess_text(stored)} than the error threshold"
         if stored is not None and stored.returncode == 0:
             stored, reason = None, _SUCCEEDED
+        stored_failure = internal_error(stored) if stored is not None else ""
+        if stored_failure:
+            stored, reason = None, f"a stored result is a miss when {stored_failure}"
         if stored is not None:
             _note(fixture_name, f"the result comes from the store (entry {key})")
             return stored, True
@@ -2920,15 +2981,17 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         dependencies, missing, dependency_reason = dependency_pass(argv, directory, depfile.parent, env)
     result = result.with_inputs(None if dependencies is None else tuple(dependencies))
     if store is not None and key is not None:
-        if dependencies is None:
+        if internal_error(result):
+            # The next run can give a different output (the module text, The
+            # internal compiler error).
+            is_stored, why = False, internal_error(result)
+        elif dependencies is None:
             is_stored, why = False, dependency_reason
         elif result.log is None:
             is_stored, why = False, result.log_problem
         elif result.returncode == 0:
             is_stored, why = False, _SUCCEEDED
         elif result.returncode != 1:
-            # A signal or an internal error of the compiler can give a different
-            # output on the next run.
             is_stored, why = False, f"the exit code is {result.returncode}"
         elif budget.is_over_error(fixture_name, result):
             is_stored, why = False, f"the compile {budget.excess_text(result)} than the error threshold"
@@ -3030,14 +3093,23 @@ def evaluate(fixture_name: str, source: Path, expected_regexes: list[str],
 
     The second value is the list of the errors that no regex reaches
     (`unmatched_errors`), for `report_own_reason`.  It is None when the
-    compile succeeded or a regex did not match, because the test then fails
-    for that cause.  The function gives the same values and the same messages
-    for a stored result and for a fresh compile.
+    compile succeeded or ended in an internal compiler error, and when a regex
+    did not match.  The test then fails for that cause.  The function gives
+    the same values and the same messages for a stored result and for a fresh
+    compile.
     """
     # The reader of the test sees the text output of the compiler, with each
     # source line and caret line.
     sys.stdout.write(result.output)
 
+    # A compile that ends in an internal compiler error does not show that the
+    # compiler refuses the fixture (the module text, The internal compiler
+    # error).
+    failure = internal_error(result)
+    if failure:
+        _report_module().write_line(f"negative fixture {fixture_name}: {failure}.  The store keeps no result of it, "
+                                    f"and the next run compiles the fixture again", is_error=True)
+        return 1, None
     if result.returncode == 0:
         print(
             f"negative fixture {fixture_name} compiled successfully",
