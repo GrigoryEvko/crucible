@@ -22,7 +22,7 @@ rule syscall-capability
 configuration x86_64-debug-asan kind x86_64-debug-asan
 configuration x86_64-debug-tsan kind x86_64-debug-tsan
 configuration x86_64-debug-asan-syntax kind x86_64-debug-asan
-configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+znver5-f612fd24
+configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+native-x86_64
 configuration x86_64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan-syntax CMAKE_CXX_FLAGS -march=x86-64-v3
 configuration x86_64-debug-asan-syntax CRUCIBLE_SANITIZE on

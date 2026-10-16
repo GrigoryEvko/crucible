@@ -91,7 +91,8 @@ include/Divided.h | {KIND}-bench | 200/2 | - | -
 """
 # A head comment that a different writer wrote, with an incorrect fact.
 STALE_HEAD = "# The rows count the last real compile of each unit.\n"
-# The output of -Q --help=target of a planted compiler: x86-64 with no flag, and znver5 with -march=native.
+# The output of -Q --help=target of a planted compiler: x86-64 with no flag, and znver5, the processor of a planted
+# host, with -march=native.
 COMPILER_HELP = "The following options are target specific:\n  -march=   \t\tx86-64\n  -mtune=   \t\tgeneric\n"
 # The rows of a build that a planted compiler compiles, with one object of all that takes -march=native.
 NATIVE_ROWS = f"""\
@@ -126,10 +127,14 @@ def plant(root: Path, rows: str, rule_id: str, ledger_rows: str) -> Path:
 
 
 def plant_compiler(root: Path, exit_status: int = 0) -> None:
-    """Write a planted compiler that prints COMPILER_HELP, with znver5 for -march=native, and exits with a status."""
+    """Write a planted compiler that prints COMPILER_HELP, with znver5 for -march=native, and exits with a status.
+
+    The compiler prints an x86_64 machine for -dumpmachine.
+    """
     compiler = root / "planted-cxx"
     compiler.write_text(
         f"#!{sys.executable}\nimport sys\n"
+        f"print('x86_64-pc-linux-gnu') if '-dumpmachine' in sys.argv else "
         f"print({COMPILER_HELP!r}.replace('x86-64', 'znver5' if '-march=native' in sys.argv else 'x86-64'))\n"
         f"sys.exit({exit_status})\n",
         encoding="utf-8",
@@ -302,8 +307,8 @@ def real_cases(expect: testing.Expect) -> None:
             configuration.name == KIND and tier.startswith("x86-64-"),
         )
         expect(
-            "a compile of all with -march=native adds the native tier to the tier, once",
-            tier.count("+") == 1 and "+znver5-" in tier,
+            "a compile of all with -march=native adds the native request to the tier, once, and no processor",
+            tier.count("+") == 1 and tier.endswith("+native-x86_64") and "znver5" not in tier,
         )
         expect(
             "the cache entry of the build type is a fact of the configuration",

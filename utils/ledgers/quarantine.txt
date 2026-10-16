@@ -48,12 +48,13 @@
 #
 # THE TIER
 #   The tier names the target of the build flags.  When a compile of the objects of all has its own
-#   -march=native or -mcpu=native, the tier adds "+" and the native tier of the host.  The units of
-#   test/layer/admitted_flag_matrix compile with the release flags, and each bench target adds
-#   -march=native, so each x86_64 configuration here has the native tier of the build host.  A
-#   build on a different processor can compile other preprocessor arms, for example the AVX-512 arm
-#   of include/crucible/SwissTable.h.  The rows of its name judge it, and a line names its tier, so
-#   a finding of such an arm fails it.
+#   -march=native or -mcpu=native, the tier adds "+" and the native request: the word native and
+#   the architecture, such as native-x86_64.  The units of test/layer/admitted_flag_matrix compile
+#   with the release flags, and each bench target adds -march=native, so each x86_64 configuration
+#   here holds that request.  The tier names no processor of the host.  So a host with a different
+#   processor of one architecture has the same configuration.  Its native compiles can select other
+#   preprocessor arms, for example the AVX-512 arm of include/crucible/SwissTable.h.  The rows of its
+#   name judge it, so such an arm gives a count above or below its row.
 #
 # THE CONFIGURATIONS
 #   x86_64-debug-asan              The default preset, in the build directory build.  The base.
@@ -102,7 +103,7 @@
 format 1
 rule quarantine
 configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
@@ -119,7 +120,7 @@ configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
 configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release tier native-x86_64
 configuration x86_64-release CMAKE_BUILD_TYPE Release
 configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
 configuration x86_64-release CRUCIBLE_SANITIZE on
@@ -136,7 +137,7 @@ configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-release TORCH_DIR unset
 configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
-configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
@@ -153,7 +154,7 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
 configuration x86_64-debug-tsan kind x86_64-debug-tsan
-configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
@@ -170,7 +171,7 @@ configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-tsan TORCH_DIR unset
 configuration x86_64-debug-asan-syntax kind x86_64-debug-asan
-configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+znver5-f612fd24
+configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+native-x86_64
 configuration x86_64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan-syntax CMAKE_CXX_FLAGS -march=x86-64-v3
 configuration x86_64-debug-asan-syntax CRUCIBLE_SANITIZE on

@@ -4,10 +4,12 @@
 a ledger with configurations in the rows grammar, or a log of rows in a
 throwaway directory.  The cases hold the rows that judge a build and the
 largest count of each key (THE MAXIMUM of assay.core.ledger).  They also hold
-the rows that a write writes, --add-configuration and the import of rows.
+the rows that a write writes, --add-configuration and the import of rows.  A
+case holds one configuration of a native build on two planted hosts.
 Exit 0 when each case holds, else 1.
 """
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -36,6 +38,17 @@ ROWS = (
 )
 CLOSE = rule_ledger.Key("a.cpp", KIND, "close")
 DUP = rule_ledger.Key("b.cpp", KIND, "dup")
+# A planted x86_64 compiler.  -march=native resolves to the processor that the file native.txt beside it names, the
+# processor of a planted host.
+PLANTED_COMPILER = """import sys
+from pathlib import Path
+if "-dumpmachine" in sys.argv:
+    sys.exit(print("x86_64-pc-linux-gnu"))
+native = (Path(__file__).parent / "native.txt").read_text().strip()
+print("The following options are target specific:")
+print("  -march=   \\t\\t" + (native if "-march=native" in sys.argv else "x86-64"))
+print("  -mtune=   \\t\\tgeneric")
+"""
 
 
 def planted_ledger(text: str = HEAD + ROWS) -> rule_ledger.Ledger:
@@ -195,6 +208,55 @@ def write_cases(expect: testing.Expect) -> None:
     )
 
 
+def host_cases(expect: testing.Expect) -> None:
+    """Hold one configuration of a native build on two planted hosts of one architecture (THE CONFIGURATION).
+
+    A ledger that a build on one host wrote then takes a write from the build on the other host.  The gate writes the
+    falls of each configuration that it builds in this way.
+    """
+    with tempfile.TemporaryDirectory(prefix="test-configuration-") as work:
+        build = Path(work)
+        compiler = build / "g++"
+        compiler.write_text(f"#!{sys.executable}\n{PLANTED_COMPILER}", encoding="utf-8")
+        compiler.chmod(0o755)
+        (build / "build-kind.txt").write_text("x86_64-release\n", encoding="utf-8")
+        cmake.plant(
+            build,
+            cache={
+                "CMAKE_BUILD_TYPE": ("STRING", "Release"),
+                "CMAKE_CXX_FLAGS": ("STRING", "-O1 -march=native"),
+                "CMAKE_CXX_COMPILER": ("FILEPATH", str(compiler)),
+            },
+        )
+        commands = ["g++ -O3 -march=native -c bench.cpp"]
+        host = build / "native.txt"
+        host.write_text("znver5\n", encoding="utf-8")
+        first = build_config.read_configuration(build, commands)
+        written = rule_ledger.Ledger(
+            RULE,
+            rule_registry.Policy.COUNT,
+            "# A planted ledger.\n",
+            (rule_ledger.Configuration(first.name, first.facts),),
+        )
+        host.write_text("znver4\n", encoding="utf-8")
+        second = build_config.read_configuration(build, commands)
+        expect(
+            f"a native build on two hosts of one architecture has one configuration, whose tier names the request "
+            f"and the architecture: {first.tier} and {second.tier}",
+            first == second and first.tier == "native-x86_64",
+        )
+        target = build_config.write_target(RULE, written, second, False)
+        expect(
+            "a write from the build on the second host writes the rows of the configuration, with no "
+            "--add-configuration",
+            isinstance(target, build_config.WriteTarget) and target.name == first.name and not target.is_added,
+        )
+        expect(
+            "the rows of the configuration judge the build on the second host with no line of a fact",
+            build_config.judging(RULE, written, second).note == "",
+        )
+
+
 def import_cases(expect: testing.Expect) -> None:
     """Hold the rows that a run prints for an import, and the import of a log."""
     rule = rule_ledger.rule_of(RULE)
@@ -237,5 +299,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (cache_cases, judging_cases, maximum_cases, write_cases, import_cases),
+        (cache_cases, judging_cases, maximum_cases, write_cases, host_cases, import_cases),
     )

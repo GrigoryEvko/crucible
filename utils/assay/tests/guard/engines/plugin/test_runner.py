@@ -62,10 +62,12 @@ EMPTY_LEDGER = f"{HEAD}format 1\nrule {RULE}\n"
 STAMP_VALUE = "0123abcd"
 PROBE_REASON = "PROBE: a planted region"
 # A fake compiler: -Q --help=target prints the -march value of the file march.txt beside it, or of native.txt for
-# -march=native.
+# -march=native.  native.txt names the processor of a planted host.  -dumpmachine prints an x86_64 machine.
 FAKE_COMPILER = """\
 import sys
 from pathlib import Path
+if "-dumpmachine" in sys.argv:
+    sys.exit(print("x86_64-pc-linux-gnu"))
 here = Path(__file__).parent
 word = "native" if "-march=native" in sys.argv else "march"
 value = (here / f"{word}.txt").read_text().strip() if (here / f"{word}.txt").exists() else "x86-64"
@@ -926,25 +928,24 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
             generated: 1,
             gone: 1,
         }
-        and scratch.tier(RELEASE_NAME).startswith("znver5-"),
+        and scratch.tier(RELEASE_NAME) == "native-x86_64",
     )
     expect("the second configuration gives no error", scratch.run()[0] == 0)
     (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
     status, _, text = scratch.run()
     expect(
-        "the rows of its name judge a host of a different native tier, and one line names the two tiers",
+        "a host with a different processor holds the configuration, and its rows judge the build with no line of a "
+        "fact",
         status == 0
         and f"judged against the rows of the configuration {RELEASE_NAME}" in text
-        and f"holds no rows of {RELEASE_NAME} on the tier znver3-" in text
-        and f"{RELEASE_NAME} on znver5-" in text
-        and "tier is znver3-" in text
-        and "can compile other preprocessor arms" in text,
+        and "holds no rows" not in text
+        and rule_ledger.ROW_MARK not in text,
     )
     scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
     status, written_text = scratch.write()
     expect(
-        "a finding of an arm of that tier fails the build, and a write from it writes nothing",
-        scratch.run()[0] == 1 and status == 1 and "Give --add-configuration" in written_text,
+        "a finding of an arm that only that host compiles fails the build, and a write refuses the rise",
+        scratch.run()[0] == 1 and status == 1 and "rises from 0" in written_text,
     )
     scratch.drop("g")
     (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
@@ -1050,29 +1051,43 @@ def import_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def bench_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a bench target that adds -march=native to its own compiles, so that its arms depend on the host."""
+    """Hold a bench target that adds -march=native to its own compiles, so that its arms depend on the host.
+
+    The tier names the native request and no processor.  A write from a host with a different processor then records
+    a fall with no --add-configuration.  The gate writes the falls of each configuration in this way (THE FALLS of
+    assay.loop.gate).
+    """
     bench_name = f"{BASE_NAME}-bench"
     scratch.configure(BASE_NAME, "Debug", extra={"CRUCIBLE_BENCH": ("BOOL", "ON")})
     scratch.flags["h"] = "-O3 -march=native"
-    scratch.add("h", ["quarantine compiler-builtin include/crucible/Vigil.h:40:7 __builtin_ia32_vpcmpb512"])
+    vector_compare = ("include/crucible/Vigil.h", "compiler-builtin", "__builtin_ia32_vpcmpb512")
+    scratch.add("h", [f"quarantine {vector_compare[1]} {vector_compare[0]}:40:7 {vector_compare[2]}"])
     status, _ = scratch.write(add_configuration=True)
     bench_tier = scratch.tier(bench_name)
     expect(
-        "a compile with its own native flag adds the native tier of the host to the tier",
-        status == 0 and bench_tier.startswith("x86-64-") and "+znver5-" in bench_tier,
+        "a compile with its own native flag adds the native request and the architecture to the tier",
+        status == 0 and bench_tier.startswith("x86-64-") and bench_tier.endswith("+native-x86_64"),
     )
     (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
     scratch.add("h", [])
     status, _, text = scratch.run()
     expect(
-        "the rows of its name judge a host of a different tier, with other arms in the bench compile, and one line "
-        "names the tiers",
+        "the rows of its name judge a host with a different processor, and the arm that its bench compile does not "
+        "select is a count below its row",
         status == 1
         and f"judged against the rows of the configuration {bench_name}" in text
-        and f"holds no rows of {bench_name} on the tier x86-64-" in text
-        and "+znver3-" in text
-        and f"{bench_name} on {bench_tier}" in text,
+        and "holds no rows" not in text
+        and "has 0 findings of the kind compiler-builtin" in text,
     )
+    status, written_text = scratch.write()
+    holds = (
+        status == 0
+        and vector_compare not in scratch.deltas(bench_name)
+        and scratch.tier(bench_name) == bench_tier
+        and scratch.run()[0] == 0
+    )
+    label = "a write from that host records the fall with no --add-configuration, and the build then gives no error"
+    expect(label if holds else f"{label}: {written_text}", holds)
     (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
     scratch.drop("h")
     scratch.configure(BASE_NAME, "Debug")

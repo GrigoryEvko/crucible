@@ -11,7 +11,6 @@ check of a planted parse build, which parses nothing.
 
 import contextlib
 import io
-import sys
 import tempfile
 from pathlib import Path
 
@@ -54,14 +53,6 @@ if unknown:
 """
 
 
-def planted_compiler(directory: Path, name: str, text: str) -> str:
-    """Write an executable Python script as a compiler, and return its path."""
-    path = directory / name
-    path.write_text(f"#!{sys.executable}\n{text}", encoding="utf-8")
-    path.chmod(0o755)
-    return str(path)
-
-
 def word_cases(expect: testing.Expect) -> None:
     """Hold the words of the parse of a compile command."""
     report = Path("/build/quarantine/syntax/a.o")
@@ -95,8 +86,8 @@ def native_cases(expect: testing.Expect) -> None:
     """Hold the test of a compiler that refuses -march=native."""
     with tempfile.TemporaryDirectory(prefix="syntax-native-") as scratch_text:
         scratch = Path(scratch_text)
-        native = planted_compiler(scratch, "native-g++", "import sys\nsys.exit(0)\n")
-        cross = planted_compiler(
+        native = testing.planted_program(scratch, "native-g++", "import sys\nsys.exit(0)\n")
+        cross = testing.planted_program(
             scratch, "cross-g++", "import sys\nsys.exit(1 if '-march=native' in sys.argv else 0)\n"
         )
         expect("a compiler that takes -march=native does not refuse it", not syntax.refuses_native(native))
@@ -126,7 +117,7 @@ def stale_graph_cases(expect: testing.Expect) -> None:
     """Hold the build of the input targets of a warm build.  Its graph names a target that a configure removes."""
     with tempfile.TemporaryDirectory(prefix="syntax-stale-") as scratch_text:
         scratch = Path(scratch_text)
-        cmake.plant(scratch, cache={"CMAKE_COMMAND": planted_compiler(scratch, "cmake", FAKE_CMAKE)})
+        cmake.plant(scratch, cache={"CMAKE_COMMAND": testing.planted_program(scratch, "cmake", FAKE_CMAKE)})
         (scratch / ninja.GRAPH_NAME).write_text(
             "build cmake_object_order_depends_target_old: phony\n", encoding="utf-8"
         )
@@ -157,7 +148,7 @@ def unit_cases(expect: testing.Expect) -> None:
 
     with tempfile.TemporaryDirectory(prefix="syntax-unit-") as scratch_text:
         scratch = Path(scratch_text)
-        compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
+        compiler = testing.planted_program(scratch, "g++", FAKE_COMPILER)
         source = scratch / "a.cpp"
         source.write_text("int a;\n", encoding="utf-8")
         os.utime(source, ns=(1, 1))
@@ -220,15 +211,15 @@ def planted_build(scratch: Path) -> tuple[Path, str]:
     """
     build = scratch / "build"
     build.mkdir()
-    compiler = planted_compiler(scratch, "g++", FAKE_COMPILER)
+    compiler = testing.planted_program(scratch, "g++", FAKE_COMPILER)
     cmake.cache_file(build).write_text("")
     cmake.plant(
         build,
         cache={
             build_config.SYNTAX_OPTION: ("BOOL", "ON"),
             "CMAKE_GENERATOR": "Ninja",
-            "CMAKE_MAKE_PROGRAM": planted_compiler(scratch, "ninja", INPUTS_NINJA),
-            "CMAKE_COMMAND": planted_compiler(scratch, "cmake", RECONFIGURE_CMAKE),
+            "CMAKE_MAKE_PROGRAM": testing.planted_program(scratch, "ninja", INPUTS_NINJA),
+            "CMAKE_COMMAND": testing.planted_program(scratch, "cmake", RECONFIGURE_CMAKE),
         },
     )
     output = str(build / "t.dir" / "a.cpp.o")

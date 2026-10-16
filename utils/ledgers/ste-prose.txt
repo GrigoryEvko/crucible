@@ -264,7 +264,6 @@ utils/assay/core/ruletable.py | refused-word | 1 | parse_admit: any | A text of 
 utils/assay/core/ruletable.py | refused-word | 1 | parse_admit: order | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/ruletable.py | refused-word | 1 | parse_admit: repeated | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/target.py | long-sentence | 1 | <module> | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/core/target.py | refused-word | 2 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/target.py | refused-word | 1 | <module>: any | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/target.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/core/target.py | refused-word | 1 | build_tier: distinct | A text of today.  The change that writes the text again in STE lowers the count

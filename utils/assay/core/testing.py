@@ -32,12 +32,19 @@ THE COMPILER
     text is empty.  held_compiler() also holds the case that a variable
     names a compiler file.
 
+THE PLANTED PROGRAM
+    planted_program() writes a Python script as a program file of a case,
+    such as a planted compiler, cmake or ninja.  The first line of the file
+    runs the Python of this process.  The mode of the file lets each user
+    run it.
+
 `guard selftest tests.core.test_testing` does a test of the module.
 """
 
 import contextlib
 import io
 import os
+import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
@@ -68,6 +75,20 @@ def held_compiler(expect: Expect) -> str | None:
     is_named = bool(compiler) and Path(compiler).is_file()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", is_named)
     return compiler if is_named else None
+
+
+def planted_program(directory: Path, name: str, text: str) -> str:
+    """Write a Python script as an executable program file of a case, and return its path (THE PLANTED PROGRAM).
+
+    Args:
+        directory: The directory of the file
+        name: The name of the file
+        text: The Python text of the script, without its first line
+    """
+    path = directory / name
+    path.write_text(f"#!{sys.executable}\n{text}", encoding="utf-8")
+    path.chmod(0o755)
+    return str(path)
 
 
 @contextlib.contextmanager

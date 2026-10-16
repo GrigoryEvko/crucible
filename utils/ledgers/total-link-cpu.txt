@@ -13,7 +13,7 @@
 format 1
 rule total-link-cpu
 configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
@@ -31,7 +31,7 @@ configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
 configuration x86_64-debug-asan CRUCIBLE_SYNTAX_ONLY off
 configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release tier native-x86_64
 configuration x86_64-release CMAKE_BUILD_TYPE Release
 configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
 configuration x86_64-release CRUCIBLE_SANITIZE on
@@ -49,7 +49,7 @@ configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-release TORCH_DIR unset
 configuration x86_64-release CRUCIBLE_SYNTAX_ONLY off
 configuration x86_64-debug-tsan kind x86_64-debug-tsan
-configuration x86_64-debug-tsan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-tsan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
@@ -67,7 +67,7 @@ configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-tsan TORCH_DIR unset
 configuration x86_64-debug-tsan CRUCIBLE_SYNTAX_ONLY off
 configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
-configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-ubsan-strict CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-ubsan-strict CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-ubsan-strict CRUCIBLE_SANITIZE off
@@ -85,7 +85,7 @@ configuration x86_64-debug-ubsan-strict CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-ubsan-strict TORCH_DIR unset
 configuration x86_64-debug-ubsan-strict CRUCIBLE_SYNTAX_ONLY off
 configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
-configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on

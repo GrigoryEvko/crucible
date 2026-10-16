@@ -1,4 +1,4 @@
-"""The test of the run of the cases of a test module (assay.core.testing): the lines, the status and the usage.
+"""The test of assay.core.testing: the lines, the status and the usage of a run, and the planted program.
 
 `guard selftest tests.core.test_testing` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
@@ -7,10 +7,12 @@ line.  Exit 0 when each case holds, else 1.
 import contextlib
 import io
 import os
+import tempfile
 from collections.abc import Sequence
+from pathlib import Path
 
+from assay.core import proc, testing
 from assay.core import report as check_report
-from assay.core import testing
 from assay.core.exit import ExitCode
 
 
@@ -133,8 +135,22 @@ def environment_cases(expect: testing.Expect) -> None:
     expect("a variable that was not set is not set after the block", name not in os.environ)
 
 
+def program_cases(expect: testing.Expect) -> None:
+    """Check that planted_program() writes a script that runs with the Python of this process (THE PLANTED PROGRAM)."""
+    with tempfile.TemporaryDirectory(prefix="assay-testing-") as scratch:
+        program = testing.planted_program(Path(scratch), "tool", "import sys\nprint(' '.join(sys.argv[1:]))\n")
+        is_executable = os.access(program, os.X_OK)
+        done = proc.run(proc.Command([program, "two", "words"], timeout_s=proc.QUICK_S))
+    expect(
+        "planted_program() writes an executable file in the directory, and the file runs its text",
+        program.endswith("/tool") and is_executable and done.exit == 0 and done.out == "two words\n",
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (run_cases, output_cases, compiler_cases, environment_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (run_cases, output_cases, compiler_cases, environment_cases, program_cases),
     )

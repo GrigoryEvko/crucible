@@ -5,7 +5,7 @@ rule library-bytes
 configuration x86_64-debug-asan kind x86_64-debug-asan
 configuration x86_64-debug-asan tier x86-64-eb53fd1c
 configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier znver5-f612fd24
+configuration x86_64-release tier native-x86_64
 configuration x86_64-debug-tsan kind x86_64-debug-tsan
 configuration x86_64-debug-tsan tier x86-64-eb53fd1c
 configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict

@@ -4,9 +4,18 @@ THE CONFIGURATION
     A configuration is the build kind and the target tier of
     assay.core.target, and each cache variable of CONFIGURATION.  A target
     can add a native flag to its own compile, as each bench target adds
-    -march=native.  The tier then also holds the native tier of the host.  A
-    different configuration compiles other objects or other preprocessor
-    arms.  Its findings, its symbols and its totals can then be different.
+    -march=native.  The tier then also holds the native request and the
+    architecture, and no fact of the processor of the host (THE TARGET TIER
+    of assay.core.target).  A different configuration compiles other objects
+    or other preprocessor arms.  Its findings, its symbols and its totals can
+    then be different.
+
+    Two hosts of one architecture give a build one configuration.  The
+    native compiles of the two hosts can select other preprocessor arms,
+    such as the AVX-512 arm of include/crucible/SwissTable.h on a host with
+    AVX512BW.  The rows of the configuration judge each of the two builds.
+    Such an arm then gives a count above or below its row on one of the
+    hosts.
 
     The name of a configuration is its build kind, for example
     x86_64-debug-asan.  The name adds -bench when CRUCIBLE_BENCH is on, -fuzz
@@ -31,9 +40,9 @@ THE POLICY
       * the largest count of each key over the configurations, for a build
         of a name that the ledger does not hold (assay.core.ledger, THE
         MAXIMUM).  An arm that a different configuration counts then gives
-        no error.  An example is a SIMD arm of a CI runner of a different
-        native tier.  A count below its row is no error, because the build
-        can compile fewer arms
+        no error.  An example is an aarch64 arm of a build of aarch64
+        objects, which the parse build of aarch64 counts.  A count below its
+        row is no error, because the build can compile fewer arms
       * the base rows, for a ledger with no configuration.
     The summary line of a run names the rows.  A build of a new kind then
     fails on each new finding of an arm that only it compiles.  No finding
@@ -178,9 +187,10 @@ def is_parse_build(build_dir: Path) -> bool:
 def read_configuration(build_dir: Path, commands: Iterable[str]) -> BuildConfiguration:
     """Return the configuration of a build: the build kind, the tier and each name of CONFIGURATION.
 
-    The tier holds the native tier of each native flag of the compile commands of the objects.  A bench target with
-    its own -march=native then gives the configuration the tier of the host.  Complexity: linear in the size of the
-    commands, and one compiler run for each different tier.
+    The tier holds the native request of each native flag of the compile commands of the objects.  A bench target
+    with its own -march=native then gives the tier the word native and the architecture, and no fact of the processor
+    of the host.  Complexity: linear in the length of the commands, and at most two compiler runs for each different
+    native flag.
 
     Raises:
         ConfigurationError: If the build has no build-kind.txt, its CMake cache cannot be read, or the compiler does

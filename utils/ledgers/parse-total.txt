@@ -30,7 +30,7 @@
 format 1
 rule parse-total
 configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
@@ -47,7 +47,7 @@ configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
 configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
 configuration x86_64-debug-asan TORCH_DIR unset
 configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
-configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on

@@ -37,7 +37,7 @@
 format 1
 rule fixture-quarantine
 configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+znver5-f612fd24
+configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
 configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
 configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
 configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
