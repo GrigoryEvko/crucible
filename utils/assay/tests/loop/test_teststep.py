@@ -39,6 +39,11 @@ class Planted:
         self.program = self.plant_test("test_planted", '#!/bin/sh\nexit "${1:-0}"\n')
         self.killer = self.plant_test("test_killed", "#!/bin/sh\nkill -TERM $$\n")
         self.hard_killer = self.plant_test("test_hard_killed", "#!/bin/sh\nkill -KILL $$\n")
+        # A planted emulator that is not in the build directory, as qemu-aarch64-static is.  It drops its two options
+        # and runs the program (THE EMULATOR of the launcher).
+        self.emulator = root / "emulator"
+        self.emulator.write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
+        self.emulator.chmod(0o755)
         # The launcher as ctest starts it: the master loop with the subcommand test-step.
         self.launcher = [sys.executable, "-S", cost_meter.LOOP_MASTER, "test-step"]
 
@@ -221,6 +226,56 @@ class Planted:
             )
             and frozenset(string.ascii_letters + string.digits + "_.-") == test_launcher.NAME_CHARACTERS,
         )
+
+    def launch_emulated(self, words: str, target: Path, *args: str) -> tuple[int, str]:
+        """Run the launcher on one planted test behind the planted emulator, as CMake starts a test of a cross build.
+
+        CMake puts the emulator and its two options after the launcher and before the program (THE EMULATOR).
+        """
+        done = proc.run(
+            proc.Command(
+                [
+                    *self.launcher,
+                    "--warnings-dir",
+                    str(self.warnings),
+                    "--build-dir",
+                    str(self.build),
+                    "--emulator-words",
+                    words,
+                    str(self.emulator),
+                    "-L",
+                    "/planted/sysroot",
+                    str(target),
+                    *args,
+                ],
+                timeout_s=proc.TOOL_S,
+                env=self._environment_of({}),
+            )
+        )
+        return done.exit, done.err
+
+    def emulator_cases(self, expect: testing.Expect) -> None:
+        """Check that two tests behind one emulator get two records, each named after its program (THE EMULATOR)."""
+        self.budget((1000, 2000), (1000, 2000))
+        first = self.plant_test("test_emulated_first", '#!/bin/sh\nexit "${1:-0}"\n')
+        second = self.plant_test("test_emulated_second", '#!/bin/sh\nexit "${1:-0}"\n')
+        first_status, _ = self.launch_emulated("3", first)
+        second_status, _ = self.launch_emulated("3", second, "3")
+        first_record, second_record = self._record_of("test_emulated_first"), self._record_of("test_emulated_second")
+        expect(
+            "two tests behind one emulator run through it, and each gets a record of its own, with the name and the "
+            "path of its program",
+            (first_status, second_status) == (0, 3)
+            and (first_record.get("result"), first_record.get("command")) == ("passed", str(first))
+            and (second_record.get("exit"), second_record.get("command")) == (3, str(second))
+            and self._record_of(self.emulator.name) == {},
+        )
+        for words, label in (("4", "a count that leaves no program"), ("x", "a word that is not a count")):
+            status, said = self.launch_emulated(words, first)
+            expect(
+                f"--emulator-words with {label} is a usage error",
+                status == 2 and f"--emulator-words {words!r} is not a count" in said,
+            )
 
     def environment_cases(self, expect: testing.Expect) -> None:
         """Check that a test runs in the clean environment of the launcher (THE ENVIRONMENT)."""
@@ -737,6 +792,22 @@ def launched_cases(expect: testing.Expect) -> None:
     )
     fixture = [sys.executable, "-S", master, "fixture", "/build", "neg.cpp", "neg", "regex"]
     expect("the driver of a negative fixture is not the launcher", test_launcher.launched(fixture) == fixture)
+    emulated = ["/usr/bin/qemu-aarch64-static", "-L", "/sysroot", *executable]
+    expect(
+        "a test of a cross build runs its emulator behind the launcher, and its program is the word after the emulator",
+        test_launcher.launched([*launcher, "--emulator-words", "3", *emulated]) == emulated
+        and test_launcher.launched_program([*launcher, "--emulator-words", "3", *emulated]) == executable[0],
+    )
+    expect(
+        "the program of a test with no emulator is the word after the launcher, and of a command with no launcher its "
+        "first word",
+        test_launcher.launched_program([*launcher, "--build-dir", "/build", *executable]) == executable[0]
+        and test_launcher.launched_program(executable) == executable[0],
+    )
+    expect(
+        "a count of the emulator that leaves no program gives no program",
+        test_launcher.launched_program([*launcher, "--emulator-words", str(len(emulated)), *emulated]) is None,
+    )
 
 
 def environment_unit_cases(expect: testing.Expect) -> None:
@@ -801,6 +872,7 @@ def main(argv: list[str]) -> int:
                 planted.ledger_cases,
                 planted.core_cases,
                 planted.version_cases,
+                planted.emulator_cases,
                 planted.environment_cases,
                 unmeasured_cases,
                 window_cases,

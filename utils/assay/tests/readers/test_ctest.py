@@ -270,7 +270,12 @@ def project_cases(expect: testing.Expect) -> None:
         (source / "exit.py").write_text("import sys\nsys.exit(int(sys.argv[1]))\n", encoding="utf-8")
         (source / "CMakeLists.txt").write_text(
             "cmake_minimum_required(VERSION 3.29)\nproject(planted NONE)\nenable_testing()\n"
+            # The emulator of a cross build gives the launcher of an executable target the count of its words.  The
+            # toolchain file of a cross build sets the two variables.
+            "set(CMAKE_CROSSCOMPILING TRUE)\n"
+            'set(CMAKE_CROSSCOMPILING_EMULATOR "/planted/qemu-aarch64-static;-L;/planted/sysroot")\n'
             f'set(CRUCIBLE_PYTHON3 "{sys.executable}")\ninclude("{REPO_ROOT / "cmake" / "TestLauncher.cmake"}")\n'
+            'file(WRITE "${CMAKE_BINARY_DIR}/launcher.txt" "${CMAKE_TEST_LAUNCHER}")\n'
             f'crucible_script_test(NAME planted_pass COMMAND "{sys.executable}" "{source / "exit.py"}" 0)\n'
             f'crucible_script_test(NAME planted_fail COMMAND "{sys.executable}" "{source / "exit.py"}" 1)\n'
             'set_tests_properties(planted_pass PROPERTIES LABELS "ci_guard")\n'
@@ -295,7 +300,13 @@ def project_cases(expect: testing.Expect) -> None:
             "call of crucible_script_test()",
             set(tests) == {"planted_pass", "planted_fail", "planted_skip", "planted_after"}
             and "test-step" in tests["planted_pass"].command
-            and (Path(tests["planted_fail"].file).name, tests["planted_fail"].line) == ("CMakeLists.txt", 7),
+            and (Path(tests["planted_fail"].file).name, tests["planted_fail"].line) == ("CMakeLists.txt", 10),
+        )
+        launcher = (build / "launcher.txt").read_text(encoding="utf-8").split(";")
+        expect(
+            "the launcher of an executable target gets --emulator-words with the count of the words of the emulator, "
+            "and a script test does not",
+            launcher[-2:] == ["--emulator-words", "3"] and "--emulator-words" not in tests["planted_pass"].command,
         )
         expect(
             "tests with a label reads the labels of ctest",

@@ -73,3 +73,14 @@ cmake_path(SET _crucible_test_masters NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../ut
 set(CRUCIBLE_TEST_STEP "${CRUCIBLE_PYTHON3}" -S "${_crucible_test_masters}/loop" test-step
     --warnings-dir "${CRUCIBLE_CHECK_WARNINGS_DIR}" --build-dir "${CMAKE_BINARY_DIR}")
 set(CMAKE_TEST_LAUNCHER ${CRUCIBLE_TEST_STEP})
+
+# CMake puts CMAKE_CROSSCOMPILING_EMULATOR after the launcher and before the
+# program of a test of an executable target.  With the policy CMP0158 NEW, it
+# does so only in a cross build.  The launcher then gets the number of the
+# words of the emulator.  The program of the test is the word after them, and
+# each test gets a record of its own (THE EMULATOR of utils/assay/loop/teststep.py).
+cmake_policy(GET CMP0158 _crucible_emulator_policy)
+if(CMAKE_CROSSCOMPILING_EMULATOR AND (CMAKE_CROSSCOMPILING OR NOT _crucible_emulator_policy STREQUAL "NEW"))
+  list(LENGTH CMAKE_CROSSCOMPILING_EMULATOR _crucible_emulator_words)
+  list(APPEND CMAKE_TEST_LAUNCHER --emulator-words ${_crucible_emulator_words})
+endif()

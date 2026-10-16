@@ -19,8 +19,9 @@ THE EXECUTABLE TEST
     The program of an executable test is an ELF file of the build tree, after
     the wrappers: the test launcher of the tree (`python3 -S utils/bin/loop
     test-step` and its options, which CMake puts in front of each executable
-    target, and crucible_script_test() in front of each script test), `cmake
-    -E env` and `valgrind`.  Its fingerprint is a hash of these items:
+    target, and crucible_script_test() in front of each script test), the
+    emulator of a cross build (assay.loop.teststep, THE EMULATOR), `cmake -E
+    env` and `valgrind`.  Its fingerprint is a hash of these items:
     - The ctest record of the test: the command and each property.
     - The bytes of each file of the build tree that the command names.
     - The bytes of each file that an ELF file of the command names as an
@@ -494,32 +495,48 @@ def is_fixture(command: tuple[str, ...]) -> bool:
     return any(starts_subcommand(command, index, FIXTURE_SUBCOMMAND) for index in range(len(command)))
 
 
-def launcher_prefix(command: tuple[str, ...]) -> tuple[int, str]:
-    """Return the index after the test launcher prefix and the path of the master, or (0, "") with no launcher.
+def launcher_options(command: tuple[str, ...]) -> tuple[int, str, test_launcher.Options]:
+    """Return the index after the test launcher prefix, the path of the master and the options of the launcher.
 
     The prefix is a Python interpreter, its options, the master loop, the
     subcommand test-step and its options with their values
-    (assay.loop.teststep.OPTIONS).
+    (assay.loop.teststep.OPTIONS).  A command with no launcher gives (0, "")
+    and options with no value.  Complexity: linear in the words of the prefix.
     """
+    options = test_launcher.Options()
     if not command or not os.path.basename(command[0]).startswith("python"):
-        return 0, ""
+        return 0, "", options
     index = 1
     while index < len(command) and command[index].startswith("-"):
         index += 1
     if not starts_subcommand(command, index, LAUNCHER_SUBCOMMAND):
-        return 0, ""
+        return 0, "", options
     master = command[index]
     index += 2
     while index < len(command) and command[index] in test_launcher.OPTIONS:
+        if index + 1 < len(command):
+            setattr(options, test_launcher.option_field(command[index]), command[index + 1])
         index += 2
+    return index, master, options
+
+
+def launcher_prefix(command: tuple[str, ...]) -> tuple[int, str]:
+    """Return the index after the test launcher prefix and the path of the master, or (0, "") with no launcher."""
+    index, master, _ = launcher_options(command)
     return index, master
 
 
 def program_index(command: tuple[str, ...]) -> int | None:
-    """Return the index of the program after the test launcher, `cmake -E env` and `valgrind`, or None."""
+    """Return the index of the program after the test launcher, its emulator, `cmake -E env` and `valgrind`, or None.
+
+    The option --emulator-words of the launcher gives the words of the emulator (assay.loop.teststep, THE EMULATOR).
+    A value that is not a count gives no emulator, and the launcher then refuses the test.
+    """
     if not command:
         return None
-    index, _launcher = launcher_prefix(command)
+    index, _launcher, options = launcher_options(command)
+    if index < len(command):
+        index += test_launcher.program_index(options, command[index:]) or 0
     if index >= len(command):
         return None
     name = os.path.basename(command[index])
@@ -1795,6 +1812,11 @@ def self_test(ctest: str) -> int:
     expect("program_index skips each option of the test launcher",
            program_index(launched[:6] + ("--build-dir", "/s/b", "--name", "a_test", "/usr/bin/python3",
                                          "/s/check.py")) == 10)
+    emulated = launched[:6] + ("--emulator-words", "3", "/usr/bin/qemu-aarch64-static", "-L", "/sysroot", "/s/b/t")
+    expect("program_index skips the test launcher and the words of the emulator of a cross build",
+           program_index(emulated) == 11)
+    expect("a value of --emulator-words that is not a count gives no emulator",
+           program_index(emulated[:7] + ("x",) + emulated[8:]) == 8)
     expect("a Python script is not a test launcher", program_index(("/usr/bin/python3", "/s/check.py")) == 0)
     expect("another subcommand of the master is not a test launcher",
            program_index(("/usr/bin/python3", f"/s/utils/bin/{LOOP_MASTER}", FIXTURE_SUBCOMMAND, "/s/b/t")) == 0)

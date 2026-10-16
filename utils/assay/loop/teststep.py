@@ -13,7 +13,9 @@ with the name of the test:
 
 CMake gives a launcher no test name, and each executable test of the tree has
 the name of its target.  The name of a test with no --name is the file name
-of its program.  The driver of a negative fixture, `loop fixture`, writes the
+of its program.  In a cross build, CMake puts an emulator in front of the
+program, and cmake/TestLauncher.cmake gives the option --emulator-words
+(THE EMULATOR).  The driver of a negative fixture, `loop fixture`, writes the
 same record with the same judge.  A fixture then pays no second start of
 Python.
 
@@ -30,6 +32,23 @@ WHAT THE SUBCOMMAND DOES
     directory above the program with a build-kind.txt.  With no such
     directory, the subcommand writes no record.  A failure to measure, to
     read the registry or to write the record does not change the status.
+
+THE EMULATOR
+    A cross build runs each executable test through the emulator of
+    CMAKE_CROSSCOMPILING_EMULATOR, such as qemu-aarch64-static with its
+    options.  CMake puts the emulator after the launcher and before the
+    program of the test:
+
+        ... test-step --build-dir BUILD --emulator-words 3 /usr/bin/qemu-aarch64-static -L SYSROOT BUILD/test/T
+
+    cmake/TestLauncher.cmake gives the launcher --emulator-words N, the
+    number of the words of the emulator.  The launcher runs the full
+    command, with the emulator.  The program of the test is the word after
+    the emulator.  The name, the record, the read set and the findings of
+    the test belong to that program.  Each test then has a record of its
+    own.  program_index() gives the index of the program in the command.
+    launched_program() gives the program of the command of a test to a
+    reader of the tests of a build, such as assay.loop.affected.
 
 THE ENVIRONMENT
     The subcommand runs the test in a clean environment
@@ -234,7 +253,7 @@ KEPT_PREFIXES = ("ASSAY_", "CCACHE_", "CRUCIBLE_", "SESSION_ORACLE_")
 FIXED_VALUES = (("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"), ("TZ", "UTC"))
 SEARCH_PATH = "PATH"
 # The options before the command, each with one value.
-OPTIONS = ("--warnings-dir", "--build-dir", "--name")
+OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words")
 # The end of the path of the master, and the subcommand that this module is.  A test command can name the master of
 # an export of the tree.  A reader then finds the master by the end of its path.
 MASTER = "utils/bin/loop"
@@ -243,8 +262,8 @@ SUBCOMMAND = "test-step"
 MASTERS = ("utils/bin/guard", MASTER, "utils/bin/setup")
 PACKAGE = "assay"
 USAGE = (
-    "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]... | "
-    "guard selftest tests.loop.test_teststep"
+    "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] "
+    "[EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
 )
 # The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
 # module holds equal to WRITER_KEY.  A name does not start with '-' or '.'.
@@ -535,13 +554,19 @@ def is_test_name(name: str) -> bool:
 class Options:
     """The options of the command line: each one is None when the command line does not give it."""
 
-    __slots__ = ("build_dir", "name", "warnings_dir")
+    __slots__ = ("build_dir", "emulator_words", "name", "warnings_dir")
 
     def __init__(self) -> None:
         """Start with no option."""
         self.warnings_dir: str | None = None
         self.build_dir: str | None = None
         self.name: str | None = None
+        self.emulator_words: str | None = None
+
+
+def option_field(option: str) -> str:
+    """Return the field of Options that holds the value of an option of OPTIONS, such as build_dir for --build-dir."""
+    return option.removeprefix("--").replace("-", "_")
 
 
 def read_options(argv: list[str]) -> tuple[Options, list[str]] | None:
@@ -557,7 +582,7 @@ def read_options(argv: list[str]) -> tuple[Options, list[str]] | None:
     options = Options()
     index = 0
     while index < len(argv) and argv[index] in OPTIONS:
-        field = argv[index].removeprefix("--").replace("-", "_")
+        field = option_field(argv[index])
         if index + 1 >= len(argv) or getattr(options, field) is not None:
             return None
         setattr(options, field, argv[index + 1])
@@ -576,6 +601,43 @@ def launched(command: list[str]) -> list[str]:
             read = read_options(command[index + 2:])
             return read[1] if read is not None else command
     return command
+
+
+def program_index(options: Options, command: Sequence[str]) -> int | None:
+    """Return the index in `command` of the program of the test, after the words of its emulator (THE EMULATOR).
+
+    Args:
+        options: The options of the launcher
+        command: The command after the options
+
+    Returns:
+        0 with no --emulator-words.  None when the value of --emulator-words is not a count of words before the
+        program
+    """
+    count = options.emulator_words
+    if count is None:
+        return 0
+    if not (count.isascii() and count.isdigit()) or int(count) >= len(command):
+        return None
+    return int(count)
+
+
+def launched_program(command: list[str]) -> str | None:
+    """Return the program of a test command behind this launcher, after the words of an emulator (THE EMULATOR).
+
+    A command with no launcher gives its first word.  The result is None for an empty command.  It is None for a
+    launcher with no program, or with a value of --emulator-words that is not a count.  Complexity: linear in the
+    words.
+    """
+    for index, word in enumerate(command[:-1]):
+        if word.endswith(MASTER) and command[index + 1] == SUBCOMMAND:
+            read = read_options(command[index + 2:])
+            if read is None:
+                return None
+            options, launched_command = read
+            place = program_index(options, launched_command)
+            return None if place is None else launched_command[place]
+    return command[0] if command else None
 
 
 def read_budget() -> dict[str, tuple[float, float]]:
@@ -674,20 +736,29 @@ def main(argv: list[str]) -> int:
     """Run the test of the command line, and end as it ended.
 
     Args:
-        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] PROGRAM [ARG]...
+        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] [EMULATOR...] PROGRAM [ARG]...
 
     Returns:
         2 on a usage error.  Else the function ends the process as the test ended
     """
     parsed = read_options(argv)
-    name = "" if parsed is None else parsed[0].name or os.path.basename(parsed[1][0])
-    if parsed is None or not is_test_name(name):
-        problem = "" if parsed is None else (f"the test name {name!r} is not a word of letters, digits, '_', '.' "
-                                             f"and '-' that starts with a letter, a digit or '_'.  ")
+    program_at = None if parsed is None else program_index(*parsed)
+    program_word = "" if parsed is None or program_at is None else parsed[1][program_at]
+    name = "" if parsed is None else parsed[0].name or os.path.basename(program_word)
+    if parsed is None or program_at is None or not is_test_name(name):
+        if parsed is None:
+            problem = ""
+        elif program_at is None:
+            problem = (f"--emulator-words {parsed[0].emulator_words!r} is not a count of the words of the emulator "
+                       f"before the program.  ")
+        else:
+            problem = (f"the test name {name!r} is not a word of letters, digits, '_', '.' and '-' that starts with a "
+                       f"letter, a digit or '_'.  ")
         print(f"loop test-step: {problem}{USAGE}", file=sys.stderr)
         return 2
     options, command = parsed
-    program = os.path.abspath(command[0]) if os.sep in command[0] else command[0]
+    # The program of the test is the word after its emulator (THE EMULATOR).  The full command runs.
+    program = os.path.abspath(program_word) if os.sep in program_word else program_word
     build_dir = options.build_dir
     if build_dir is None and os.path.isabs(program):
         build_dir = cost_meter.build_dir_of(program)

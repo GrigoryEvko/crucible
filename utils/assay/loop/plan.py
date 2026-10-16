@@ -436,11 +436,14 @@ def is_fixture(test: ctest_reader.TestEntry, root: Path) -> bool:
 
 
 def bench_target_of(test: ctest_reader.TestEntry, programs: Mapping[str, str]) -> str | None:
-    """Return the bench target that has the program of a test as a file, or None (THE COVERS)."""
-    command = test_launcher.launched(list(test.command))
-    if not command or not programs:
+    """Return the bench target that has the program of a test as a file, or None (THE COVERS).
+
+    The program comes after the launcher and after the emulator of a cross build (assay.loop.teststep, THE EMULATOR).
+    """
+    program = test_launcher.launched_program(list(test.command))
+    if program is None or not programs:
         return None
-    return programs.get(str(Path(command[0]).resolve()))
+    return programs.get(str(Path(program).resolve()))
 
 
 def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
