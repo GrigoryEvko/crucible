@@ -627,6 +627,11 @@ def meter_compiler(command: list[str]) -> None:
 def end_like(exit_code: int) -> None:
     """End this process as the command ended: with its status, or on its signal.
 
+    The process gives the signal the default action, and then it sends the
+    signal to itself.  The kernel refuses a change of the action of SIGKILL
+    and SIGSTOP, and their action is always the default action.  The process
+    then sends such a signal with no change.
+
     Args:
         exit_code: The status of the command, or minus its signal number
     """
@@ -635,9 +640,11 @@ def end_like(exit_code: int) -> None:
     if exit_code < 0:
         import signal
 
-        signal.signal(-exit_code, signal.SIG_DFL)
-        os.kill(os.getpid(), -exit_code)
-        os._exit(128 - exit_code)
+        number = -exit_code
+        if number not in (signal.SIGKILL, signal.SIGSTOP):
+            signal.signal(number, signal.SIG_DFL)
+        os.kill(os.getpid(), number)
+        os._exit(128 + number)
     os._exit(exit_code)
 
 

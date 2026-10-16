@@ -38,6 +38,7 @@ class Planted:
         self.warnings = self.build / "check-warnings"
         self.program = self.plant_test("test_planted", '#!/bin/sh\nexit "${1:-0}"\n')
         self.killer = self.plant_test("test_killed", "#!/bin/sh\nkill -TERM $$\n")
+        self.hard_killer = self.plant_test("test_hard_killed", "#!/bin/sh\nkill -KILL $$\n")
         # The launcher as ctest starts it: the master loop with the subcommand test-step.
         self.launcher = [sys.executable, "-S", cost_meter.LOOP_MASTER, "test-step"]
 
@@ -164,6 +165,15 @@ class Planted:
         )
         status, _ = self.launch(self.killer)
         expect("a test that a signal stops ends on the same signal", status == -15)
+        status, said = self.launch(self.hard_killer)
+        hard_record = self._record_of("test_hard_killed")
+        expect(
+            "a test that SIGKILL stops ends the launcher on SIGKILL with no traceback, and the record gives the signal",
+            status == -signal.SIGKILL
+            and "Traceback" not in said
+            and hard_record.get("exit") == -signal.SIGKILL
+            and hard_record.get("result") == "failed",
+        )
 
     def script_cases(self, expect: testing.Expect) -> None:
         """Check a script test, the usage errors, and the characters of a test name."""
