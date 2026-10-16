@@ -129,7 +129,7 @@ if TYPE_CHECKING:
 
 # The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).  The rule compile-jobs holds
 # it equal to the error threshold of its row in utils/registry.txt.
-DEFAULT_JOBS = 16
+DEFAULT_JOBS = 128
 # The time limits of three classes of work, in seconds (THE TIME LIMIT).
 QUICK_S = 120.0
 TOOL_S = 900.0

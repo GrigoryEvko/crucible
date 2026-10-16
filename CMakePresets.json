@@ -157,72 +157,72 @@
     }
   ],
   "buildPresets": [
-    { "name": "default", "configurePreset": "default", "jobs": 16 },
-    { "name": "analyzer", "configurePreset": "analyzer", "jobs": 16 },
-    { "name": "release", "configurePreset": "release", "jobs": 16 },
-    { "name": "bench",   "configurePreset": "bench", "jobs": 16 },
-    { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 16 },
-    { "name": "pgo",     "configurePreset": "pgo",   "jobs": 16 },
-    { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 16 },
-    { "name": "tsan",    "configurePreset": "tsan", "jobs": 16 },
-    { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 16 },
-    { "name": "bench-fuzz", "configurePreset": "bench-fuzz", "jobs": 16 },
-    { "name": "verify",  "configurePreset": "verify", "jobs": 16 }
+    { "name": "default", "configurePreset": "default", "jobs": 128 },
+    { "name": "analyzer", "configurePreset": "analyzer", "jobs": 128 },
+    { "name": "release", "configurePreset": "release", "jobs": 128 },
+    { "name": "bench",   "configurePreset": "bench", "jobs": 128 },
+    { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 128 },
+    { "name": "pgo",     "configurePreset": "pgo",   "jobs": 128 },
+    { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 128 },
+    { "name": "tsan",    "configurePreset": "tsan", "jobs": 128 },
+    { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 128 },
+    { "name": "bench-fuzz", "configurePreset": "bench-fuzz", "jobs": 128 },
+    { "name": "verify",  "configurePreset": "verify", "jobs": 128 }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "release",
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "pgo",
       "configurePreset": "pgo",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "pgo-release",
       "configurePreset": "pgo-release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "analyzer",
       "configurePreset": "analyzer",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "tsan",
       "configurePreset": "tsan",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 600 }
+      "execution": { "jobs": 128,"timeout": 600 }
     },
     {
       "name": "ubsan-strict",
       "configurePreset": "ubsan-strict",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 600 }
+      "execution": { "jobs": 128,"timeout": 600 }
     },
     {
       "name": "bench-fuzz",
       "configurePreset": "bench-fuzz",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "verify",
       "configurePreset": "verify",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16, "timeout": 300 }
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "stress",
@@ -231,7 +231,7 @@
       "vendor": { "crucible": { "tier": "nightly" } },
       "output": { "outputOnFailure": true },
       "execution": {
-        "jobs": 16,
+        "jobs": 128,
         "timeout": 300,
         "repeat": { "mode": "until-fail", "count": 50 }
       }

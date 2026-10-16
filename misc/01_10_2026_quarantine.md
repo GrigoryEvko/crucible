@@ -155,7 +155,7 @@ Every unit obeys these instructions. The brief of each unit repeats them.
 - **Run every command in the foreground.** A command must block until it ends. Use a timeout of up to 600,000 ms, and split a long step into several calls. Never start a Monitor. Never end the turn while a command runs. Each stop sends the owner a notification.
 - Report only once, in the final report. Send an interim message only for a question that blocks the unit.
 - Run `free -g` before each heavy command. Wait while the available memory is below the level of section 20.2.
-- Build with the job count that the stage gives. The default is 16 jobs for each unit, and one heavy unit runs at a time (section 20.2).
+- Build with the job count that the stage gives. The default is 128 jobs for each unit, and one heavy unit runs at a time (section 20.2).
 - Never `nice` a ctest run.
 
 ### 5.4 Checks before landing
@@ -2309,17 +2309,17 @@ The owner approved each decision of this table on 2026-10-03 (D15). The first co
 
 ### 20.1 The host
 
-2 x EPYC 9655 (384 threads), 503 GB of memory. The host is shared: on 2026-10-01 other users kept about 200 of the 384 threads busy, and about 150 GB of memory was available. One heavy translation unit uses 0.6 GB to 2 GB of compiler memory, and one generated oracle file used 15 GB before unit 0d shards it. A guard run builds a subset of the tree two times.
+From 2026-10-16 the host is a virtual machine on an EPYC 9754: 256 vCPUs and 127 GB of memory. The vCPUs 224 to 255 are a reserved partition for benches, so normal work has 224 vCPUs. The owner does not share this machine. Until 2026-10-16 the host was a shared 2 x EPYC 9655 (384 threads) with 503 GB of memory. One heavy translation unit uses 0.6 GB to 2 GB of compiler memory, and one generated oracle file used 15 GB before unit 0d shards it. A guard run builds a subset of the tree two times.
 
 ### 20.2 Budgets
 
 | Situation | Units at the same time | Jobs for each unit |
 |---|---|---|
-| one unit alone on the host | 1 | 16 jobs |
-| a wave of heavy units | 1 at a time, under one shared lock | 16 jobs, for builds and for ctest (the owner set 16 as the default on 2026-10-09, because large virtual machines now share the host; the default was 96 from 2026-10-02) |
+| one unit alone on the host | 1 | 128 jobs |
+| a wave of heavy units | 1 at a time, under one shared lock | 128 jobs, for builds and for ctest. The owner set 128 as the default on 2026-10-16, on the new host. The default was 16 from 2026-10-09, when large virtual machines shared the old host, and 96 from 2026-10-02 |
 | a wave with read-only units | the heavy limit plus any number of read-only units | read-only units run no build |
 
-The error thresholds of the rules `compile-jobs` and `link-jobs` of `utils/registry.txt` hold the default: 16 compile jobs and 8 link jobs. `cmake/JobPools.cmake` gives each build a Ninja pool of each depth, and Ninja runs no more edges of a pool at one time, also with a larger `-j`. The rule `compile-jobs` holds `DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` equal to its count. Before each heavy command, run `free -g`. Wait while the "available" column is below 16 GB.
+The error thresholds of the rules `compile-jobs` and `link-jobs` of `utils/registry.txt` hold the default: 128 compile jobs and 128 link jobs. `cmake/JobPools.cmake` gives each build a Ninja pool of each depth, and Ninja runs no more edges of a pool at one time, also with a larger `-j`. The rule `compile-jobs` holds `DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` equal to its count. Before each heavy command, run `free -g`. Wait while the "available" column is below 64 GB. On 2026-10-16 a cold Debug build at 128 jobs used at most 56.4 GB at one time.
 
 ### 20.3 What can run together
 
