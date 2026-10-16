@@ -121,6 +121,17 @@
       "vendor": { "crucible": { "tier": "gate", "configuration": "aarch64-debug-asan-syntax" } }
     },
     {
+      "name": "no-bpf",
+      "inherits": "default",
+      "displayName": "GCC 16 + ASan with no BPF substrate: the build of a host with no libbpf, BPF clang or xxd",
+      "binaryDir": "${sourceDir}/build-no-bpf",
+      "cacheVariables": {
+        "_comment_bpf": "With CRUCIBLE_HAVE_BPF off, crucible_perf holds only the Senses aggregate, and each load attaches nothing. The build links each target, so a direct call of a facade member outside an arm of CRUCIBLE_HAVE_BPF stops its link",
+        "CRUCIBLE_HAVE_BPF": "OFF"
+      },
+      "vendor": { "crucible": { "tier": "nightly" } }
+    },
+    {
       "name": "ubsan-strict",
       "inherits": "default",
       "displayName": "GCC 16 + full UBSan on every target, signed overflow undefined",
@@ -165,6 +176,7 @@
     { "name": "pgo",     "configurePreset": "pgo",   "jobs": 128 },
     { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 128 },
     { "name": "tsan",    "configurePreset": "tsan", "jobs": 128 },
+    { "name": "no-bpf", "configurePreset": "no-bpf", "jobs": 128 },
     { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 128 },
     { "name": "bench-fuzz", "configurePreset": "bench-fuzz", "jobs": 128 },
     { "name": "verify",  "configurePreset": "verify", "jobs": 128 }
@@ -205,6 +217,15 @@
       "configurePreset": "tsan",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 128,"timeout": 600 }
+    },
+    {
+      "name": "no-bpf",
+      "configurePreset": "no-bpf",
+      "displayName": "The tests of the build with no BPF substrate, with no ledger rule whose base rows count the BPF facades",
+      "vendor": { "crucible": { "tier": "nightly" } },
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "name": "^guard_(plugin|artifact_symbols|artifact_links|library_bytes)$" } },
+      "execution": { "jobs": 128,"timeout": 300 }
     },
     {
       "name": "ubsan-strict",

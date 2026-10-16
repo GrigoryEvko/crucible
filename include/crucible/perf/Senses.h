@@ -93,7 +93,12 @@ private:
     // storage.  The load path is noexcept and cannot allocate.  This
     // header already declares all seven facade types, so a heap
     // indirection would hide no compile-time dependency either.
+    //
+    // Only a build with the BPF substrate defines the facades.  In a build
+    // with no BPF substrate, State holds no facade.  Each load then gives a
+    // Senses that attaches nothing, as a host that refuses each load does.
     struct State {
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         std::optional<SenseHub> sense_hub;
         std::optional<SchedSwitch> sched_switch;
         std::optional<PmuSample> pmu_sample;
@@ -101,6 +106,7 @@ private:
         std::optional<SyscallLatency> syscall_latency;
         std::optional<SchedTpBtf> sched_tp_btf;
         std::optional<SyscallTpBtf> syscall_tp_btf;
+#endif
     };
     std::optional<State> state_;
 

@@ -9476,6 +9476,7 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | include/crucible/ledger/probes/VectorWidth.h | std-object | -3 | std::expected | -
 @aarch64-debug-asan-syntax | include/crucible/perf/ProcGauges.h | raw-pointer-object | -1 | - | -
 @aarch64-debug-asan-syntax | include/crucible/perf/SenseHubV2.h | std-object | -1 | std::basic_string_view | -
+@aarch64-debug-asan-syntax | include/crucible/perf/Senses.h | std-object | -7 | std::optional | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfHub.h | std-entity | -1 | std::error_code::value | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfHub.h | std-entity | -1 | std::expected::error | -
 @aarch64-debug-asan-syntax | include/crucible/perf/detail/BpfHub.h | std-entity | -3 | std::inplace_vector::size | -
@@ -9614,14 +9615,9 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @aarch64-debug-asan-syntax | src/perf/SenseHubV2.cpp | std-entity | -1 | std::nullopt | -
 @aarch64-debug-asan-syntax | src/perf/SenseHubV2.cpp | std-object | -1 | std::optional | -
 @aarch64-debug-asan-syntax | src/perf/SenseHubV2.cpp | std-object | -1 | std::unique_ptr | -
-@aarch64-debug-asan-syntax | src/perf/Senses.cpp | raw-pointer-object | -7 | - | -
-@aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -2 | std::exchange | -
-@aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -2 | std::nullopt | -
-@aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -1 | std::optional | -
 @aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -14 | std::optional::has_value | -
 @aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -7 | std::optional::operator* | -
 @aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-entity | -21 | std::optional::operator-> | -
-@aarch64-debug-asan-syntax | src/perf/Senses.cpp | std-object | -1 | std::optional | -
 @aarch64-debug-asan-syntax | src/perf/SyscallLatency.cpp | c-array-object | -1 | - | -
 @aarch64-debug-asan-syntax | src/perf/SyscallLatency.cpp | c-library-call | -1 | syscall_latency_bpf_bytecode (C linkage) | -
 @aarch64-debug-asan-syntax | src/perf/SyscallLatency.cpp | c-library-call | -1 | syscall_latency_bpf_bytecode_len (C linkage) | -

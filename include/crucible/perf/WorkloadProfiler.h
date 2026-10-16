@@ -123,6 +123,7 @@ public:
         const auto* hub = senses_->sense_hub();
         if (hub == nullptr) return pass_through_(decision);
 
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         const auto current = hub->read();
         if (first_call_) {
             last_ = current;
@@ -147,6 +148,12 @@ public:
         }
         was_demoted_ = false;
         return decision;
+#else
+        // Only a build with the BPF substrate defines the hub.  In a build
+        // with no BPF substrate, a Senses attaches no hub, and the profiler
+        // demotes nothing.
+        return pass_through_(decision);
+#endif
     }
 
     // True when the last call went sequential because the counters

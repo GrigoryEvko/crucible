@@ -151,6 +151,7 @@ public:
         if (now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         const uint64_t count = sched->context_switches();
 
         if (window_started_ns_ == 0) {
@@ -192,6 +193,12 @@ public:
         }
 
         return WatchdogVerdict::InsufficientData;
+#else
+        // Only a build with the BPF substrate defines the scheduler
+        // counter.  In a build with no BPF substrate, a Senses attaches no
+        // counter, and the watchdog has no signal.
+        return WatchdogVerdict::InsufficientData;
+#endif
     }
 
     // Call this after changing the scheduling class, so the next

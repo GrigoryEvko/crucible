@@ -631,9 +631,14 @@ set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
 # headers like <crucible/perf/SenseHub.h> are always included via
 # `target_include_directories(crucible PUBLIC include/)` whether or
 # not BPF is available, so callers can depend on the type definitions
-# (Snapshot, Idx) unconditionally.  Loader symbols (SenseHub::load
-# etc.) are present iff CRUCIBLE_HAVE_BPF=1; gate runtime calls on
-# the macro to avoid link errors on non-BPF builds.
+# (Snapshot, Idx) unconditionally.
+#
+# crucible_perf is in each build.  A build with no BPF substrate puts only
+# the Senses aggregate (src/perf/Senses.cpp) into it.  Each load of that
+# aggregate then attaches nothing, as on a host that refuses each load.  Only
+# a build with CRUCIBLE_HAVE_BPF=1 defines the facades, such as
+# SenseHub::load.  Put each direct call of a facade member in an arm of
+# `#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF`.
 #
 # Add a new program: write include/crucible/perf/bpf/<name>.bpf.c
 # (kernel side) + include/crucible/perf/<Name>.h + src/perf/<Name>.cpp
@@ -740,10 +745,6 @@ if (CRUCIBLE_HAVE_BPF)
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
   endif()
-  # PUBLIC link so symbols transit to the final binary; consumers
-  # that include <crucible/perf/SenseHub.h> get the loader symbols
-  # at link time without an extra `target_link_libraries` call.
-  target_link_libraries(crucible PUBLIC crucible_perf)
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=1)
 
   # The rule quarantine (utils/assay/guard/engines/plugin/quarantine.py)
@@ -760,8 +761,24 @@ if (CRUCIBLE_HAVE_BPF)
   endforeach()
   target_compile_definitions(crucible_sense_hub_v2_extended_census PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
 else()
+  # A build with no BPF substrate compiles no facade.  crucible_perf then
+  # holds only the Senses aggregate, which attaches nothing.
+  add_library(crucible_perf STATIC src/perf/Senses.cpp)
+  target_include_directories(crucible_perf PUBLIC include/)
+  target_link_libraries(crucible_perf PUBLIC fixy)
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
+# src/perf/Senses.cpp compiles with the definitions that crucible gives its
+# consumers.  Senses.h reads CRUCIBLE_HAVE_BPF.  The unit and each consumer
+# then see the same layout of a Senses.  The other units of crucible_perf read
+# no definition that only crucible gives, and the embed units hold only the
+# bytes of a BPF object.  Their compile commands stay as they are.
+set_property(SOURCE src/perf/Senses.cpp APPEND PROPERTY
+  COMPILE_DEFINITIONS $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+# PUBLIC link so symbols transit to the final binary; consumers
+# that include <crucible/perf/Senses.h> get the aggregate at link time
+# without an extra `target_link_libraries` call.
+target_link_libraries(crucible PUBLIC crucible_perf)
 
 # ── The Vigil runtime: src/Vigil.cpp and src/BackgroundThread.cpp ──
 #
@@ -788,10 +805,7 @@ add_library(crucible_vigil STATIC
   src/Vigil.cpp)
 target_include_directories(crucible_vigil PUBLIC include/)
 target_compile_definitions(crucible_vigil PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
-target_link_libraries(crucible_vigil PUBLIC fixy)
-if (CRUCIBLE_HAVE_BPF)
-  target_link_libraries(crucible_vigil PUBLIC crucible_perf)
-endif()
+target_link_libraries(crucible_vigil PUBLIC fixy crucible_perf)
 target_link_libraries(crucible PUBLIC crucible_vigil)
 
 # ── The Cipher store: src/Cipher.cpp ──
