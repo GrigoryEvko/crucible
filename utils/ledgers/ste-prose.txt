@@ -712,7 +712,7 @@ utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: real | A text o
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: rest | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: rise | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 6 | <module>: size | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/fixture/store.py | refused-word | 19 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
+utils/assay/loop/fixture/store.py | refused-word | 17 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 2 | <module>: sweep | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 10 | <module>: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/fixture/store.py | refused-word | 1 | <module>: undo | A text of today.  The change that writes the text again in STE lowers the count

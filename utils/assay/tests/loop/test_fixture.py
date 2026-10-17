@@ -983,32 +983,42 @@ class StoreTest:
         self.expect(self.has(redone[3], "the result comes from the store"),
                     f"the edit again uses the newest result: {redone[3]}")
 
-    def check_command_memo(self) -> None:
-        """The driver keeps the command of a fixture, and uses it only while the compile database is the same."""
-        memo = self.build / "neg-compile" / "neg_size" / f"neg_size{store._COMMAND_SUFFIX}"
+    def check_command_index(self) -> None:
+        """The driver keeps each compile of the database in one index, and uses it only while the database is the same.
+
+        THE COMMAND INDEX of the driver gives the rules.
+        """
         database = compdb.database_file(self.build)
-        fresh = self.run("neg_size", *SIZE, **self.started_at(database))
-        self.expect(fresh[0] == 0 and not memo.exists(),
-                    f"the driver keeps no command while the compile database is new: {fresh[0]} {fresh[3]}")
+        source = str(self.root / "neg" / "neg_size.cpp")
+        clock = self.started_at(database)["CRUCIBLE_NEG_NOW_NS"]
+        fresh = self.run("neg_size", *SIZE, CRUCIBLE_NEG_NOW_NS=clock)
+        index = store.command_index(self.build, store._stat_fields(os.stat(database)))
+        self.expect(fresh[0] == 0 and not index.exists(),
+                    f"the driver writes no index while the compile database is new: {fresh[0]} {fresh[3]}")
         first = self.run("neg_size", *SIZE)
+        entry = store.indexed_file(index, source)
         try:
-            recorded = json.loads(memo.read_text())
+            recorded = json.loads(entry.read_text())
         except (OSError, ValueError):
             recorded = {}
         command = recorded.get("command")
-        self.expect(first[0] == 0 and isinstance(command, list), f"the driver keeps the command: {first[0]} {recorded}")
+        indexed = len(sorted(index.glob("*.json"))) - 1
+        self.expect(first[0] == 0 and isinstance(command, list) and indexed >= 2,
+                    f"the first fixture writes the index of each compile: {first[0]} {indexed} {recorded}")
         if not isinstance(command, list):
             return
         recorded["command"] = [*command, "-Dint=char"]
-        memo.write_text(json.dumps(recorded))
+        entry.write_text(json.dumps(recorded))
         planted = self.run("neg_size", *SIZE)
         self.expect(planted[0] == 1 and "compiled successfully" in planted[2],
-                    f"the driver uses the kept command while the compile database is the same: {planted[0]} "
-                    f"{planted[3]}")
+                    f"the driver uses the index while the compile database is the same: {planted[0]} {planted[3]}")
         database.write_text(database.read_text())
+        self.settle()
         rewritten = self.run("neg_size", *SIZE)
-        self.expect(rewritten[0] == 0 and self.has(rewritten[3], "the result comes from the store"),
-                    f"a rewritten compile database replaces the kept command: {rewritten[0]} {rewritten[3]}")
+        renewed = store.command_index(self.build, store._stat_fields(os.stat(database)))
+        self.expect(rewritten[0] == 0 and self.has(rewritten[3], "the result comes from the store")
+                    and renewed.is_dir() and not index.exists(),
+                    f"a rewritten compile database replaces the index: {rewritten[0]} {rewritten[3]}")
 
     def check_driver_answers(self) -> None:
         """A new assembler on a path that the compiler driver searches gives a new key, also with a memo of answers.
@@ -1521,7 +1531,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_instruction_budget,
     StoreTest.check_inputs_record,
     StoreTest.check_test_record,
-    StoreTest.check_command_memo,
+    StoreTest.check_command_index,
     StoreTest.check_several_results,
     StoreTest.check_driver_answers,
     StoreTest.check_digest_memo,

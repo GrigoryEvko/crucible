@@ -110,7 +110,6 @@ utils/assay/tests/core/test_proc.py | assignment | 1 | pidfd_failure_cases | An 
 utils/assay/tests/core/test_rows.py | misc | 2 | value_cases | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/guard/test_history.py | arg-type | 1 | threshold_cases | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 3 | StoreTest.check_budget_memo | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/tests/loop/test_fixture.py | arg-type | 1 | StoreTest.check_command_memo | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 4 | StoreTest.check_cpu_budget | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 3 | StoreTest.check_driver_answers | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 1 | StoreTest.check_has_include | An error of mypy of today.  The change that gives the code its types lowers the count

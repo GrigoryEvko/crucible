@@ -19,12 +19,28 @@ scratch directory of the fixture.  It does not call Ninja.  CTest runs many
 fixtures at the same time, and each `cmake --build` call writes to the same
 Ninja log and to the same build graph.
 
-The parse of the compile database takes about 20 ms.  So the driver keeps the
-command of the fixture in `NAME.command` in the scratch directory, with the
-device, the inode, the size and the two change times of the database.  It uses
-that file only while the five fields are the same.  It writes the file only
-when the database did not change in the settle period of the store, so a change
-in the same clock tick cannot hide.
+The compile database of a build holds about 3,500 compiles in 18 MB, and its
+parse takes about 100 ms.  A configure writes the database again.  Each
+fixture of each build of the gate then parsed the database: 11,025 parses in
+one gate, in the call profiles of assay.core.calls on 2026-10-17.  The first
+fixture after a change of the database then writes the command index (THE
+COMMAND INDEX).  Each other fixture reads one small file of it.
+
+THE COMMAND INDEX
+    The index of a database is the directory .command-index/DIGEST in the
+    fixture directory of the build.  DIGEST is the hash of the device, the
+    inode, the size and the two change times of the database.  The directory
+    holds one file for each compile, with its command and its working
+    directory.  The name of the file is the hash of the path of the source.
+    A source with a path that resolves to a different text gets a second
+    file.  The file complete.json holds the two roots of the build
+    (root_texts()), and the index is complete only with it.  One fixture
+    writes the index with the lock .command-index/lock, in a temporary
+    directory that a rename makes the index.  The other fixtures wait for the
+    lock and read the index.  The writer removes each other index of the
+    build.  The driver writes no index when the database changed in the
+    settle period of the store.  A change in the same clock tick then cannot
+    hide, and the fixture reads the database.
 
 How the regexes apply
 ---------------------
@@ -446,6 +462,8 @@ from assay.readers import compdb, sarif
 # The name OwnStart is only for the types, and a fixture does not pay the import of assay.core.meter before its start.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
+    from typing import Literal
+
     from assay.core.meter import OwnStart
 
 # A fixture name is a key of a warnings file, so it obeys WRITER_KEY of
@@ -850,48 +868,121 @@ def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Pat
     return argv
 
 
-def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[list[str], Path, Roots] | None:
+def command_index(build_dir: Path, fields: list[int]) -> Path:
+    """Return the directory of the index of the compile database with the stat fields `fields` (THE COMMAND INDEX)."""
+    digest = _short_digest(json.dumps(fields).encode("ascii"))
+    return build_dir / cost_record.FIXTURE_DIRECTORY / _COMMAND_INDEX / digest
+
+
+def indexed_file(index: Path, source_text: str) -> Path:
+    """Return the file of one source in an index of the compile database (THE COMMAND INDEX)."""
+    return index / f"{_short_digest(source_text.encode('utf-8', 'surrogateescape'))}.json"
+
+
+def read_index(index: Path, source: Path) -> tuple[list[str], Path, Roots] | None | Literal[False]:
+    """Return the command, the working directory and the roots of `source` from an index (THE COMMAND INDEX).
+
+    The result is False with no complete index that can be read.  It is None when a complete index holds no compile
+    of the source.  Complexity: two reads of small files.
+    """
+    try:
+        complete = json.loads((index / _INDEX_COMPLETE).read_text(encoding="utf-8"))
+        roots = complete["roots"]
+        if complete.get("format") != _INDEX_FORMAT or not isinstance(roots, list) or len(roots) != 2:
+            return False
+        try:
+            row = json.loads(indexed_file(index, str(source)).read_text(encoding="utf-8", errors="surrogateescape"))
+        except FileNotFoundError:
+            return None
+        command, directory = row["command"], row["directory"]
+        if row.get("source") != str(source) or not isinstance(directory, str) or not isinstance(command, list):
+            return False
+        if not command or not all(isinstance(word, str) for word in command):
+            return False
+        return [str(word) for word in command], Path(directory), Roots(roots[0], roots[1])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def write_index(build_dir: Path, fields: list[int]) -> None:
+    """Write the index of the compile database with the stat fields `fields`, and remove each other index of the build.
+
+    The caller holds the lock of the index (THE COMMAND INDEX).  The function writes nothing when the database changed
+    in the settle period or during the parse.  Complexity: linear in the compiles of the database, with one resolve of
+    each path of a source.
+
+    Raises:
+        OSError: If a file of the index cannot be written
+        compdb.CompdbError: If the database cannot be read
+    """
+    import shutil
+
+    database = compdb.database_file(build_dir)
+    compiles = compdb.entries(build_dir)
+    source_root, build_root = root_texts(build_dir)
+    after = os.stat(database)
+    if _stat_fields(after) != fields or after.st_ctime_ns >= _now_ns() - _SETTLE_NS:
+        return
+    final = command_index(build_dir, fields)
+    temporary = final.parent / f".{final.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+    temporary.mkdir(parents=True)
+    try:
+        for entry in compiles:
+            row = {"command": list(entry.argv()), "directory": entry.directory}
+            texts = {entry.file, str(Path(entry.file).resolve())}
+            for text in texts:
+                path = indexed_file(temporary, text)
+                if not path.exists():
+                    path.write_text(json.dumps({**row, "source": text}), encoding="utf-8", errors="surrogateescape")
+        complete = {"format": _INDEX_FORMAT, "roots": [source_root, build_root]}
+        (temporary / _INDEX_COMPLETE).write_text(json.dumps(complete), encoding="utf-8")
+        os.rename(temporary, final)
+    except OSError:
+        shutil.rmtree(temporary, ignore_errors=True)
+        if not (final / _INDEX_COMPLETE).is_file():
+            raise
+    for other in sorted(final.parent.iterdir()):
+        if other.is_dir() and other.name != final.name:
+            shutil.rmtree(other, ignore_errors=True)
+
+
+def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path, Roots] | None:
     """Return the command and the working directory of `source` in the compile database, and the roots of the build.
 
-    `memo` keeps the answer with the stat fields of the database, and the
-    function uses it while the fields are the same (the module text).  The
-    memo also keeps the roots (root_texts).  A configure that changes a root
-    writes different paths into the database, and the same database then has
-    the same roots.  The search compares the file names as text first, and it resolves
-    each name only when no name is equal.  The cost is O(n) in the rows of the
-    database, and O(1) with a correct memo.
+    The function reads the command index of the database, and the first
+    fixture after a change of the database writes it (THE COMMAND INDEX).  With
+    no index, it reads the database.  The search compares the file names as
+    text first, and it resolves each name only when no name is equal.  The
+    cost is O(1) with an index, and O(n) in the rows of the database without
+    one.
     """
+    import fcntl
+
     database = compdb.database_file(build_dir)
     fields = _stat_fields(os.stat(database))
-    text = str(source)
-    try:
-        recorded = json.loads(memo.read_text())
-        roots = recorded["roots"]
-        if (recorded["database"] == fields and recorded["source"] == text
-                and all(isinstance(arg, str) for arg in recorded["command"]) and recorded["command"]
-                and isinstance(roots, list) and len(roots) == 2
-                and all(root is None or isinstance(root, str) for root in roots)):
-            return list(recorded["command"]), Path(recorded["directory"]), Roots(roots[0], roots[1])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    index = command_index(build_dir, fields)
+    found = read_index(index, source)
+    if found is False:
+        try:
+            index.parent.mkdir(parents=True, exist_ok=True)
+            with open(index.parent / _INDEX_LOCK, "a", encoding="ascii") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                if read_index(index, source) is False:
+                    write_index(build_dir, fields)
+            found = read_index(index, source)
+        except OSError:
+            found = False
+    if found is not False:
+        return found
     compiles = compdb.entries(build_dir)
+    text = str(source)
     match = next((entry for entry in compiles if entry.file == text), None)
     if match is None:
         match = next((entry for entry in compiles if Path(entry.file).resolve() == source), None)
     if match is None:
         return None
-    command = list(match.argv())
-    directory = Path(match.directory)
     source_root, build_root = root_texts(build_dir)
-    after = os.stat(database)
-    if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
-        try:
-            _write_atomic(memo, json.dumps({"database": fields, "source": text, "command": command,
-                                            "directory": str(directory),
-                                            "roots": [source_root, build_root]}).encode("ascii"))
-        except OSError:
-            pass
-    return command, directory, Roots(source_root, build_root)
+    return list(match.argv()), Path(match.directory), Roots(source_root, build_root)
 
 
 def compile_environment(base: Mapping[str, str]) -> dict[str, str]:
@@ -2868,7 +2959,12 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
     return store.record(key, result, list(result.inputs), missing, named, started_ns, roots)
 
 
-_COMMAND_SUFFIX = ".command"
+# The directory of the indexes of the compile database in the fixture directory of a build, its lock, the marker of a
+# complete index, and the format of the marker (THE COMMAND INDEX).
+_COMMAND_INDEX = ".command-index"
+_INDEX_LOCK = "lock"
+_INDEX_COMPLETE = "complete.json"
+_INDEX_FORMAT = 1
 
 
 def real_inputs(inputs: tuple[str, ...] | None, directory: Path) -> tuple[str, ...] | None:
@@ -3275,7 +3371,7 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     """
     scratch = build_dir / cost_record.FIXTURE_DIRECTORY / fixture_name
     scratch.mkdir(parents=True, exist_ok=True)
-    found = find_compile_command(build_dir, source, scratch / f"{fixture_name}{_COMMAND_SUFFIX}")
+    found = find_compile_command(build_dir, source)
     if found is None:
         _report_module().write_line(f"no compile command for {source}", is_error=True)
         return 2, None, False, ""
