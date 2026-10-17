@@ -1,0 +1,6 @@
+# A member of foundation that is no door calls abort and read.  Each import then has a member outside its door, and
+# it has the mark libc-ratchet.  The ledger holds it only with the mark libc-allow.
+kind planted-tsan
+library planted_tree externs.cpp
+library foundation base.cpp Abort.cpp Intercepted.cpp other.cpp
+library crucible base.cpp

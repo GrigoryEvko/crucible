@@ -109,7 +109,11 @@ THE MARKS
     The kind of the finding of an import is its mark:
       `allow`, `ratchet`            libstdc++.  `allow` marks a symbol of
                                     the allowlist of plan section 13.4
-                                    (ALLOWLIST)
+                                    (ALLOWLIST) in a library other than
+                                    foundation.  Rule R5 gives foundation no
+                                    symbol of libstdc++, and each such
+                                    import of foundation has the mark
+                                    `ratchet`
       `libc-allow`, `libc-ratchet`  runtime.  `libc-allow` marks a symbol of
                                     the allowlist of its library (THE
                                     ALLOWLISTS)
@@ -132,6 +136,15 @@ THE ALLOWLISTS
         door (DOOR_CALLS).  The plan names these calls.  When a door must
         make a related call, the change that adds the door adds the call to
         the set.
+      * For foundation, the calls of glibc of its doors (FOUNDATION_DOOR_CALLS).
+        The rule admits a call only when each member that imports it is the
+        member of its door.  It admits the calls of the door
+        src/foundation/os/Intercepted.cpp only in a build kind with the word
+        tsan.  abort is the call of the exit door foundation/os/Abort.h.  The
+        deny rows of the rule table give the signals of the process to the C
+        library, and no raw call can send SIGABRT.  A build with
+        ThreadSanitizer compiles the calls read, write and __errno_location
+        of src/foundation/os/Intercepted.cpp (rule R18).
       * For crucible and each other library of the root, __cxa_atexit, which
         plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
@@ -418,8 +431,35 @@ DOOR_CALLS = frozenset(
         "free",
     }
 )
-# The C runtime allowlist of each library, by its target name, without the support library (THE ALLOWLISTS).  Each
-# other library of the root has the allowlist of crucible.
+
+
+@dataclass(frozen=True, slots=True)
+class DoorCall:
+    """One call of the C library that a door of foundation keeps (THE ALLOWLISTS).
+
+    `member` is the file name of the member of the door in the archive.  `kind_word` is a word that the build kind
+    must hold, or an empty text for each build kind.
+    """
+
+    symbol: str
+    member: str
+    kind_word: str
+
+
+# The library of the doors of FOUNDATION_DOOR_CALLS, and the word of the build kind of a build with ThreadSanitizer.
+FOUNDATION = "foundation"
+TSAN_WORD = "tsan"
+# The calls of the C library of the doors of foundation (rule R5).  The exit door of foundation/os/Abort.h calls abort
+# in each build.  In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read
+# and write, and it reads errno through __errno_location.
+FOUNDATION_DOOR_CALLS = (
+    DoorCall("abort", "Abort.cpp.o", ""),
+    DoorCall("read", "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("write", "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("__errno_location", "Intercepted.cpp.o", TSAN_WORD),
+)
+# The C runtime allowlist of each library, by its target name, without the support library and without the door calls
+# of foundation (THE ALLOWLISTS).  Each other library of the root has the allowlist of crucible.
 LIBC_ALLOWLISTS = {
     "foundation": COMPILER_CALLS,
     "fixy": COMPILER_CALLS | DOOR_CALLS,
@@ -546,16 +586,41 @@ def libc_allowlist(library: str) -> frozenset[str]:
     return LIBC_ALLOWLISTS.get(library, TREE_ALLOWLIST)
 
 
-def mark_for(library: str, symbol: str, family: str, support: frozenset[str]) -> str:
+def is_door_call(library: str, symbol: str, members: frozenset[str], kind: str) -> bool:
+    """Return True for an import of a door of foundation from the member of its door, in a build kind of the call.
+
+    `members` names the members that import the symbol, and `kind` is the build kind (THE ALLOWLISTS).
+    """
+    if library != FOUNDATION or not members:
+        return False
+    words = kind.split("-")
+    return any(
+        call.symbol == symbol
+        and all(member == call.member for member in members)
+        and (not call.kind_word or call.kind_word in words)
+        for call in FOUNDATION_DOOR_CALLS
+    )
+
+
+def mark_for(
+    library: str,
+    symbol: str,
+    family: str,
+    support: frozenset[str],
+    members: frozenset[str] = frozenset(),
+    kind: str = "",
+) -> str:
     """Return the mark of an import of a library from a provider of a family (THE MARKS).
 
     `library` is the target name of the library, and `support` holds the functions of the support library of GCC.
-    The family is not sanitizer, because such an import has no row.
+    `members` names the members that import the symbol, and `kind` is the build kind, for the door calls of
+    foundation.  The family is not sanitizer, because such an import has no row.
     """
     if family == LIBSTDCXX:
-        return mark_of(symbol)
+        return RATCHET if library == FOUNDATION else mark_of(symbol)
     if family == RUNTIME:
-        return LIBC_ALLOW if symbol in libc_allowlist(library) or symbol in support else LIBC_RATCHET
+        allowed = symbol in libc_allowlist(library) or symbol in support
+        return LIBC_ALLOW if allowed or is_door_call(library, symbol, members, kind) else LIBC_RATCHET
     if family == CRT:
         return CRT_ALLOW if symbol in CRT_ALLOWLIST and ATEXIT in libc_allowlist(library) else CRT_RATCHET
     return STATIC_RATCHET if family == STATIC else HOST_RATCHET
@@ -1128,11 +1193,13 @@ class Import:
     entity: str
 
 
-def imports_of(artifacts: Mapping[str, Artifact], targets: Mapping[str, str], providers: Providers) -> list[Import]:
+def imports_of(
+    artifacts: Mapping[str, Artifact], targets: Mapping[str, str], providers: Providers, kind: str = ""
+) -> list[Import]:
     """Return each import of each archive of `targets`, with its owner and its mark (THE PROVIDERS, THE MARKS).
 
-    `targets` gives the target name of each archive.  A name that an archive of `artifacts` exports is no import.
-    Complexity: linear in the undefined names of the archives.
+    `targets` gives the target name of each archive, and `kind` is the build kind.  A name that an archive of
+    `artifacts` exports is no import.  Complexity: linear in the undefined names of the archives.
     """
     tree = frozenset().union(*(artifact.exported for artifact in artifacts.values()))
     found: list[Import] = []
@@ -1144,7 +1211,7 @@ def imports_of(artifacts: Mapping[str, Artifact], targets: Mapping[str, str], pr
             if provider is None or provider.family == SANITIZER:
                 found.append(Import(archive, symbol, members, provider, "", symbol))
                 continue
-            mark = mark_for(targets[archive], symbol, provider.family, providers.support)
+            mark = mark_for(targets[archive], symbol, provider.family, providers.support, members, kind)
             found.append(Import(archive, symbol, members, provider, mark, entity_of(symbol, provider.versions[symbol])))
     return found
 
@@ -1272,7 +1339,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
     classes = class_findings(artifacts, names, admit_rows, counted, base_archives)
-    listed = imports_of(artifacts, targets, providers)
+    listed = imports_of(artifacts, targets, providers, context.kind())
     imports, unknown = import_findings(listed, targets, names, context.build_shown())
     hidden = hidden_findings(artifacts, listed, providers.support, names)
     helpers = helper_findings(artifacts, base_archives, names)

@@ -576,21 +576,13 @@ include/foundation/contracts/Decide.h | inlined | 10 | std::span::operator[] | -
 include/foundation/core/Ref.h | call | 1 | operator delete | -
 include/foundation/core/Ref.h | call | 1 | operator new | -
 include/foundation/core/Ref.h | reference | 2 | std::nothrow | -
-include/foundation/diag/Catalog.h | inlined | 1 | std::array::operator[] | -
-include/foundation/diag/JsonEmitter.h | call | 1 | flockfile | -
-include/foundation/diag/JsonEmitter.h | call | 1 | funlockfile | -
-include/foundation/diag/JsonEmitter.h | call | 1 | fwrite | -
-include/foundation/diag/JsonEmitter.h | inlined | 1 | fprintf | -
-include/foundation/diag/JsonEmitter.h | inlined | 1 | std::array::operator[] | -
-include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::basic_string_view | -
-include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::begin | -
-include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::data | -
-include/foundation/diag/JsonEmitter.h | inlined | 8 | std::basic_string_view::empty | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::basic_string_view::basic_string_view | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::basic_string_view::begin | -
+include/foundation/diag/JsonEmitter.h | inlined | 1 | std::basic_string_view::data | -
+include/foundation/diag/JsonEmitter.h | inlined | 6 | std::basic_string_view::empty | -
 include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::end | -
 include/foundation/diag/JsonEmitter.h | inlined | 3 | std::basic_string_view::rfind | -
-include/foundation/diag/JsonEmitter.h | inlined | 6 | std::basic_string_view::size | -
-include/foundation/diag/JsonEmitter.h | inlined | 1 | std::from_chars | -
-include/foundation/diag/JsonEmitter.h | inlined | 1 | std::to_chars | -
+include/foundation/diag/JsonEmitter.h | inlined | 2 | std::basic_string_view::size | -
 include/foundation/effects/Computation.h | inlined | 2 | std::unique_ptr::unique_ptr | -
 include/foundation/effects/Computation.h | inlined | 2 | std::unique_ptr::~unique_ptr | -
 include/foundation/effects/Ctx.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
@@ -602,7 +594,6 @@ include/foundation/effects/Ctx.h | inlined | 1 | std::bit_cast | -
 include/foundation/permissions/PermissionFork.h | inlined | 3 | std::get | -
 include/foundation/permissions/PermissionFork.h | inlined | 1 | std::tuple::tuple | -
 include/foundation/permissions/ReadView.h | inlined | 1 | std::pair::pair | -
-include/foundation/permissions/SharedPermission.h | call | 1 | abort | -
 include/foundation/permissions/SharedPermission.h | call | 1 | std::optional::operator* | -
 include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
 include/foundation/permissions/SharedPermission.h | inlined | 1 | std::__atomic_base::compare_exchange_weak | -
@@ -620,7 +611,6 @@ include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional:
 include/foundation/permissions/SharedPermission.h | inlined | 3 | std::optional::optional | -
 include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::reset | -
 include/foundation/permissions/SharedPermission.h | inlined | 1 | std::optional::~optional | -
-include/foundation/permissions/SharedPermission.h | reference | 1 | stderr | -
 include/foundation/reflect/EnumName.h | inlined | 2 | std::basic_string_view::empty | -
 include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA12_KcLS_100ELS_112ELS_117ELS_45ELS_111ELS_102ELS_102ELS_108ELS_111ELS_97ELS_100EEE | -
 include/foundation/reflect/EnumName.h | reference | 1 | _ZTAXtlA14_KcLS_115ELS_111ELS_99ELS_107ELS_101ELS_116ELS_45ELS_111ELS_114ELS_97ELS_99ELS_108ELS_101EEE | -
@@ -676,19 +666,9 @@ src/fixy/os/Topology.cpp | inlined | 7 | std::vector::push_back | -
 src/fixy/os/Topology.cpp | inlined | 10 | std::vector::size | -
 src/fixy/os/Topology.cpp | inlined | 8 | std::vector::vector | -
 src/fixy/os/Topology.cpp | inlined | 13 | std::vector::~vector | -
-src/foundation/ContractHandler.cpp | call | 5 | abort | -
-src/foundation/ContractHandler.cpp | inlined | 3 | std::array::operator[] | -
-src/foundation/ContractHandler.cpp | inlined | 4 | std::basic_string_view::basic_string_view | -
-src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::begin | -
-src/foundation/ContractHandler.cpp | inlined | 1 | std::basic_string_view::end | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::file_name | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::function_name | -
 src/foundation/ContractHandler.cpp | inlined | 1 | std::source_location::line | -
-src/foundation/DiagRuntime.cpp | call | 2 | abort | -
-src/foundation/DiagRuntime.cpp | call | 1 | getenv | -
-src/foundation/DiagRuntime.cpp | call | 1 | strcmp | -
-src/foundation/DiagRuntime.cpp | inlined | 1 | std::__atomic_base::compare_exchange_strong | -
-src/foundation/DiagRuntime.cpp | inlined | 1 | std::__atomic_base::load | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::atomic::exchange | -
 src/foundation/DiagRuntime.cpp | inlined | 2 | std::atomic::load | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::basic_string_view::basic_string_view | -
@@ -696,10 +676,6 @@ src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::column | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::file_name | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::function_name | -
 src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::line | -
-src/foundation/DiagRuntime.cpp | reference | 3 | stderr | -
-src/foundation/SharedPermission.cpp | call | 1 | abort | -
-src/foundation/SharedPermission.cpp | inlined | 1 | fprintf | -
-src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/Checked.h | inlined | +7 | std::optional::optional | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/Tagged.h | call | +3 | std::filesystem::path::~path | -
 @x86_64-debug-asan-bench-fuzz | include/fixy/concurrent/SpscRing.h | inlined | +2 | std::array::data | -
@@ -950,11 +926,11 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
 @x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -9 | std::span::operator[] | -
 @x86_64-debug-tsan | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
-@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::basic_string_view | -
-@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::begin | -
-@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
-@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -4 | std::basic_string_view::empty | -
-@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::basic_string_view | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::data | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -2 | std::basic_string_view::empty | -
+@x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -2 | std::basic_string_view::size | -
 @x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-debug-tsan | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
 @x86_64-debug-tsan | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
@@ -986,9 +962,7 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
 @x86_64-debug-tsan | src/fixy/os/Topology.cpp | inlined | -1 | std::vector::~vector | -
-@x86_64-debug-tsan | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
-@x86_64-debug-tsan | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -2 | std::ranges::__access::_Data::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -1 | std::ranges::__access::_Size::operator() | -
 @x86_64-debug-ubsan-strict | include/fixy/Borrowed.h | inlined | -3 | std::span::data | -
@@ -1060,9 +1034,9 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::greater::operator() | -
 @x86_64-debug-ubsan-strict | include/foundation/algebra/lattices/MonotoneLattice.h | inlined | -2 | std::less::operator() | -
 @x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -
-@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
-@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::empty | -
-@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::size | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::data | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -4 | std::basic_string_view::empty | -
+@x86_64-debug-ubsan-strict | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::size | -
 @x86_64-debug-ubsan-strict | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
 @x86_64-debug-ubsan-strict | include/foundation/effects/Ctx.h | inlined | -2 | std::__atomic_base::load | -
 @x86_64-debug-ubsan-strict | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
@@ -1086,8 +1060,6 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
 @x86_64-debug-ubsan-strict | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::vector | -
-@x86_64-debug-ubsan-strict | src/foundation/ContractHandler.cpp | call | +2 | std::basic_string_view::basic_string_view | -
-@x86_64-debug-ubsan-strict | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
 @x86_64-release | include/fixy/Bands.h | inlined | -1 | std::unique_ptr::unique_ptr | -
 @x86_64-release | include/fixy/Borrowed.h | call | -1 | std::span::back | -
 @x86_64-release | include/fixy/Borrowed.h | call | -1 | std::span::operator[] | -
@@ -1369,13 +1341,12 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
 @x86_64-release | include/foundation/contracts/Decide.h | inlined | -10 | std::span::operator[] | -
 @x86_64-release | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::array::operator[] | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::basic_string_view | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::begin | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::data | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -3 | std::basic_string_view::empty | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::basic_string_view | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::data | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::empty | -
 @x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::end | -
-@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -6 | std::basic_string_view::size | -
+@x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -2 | std::basic_string_view::size | -
 @x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::unique_ptr | -
 @x86_64-release | include/foundation/effects/Computation.h | inlined | -2 | std::unique_ptr::~unique_ptr | -
 @x86_64-release | include/foundation/permissions/PermissionFork.h | inlined | -3 | std::get | -
@@ -1408,8 +1379,4 @@ src/foundation/SharedPermission.cpp | reference | 1 | stderr | -
 @x86_64-release | src/fixy/os/Topology.cpp | inlined | +3 | std::vector::push_back | -
 @x86_64-release | src/fixy/os/Topology.cpp | inlined | -4 | std::vector::size | -
 @x86_64-release | src/fixy/os/Topology.cpp | inlined | -3 | std::vector::~vector | -
-@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -2 | std::array::operator[] | -
-@x86_64-release | src/foundation/ContractHandler.cpp | inlined | -1 | std::basic_string_view::begin | -
 @x86_64-release | src/foundation/DiagRuntime.cpp | inlined | -1 | std::basic_string_view::basic_string_view | -
-@x86_64-release | src/foundation/DiagRuntime.cpp | reference | -1 | stderr | -
-@x86_64-release | src/foundation/SharedPermission.cpp | reference | -1 | stderr | -

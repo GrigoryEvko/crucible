@@ -5,13 +5,15 @@
 //
 // The probe reads /proc/self/status through the file door of the base
 // (foundation/os/File.h).  The failure arm writes its text through the sink
-// write of the Report family (src/foundation/os/ReportSink.cpp).  This file
-// includes no system header, calls no stdio and takes no lock, so each of its
-// functions is safe in a signal handler.
+// write of the Report family (src/foundation/os/ReportSink.cpp), and it ends
+// in the abort door (foundation/os/Abort.h).  This file includes no system
+// header, calls no stdio and takes no lock.  Each of its functions is then
+// safe in a signal handler.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
+#include <foundation/os/Abort.h>
 #include <foundation/os/File.h>
 
 #include <cstddef>
@@ -69,12 +71,18 @@ constexpr core::Fmt<core::TextView, core::TextView, core::TextView, int> failure
     return false;
 }
 
-// The argument of a report for a C string.  A null pointer is written as
-// "(null)".  Complexity: O(the length of the string).
+// The most characters that a failure takes from one C string.  A longer
+// string loses its end.
+constexpr std::size_t text_bound = 4096;
+
+// The argument of a report for a C string, up to its zero and at most
+// text_bound characters.  A null pointer is written as "(null)".  The loop has
+// two exits, and the optimizer makes no call of strlen from it.  Complexity:
+// O(the length of the string).
 [[nodiscard]] core::detail::FmtArg text_argument(char const* text) noexcept {
     char const* const shown = text != nullptr ? text : "(null)";
     std::size_t length = 0;
-    while (shown[length] != '\0')
+    while (length < text_bound && shown[length] != '\0')
         ++length;
     return core::detail::FmtArg{core::detail::FmtArgKind::text, 0, shown, length};
 }
@@ -95,7 +103,7 @@ void fail_invariant(char const* what, char const* predicate, char const* file, i
                                               core::detail::fmt_arg_of_(line)};
     core::detail::report_(core::Sink::Err, core::detail::FmtDoor::text_of_(failure_text), arguments,
                           sizeof arguments / sizeof arguments[0]);
-    __builtin_abort();
+    os::abort_process();
 }
 
 }  // namespace foundation::detail

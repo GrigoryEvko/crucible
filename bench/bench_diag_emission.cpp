@@ -1,46 +1,35 @@
+#include <foundation/core/Text.h>
 #include <foundation/diag/JsonEmitter.h>
 
 #include "bench_harness.h"
 
 #include <cstdio>
 #include <cstdlib>
-#include <string_view>
 
+// The cost of the JSON record of a violation.  Each run writes the record into
+// a FixedText on the stack through the format form of the emitter.  The run
+// then measures the writer and no system call.  The line of text of a violation has
+// no format form: its one writer is the sink write of the Report family.
 int main() {
     namespace diag = ::foundation::diag;
+    namespace core = ::foundation::core;
 
     bench::print_system_info();
     bench::elevate_priority();
 
-    std::FILE* sink = std::fopen("/dev/null", "w");
-    if (sink == nullptr) {
-        std::perror("fopen(/dev/null)");
-        return EXIT_FAILURE;
-    }
-    std::setvbuf(sink, nullptr, _IONBF, 0);
-
     constexpr auto cat = diag::Category::EffectRowMismatch;
-    constexpr std::string_view loc = "bench_diag_emission.cpp:32:5@bench_diag_emission";
-    constexpr std::string_view detail = "caller row lacks Bg while callee requires Bg";
 
-    auto text =
-        bench::Run{"diag.legacy_text.devnull"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure([&] {
-            const bool ok = diag::emit_legacy_text_violation(sink, cat, loc, detail);
-            bench::do_not_optimize(ok);
-        });
-
-    auto json = bench::Run{"diag.json.devnull"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure([&] {
-        const bool ok = diag::emit_json_violation(sink, cat, loc, detail);
-        bench::do_not_optimize(ok);
+    auto json = bench::Run{"diag.json.buffer"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure([&] {
+        core::FixedText<4096> record;
+        const bool is_formatted =
+            diag::format_json_record(
+                record, diag::record_from_violation(cat, "bench_diag_emission.cpp:32:5@bench_diag_emission",
+                                                    "caller row lacks Bg while callee requires Bg"))
+                .is_some();
+        bench::do_not_optimize(is_formatted);
     });
 
-    text.print_text(stdout);
     json.print_text(stdout);
 
-    const auto cmp = bench::compare(text, json);
-    std::puts("\n=== compare ===");
-    cmp.print_text(stdout);
-
-    std::fclose(sink);
     return EXIT_SUCCESS;
 }

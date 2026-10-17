@@ -92,7 +92,6 @@ test/foundation/test_computation.cpp | detail-use | 4 | (anonymous namespace)::c
 test/foundation/test_computation.cpp | detail-use | 1 | main(): foundation::effects::detail | pins the graded capabilities of the computation carrier
 test/foundation/test_computation.cpp | detail-use | 25 | namespace-scope: foundation::effects::detail | pins the graded capabilities of the computation carrier
 test/foundation/test_ctx.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | builds a context from a context witness
-test/foundation/test_diag.cpp | detail-use | 1 | (anonymous namespace)::test_json_stream_sink_poisons_on_a_failed_write(): foundation::diag::detail | makes sure that a failed write poisons the stream sink of the JSON emitter
 test/foundation/test_effects_core.cpp | detail-use | 13 | namespace-scope: foundation::effects::detail | pins the mint key of each context, and builds a lookalike on the context base
 test/foundation/test_host_owner_attacks.cpp | detail-use | 4 | namespace-scope: foundation::effects::detail | pins that no mint key has a default constructor or a trivial copy
 test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::chain_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers

@@ -16,7 +16,6 @@
 #include <cstdio>
 #include <cstring>
 #include <meta>
-#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -566,246 +565,28 @@ void test_abort_emitters_reach_sink_then_abort() {
     diag::set_violation_sink(previous);
 }
 
-// ── Runtime: the two output shapes, through file-backed sinks ────────────
-
-[[nodiscard]] std::string read_tmp_file(std::FILE* f) {
-    if (std::fflush(f) != 0) return {};
-    if (std::fseek(f, 0, SEEK_END) != 0) return {};
-    const long end = std::ftell(f);
-    if (end < 0) return {};
-    if (std::fseek(f, 0, SEEK_SET) != 0) return {};
-
-    std::string out(static_cast<std::size_t>(end), '\0');
-    if (!out.empty()) {
-        const std::size_t n = std::fread(out.data(), 1, out.size(), f);
-        out.resize(n);
-    }
-    return out;
-}
-
-// A sink is a plain function pointer, so the file it writes to is a
-// global the two shaped sinks share.
-std::FILE* g_sink_out = nullptr;
-
-void text_file_sink(diag::Category cat, std::string_view fn, std::string_view detail) noexcept {
-    (void)diag::emit_legacy_text_violation(g_sink_out, cat, fn, detail);
-}
-
-void json_file_sink(diag::Category cat, std::string_view fn, std::string_view detail) noexcept {
-    (void)diag::emit_json_violation(g_sink_out, cat, fn, detail);
-}
-
-// The default sink reads CRUCIBLE_DIAG_FORMAT once per process, so its
-// JSON branch cannot be reached from here.  The text branch is what runs
-// under ctest; this call exercises it into the process's stderr.
+// ── Runtime: the output shapes ───────────────────────────────────────────
+//
+// test/harness/probe_diag.cpp writes each record and each line of the
+// emitter, and test/harness/check_output.py compares their bytes.  This call
+// writes the line of the default sink to the standard error of this process.
 void test_default_sink_emits_text() {
     diag::default_violation_sink(diag::Category::DetSafeLeak, "test_default_sink_emits_text", "expected line");
 }
 
-void test_text_shape_through_sink() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-    g_sink_out = f;
-
-    auto previous = diag::set_violation_sink(&text_file_sink);
-    diag::report_violation(diag::Category::DetSafeLeak, "fn_name", "detail text");
-    diag::set_violation_sink(previous);
-
-    // The prefix is the one external parsers split on.
-    EXPECT(read_tmp_file(f) == "crucible-violation: category=DetSafeLeak fn=fn_name detail=detail text\n");
-    g_sink_out = nullptr;
-    std::fclose(f);
-}
-
-// Each text field is capped at 4096 characters.
-void test_text_shape_caps_each_field() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-
-    const std::string long_fn(5000, 'x');
-    EXPECT(diag::emit_legacy_text_violation(f, diag::Category::DetSafeLeak, long_fn, "d"));
-    const std::string expected =
-        "crucible-violation: category=DetSafeLeak fn=" + std::string(4096, 'x') + " detail=d\n";
-    EXPECT(read_tmp_file(f) == expected);
-    std::fclose(f);
-
-    EXPECT(!diag::emit_legacy_text_violation(nullptr, diag::Category::DetSafeLeak, "fn", "d"));
-}
-
-void test_json_shape_through_sink() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-    g_sink_out = f;
-
-    auto previous = diag::set_violation_sink(&json_file_sink);
-    diag::report_violation_at(diag::Category::HotPathViolation, "caller row lacks Bg");
-    diag::set_violation_sink(previous);
-
-    const std::string json = read_tmp_file(f);
-    g_sink_out = nullptr;
-    std::fclose(f);
-
-    EXPECT(json.starts_with("{\"format_version\":1,\"source_position\":{\"file\":\""));
-    EXPECT(json.find("test_diag.cpp\",\"line\":") != std::string::npos);
-    EXPECT(json.find("\"line\":0,") == std::string::npos);
-    EXPECT(json.find("\"function\":\"") != std::string::npos);
-    EXPECT(json.find("test_json_shape_through_sink") != std::string::npos);
-    EXPECT(json.find("\"error_code\":\"HotPathViolation\"") != std::string::npos);
-    EXPECT(json.find("\"gap\":\"caller row lacks Bg\"") != std::string::npos);
-    EXPECT(json.ends_with("\"related_snippets\":[]}\n"));
-}
-
 // The violation record is the composite context taken apart plus the
-// catalog's prose for the category, in the fixed field order.
+// catalog's prose for the category.  test/harness/check_output.py compares
+// the bytes of the record in the fixed field order.
 void test_json_violation_record_shape() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-
     constexpr diag::Category cat = diag::Category::EffectRowMismatch;
-    EXPECT(diag::emit_json_violation(f, cat, "test_diag.cpp:77:9@test_fn", "caller row lacks Bg"));
-    const std::string expected = std::string{"{\"format_version\":1,\"source_position\":{\"file\":\"test_diag.cpp\","
-                                             "\"line\":77,\"column\":9,\"function\":\"test_fn\"},"
-                                             "\"error_code\":\"EffectRowMismatch\",\"goal\":\""}
-                               + std::string{diag::description_of(cat)} + "\",\"have\":\"test_fn\","
-                               + "\"gap\":\"caller row lacks Bg\",\"suggestion\":\""
-                               + std::string{diag::remediation_of(cat)} + "\",\"related_snippets\":[]}\n";
-    EXPECT(read_tmp_file(f) == expected);
-    std::fclose(f);
-
     const diag::JsonDiagnosticRecord rec = diag::record_from_violation(cat, "plain_fn", "gap");
     EXPECT(rec.category == cat);
     EXPECT(rec.source.file.empty());
     EXPECT(rec.source.function == "plain_fn");
     EXPECT(rec.have == "plain_fn");
     EXPECT(rec.error_code == diag::name_of(cat));
-}
-
-// Every escape the emitter knows, in one record, compared byte for byte.
-void test_json_record_escapes() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-
-    const bool ok = diag::emit_json_record(f, diag::JsonDiagnosticRecord{
-                                                  .category = diag::Category::EffectRowMismatch,
-                                                  .source =
-                                                      diag::SourcePosition{
-                                                          .file = "escape.cpp",
-                                                          .line = 1,
-                                                          .column = 2,
-                                                          .function = "escape_fn",
-                                                      },
-                                                  .error_code = "EffectRowMismatch",
-                                                  .goal = "goal",
-                                                  .have = "have",
-                                                  .gap = "quote \" slash \\ newline\n tab \t ctrl \x01",
-                                                  .suggestion = "suggestion",
-                                                  .related_snippet = "x < y",
-                                              });
-    EXPECT(ok);
-    // A control character below 0x20 comes out as a backslash-u escape
-    // with uppercase hex; the six bytes are spelled out so the source
-    // holds no universal-character-name of its own.
-    const std::string ctrl_escape{'\\', 'u', '0', '0', '0', '1'};
-    const std::string expected =
-        std::string{R"json({"format_version":1,"source_position":{"file":"escape.cpp","line":1,"column":2,)json"
-                    R"json("function":"escape_fn"},"error_code":"EffectRowMismatch","goal":"goal","have":"have",)json"
-                    R"json("gap":"quote \" slash \\ newline\n tab \t ctrl )json"}
-        + ctrl_escape + R"json(","suggestion":"suggestion","related_snippets":["x < y"]})json" + "\n";
-    EXPECT(read_tmp_file(f) == expected);
-    std::fclose(f);
-
-    // Empty code / goal / suggestion fall back to the catalog's prose.
-    std::FILE* g = std::tmpfile();
-    EXPECT(g != nullptr);
-    if (g == nullptr) return;
-    EXPECT(diag::emit_json_record(g, diag::JsonDiagnosticRecord{.category = diag::Category::DetSafeLeak}));
-    const std::string fallback = read_tmp_file(g);
-    std::fclose(g);
-    EXPECT(fallback.find("\"error_code\":\"DetSafeLeak\"") != std::string::npos);
-    EXPECT(fallback.find("\"goal\":\"" + std::string{diag::DetSafeLeak::description}) != std::string::npos);
-    EXPECT(fallback.find("\"suggestion\":\"" + std::string{diag::DetSafeLeak::remediation}) != std::string::npos);
-}
-
-// A record of exactly json_record_max_bytes is written.  One byte more
-// and the record is refused whole: nothing reaches the stream.
-void test_json_record_bound() {
-    constexpr diag::Category cat = diag::Category::BudgetExceeded;
-    std::FILE* frame = std::tmpfile();
-    EXPECT(frame != nullptr);
-    if (frame == nullptr) return;
-    EXPECT(diag::emit_json_violation(frame, cat, "fn", ""));
-    const std::size_t frame_bytes = read_tmp_file(frame).size();
-    std::fclose(frame);
-    EXPECT(frame_bytes > 0 && frame_bytes < diag::json_record_max_bytes);
-
-    std::FILE* exact = std::tmpfile();
-    EXPECT(exact != nullptr);
-    if (exact == nullptr) return;
-    const std::string exact_gap(diag::json_record_max_bytes - frame_bytes, 'g');
-    EXPECT(diag::emit_json_violation(exact, cat, "fn", exact_gap));
-    EXPECT(read_tmp_file(exact).size() == diag::json_record_max_bytes);
-    std::fclose(exact);
-
-    std::FILE* over = std::tmpfile();
-    EXPECT(over != nullptr);
-    if (over == nullptr) return;
-    const std::string over_gap(exact_gap.size() + 1, 'g');
-    EXPECT(!diag::emit_json_violation(over, cat, "fn", over_gap));
-    EXPECT(read_tmp_file(over).empty());
-    std::fclose(over);
-
-    EXPECT(!diag::emit_json_violation(nullptr, cat, "fn", "d"));
-}
-
-// A record goes to the stream through a buffer much shorter than the
-// record.  The escapes cross each boundary of that buffer, and the output
-// is compared byte for byte.
-void test_json_record_longer_than_the_stream_buffer() {
-    std::FILE* f = std::tmpfile();
-    EXPECT(f != nullptr);
-    if (f == nullptr) return;
-
-    std::string gap;
-    std::string escaped_gap;
-    for (int index = 0; index < 1500; ++index) {
-        gap += "ab\"\n";
-        escaped_gap += R"(ab\"\n)";
-    }
-    constexpr diag::Category cat = diag::Category::EffectRowMismatch;
-    EXPECT(diag::emit_json_violation(f, cat, "long.cpp:3:4@long_fn", gap));
-    const std::string expected = std::string{"{\"format_version\":1,\"source_position\":{\"file\":\"long.cpp\","
-                                             "\"line\":3,\"column\":4,\"function\":\"long_fn\"},"
-                                             "\"error_code\":\"EffectRowMismatch\",\"goal\":\""}
-                               + std::string{diag::description_of(cat)} + "\",\"have\":\"long_fn\",\"gap\":\""
-                               + escaped_gap + "\",\"suggestion\":\"" + std::string{diag::remediation_of(cat)}
-                               + "\",\"related_snippets\":[]}\n";
-    EXPECT(read_tmp_file(f) == expected);
-    std::fclose(f);
-}
-
-// A stream that refuses the write poisons the sink: the flush answers
-// false, and so does each later push and flush.
-void test_json_stream_sink_poisons_on_a_failed_write() {
-    std::FILE* read_only = std::fopen("/dev/null", "r");
-    EXPECT(read_only != nullptr);
-    if (read_only == nullptr) return;
-    diag::detail::file_json_sink sink{read_only};
-    EXPECT(sink.push('x'));
-    EXPECT(!sink.flush());
-    EXPECT(!sink.push('y'));
-    EXPECT(!sink.flush());
-    std::fclose(read_only);
-
-    std::FILE* also_read_only = std::fopen("/dev/null", "r");
-    EXPECT(also_read_only != nullptr);
-    if (also_read_only == nullptr) return;
-    EXPECT(!diag::emit_json_violation(also_read_only, diag::Category::DetSafeLeak, "fn", "d"));
-    std::fclose(also_read_only);
+    EXPECT(rec.goal == diag::description_of(cat));
+    EXPECT(rec.suggestion == diag::remediation_of(cat));
 }
 
 void test_source_position_parser() {
@@ -856,14 +637,7 @@ int main() {
     test_abort_emitters_reach_sink_then_abort();
 
     test_default_sink_emits_text();
-    test_text_shape_through_sink();
-    test_text_shape_caps_each_field();
-    test_json_shape_through_sink();
     test_json_violation_record_shape();
-    test_json_record_escapes();
-    test_json_record_bound();
-    test_json_record_longer_than_the_stream_buffer();
-    test_json_stream_sink_poisons_on_a_failed_write();
     test_source_position_parser();
 
     if (g_failures > 0) {

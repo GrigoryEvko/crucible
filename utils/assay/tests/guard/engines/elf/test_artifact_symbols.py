@@ -289,6 +289,9 @@ def class_cases(expect: testing.Expect) -> None:
         ("crucible_vigil", "getenv", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible", "__cxa_guard_acquire", module.LIBSTDCXX, module.ALLOW),
         ("crucible", "_ZSt9terminatev", module.LIBSTDCXX, module.RATCHET),
+        ("crucible", "__gxx_personality_v0", module.LIBSTDCXX, module.ALLOW),
+        ("foundation", "__gxx_personality_v0", module.LIBSTDCXX, module.RATCHET),
+        ("foundation", "__cxa_guard_acquire", module.LIBSTDCXX, module.RATCHET),
         ("crucible_vigil", "__dso_handle", module.CRT, module.CRT_ALLOW),
         ("fixy", "__dso_handle", module.CRT, module.CRT_RATCHET),
         ("crucible", "data_start", module.CRT, module.CRT_RATCHET),
@@ -298,6 +301,22 @@ def class_cases(expect: testing.Expect) -> None:
         expect(
             f"an import {symbol} of the family {family} in {library} has the mark {wanted}",
             module.mark_for(library, symbol, family, support) == wanted,
+        )
+    door, routes, other = frozenset({"Abort.cpp.o"}), frozenset({"Intercepted.cpp.o"}), frozenset({"Platform.cpp.o"})
+    for library, symbol, members, kind, wanted in (
+        ("foundation", "abort", door, "x86_64-debug-asan", module.LIBC_ALLOW),
+        ("foundation", "abort", door | other, "x86_64-debug-asan", module.LIBC_RATCHET),
+        ("foundation", "abort", other, "x86_64-release", module.LIBC_RATCHET),
+        ("fixy", "abort", door, "x86_64-release", module.LIBC_RATCHET),
+        ("foundation", "read", routes, "x86_64-debug-tsan", module.LIBC_ALLOW),
+        ("foundation", "__errno_location", routes, "aarch64-debug-tsan", module.LIBC_ALLOW),
+        ("foundation", "write", routes, "x86_64-debug-asan", module.LIBC_RATCHET),
+        ("foundation", "read", other, "x86_64-debug-tsan", module.LIBC_RATCHET),
+        ("foundation", "read", door, "x86_64-debug-tsan", module.LIBC_RATCHET),
+    ):
+        expect(
+            f"an import {symbol} of {sorted(members)} in {library} of the kind {kind} has the mark {wanted}",
+            module.mark_for(library, symbol, module.RUNTIME, support, members, kind) == wanted,
         )
     expect(
         "an import of a shared library has the entity SYMBOL@VERSION, and an import of an archive the name alone",
@@ -775,7 +794,8 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "after a write the build passes, and the ledger keeps no row of std::thread",
         status == 0 and scratch.run()[0] == 0 and "hardware_concurrency" not in scratch.ledger_text(),
     )
-    scratch.archive("foundation", ["base", "guard"])
+    # Rule R5 gives foundation no allowlist symbol of libstdc++.  The allowlist plant goes to fixy.
+    scratch.archive("fixy", ["base", "guard"])
     status, found, _ = scratch.run()
     guard_errors = [message for message in errors_of(found) if "__cxa_guard" in message]
     expect(
@@ -783,9 +803,7 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 1 and guard_errors != [] and all("allowlist" in message for message in guard_errors),
     )
     status, _ = scratch.write()
-    guard_rows = {
-        bare(key.entity): key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfoundation.a"
-    }
+    guard_rows = {bare(key.entity): key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfixy.a"}
     expect(
         "a write writes the allowlist symbols without --raise: the mark allow, and libc-allow for the unwinder",
         status == 0
@@ -800,8 +818,8 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
     good = scratch.ledger_text()
     scratch.ledger.write_text(
         good.replace(
-            "libfoundation.a | allow | 1 | __cxa_guard_acquire@",
-            "libfoundation.a | ratchet | 1 | __cxa_guard_acquire@",
+            "libfixy.a | allow | 1 | __cxa_guard_acquire@",
+            "libfixy.a | ratchet | 1 | __cxa_guard_acquire@",
         ),
         encoding="utf-8",
     )
@@ -838,9 +856,13 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     tier = scratch.tier(KIND)
 
     def build_of(kind: str, units: list[str]) -> None:
-        """Set the kind of the build directory, and make the archive of the library foundation again."""
+        """Set the kind of the build directory, and make the archives of foundation and fixy again.
+
+        The unit guard goes to fixy, because rule R5 gives foundation no allowlist symbol of libstdc++.
+        """
         scratch.set_kind(kind)
-        scratch.archive("foundation", units)
+        scratch.archive("foundation", [unit for unit in units if unit != "guard"])
+        scratch.archive("fixy", ["base", *(unit for unit in units if unit == "guard")])
 
     build_of(OTHER, ["base", "guard", "text"])
     status, found, _ = scratch.run()
@@ -862,7 +884,7 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 0
         and f"the largest count of each key over the configurations {KIND}" in text
         and f"{mark}configuration {OTHER} tier {tier}" in text
-        and f"{mark}@{OTHER} | @build/libfoundation.a | allow | -1 | __cxa_guard_acquire" in text,
+        and f"{mark}@{OTHER} | @build/libfixy.a | allow | -1 | __cxa_guard_acquire" in text,
     )
     log = scratch.root / "ci.log"
     log.write_text(
@@ -967,7 +989,7 @@ def tier_cases(expect: testing.Expect, scratch: Scratch) -> None:
 def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold the rows throw: a row that admits a throw, a row that admits nothing, and their write."""
     good = scratch.ledger_text()
-    scratch.archive("fixy", ["base", "thrower"])
+    scratch.archive("fixy", ["base", "guard", "thrower"])
     scratch.write(rule_ledger.WriteMode.RAISE)
     admitted = "@build/libfixy.a | throw | admit | thrower_entry | a planted throw\n"
     stale = "@build/libfixy.a | throw | admit | no_such_function | a planted row that admits nothing\n"
@@ -985,7 +1007,7 @@ def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "a write keeps a row throw that admits a throw, with its reason, and removes a row that admits nothing",
         status == 0 and admitted in written and "no_such_function" not in written and scratch.run()[0] == 0,
     )
-    scratch.archive("fixy", ["base"])
+    scratch.archive("fixy", ["base", "guard"])
     status, found, _ = scratch.run()
     expect(
         "a row throw of a throw that goes is an error in each build",

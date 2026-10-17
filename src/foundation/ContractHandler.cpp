@@ -7,7 +7,7 @@
 // this file from libfoundation.a.  No link line names libstdc++exp.a, which
 // holds a weak default handler too.  The definition is weak: a binary that
 // wants a different failure policy overrides it with a strong one.  Every
-// path ends in std::abort.
+// path ends in the abort door of foundation/os/Abort.h.
 //
 // A violation can occur in a signal handler, or while its thread holds the
 // lock of the heap or of a stdio stream.  So the report calls only functions
@@ -28,13 +28,13 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Text.h>
+#include <foundation/os/Abort.h>
 
-#include <array>
 #include <csignal>
 #include <contracts>
 #include <cstddef>
-#include <cstdlib>
-#include <string_view>
+#include <cstdint>
 
 namespace foundation::detail {
 
@@ -59,6 +59,11 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model(
 
 namespace {
 
+// The most characters that a report takes from one C string of a violation:
+// the comment, the file, the function or the note.  A longer string loses its
+// end, and a string with no terminating zero in that span stops at the bound.
+constexpr std::size_t kTextBound = 4096;
+
 // Collects the text of a report and writes it to file descriptor 2.  A full
 // buffer is written before more text goes in, so the report is never cut.
 class stderr_report {
@@ -68,20 +73,26 @@ public:
     stderr_report& operator=(const stderr_report&) = delete("a report writes its text once");
     ~stderr_report() { flush_(); }
 
-    void append(std::string_view text) noexcept {
-        for (const char byte : text) {
-            if (length_ == bytes_.size()) flush_();
-            bytes_[length_] = byte;
-            ++length_;
-        }
+    void append(::foundation::core::TextView text) noexcept {
+        append_bytes(::foundation::core::detail::text_first_(text), text.size());
     }
 
-    void append_or(const char* text, std::string_view fallback) noexcept {
-        append(text != nullptr ? std::string_view{text} : fallback);
+    // Appends the C string TEXT, up to its zero and at most kTextBound
+    // characters.  A null TEXT appends FALLBACK.  The loop has two exits, and
+    // the optimizer makes no call of strlen from it.
+    void append_or(char const* text, ::foundation::core::TextView fallback) noexcept {
+        if (text == nullptr) {
+            append(fallback);
+            return;
+        }
+        std::size_t length = 0;
+        while (length < kTextBound && text[length] != '\0')
+            ++length;
+        append_bytes(text, length);
     }
 
     void append_decimal(unsigned value) noexcept {
-        std::array<char, 10> digits{};
+        char digits[10] = {};
         std::size_t count = 0;
         do {
             digits[count] = static_cast<char>('0' + value % 10U);
@@ -90,7 +101,7 @@ public:
         } while (value != 0U);
         while (count > 0) {
             --count;
-            append(std::string_view{&digits[count], 1});
+            append_bytes(&digits[count], 1);
         }
     }
 
@@ -106,19 +117,29 @@ public:
             length = ::foundation::core::detail::format_window_(window, window_bytes, skip, text, arguments, count);
             std::size_t const rest = length - skip;
             std::size_t const taken = rest < window_bytes ? rest : window_bytes;
-            append(std::string_view{window, taken});
+            append_bytes(window, taken);
             skip += taken;
         } while (skip < length);
     }
 
 private:
+    static constexpr std::size_t kBufferBytes = 256;
+
+    void append_bytes(char const* bytes, std::size_t count) noexcept {
+        for (std::size_t index = 0; index < count; ++index) {
+            if (length_ == kBufferBytes) flush_();
+            bytes_[length_] = bytes[index];
+            ++length_;
+        }
+    }
+
     // The sink write writes again after a short write and after a signal.
     void flush_() noexcept {
-        ::foundation::core::detail::write_sink_(::foundation::core::Sink::Err, bytes_.data(), length_);
+        ::foundation::core::detail::write_sink_(::foundation::core::Sink::Err, bytes_, length_);
         length_ = 0;
     }
 
-    std::array<char, 256> bytes_{};
+    char bytes_[kBufferBytes] = {};
     std::size_t length_ = 0;
 };
 
@@ -126,7 +147,7 @@ private:
 // already meets its second violation, and it aborts at once.
 void enter_report_or_abort() noexcept {
     if (::foundation::detail::contract_report_in_progress != 0) [[unlikely]]
-        std::abort();
+        ::foundation::os::abort_process();
     ::foundation::detail::contract_report_in_progress = 1;
 }
 
@@ -170,7 +191,7 @@ void report_violation(char const* comment, char const* file, unsigned line, char
     report.append("\n");
     if (note != nullptr && *note != '\0') {
         report.append("  note: ");
-        report.append(note);
+        report.append_or(note, "");
         report.append("\n");
     }
 }
@@ -187,7 +208,7 @@ void handle_contract_violation(const std::contracts::contract_violation& v) noex
     report_violation(v.comment(), loc.file_name(), loc.line(), loc.function_name(), /*note=*/nullptr);
     leave_report();
     ::foundation::detail::breakpoint_if_debugging();
-    std::abort();
+    ::foundation::os::abort_process();
 }
 
 // The message forms CRUCIBLE_PRE_MSG and CRUCIBLE_POST_MSG call this.  A
@@ -206,7 +227,7 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
     report_violation(expr, file, static_cast<unsigned>(line), fn, msg);
     leave_report();
     ::foundation::detail::breakpoint_if_debugging();
-    std::abort();
+    ::foundation::os::abort_process();
 }
 
 }  // namespace foundation::detail
@@ -222,7 +243,7 @@ void report_fatal_(char const* text, char const* file, std::uint32_t line, char 
     report_fatal_text(text, file, line, function, nullptr, 0);
     leave_report();
     ::foundation::detail::breakpoint_if_debugging();
-    std::abort();
+    ::foundation::os::abort_process();
 }
 
 [[noreturn, gnu::cold]]
@@ -232,7 +253,7 @@ void report_fatal_with_(char const* text, char const* file, std::uint32_t line, 
     report_fatal_text(text, file, line, function, arguments, count);
     leave_report();
     ::foundation::detail::breakpoint_if_debugging();
-    std::abort();
+    ::foundation::os::abort_process();
 }
 
 }  // namespace foundation::core::detail

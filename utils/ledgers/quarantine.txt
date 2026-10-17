@@ -3090,9 +3090,6 @@ include/foundation/contracts/ArmedRoster.h | replace-pending:<vector> | 1 | <vec
 include/foundation/contracts/Decide.h | base-std-object | 2 | std::span | -
 include/foundation/contracts/Decide.h | replace-pending:<span> | 1 | <span> | -
 include/foundation/core/Ref.h | replace-pending:std::nothrow | 1 | std::nothrow | -
-include/foundation/diag/Catalog.h | base-std-entity | 1 | std::array | -
-include/foundation/diag/Catalog.h | base-std-entity | 1 | std::array::operator[] | -
-include/foundation/diag/Catalog.h | base-std-entity | 1 | std::basic_string_view | -
 include/foundation/diag/Catalog.h | base-std-entity | 1 | std::operator== | -
 include/foundation/diag/Catalog.h | base-std-entity | 2 | std::tuple | -
 include/foundation/diag/Catalog.h | base-std-entity | 3 | std::tuple_element | -
@@ -3100,7 +3097,6 @@ include/foundation/diag/Catalog.h | base-std-entity | 1 | std::tuple_element_t |
 include/foundation/diag/Catalog.h | base-std-entity | 2 | std::vector::operator[] | -
 include/foundation/diag/Catalog.h | base-std-entity | 3 | std::vector::push_back | -
 include/foundation/diag/Catalog.h | base-std-entity | 1 | std::vector::size | -
-include/foundation/diag/Catalog.h | base-std-object | 2 | std::array | -
 include/foundation/diag/Catalog.h | base-std-object | 6 | std::basic_string_view | -
 include/foundation/diag/Catalog.h | base-std-object | 4 | std::vector | -
 include/foundation/diag/Catalog.h | replace-pending:<vector> | 1 | <vector> | -
@@ -3126,40 +3122,20 @@ include/foundation/diag/Insights.h | base-std-entity | 5 | std::basic_string_vie
 include/foundation/diag/Insights.h | base-std-entity | 8 | std::basic_string_view::size | -
 include/foundation/diag/Insights.h | base-std-object | 14 | std::basic_string_view | -
 include/foundation/diag/Insights.h | replace-pending:<string_view> | 1 | <string_view> | -
-include/foundation/diag/JsonEmitter.h | base-c-library-call | 1 | flockfile | -
-include/foundation/diag/JsonEmitter.h | base-c-library-call | 1 | fprintf | -
-include/foundation/diag/JsonEmitter.h | base-c-library-call | 1 | funlockfile | -
-include/foundation/diag/JsonEmitter.h | base-c-library-call | 1 | fwrite | -
-include/foundation/diag/JsonEmitter.h | base-c-library-object | 5 | _IO_FILE | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::array::data | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::array::operator[] | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::array::size | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 5 | std::basic_string_view | -
+include/foundation/diag/JsonEmitter.h | base-std-entity | 3 | std::basic_string_view | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 2 | std::basic_string_view::begin | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 6 | std::basic_string_view::data | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 8 | std::basic_string_view::empty | -
+include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::basic_string_view::data | -
+include/foundation/diag/JsonEmitter.h | base-std-entity | 7 | std::basic_string_view::empty | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 2 | std::basic_string_view::end | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 3 | std::basic_string_view::rfind | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 12 | std::basic_string_view::size | -
+include/foundation/diag/JsonEmitter.h | base-std-entity | 3 | std::basic_string_view::size | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 2 | std::basic_string_view::value_type | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 2 | std::errc | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::from_chars | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::from_chars_result | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::numeric_limits::max | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::span::size | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::to_chars | -
-include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::to_chars_result | -
 include/foundation/diag/JsonEmitter.h | base-std-entity | 1 | std::vector | -
-include/foundation/diag/JsonEmitter.h | base-std-object | 4 | std::array | -
-include/foundation/diag/JsonEmitter.h | base-std-object | 30 | std::basic_string_view | -
-include/foundation/diag/JsonEmitter.h | base-std-object | 1 | std::from_chars_result | -
-include/foundation/diag/JsonEmitter.h | base-std-object | 1 | std::to_chars_result | -
+include/foundation/diag/JsonEmitter.h | base-std-object | 3 | std::array | -
+include/foundation/diag/JsonEmitter.h | base-std-object | 27 | std::basic_string_view | -
 include/foundation/diag/JsonEmitter.h | replace-pending:<array> | 1 | <array> | -
-include/foundation/diag/JsonEmitter.h | replace-pending:<charconv> | 1 | <charconv> | -
-include/foundation/diag/JsonEmitter.h | replace-pending:<cstdio> | 1 | <cstdio> | -
-include/foundation/diag/JsonEmitter.h | replace-pending:<limits> | 1 | <limits> | -
 include/foundation/diag/JsonEmitter.h | replace-pending:<string_view> | 1 | <string_view> | -
-include/foundation/diag/JsonEmitter.h | replace-pending:<system_error> | 1 | <system_error> | -
 include/foundation/diag/JsonEmitter.h | replace-pending:<vector> | 1 | <vector> | -
 include/foundation/diag/RowHash.h | base-std-object | 6 | std::array | -
 include/foundation/diag/RowHash.h | replace-pending:<array> | 1 | <array> | -
@@ -3330,9 +3306,6 @@ include/foundation/permissions/PermissionFork.h | replace-pending:<vector> | 1 |
 include/foundation/permissions/ReadView.h | base-std-entity | 2 | std::pair | -
 include/foundation/permissions/ReadView.h | base-std-object | 4 | std::align_val_t | -
 include/foundation/permissions/ReadView.h | base-std-object | 3 | std::pair | -
-include/foundation/permissions/SharedPermission.h | base-c-library-call | 1 | abort | -
-include/foundation/permissions/SharedPermission.h | base-c-library-call | 1 | fputs | -
-include/foundation/permissions/SharedPermission.h | base-c-library-call | 1 | stderr | -
 include/foundation/permissions/SharedPermission.h | base-std-entity | 1 | std::__atomic_base::compare_exchange_strong | -
 include/foundation/permissions/SharedPermission.h | base-std-entity | 1 | std::__atomic_base::compare_exchange_weak | -
 include/foundation/permissions/SharedPermission.h | base-std-entity | 4 | std::__atomic_base::load | -
@@ -3349,8 +3322,6 @@ include/foundation/permissions/SharedPermission.h | base-std-object | 1 | std::a
 include/foundation/permissions/SharedPermission.h | base-std-object | 6 | std::optional | -
 include/foundation/permissions/SharedPermission.h | base-std-object | 2 | std::vector | -
 include/foundation/permissions/SharedPermission.h | replace-pending:<atomic> | 1 | <atomic> | -
-include/foundation/permissions/SharedPermission.h | replace-pending:<cstdio> | 1 | <cstdio> | -
-include/foundation/permissions/SharedPermission.h | replace-pending:<cstdlib> | 1 | <cstdlib> | -
 include/foundation/permissions/SharedPermission.h | replace-pending:<optional> | 1 | <optional> | -
 include/foundation/reflect/EnumName.h | base-std-entity | 5 | std::array::data | -
 include/foundation/reflect/EnumName.h | base-std-entity | 4 | std::array::size | -
@@ -3751,30 +3722,11 @@ src/fixy/os/Topology.cpp | replace-pending:<string> | 1 | <string> | -
 src/fixy/os/Topology.cpp | replace-pending:<string_view> | 1 | <string_view> | -
 src/fixy/os/Topology.cpp | replace-pending:<vector> | 1 | <vector> | -
 src/forge/recipes/Network.cpp | std-object | 3 | std::basic_string_view | -
-src/foundation/ContractHandler.cpp | base-c-library-call | 5 | abort | -
-src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::array::data | -
-src/foundation/ContractHandler.cpp | base-std-entity | 3 | std::array::operator[] | -
-src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::array::size | -
-src/foundation/ContractHandler.cpp | base-std-entity | 4 | std::basic_string_view | -
-src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::basic_string_view::begin | -
-src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::basic_string_view::end | -
-src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::basic_string_view::value_type | -
 src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::source_location::file_name | -
 src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::source_location::function_name | -
 src/foundation/ContractHandler.cpp | base-std-entity | 1 | std::source_location::line | -
-src/foundation/ContractHandler.cpp | base-std-object | 2 | std::array | -
-src/foundation/ContractHandler.cpp | base-std-object | 2 | std::basic_string_view | -
 src/foundation/ContractHandler.cpp | base-std-object | 1 | std::source_location | -
-src/foundation/ContractHandler.cpp | replace-pending:<array> | 1 | <array> | -
 src/foundation/ContractHandler.cpp | replace-pending:<csignal> | 1 | <csignal> | -
-src/foundation/ContractHandler.cpp | replace-pending:<cstdlib> | 1 | <cstdlib> | -
-src/foundation/ContractHandler.cpp | replace-pending:<string_view> | 1 | <string_view> | -
-src/foundation/DiagRuntime.cpp | base-c-library-call | 2 | abort | -
-src/foundation/DiagRuntime.cpp | base-c-library-call | 1 | getenv | -
-src/foundation/DiagRuntime.cpp | base-c-library-call | 2 | stderr | -
-src/foundation/DiagRuntime.cpp | base-c-library-call | 1 | strcmp | -
-src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::__atomic_base::compare_exchange_strong | -
-src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::__atomic_base::load | -
 src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::atomic::exchange | -
 src/foundation/DiagRuntime.cpp | base-std-entity | 2 | std::atomic::load | -
 src/foundation/DiagRuntime.cpp | base-std-entity | 4 | std::basic_string_view | -
@@ -3782,20 +3734,12 @@ src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::source_location::col
 src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::source_location::file_name | -
 src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::source_location::function_name | -
 src/foundation/DiagRuntime.cpp | base-std-entity | 1 | std::source_location::line | -
-src/foundation/DiagRuntime.cpp | base-std-object | 2 | std::atomic | -
+src/foundation/DiagRuntime.cpp | base-std-object | 1 | std::atomic | -
 src/foundation/DiagRuntime.cpp | base-std-object | 9 | std::basic_string_view | -
 src/foundation/DiagRuntime.cpp | base-std-object | 3 | std::source_location | -
 src/foundation/DiagRuntime.cpp | replace-pending:<atomic> | 1 | <atomic> | -
-src/foundation/DiagRuntime.cpp | replace-pending:<cstdio> | 1 | <cstdio> | -
-src/foundation/DiagRuntime.cpp | replace-pending:<cstdlib> | 1 | <cstdlib> | -
-src/foundation/DiagRuntime.cpp | replace-pending:<cstring> | 1 | <cstring> | -
-src/foundation/SharedPermission.cpp | base-c-library-call | 1 | abort | -
-src/foundation/SharedPermission.cpp | base-c-library-call | 1 | fprintf | -
-src/foundation/SharedPermission.cpp | base-c-library-call | 1 | stderr | -
 src/foundation/SharedPermission.cpp | base-std-entity | 3 | std::basic_string_view::data | -
 src/foundation/SharedPermission.cpp | base-std-entity | 3 | std::basic_string_view::size | -
-src/foundation/SharedPermission.cpp | replace-pending:<cstdio> | 1 | <cstdio> | -
-src/foundation/SharedPermission.cpp | replace-pending:<cstdlib> | 1 | <cstdlib> | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | __gnu_cxx::__normal_iterator | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
 src/foundation/os/Errno.cpp | base-std-entity | 1 | __gnu_cxx::__normal_iterator::operator++ | -
@@ -6219,20 +6163,12 @@ test/foundation/test_decide_fuzz.cpp | std-object | 1 | std::philox_engine | -
 test/foundation/test_decide_fuzz.cpp | std-object | 1 | std::seed_seq | -
 test/foundation/test_decide_fuzz.cpp | std-object | 2 | std::span | -
 test/foundation/test_diag.cpp | c-array-object | 3 | - | -
-test/foundation/test_diag.cpp | c-library-call | 12 | fclose | -
-test/foundation/test_diag.cpp | c-library-call | 1 | fflush | -
-test/foundation/test_diag.cpp | c-library-call | 2 | fopen | -
 test/foundation/test_diag.cpp | c-library-call | 2 | fprintf | -
-test/foundation/test_diag.cpp | c-library-call | 1 | fread | -
-test/foundation/test_diag.cpp | c-library-call | 2 | fseek | -
-test/foundation/test_diag.cpp | c-library-call | 1 | ftell | -
 test/foundation/test_diag.cpp | c-library-call | 1 | memcpy | -
 test/foundation/test_diag.cpp | c-library-call | 1 | memset | -
 test/foundation/test_diag.cpp | c-library-call | 2 | stderr | -
-test/foundation/test_diag.cpp | c-library-call | 10 | tmpfile | -
-test/foundation/test_diag.cpp | c-library-object | 14 | _IO_FILE | -
-test/foundation/test_diag.cpp | raw-function-pointer | 12 | - | -
-test/foundation/test_diag.cpp | raw-pointer-object | 15 | - | -
+test/foundation/test_diag.cpp | raw-function-pointer | 10 | - | -
+test/foundation/test_diag.cpp | raw-pointer-object | 1 | - | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::__atomic_base::fetch_add | -
 test/foundation/test_diag.cpp | std-entity | 10 | std::__atomic_base::load | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::__atomic_base::store | -
@@ -6241,32 +6177,20 @@ test/foundation/test_diag.cpp | std-entity | 4 | std::array::back | -
 test/foundation/test_diag.cpp | std-entity | 2 | std::array::front | -
 test/foundation/test_diag.cpp | std-entity | 4 | std::array::operator[] | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::array::size | -
-test/foundation/test_diag.cpp | std-entity | 10 | std::basic_string | -
-test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string::data | -
-test/foundation/test_diag.cpp | std-entity | 2 | std::basic_string::empty | -
-test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string::ends_with | -
-test/foundation/test_diag.cpp | std-entity | 9 | std::basic_string::find | -
-test/foundation/test_diag.cpp | std-entity | 9 | std::basic_string::npos | -
-test/foundation/test_diag.cpp | std-entity | 2 | std::basic_string::operator+= | -
-test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string::resize | -
-test/foundation/test_diag.cpp | std-entity | 4 | std::basic_string::size | -
-test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string::starts_with | -
-test/foundation/test_diag.cpp | std-entity | 22 | std::basic_string_view | -
+test/foundation/test_diag.cpp | std-entity | 20 | std::basic_string_view | -
 test/foundation/test_diag.cpp | std-entity | 2 | std::basic_string_view::data | -
 test/foundation/test_diag.cpp | std-entity | 7 | std::basic_string_view::empty | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string_view::ends_with | -
 test/foundation/test_diag.cpp | std-entity | 7 | std::basic_string_view::find | -
 test/foundation/test_diag.cpp | std-entity | 8 | std::basic_string_view::size | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::basic_string_view::starts_with | -
-test/foundation/test_diag.cpp | std-entity | 18 | std::operator+ | -
-test/foundation/test_diag.cpp | std-entity | 35 | std::operator== | -
+test/foundation/test_diag.cpp | std-entity | 32 | std::operator== | -
 test/foundation/test_diag.cpp | std-entity | 1 | std::tuple | -
 test/foundation/test_diag.cpp | std-entity | 2 | std::tuple_element_t | -
 test/foundation/test_diag.cpp | std-entity | 2 | std::vector::size | -
 test/foundation/test_diag.cpp | std-object | 1 | std::array | -
 test/foundation/test_diag.cpp | std-object | 1 | std::atomic | -
-test/foundation/test_diag.cpp | std-object | 14 | std::basic_string | -
-test/foundation/test_diag.cpp | std-object | 30 | std::basic_string_view | -
+test/foundation/test_diag.cpp | std-object | 26 | std::basic_string_view | -
 test/foundation/test_diag.cpp | std-object | 1 | std::span | -
 test/foundation/test_effects_core.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator | -
 test/foundation/test_effects_core.cpp | std-entity | 1 | __gnu_cxx::__normal_iterator::operator* | -
@@ -6312,14 +6236,6 @@ test/foundation/test_identity_attacks.cpp | std-entity | 1 | std::bfloat16_t | -
 test/foundation/test_identity_attacks.cpp | std-entity | 1 | std::bit_cast | -
 test/foundation/test_identity_attacks.cpp | std-object | 1 | std::array | -
 test/foundation/test_identity_attacks.cpp | std-object | 2 | std::basic_string_view | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | fclose | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | fprintf | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | ftell | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | printf | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | stderr | -
-test/foundation/test_json_emitter_frame.cpp | c-library-call | 1 | tmpfile | -
-test/foundation/test_json_emitter_frame.cpp | c-library-object | 2 | _IO_FILE | -
-test/foundation/test_json_emitter_frame.cpp | raw-pointer-object | 2 | - | -
 test/foundation/test_lattices_bands.cpp | c-array-object | 1 | - | -
 test/foundation/test_lattices_bands.cpp | c-library-call | 20 | abort | -
 test/foundation/test_lattices_bands.cpp | c-library-call | 2 | fprintf | -
@@ -9770,15 +9686,7 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +3 | std::array::size | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +2 | std::span | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-object | +2 | std::array | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +1 | fclose | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +1 | fopen | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +1 | perror | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +1 | puts | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +1 | setvbuf | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +4 | stdout | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-object | +1 | _IO_FILE | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | raw-pointer-object | +1 | - | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | std-object | +2 | std::basic_string_view | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +2 | stdout | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_dispatch.cpp | c-array-object | +12 | - | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_dispatch.cpp | c-library-call | +14 | printf | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_dispatch.cpp | c-library-call | +7 | stdout | -

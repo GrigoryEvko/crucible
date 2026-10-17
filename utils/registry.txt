@@ -212,7 +212,7 @@ term transition category=noun-19 | a transition of a state machine from one stat
 term unpack category=verb-2c | to write the files of an archive into a directory, as tar and the installer of a pinned tool do
 term usage category=noun-19 | the usage text of a command: the words of its command line
 
-path test/harness/check_output.py | a test of two C++ probes of the product, as a C++ test executable is.  It is outside the utils system
+path test/harness/check_output.py | a test of three C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/admitted-audit.txt | the audit table of the admitted list: one row for each admit row of the rule table and for each candidate of the plan
 path utils/assay/**/*.py | the modules of the package
 path utils/assay/oracle/coq/*.v | the Rocq source of the liveness certificate, data beside its reader

@@ -37,8 +37,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <initializer_list>
 #include <meta>
 #include <new>
@@ -233,14 +231,8 @@ public:
 // Each guard keeps a pointer into its pool, and its destructor writes
 // the pool's count.  A pool that ends while a guard lives would take that
 // write into freed memory, so the pool refuses to end while a share is
-// out.
-[[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_outlived_abort_() noexcept {
-    std::fputs("crucible: fatal contract violation: a SharedPermissionPool ended while shares were out.  Each "
-               "guard points into its pool, so the release of that guard would write freed memory.  End every "
-               "share before the pool ends.\n",
-               stderr);
-    std::abort();
-}
+// out.  The body is in src/foundation/SharedPermission.cpp.
+[[noreturn]] CRUCIBLE_COLD void shared_permission_pool_outlived_abort_() noexcept;
 
 // The context a pool operation may run in: none, which is the token
 // form and asks the tag's row to be empty in the body, or one that

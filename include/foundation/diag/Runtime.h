@@ -5,10 +5,11 @@
 //
 //   crucible-violation: category=<Name> fn=<fn> detail=<detail>
 //
-// Setting CRUCIBLE_DIAG_FORMAT=json in the environment switches the
-// default sink to a JSON record instead. The default sink reads the
-// environment once, on its first emission, so the variable must be set
-// before the process starts.
+// A program that wants the JSON record of foundation/diag/JsonEmitter.h
+// installs a sink with set_violation_sink, and that sink calls
+// emit_json_violation.  The program chooses the format.  The base reads no
+// environment variable for the choice, because a read of the environment is
+// an effect that the call site of a violation does not show.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/Tag.h>
@@ -18,18 +19,19 @@
 
 namespace foundation::diag {
 
-// report_violation is async-signal-safe only when its sink is.  The
-// default sink is not, because it writes through stdio in each format.
-// report_violation_at builds the position on its stack with no stdio, so
-// it is async-signal-safe when its sink is.
+// report_violation is async-signal-safe only when its sink is.  The default
+// sink is, because it writes through the sink write of the Report family
+// (foundation/core/Report.h), with no stdio, no lock and no allocation.
+// report_violation_at builds the position on its stack with no stdio, and it
+// is async-signal-safe when its sink is.
 //
 // The views that a sink gets are valid while the sink runs.  A sink that
 // keeps a field after it returns copies the characters.
 
 using violation_sink_t = void (*)(Category, std::string_view, std::string_view) noexcept;
 
-// The caller keeps the detail free of newlines. One violation is one
-// line.
+// Writes the line of a violation to standard error.  The caller keeps the
+// detail free of newlines.  One violation is one line.
 [[gnu::cold]]
 void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept;
 

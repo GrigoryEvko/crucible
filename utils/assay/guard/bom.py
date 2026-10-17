@@ -172,7 +172,7 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
             build_census.names_text(item.members),
             places.get(item.symbol, ""),
         )
-        for item in artifact_symbols.imports_of(artifacts, {archive: artifact.name}, providers)
+        for item in artifact_symbols.imports_of(artifacts, {archive: artifact.name}, providers, context.kind())
     ]
     return Imports(names, [], providers.support)
 

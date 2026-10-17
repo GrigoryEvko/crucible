@@ -30,14 +30,15 @@
 # library, and a check references the violation handler.  Because of this,
 # each binary compiles the handler source of foundation with its own flags,
 # the formatter that the handler writes with, the tracer probe that the
-# handler calls with its file door, the sink write of the Report family and
-# the raw system call primitive under them.  These sources call only
-# functions of the C library and the primitive, so they need no archive of
-# the toolchain.
+# handler calls with its file door, the sink write of the Report family, the
+# abort door and the raw system call primitive under them.  These sources
+# call only functions of the C library and the primitive.  For that reason,
+# they need no archive of the toolchain.
 set(CRUCIBLE_CT_HANDLER_SOURCES
   ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/Platform.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Abort.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/File.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/ReportSink.cpp
   ${CMAKE_SOURCE_DIR}/src/foundation/os/Syscall.cpp

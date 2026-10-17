@@ -1,0 +1,17 @@
+# A planted ledger: the imports of the member Intercepted.cpp.o with the mark libc-allow, with the versions of x86_64
+# and of aarch64.
+format 1
+rule artifact-symbols
+configuration planted-x86 kind planted-x86
+configuration planted-x86 tier planted
+configuration planted-arm kind planted-arm
+configuration planted-arm tier planted
+@build/libfoundation.a | libc-allow | 1 | __errno_location@GLIBC_2.2.5 | -
+@build/libfoundation.a | libc-allow | 1 | read@GLIBC_2.2.5 | -
+@build/libfoundation.a | libc-allow | 1 | write@GLIBC_2.2.5 | -
+@planted-arm | @build/libfoundation.a | libc-allow | -1 | __errno_location@GLIBC_2.2.5 | -
+@planted-arm | @build/libfoundation.a | libc-allow | -1 | read@GLIBC_2.2.5 | -
+@planted-arm | @build/libfoundation.a | libc-allow | -1 | write@GLIBC_2.2.5 | -
+@planted-arm | @build/libfoundation.a | libc-allow | +1 | __errno_location@GLIBC_2.17 | -
+@planted-arm | @build/libfoundation.a | libc-allow | +1 | read@GLIBC_2.17 | -
+@planted-arm | @build/libfoundation.a | libc-allow | +1 | write@GLIBC_2.17 | -

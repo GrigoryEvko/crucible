@@ -1,0 +1,4 @@
+# The member Intercepted.cpp.o calls read, write and __errno_location in a build kind with no word tsan.  Each import then has the mark libc-ratchet, and the ledger holds it only with the mark libc-allow.
+library planted_tree externs.cpp
+library foundation base.cpp Intercepted.cpp
+library crucible base.cpp

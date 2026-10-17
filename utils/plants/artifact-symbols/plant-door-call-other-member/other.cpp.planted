@@ -1,0 +1,8 @@
+#include <unistd.h>
+
+long read_byte(int descriptor) {
+    char byte = 0;
+    long const done = ::read(descriptor, &byte, 1);
+    if (done < 0) __builtin_abort();
+    return byte;
+}

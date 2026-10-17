@@ -1,0 +1,12 @@
+#include <errno.h>
+#include <unistd.h>
+
+long read_route(int descriptor, void* bytes, unsigned long count) {
+    long const done = ::read(descriptor, bytes, count);
+    return done < 0 ? -static_cast<long>(errno) : done;
+}
+
+long write_route(int descriptor, void const* bytes, unsigned long count) {
+    long const done = ::write(descriptor, bytes, count);
+    return done < 0 ? -static_cast<long>(errno) : done;
+}

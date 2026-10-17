@@ -29,14 +29,16 @@
 // The two annotations of <sanitizer/tsan_interface.h>: a release on an
 // address happens before each later acquire on the same address.  This file
 // declares them too, so the routes name no header outside the allowance of
-// their layer.
+// their layer.  Each declaration is noexcept, because a hook of the sanitizer
+// throws no exception.  A noexcept function then has no table of the exception
+// path, and the member imports no personality routine of libstdc++.
 extern "C" {
 void __sanitizer_syscall_pre_impl_futex(long address, long operation, long value, long timeout, long second_address,
-                                        long third_value);
+                                        long third_value) noexcept;
 void __sanitizer_syscall_post_impl_futex(long result, long address, long operation, long value, long timeout,
-                                         long second_address, long third_value);
-void __tsan_acquire(void* address);
-void __tsan_release(void* address);
+                                         long second_address, long third_value) noexcept;
+void __tsan_acquire(void* address) noexcept;
+void __tsan_release(void* address) noexcept;
 }
 
 namespace foundation::os::detail {
@@ -51,11 +53,33 @@ namespace {
 
 }  // namespace
 
-long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept {
+// read(2) and write(2) are cancellation points of the C library.  A
+// cancellation of a thread unwinds through them.  For that reason,
+// <unistd.h> declares them without __THROW.  A noexcept function that calls
+// them needs a table of the exception path, and that table imports the
+// personality routine of libstdc++.  Rule R5 gives libfoundation.a no symbol
+// of libstdc++.
+//
+// No code of the program cancels a thread, and no exception goes out of these
+// two calls.  The attribute nothrow on read_intercepted and write_intercepted
+// tells each caller this fact, and the two functions have no noexcept
+// specifier.  ThreadSanitizer puts a
+// cleanup for its exit hook on each call that can unwind.  The attribute
+// no_sanitize_thread removes that cleanup.  The interceptors of read and write
+// stay, because they replace the functions of the C library at link time.
+//
+// A second declaration of read or write with the attribute nothrow is not a
+// solution.  It gives the function the source location of this file.  The
+// quarantine plugin then sees no call of the C library, and the rule
+// syscall-capability does not count the call.
+
+[[gnu::no_sanitize_thread]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address,
+                                                  std::uint64_t count) {
     return kernel_word(::read(static_cast<int>(descriptor), __builtin_bit_cast(void*, address), count));
 }
 
-long write_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept {
+[[gnu::no_sanitize_thread]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
+                                                   std::uint64_t count) {
     return kernel_word(::write(static_cast<int>(descriptor), __builtin_bit_cast(void const*, address), count));
 }
 

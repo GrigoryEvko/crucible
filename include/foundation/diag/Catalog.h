@@ -146,32 +146,24 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
 namespace detail {
 
 // One text field of every tag, at the tag's Category index, derived from
-// the tuple. Select says which field, so the three arrays share one walk
-// rather than repeating it once per field. An accessor indexes one of
-// these with a range check, so a value cast in from an out-of-range
-// integer answers with the sentinel rather than reading past the array.
+// the tuple, and the sentinel after the last field.  Select tells which
+// field, and the three tables share one walk.  Each table is a variable
+// template, and a translation unit builds it only when a call reads it.  The
+// table is a C array, and its index calls no function of the library in a
+// build.
 template <auto Select, class Unused, std::size_t... Is>
-[[nodiscard]] consteval auto catalog_fields_impl(std::index_sequence<Is...>) noexcept
-    -> std::array<std::string_view, sizeof...(Is)> {
-    return {Select.template operator()<std::tuple_element_t<Is, Catalog<Unused>>>()...};
-}
+inline constexpr std::string_view catalog_fields_v[sizeof...(Is) + 1] = {
+    Select.template operator()<std::tuple_element_t<Is, Catalog<Unused>>>()...,
+    "<unknown Category>"
+};
 
-template <class Unused>
-inline constexpr auto catalog_names_v =
-    catalog_fields_impl<select_name, Unused>(std::make_index_sequence<catalog_size>{});
-template <class Unused>
-inline constexpr auto catalog_descriptions_v =
-    catalog_fields_impl<select_description, Unused>(std::make_index_sequence<catalog_size>{});
-template <class Unused>
-inline constexpr auto catalog_remediations_v =
-    catalog_fields_impl<select_remediation, Unused>(std::make_index_sequence<catalog_size>{});
-
-inline constexpr std::string_view unknown_category_sentinel{"<unknown Category>"};
-
-[[nodiscard]] constexpr std::string_view catalog_field(std::array<std::string_view, catalog_size> const& fields,
-                                                       Category c) noexcept {
+// Reads the field of c in the table of Select.  An index past the catalog
+// reads the sentinel.  A value cast in from an out-of-range integer then
+// gives the sentinel, and the read stays in the table.
+template <auto Select, class Unused, std::size_t... Is>
+[[nodiscard]] constexpr std::string_view catalog_field(Category c, std::index_sequence<Is...>) noexcept {
     const auto index = static_cast<std::size_t>(std::to_underlying(c));
-    return index < catalog_size ? fields[index] : unknown_category_sentinel;
+    return catalog_fields_v<Select, Unused, Is...>[index < sizeof...(Is) ? index : sizeof...(Is)];
 }
 
 }  // namespace detail
@@ -183,17 +175,17 @@ inline constexpr std::string_view unknown_category_sentinel{"<unknown Category>"
 // template argument: name_of(c).
 template <class Unused = void>
 [[nodiscard]] constexpr std::string_view name_of(Category c) noexcept {
-    return detail::catalog_field(detail::catalog_names_v<Unused>, c);
+    return detail::catalog_field<detail::select_name, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 
 template <class Unused = void>
 [[nodiscard]] constexpr std::string_view description_of(Category c) noexcept {
-    return detail::catalog_field(detail::catalog_descriptions_v<Unused>, c);
+    return detail::catalog_field<detail::select_description, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 
 template <class Unused = void>
 [[nodiscard]] constexpr std::string_view remediation_of(Category c) noexcept {
-    return detail::catalog_field(detail::catalog_remediations_v<Unused>, c);
+    return detail::catalog_field<detail::select_remediation, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 
 }  // namespace foundation::diag

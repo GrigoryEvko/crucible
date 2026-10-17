@@ -15,8 +15,12 @@ namespace foundation::os::detail {
 // the error number E.  These are the only calls of Syscall that can block and
 // that the C library gives, and src/foundation/os/Syscall.cpp refuses a
 // blocking call with no route at compile time.
-[[nodiscard]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept;
-[[nodiscard]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count) noexcept;
+//
+// The two functions have the attribute nothrow and no noexcept specifier.
+// src/foundation/os/Intercepted.cpp tells why.
+[[nodiscard, gnu::nothrow]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count);
+[[nodiscard, gnu::nothrow]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
+                                                   std::uint64_t count);
 
 // What a futex call does for the sanitizer: a wake publishes the writes of
 // the thread on the word, and a wait can see the writes of a wake.

@@ -8,8 +8,8 @@ configuration planted tier planted
 @build/libcrucible.a | ratchet | 1 | __cxa_allocate_exception@CXXABI_1.3 | -
 @build/libcrucible.a | ratchet | 1 | __cxa_throw@CXXABI_1.3 | -
 @build/libcrucible.a | throw | admit | admitted_throwing_entry | a planted throw
-@build/libfoundation.a | allow | 1 | __cxa_guard_acquire@CXXABI_1.3 | -
-@build/libfoundation.a | allow | 1 | __cxa_guard_release@CXXABI_1.3 | -
+@build/libfoundation.a | ratchet | 1 | __cxa_guard_acquire@CXXABI_1.3 | -
+@build/libfoundation.a | ratchet | 1 | __cxa_guard_release@CXXABI_1.3 | -
 @build/libfoundation.a | ratchet | 1 | _ZTVN10__cxxabiv117__class_type_infoE@CXXABI_1.3 | -
 @build/libfoundation.a | ratchet | 1 | _ZdlPvm@CXXABI_1.3.9 | -
 @build/libfoundation.a | vtable | admit | Admitted | a planted class
