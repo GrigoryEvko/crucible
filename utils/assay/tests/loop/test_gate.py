@@ -313,8 +313,8 @@ def select_cases(expect: testing.Expect) -> None:
     touched = gate.other_runs(others, False, ("guard_rule",))
     expect(
         "a change that can change each build runs the tests of the changed inputs in each other configuration of "
-        "objects, and another change runs only the touched tests there, or nothing",
-        [run.mode for run in changed] == [gate.Mode.CHANGED] * len(others)
+        "objects with --build-only, and another change runs only the touched tests there, or nothing",
+        [(run.mode, run.is_build_only) for run in changed] == [(gate.Mode.CHANGED, True)] * len(others)
         and [(run.mode, run.names) for run in touched] == [(gate.Mode.TOUCHED, ("guard_rule",))] * len(others)
         and gate.other_runs(others, False, ()) == ()
         and len(others) == 4,
@@ -900,7 +900,14 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             verdicts["clean"].is_accepted
             and verdicts["clean"].configurations == ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
             and words["build"][0].endswith("--all")
-            and not any(line.endswith("--all") for line in words["build-bench-fuzz"]),
+            and not any("--all" in line.split() for line in words["build-bench-fuzz"]),
+        )
+        expect(
+            "default runs each test of the master guard that reads no build, and each other configuration gets "
+            "--build-only",
+            not any("--build-only" in line.split() for line in words["build"])
+            and bool(words["build-bench-fuzz"])
+            and all(line.endswith("--build-only") for line in words["build-bench-fuzz"]),
         )
         broken = verdicts["broken"]
         expect(
@@ -934,7 +941,7 @@ def touched_cases(expect: testing.Expect) -> None:
         cases = (
             ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
             ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
-            ("a module of the test launcher", LAUNCHER_MODULE, objects, "-j 1"),
+            ("a module of the test launcher", LAUNCHER_MODULE, objects, "-j 1 --build-only"),
         )
         for label, path, expected, shown in cases:
             commit = commit_change(root, path, "VALUE = 2\n", f"Change {path}")

@@ -72,6 +72,13 @@ THE SELECTION
     A build file is a file CMakeLists.txt, a file *.cmake or
     CMakePresets.json.
 
+    A test of the master guard that reads no build gives the same result in
+    each configuration (THE TESTS THAT READ THE BUILD of assay.loop.affected).
+    default runs the full suite for each change.  The gate then gives each
+    other configuration of the first two modes the option --build-only of
+    `loop test`, which skips such a test.  The run of the base can have no
+    default, and its configurations do not get the option.
+
     A parse configuration runs when `loop syntax --changed` of the warm tree
     names it for a change of an arm.  It also runs when a path of the change
     touches the inputs of a rule of COUNTED_RULES of
@@ -459,11 +466,16 @@ class Mode(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class Run:
-    """One configuration of a run of the gate, its mode, and the names of the tests of the mode TOUCHED."""
+    """One configuration of a run of the gate: its mode, the names of the tests of the mode TOUCHED, and --build-only.
+
+    With `is_build_only`, the run skips each test of the master guard that reads no build, and default runs it (THE
+    SELECTION).
+    """
 
     configuration: Configuration
     mode: Mode
     names: tuple[str, ...] = ()
+    is_build_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -622,7 +634,7 @@ def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[s
         names: The touched tests: each test that reads the build and that has an input that the change touches
     """
     if is_each:
-        return tuple(Run(item, Mode.CHANGED) for item in others)
+        return tuple(Run(item, Mode.CHANGED, is_build_only=True) for item in others)
     return tuple(Run(item, Mode.TOUCHED, tuple(names)) for item in others) if names else ()
 
 
@@ -843,14 +855,15 @@ class Gate:
         """Return the words of the mode of a run after `loop test BUILD` (THE SELECTION).
 
         A run of the full suite with `is_plain` runs the tests of the changed inputs.  The run of the touched tests
-        writes the file of --only into the directory of the logs.
+        writes the file of --only into the directory of the logs.  A run with `is_build_only` gets --build-only.
         """
         if run.mode is Mode.TOUCHED:
             self.logs.mkdir(parents=True, exist_ok=True)
             only = self.logs / f"{run.configuration.name}.only.txt"
             only.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
             return ["--only", str(only)]
-        return ["--all"] if run.mode is Mode.FULL and not is_plain else []
+        words = ["--all"] if run.mode is Mode.FULL and not is_plain else []
+        return [*words, "--build-only"] if run.is_build_only else words
 
     def touched_names(self, change: guard_inputs.Change) -> tuple[str, ...]:
         """Return each touched test of the build of ALWAYS, sorted: it reads the build, and the change touches its inputs.
@@ -931,7 +944,10 @@ class Gate:
                 if name not in BY_LEDGER_NAME:
                     check_report.write_line(f"loop land: the host does not build the configuration {name} of a ledger")
             selected = select(candidate.changed, presets, self.is_every)
-            plan = tuple(Run(item, Mode.PARSE if item.is_parse else Mode.FULL) for item in selected)
+            plan = tuple(
+                Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
+                for item in selected
+            )
             others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
             is_each = self.changes_each(candidate) if others else True
             shown = " ".join(item.name for item in selected)

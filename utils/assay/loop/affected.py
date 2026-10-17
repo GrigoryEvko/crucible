@@ -118,6 +118,14 @@ THE TESTS THAT READ THE BUILD
     `--only FILE` selects only the tests that FILE names, one name on each
     line.  The script skips each other test with no change to its record.
 
+    `--build-only` skips each test of the kind KIND_GUARD: a test of the
+    master guard with known inputs that reads no build.  Such a test gives
+    the same result in each configuration, and no file of a build is in its
+    shared key.  The gate gives the option to each configuration other than
+    default, and default runs each such test (assay.loop.gate, THE
+    SELECTION).  The script skips such a test with no change to its record,
+    also with --all.
+
 THE ENVIRONMENT
     The test launcher gives each test a clean environment
     (assay.loop.teststep, THE ENVIRONMENT).  The fingerprint of a test
@@ -339,12 +347,13 @@ THE PROGRAMS
     version.
 
 Usage:
-    loop test BUILD_DIR [-j N] [--no-build] [--all] [--only FILE] [--plan] [-- CTEST_ARGUMENT...]
+    loop test BUILD_DIR [-j N] [--no-build] [--all] [--only FILE] [--build-only] [--plan] [-- CTEST_ARGUMENT...]
     guard selftest loop.affected [--ctest CTEST]
 
 --no-build  Do not build first.  Then a stale executable can look unchanged.
 --all       Run each executable test, and record each pass.
 --only      Select only the tests that FILE names (THE TESTS THAT READ THE BUILD).
+--build-only  Skip each test of the master guard that reads no build (THE TESTS THAT READ THE BUILD).
 --plan      Print what the script would run, and run nothing.
 --ctest     The ctest of the fake build tree of the self-test.  The default
             is the ctest of PATH, when it gives the pinned version.
@@ -461,6 +470,7 @@ REASON_STORE = "the shared store holds a pass with the same inputs"
 REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
 REASON_FAILED = "the test failed in this build directory with the same inputs"
 REASON_UNNAMED = "--only does not name the test"
+REASON_BUILD_FREE = "the test reads no build, and the configuration default of the gate runs it (--build-only)"
 REASON_READS = "the read set of the last traced run is not usable, and the launcher traces the test again"
 
 
@@ -1201,7 +1211,7 @@ class Planner:
         return path
 
     def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool,
-               only: frozenset[str] | None = None) -> list[Decision]:
+               only: frozenset[str] | None = None, is_build_only: bool = False) -> list[Decision]:
         """Return the decision for each test (THE RECORD, THE SHARED STORE).
 
         With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (THE TESTS
@@ -1216,7 +1226,10 @@ class Planner:
                 decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
                 continue
             decision = self.classify(test)
-            if decision.kind in FINGERPRINTED:
+            if is_build_only and decision.kind == KIND_GUARD:
+                decision.reason = REASON_BUILD_FREE
+                decision.is_skipped = True
+            elif decision.kind in FINGERPRINTED:
                 recorded = passed.get(test.name)
                 if run_all:
                     decision.reason = REASON_ALL
@@ -1691,10 +1704,11 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
 
 
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,
-        ctest_arguments: list[str], only: frozenset[str] | None = None) -> int:
+        ctest_arguments: list[str], only: frozenset[str] | None = None, is_build_only: bool = False) -> int:
     """Build, decide, run and record.  Return the exit code of the script.
 
-    With `only`, the script selects only the tests that it names (THE TESTS THAT READ THE BUILD).
+    With `only`, the script selects only the tests that it names.  With `is_build_only`, it skips each test of the
+    kind KIND_GUARD (THE TESTS THAT READ THE BUILD).
     """
     if not build_dir.is_dir():
         raise RunnerError(f"{build_dir} is not a directory.  Give the path of a configured build directory.")
@@ -1730,8 +1744,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
         warmer.join()
-        decisions = planner.decide(tests, run_all, only)
+        decisions = planner.decide(tests, run_all, only, is_build_only)
         unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
+        build_free = sum(decision.reason == REASON_BUILD_FREE for decision in decisions)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
         write_list(state_dir / "skipped.txt", skipped)
@@ -1766,7 +1781,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
               f"skip code, {not_run} did not run.")
         if unnamed:
             check_report.write_line(f"loop test: {unnamed} tests skipped, because --only does not name them.")
-        print(f"loop test: {len(skipped) - unnamed} tests skipped, because {REASON_SKIPPED} "
+        if build_free:
+            check_report.write_line(f"loop test: {build_free} tests skipped, because {REASON_BUILD_FREE}.")
+        print(f"loop test: {len(skipped) - unnamed - build_free} tests skipped, because {REASON_SKIPPED} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
             print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
@@ -2084,6 +2101,14 @@ def only_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> Non
     ran, output = fake.ran()
     expect("a test that --only skipped keeps its record, and a call with no --only runs it when its input changed",
            ran == {"guard_alpha_witness", "guard_gamma"}, output)
+    fake.write("utils/plants/alpha/plant-one/input.txt", "five\n")
+    ran, output = fake.ran("--build-only", "--all")
+    expect("--build-only skips each test of the master guard that reads no build, also with --all, and it runs the "
+           "test that reads the build", "guard_gamma" in ran and not ran & {"guard_alpha", "guard_alpha_witness"}
+           and REASON_BUILD_FREE in output, output)
+    ran, output = fake.ran()
+    expect("a test that --build-only skipped keeps its record, and a call with no option runs it",
+           {"guard_alpha", "guard_alpha_witness"} <= ran, output)
 
 
 def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
@@ -2554,6 +2579,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--plan", action="store_true")
     parser.add_argument("--only", type=Path, default=None, help="a file with one test name on each line: the script "
                                                                 "selects only those tests")
+    parser.add_argument("--build-only", action="store_true", help="skip each test of the master guard that reads no "
+                                                                  "build (THE TESTS THAT READ THE BUILD)")
     parser.add_argument("--ctest", help="the ctest of the fake build tree of --self-test; the default is the ctest "
                                         "of PATH, when it gives the pinned version")
     parser.add_argument("--self-test", action="store_true")
@@ -2581,7 +2608,7 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         return run(options.build_dir.resolve(), options.jobs, not options.no_build, options.all, options.plan,
-                   ctest_arguments, only)
+                   ctest_arguments, only, options.build_only)
     except RunnerError as error:
         print(f"loop test: {error}")
         return 2
