@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Run the probes of the test harness and check their output.
 
-usage: check_output.py PROBE_REPORT PROBE_FATAL_TWICE
+usage: check_output.py PROBE_REPORT PROBE_FATAL_TWICE [EMULATOR [ARG]...]
+
+EMULATOR and its arguments run each probe in a cross build, such as
+qemu-aarch64-static -L SYSROOT.  test/CMakeLists.txt gives them from the
+target property CROSSCOMPILING_EMULATOR.  A native build gives none.
 
 PROBE_REPORT (test/harness/probe_report.cpp) writes a pass line and reports,
 and then fails an assert.  Its standard output must hold the exact bytes,
@@ -39,16 +43,19 @@ def no_core_dump() -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (1, hard))
 
 
-def run(probe: str) -> subprocess.CompletedProcess[str]:
+def run(probe: str, emulator: list[str]) -> subprocess.CompletedProcess[str]:
     """Run one probe and give its status and its two outputs.
 
     Args:
         probe: The path of the probe program
+        emulator: The words of the emulator that runs the probe, or none
 
     Returns:
         The completed process, with the text of standard output and standard error
     """
-    return subprocess.run([probe], capture_output=True, text=True, timeout=10, preexec_fn=no_core_dump, check=False)
+    return subprocess.run(
+        [*emulator, probe], capture_output=True, text=True, timeout=10, preexec_fn=no_core_dump, check=False
+    )
 
 
 def check(condition: bool, what: str, result: subprocess.CompletedProcess[str]) -> bool:
@@ -69,9 +76,9 @@ def check(condition: bool, what: str, result: subprocess.CompletedProcess[str]) 
     return condition
 
 
-def check_report_probe(probe: str) -> bool:
+def check_report_probe(probe: str, emulator: list[str]) -> bool:
     """Check the pass line, the reports and the failed assert of probe_report."""
-    result = run(probe)
+    result = run(probe, emulator)
     fatal = "foundation: fatal: assert: queue_depth == 4\n  at "
     line = ASSERT_LINE.search(result.stderr)
     site = f"probe_report.cpp:{line.group(1) if line else '?'} in main\n"
@@ -86,9 +93,9 @@ def check_report_probe(probe: str) -> bool:
     return passed
 
 
-def check_fatal_twice_probe(probe: str) -> bool:
+def check_fatal_twice_probe(probe: str, emulator: list[str]) -> bool:
     """Check that each of two caught fatal exits on one thread writes its text."""
-    result = run(probe)
+    result = run(probe, emulator)
     passed = check(result.returncode == 0, "the two abort probes catch the two fatal exits", result)
     for which in ("first", "second"):
         text = f"foundation: fatal: the {which} fatal exit of the probe\n"
@@ -99,11 +106,12 @@ def check_fatal_twice_probe(probe: str) -> bool:
 
 def main(arguments: list[str]) -> int:
     """Run the two probes and give the exit status of the check."""
-    if len(arguments) != 3:
+    if len(arguments) < 3:
         print(__doc__, file=sys.stderr)
         return 2
-    passed = check_report_probe(arguments[1])
-    passed = check_fatal_twice_probe(arguments[2]) and passed
+    emulator = arguments[3:]
+    passed = check_report_probe(arguments[1], emulator)
+    passed = check_fatal_twice_probe(arguments[2], emulator) and passed
     print("check_output: " + ("all checks passed" if passed else "FAILED"))
     return 0 if passed else 1
 

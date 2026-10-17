@@ -148,7 +148,9 @@ endfunction()
 # test_assert.h gives the assert macro and the pass line of the tests.  The
 # two probes of test/harness/ show what they write.  probe_report ends by
 # SIGABRT on purpose, so ctest runs neither probe as a test of its own:
-# test/harness/check_output.py runs the two and reads their outputs.
+# test/harness/check_output.py runs the two and reads their outputs.  In a
+# cross build, the script runs each probe through the emulator of the probe
+# target, as ctest runs a test of an executable target (cmake/TestLauncher.cmake).
 foreach(_harness_probe probe_report probe_fatal_twice)
   add_executable(harness_${_harness_probe} harness/${_harness_probe}.cpp)
   target_link_libraries(harness_${_harness_probe} PRIVATE foundation)
@@ -158,9 +160,14 @@ foreach(_harness_probe probe_report probe_fatal_twice)
     target_link_options(harness_${_harness_probe} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})
   endif()
 endforeach()
+set(_harness_emulator "")
+if(CMAKE_CROSSCOMPILING)
+  set(_harness_emulator "$<TARGET_PROPERTY:harness_probe_report,CROSSCOMPILING_EMULATOR>")
+endif()
 crucible_script_test(NAME harness_output
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/harness/check_output.py
-          $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_fatal_twice>)
+          $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_fatal_twice> ${_harness_emulator}
+  COMMAND_EXPAND_LISTS)
 
 # A regression test for the constant-evaluator defect that the patch
 # series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
