@@ -165,11 +165,13 @@ THE MEMO OF THE ROWS
     in the cache ROWS_CACHE of the root of the caches
     (assay.core.cache_root).  The key of an entry holds the rule, the shape
     of an item, and the resolved path of the ledger.  It also holds the stat
-    fields of each input of the parse: the ledger, the registry, and the four
+    fields of each input of the parse: the ledger, the registry, and the
     modules of ROWS_MODULES.  A read with an entry imports no module but
     hashlib and json.  The function writes an entry only when no input
     changed in ROWS_SETTLE_NS.  A change in the same clock tick then cannot
-    hide.  `loop test` holds the cache in its row of LIMITS of
+    hide.  An entry holds the rows in the sequence of their lines, as the
+    parse gives them.  A read with an entry and a read with a parse then give
+    the same sequence.  `loop test` holds the cache in its row of LIMITS of
     assay.core.cache.
 
     The build kind of a build directory is the one line of
@@ -261,7 +263,7 @@ ROWS_FORMAT = 1
 # The period in which a change of an input of the parse makes read_kind_rows() write no entry (THE MEMO OF THE ROWS).
 ROWS_SETTLE_NS = 50_000_000
 # The modules of this directory that make the rows of a ledger from its text (THE MEMO OF THE ROWS).
-ROWS_MODULES = ("meter.py", "ledger.py", "rows.py", "registry.py")
+ROWS_MODULES = ("meter.py", "ledger.py", "rows.py", "registry.py", "paths.py")
 # The forms of the item of a row of a ledger of a measured rule (THE REGISTRY AND THE LEDGERS), and the row of each.
 ITEM_OUTPUT = "output"
 ITEM_FILE = "file"
@@ -816,7 +818,8 @@ def write_rows_memo(entry: str, rows: dict[tuple[str, str], tuple[int, float, st
     """Write an entry of the cache through a temporary file and a rename.  A write that fails writes nothing."""
     import json
 
-    document = {"format": ROWS_FORMAT, "rows": [[kind, item, *value] for (kind, item), value in sorted(rows.items())],
+    lined = sorted(rows.items(), key=lambda pair: pair[1][0])
+    document = {"format": ROWS_FORMAT, "rows": [[kind, item, *value] for (kind, item), value in lined],
                 "problems": problems}
     temporary = f"{entry}.{os.getpid()}.tmp"
     try:

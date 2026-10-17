@@ -288,6 +288,18 @@ def memo_cases(expect: testing.Expect) -> None:
             entry, _ = cost_meter.rows_memo(rule, form, ledger) or ("", False)
             cost_meter.read_kind_rows(rule, form, ledger)
             expect("a settled ledger gets an entry of its rows", settled and os.path.isfile(entry))
+            rows_cache = cache.cache_root(cost_meter.ROWS_CACHE)
+            expect(
+                "the entry is in the cache that loop test holds in its limit",
+                rows_cache is not None and Path(entry).is_relative_to(rows_cache),
+            )
+            lined = {("z", "first.o"): (4, 1.0, "the first line"), ("a", "second.o"): (5, 2.0, "the second line")}
+            cost_meter.write_rows_memo(entry, lined, [])
+            kept = cost_meter.read_rows_memo(entry)
+            expect(
+                "an entry keeps the rows in the sequence of their lines, as the parse gives them",
+                kept is not None and list(kept[0]) == [("z", "first.o"), ("a", "second.o")],
+            )
             cost_meter.write_rows_memo(entry, {("k", "unit.o"): (3, 9.0, "the planted entry")}, [])
             held, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
             expect("a read takes the rows of the entry with no parse", held[("k", "unit.o")][1] == 9.0)
