@@ -1,4 +1,2 @@
 format 1
 rule plan-coverage
-utils/assay/loop/plan.py | no-target | admit | step gauge | No runner of `loop evidence` adds the runs of the step to a key at this time
-utils/assay/loop/plan.py | no-target | admit | step pgo | No runner of `loop evidence` adds the runs of the step to a key at this time

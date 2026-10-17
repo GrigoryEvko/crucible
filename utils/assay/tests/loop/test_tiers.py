@@ -62,6 +62,13 @@ PLANTED_CONFIGURE: list[dict[str, object]] = [
         "cacheVariables": {"CRUCIBLE_FUZZ": "ON"},
         "vendor": {"crucible": {"tier": "nightly"}},
     },
+    {
+        "name": "profiled",
+        "inherits": "bench",
+        "binaryDir": "out/profiled",
+        "cacheVariables": {"CRUCIBLE_PGO": "use"},
+        "vendor": {"crucible": {"tier": "release"}},
+    },
 ]
 PLANTED_TESTS: list[dict[str, object]] = [
     {"name": "base", "configurePreset": "base"},
@@ -152,6 +159,12 @@ def read_cases(expect: testing.Expect) -> None:
         and not configure["bench-fuzz"].is_bench
         and configure["bench-fuzz"].is_fuzz
         and not configure["base"].is_bench,
+    )
+    expect(
+        "only a preset that compiles with the profile uses the profile",
+        configure["profiled"].uses_profile
+        and not configure["bench-counters"].uses_profile
+        and not configure["bench"].uses_profile,
     )
     expect(
         "a preset with no block has a problem and no tier",

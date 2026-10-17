@@ -76,12 +76,14 @@ TIER_FIELD = "tier"
 REASON_FIELD = "reason"
 CONFIGURATION_FIELD = "configuration"
 FIELDS = (TIER_FIELD, REASON_FIELD, CONFIGURATION_FIELD)
-# The cache variables that build the fuzzers, the benches and the profile counters (PresetTier, is_fuzz and
-# is_bench).  The profile option builds the counters with the value COUNTERS_VALUE.
+# The cache variables that build the fuzzers, the benches and the profile counters (PresetTier, is_fuzz, is_bench and
+# uses_profile).  The profile option builds the counters with the value COUNTERS_VALUE, and it compiles with the
+# profile with the value PROFILE_VALUE.
 FUZZ_OPTION = dict(build_config.NAME_OPTIONS)["fuzz"]
 BENCH_OPTION = dict(build_config.NAME_OPTIONS)["bench"]
 PROFILE_OPTION = "CRUCIBLE_PGO"
 COUNTERS_VALUE = "generate"
+PROFILE_VALUE = "use"
 
 
 class Tier(enum.StrEnum):
@@ -117,10 +119,11 @@ class PresetTier:
     through a parent.  `is_fuzz` tells the same of CRUCIBLE_FUZZ, which
     builds the fuzzers.  `is_bench` tells that the preset builds the benches
     for a measurement: it sets CRUCIBLE_BENCH, and it builds no fuzzers and
-    no profile counters.  `configure` is the configure preset of a test preset,
-    and `is_inherited` tells that a plain test preset gets the tier of its
-    configure preset.  `is_repeated` tells that a test preset runs each test
-    again (assay.readers.cmake, TestPreset).
+    no profile counters.  `uses_profile` tells that the preset compiles with
+    the profile of `loop pgo`.  `configure` is the configure preset of a test
+    preset, and `is_inherited` tells that a plain test preset gets the tier of
+    its configure preset.  `is_repeated` tells that a test preset runs each
+    test again (assay.readers.cmake, TestPreset).
     """
 
     kind: PresetKind
@@ -136,6 +139,7 @@ class PresetTier:
     is_repeated: bool = False
     is_fuzz: bool = False
     is_bench: bool = False
+    uses_profile: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +230,7 @@ def read_configure(root: Path, configure: Sequence[cmake.Preset]) -> list[Preset
             is_parse=build_config.normalized("BOOL", variables.get(build_config.SYNTAX_OPTION) or "") == "on",
             is_fuzz=is_fuzz,
             is_bench=has_benches and not is_fuzz and not has_counters,
+            uses_profile=(variables.get(PROFILE_OPTION) or "") == PROFILE_VALUE,
         )
         if isinstance(block, str):
             found.append(replace(item, problem=block))

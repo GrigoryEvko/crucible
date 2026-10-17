@@ -59,6 +59,8 @@ SUBCOMMANDS = {
     "heavy": ("assay.loop.heavy", "run one command under the lock of the heavy steps: loop heavy -- COMMAND..."),
     "plan": ("assay.loop.plan", "print each item of the plan with its tier and its entry: loop plan [--build-dir DIR]"),
     "evidence": ("assay.loop.evidence", "give the evidence of the sampled checks, or add to it: loop evidence status"),
+    "nightly": ("assay.loop.nightly", "run the work of the tiers gate and nightly in a time budget: loop nightly"),
+    "release": ("assay.loop.release", "run the work of each tier in a time budget: loop release"),
     "step": ("assay.loop.step", None),
     "meter-compiler": ("assay.loop.meter_compiler", None),
     "test-step": ("assay.loop.teststep", None),

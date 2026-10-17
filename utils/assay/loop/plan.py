@@ -60,6 +60,11 @@ THE SAMPLED ITEMS
     the ledger of plan-coverage admits such an item with the reason why it
     has no target.
 
+    An item is not sampled when one run gives the full evidence for its
+    inputs.  The step gauge judges the medians of the runs of one call, the
+    step pgo writes a new profile, and `loop derive header-costs --measure`
+    counts instructions.  These items then have no target.
+
 THE BUILDS
     read_builds() reads the build directories that the call names.  With no
     name, it reads the build directory of each configure preset with a tier
@@ -74,7 +79,10 @@ THE STEPS
     has a tier, the words of its command and a text.  It can name the
     configure preset of its build and the rules that it runs.  A command that
     ends with --build-dir takes the build directory of that preset.  A step
-    with `each` takes one item of that kind as the last word of its command.
+    with `each` runs each item of that kind.  The command `loop evidence run
+    KIND` runs the items of the class of KIND in a time budget, and the
+    command `loop fuzz` runs one campaign of each harness
+    (assay.loop.entry, THE WORK).
 
 THE COMMANDS
     Each subcommand of utils/bin/loop has a class:
@@ -283,8 +291,8 @@ STEPS = (
     Step(
         "bench",
         tiers.Tier.NIGHTLY,
-        ("loop", "bench"),
-        "builds a bench target in the build of its preset and runs it on an isolated core",
+        ("loop", "evidence", "run", str(evidence_targets.MEASUREMENT.kind)),
+        "runs each bench target of the build of its preset on a reserved core, and adds the valid runs to its evidence",
         preset=bench.DEFAULT_PRESET,
         each=Kind.BENCH,
     ),
@@ -331,15 +339,10 @@ HOLDERS = {
 }
 # The sampled items with no class of assay.loop.evidence.targets: a kind, and a name or "" for each item of the kind
 # (THE SAMPLED ITEMS).
-UNTARGETED = (
-    (Kind.HARNESS, ""),
-    (Kind.STEP, "gauge"),
-    (Kind.STEP, "pgo"),
-    (Kind.DERIVE, "header-costs"),
-)
-ENTRY_COMMANDS = ("land", "syntax", "test")
+UNTARGETED = ((Kind.HARNESS, ""),)
+ENTRY_COMMANDS = ("land", "nightly", "release", "syntax", "test")
 TOOL_COMMANDS = ("heavy", "history", "plan")
-ITEM_COMMANDS = ("derive",)
+ITEM_COMMANDS = ("bench", "derive")
 
 
 # ── The builds ─────────────────────────────────────────────────────────────

@@ -196,11 +196,11 @@ def sampled_cases(expect: testing.Expect) -> None:
             "test-preset stress",
             "test prop_one",
             "bench bench_one",
-            "step gauge",
             "harness region",
             f"rule {evidence_targets.COVERAGE.check}",
         },
     )
+    expect("a step that gives the full evidence of its inputs in one run is not sampled", "step gauge" not in bare)
     held = "".join(
         f"rule {target.rule} engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=loop-evidence "
         f"doc=XV | a target | run it\n"
@@ -210,7 +210,7 @@ def sampled_cases(expect: testing.Expect) -> None:
     targeted = {item.entity for item in plan.untargeted_items(items, presets, (build,), registry)}
     expect(
         f"with the class rules, only the items of UNTARGETED have no target: {sorted(targeted)}",
-        targeted == {"step gauge", "harness region"},
+        targeted == {"harness region"},
     )
 
 
@@ -249,6 +249,12 @@ def tree_cases(expect: testing.Expect) -> None:
     )
     commands = plan.subcommands(paths.REPO_ROOT)
     expect("the subcommands of this tree hold loop plan, and hide loop step", commands["plan"] and not commands["step"])
+    expect(
+        "the step bench adds the runs of each bench target to the evidence of the class of measurement",
+        items[(plan.Kind.STEP, "bench")].tier is NIGHTLY
+        and next(step for step in plan.STEPS if step.name == "bench").command[-1]
+        == str(evidence_targets.MEASUREMENT.kind),
+    )
 
 
 def main(argv: list[str]) -> int:

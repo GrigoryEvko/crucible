@@ -91,6 +91,16 @@ class Campaign:
     seconds: int
 
 
+def afl_directory() -> Path:
+    """Return the directory of the AFL++ tools: AFL_BIN, else $HOME/.local/bin (THE ENVIRONMENT)."""
+    return Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
+
+
+def reserved_text() -> str:
+    """Return the cores that no instance can use: CRUCIBLE_FUZZ_RESERVED_CPUS, else DEFAULT_RESERVED."""
+    return os.environ.get("CRUCIBLE_FUZZ_RESERVED_CPUS", DEFAULT_RESERVED)
+
+
 def expand_cpus(text: str) -> tuple[int, ...]:
     """Return each core of a list such as 1-3,7, in the order of the list.
 
@@ -232,7 +242,7 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
     Returns:
         0 when each instance ended with status 0, else 1
     """
-    afl_bin = Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
+    afl_bin = afl_directory()
     environment = _afl_environment()
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, environment)
@@ -354,7 +364,7 @@ def main(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return self_test()
     try:
-        campaign = campaign_of(argv, REPO_ROOT, os.environ.get("CRUCIBLE_FUZZ_RESERVED_CPUS", DEFAULT_RESERVED))
+        campaign = campaign_of(argv, REPO_ROOT, reserved_text())
     except FuzzError as problem:
         print(f"loop fuzz: {problem}", file=sys.stderr)
         return 2

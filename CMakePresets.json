@@ -60,7 +60,7 @@
         "CRUCIBLE_PGO": "generate",
         "CRUCIBLE_BENCH": "ON"
       },
-      "vendor": { "crucible": { "tier": "release" } }
+      "vendor": { "crucible": { "tier": "manual", "reason": "The step pgo of the release entry configures this build, builds its benches and runs them. A test run in this build adds counters to the profile. No entry runs its tests" } }
     },
     {
       "name": "pgo",
@@ -119,6 +119,21 @@
         "CRUCIBLE_SYNTAX_ONLY": "ON"
       },
       "vendor": { "crucible": { "tier": "gate", "configuration": "aarch64-debug-asan-syntax" } }
+    },
+    {
+      "name": "aarch64",
+      "inherits": "default",
+      "displayName": "Cross GCC 16 for aarch64 with no sanitizer: the release entry runs the tests under qemu-user",
+      "binaryDir": "${sourceDir}/build-aarch64",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchain-gcc16-aarch64.cmake",
+        "_comment_sanitizers": "The cross install of the patched GCC has no libasan, libubsan or libtsan for aarch64. The build then links no sanitizer runtime",
+        "_comment_bpf": "include/crucible/perf/bpf/vmlinux.h holds the kernel types of x86_64, and clang cannot compile a BPF program of aarch64 with it",
+        "CRUCIBLE_SANITIZE": "OFF",
+        "CRUCIBLE_TSAN": "OFF",
+        "CRUCIBLE_HAVE_BPF": "OFF"
+      },
+      "vendor": { "crucible": { "tier": "release" } }
     },
     {
       "name": "no-bpf",
@@ -226,6 +241,15 @@
       "output": { "outputOnFailure": true },
       "filter": { "exclude": { "name": "^guard_(plugin|artifact_symbols|artifact_links|library_bytes)$" } },
       "execution": { "jobs": 128,"timeout": 300 }
+    },
+    {
+      "name": "aarch64",
+      "configurePreset": "aarch64",
+      "displayName": "The tests of the aarch64 build under qemu-user, with no guard: the rows of an aarch64 configuration come from the log of its CI leg",
+      "vendor": { "crucible": { "tier": "release" } },
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "ci_guard" } },
+      "execution": { "jobs": 128,"timeout": 900 }
     },
     {
       "name": "ubsan-strict",

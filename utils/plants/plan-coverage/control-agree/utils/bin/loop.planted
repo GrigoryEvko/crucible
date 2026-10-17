@@ -3,6 +3,8 @@
 SUBCOMMANDS = {
     "test": ("assay.loop.affected", "run each test"),
     "land": ("assay.loop.land", "land a change"),
+    "nightly": ("assay.loop.nightly", "run the nightly work"),
+    "release": ("assay.loop.release", "run the release work"),
     "syntax": ("assay.loop.syntax", "parse each unit"),
     "heavy": ("assay.loop.heavy", "run one heavy command"),
     "history": ("assay.loop.history", "print the history"),
