@@ -16,11 +16,13 @@ THE ARGUMENTS
     HARNESS    A name from test/fuzz/boundary/harnesses, such as region.
     CPU_LIST   The cores, such as 100-131 or 100-115,200-215.  One instance
                runs on each core.  The first one is the main instance.  The
-               command refuses a list that names a reserved core.
+               command refuses a list that names a reserved CPU of the host.
+               read_reserved() of assay.loop.bench reads these CPUs, for
+               `loop bench` too (THE RESERVED CPUS of that module).
     SECONDS    The time limit of each instance.
 
 THE ENVIRONMENT
-    CRUCIBLE_FUZZ_RESERVED_CPUS  The cores that no instance can use.  The default is 88-95
+    CRUCIBLE_BENCH_SLICE         The slice of the reserved partition when the host has more than one
     AFL_BIN                      The directory of the AFL++ tools.  The default is $HOME/.local/bin
     CRUCIBLE_CXX                 The patched g++ that the compiler wrappers call, and the gcc in the same directory
     CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC, when CRUCIBLE_CXX is not set.  The default is
@@ -54,11 +56,11 @@ from pathlib import Path
 
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.loop import bench
 from assay.readers import cmake as cmake_reader
 from assay.setup import gcc as patched_gcc
 from assay.setup import pins as cmake_pin
 
-DEFAULT_RESERVED = "88-95"
 HARNESSES = Path("test/fuzz/boundary/harnesses")
 # The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
 # assay.core.proc before SIGKILL.
@@ -96,9 +98,20 @@ def afl_directory() -> Path:
     return Path(os.environ.get("AFL_BIN", str(Path.home() / ".local" / "bin")))
 
 
-def reserved_text() -> str:
-    """Return the cores that no instance can use: CRUCIBLE_FUZZ_RESERVED_CPUS, else DEFAULT_RESERVED."""
-    return os.environ.get("CRUCIBLE_FUZZ_RESERVED_CPUS", DEFAULT_RESERVED)
+def reserved_cpus(cpu_root: Path = bench.CPU_ROOT, cgroup_root: Path = bench.CGROUP_ROOT) -> tuple[int, ...]:
+    """Return the cores that no instance can use: the reserved CPUs of the host, which `loop bench` reads too.
+
+    CRUCIBLE_BENCH_SLICE selects the partition when the host has more than one.  Complexity: the complexity of
+    read_reserved() of assay.loop.bench.
+
+    Args:
+        cpu_root: The CPU directory of sysfs
+        cgroup_root: The root of the cgroup v2 hierarchy
+
+    Raises:
+        bench.BenchError: If the host has two partitions and CRUCIBLE_BENCH_SLICE names none of them
+    """
+    return bench.read_reserved(bench.Settings.from_environment().slice_name, cpu_root, cgroup_root).cpus
 
 
 def expand_cpus(text: str) -> tuple[int, ...]:
@@ -116,8 +129,13 @@ def expand_cpus(text: str) -> tuple[int, ...]:
     return tuple(cpus)
 
 
-def campaign_of(argv: list[str], root: Path, reserved_text: str) -> Campaign:
+def campaign_of(argv: list[str], root: Path, reserved: tuple[int, ...]) -> Campaign:
     """Read the arguments, and refuse an empty OUT_DIR, an unknown harness, a bad time and a reserved core.
+
+    Args:
+        argv: The words after `loop fuzz`
+        root: The source tree
+        reserved: The reserved CPUs of the host (reserved_cpus())
 
     Raises:
         FuzzError: If an argument is not correct
@@ -135,10 +153,10 @@ def campaign_of(argv: list[str], root: Path, reserved_text: str) -> Campaign:
     cpus = expand_cpus(cpu_text)
     if not cpus:
         raise FuzzError("CPU_LIST names no core")
-    reserved = set(expand_cpus(reserved_text))
+    reserved_set = frozenset(reserved)
     for cpu in cpus:
-        if cpu in reserved:
-            raise FuzzError(f"core {cpu} is reserved ({reserved_text})")
+        if cpu in reserved_set:
+            raise FuzzError(f"core {cpu} is a reserved CPU of the host.  Give a CPU_LIST with no reserved CPU")
     return Campaign(Path(build_text), Path(out_text), harness, cpus, int(seconds_text))
 
 
@@ -299,17 +317,26 @@ def self_test() -> int:
         root = Path(work)
         (root / HARNESSES).mkdir(parents=True)
         (root / HARNESSES / "region.h").write_text("", encoding="utf-8")
-        campaign = campaign_of(["build", "out", "region", "100-101", "60"], root, DEFAULT_RESERVED)
+        cpu_root, cgroup_root = root / "cpu", root / "cgroup"
+        cpu_root.mkdir()
+        expect("a host with no reservation reserves no core", reserved_cpus(cpu_root, cgroup_root) == ())
+        (cgroup_root / "reserved.slice").mkdir(parents=True)
+        (cgroup_root / "reserved.slice" / "cpuset.cpus.partition").write_text("root\n", encoding="ascii")
+        (cgroup_root / "reserved.slice" / "cpuset.cpus.exclusive.effective").write_text("224-255\n", encoding="ascii")
+        reserved = reserved_cpus(cpu_root, cgroup_root)
+        expect("the reserved CPUs are the CPUs of the partition that loop bench reads",
+               reserved == tuple(range(224, 256)))
+        campaign = campaign_of(["build", "out", "region", "100-101", "60"], root, reserved)
         expect("the arguments of a campaign are read",
                campaign == Campaign(Path("build"), Path("out"), "region", (100, 101), 60))
         refusals = {"an empty OUT_DIR": ["build", "", "region", "100", "60"],
                     "an unknown harness": ["build", "out", "absent", "100", "60"],
                     "a time that is not a whole number": ["build", "out", "region", "100", "1.5"],
-                    "a reserved core": ["build", "out", "region", "90-100", "60"],
+                    "a core of the reserved partition": ["build", "out", "region", "220-224", "60"],
                     "a wrong count of arguments": ["build", "out", "region", "100"]}
         for name, argv in refusals.items():
             try:
-                campaign_of(argv, root, DEFAULT_RESERVED)
+                campaign_of(argv, root, reserved)
                 expect(f"{name} is refused", False)
             except FuzzError:
                 expect(f"{name} is refused", True)
@@ -364,8 +391,8 @@ def main(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return self_test()
     try:
-        campaign = campaign_of(argv, REPO_ROOT, reserved_text())
-    except FuzzError as problem:
+        campaign = campaign_of(argv, REPO_ROOT, reserved_cpus())
+    except (FuzzError, bench.BenchError) as problem:
         print(f"loop fuzz: {problem}", file=sys.stderr)
         return 2
     try:

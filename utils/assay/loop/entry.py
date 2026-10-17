@@ -57,9 +57,9 @@ THE CAMPAIGN
     and the report gives the reason.  Else the job runs `loop fuzz BUILD OUT
     HARNESS CPUS SECONDS`.  BUILD is CAMPAIGN_BUILD in the tree, and OUT is a
     directory of the harness in it.  CPUS are at most CAMPAIGN_CORES CPUs of
-    this process that are not reserved (the list of loop fuzz, and the
-    reserved CPUs of assay.loop.bench).  SECONDS is an equal part of the
-    remaining time for each remaining campaign.
+    this process that are not reserved CPUs of the host (reserved_cpus() of
+    assay.loop.fuzz, which reads them as `loop bench` does).  SECONDS is an
+    equal part of the remaining time for each remaining campaign.
 
 THE REPORT
     Each run writes the directory TIER-TIME in REPORTS of the build directory
@@ -528,8 +528,8 @@ class Runner:
             self.campaigns_left -= 1
             return Outcome(job, State.BLOCKED, f"the host has no {tool}.  Install AFL++, or set AFL_BIN")
         try:
-            reserved = (*fuzz.expand_cpus(fuzz.reserved_text()), *bench.read_reserved().cpus)
-        except (fuzz.FuzzError, bench.BenchError) as problem:
+            reserved = fuzz.reserved_cpus()
+        except bench.BenchError as problem:
             self.campaigns_left -= 1
             return Outcome(job, State.BLOCKED, f"the reserved CPUs do not read: {problem}")
         cpus = campaign_cpus(tuple(os.sched_getaffinity(0)), reserved)
