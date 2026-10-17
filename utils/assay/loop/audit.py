@@ -48,6 +48,30 @@ THE CALL PROFILES
     one function.  `--command TEXT` keeps only the processes of one command,
     such as "loop fixture".
 
+THE LINES
+    A run with LINES_ENV of assay.core.meter writes the rows of the lines
+    (THE LINES of assay.core.calls).  `--lines` writes a table of each
+    function with the largest cumulative time, LINE_FUNCTIONS functions, as
+    line_profiler does.  `--lines TEXT` writes the table of each function
+    with TEXT in its name or its path.  A table has one row for each line of
+    the function.  The row holds these fields:
+      - The hits, the wall time and the time for each hit
+      - The part of the cumulative time of the function
+      - The CPU time and the text of the line.
+    The sums go over each process of the run.  The text comes from the file
+    of the first process that ran the line.  When that file is not
+    available, it comes from the same path in the directory utils of this
+    tree.
+
+    After the table of a function, the report expands each line into the
+    tables of the functions of the package that it calls.  THE CALLS OF A
+    LINE of assay.core.calls gives these calls.  A callee gets a table when its calls from
+    the line take DRILL_PART or more of the wall time of the first function.
+    The report goes down `--depth N` levels, DRILL_DEPTH by default.  A
+    callee with a table above gets one line with its location.  A callee on
+    the path gets no table.  The report then follows the hot path down into
+    the callees with no list of functions.
+
 `guard selftest tests.loop.test_audit` does a test of the module.
 
 Complexity: linear in the tests of the build directories and in the rows of
@@ -84,10 +108,24 @@ PACKAGE_MARK = "<utils>"
 PROFILE_MODULE = f"{PACKAGE_MARK}/assay/core/calls.py"
 # The fields of a call profile that hold a number (THE RECORD of assay.core.calls).
 NUMBER_FIELDS = ("pid", "parent", "start", "end", "cpu_s")
+# The number of functions that `--lines` with no text writes (THE LINES).
+LINE_FUNCTIONS = 5
+# The smallest part of the wall time of the first function, and the levels, of a callee that gets a table (THE LINES).
+DRILL_PART = 0.05
+DRILL_DEPTH = 3
 
+# The types of the fields of a row of the functions and of a row of the lines (assay.core.calls).
+type MeasuredRow = tuple[str, int, str, int, int, float, float]
 # One row of a call profile: file, line, name, calls, primitive calls, own time, cumulative time (assay.core.calls).
-type FunctionRow = tuple[str, int, str, int, int, float, float]
+type FunctionRow = MeasuredRow
 type FunctionKey = tuple[str, int, str]
+# One row of the lines: file, line, full name, first line of the function, hits, wall time, CPU time (THE LINES).
+type LineRow = MeasuredRow
+# The calls of a line to one callee (THE CALLS OF A LINE of assay.core.calls).  The fields are the file, the first
+# line and the full name of the caller, and the line.  Then come the same three of the callee, the calls and the time.
+type CallRow = tuple[str, int, str, int, str, int, str, int, float]
+# The marked key of a caller and its line.
+type CallSite = tuple[FunctionKey, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +162,25 @@ class CallProfile:
     end: float
     cpu_s: float
     functions: tuple[FunctionRow, ...]
+    lines: tuple[LineRow, ...] = ()
+    calls: tuple[CallRow, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CallTotal:
+    """The sum of the calls of one line to one callee over the call profiles: the calls and the wall time."""
+
+    calls: int
+    wall_s: float
+
+
+@dataclass(frozen=True, slots=True)
+class LineTotal:
+    """The sum of one line over the call profiles: its hits, its wall time and its CPU time (THE LINES)."""
+
+    hits: int
+    wall_s: float
+    cpu_s: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,18 +315,35 @@ def command_of(argv: Sequence[str]) -> str:
     return " ".join([Path(argv[0]).name if argv else "?", *argv[1:2]])
 
 
-def function_row(row: object) -> FunctionRow | None:
-    """Return one row of the functions of a call profile, or None when it does not have the shape of a row."""
+def measured_row(row: object) -> MeasuredRow | None:
+    """Return one row of the functions or of the lines of a call profile, or None when it does not have the shape.
+
+    The two rows have the same types of fields: a file, a number, a name, two counts and two times (assay.core.calls).
+    """
     if not isinstance(row, list) or len(row) != 7:
         return None
-    file, line, name, called, primitive, own_s, cumulative_s = row
+    file, number, name, first_count, second_count, first_s, second_s = row
     if not (isinstance(file, str) and isinstance(name, str)):
         return None
-    if not (isinstance(line, int) and isinstance(called, int) and isinstance(primitive, int)):
+    if not (isinstance(number, int) and isinstance(first_count, int) and isinstance(second_count, int)):
         return None
-    if not (isinstance(own_s, (int, float)) and isinstance(cumulative_s, (int, float))):
+    if not (isinstance(first_s, (int, float)) and isinstance(second_s, (int, float))):
         return None
-    return (file, line, name, called, primitive, float(own_s), float(cumulative_s))
+    return (file, number, name, first_count, second_count, float(first_s), float(second_s))
+
+
+def call_row(row: object) -> CallRow | None:
+    """Return one call of a line of a call profile, or None when it does not have the shape of a row."""
+    if not isinstance(row, list) or len(row) != 9:
+        return None
+    caller_file, caller_first, caller_name, line, callee_file, callee_first, callee_name, calls, wall_s = row
+    if not all(isinstance(word, str) for word in (caller_file, caller_name, callee_file, callee_name)):
+        return None
+    if not all(isinstance(number, int) for number in (caller_first, line, callee_first, calls)):
+        return None
+    if not isinstance(wall_s, (int, float)):
+        return None
+    return (caller_file, caller_first, caller_name, line, callee_file, callee_first, callee_name, calls, float(wall_s))
 
 
 def call_profile_of(path: Path, document: object) -> CallProfile:
@@ -281,17 +355,30 @@ def call_profile_of(path: Path, document: object) -> CallProfile:
     shape = f"the call profile {path} does not have the format {call_profile.FORMAT} and its shape"
     if not isinstance(document, dict) or document.get("format") != call_profile.FORMAT:
         raise AuditError(shape)
-    argv, rows = document.get("argv"), document.get("functions")
+    argv, rows, line_rows = document.get("argv"), document.get("functions"), document.get("lines")
+    call_rows = document.get("calls")
     numbers = [document.get(key) for key in NUMBER_FIELDS]
-    if not isinstance(argv, list) or not isinstance(rows, list):
+    if not (
+        isinstance(argv, list)
+        and isinstance(rows, list)
+        and isinstance(line_rows, list)
+        and isinstance(call_rows, list)
+    ):
         raise AuditError(shape)
     values = [float(number) for number in numbers if isinstance(number, (int, float))]
-    functions = [function_row(row) for row in rows]
+    functions = [measured_row(row) for row in rows]
     kept = tuple(row for row in functions if row is not None)
+    lines = [measured_row(row) for row in line_rows]
+    kept_lines = tuple(row for row in lines if row is not None)
+    calls = [call_row(row) for row in call_rows]
+    kept_calls = tuple(row for row in calls if row is not None)
     if len(values) != len(NUMBER_FIELDS) or len(kept) != len(functions):
         raise AuditError(shape)
+    if len(kept_lines) != len(lines) or len(kept_calls) != len(calls):
+        raise AuditError(shape)
     pid, parent, start, end, cpu_s = values
-    return CallProfile(tuple(str(word) for word in argv), int(pid), int(parent), start, end, cpu_s, kept)
+    words = tuple(str(word) for word in argv)
+    return CallProfile(words, int(pid), int(parent), start, end, cpu_s, kept, kept_lines, kept_calls)
 
 
 def read_profiles(directory: Path) -> list[CallProfile]:
@@ -421,11 +508,198 @@ def report_calls(directory: Path, command: str = "") -> None:
         )
 
 
+def line_totals(profiles: Sequence[CallProfile]) -> tuple[dict[FunctionKey, dict[int, LineTotal]], dict[str, Path]]:
+    """Return the sum of each line of each function over the call profiles, and the file of a process for each marked file.
+
+    The key of a function holds its marked file, its first line and its full name (THE LINES).  Complexity:
+    linear in the rows of the lines.
+    """
+    sums: dict[FunctionKey, dict[int, list[float]]] = {}
+    process_files: dict[str, Path] = {}
+    for profile in profiles:
+        utils = utils_of(profile.argv)
+        for file, line, name, first_line, hits, wall_s, cpu_s in profile.lines:
+            marked = marked_file(file, utils)
+            process_files.setdefault(marked, Path(file))
+            counts = sums.setdefault((marked, first_line, name), {}).setdefault(line, [0, 0.0, 0.0])
+            counts[0] += hits
+            counts[1] += wall_s
+            counts[2] += cpu_s
+    totals = {
+        key: {line: LineTotal(int(counts[0]), counts[1], counts[2]) for line, counts in lines.items()}
+        for key, lines in sums.items()
+    }
+    return totals, process_files
+
+
+def call_totals(profiles: Sequence[CallProfile]) -> dict[CallSite, dict[FunctionKey, CallTotal]]:
+    """Return the sum of the calls of each line to each callee over the call profiles (THE CALLS OF A LINE).
+
+    Complexity: linear in the calls of the lines.
+    """
+    sums: dict[CallSite, dict[FunctionKey, list[float]]] = {}
+    for profile in profiles:
+        utils = utils_of(profile.argv)
+        for (
+            caller_file,
+            caller_first,
+            caller_name,
+            line,
+            callee_file,
+            callee_first,
+            callee_name,
+            calls,
+            wall_s,
+        ) in profile.calls:
+            site = ((marked_file(caller_file, utils), caller_first, caller_name), line)
+            callee = (marked_file(callee_file, utils), callee_first, callee_name)
+            counts = sums.setdefault(site, {}).setdefault(callee, [0, 0.0])
+            counts[0] += calls
+            counts[1] += wall_s
+    return {
+        site: {callee: CallTotal(int(counts[0]), counts[1]) for callee, counts in callees.items()}
+        for site, callees in sums.items()
+    }
+
+
+def source_lines(marked: str, process_files: dict[str, Path]) -> list[str]:
+    """Return the lines of the file of a function, from the file of a process or from this tree, or none (THE LINES)."""
+    from assay.core import meter as cost_meter
+
+    candidates = [path for path in (process_files.get(marked),) if path is not None]
+    candidates.append(Path(cost_meter.UTILS + marked.removeprefix(PACKAGE_MARK)))
+    for candidate in candidates:
+        try:
+            return Path(candidate).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+    return []
+
+
+def write_line_table(
+    key: FunctionKey,
+    lines: dict[int, LineTotal],
+    function: FunctionTotal | None,
+    process_files: dict[str, Path],
+    indent: str = "",
+) -> None:
+    """Write the table of the lines of one function, as line_profiler does (THE LINES)."""
+    marked, first_line, _ = key
+    head = f"loop audit: {indent}"
+    wall_total = sum(total.wall_s for total in lines.values())
+    denominator = function.cumulative_s if function is not None and function.cumulative_s > 0 else wall_total
+    calls = f"{function.calls} calls in {function.processes} processes, " if function is not None else ""
+    own = f", {function.own_s:.3f} s own" if function is not None else ""
+    check_report.write_line(f"{head}function {function_location(key)}")
+    check_report.write_line(f"{head}  {calls}{denominator:.3f} s cumulative{own}")
+    check_report.write_line(
+        f"{head}  {'Line':>6} {'Hits':>10} {'Wall s':>10} {'Per hit us':>11} {'% Wall':>7} {'CPU s':>10}  Contents"
+    )
+    text = source_lines(marked, process_files)
+    for number in range(first_line, max(lines, default=first_line) + 1):
+        contents = text[number - 1] if 0 < number <= len(text) else ""
+        total = lines.get(number)
+        if total is None:
+            check_report.write_line(f"{head}  {number:>6} {'':>10} {'':>10} {'':>11} {'':>7} {'':>10}  {contents}")
+            continue
+        per_hit_us = total.wall_s / total.hits * 1e6 if total.hits else 0.0
+        part = total.wall_s / denominator * 100 if denominator > 0 else 0.0
+        check_report.write_line(
+            f"{head}  {number:>6} {total.hits:>10} {total.wall_s:>10.4f} {per_hit_us:>11.2f} {part:>7.1f} "
+            f"{total.cpu_s:>10.4f}  {contents}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LineReport:
+    """The sums that the tables of the lines read: the lines, the functions, the calls of a line, the process files."""
+
+    lines: dict[FunctionKey, dict[int, LineTotal]]
+    functions: dict[FunctionKey, FunctionTotal]
+    calls: dict[CallSite, dict[FunctionKey, CallTotal]]
+    process_files: dict[str, Path]
+
+    def cumulative(self, key: FunctionKey) -> float:
+        """Return the cumulative time of a function, or the sum of the times of its lines."""
+        function = self.functions.get(key)
+        if function is not None:
+            return function.cumulative_s
+        return sum(item.wall_s for item in self.lines.get(key, {}).values())
+
+
+def write_callees(
+    report: LineReport, key: FunctionKey, root_s: float, depth: int, path: list[FunctionKey], written: set[FunctionKey]
+) -> None:
+    """Expand each line of a function into the tables of the functions that it calls (THE LINES).
+
+    A callee gets a table when its calls from the line take DRILL_PART or more
+    of `root_s`, the wall time of the first function.  Complexity: linear in
+    the tables that it writes and in their calls.
+    """
+    if depth <= 0:
+        return
+    indent = "  " * len(path)
+    for line in sorted(report.lines.get(key, {})):
+        callees = report.calls.get((key, line), {})
+        for callee, total in sorted(callees.items(), key=lambda pair: pair[1].wall_s, reverse=True):
+            if total.wall_s < DRILL_PART * root_s or callee in path:
+                continue
+            part = total.wall_s / root_s * 100 if root_s > 0 else 0.0
+            check_report.write_line(
+                f"loop audit: {indent}> line {line} calls {function_location(callee)}: {total.calls} calls, "
+                f"{total.wall_s:.3f} s, {part:.1f} % of the first function"
+            )
+            if callee in written or callee not in report.lines:
+                continue
+            written.add(callee)
+            path.append(callee)
+            write_line_table(
+                callee, report.lines[callee], report.functions.get(callee), report.process_files, indent + "  "
+            )
+            write_callees(report, callee, root_s, depth - 1, path, written)
+            path.pop()
+
+
+def report_lines(directory: Path, text: str, command: str = "", depth: int = DRILL_DEPTH) -> None:
+    """Write the tables of the lines of the hot functions, or of the functions that `text` names (THE LINES).
+
+    After each table, the report expands the hot lines into the tables of their callees, to `depth` levels.
+
+    Raises:
+        AuditError: If the directory or a profile cannot be read, or it holds no rows of the lines
+    """
+    profiles = [profile for profile in read_profiles(directory) if not command or command_of(profile.argv) == command]
+    totals, process_files = line_totals(profiles)
+    if not totals:
+        raise AuditError(
+            f"the call profiles in {directory} hold no rows of the lines: run with {call_profile.LINES_ON} in the "
+            "variable CRUCIBLE_CALL_PROFILE_LINES (THE LINES of assay.core.calls)"
+        )
+    report = LineReport(totals, function_totals(profiles), call_totals(profiles), process_files)
+    if text:
+        chosen = [key for key in totals if text in function_location(key)]
+    else:
+        candidates = [
+            key for key in totals if key[0] != PROFILE_MODULE and key[2].rsplit(".", 1)[-1] not in ENTRY_NAMES
+        ]
+        chosen = sorted(candidates, key=report.cumulative, reverse=True)[:LINE_FUNCTIONS]
+    if not chosen:
+        check_report.write_line(f"loop audit: no function of the lines holds {text!r}")
+    written: set[FunctionKey] = set()
+    for key in chosen:
+        if key in written:
+            check_report.write_line(f"loop audit: function {function_location(key)} has a table above")
+            continue
+        written.add(key)
+        write_line_table(key, totals[key], report.functions.get(key), process_files)
+        write_callees(report, key, report.cumulative(key), depth, [key], written)
+
+
 def main(argv: list[str]) -> int:
     """Compare the last call of `loop test` with its plan in each build directory of the command line.
 
     Args:
-        argv: The words after `loop audit`: [--calls DIR] [BUILD_DIR...]
+        argv: The words after `loop audit`: [--calls DIR [--command TEXT] [--lines [TEXT] [--depth N]]] [BUILD_DIR...]
 
     Returns:
         OK, or FINDINGS when a selected test did not run.  USAGE with no build directory and no --calls.
@@ -437,16 +711,36 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--command", default="", help="keep only the call profiles of one command, such as 'loop fixture'"
     )
+    parser.add_argument(
+        "--lines",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="TEXT",
+        help="write the table of the lines of the hot functions, or of each function that holds TEXT (THE LINES)",
+    )
+    parser.add_argument(
+        "--depth",
+        type=int,
+        default=DRILL_DEPTH,
+        metavar="N",
+        help=f"expand the hot lines into the tables of their callees to N levels (THE LINES, {DRILL_DEPTH} by default)",
+    )
     options = parser.parse_args(argv)
     if not options.build_dirs and options.calls is None:
         check_report.write_line(
             "loop audit: give a build directory, or the directory of the call profiles with --calls", is_error=True
         )
         return ExitCode.USAGE
+    if options.lines is not None and options.calls is None:
+        check_report.write_line("loop audit: --lines reads the call profiles of --calls DIR", is_error=True)
+        return ExitCode.USAGE
     try:
         status = audit([build_dir.resolve() for build_dir in options.build_dirs]) if options.build_dirs else ExitCode.OK
         if options.calls is not None:
             report_calls(options.calls, options.command)
+        if options.calls is not None and options.lines is not None:
+            report_lines(options.calls, options.lines, options.command, max(options.depth, 0))
         return status
     except AuditError as problem:
         check_report.write_line(f"loop audit: {problem}", is_error=True)

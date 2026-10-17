@@ -69,9 +69,9 @@ THE ENVIRONMENT
         test module then run at the same time on the free jobs.  ninja or
         make in a test does not obey the jobserver.  The clean environment
         holds no such variable, because a jobserver changes no result.
-      * It gives CALL_PROFILE_ENV of assay.core.meter to the test with no
-        change, and the clean environment does not hold it (THE COST of
-        assay.core.calls).
+      * It gives CALL_PROFILE_ENV and LINES_ENV of assay.core.meter to the
+        test with no change, and the clean environment does not hold them
+        (THE COST of assay.core.calls).
     `loop test` puts the same environment into the key of each test behind
     the launcher (assay.loop.affected).  A variable that the launcher drops
     then changes no result and no key.  A variable that a test gets from its
@@ -260,6 +260,10 @@ KEPT_NAMES = frozenset(
 KEPT_PREFIXES = ("ASSAY_", "CCACHE_", "CRUCIBLE_", "SESSION_ORACLE_")
 # The variables that the launcher gives each test, with their values.
 FIXED_VALUES = (("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"), ("TZ", "UTC"))
+# The variables of the launcher that the clean environment does not hold.  The launcher gives the profile variables to
+# the test with no change (THE ENVIRONMENT).
+PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
+PASSED_THROUGH = frozenset({LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
 SEARCH_PATH = "PATH"
 # The options before the command, each with one value.
 OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words")
@@ -344,7 +348,7 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
     kept = {
         name: value
         for name, value in environment.items()
-        if is_kept(name) and name not in (LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV, cost_meter.CALL_PROFILE_ENV)
+        if is_kept(name) and name not in PASSED_THROUGH
     }
     if SEARCH_PATH in kept:
         directories = search_path(kept[SEARCH_PATH])
@@ -790,14 +794,13 @@ def main(argv: list[str]) -> int:
     # the environment for the child costs more.
     clean = canonical_environment(os.environ)
     makeflags = os.environ.get(cost_meter.MAKEFLAGS_ENV)
-    profiles = os.environ.get(cost_meter.CALL_PROFILE_ENV)
+    profiles = {variable: os.environ[variable] for variable in PROFILE_NAMES if os.environ.get(variable)}
     os.environ.clear()
     os.environ.update(clean)
     os.environ[LAUNCHED_ENV] = name
     if makeflags:
         os.environ[cost_meter.TEST_JOBSERVER_ENV] = makeflags
-    if profiles:
-        os.environ[cost_meter.CALL_PROFILE_ENV] = profiles
+    os.environ.update(profiles)
     traced_dir = build_dir if is_built else None
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     try:

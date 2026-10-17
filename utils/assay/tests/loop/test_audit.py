@@ -7,7 +7,10 @@ The cases plant the plan of `loop test`, its JUnit report and the records of
 the tests in two build directories.  The report must find each kind of THE
 FINDINGS: a missed test, an unplanned test, a shared key that ran again, and
 a test with no shared key.  The call cases plant call profiles, and the
-report must give the totals of THE CALL PROFILES.
+report must give the totals of THE CALL PROFILES.  The line cases plant a
+source file and the rows of its lines and of the calls of its lines.  The
+report must give the table of each line, and it must expand a hot line into
+the table of its callee (THE LINES).
 """
 
 import json
@@ -57,10 +60,22 @@ def planted_test(name: str) -> ctest_reader.TestEntry:
     return ctest_reader.TestEntry(name, ("/planted/program",))
 
 
-def plant_profile(directory: Path, name: str, argv: list[str], cpu_s: float, rows: list[list[object]]) -> None:
-    """Write one planted call profile of one second of wall time (THE RECORD of assay.core.calls)."""
+def plant_profile(
+    directory: Path,
+    name: str,
+    argv: list[str],
+    cpu_s: float,
+    rows: list[list[object]],
+    lines: Sequence[list[object]] = (),
+    calls: Sequence[list[object]] = (),
+) -> None:
+    """Write one planted call profile of one second of wall time (THE RECORD of assay.core.calls).
+
+    With rows of `lines` and `calls`, the profile has the mode of the lines (THE LINES of assay.core.calls).
+    """
     document = {
         "format": call_profile.FORMAT,
+        "mode": call_profile.MODE_LINES if lines else call_profile.MODE_FUNCTIONS,
         "argv": argv,
         "pid": 1,
         "parent": 0,
@@ -68,6 +83,8 @@ def plant_profile(directory: Path, name: str, argv: list[str], cpu_s: float, row
         "end": 11.0,
         "cpu_s": cpu_s,
         "functions": rows,
+        "lines": list(lines),
+        "calls": list(calls),
     }
     (directory / f"{name}{call_profile.SUFFIX}").write_text(json.dumps(document), encoding="utf-8")
 
@@ -167,6 +184,85 @@ def calls_cases(expect: testing.Expect) -> None:
         expect("no build directory and no --calls gives USAGE", status == ExitCode.USAGE)
 
 
+PLANTED_SOURCE = """def outer():
+    prepare()
+    callee()
+    return 1
+
+
+def callee():
+    total = sum(range(10))
+    return total
+"""
+
+
+def lines_cases(expect: testing.Expect) -> None:
+    """Check the tables of the lines and the expansion of a hot line into its callee (THE LINES of assay.loop.audit)."""
+    with tempfile.TemporaryDirectory(prefix="assay-audit-") as scratch:
+        utils = Path(scratch) / "utils"
+        source = utils / "assay" / "core" / "planted.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(PLANTED_SOURCE, encoding="utf-8")
+        real, words = str(source), [str(utils / "bin" / "guard"), "selftest", "planted"]
+        functions = [[real, 1, "outer", 1, 1, 0.1, 1.0], [real, 7, "callee", 1, 1, 0.8, 0.8]]
+        lines = [
+            [real, 2, "outer", 1, 1, 0.05, 0.05],
+            [real, 3, "outer", 1, 1, 0.9, 0.85],
+            [real, 4, "outer", 1, 1, 0.05, 0.05],
+            [real, 8, "callee", 7, 1, 0.7, 0.7],
+            [real, 9, "callee", 7, 1, 0.1, 0.1],
+        ]
+        calls = [
+            [real, 1, "outer", 3, real, 7, "callee", 1, 0.8],
+            [real, 1, "outer", 2, real, 7, "callee", 1, 0.01],
+            [real, 7, "callee", 8, real, 1, "outer", 1, 0.5],
+        ]
+        directory = Path(scratch) / "profiles"
+        directory.mkdir()
+        plant_profile(directory, "1-1", words, 1.0, functions, lines, calls)
+        status, out = testing.captured(lambda: audit.main(["--calls", str(directory), "--lines", "outer"]))
+        expect(
+            "--lines TEXT gives the table of the function, with its calls, its times and the text of each line",
+            status == ExitCode.OK
+            and "function outer (assay/core/planted.py:1)" in out
+            and "1 calls in 1 processes, 1.000 s cumulative, 0.100 s own" in out
+            and "0.9000   900000.00    90.0     0.8500      callee()" in out,
+        )
+        expect(
+            "a hot line expands into the table of its callee, below the table of its caller",
+            "> line 3 calls callee (assay/core/planted.py:7): 1 calls, 0.800 s, 80.0 % of the first function" in out
+            and out.count("function callee (assay/core/planted.py:7)") == 1
+            and out.index("> line 3 calls") < out.index("function callee"),
+        )
+        expect(
+            "a call of a line below DRILL_PART, and a call back into a function on the path, get no table",
+            "> line 2 calls" not in out and "> line 8 calls" not in out,
+        )
+        status, out = testing.captured(
+            lambda: audit.main(["--calls", str(directory), "--lines", "outer", "--depth", "0"])
+        )
+        expect("--depth 0 expands no line", status == ExitCode.OK and "> line" not in out)
+        status, out = testing.captured(lambda: audit.main(["--calls", str(directory), "--lines"]))
+        expect(
+            "--lines with no text writes each hot function one time, and a callee with a table above gets one line",
+            status == ExitCode.OK
+            and out.count("function callee (assay/core/planted.py:7)") == 2
+            and "function callee (assay/core/planted.py:7) has a table above" in out,
+        )
+        status, out = testing.captured(lambda: audit.main(["--calls", str(directory), "--lines", "absent"]))
+        expect("--lines with a text that no function holds says so", "no function of the lines holds 'absent'" in out)
+        status, out = testing.captured(lambda: audit.main(["--lines"]))
+        expect("--lines with no --calls gives USAGE", status == ExitCode.USAGE)
+        quiet = Path(scratch) / "quiet"
+        quiet.mkdir()
+        plant_profile(quiet, "1-1", words, 1.0, functions)
+        status, out = testing.captured(lambda: audit.main(["--calls", str(quiet), "--lines"]))
+        expect(
+            "profiles with no rows of the lines give MISSING_INPUT and name the variable",
+            status == ExitCode.MISSING_INPUT and "CRUCIBLE_CALL_PROFILE_LINES" in out,
+        )
+
+
 def plan_cases(expect: testing.Expect) -> None:
     """Check the reader of the plan: a damaged plan and an entry that is not a test give an error."""
     with tempfile.TemporaryDirectory(prefix="assay-audit-") as scratch:
@@ -187,4 +283,4 @@ def plan_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (audit_cases, calls_cases, plan_cases))
+    return testing.run(__name__.removeprefix("assay."), argv, (audit_cases, calls_cases, lines_cases, plan_cases))

@@ -12,7 +12,7 @@ the profile of its parent first (restart_profile()).
 
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from assay.core import calls, proc, testing
@@ -53,13 +53,47 @@ def in_child(action: Callable[[], int]) -> tuple[int, str]:
     return end.status, proc.decoded(end.output)
 
 
-def restart_profile(directory: Path | None) -> None:
-    """End the profile that this child got from its parent, and start the profile of a case in `directory`, or none."""
+def planted_loop(count: int) -> int:
+    """Add the numbers below `count` on a line of its own, the line that the profile of the lines must count."""
+    total = 0
+    for index in range(count):
+        total += index
+    return total
+
+
+def planted_outer() -> int:
+    """Call planted_loop on two lines of its own, the calls of a line that the profile must record."""
+    first = planted_loop(100)
+    second = planted_loop(200)
+    return first + second
+
+
+def planted_depth(depth: int) -> int:
+    """Call itself `depth` times.  The profile of the lines must count each of these calls."""
+    return 0 if depth == 0 else 1 + planted_depth(depth - 1)
+
+
+def planted_numbers(count: int) -> Iterator[int]:
+    """Yield `count` numbers.  When the generator continues after a yield, the profile counts no call."""
+    for index in range(count):
+        doubled = index * 2
+        yield doubled
+
+
+def restart_profile(directory: Path | None, is_lines: bool = False) -> None:
+    """End the profile that this child got from its parent, and start the profile of a case in `directory`, or none.
+
+    With `is_lines`, the new profile records the lines (THE LINES of assay.core.calls).
+    """
     calls.finish()
     if directory is None:
         os.environ.pop(cost_meter.CALL_PROFILE_ENV, None)
     else:
         os.environ[cost_meter.CALL_PROFILE_ENV] = str(directory)
+    if is_lines:
+        os.environ[cost_meter.LINES_ENV] = calls.LINES_ON
+    else:
+        os.environ.pop(cost_meter.LINES_ENV, None)
     calls.start()
 
 
@@ -148,6 +182,86 @@ def fork_cases(expect: testing.Expect) -> None:
         )
 
 
+def line_hits(profile: audit.CallProfile, line: int) -> int:
+    """Return the hits of one line of this module in one call profile."""
+    return sum(row[4] for row in profile.lines if row[0] == __file__ and row[1] == line)
+
+
+def function_calls(profile: audit.CallProfile, name: str) -> int:
+    """Return the calls of one function of this module in one call profile."""
+    return sum(row[3] for row in profile.functions if row[0] == __file__ and row[2] == name)
+
+
+def line_calls(profile: audit.CallProfile, caller: str, callee: str) -> dict[int, tuple[int, float]]:
+    """Return the calls and the wall time of each line of `caller` that calls `callee`, in this module."""
+    return {
+        row[3]: (row[7], row[8])
+        for row in profile.calls
+        if row[0] == __file__ and row[2].endswith(caller) and row[4] == __file__ and row[6] == callee
+    }
+
+
+def line_cases(expect: testing.Expect) -> None:
+    """Check the profile of the lines: the hits, the calls, a recursion, a generator and a fork (THE LINES)."""
+    loop_line = planted_loop.__code__.co_firstlineno + 4
+    body_line = planted_numbers.__code__.co_firstlineno + 3
+    with tempfile.TemporaryDirectory(prefix="assay-calls-") as scratch:
+        directory = Path(scratch) / "lines"
+
+        def profiled() -> int:
+            restart_profile(directory, is_lines=True)
+            planted_loop(1000)
+            planted_outer()
+            planted_depth(5)
+            consumed = sum(planted_numbers(50))
+            child_status, _ = in_child(child_work)
+            calls.finish()
+            return child_status if consumed == 2450 else ExitCode.FINDINGS
+
+        status, _ = in_child(profiled)
+        found = audit.read_profiles(directory)
+        pids = {profile.pid for profile in found}
+        parent = next((profile for profile in found if profile.parent not in pids), None)
+        child = next((profile for profile in found if profile.parent in pids), None)
+        expect(
+            "a process with the variable of the lines and its forked child each write one file of the lines",
+            status == ExitCode.OK and parent is not None and child is not None and bool(parent.lines),
+        )
+        expect(
+            "the line in the body of a loop has one hit for each turn, and the function has a call for each call",
+            parent is not None and line_hits(parent, loop_line) == 1300 and function_calls(parent, "planted_loop") == 3,
+        )
+        outer_line = planted_outer.__code__.co_firstlineno + 2
+        outer_calls = line_calls(parent, "planted_outer", "planted_loop") if parent is not None else {}
+        expect(
+            "each line that calls a function of the package has its own row of the calls, with a wall time",
+            set(outer_calls) == {outer_line, outer_line + 1}
+            and all(calls == 1 and wall_s > 0 for calls, wall_s in outer_calls.values()),
+        )
+        resumes = line_calls(parent, "profiled", "planted_numbers") if parent is not None else {}
+        expect(
+            "the line that consumes a generator gets one call and the time of each resume",
+            len(resumes) == 1 and all(calls == 1 and wall_s > 0 for calls, wall_s in resumes.values()),
+        )
+        expect(
+            "a recursion counts each call, and the resumes of a generator are no calls",
+            parent is not None
+            and function_calls(parent, "planted_depth") == 6
+            and function_calls(parent, "planted_numbers") == 1
+            and line_hits(parent, body_line) == 50,
+        )
+        expect(
+            "a line of the package gets its wall time, and each row of a line is a file of the package",
+            parent is not None
+            and sum(row[5] for row in parent.lines if row[0] == __file__ and row[1] == loop_line) > 0
+            and all(row[0].startswith(cost_meter.UTILS) for row in parent.lines),
+        )
+        expect(
+            "the forked child counts only its own lines",
+            child is not None and line_hits(child, loop_line) == 0 and function_calls(child, "planted_work") == 1,
+        )
+
+
 def failure_cases(expect: testing.Expect) -> None:
     """Check a directory that cannot be made: finish() writes one line to the standard error and raises nothing."""
     with tempfile.TemporaryDirectory(prefix="assay-calls-") as scratch:
@@ -168,4 +282,6 @@ def failure_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (kept_cases, record_cases, fork_cases, failure_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (kept_cases, record_cases, fork_cases, line_cases, failure_cases)
+    )
