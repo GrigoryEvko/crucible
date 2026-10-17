@@ -13,6 +13,24 @@ THE RUN
     time increased these log files to 1 GiB in all, and the files of the
     cache took 9 MB.
 
+THE ONE RUN AT A TIME
+    mypy keeps a module in a meta file and a data file.  It writes the two
+    files one after the other.  The meta file holds the time of the data
+    file in full seconds.  A run can do a check of a module again with no
+    change of its interface.  Then mypy writes no data file, and it reads
+    the time of the data file on the disk.
+
+    Two runs of two trees at one time can put the meta file of one tree
+    adjacent to the data file of the other.  A subsequent run of
+    the first tree reads the interface of the second tree.  A run with no
+    cache gives no such interface.
+
+    The rule holds the lock of the cache in the exclusive mode for the run
+    (assay.core.cache, exclusive_use()).  Two runs of the rule then use the
+    cache one after the other.  On 2026-10-17, 5 of 20 pairs of runs at one
+    time on a planted cache read the interface of the other tree.  20 pairs
+    of runs one after the other gave none.
+
 THE BOUND
     Before its run, the rule keeps the cache in its row of LIMITS at its turn
     (assay.core.cache, A TREE OF FILES).  An entry is a file with a suffix of
@@ -20,8 +38,8 @@ THE BOUND
     UNREAD_SUFFIXES.  These files are the databases of the SQLite cache, and
     no run with --no-sqlite-cache reads them.  mypy reads the data file of a
     module after its meta file.  A data file that goes between the two reads
-    stops the run.  The rule holds the lock of the cache in the shared mode
-    for the run, and no eviction takes its turn during the run.
+    stops the run.  The rule holds the lock of the cache for the run.  No
+    eviction takes its turn during the run (THE ONE RUN AT A TIME).
 
 THE RULE
     Each error of mypy is a finding.  The kind is the error code of mypy,
@@ -72,6 +90,8 @@ CLEAN, ERRORS = 0, 1
 def run_mypy(context: MetaContext, files: list[str]) -> str:
     """Run the pinned mypy on files of the directory utils/ of a tree, and return its report (THE RUN).
 
+    The run waits for each other run of the rule on the same cache (THE ONE RUN AT A TIME).
+
     Raises:
         NotApplicable: If mypy is not installed at its pin
         proc.ToolFailed: If mypy cannot start, runs longer than its time limit, or ends with a status that is not 0
@@ -87,7 +107,7 @@ def run_mypy(context: MetaContext, files: list[str]) -> str:
         completed = proc.run(command)
     else:
         cache.hold_tree_bound(directory, cache.LIMITS[CACHE_NAME], ENTRY_SUFFIXES, UNREAD_SUFFIXES)
-        with cache.shared_use(directory):
+        with cache.exclusive_use(directory):
             completed = proc.run(command)
     if completed.exit not in (CLEAN, ERRORS):
         proc.require(completed)

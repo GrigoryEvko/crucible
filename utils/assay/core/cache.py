@@ -59,8 +59,11 @@ A TREE OF FILES
     reads.  An example is a database that mypy wrote before the rule stopped
     the SQLite cache of mypy.  A tool that reads a set of entries during one
     long run holds the lock in the shared mode for the run (shared_use()).
-    mypy is such a tool.  An eviction does not take its turn
-    while a reader holds that lock.
+    An eviction does not take its turn while a reader holds that lock.
+
+    A tool that also writes more than one file for one entry holds the lock
+    in the exclusive mode for the run (exclusive_use()).  mypy is such a tool
+    (assay.guard.engines.meta.types, THE ONE RUN AT A TIME).
 
 THE ENTRIES
     An entry is a file whose name is the SHA-256 of each input that its
@@ -562,6 +565,20 @@ def shared_use(directory: Path) -> Iterator[None]:
         yield
 
 
+@contextlib.contextmanager
+def exclusive_use(directory: Path) -> Iterator[None]:
+    """Hold the lock of the eviction of a cache in the exclusive mode for the block (A TREE OF FILES).
+
+    No eviction and no other user of the cache runs in the block.  A tool
+    can write more than one file for an entry, with no lock of its own.
+    Then the files of each entry come from one run.  The block waits while a
+    different user or an eviction holds the lock.
+    """
+    with open(directory / EVICT_LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 def hold_bound(directory: Path, max_bytes: int, max_age: float = MAX_AGE) -> bool:
     """Hold a cache whose entries are files one level below its subdirectories under its limits, when its turn is due.
 
@@ -756,6 +773,25 @@ def self_test() -> int:
             expect(
                 "an eviction does not take its turn while a reader holds the lock in the shared mode",
                 not hold_tree_bound(tool, 1 << 20, (".ff",), (".db",)) and aged.exists() and database.exists(),
+            )
+
+        def is_lock_free(mode: int) -> bool:
+            with open(tool / EVICT_LOCK, "a") as other:
+                try:
+                    fcntl.flock(other, mode | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return False
+                return True
+
+        with exclusive_use(tool):
+            expect(
+                "no other user and no eviction gets the lock while a writer holds it in the exclusive mode",
+                not is_lock_free(fcntl.LOCK_SH) and not is_lock_free(fcntl.LOCK_EX),
+            )
+        with shared_use(tool):
+            expect(
+                "two readers hold the lock in the shared mode at one time, and a writer waits for them",
+                is_lock_free(fcntl.LOCK_SH) and not is_lock_free(fcntl.LOCK_EX),
             )
         expect(
             "hold_tree_bound removes an entry past the age limit and each unread file, and keeps the others",
