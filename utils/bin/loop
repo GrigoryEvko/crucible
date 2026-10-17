@@ -50,6 +50,7 @@ SUBCOMMANDS = {
     "gauge": ("assay.loop.gauge", "measure the edit loop in a clone, a sample of units with --sample, or a clean "
                                   "build with --cold"),
     "history": ("assay.loop.history", "print the loop history of a build directory: loop history BUILD_DIR"),
+    "audit": ("assay.loop.audit", "compare the tests that loop test ran with its plan: loop audit BUILD_DIR..."),
     "derive": ("assay.loop.derive", "write each generated file and compare it, or one: loop derive [TARGET [ARG]...]"),
     "pgo": ("assay.loop.pgo", "collect a profile for profile-guided optimization on this host: loop pgo"),
     "syntax": ("assay.loop.syntax", "parse each unit of a parse build with the plugin: loop syntax BUILD_DIR"),
@@ -81,5 +82,9 @@ if __name__ == "__main__":
         if _words and not _asked:
             print(f"loop: {_words[0]!r} is not a subcommand.", file=sys.stderr)
         sys.exit(0 if _asked else 2)
+    if os.environ.get("CRUCIBLE_CALL_PROFILE"):
+        from assay.core import calls as _calls
+
+        _calls.start()
     __import__(_entry[0])
     sys.exit(sys.modules[_entry[0]].main(_words[1:]))

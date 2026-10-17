@@ -341,7 +341,7 @@ HOLDERS = {
 # (THE SAMPLED ITEMS).
 UNTARGETED = ((Kind.HARNESS, ""),)
 ENTRY_COMMANDS = ("land", "nightly", "release", "syntax", "test")
-TOOL_COMMANDS = ("heavy", "history", "plan")
+TOOL_COMMANDS = ("audit", "heavy", "history", "plan")
 ITEM_COMMANDS = ("bench", "derive")
 
 

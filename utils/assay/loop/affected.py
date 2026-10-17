@@ -278,6 +278,16 @@ THE RECORD
     BUILD_DIR/affected-tests/lock keeps two calls on one build directory
     apart.
 
+THE PLAN
+    After its decision, each call writes its plan,
+    BUILD_DIR/affected-tests/plan.json (write_plan()).  It holds one entry
+    for each registered test.  An entry holds the name, the kind, the reason
+    of the decision, the shared key and the skip.  A test with no shared key
+    has an empty text there.  The plan is the list of the work that the call
+    must do.  `loop audit` compares it
+    with the tests that ran (assay.loop.audit).  read_plan() is the one
+    reader of the file.
+
 THE SHARED STORE
     The result of each run with the status 0 also goes into one store: the
     cache STORE_NAME of assay.core.cache.  The warm trees of the gate of `loop land`, the copy of
@@ -413,6 +423,9 @@ FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 # The property that names the tests that a test runs after (THE LAYERS).
 DEPENDS_PROPERTY = "DEPENDS"
+# The plan of the last call in the state directory, and its format (THE PLAN).
+PLAN_FILE = "plan.json"
+PLAN_FORMAT = 1
 # The property of a test that runs alone (THE SHARDS).
 SERIAL_PROPERTY = "RUN_SERIAL"
 # The ctest runs of one layer at the same time, and the directory of their test directories in the state directory
@@ -1281,6 +1294,58 @@ def write_list(path: Path, names: list[str]) -> None:
     path.write_text("".join(f"{name}\n" for name in names))
 
 
+@dataclass(frozen=True, slots=True)
+class PlannedTest:
+    """One entry of the plan of a call (THE PLAN): the name, the kind, the reason, the shared key and the skip."""
+
+    name: str
+    kind: str
+    reason: str
+    shared: str
+    is_skipped: bool
+
+
+def write_plan(path: Path, decisions: list[Decision]) -> None:
+    """Write the plan of a call: one entry for each decision, in the sequence of the decisions (THE PLAN)."""
+    entries = [
+        {
+            "name": decision.test.name,
+            "kind": decision.kind,
+            "reason": decision.reason,
+            "shared": decision.shared,
+            "skipped": decision.is_skipped,
+        }
+        for decision in decisions
+    ]
+    path.write_text(json.dumps({"format": PLAN_FORMAT, "tests": entries}, indent=1) + "\n", encoding="utf-8")
+
+
+def read_plan(path: Path) -> tuple[PlannedTest, ...]:
+    """Return the entries of the plan of a call (THE PLAN).
+
+    Raises:
+        RunnerError: If the plan cannot be read, or it is not a plan of PLAN_FORMAT
+    """
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as problem:
+        raise RunnerError(f"the plan {path} cannot be read: {problem.strerror}.  Run `loop test` first") from None
+    except json.JSONDecodeError as problem:
+        raise RunnerError(f"the plan {path} is not JSON: {problem}") from None
+    entries = document.get("tests") if isinstance(document, dict) else None
+    if not isinstance(document, dict) or document.get("format") != PLAN_FORMAT or not isinstance(entries, list):
+        raise RunnerError(f"the plan {path} is not a plan of the format {PLAN_FORMAT}.  Run `loop test` again")
+    planned: list[PlannedTest] = []
+    for entry in entries:
+        fields = entry if isinstance(entry, dict) else {}
+        name, kind, reason, shared, skipped = (fields.get(key) for key in ("name", "kind", "reason", "shared", "skipped"))
+        if not (isinstance(name, str) and isinstance(kind, str) and isinstance(reason, str)
+                and isinstance(shared, str) and isinstance(skipped, bool)):
+            raise RunnerError(f"the plan {path} holds an entry that is not a test: {entry!r}")
+        planned.append(PlannedTest(name, kind, reason, shared, skipped))
+    return tuple(planned)
+
+
 def _run_inherited(command: list[str], environment: dict[str, str] | None = None) -> int:
     """Run a build or a test run with the standard streams of this process, and return its exit code.
 
@@ -1670,6 +1735,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
         write_list(state_dir / "skipped.txt", skipped)
+        write_plan(state_dir / PLAN_FILE, decisions)
         print_plan(decisions, build_dir)
         layers = serial_last(tests, test_layers(tests, selected, jobs))
         if len(layers) > 1:

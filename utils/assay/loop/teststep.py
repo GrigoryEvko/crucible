@@ -69,6 +69,9 @@ THE ENVIRONMENT
         test module then run at the same time on the free jobs.  ninja or
         make in a test does not obey the jobserver.  The clean environment
         holds no such variable, because a jobserver changes no result.
+      * It gives CALL_PROFILE_ENV of assay.core.meter to the test with no
+        change, and the clean environment does not hold it (THE COST of
+        assay.core.calls).
     `loop test` puts the same environment into the key of each test behind
     the launcher (assay.loop.affected).  A variable that the launcher drops
     then changes no result and no key.  A variable that a test gets from its
@@ -341,7 +344,7 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
     kept = {
         name: value
         for name, value in environment.items()
-        if is_kept(name) and name not in (LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV)
+        if is_kept(name) and name not in (LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV, cost_meter.CALL_PROFILE_ENV)
     }
     if SEARCH_PATH in kept:
         directories = search_path(kept[SEARCH_PATH])
@@ -787,11 +790,14 @@ def main(argv: list[str]) -> int:
     # the environment for the child costs more.
     clean = canonical_environment(os.environ)
     makeflags = os.environ.get(cost_meter.MAKEFLAGS_ENV)
+    profiles = os.environ.get(cost_meter.CALL_PROFILE_ENV)
     os.environ.clear()
     os.environ.update(clean)
     os.environ[LAUNCHED_ENV] = name
     if makeflags:
         os.environ[cost_meter.TEST_JOBSERVER_ENV] = makeflags
+    if profiles:
+        os.environ[cost_meter.CALL_PROFILE_ENV] = profiles
     traced_dir = build_dir if is_built else None
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     try:

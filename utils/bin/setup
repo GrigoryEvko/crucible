@@ -56,5 +56,9 @@ if __name__ == "__main__":
         if _words and not _asked:
             print(f"setup: {_words[0]!r} is not a subcommand.", file=sys.stderr)
         sys.exit(0 if _asked else 2)
+    if os.environ.get("CRUCIBLE_CALL_PROFILE"):
+        from assay.core import calls as _calls
+
+        _calls.start()
     __import__(_entry[0])
     sys.exit(sys.modules[_entry[0]].main(_words[1:]))

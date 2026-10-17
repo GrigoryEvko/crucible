@@ -4987,8 +4987,8 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_walk_units loop.derive.test_header_lists
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
-        loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset
-        loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status
+        loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset loop.test_audit
+        core.test_calls loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status
         loop.evidence.test_measurement loop.evidence.test_coverage loop.test_entry)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}

@@ -8,6 +8,7 @@ SUBCOMMANDS = {
     "syntax": ("assay.loop.syntax", "parse each unit"),
     "heavy": ("assay.loop.heavy", "run one heavy command"),
     "history": ("assay.loop.history", "print the history"),
+    "audit": ("assay.loop.audit", "compare a run with its plan"),
     "plan": ("assay.loop.plan", "print the plan"),
     "derive": ("assay.loop.derive", "write each generated file"),
     "gauge": ("assay.loop.gauge", "measure the edit loop"),

@@ -102,7 +102,8 @@ A FORKED GROUP
         ends with os._exit() and that status.  It runs no handler of atexit
         and no finalizer of the parent, such as the removal of a temporary
         directory of the parent.  An action that raises an exception writes
-        its traceback, and its child ends with ExitCode.TOOL_FAILED.
+        its traceback, and its child ends with ExitCode.TOOL_FAILED.  A child
+        writes its call profile first (THE FORK of assay.core.calls).
       * One poll(2) waits for a pidfd of each child (Linux 5.3) and for a
         byte of the jobserver.  The function then starts a child when a slot
         becomes free, and it reaps a child when the child ends.
@@ -849,6 +850,10 @@ def _run_child(action: Callable[[], int], output: int) -> None:
         status = ExitCode.TOOL_FAILED
         raise
     finally:
+        if "assay.core.calls" in sys.modules:
+            from assay.core import calls
+
+            calls.finish()
         for stream in (sys.stdout, sys.stderr):
             with contextlib.suppress(OSError, ValueError):
                 stream.flush()

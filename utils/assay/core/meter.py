@@ -124,7 +124,8 @@ THE JOBSERVER OF A TEST
     MAKEFLAGS to the test as TEST_JOBSERVER_ENV.  assay.core.testing reads it,
     and it runs the groups of a test module at the same time on the free
     jobs.  The variable changes no result.  The key of a test then does not
-    hold it.
+    hold it.  The launcher gives CALL_PROFILE_ENV to the test by the same
+    rule (assay.core.calls).
 
 THE RECORD
     A launcher writes the record of each step with assay.core.record, from
@@ -228,6 +229,8 @@ CCACHE_PREFIX_ENV = "CCACHE_PREFIX"
 # The variable of the GNU make jobserver, and the variable that gives its value to a test (THE JOBSERVER OF A TEST).
 MAKEFLAGS_ENV = "MAKEFLAGS"
 TEST_JOBSERVER_ENV = "CRUCIBLE_TEST_MAKEFLAGS"
+# The directory of the call profiles of a diagnostic run (THE RECORD of assay.core.calls).
+CALL_PROFILE_ENV = "CRUCIBLE_CALL_PROFILE"
 # The directory utils.  This module is utils/assay/core/meter.py.  It calculates the paths with os.path and not with
 # assay.core.paths, because each compile and each link imports it, and pathlib costs an import.
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
