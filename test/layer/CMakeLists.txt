@@ -451,7 +451,15 @@ endif()
 # matrix has no flag set for it.
 #
 # Measured on 2026-10-02: each unit takes approximately 0.35 s of CPU time.
-set(_matrix_release -O3 -march=native -DNDEBUG -U_GLIBCXX_ASSERTIONS -U_GLIBCXX_SANITIZE_VECTOR -fno-sanitize=all
+#
+# A cross compiler refuses -march=native, because it cannot read the processor of
+# the target.  The release set of a cross build then compiles for the default
+# processor of the target.
+set(_matrix_native -march=native)
+if(CMAKE_CROSSCOMPILING)
+  set(_matrix_native "")
+endif()
+set(_matrix_release -O3 ${_matrix_native} -DNDEBUG -U_GLIBCXX_ASSERTIONS -U_GLIBCXX_SANITIZE_VECTOR -fno-sanitize=all
     -fharden-compares -fharden-conditional-branches -fno-strict-overflow)
 set(_matrix_debug -O1 -UNDEBUG -D_GLIBCXX_ASSERTIONS=1 -D_GLIBCXX_SANITIZE_VECTOR=1 -fno-sanitize=all)
 set(_matrix_flags_debug ${_matrix_debug} -fsanitize=address -fno-sanitize-recover=all -fno-strict-overflow
