@@ -29,10 +29,7 @@
     "Apple aarch64 cores have 128-byte cache lines, and the tree assumes 64-byte lines. Before you add this target, audit each alignas(64) and each struct whose size is one cache line."
 #endif
 
-#include <bit>
-#include <contracts>
 #include <type_traits>
-#include <version>
 
 // GCC reports 202400L for `-std=c++26`, the draft value. The floor sits there
 // rather than at the published 202600L.
@@ -46,7 +43,9 @@ static_assert(sizeof(void*) == 8,
               "foundation supports 64-bit targets only. Before you add a 32-bit target, audit each size and offset "
               "calculation, each struct with a fixed size, and each tag in the bits of a pointer.");
 
-static_assert(std::endian::native == std::endian::little,
+// GCC gives the byte order of the target as a predefined macro, so the check
+// includes no header.
+static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
               "foundation supports little-endian targets only. Before you add a big-endian target, audit each file "
               "format and wire format that the tree reads or writes as raw bytes, and each hash of raw bytes.");
 

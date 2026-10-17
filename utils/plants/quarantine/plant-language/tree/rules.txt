@@ -1,11 +1,13 @@
 # The rule table of the language rule.  The file of the language is in the
 # layer high, and its language row caps its outside includes at the
 # allowance of the layer low.  The quarantine rows name the files of this
-# plant.
+# plant.  The Region family replaces <array>, and a file of the language reads
+# no allow row with `until`.
 
 layer low 0 include/fixy/
 layer high 1 include/fixy/high/
 
+allow low <array> until Region
 allow low <cstddef>
 allow low <cstring>
 allow low <meta>

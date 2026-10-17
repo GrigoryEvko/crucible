@@ -2429,7 +2429,7 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 
 // After the includes.
 static_assert(sizeof(void*) == 8, "foundation supports 64-bit targets only. ...");
-static_assert(std::endian::native == std::endian::little, "foundation supports little-endian targets only. ...");
+static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "foundation supports little-endian targets only. ...");
 static_assert(__GCC_CONSTRUCTIVE_SIZE == 64, "the tree assumes 64-byte cache lines, and GCC gives a longer line ...");
 #if defined(__x86_64__)
 static_assert(__GCC_DESTRUCTIVE_SIZE == 64, "the tree separates two shared atomics by 64 bytes, ...");
@@ -3157,11 +3157,11 @@ Each change moves each producer and each consumer of an API at one time. It keep
 
 The `layer` rows of the rule table give the layers of the base, from F0 floor to X6 channels, each with a rank. A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
 
-The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, the rule `quarantine` counts each such name with a base kind (The base kinds). The audit can make the allowance shorter. Only the owner can make it longer.
+The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. Each runtime std header that a base file includes has such a row on the lowest layer that includes it. A file of the language reads no row with `until`, so such an include is an error there. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, the rule `quarantine` counts each such name with a base kind (The base kinds). The audit can make the allowance shorter. Only the owner can make it longer.
 
 When a builtin gives a function, the base uses the builtin and not a header (R3, and rule 4 of §XV "Compile time"). A new header becomes part of an allowance only if the five conditions of plan §12 hold. The plan removes each other std header from the base. After that, no layer includes `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>` or a third-party header.
 
-In a `REPORT` build, the plugin gives a finding for each include that does not obey a rule of this subsection or of R4. The rules `layer-boundary` and `layer-residual` read the same table, and they put the layers together into the three layers of §XVI: the rank of a project root is the lowest rank of its layers.
+The plugin gives a finding for each include that does not obey a rule of this subsection or of R4. The enforce rows of the four base directories make each such finding a compile error in each build (The plugin modes and the enforce rows). The rules `layer-boundary` and `layer-residual` read the same table, and they put the layers together into the three layers of §XVI: the rank of a project root is the lowest rank of its layers.
 
 ### The doors (R4, R5)
 
@@ -3243,16 +3243,16 @@ The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.
 
 To get the findings of a change, build the targets that compile the changed files, before and after the change. Then compare the output of `python3 utils/bin/guard sections OBJECT...` for their objects. Each object holds the findings of its unit in the section `.crucible.quarantine`, so a cache hit of ccache gives the findings too.
 
-The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error. A row with the word `include` sets the mode of the three include kinds only: `layer-header`, `door-header` and `upward-include`. A row with no such word sets the mode of each kind. Such a scope can make the include rules of a base directory errors while its std headers wait for their families. The kind `replace-pending:HEADER` of an `allow` row with `until` is no include kind, so a row of the scope `include` does not make it an error.
+The `enforce` rows of the rule table give a directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error. A row with the word `include` sets the mode of the three include kinds only: `layer-header`, `door-header` and `upward-include`. A row with no such word sets the mode of each kind. Such a scope can make the include rules of a base directory errors while its std headers wait for their families. The kind `replace-pending:HEADER` of an `allow` row with `until` is no include kind, so a row of the scope `include` does not make it an error.
 
 The `language` row of the rule table holds `include/foundation/core/`, `src/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for each of these items:
-- An include outside the allowance of the layer F0 primitives, and a system header
+- An include outside the allowance of the layer F0 primitives, an include that only an `allow` row with `until` gives, and a system header
 - A declaration whose type holds a library type that no `admit` row admits there
 - An expression, also an unevaluated operand, that names a library entity that no `admit` row admits there.
 
 An `admit` row with `in` admits in a file of the language under one of its paths. A row with `until` admits there only with `in`. Each such use is a finding of its pending kind and no error, as `std::nothrow` in `include/foundation/core/Ref.h` is. The restriction `consteval-only` admits only a class that holds a `std::meta::info`, and the members of such a class. The compiler permits such a class, such as the `std::vector` that a `std::meta` query returns, only in a constant evaluation. The head comment of the rule table gives the rules.
 
-At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `loop stamps` (`utils/assay/loop/stamps.py`) writes the inputs that make this so.
+At this time, each `enforce` row of a quarantined directory has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. The four base directories `include/foundation/`, `include/fixy/`, `src/foundation/` and `src/fixy/` have a row `error include`. A new include of a header outside the allowance of its layer in a base file is then a compile error in each build. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `loop stamps` (`utils/assay/loop/stamps.py`) writes the inputs that make this so.
 
 ### The ratchet (R11)
 

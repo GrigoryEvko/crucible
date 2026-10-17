@@ -17,7 +17,6 @@
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
 
 #include <concepts>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 

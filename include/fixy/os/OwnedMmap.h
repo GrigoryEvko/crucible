@@ -51,7 +51,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <expected>
 #include <meta>
 #include <system_error>

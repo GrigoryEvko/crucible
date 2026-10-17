@@ -58,7 +58,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 namespace fixy::concurrent {
 

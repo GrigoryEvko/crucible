@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
-#include <tuple>
 #include <utility>
 
 namespace foundation::diag {

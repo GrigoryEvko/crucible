@@ -36,7 +36,6 @@
 #include <concepts>
 #include <cstddef>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 

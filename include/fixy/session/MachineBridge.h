@@ -27,7 +27,6 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 
-#include <atomic>
 #include <concepts>
 #include <meta>
 #include <string_view>

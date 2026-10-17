@@ -33,7 +33,6 @@
 #include <foundation/reflect/TypeComponents.h>
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <meta>

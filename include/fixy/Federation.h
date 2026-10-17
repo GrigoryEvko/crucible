@@ -32,7 +32,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>

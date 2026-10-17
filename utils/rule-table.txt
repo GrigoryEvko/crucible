@@ -33,7 +33,7 @@
 #       family of the base replaces the header, and each such include is a
 #       finding of the kind replace-pending:HEADER.  The ratchet refuses a new
 #       include, and an enforce row of the scope include does not make the
-#       finding an error.
+#       finding an error.  A file of the language reads no row with `until`
 #   door HEADER OWNER
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.  The rule door-unit refuses an OWNER that is a
@@ -105,9 +105,9 @@
 #       compiles nothing.
 #   language LAYER PATH...
 #       Each base file under a PATH is a file of the language.  It can include
-#       a header outside the source root only if the allow rows give it to
-#       LAYER or a lower layer, and to its own layer.  The type of each
-#       declaration in it, also a local one, uses no library class,
+#       a header outside the source root only if an allow row with no `until`
+#       gives it to LAYER or a lower layer, and to its own layer.  The type of
+#       each declaration in it, also a local one, uses no library class,
 #       enumeration or typedef that no admit row admits there.  Each
 #       expression in it, also an unevaluated operand, names no library entity
 #       that no admit row admits there.  A row with `in` admits in a file of
@@ -263,6 +263,42 @@ allow F0_floor <initializer_list>
 allow F0_floor <new>
 allow F0_floor <meta>
 
+# The runtime headers of the standard library that a family of the base
+# replaces.  Each row is on the lowest layer that includes its header, and the
+# reason gives the names that the base uses.  Each such include is a finding of
+# the kind replace-pending:HEADER, and the ratchet lets its count only fall.
+allow F0_core <array> until Region | std::array
+allow F0_core <bit> until Scalar | std::bit_cast, std::popcount and the other operations on bits
+allow F0_core <span> until Region | std::span, a pointer and a count
+allow F0_core <string> until Region | std::string, in most uses the text of a constant evaluation
+allow F0_core <string_view> until Region | std::string_view, a view of a text
+allow F0_core <tuple> until Record | std::tuple and its protocol
+allow F0_core <vector> until Region | std::vector, in most uses the result of a reflection query in a constant evaluation
+allow F0_primitives <atomic> until Atomic | std::atomic and the memory orders
+allow F0_primitives <cstdlib> until Report | std::abort in most uses.  The Ref family replaces the free functions of the two buffers, and the Os family replaces std::getenv
+allow F0_primitives <cstring> until Region | std::memcpy and the other copies of bytes
+allow F0_primitives <numeric> until Scalar | the saturating operations and std::gcd
+allow F1_lattices <expected> until Choice | std::expected, a value or an error
+allow F1_lattices <functional> until Ref | std::invoke and the function types in most uses, and the comparators std::less, std::greater and std::identity
+allow F1_lattices <limits> until Scalar | std::numeric_limits
+allow F1_diag <charconv> until Report | std::to_chars and std::from_chars
+allow F1_diag <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
+allow F1_diag <source_location> until Report | std::source_location, the place of a call
+allow F1_diag <system_error> until Os | std::error_code in most uses.  The Report family replaces std::errc of the JSON emitter
+allow F1_permissions <optional> until Choice | std::optional, a value or no value
+allow F1_rest <csignal> until Os | std::sig_atomic_t of the contract handler
+allow X1_wrappers <cmath> until Scalar | std::isnan, std::sqrt, std::fma and the other operations on a floating value
+allow X1_wrappers <memory> until Ref | std::construct_at and std::destroy_at
+allow X1_wrappers <ranges> until Region | the range concepts and the range access of std::ranges
+allow X1_wrappers <variant> until Choice | std::variant, one value of a closed set of types
+allow X3_os <algorithm> until Region | std::sort, std::lower_bound and the other operations on a sequence
+allow X3_os <cerrno> until Os | errno and the error numbers
+allow X3_os <climits> until Scalar | CHAR_BIT
+allow X3_os <ctime> until Os | the clock calls and the time structures of the C library
+allow X3_os <filesystem> until Os | std::filesystem::path
+allow X3_os <mutex> until Os | the lock tag std::try_to_lock_t
+allow X5_session <any> until Ref | the classification names std::any to refuse a payload that erases its type
+
 door <asm/unistd.h> src/foundation/os/Syscall.cpp
 door <asm-generic/errno-base.h> src/foundation/os/Syscall.cpp
 door <linux/utsname.h> src/foundation/os/Syscall.cpp
@@ -355,7 +391,11 @@ enforce bench/ report
 enforce cmake/ report
 enforce examples/ report
 enforce include/crucible/ report
+enforce include/fixy/ error include
+enforce include/foundation/ error include
 enforce src/ report
+enforce src/fixy/ error include
+enforce src/foundation/ error include
 enforce test/ report
 enforce utils/tools/ report
 enforce vessel/ report

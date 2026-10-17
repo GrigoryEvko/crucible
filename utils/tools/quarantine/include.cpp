@@ -9,7 +9,8 @@
 // the pending kind of the header (kPendingKindPrefix and the header), and the
 // ratchet counts it.  A door header can have only its door as includer.  A
 // file of the language gets the allowance of its own layer and of the layer of
-// its language row, whichever is lower.
+// its language row, whichever is lower.  It reads no allow row with `until`, so
+// an include of a header that a family replaces stays an error there.
 //
 // THE DOOR UNITS (the rule door-unit)
 //     A door is one source file, and its unit holds the system declarations of
@@ -287,7 +288,10 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
     }
     // An allow row with no `until` admits the include.  A row with `until`
     // gives it the pending kind of the header, and no enforce mode of the
-    // scope include makes that kind an error.
+    // scope include makes that kind an error.  A file of the language reads no
+    // row with `until`, so the include stays a layer-header there, which is an
+    // error in each mode.
+    bool is_language_file = includer.language_layer >= 0;
     const AllowRow* pending_row = nullptr;
     for (const AllowRow& allow : state.table.allows) {
         if (allow.header != pending.spelled || layer_rank(allow.layer) > allowed_rank) {
@@ -296,7 +300,9 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
         if (allow.pending.until.empty()) {
             return;
         }
-        pending_row = &allow;
+        if (!is_language_file) {
+            pending_row = &allow;
+        }
     }
     if (pending_row != nullptr) {
         add_finding(Kind::replace_pending, &pending_row->pending, pending.place, "<" + pending.spelled + ">");

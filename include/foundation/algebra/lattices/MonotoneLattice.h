@@ -27,7 +27,6 @@
 #include <foundation/algebra/Lattice.h>
 
 #include <concepts>
-#include <contracts>
 #include <cstdint>
 #include <functional>
 #include <limits>

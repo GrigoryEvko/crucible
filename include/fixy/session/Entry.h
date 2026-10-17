@@ -53,7 +53,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>
 
-#include <functional>
 #include <source_location>
 #include <type_traits>
 #include <utility>

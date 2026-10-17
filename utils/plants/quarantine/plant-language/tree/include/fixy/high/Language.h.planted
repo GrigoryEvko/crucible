@@ -100,3 +100,7 @@ static_assert(alignof(std::vector<int>) > 0);
 #endif
 
 }  // namespace fixy::language_test
+
+#if defined(PLANT_LANGUAGE_PENDING_HEADER)
+#include <array>
+#endif

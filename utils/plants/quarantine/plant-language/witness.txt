@@ -6,6 +6,13 @@ flag high-header -freflection -DPLANT_LANGUAGE_HIGH_HEADER
 exit high-header fail
 error high-header include/fixy/high/Language.h:17 | quarantine: layer-header <cstdint> in the layer high, a file of the language with the allowance of the layer low;
 
+# The allow row of <array> has `until`, so it gives the file of the language no
+# pending include, and the include stays an error.
+compile pending-header language_user.cpp out=no
+flag pending-header -freflection -DPLANT_LANGUAGE_PENDING_HEADER
+exit pending-header fail
+error pending-header include/fixy/high/Language.h:105 | quarantine: layer-header <array> in the layer high, a file of the language with the allowance of the layer low;
+
 compile system-header language_user.cpp out=no
 flag system-header -freflection -DPLANT_LANGUAGE_SYSTEM_HEADER
 exit system-header fail

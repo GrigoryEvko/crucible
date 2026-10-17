@@ -19,7 +19,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <span>
 #include <type_traits>
 #include <utility>

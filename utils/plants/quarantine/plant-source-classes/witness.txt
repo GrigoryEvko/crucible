@@ -2,38 +2,41 @@
 # repository, in a tree with the paths of the repository.  A file of src/fixy/
 # is a base file of the layer X1_wrappers, and a file of src/fixy/session/ is a
 # base file of the layer X5_session.  No row of src/fixy/concurrent/ holds a
-# file, so a file there is a file of X1_wrappers too.  So an include of <cmath>
-# names the layer of the file.  Such a file is the sentinel of its own unit,
-# so a std name that no admit row admits is a finding of the kind
-# base-std-entity, and no error in the mode report.  A file of
-# src/foundation/core/ is a file of the language of the layer F0_primitives,
-# so a std name that no admit row admits there, and an include outside the
-# allowance, are errors in each mode.
+# file, so a file there is a file of X1_wrappers too.  No allow row gives
+# <csetjmp>, so an include of it names the layer of the file.  The enforce row
+# of src/fixy/ with the scope include makes that include an error in the mode
+# report.  Such a file is the sentinel of its own unit, so a std name that no
+# admit row admits is a finding of the kind base-std-entity, and no error in
+# the mode report.  A file of src/foundation/core/ is a file of the language of
+# the layer F0_primitives, so a std name that no admit row admits there is an
+# error in each mode.  A file of the language reads no allow row with `until`,
+# so an include of <string_view>, which such a row gives to the layer F0_core,
+# is an error there too.
 
-compile fixy-header src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+compile fixy-header src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag fixy-header -DPLANT_LAYER_HEADER
-exit fixy-header pass
-finding fixy-header quarantine layer-header src/fixy/Plant.cpp:2:0 | <cmath> in the layer X1_wrappers
+exit fixy-header fail
+error fixy-header src/fixy/Plant.cpp:2 | quarantine: layer-header <csetjmp> in the layer X1_wrappers;
 
 compile fixy-std-name src/fixy/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag fixy-std-name -DPLANT_STD_NAME
 exit fixy-std-name pass
 finding fixy-std-name quarantine base-std-entity src/fixy/Plant.cpp:7:14 | std::swap
 
-compile session-header src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+compile session-header src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag session-header -DPLANT_LAYER_HEADER
-exit session-header pass
-finding session-header quarantine layer-header src/fixy/session/Plant.cpp:2:0 | <cmath> in the layer X5_session
+exit session-header fail
+error session-header src/fixy/session/Plant.cpp:2 | quarantine: layer-header <csetjmp> in the layer X5_session;
 
 compile session-std-name src/fixy/session/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag session-std-name -DPLANT_STD_NAME
 exit session-std-name pass
 finding session-std-name quarantine base-std-entity src/fixy/session/Plant.cpp:7:14 | std::swap
 
-compile concurrent-header src/fixy/concurrent/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+compile concurrent-header src/fixy/concurrent/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag concurrent-header -DPLANT_LAYER_HEADER
-exit concurrent-header pass
-finding concurrent-header quarantine layer-header src/fixy/concurrent/Plant.cpp:2:0 | <cmath> in the layer X1_wrappers
+exit concurrent-header fail
+error concurrent-header src/fixy/concurrent/Plant.cpp:2 | quarantine: layer-header <csetjmp> in the layer X1_wrappers;
 
 compile core-clean src/foundation/core/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 exit core-clean pass
@@ -46,4 +49,4 @@ error core-std-name src/foundation/core/Plant.cpp:7 | quarantine: std-entity std
 compile core-header src/foundation/core/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag core-header -DPLANT_LAYER_HEADER
 exit core-header fail
-error core-header src/foundation/core/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F0_primitives;
+error core-header src/foundation/core/Plant.cpp:2 | quarantine: layer-header <string_view> in the layer F0_primitives;

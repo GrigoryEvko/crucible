@@ -12,7 +12,6 @@
 #include <foundation/reflect/Signature.h>
 
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 #include <utility>
 

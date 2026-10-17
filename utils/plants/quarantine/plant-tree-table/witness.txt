@@ -1,10 +1,14 @@
 # A plant of each row kind against the rule table of the repository, in a
 # tree with the paths of the repository: a base file of the layer F1_rest,
-# a header of the higher layer X1_wrappers and a quarantined file.  In the
-# mode report, the section of the object holds the one finding of the plant,
-# and the file with no plant has no finding.  In the mode error, the plant
-# fails the compile, and the file with no plant passes, so the rule table of
-# the repository loads.
+# a header of the higher layer X1_wrappers and a quarantined file.  The
+# enforce row of src/foundation/ with the scope include makes each include
+# kind of the base file an error in the mode report: a header that no allow
+# row gives, a door header and an upward include.  An allow row with `until`
+# gives <vector> to the layer F0_core, so its include is a finding of the
+# kind replace-pending:<vector> and no error.  In the mode report, the file
+# with no plant has no finding, and a std name of the quarantined file is a
+# finding and no error.  In the mode error, each plant fails the compile, and
+# the file with no plant passes, so the rule table of the repository loads.
 
 compile report-base src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 exit report-base pass
@@ -12,20 +16,25 @@ exit report-base pass
 compile report-quarantined test/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 exit report-quarantined pass
 
-compile report-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
-flag report-layer-header -DPLANT_LAYER_HEADER
-exit report-layer-header pass
-finding report-layer-header quarantine layer-header src/foundation/Plant.cpp:2:0 | <cmath> in the layer F1_rest
+compile enforced-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt out=no
+flag enforced-layer-header -DPLANT_LAYER_HEADER
+exit enforced-layer-header fail
+error enforced-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <csetjmp> in the layer F1_rest;
 
-compile report-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
-flag report-door-header -DPLANT_DOOR_HEADER
-exit report-door-header pass
-finding report-door-header quarantine door-header src/foundation/Plant.cpp:5:0 | <sys/socket.h> has the door include/fixy/os/Socket.h
+compile enforced-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt out=no
+flag enforced-door-header -DPLANT_DOOR_HEADER
+exit enforced-door-header fail
+error enforced-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <sys/socket.h> has the door include/fixy/os/Socket.h;
 
-compile report-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
-flag report-upward -DPLANT_UPWARD_INCLUDE
-exit report-upward pass
-finding report-upward quarantine upward-include src/foundation/Plant.cpp:8:0 | include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_rest
+compile enforced-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt out=no
+flag enforced-upward -DPLANT_UPWARD_INCLUDE
+exit enforced-upward fail
+error enforced-upward src/foundation/Plant.cpp:8 | quarantine: upward-include include/fixy/PlantHigh.h (the layer X1_wrappers) from the layer F1_rest;
+
+compile report-pending src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
+flag report-pending -DPLANT_PENDING_HEADER
+exit report-pending pass
+finding report-pending quarantine replace-pending:<vector> src/foundation/Plant.cpp:11:0 | <vector>
 
 compile report-std-name test/Plant.cpp rules={repo}/utils/rule-table.txt stage=c out=no
 flag report-std-name -DPLANT_STD_NAME
@@ -41,7 +50,7 @@ exit error-quarantined pass
 compile error-layer-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-layer-header -DPLANT_LAYER_HEADER
 exit error-layer-header fail
-error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <cmath> in the layer F1_rest;
+error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <csetjmp> in the layer F1_rest;
 
 compile error-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-door-header -DPLANT_DOOR_HEADER

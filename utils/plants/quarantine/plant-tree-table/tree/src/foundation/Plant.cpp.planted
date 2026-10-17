@@ -1,10 +1,13 @@
 #if defined(PLANT_LAYER_HEADER)
-#include <cmath>
+#include <csetjmp>
 #endif
 #if defined(PLANT_DOOR_HEADER)
 #include <sys/socket.h>
 #endif
 #if defined(PLANT_UPWARD_INCLUDE)
 #include <fixy/PlantHigh.h>
+#endif
+#if defined(PLANT_PENDING_HEADER)
+#include <vector>
 #endif
 int plant_base_value() { return 1; }

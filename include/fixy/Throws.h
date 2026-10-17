@@ -48,7 +48,6 @@
 
 #include <meta>
 
-#include <tuple>
 #include <type_traits>
 
 namespace fixy {

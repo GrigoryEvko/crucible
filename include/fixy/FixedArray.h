@@ -28,12 +28,10 @@
 #include <foundation/Platform.h>
 
 #include <array>
-#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <span>
 #include <string_view>
 #include <type_traits>
