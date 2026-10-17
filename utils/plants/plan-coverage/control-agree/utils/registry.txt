@@ -10,3 +10,5 @@ rule gauged engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by
 rule historied engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-history doc=XV | a time | lower it
 rule launcher engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-test-step doc=XV | a time | lower it
 rule evidenced engine=build scope=builddir ledger=none warn=1 error=2 unit=passes held-by=loop-evidence doc=XIII | the passes of a test | run the test again
+rule gate-mutants engine=build scope=builddir ledger=admit doc=XXI | a gate that no test witnesses | add a test
+rule mutant-runs engine=build scope=builddir ledger=none warn=1 error=1 unit=runs held-by=loop-evidence doc=XV | the runs of the mutants of a header | run them again

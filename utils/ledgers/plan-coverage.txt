@@ -22,5 +22,3 @@ utils/assay/loop/derive/aten_ops.py | no-tier | admit | derive aten-ops | The ta
 utils/assay/loop/derive/header_costs.py | no-target | admit | derive header-costs | No runner of `loop evidence` adds the measurements of --measure to a key at this time.  A person measures the headers again after a change of a heavy header
 utils/assay/loop/plan.py | no-target | admit | step gauge | No runner of `loop evidence` adds the runs of the step to a key at this time.  The step runs one time in each run of its entry
 utils/assay/loop/plan.py | no-target | admit | step pgo | No runner of `loop evidence` adds the runs of the step to a key at this time.  The step runs one time in each run of its entry
-utils/registry.txt | no-target | admit | rule gate-mutants | No runner of `loop evidence` adds the runs of the rule on a header to the key of the header at this time.  A person runs the rule on the headers of a change
-utils/registry.txt | no-tier | admit | rule gate-mutants | The rule runs only on the headers that a call names with --path, and no entry has a list of such headers.  A person runs it on the headers of a change

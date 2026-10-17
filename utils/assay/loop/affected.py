@@ -820,6 +820,22 @@ class Planner:
         self.used_scans[digest] = result.to_json()
         return result
 
+    def build_program(self, test: ctest_reader.TestEntry) -> str | None:
+        """Return the program of a test when it is an ELF file of the build tree, else None (THE EXECUTABLE TEST).
+
+        A fixture, a test of the master guard and a script test have no such program.  A program of the build tree
+        that is not there at this time counts as an ELF file, because the build makes it.
+        """
+        if is_fixture(test.command):
+            return None
+        index = program_index(test.command)
+        if index is None:
+            return None
+        program = real(test.command[index]) if os.path.isabs(test.command[index]) else test.command[index]
+        if not os.path.isabs(program) or not self.trees.is_in_build(program):
+            return None
+        return None if os.path.exists(program) and not elf_file.is_elf(program) else program
+
     def classify(self, test: ctest_reader.TestEntry) -> Decision:
         """Return the kind of a test and, for an executable test, its fingerprint."""
         trees = self.trees
@@ -831,10 +847,8 @@ class Planner:
         guard = self.guard_decision(test, index)
         if guard is not None:
             return guard
-        program = real(test.command[index]) if os.path.isabs(test.command[index]) else test.command[index]
-        if not os.path.isabs(program) or not trees.is_in_build(program):
-            return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
-        if os.path.exists(program) and not elf_file.is_elf(program):
+        program = self.build_program(test)
+        if program is None:
             return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
         start, launcher = launcher_prefix(test.command)
         always = self.property_reason(test)

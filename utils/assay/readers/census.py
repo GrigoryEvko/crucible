@@ -58,6 +58,9 @@ FIXTURE_MASTER = "utils/bin/loop"
 FIXTURE_SUBCOMMAND = "fixture"
 # The number of names that a message lists before it gives only the count.
 SHOWN_NAMES = 5
+# The start of the name of a file of the build directory and of a file of no tree (file_key()).
+BUILD_KEY = "<build>/"
+SYSTEM_KEY = "<system>/"
 
 
 class NotApplicable(Exception):
@@ -351,8 +354,8 @@ def file_key(real: str, root: Path, build_dir: Path) -> str:
     """
     path = Path(real)
     if path.is_relative_to(build_dir):
-        return f"<build>/{path.relative_to(build_dir).as_posix()}"
+        return f"{BUILD_KEY}{path.relative_to(build_dir).as_posix()}"
     if path.is_relative_to(root):
         return path.relative_to(root).as_posix()
     _, marker, tail = real.partition("/include/")
-    return f"<system>/{tail}" if marker else real
+    return f"{SYSTEM_KEY}{tail}" if marker else real

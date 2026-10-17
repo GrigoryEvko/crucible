@@ -5,15 +5,22 @@ THE ITEMS
     assay.loop.evidence.targets.  A member is a test with the label of the
     class in a build of the class (THE ITEMS OF A CLASS of that module):
       stress-passes    each test of the build of each test preset with the
-                       field `repeat`
+                       field `repeat`, when the program of the test is an ELF
+                       file of the build tree (build_program() of
+                       assay.loop.affected)
       property-search  each test with the label fuzz_property in each build
                        that builds the fuzzers
       bench-runs       each bench target of the code model of each build
                        that builds the benches for a measurement
                        (assay.loop.bench, bench_targets())
+      mutant-runs      each header of include/ that the source tree of the
+                       build of the preset MUTANT_PRESET holds
     A negative fixture and a disabled test are no items.  A fixture is a
     compile, and the result store of `loop fixture` keeps its one result.
-    ctest runs no disabled test.
+    ctest runs no disabled test.  A repetition looks for a race in a program
+    of the tree.  A test of the master guard, a self-test of a module of the
+    package and a CMake script run no such program.  Their results come from
+    their inputs only, and such a test is no item of stress-passes.
     An item gives its rule, its name, the build directory that gives its key,
     and its key.  An item with no key gives the reason, and no evidence
     applies to it: no runner can add evidence that a subsequent run can find.
@@ -36,6 +43,39 @@ THE KEYS
     bench with no program has no key.  When the compiler of a build gives no
     native tier, no bench of the build has a key.
 
+THE KEYS OF A HEADER
+    The key of a header of include/ holds each input of a run of the rule
+    gate-mutants on the header (assay.mutation.run).  These are the inputs:
+      * the units of the build that read the header
+      * the code of the mutants
+      * the rows of the ledger of gate-mutants for the header.
+    A unit is an object of the target all or a negative fixture
+    (assay.readers.census).
+      * The digest of a unit holds its command, the resolved path of its
+        compiler, and the bytes of each file that its compile read.
+      * relocated() of assay.core.cost_store replaces the source root and the
+        build directory with marks in each word of the command.  A file of
+        the build directory gets the same marks in its bytes.  The build can
+        write these paths into a file that it makes.
+      * A file has the name that file_key() of assay.readers.census gives.
+        That name holds no path of the source root or of the build
+        directory.
+    The key of a header is the SHA-256 of these parts:
+      * MUTANT_KEY_FORMAT and the header
+      * the digest of each file of MUTATION_FILES in the tree of this package
+      * the rows of the ledger for the header
+      * the sorted digests of the units that read the header.
+    A change of a test or of a fixture that reads the header then changes
+    the key.  These are the limits:
+      * A test executable also links objects that do not read the header.  A
+        change of only such an object does not change the key.
+      * The census uses the record of each fixture of the build.  A build
+        with no such record gives no key to a header, with the reason.
+      * A header that no unit of the build reads has no key.
+      * A header of a host row or of a kernel row of the rule table is no
+        item.  A different compiler compiles it, and the build has no unit of
+        it (assay.core.ruletable, EXEMPT_KINDS).
+
 THE BUILDS
     With no build directory, the items of a class come from the builds that
     the presets file names (assay.loop.tiers).  A build directory that the
@@ -54,16 +94,23 @@ THE PENDING ITEMS
 """
 
 import hashlib
+import os
 import platform
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import cost_store, git, paths, ruletable
+from assay.core import ledger as rule_ledger
+from assay.core import registry as rule_registry
+from assay.core import rows as rows_grammar
 from assay.core import target as build_target
 from assay.loop import affected, bench, tiers
 from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets
+from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
+from assay.readers import compdb
 from assay.readers import ctest as ctest_reader
 
 # The property of a disabled test.
@@ -73,6 +120,15 @@ DISABLED = "DISABLED"
 BENCH_KEY_FORMAT = "crucible-bench-key 1"
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
 NATIVE_FLAGS = {"x86_64": "-march=native", "aarch64": "-mcpu=native"}
+# The format of the key of a header and the files of the code of the mutants (THE KEYS OF A HEADER).  Then the directory
+# and the suffix of a header.  Then the entry of the source tree in the CMake cache, and the digest of a file with no
+# read.
+MUTANT_KEY_FORMAT = "crucible-mutant-key 1"
+MUTATION_FILES = ("utils/assay/mutation/gates.py", "utils/assay/mutation/run.py")
+HEADER_DIRECTORY = "include/"
+HEADER_SUFFIX = ".h"
+SOURCE_ENTRY = "CMAKE_HOME_DIRECTORY"
+UNREAD = "unread"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +177,10 @@ class TestKeys:
     def decision(self, test: ctest_reader.TestEntry) -> affected.Decision:
         """Return the decision of the planner for a test: its kind, its shared key and its read set."""
         return self.planner.classify(test)
+
+    def runs_build_program(self, test: ctest_reader.TestEntry) -> bool:
+        """Return True when the program of a test is an ELF file of the build tree (THE ITEMS)."""
+        return self.planner.build_program(test) is not None
 
     def forget(self) -> None:
         """Forget each digest.  After a run of the tests, the next key then reads each input again."""
@@ -207,6 +267,203 @@ def bench_programs(rule: str, build_dir: Path) -> list[Program]:
     return sorted(found.values(), key=lambda program: program.item.name)
 
 
+@dataclass(frozen=True, slots=True)
+class HeaderKeys:
+    """The source tree of a build, each header of include/ in it, and the key of each header that a unit reads.
+
+    `deps` gives the files of include/ that each unit reads, by the resolved path of its source, as the candidates of
+    assay.mutation.run take them.  `ledger` is the ledger of the rule of the class of coverage, or None.
+    """
+
+    source: Path
+    headers: tuple[str, ...]
+    keys: Mapping[str, str]
+    deps: Mapping[str, tuple[str, ...]]
+    ledger: rule_ledger.Ledger | None = None
+
+
+def source_tree(build_dir: Path) -> Path:
+    """Return the source tree of a configured build: the directory of SOURCE_ENTRY of its CMake cache.
+
+    Raises:
+        cmake_reader.CmakeError: If the CMake cache cannot be read, or it names no directory
+    """
+    entry = cmake_reader.cache(build_dir).get(SOURCE_ENTRY)
+    if entry is None or not entry.value or not Path(entry.value).is_dir():
+        raise cmake_reader.CmakeError(f"the CMake cache of {build_dir} names no source tree in {SOURCE_ENTRY}")
+    return Path(entry.value).resolve()
+
+
+class Digests:
+    """The SHA-256 of the bytes of each file that a call reads, each file read one time."""
+
+    __slots__ = ("found",)
+
+    def __init__(self) -> None:
+        """Start with no file."""
+        self.found: dict[str, str] = {}
+
+    def of(self, path: str) -> str:
+        """Return the SHA-256 of the bytes of a file, or UNREAD when the file cannot be read.
+
+        Complexity: linear in the bytes of the file at the first call for the file, then one lookup.
+        """
+        known = self.found.get(path)
+        if known is None:
+            try:
+                with open(path, "rb") as handle:
+                    known = hashlib.file_digest(handle, "sha256").hexdigest()
+            except OSError:
+                known = UNREAD
+            self.found[path] = known
+        return known
+
+
+def unit_commands(build_dir: Path) -> dict[tuple[str, str], tuple[str, ...]]:
+    """Return the command of each unit of a build: an object from the compile database, a fixture from its test.
+
+    The key of a unit is its kind and its item, as a unit of assay.readers.census gives them.  Complexity: linear in
+    the entries of the compile database and in the tests.
+
+    Raises:
+        compdb.CompdbError: If the compile database cannot be read
+        ctest_reader.CtestError: If ctest cannot list the tests
+    """
+    found: dict[tuple[str, str], tuple[str, ...]] = {}
+    for entry in compdb.entries(build_dir):
+        if entry.output is not None:
+            found[("object", build_census.shown(entry.output, build_dir))] = entry.argv()
+    for test in ctest_reader.tests(build_dir):
+        if build_census.fixture_words(list(test.command)) is not None:
+            found[("fixture", test.name)] = tuple(test.command)
+    return found
+
+
+def gate_ledger(source: Path) -> rule_ledger.Ledger | None:
+    """Return the ledger of the rule of the class of coverage in a tree, or None when the tree has no such rule.
+
+    A tree with no registry has no such rule.
+
+    Raises:
+        rows_grammar.RowsError: If the registry or the ledger does not obey its schema
+        OSError: If the registry or the ledger cannot be read
+    """
+    path = source / rule_registry.REGISTRY_PATH
+    if not path.is_file():
+        return None
+    registry = rule_registry.load(path)
+    rule = registry.rules.get(targets.COVERAGE.check)
+    return None if rule is None else rule_ledger.read(rule, source)
+
+
+def gate_rows(ledger: rule_ledger.Ledger | None) -> dict[str, list[str]]:
+    """Return the text of each row of the ledger of the rule of the class of coverage, by its header."""
+    found: dict[str, list[str]] = {}
+    for key, entry in sorted(() if ledger is None else ledger.base.items()):
+        found.setdefault(key.path, []).append(f"{key.kind}\t{key.entity}\t{entry.value}")
+    return found
+
+
+def built_digest(path: str, build: str, source: str) -> str:
+    """Return the SHA-256 of the bytes of a file of a build, with each path of the build and the source tree as a mark.
+
+    A file that a build makes can hold the path of its build or of its source tree.  Its digest holds no such path, and
+    two trees with the same files give it the same digest.  Complexity: linear in the bytes of the file.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return UNREAD
+    for root, mark in relocation_roots(build, source):
+        data = data.replace(root.encode("utf-8", "surrogateescape"), mark.encode())
+    return hashlib.sha256(data).hexdigest()
+
+
+def relocation_roots(build: str, source: str) -> list[tuple[str, str]]:
+    """Return the build directory and the source tree with their marks, the longest path first (relocated())."""
+    return sorted(((build, cost_store.BUILD_MARK), (source, cost_store.ROOT_MARK)), key=lambda item: -len(item[0]))
+
+
+def mutant_keys(build_dir: Path, package_root: Path = paths.REPO_ROOT) -> HeaderKeys:
+    """Return the key of each header of include/ that a unit of a build reads (THE KEYS OF A HEADER).
+
+    Complexity: linear in the files of the units of the build, with one read of each file.
+
+    Raises:
+        cmake_reader.CmakeError: If the CMake cache of the build names no source tree
+        build_census.NotApplicable: If the build has no census, such as a build with no fixture record
+        build_census.CensusError: If the census of the build cannot be read
+        compdb.CompdbError: If the compile database cannot be read
+        ctest_reader.CtestError: If the tests of the build cannot be read
+        rows_grammar.RowsError: If the registry or the ledger of the source tree does not obey its schema
+        OSError: If the registry or the ledger of the source tree cannot be read
+        git.GitError: If git cannot list the headers of the source tree
+    """
+    source = source_tree(build_dir)
+    build = build_dir.resolve()
+    found = build_census.read_census(build_dir, source)
+    commands = unit_commands(build_dir)
+    roots = relocation_roots(str(build), str(source))
+    digests = Digests()
+    tool = "\0".join(digests.of(str(package_root / name)) for name in MUTATION_FILES)
+    ledger = gate_ledger(source)
+    rows = gate_rows(ledger)
+    built: dict[str, str] = {}
+    readers: dict[str, set[str]] = {}
+    deps: dict[str, tuple[str, ...]] = {}
+    for unit in found.units:
+        command = commands.get((unit.kind, unit.item), ())
+        compiler = os.path.realpath(command[0]) if command else ""
+        named = sorted((build_census.file_key(real, source, build), real) for real in unit.files)
+        for name, real in named:
+            if name.startswith(build_census.BUILD_KEY) and real not in built:
+                built[real] = built_digest(real, str(build), str(source))
+        words = (cost_store.relocated(word, roots) for word in command)
+        files = (f"{name}\t{built.get(real) or digests.of(real)}" for name, real in named)
+        digest = hashlib.sha256("\0".join((unit.kind, *words, compiler, *files)).encode("utf-8", "surrogateescape"))
+        headers = tuple(name for name, _ in named if name.startswith(HEADER_DIRECTORY))
+        deps[os.path.realpath(os.path.join(source, unit.source))] = headers
+        for name in headers:
+            if name.endswith(HEADER_SUFFIX):
+                readers.setdefault(name, set()).add(digest.hexdigest())
+    keys: dict[str, str] = {}
+    for header, units in readers.items():
+        material = "\0".join((MUTANT_KEY_FORMAT, header, tool, *rows.get(header, ()), *sorted(units)))
+        keys[header] = hashlib.sha256(material.encode("utf-8", "surrogateescape")).hexdigest()
+    table_path = source / ruletable.TABLE.relative_to(paths.REPO_ROOT)
+    table = ruletable.load(table_path) if table_path.is_file() else None
+    listed = {
+        name
+        for name in git.tracked_files(source, [HEADER_DIRECTORY], with_new=True)
+        if name.endswith(HEADER_SUFFIX) and (table is None or table.class_of(name)[0] not in ruletable.EXEMPT_KINDS)
+    }
+    return HeaderKeys(source, tuple(sorted(listed | set(keys))), keys, deps, ledger)
+
+
+def mutant_items(rule: str, build_dir: Path, keyed: HeaderKeys) -> list[Item]:
+    """Return an item for each header of a source tree, with its key or the reason that it has none."""
+    build = str(build_dir)
+    reason = "no unit of the build reads the header"
+    return [
+        Item(rule, header, build, keyed.keys[header]) if header in keyed.keys else Item(rule, header, build, "", reason)
+        for header in keyed.headers
+    ]
+
+
+# The errors of a build that gives no key to its headers (THE KEYS OF A HEADER).
+MUTANT_ERRORS = (
+    cmake_reader.CmakeError,
+    build_census.NotApplicable,
+    build_census.CensusError,
+    compdb.CompdbError,
+    ctest_reader.CtestError,
+    rows_grammar.RowsError,
+    OSError,
+    git.GitError,
+)
+
+
 def is_disabled(test: ctest_reader.TestEntry) -> bool:
     """Return True when the property DISABLED of a test has the value yes."""
     return any(word.upper() in affected.TRUE_WORDS for word in test.words_of(DISABLED))
@@ -236,6 +493,12 @@ def class_builds(sampled: targets.Target, presets: tiers.Tiers) -> tuple[tuple[s
     """
     if sampled.builds is targets.Builds.REPEATED:
         return repeated_builds(presets)
+    if sampled.builds is targets.Builds.MUTANTS:
+        return tuple(
+            (item.name, item.build)
+            for item in presets.configure
+            if item.name == targets.MUTANT_PRESET and item.build is not None
+        )
     is_bench = sampled.builds is targets.Builds.BENCH
     return tuple(
         (item.name, item.build)
@@ -249,7 +512,12 @@ def class_items(keys: TestKeys, sampled: targets.Target) -> list[Item]:
 
     Complexity: the cost of the planner of assay.loop.affected for each member.
     """
-    return [keys.item(sampled.rule, test) for test in keys.tests if is_member(test, sampled)]
+    is_repeated = sampled.builds is targets.Builds.REPEATED
+    return [
+        keys.item(sampled.rule, test)
+        for test in keys.tests
+        if is_member(test, sampled) and (not is_repeated or keys.runs_build_program(test))
+    ]
 
 
 class BuildKeys:
@@ -293,6 +561,16 @@ class BuildKeys:
             self.problems.append(f"the benches of the build {build} cannot be read: {problem}")
             return []
 
+    def headers(self, name: str, build: Path, rule: str) -> list[Item]:
+        """Return the item of each header of the source tree of a build, or no items with one problem (THE ITEMS)."""
+        if not self.is_configured(name, build):
+            return []
+        try:
+            return mutant_items(rule, build, mutant_keys(build))
+        except MUTANT_ERRORS as problem:
+            self.problems.append(f"the headers of the build {build} have no key: {problem}")
+            return []
+
 
 def pending(
     found: Sequence[Item], store: evidence_store.EvidenceStore, goal: float, names: Sequence[str]
@@ -332,6 +610,9 @@ def tree_items(
         for name, build in named:
             if sampled.builds is targets.Builds.BENCH:
                 found += builds.benches(name, build, sampled.rule)
+                continue
+            if sampled.builds is targets.Builds.MUTANTS:
+                found += builds.headers(name, build, sampled.rule)
                 continue
             keys = builds.of(name, build)
             if keys is not None:

@@ -25,7 +25,10 @@ THE SAMPLED CHECKS
 
 THE ITEMS OF A CLASS
     The items of a class of tests are the tests with its label in its builds:
-      Builds.REPEATED  the build of each test preset with the field `repeat`
+      Builds.REPEATED  the build of each test preset with the field `repeat`.
+                       A test is an item only when its program is an ELF
+                       file of the build tree.  A repetition looks for a race
+                       in a program of the tree (assay.loop.evidence.items)
       Builds.FUZZ      the build of each configure preset that builds the
                        fuzzers (assay.loop.tiers, PresetTier)
     A class with no label takes each test of its builds.  The items of the
@@ -33,6 +36,11 @@ THE ITEMS OF A CLASS
       Builds.BENCH     the build of each configure preset that builds the
                        benches for a measurement: with no fuzzers and no
                        profile counters (assay.loop.tiers, PresetTier)
+    The items of a class of coverage are the files of the scope of the rule
+    `check` of the class:
+      Builds.MUTANTS   the build of the configure preset MUTANT_PRESET.  Its
+                       units give the key of each header of include/
+                       (assay.loop.evidence.items, THE KEYS OF A HEADER)
 """
 
 import enum
@@ -40,6 +48,8 @@ from dataclasses import dataclass
 
 # The holder of the rule of each target in utils/registry.txt (the field held-by).
 HOLDER = "loop-evidence"
+# The configure preset of the build that gives the keys of the headers (THE ITEMS OF A CLASS).
+MUTANT_PRESET = "default"
 
 
 class Kind(enum.StrEnum):
@@ -57,19 +67,25 @@ class Builds(enum.StrEnum):
     REPEATED = "repeated"
     FUZZ = "fuzz"
     BENCH = "bench"
+    MUTANTS = "mutants"
 
 
 @dataclass(frozen=True, slots=True)
 class Target:
-    """One class of sampled checks: the measured rule of its target, its kind of evidence, its builds and its label."""
+    """One class of sampled checks: the measured rule of its target, its kind of evidence, its builds and its label.
+
+    `check` is the rule that a class of coverage runs on each item (THE ITEMS OF A CLASS).
+    """
 
     rule: str
     kind: Kind
     builds: Builds
     label: str = ""
+    check: str = ""
 
 
 STRESS = Target("stress-passes", Kind.REPETITION, Builds.REPEATED)
 PROPERTY = Target("property-search", Kind.SEARCH, Builds.FUZZ, "fuzz_property")
 MEASUREMENT = Target("bench-runs", Kind.MEASUREMENT, Builds.BENCH)
-TARGETS = (STRESS, PROPERTY, MEASUREMENT)
+COVERAGE = Target("mutant-runs", Kind.COVERAGE, Builds.MUTANTS, check="gate-mutants")
+TARGETS = (STRESS, PROPERTY, MEASUREMENT, COVERAGE)

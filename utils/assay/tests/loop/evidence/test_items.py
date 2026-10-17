@@ -73,6 +73,10 @@ def preset_cases(expect: testing.Expect) -> None:
         "only a configure preset that builds the benches for a measurement gives a build of the benches",
         evidence_items.class_builds(targets.MEASUREMENT, benches) == (("bench", build),),
     )
+    expect(
+        "only the build of the preset of the mutants gives the keys of the headers",
+        evidence_items.class_builds(targets.COVERAGE, benches) == ((targets.MUTANT_PRESET, build),),
+    )
     with tempfile.TemporaryDirectory(prefix="evidence-items-") as directory:
         found, problems = evidence_items.tree_items(Path(directory), (Path(directory) / "none",))
     expect(
@@ -113,11 +117,10 @@ def build_cases(expect: testing.Expect) -> None:
         "an executable test and a launched test have a key and no reason",
         all(found[name].key and not found[name].reason for name in ("exe_ok", "exe_bad", "exe_launched")),
     )
+    expect("a script test runs no program of the build, and is no item of the repetition", "script_guard" not in found)
     expect(
-        "a script test and a test that always runs have no key, and the reason names the kind",
-        not found["script_guard"].key
-        and affected.KIND_SCRIPT in found["script_guard"].reason
-        and not found["exe_fixtures"].key,
+        "a test of a program of the build that always runs has no key, and the reason names the kind",
+        not found["exe_fixtures"].key and affected.KIND_ALWAYS in found["exe_fixtures"].reason,
     )
     expect("two tests have different keys", found["exe_ok"].key != found["exe_bad"].key)
     expect("a second read of the same tree gives the same keys", found == again)
@@ -168,6 +171,90 @@ def bench_cases(expect: testing.Expect) -> None:
     )
 
 
+# A planted CMake project (THE KEYS OF A HEADER).  Two tests read two headers of include/, and no unit reads a third
+# header.  A header of the build names the build directory.
+PROJECT = """cmake_minimum_required(VERSION 3.28)
+project(planted_headers CXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+enable_testing()
+file(WRITE ${CMAKE_BINARY_DIR}/generated/where.h "// ${CMAKE_BINARY_DIR}\\n")
+add_executable(gate_test test/gate_test.cpp)
+target_include_directories(gate_test PRIVATE include ${CMAKE_BINARY_DIR}/generated)
+add_test(NAME gate_test COMMAND gate_test)
+add_executable(other_test test/other_test.cpp)
+target_include_directories(other_test PRIVATE include)
+add_test(NAME other_test COMMAND other_test)
+"""
+SOURCES = {
+    "CMakeLists.txt": PROJECT,
+    "include/demo/Gate.h": "#pragma once\ninline int gate(int value) { return value; }\n",
+    "include/demo/Other.h": "#pragma once\ninline int other() { return 2; }\n",
+    "include/demo/Alone.h": "#pragma once\n",
+    "test/gate_test.cpp": '#include <demo/Gate.h>\n#include "where.h"\nint main() { return gate(0); }\n',
+    "test/other_test.cpp": "#include <demo/Other.h>\nint main() { return other() - 2; }\n",
+}
+
+
+def planted_build(source: Path, build: Path, tools: tuple[str, str, str]) -> bool:
+    """Configure and build the planted project of a source tree in a build directory, and return True on success."""
+    from assay.core import proc
+
+    cmake, ninja, compiler = tools
+    cmake_reader.request(build)
+    words = [cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", f"-DCMAKE_CXX_COMPILER={compiler}"]
+    configured = proc.run(proc.Command([*words, "-S", str(source), "-B", str(build)], timeout_s=proc.TOOL_S))
+    built = proc.run(proc.Command([cmake, "--build", str(build)], timeout_s=proc.TOOL_S))
+    return configured.exit == 0 and built.exit == 0
+
+
+def header_cases(expect: testing.Expect) -> None:
+    """Hold the keys of the headers of a planted build, in two build directories and after a change (THE KEYS OF A
+    HEADER)."""
+    from assay.core import git
+    from assay.guard.engines.buildsys import reconfigure_noop
+    from assay.guard.engines.meta import runner as meta_runner
+
+    compiler = testing.held_compiler(expect)
+    try:
+        cmake, ninja = reconfigure_noop.planted_tools()
+    except meta_runner.NotApplicable as problem:
+        expect(f"the pinned cmake and a ninja are there: {problem}", False)
+        return
+    if compiler is None:
+        return
+    with tempfile.TemporaryDirectory(prefix="evidence-headers-") as directory:
+        source = Path(directory) / "tree"
+        for name, text in SOURCES.items():
+            (source / name).parent.mkdir(parents=True, exist_ok=True)
+            (source / name).write_text(text, encoding="utf-8")
+        git.init(source)
+        tools = (cmake, ninja, compiler)
+        is_built = planted_build(source, Path(directory) / "one", tools)
+        is_built = planted_build(source, Path(directory) / "two", tools) and is_built
+        expect("the planted project configures and builds in two build directories", is_built)
+        if not is_built:
+            return
+        first = evidence_items.mutant_keys(Path(directory) / "one", source)
+        second = evidence_items.mutant_keys(Path(directory) / "two", source)
+        (source / "test/other_test.cpp").write_text(SOURCES["test/other_test.cpp"] + "// a change\n", encoding="utf-8")
+        changed = evidence_items.mutant_keys(Path(directory) / "one", source)
+        found = {item.name: item for item in evidence_items.mutant_items(RULE, Path(directory) / "one", first)}
+        gate_source = str((source / "test/gate_test.cpp").resolve())
+    gate, other, alone = "include/demo/Gate.h", "include/demo/Other.h", "include/demo/Alone.h"
+    expect(f"each header of include/ is an item: {sorted(found)}", sorted(found) == [alone, gate, other])
+    expect("a header that a unit reads has a key", bool(found[gate].key) and bool(found[other].key))
+    expect("a header that no unit reads has no key and a reason", not found[alone].key and bool(found[alone].reason))
+    expect(
+        "two build directories of one tree give the same keys, also with a header of the build that names its directory",
+        first.keys == second.keys,
+    )
+    expect(
+        "a change of a test that reads a header changes the key of that header, and of no other header",
+        changed.keys[other] != first.keys[other] and changed.keys[gate] == first.keys[gate],
+    )
+    expect("the headers of a unit are in the dependencies of its source", gate in first.deps.get(gate_source, ()))
+
+
 def pending_cases(expect: testing.Expect) -> None:
     """Hold the pending items of a target: a key, less evidence, and no kept failure unless named."""
     found = [
@@ -189,5 +276,5 @@ def pending_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
-    cases = (preset_cases, member_cases, build_cases, bench_cases, pending_cases)
+    cases = (preset_cases, member_cases, build_cases, bench_cases, header_cases, pending_cases)
     return testing.run(__name__.removeprefix("assay."), argv, cases)

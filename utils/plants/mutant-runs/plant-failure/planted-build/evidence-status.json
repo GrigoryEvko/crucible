@@ -1,0 +1,25 @@
+{
+ "format": "crucible-evidence-status 1",
+ "problems": [],
+ "rows": [
+  {
+   "build": "build",
+   "failure": {
+    "at": "2026-10-16T12:00:00Z",
+    "facts": [["gates", "12"], ["killed", "11"], ["survivors", "1"], ["invalid", "0"], ["first", "line 40 requires Stale (survived)"]],
+    "rerun": ["python3", "utils/bin/guard", "check", "--rule", "gate-mutants", "--build-dir", "build", "--path", "include/fixy/Survivor.h"],
+    "summary": "the header has 1 mutants that no test kills"
+   },
+   "item": "include/fixy/Survivor.h",
+   "key": "a-planted-key",
+   "kind": "coverage",
+   "nightly": 1.0,
+   "reason": "",
+   "release": 1.0,
+   "rule": "mutant-runs",
+   "unit": "runs",
+   "unit_wall_s": null,
+   "value": 0.0
+  }
+ ]
+}

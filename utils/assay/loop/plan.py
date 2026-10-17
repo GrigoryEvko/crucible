@@ -48,7 +48,10 @@ THE SAMPLED ITEMS
     TARGETS of assay.loop.evidence.targets gives its items:
       * each test preset with the field `repeat` (Builds.REPEATED)
       * each test with the label of the class (Builds.FUZZ)
-      * each bench target (Builds.BENCH).
+      * each bench target (Builds.BENCH)
+      * the rule `check` of a class of coverage (Builds.MUTANTS).  The step
+        evidence names that rule, and the rule then gets the tier of the
+        step.
     UNTARGETED gives the other sampled items: each item of a kind, or one
     item of a kind and a name.  Such an item has no class at this time.
     The target of an item is the rule of its class, which the registry must
@@ -312,6 +315,7 @@ STEPS = (
         tiers.Tier.NIGHTLY,
         ("loop", "evidence", "run"),
         "adds evidence to the sampled checks in a time budget, and judges it against the targets of the registry",
+        rules=tuple(target.check for target in evidence_targets.TARGETS if target.check),
     ),
 )
 SUITE = Holding(is_suite=True)
@@ -332,7 +336,6 @@ UNTARGETED = (
     (Kind.STEP, "gauge"),
     (Kind.STEP, "pgo"),
     (Kind.DERIVE, "header-costs"),
-    (Kind.RULE, "gate-mutants"),
 )
 ENTRY_COMMANDS = ("land", "syntax", "test")
 TOOL_COMMANDS = ("heavy", "history", "plan")
@@ -611,6 +614,8 @@ def sampled_rule(item: Item, repeat_presets: frozenset[str], labels: Mapping[str
             is_member = item.kind is Kind.TEST_PRESET and item.name in repeat_presets
         elif target.builds is evidence_targets.Builds.FUZZ:
             is_member = item.kind is Kind.TEST and target.label in labels.get(item.name, frozenset())
+        elif target.builds is evidence_targets.Builds.MUTANTS:
+            is_member = item.kind is Kind.RULE and item.name == target.check
         else:
             is_member = item.kind is Kind.BENCH
         if is_member:

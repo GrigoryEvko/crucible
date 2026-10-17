@@ -1,0 +1,4 @@
+# A planted registry: the target of the runs of gate-mutants on a header is 1 for the nightly entry and for the
+# release entry.
+format 1
+rule mutant-runs engine=build scope=builddir ledger=none warn=1 error=1 unit=runs held-by=loop-evidence holder=assay.loop.evidence.status:judged doc=XV | the runs of gate-mutants on a header | run the mutants of the header again

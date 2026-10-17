@@ -22,7 +22,9 @@ THE SUBCOMMANDS
             The kind search runs each property test of a build with new
             seeds (assay.loop.evidence.search).  The kind measurement runs
             each bench of a build, one at a time
-            (assay.loop.evidence.measurement).  The builds of the kind share
+            (assay.loop.evidence.measurement).  The kind coverage runs the
+            rule gate-mutants on each header of include/
+            (assay.loop.evidence.coverage).  The builds of the kind share
             the budget, in their sequence.  After the runs, the store goes
             back to its row of LIMITS of assay.core.cache.
 
@@ -30,7 +32,7 @@ Usage
     loop evidence status [--build-dir DIR]... [--json] [--release]
     loop evidence run KIND --budget-s SECONDS [--build-dir DIR]... [--item NAME]... [--release] [-j N]
 
-    KIND         repetition, search or measurement
+    KIND         repetition, search, measurement or coverage
 
     --build-dir  A build directory that replaces the builds of the presets
                  file (assay.loop.evidence.items, THE BUILDS)
@@ -50,7 +52,7 @@ from assay.core.exit import ExitCode
 
 PROGRAM = "loop evidence"
 # The kinds that `loop evidence run` runs.
-RUNNERS = ("repetition", "search", "measurement")
+RUNNERS = ("repetition", "search", "measurement", "coverage")
 
 
 def status_main(directories: list[Path], as_json: bool, is_release: bool) -> int:
@@ -86,14 +88,15 @@ def run_main(kind: str, directories: list[Path], budget_s: float, is_release: bo
     """Add evidence of one kind in a time budget (THE SUBCOMMANDS, run)."""
     from assay.core import cache
     from assay.loop import tiers
+    from assay.loop.evidence import coverage, measurement, repetition, search, targets
     from assay.loop.evidence import items as evidence_items
-    from assay.loop.evidence import measurement, repetition, search, targets
     from assay.loop.evidence import store as evidence_store
 
     sampled, run_build = {
         "repetition": (targets.STRESS, repetition.run),
         "search": (targets.PROPERTY, search.run),
         "measurement": (targets.MEASUREMENT, measurement.run),
+        "coverage": (targets.COVERAGE, coverage.run),
     }[kind]
     try:
         budget = check_report.read_budgets().get(sampled.rule)

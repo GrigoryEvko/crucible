@@ -185,11 +185,21 @@ def sampled_cases(expect: testing.Expect) -> None:
         plan.Item(plan.Kind.STEP, "gauge", "x"),
         plan.Item(plan.Kind.STEP, "bench", "x"),
         plan.Item(plan.Kind.HARNESS, "region", "x"),
+        plan.Item(plan.Kind.RULE, evidence_targets.COVERAGE.check, "x"),
+        plan.Item(plan.Kind.RULE, "tested", "x"),
     ]
     bare = {item.entity for item in plan.untargeted_items(items, presets, (build,), planted_registry())}
     expect(
         f"with no class rule in the registry, each sampled item has no target: {sorted(bare)}",
-        bare == {"test-preset stress", "test prop_one", "bench bench_one", "step gauge", "harness region"},
+        bare
+        == {
+            "test-preset stress",
+            "test prop_one",
+            "bench bench_one",
+            "step gauge",
+            "harness region",
+            f"rule {evidence_targets.COVERAGE.check}",
+        },
     )
     held = "".join(
         f"rule {target.rule} engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=loop-evidence "
@@ -229,6 +239,14 @@ def tree_cases(expect: testing.Expect) -> None:
         items[(plan.Kind.DERIVE, "walk-units")].tier is GATE,
     )
     expect("each boundary harness is an item of the step fuzz", items[(plan.Kind.HARNESS, "region")].tier is NIGHTLY)
+    expect(
+        "the rule of a class of coverage gets the tier of the step evidence, which runs it",
+        items[(plan.Kind.RULE, evidence_targets.COVERAGE.check)].tier is NIGHTLY,
+    )
+    expect(
+        "the rule of a class of coverage has a target",
+        all(item.entity != f"rule {evidence_targets.COVERAGE.check}" for item in found.untargeted),
+    )
     commands = plan.subcommands(paths.REPO_ROOT)
     expect("the subcommands of this tree hold loop plan, and hide loop step", commands["plan"] and not commands["step"])
 
