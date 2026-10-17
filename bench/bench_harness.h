@@ -1278,6 +1278,13 @@ public:
     // close_ after it.  Each instantiation of measure holds only its two
     // loops, so a translation unit compiles the cold work one time and not one
     // time for each body.
+    //
+    // A body with a member before_sample() gets a call of it before each
+    // sample, outside the timed region.  A body that allocates puts its
+    // allocator back to the same state there.  Each sample then times the same
+    // path, and no sample meets a new block or the first touch of a page.  A
+    // body with no such member gives the instructions of a measure with no
+    // hook, because the discarded branch makes no code.
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
         MeasureOpening opening = open_();
@@ -1339,6 +1346,9 @@ public:
         const auto wall0 = std::chrono::steady_clock::now();
 
         for (size_t i = 0; i < S; ++i) {
+            if constexpr (requires { body.before_sample(); }) {
+                body.before_sample();
+            }
             // The pinned-overload form — the witness's existence
             // proves a sched_setaffinity (or hardening apply) ran above
             // and the thread has not migrated since.
@@ -1968,8 +1978,8 @@ static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::
 
 // One-shot: build a Run with env-driven core pinning and measure body.
 // For benches that need .samples()/.warmup() overrides, construct Run
-// directly and apply env_core() manually — see bench_arena.cpp slow-path
-// case for the fluent-builder form.
+// directly and apply env_core() manually — see measure_in_epochs in
+// bench_arena.cpp for the fluent-builder form.
 template <typename Body>
 [[nodiscard]] inline Report run(std::string name, Body&& body) {
     Run r{std::move(name)};
