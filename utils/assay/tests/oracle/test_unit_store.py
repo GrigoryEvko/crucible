@@ -31,6 +31,13 @@ THE ARCHIVE CASES
     -B words of the link line of that build.  These words name the linker of
     the tree.
 
+THE NAMED ARCHIVE
+    A program names the scratch archive by its path on the link command.  A
+    program unit of the group oracle names the archives of a build in the
+    same way.  A new name adjacent to the archive or below its directory
+    keeps the stored result.  A changed archive makes the program miss (THE
+    KEY OF A PROGRAM of assay.oracle.unit_store).
+
 THE PARTS
     With `--part K/N`, the part of STORE_PART runs the cases of the store.
     The part of ROOTS_PART runs the cases of the spelled roots (THE PARTS of
@@ -332,6 +339,26 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
             f"a changed static archive that only the link reads makes the program miss, with {linker}",
             not relinked_archive.is_stored and relinked_archive.stdout == "archived 5\n",
         )
+
+    def named_store() -> UnitStore:
+        """Return a store of a program, and its link command names the scratch archive by its path (THE NAMED ARCHIVE)."""
+        return UnitStore(cxx, ["-std=c++20"], [*variants[0], str(archives / "libarchived.a")], scratch, store_root)
+
+    cold_named = named_store().program(archived)
+    (archives / "nested").mkdir()
+    for added in (archives / "added.txt", archives / "nested" / "added.txt"):
+        added.write_text("a name that no link reads\n", encoding="utf-8")
+    warm_named = named_store().program(archived)
+    expect(
+        "a new name adjacent to or below an archive that the link command names keeps the stored program",
+        cold_named.stdout == "archived 5\n" and warm_named.is_stored and warm_named.stdout == "archived 5\n",
+    )
+    expect("the archive that the link command names builds again", build_archive(cxx, archives, 7))
+    changed_named = named_store().program(archived)
+    expect(
+        "a changed archive that the link command names makes the program miss",
+        not changed_named.is_stored and changed_named.stdout == "archived 7\n",
+    )
 
     with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
         disabled = UnitStore(cxx, flags, link_flags, scratch)

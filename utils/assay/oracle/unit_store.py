@@ -61,13 +61,20 @@ THE KEY OF A PROGRAM
       - The arguments of the run, and each environment variable of the C
         library in the run environment (RUN_ENVIRONMENT,
         RUN_ENVIRONMENT_PREFIXES, THE RUN ENVIRONMENT).
+      - The path and the bytes of each file that the link command names by
+        its absolute path (named_link_files()).  An archive of a build is
+        such a file.
     The inputs of a result of a program are the inputs of each compile, and
     these inputs:
-      - Each file that the linker read, from the dependency file that the
-        link writes with --dependency-file.  The directory of each such file,
-        and each directory that a -L word of the link flags names, is a
+      - Each other file that the linker read, from the dependency file that
+        the link writes with --dependency-file.  The directory of each such
+        file, and each directory that a -L word of the link flags names, is a
         search root.  A new file in a search root then makes the result a
         miss.  Such a file can be a library that the next link finds first.
+        The linker opens a file that the link command names, and it searches
+        no directory for it.  The directory of such a file is then not a
+        search root.  The archives of a build are in its top directory.  Each
+        run of the tests adds names below that directory.
       - Each path that the loader tried for the program and each shared
         object that it maps, from a list of the loader with LD_DEBUG=libs.
     A file that is there is a dependency, and its bytes are an input.  A path
@@ -357,14 +364,32 @@ def library_directories(link_flags: Sequence[str], directory: Path) -> list[str]
     return list(dict.fromkeys(os.path.realpath(os.path.join(directory, name)) for name in named))
 
 
+def named_link_files(link: Sequence[str], work: Path) -> list[str]:
+    """Return the path with no link of each file that a word of the link command names by its absolute path.
+
+    Such a word is no flag, and it names a regular file that is not in the
+    scratch directory ``work`` of the unit, such as an archive of a build.  The key
+    holds the bytes of each such file (THE KEY OF A PROGRAM).  O(n) for n
+    words, with one stat of each absolute word.
+    """
+    named = (
+        os.path.realpath(word)
+        for word in link[1:]
+        if not word.startswith("-") and os.path.isabs(word) and not _is_under(word, work) and os.path.isfile(word)
+    )
+    return list(dict.fromkeys(named))
+
+
 def parse_link_dependencies(
-    text: str | None, directory: Path, outputs: Path, searched: Sequence[str]
+    text: str | None, directory: Path, outputs: Path, searched: Sequence[str], named: Sequence[str] = ()
 ) -> _Inputs | None:
     """Return the inputs of a link from the text of its dependency file, or None when the text does not read.
 
     Each prerequisite of the rule of the link is a dependency, and each
     directory of ``searched`` is a search root (THE LINKER).  A path in
-    ``outputs`` is an output of the unit and not an input.  A relative path is
+    ``outputs`` is an output of the unit and not an input.  A path of
+    ``named`` is a file that the link command names: the key holds its bytes,
+    and it is not a dependency (THE KEY OF A PROGRAM).  A relative path is
     relative to ``directory``.  Each path has no link in it (THE PATHS OF A
     RECORD).  A link that wrote no file gives None for ``text``.  O(length of
     the text).
@@ -373,8 +398,11 @@ def parse_link_dependencies(
     if parsed is None:
         return None
     dependencies = (os.path.realpath(os.path.join(directory, name)) for name in parsed)
+    excluded = frozenset(named)
     return _Inputs(
-        dependencies=list(dict.fromkeys(path for path in dependencies if not _is_under(path, outputs))),
+        dependencies=list(
+            dict.fromkeys(path for path in dependencies if not _is_under(path, outputs) and path not in excluded)
+        ),
         named=list(searched),
     )
 
@@ -789,11 +817,19 @@ class UnitStore:
             identity = self._link_identity(unit.directory)
             if identity is None:
                 return None
+            try:
+                named = [
+                    [path, compile_store.file_digest(path, self.store.memo)]
+                    for path in named_link_files(unit.link, unit.work)
+                ]
+            except OSError:
+                return None
             parts += [
                 [placeholders.get(arg, arg) for arg in unit.link],
                 identity,
                 _loader_identity(self.store.memo),
                 self._run_identity(unit.arguments),
+                named,
             ]
         return self._key(unit.kind, parts)
 
@@ -888,7 +924,7 @@ class UnitStore:
             except OSError:
                 text = None
             linked_inputs = parse_link_dependencies(
-                text, directory, work, library_directories(self.link_flags, directory)
+                text, directory, work, library_directories(self.link_flags, directory), named_link_files(link, work)
             )
             if linked_inputs is None:
                 inputs = None
