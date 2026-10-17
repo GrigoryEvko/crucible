@@ -13,6 +13,7 @@ import os
 import shutil
 import stat
 import sys
+import tarfile
 import tempfile
 import time
 import zipfile
@@ -223,6 +224,14 @@ def check_cases(expect: Expect, work: Path) -> None:
            and refused(lambda: install.check_version_line("clang-format", f"clang-format version "
                                                           f"{formatter_pin.version} (Fedora 22.1.8-4.fc44)",
                                                           formatter_pin.version), 2))
+    mold_pin = install.pin_of(install.TOOLS["mold"], table, "linux-x86_64")
+    mold_line = f"mold {mold_pin.version} (8de38c35a2df16a25f7ff87ac3ad07156a925beb; compatible with GNU ld)"
+    expect("the version check of mold accepts the line of the release, and rejects another version and another program",
+           not refused(lambda: install.check_mold_version(mold_line, mold_pin.version))
+           and refused(lambda: install.check_mold_version(mold_line.replace(mold_pin.version, "2.40.4"),
+                                                          mold_pin.version), 2)
+           and refused(lambda: install.check_mold_version(f"GNU ld (GNU Binutils) {mold_pin.version}",
+                                                          mold_pin.version), 2))
     expect("each tool resolves linux-x86_64, and ast-grep, the kit and clang-format resolve darwin-aarch64",
            all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
                for name in install.TOOLS)
@@ -235,7 +244,7 @@ def check_cases(expect: Expect, work: Path) -> None:
            == f"cmake-{version}-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl")
     root = work / "tools"
     for name, slug in (("tree-sitter", "linux-x64"), ("ast-grep", "x86_64-unknown-linux-gnu"), ("cmake", "x86_64"),
-                       ("clang-format", "x86_64")):
+                       ("mold", "x86_64"), ("clang-format", "x86_64")):
         tool = install.TOOLS[name]
         pin = install.pin_of(tool, table, "linux-x86_64")
         directory = install.directory_of(tool, pin, root, table)
@@ -377,6 +386,68 @@ def wheel_cases(expect: Expect, work: Path) -> None:
     )
 
 
+# ── A tarball of mold with no network ──────────────────────────────
+
+
+def planted_mold_tarball(directory: Path, version: str, has_link: bool = True) -> Path:
+    """Write the tarball of a stand-in mold with programs that give VERSION, and return its path.
+
+    The tarball has the layout of a release of mold: the top directory
+    mold-9.9.9-x86_64-linux holds bin/mold and, with has_link, the link
+    bin/ld.mold to it.
+    """
+    top ="mold-9.9.9-x86_64-linux"
+    tree = directory / "tree"
+    (tree / top / "bin").mkdir(parents=True)
+    program = tree / top / "bin" / "mold"
+    program.write_text(f'#!/bin/sh\necho "mold {version} (0000000; compatible with GNU ld)"\n', encoding="utf-8")
+    program.chmod(0o755)
+    if has_link:
+        (tree / top / "bin" / "ld.mold").symlink_to("mold")
+    path = directory / f"{top}.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(tree / top, arcname=top)
+    return path
+
+
+def planted_mold_table(source: Path) -> install.Pins:
+    """Return a pin table with one mold of this host, with the source and its SHA-256."""
+    return planted_table(source, install.sha256_of(source), "mold")
+
+
+def tarball_cases(expect: Expect, work: Path) -> None:
+    """Install a planted tarball of mold, and refuse a tarball with no ld.mold and a mold of a different version."""
+    if pin_table.host_platform() not in install.TOOLS["mold"].slugs:
+        expect("the install cases of mold need a host platform of mold", True)
+        return
+    good = planted_mold_tarball(work / "good", "9.9.9")
+    table = planted_mold_table(good)
+    root = work / "install"
+    directory = install.install("mold", root, copy_fetch, table)
+    expect(
+        "an install of a planted tarball unpacks mold and its link ld.mold, checks them and stamps them",
+        install.is_executable(directory / "bin" / "ld.mold")
+        and (directory / install.STAMP).read_text() == f"9.9.9 {install.sha256_of(good)}\n"
+        and leftovers(root) == [],
+    )
+    expect("--print-bin prints the bin directory that holds ld.mold",
+           install.program("mold", root, table) == directory / "bin")
+    unlinked = planted_mold_tarball(work / "unlinked", "9.9.9", has_link=False)
+    unlinked_root = work / "no-link"
+    expect(
+        "an install refuses a tarball with no ld.mold, with the status 2, and adds nothing",
+        refused(lambda: install.install("mold", unlinked_root, copy_fetch, planted_mold_table(unlinked)), 2)
+        and sorted(child.name for child in unlinked_root.iterdir()) == [],
+    )
+    other = planted_mold_tarball(work / "other", "2.40.4")
+    other_root = work / "other-version"
+    expect(
+        "an install refuses a mold that gives a different version, with the status 2, and adds nothing",
+        refused(lambda: install.install("mold", other_root, copy_fetch, planted_mold_table(other)), 2)
+        and sorted(child.name for child in other_root.iterdir()) == [],
+    )
+
+
 # ── A tool of via=pip with no network ──────────────────────────────
 
 
@@ -466,7 +537,7 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
         for group, cases in (("directories", directory_cases), ("checks", check_cases), ("installs", install_cases),
-                             ("wheels", wheel_cases), ("pip", pip_cases)):
+                             ("wheels", wheel_cases), ("tarballs", tarball_cases), ("pip", pip_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:

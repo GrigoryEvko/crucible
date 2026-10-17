@@ -91,8 +91,10 @@ THE LINK OF A PROGRAM
   runtime.  regenerate takes the build with --build-dir.  The group oracle
   of `guard selftest` takes it from the variable ASSAY_TEST_BUILD_DIR, which
   test/CMakeLists.txt sets.  A run with --at REV also links the archives of
-  the build, and not archives of REV.  The result store of a unit reads each
-  file that the linker opened, and a new archive builds the unit again.
+  the build, and not archives of REV.  The link flags also name the linker
+  of the build and its directory (-fuse-ld and -B).  The result store of a
+  unit reads each file of the dependency file of the link (THE LINKER of
+  assay.oracle.unit_store).  A new archive then builds the unit again.
 
 THE TOOLCHAINS
   Install them one time, in your home directory.  Nothing goes into the

@@ -1,5 +1,5 @@
-# The planted record of the gauge gives the edit build a median of 45 s of wall time at 128 jobs on a quiet host, over
-# the error threshold 40 s. On the planted CI runner of environment.txt, the time error is a warning, and the rule
-# gives no error.
+# The planted record of the gauge gives the edit build a median of 45 s of wall time at the 224 jobs of the rule
+# compile-jobs, on a quiet host, over the error threshold 40 s. On the planted CI runner of environment.txt, the time
+# error is a warning, and the rule gives no error.
 format 1
 kind x86_64-debug-asan

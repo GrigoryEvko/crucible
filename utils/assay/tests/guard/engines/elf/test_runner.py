@@ -338,6 +338,14 @@ def compile_cases(expect: testing.Expect) -> None:
             placed == [("examples", Path("examples/tool"), runner.EXECUTABLE)]
             and (scratch / "program" / "examples" / "tool.map").is_file(),
         )
+        comments: tuple[str, ...] = ()
+        if program.linked:
+            with elf.mapped(program.linked[0].path) as linked_tool:
+                comments = linked_tool.comments()
+        expect(
+            "each link of a plant uses the pinned mold, which puts its version into the section .comment",
+            any(text.startswith("mold ") for text in comments) and "-fuse-ld=mold" in runner.mold_words(),
+        )
         (tree / runner.MANIFEST).write_text("module test libplanted.so a.cpp\n", encoding="utf-8")
         module = runner.planted_build(tree, scratch / "module", compiler)
         module_file = scratch / "module" / "test" / "libplanted.so"

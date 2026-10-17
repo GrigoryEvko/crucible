@@ -1,4 +1,5 @@
-# The planted record of the gauge gives the edit build a median of 45 s of wall time at 128 jobs on a quiet host,
-# over the error threshold 40 s of edit-build-wall.  judged_record() of `loop gauge` gives one error.
+# The planted record of the gauge gives the edit build a median of 45 s of wall time at the 224 jobs of the rule
+# compile-jobs, on a quiet host, over the error threshold 40 s of edit-build-wall.  judged_record() of `loop gauge`
+# gives one error.
 format 1
 kind x86_64-debug-asan

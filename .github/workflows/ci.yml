@@ -26,6 +26,8 @@
 # compiler without each fix, so no job can compile with the stock g++ of the
 # container.  Each job that configures or tests runs the CMake and the ctest
 # that the rows of cmake of utils/pins.txt pin (.github/actions/pinned-cmake).
+# Each job that configures installs the linker mold that the rows of mold pin
+# (.github/actions/pinned-mold), because each link of the tree runs it.
 #
 # Caching (public repo, free cache): ccache wraps the compiler — objects restored
 # per (arch,preset) across runs, split restore/save so even a failed run banks
@@ -352,6 +354,10 @@ jobs:
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
+      # The aarch64 legs get the mold of the row of linux-aarch64.
+      - name: Install the pinned mold
+        uses: ./.github/actions/pinned-mold
+
       # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
       # programs need the matching arm64 layout. Regenerate it from the runner
       # kernel's BTF (CO-RE: compile-time types, load-time relocation). Fails
@@ -378,7 +384,7 @@ jobs:
       - name: Reset ccache stats
         run: ccache -z
 
-      # -jN overrides the preset's jobs:128. 4 vCPU / 16 GB runners; sanitizer
+      # -jN overrides the preset's jobs:224. 4 vCPU / 16 GB runners; sanitizer
       # and -fanalyzer TUs are memory-heavy, so jobs is tuned per preset. The
       # analyzer preset is restricted to the `crucible` library target —
       # -fanalyzer over the full ~1000-TU test tree would blow the wall-clock
@@ -544,6 +550,9 @@ jobs:
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
+      - name: Install the pinned mold
+        uses: ./.github/actions/pinned-mold
+
       # CPU wheel only: the CUDA wheels are several GB and the runner shares
       # ~14 GB with the container. The wheel ships the full C++ header tree at
       # site-packages/torch/include, which is all a compile gate needs.
@@ -685,6 +694,8 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
+      - name: Install the pinned mold
+        uses: ./.github/actions/pinned-mold
       - name: Configure (bench, ccache)
         run: >
           cmake --preset bench
@@ -758,6 +769,8 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
+      - name: Install the pinned mold
+        uses: ./.github/actions/pinned-mold
       - name: Configure (default + CRUCIBLE_FUZZ + CRUCIBLE_BENCH, ccache)
         run: >
           cmake --preset default

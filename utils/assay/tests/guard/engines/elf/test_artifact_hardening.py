@@ -4,8 +4,8 @@ THE CASES
     The cases hold these parts of the rule:
       * The problems of the facts of one artifact, for each kind and each
         machine, with planted facts
-      * The inputs of a link that remove the control-flow protection, from
-        planted merges of a map
+      * The inputs of a link that remove the control-flow protection, from a
+        planted mold map, planted objects and a planted archive
       * The kinds of a row `properties` of a plant
       * The read of linked artifacts of planted builds, the groups of the
         problems, and the builds that the rule does not apply to.
@@ -65,6 +65,23 @@ def planted_rule() -> rule_registry.Rule:
     """Return the rule artifact-hardening of a planted registry."""
     row = f"rule {artifact_hardening.RULE} engine=elf scope=builddir ledger=none doc=V | a planted property | add it"
     return rule_registry.planted_rules((row,))[artifact_hardening.RULE]
+
+
+def planted_object(word: int | None, kind: int = X86.kind) -> bytes:
+    """Return an object with the feature property KIND of a word in its section .note.gnu.property, or no section."""
+    note = elf.property_note([(kind, word.to_bytes(4, "little"))]) if word is not None else b""
+    sections = [elf.Planted(artifact_hardening.PROPERTY_SECTION, note)] if word is not None else []
+    return elf.make_file([elf.Planted(".text", b"\x90"), *sections])
+
+
+def planted_map(inputs: Iterable[str]) -> str:
+    """Return a mold map with one output section, one input section of each input, and one symbol of the first."""
+    rows = [linkmap.HEADING, f"{0:>18}{64:>11}{8:>6} EHDR", f"{0x1000:#18x}{16:>11}{16:>6} .text"]
+    for index, item in enumerate(inputs):
+        rows.append(f"{0x1000 + index:#18x}{1:>11}{1:>6}         {item}:(.text)")
+        if not index:
+            rows.append(f"{0x1000:#18x}          0     0                 main(int, char**)")
+    return "\n".join(rows) + "\n"
 
 
 # ── The cases ──────────────────────────────────────────────────────
@@ -145,29 +162,78 @@ def problem_cases(expect: testing.Expect) -> None:
 
 
 def input_cases(expect: testing.Expect) -> None:
-    """Hold the inputs that removed the control-flow protection, from the merges of a map (THE CONTROL FLOW)."""
-
-    def merge(first: str, first_value: int | None, second: str, second_value: int | None) -> linkmap.PropertyMerge:
-        """Return a planted merge of the feature property of x86."""
-        return linkmap.PropertyMerge("Removed", X86.kind, None, first, first_value, second, second_value)
-
-    merges = [
-        merge("crt1.o", 3, "unit.o", None),
-        linkmap.PropertyMerge("Removed", 0xC0008002, None, "crt1.o", 1, "other.o", None),
-        merge("crt1.o", None, "libx.a(member.o)", 3),
-        merge("crt1.o", None, "unit.o", None),
-        linkmap.PropertyMerge("Updated", X86.kind, 1, "crt1.o", 3, "part.o", 1),
-    ]
-    expect(
-        "each second file with no property or with no required bit comes one time, and a different type adds none",
-        artifact_hardening.lacking_inputs(merges, X86) == ("unit.o", "part.o"),
-    )
-    expect(
-        "the first file of the first merge comes when it has no required bit",
-        artifact_hardening.lacking_inputs([merge("start.o", 1, "unit.o", 3)], X86) == ("start.o",)
-        and artifact_hardening.lacking_inputs([merge("start.o", None, "unit.o", 3)], X86) == ("start.o",),
-    )
-    expect("no merge gives no input", artifact_hardening.lacking_inputs([], X86) == ())
+    """Hold the inputs that removed the control-flow protection, from a planted map and its inputs (THE CONTROL FLOW)."""
+    with TemporaryDirectory(prefix="artifact-hardening-inputs-") as scratch_text:
+        scratch = Path(scratch_text)
+        for name, word in (("good.o", 3), ("bare.o", None), ("shadowless.o", 1)):
+            (scratch / name).write_bytes(planted_object(word))
+        (scratch / "arm.o").write_bytes(planted_object(3, AARCH64.kind))
+        members = (
+            ("good.o", planted_object(3)),
+            ("bad.o", planted_object(None)),
+            ("twice.o", planted_object(3)),
+            ("twice.o", planted_object(1)),
+        )
+        (scratch / "libx.a").write_bytes(elf.make_archive(members))
+        (scratch / "libdamaged.a").write_bytes(elf.ARCHIVE_MAGIC + b"not a member header")
+        reader = artifact_hardening.InputReader(scratch)
+        inputs = (
+            "good.o",
+            "bare.o",
+            "shadowless.o",
+            "libx.a(good.o)",
+            "libx.a(bad.o)",
+            "libx.a(twice.o)",
+            "libx.a(absent.o)",
+            "missing.o",
+            str(scratch / "good.o"),
+            "libdamaged.a(one.o)",
+            "libdamaged.a(two.o)",
+        )
+        scan = reader.scan(inputs, X86)
+        expect(
+            "an object or a member with no property, or with no required bit, lacks the bits, in the sequence of the "
+            "map, and a relative input gets the build directory",
+            scan.lacking
+            == tuple(str(scratch / name) for name in ("bare.o", "shadowless.o", "libx.a(bad.o)", "libx.a(twice.o)")),
+        )
+        unread = dict(scan.unread)
+        unread_names = ("libx.a(absent.o)", "missing.o", "libdamaged.a(one.o)", "libdamaged.a(two.o)")
+        expect(
+            "a member that the archive does not hold, a missing file and a damaged archive cannot be read, with "
+            "their reasons",
+            list(unread) == [str(scratch / name) for name in unread_names]
+            and "has no member absent.o" in unread[str(scratch / "libx.a(absent.o)")],
+        )
+        expect(
+            "the reader reads each archive one time, also an archive that cannot be read",
+            sorted(path.name for path, _ in reader.archives) == ["libdamaged.a", "libx.a"],
+        )
+        expect(
+            "the feature property of x86 does not protect an object of aarch64, and the property of aarch64 does",
+            reader.scan(("arm.o", "good.o"), AARCH64).lacking == (str(scratch / "good.o"),),
+        )
+        program = scratch / "program"
+        words = ((str(scratch), "{build}"),)
+        program.with_name("program.map").write_text(planted_map(inputs[:3] + inputs[6:7]), encoding="utf-8")
+        cause = artifact_hardening.control_flow_cause(program, X86, words, reader)
+        expect(
+            "the cause names each input with no bit with the words of the paths, and the inputs that cannot be read",
+            "these inputs do not have them: {build}/bare.o, {build}/shadowless.o." in cause
+            and "cannot read 1 inputs of the map, such as {build}/libx.a(absent.o): " in cause,
+        )
+        program.with_name("program.map").write_text(planted_map(inputs[:1]), encoding="utf-8")
+        cause = artifact_hardening.control_flow_cause(program, X86, words, reader)
+        expect(
+            "a map whose inputs have the bits tells that an object with no section in the output removed them",
+            "Each input of the map has the bits" in cause,
+        )
+        program.with_name("program.map").write_text("Archive member included to satisfy reference\n", encoding="utf-8")
+        cause = artifact_hardening.control_flow_cause(program, X86, words, reader)
+        expect(
+            "a map of GNU ld cannot be read, and the cause tells that the tree links with mold",
+            "cannot be read" in cause and "links with mold" in cause,
+        )
     words = (("/opt/gcc", "{toolchain}"),)
     many = [f"/opt/gcc/lib/x{index}.o" for index in range(artifact_hardening.SHOWN_INPUTS + 2)]
     shown = artifact_hardening.shown_inputs(many, words)
@@ -230,7 +296,7 @@ def build_cases(expect: testing.Expect, compiler: str, scratch: Path) -> None:
     )
     program = plain.linked_artifacts()[0].path
     program.with_name(program.name + ".map").unlink()
-    cause = artifact_hardening.control_flow_cause(program, X86, ())
+    cause = artifact_hardening.control_flow_cause(program, X86, (), artifact_hardening.InputReader(scratch))
     expect("a map that cannot be read gives words that say so", "cannot be read" in cause)
     twice = built("twice", "program examples one main.cpp | -no-pie\nprogram examples two main.cpp | -no-pie\n")
     pie_errors = [item for item in artifact_hardening.findings(twice) if item.kind == artifact_hardening.PIE]

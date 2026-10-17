@@ -290,6 +290,13 @@ endif()
 # first target.
 include(cmake/JobPools.cmake)
 
+# Each link of the tree runs the pinned mold with the thread count of the rule
+# link-threads of utils/registry.txt (cmake/Linker.cmake).  The file puts the
+# linker flags into CMAKE_EXE_LINKER_FLAGS, CMAKE_SHARED_LINKER_FLAGS and
+# CMAKE_MODULE_LINKER_FLAGS.  A try_compile then gets them too.  The file comes
+# before the first target and before check_pie_supported().
+include(cmake/Linker.cmake)
+
 # The test launcher records the cost of each test and holds its budget, and
 # crucible_script_test() registers a script test behind it.  It also names
 # the warnings directory of the checks.  It comes before the first target and
@@ -307,7 +314,7 @@ include(utils/tools/quarantine/Quarantine.cmake)
 # clears the compiler launcher, and before the first target.
 include(cmake/BuildLauncher.cmake)
 
-# GNU ld writes the map of each link beside its output.  The rule
+# The linker writes the map of each link beside its output.  The rule
 # artifact-links reads the maps.
 include(cmake/LinkMap.cmake)
 
@@ -1498,7 +1505,7 @@ target_link_options(crucible_dialect INTERFACE
   "LINKER:--hash-style=gnu"            # 238  GNU hash (faster lookup)
   "LINKER:--build-id=sha1"             # 239  SHA-1 build ID
   "LINKER:-z,pack-relative-relocs"     # 240  compact relocations
-  "LINKER:-z,nodump"                   # 241  prevent core dump of lib
+  "LINKER:-z,nodump"                   # 241  DF_1_NODUMP: dldump(3) must not dump the object.  A core dump does not change
   "LINKER:--gc-sections"               # 242  garbage-collect sections
   "LINKER:-z,defs"                     # 243  no undefined symbols
 )

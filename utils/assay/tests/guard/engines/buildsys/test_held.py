@@ -14,15 +14,16 @@ from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
+from assay.core import report as check_report
 from assay.core import testing
 from assay.guard.engines.buildsys import cost_budgets, held, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
+from assay.loop import gauge
 
-# A gauge record at the 128 jobs of the rule compile-jobs.  The wall time of the build and of the test run are each
-# over their error threshold.
+# A gauge record at JOBS jobs.  The wall time of the build and of the test run are each over their error threshold.
 SLOW_RECORD = (
-    '{"jobs": 128, "steps": [], "medians": {'
+    '{"jobs": JOBS, "steps": [], "medians": {'
     '"build": {"wall_s": 45.0, "cpu_s": 1000.0, "instructions_g": 5000.0, "worst_others_pct": 2.0}, '
     '"tests": {"wall_s": 130.0, "cpu_s": 1000.0, "instructions_g": 10000.0, "worst_others_pct": 2.0}}}\n'
 )
@@ -71,9 +72,16 @@ def is_refused(rule: rule_registry.Rule, context: BuildContext) -> bool:
 
 
 def gauge_cases(expect: testing.Expect) -> None:
-    """The judge of the gauge keeps the findings of the held rule, and refuses a record that does not read."""
+    """The judge of the gauge keeps the findings of the held rule, and refuses a record that does not read.
+
+    The record runs the job count of the gate, the error threshold of the
+    rule compile-jobs of the tree.  The judge reads the wall times only at
+    that count.
+    """
+    gate_jobs = gauge.gate_jobs(check_report.read_budgets())
+    record = SLOW_RECORD.replace("JOBS", str(gate_jobs))
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
-        context = context_of(Path(scratch), BUILD_HEAD, [(f"planted-build/{held.GAUGE_RECORDS}", SLOW_RECORD)])
+        context = context_of(Path(scratch), BUILD_HEAD, [(f"planted-build/{held.GAUGE_RECORDS}", record)])
         found = held.held_findings(tree_rule("edit-test-wall"), context)
         expect(
             "a gauge record over the error threshold gives one error of the held rule, and no finding of another rule",

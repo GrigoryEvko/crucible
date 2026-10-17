@@ -1643,6 +1643,12 @@ def check_parsers(failures: list[str]) -> None:
         failures.append(f"the dependency file parse gives {parsed}")
     if store.parse_dependency_file("out.o: a.h\nb.h: c.h\n") is not None:
         failures.append("a dependency file with two rules is refused")
+    # The shape of -MP and of the dependency file of a link: one phony rule for each prerequisite, also two times.
+    phony = store.parse_dependency_file("program: a.o lib.a lib.a\n\na.o:\n\nlib.a:\n\nlib.a:\n")
+    if phony != ["a.o", "lib.a", "lib.a"]:
+        failures.append(f"a dependency file with a phony rule for each prerequisite gives {phony}")
+    if store.parse_dependency_file("program: a.o\n\nother.o:\n") is not None:
+        failures.append("a phony rule that names no prerequisite of the first rule is refused")
     named = store.parse_search_list(SEARCH_LIST)
     expected_named = ["/opt/gcc/x86_64/include", "/opt/inc/./", "/work/quote", "/work/include", "/opt/gcc/include/c++",
                       "/Library/Frameworks"]

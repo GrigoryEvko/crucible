@@ -1,0 +1,4 @@
+# The tree of each plant of the rule: each link gives the compiler -fuse-ld=mold, the -B prefix planted-mold/ of the
+# build directory, which holds ld.mold, and the linker options --threads=4 and --no-fork, the setting of the planted
+# registry.  The archive gives no linker flag, and the rule does not read it.  The rule gives no error.
+format 1

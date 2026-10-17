@@ -1,9 +1,0 @@
-# The ledger of the rule link-time of utils/registry.txt: the items that a row keeps over the warning threshold
-# of the rule, one row for each item and build kind or configuration.  A row is '@build/OUTPUT | KIND | VALUE | - | REASON'.
-# KIND is the build kind of BUILD_DIR/build-kind.txt or the name of BUILD_DIR/build-configuration.txt, and
-# VALUE is the value at the last write, in s.  A row keeps its item up to VALUE with the noise of its
-# unit (THE NOISE of utils/assay/core/budget.py).  `python3 utils/bin/guard explain link-time` tells the rule,
-# and `python3 utils/bin/guard write --rule link-time --build-dir DIR [--reason TEXT]` writes this file.
-format 1
-rule link-time
-@build/test/session_oracle/test_session_oracle_fixy_wire | x86_64-debug-asan | 5.125 | - | GNU ld 2.46.1 writes this program of 118 MB in 5.1 s of CPU time, 3.4 s of it system time, at a host load of 38.  mold 3.0.0 links it in 0.16 s, and the change to mold removes this row

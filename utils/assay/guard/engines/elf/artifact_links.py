@@ -53,10 +53,12 @@ THE RUN PATH DIRECTORIES
     the ledger refuses a build with one (configured.Inspection.unadmitted).
 
 THE MAP
-    cmake/LinkMap.cmake makes GNU ld write the map of each link adjacent to
-    its output, as OUTPUT.map.  The rule reads the archive members of the map
-    (assay.readers.linkmap.read_members).  An artifact with no map is an
-    error of the build: configure the build again.
+    cmake/LinkMap.cmake makes mold write the map of each link adjacent to
+    its output, as OUTPUT.map.  The rule reads the archive members that the
+    input sections of the map name (assay.readers.linkmap.read_members).
+    A member that keeps no section in the output gives no fact (THE INPUTS
+    of assay.readers.linkmap).  An artifact with no map is an error of the
+    build: configure the build again.
 
 THE LEDGER
     utils/ledgers/artifact-links.txt has the policy count, in format 1 of

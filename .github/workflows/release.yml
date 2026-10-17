@@ -174,6 +174,13 @@ jobs:
         if: ${{ hashFiles('utils/pins.txt', 'utils/toolchain/cmake/requirements.txt') != '' }}
         uses: ./.github/actions/pinned-cmake
 
+      # Each link of a tag with the action pinned-mold runs the mold that the tag
+      # pins (cmake/Linker.cmake).  A tag from before the pin of mold has no such
+      # action, and it links with the linker of the compiler.
+      - name: Install the pinned mold
+        if: ${{ hashFiles('.github/actions/pinned-mold/action.yml') != '' }}
+        uses: ./.github/actions/pinned-mold
+
       # Portable static configure. ccache launchers compose with the gcc16
       # toolchain shim. BPF off => no libbpf dep; examples off => fewer TUs.
       - name: Configure (static, BPF off, ${{ matrix.march }})

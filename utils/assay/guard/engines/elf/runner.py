@@ -78,6 +78,11 @@ THE PLANTS
     PlantedBuild.  A plant that the rule refuses must give an error, and a
     control must give none.
 
+    Each link of a plant uses the pinned mold, as each link of the tree does
+    (cmake/Linker.cmake).  mold_words() gives the words of the link, from
+    the bin directory of the install of mold (assay.setup.install).  A
+    plant does not build when mold is not installed.
+
 THE RUN
     A module that judges its findings itself gives judge(rule, context),
     run(rule, context, warnings_dir) and write(rule, request).  For each other
@@ -90,6 +95,7 @@ THE RUN
 `guard selftest tests.guard.engines.elf.test_runner` does a test of the module.
 """
 
+import functools
 import os
 import platform
 import shlex
@@ -129,6 +135,12 @@ LIBRARY_ROWS = frozenset({"library", "archive", "shared"})
 PROGRAM_ROW = "program"
 MODULE_ROW = "module"
 LINKED_ROWS = frozenset({PROGRAM_ROW, MODULE_ROW})
+# The tool of the linker, the rule of its thread count, and the word that tells mold to start no child process
+# (THE PLANTS).  cmake/Linker.cmake gives each link of the tree the same words, and the link is then complete when
+# the compiler driver stops.
+LINKER_TOOL = "mold"
+THREADS_RULE = "link-threads"
+NO_FORK_WORD = "-Wl,--no-fork"
 SKIPPED = meta_runner.SKIPPED
 NotApplicable = meta_runner.NotApplicable
 
@@ -506,11 +518,35 @@ def host_flags(words: Sequence[str]) -> list[str]:
     return [CFI_FLAGS[machine] if word == CFI_WORD else word for word in words]
 
 
-def linked_artifact(row: rows_grammar.Row, tree: Path, build: Path, compiler: str) -> LinkedArtifact:
-    """Link the program or the shared library of a program row or a module row of plant.txt, with its map.
+@functools.cache
+def mold_words() -> tuple[str, ...]:
+    """Return the words that make the compiler link with the pinned mold (THE PLANTS).
+
+    The thread count is the error threshold of the rule link-threads of the registry of the repository.  The check
+    of the install runs mold two times, and the cache does it one time in a process.
 
     Raises:
-        BuildError: If the link fails
+        BuildError: If the pinned mold is not installed, or the registry gives no integer thread count
+    """
+    from assay.setup import install
+
+    try:
+        directory = install.program(LINKER_TOOL)
+    except install.InstallError as problem:
+        raise BuildError(f"the plant cannot link, because {problem}") from None
+    rule = rule_registry.load().rules.get(THREADS_RULE)
+    threshold = rule.threshold if rule is not None else None
+    if threshold is None or not threshold.error.is_integer() or threshold.error < 1:
+        raise BuildError(f"the rule {THREADS_RULE} of utils/registry.txt gives no thread count above 0")
+    threads = int(threshold.error)
+    return (f"-fuse-ld={LINKER_TOOL}", f"-B{directory}/", f"-Wl,--threads={threads}", NO_FORK_WORD)
+
+
+def linked_artifact(row: rows_grammar.Row, tree: Path, build: Path, compiler: str) -> LinkedArtifact:
+    """Link the program or the shared library of a program row or a module row of plant.txt, with mold and its map.
+
+    Raises:
+        BuildError: If mold is not installed, or the link fails
     """
     is_module = row.words[0] == MODULE_ROW
     artifact = build / row.words[1] / row.words[2]
@@ -518,7 +554,8 @@ def linked_artifact(row: rows_grammar.Row, tree: Path, build: Path, compiler: st
     objects = [str(object_of(build, unit, is_module)) for unit in row.words[3:]]
     words = [word.replace(ROOT_WORD, str(tree)) for cell in row.cells for word in rows_grammar.head_words(cell)]
     shared = ["-shared"] if is_module else []
-    compiled([compiler, *shared, *objects, "-o", str(artifact), f"-Wl,-Map={artifact}.map", *words], build)
+    map_word = f"-Wl,-Map={artifact}.map"
+    compiled([compiler, *shared, *objects, "-o", str(artifact), map_word, *mold_words(), *words], build)
     return LinkedArtifact(row.words[1], artifact, MODULE_LIBRARY if is_module else EXECUTABLE)
 
 
@@ -583,7 +620,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
         if is_shared:
             library = build / "links" / f"lib{name}.so"
             library.parent.mkdir(exist_ok=True)
-            compiled([compiler, "-shared", *objects, "-o", str(library)], build)
+            compiled([compiler, "-shared", *objects, "-o", str(library), *mold_words()], build)
         else:
             library = (build if row.words[0] == "library" else build / "links") / f"lib{name}.a"
             library.parent.mkdir(exist_ok=True)

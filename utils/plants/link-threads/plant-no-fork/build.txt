@@ -1,0 +1,3 @@
+# The link of tool does not give mold --no-fork.  mold then links in a child process, and the build launcher
+# measures only the compiler driver.  The rule gives one error fork.
+format 1

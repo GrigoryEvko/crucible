@@ -17,7 +17,6 @@ utils/assay/oracle/keskin.py | regex-call | 1 | <module> | The pattern reads the
 utils/assay/oracle/probe.py | regex-call | 2 | <module> | The probe reads the messages of its compile from the SARIF log.  One pattern reads a printed C++ type in a message, and one reads a bracketed tag.  No reader of the package parses a printed type
 utils/assay/oracle/rocq.py | regex-call | 2 | <module> | The patterns read the Require lines of the Rocq sources and the output of Eval vm_compute.  The pinned Rocq gives no structured output, and no reader of the package reads it
 utils/assay/oracle/sprout.py | regex-call | 2 | <module> | The patterns read the report of the Sprout tool, which has no structured output.  No reader of the package reads it
-utils/assay/oracle/unit_store.py | regex-call | 1 | <module> | The pattern reads each attempt to open a file in the output of ld --verbose, which has no structured form.  assay.readers.linkmap reads a link map and not this trace
 utils/assay/tests/core/test_git.py | git-output | 1 | answer_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
 utils/assay/tests/core/test_git.py | git-output | 4 | command_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module
 utils/assay/tests/core/test_git.py | git-output | 1 | isolation_cases | The test of assay.core.git calls run() and run_any_exit() to test them, and reads their output to test the functions of the module

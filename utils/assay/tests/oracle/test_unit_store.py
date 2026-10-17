@@ -22,6 +22,15 @@ THE SPELLED ROOTS
     store then kept no result.  `guard selftest oracle` runs the module with
     the other modules of its group.
 
+THE ARCHIVE CASES
+    A program links a static archive through a -L directory.  The loader
+    does not read the archive.  Only the dependency file of the link then
+    makes a new archive a miss (THE LINKER of assay.oracle.unit_store).  The
+    cases link with the default linker of the compiler.  When
+    ASSAY_TEST_BUILD_DIR names a build, they also link with the -fuse-ld and
+    -B words of the link line of that build.  These words name the linker of
+    the tree.
+
 THE PARTS
     With `--part K/N`, the part of STORE_PART runs the cases of the store.
     The part of ROOTS_PART runs the cases of the spelled roots (THE PARTS of
@@ -46,7 +55,8 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard import selftest
 from assay.loop.fixture import store as compile_store
-from assay.oracle.unit_store import UnitStore
+from assay.oracle import runner
+from assay.oracle.unit_store import USE_LINKER, UnitStore, linker_of, program_flags
 from assay.tests import oracle as oracle_parts
 
 # The group oracle gives this module the part of the call (THE PARTS).
@@ -58,6 +68,9 @@ SETTLED_S = compile_store._SETTLE_NS / 1e9 + 0.2
 SLOTS = 2
 SLOT_UNITS = 6
 SLOT_WAIT_S = 0.3
+# The variable that names the build of the group oracle.  The archive cases also link with the linker of that build
+# (THE ARCHIVE CASES).
+BUILD_DIR_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 
 
 def counting_compiler(cxx: str, directory: Path) -> tuple[str, Path]:
@@ -90,15 +103,42 @@ def build_library(cxx: str, directory: Path, value: int, name: str = "value") ->
     return proc.run(proc.Command(command, timeout_s=proc.TOOL_S)).exit == 0
 
 
+def build_archive(cxx: str, directory: Path, value: int) -> bool:
+    """Build directory/libarchived.a with archived_number, which gives ``value``.  Return True when it builds."""
+    source, obj, archive = directory / "archived.cpp", directory / "archived.o", directory / "libarchived.a"
+    source.write_text(f"int archived_number() {{ return {value}; }}\n", encoding="utf-8")
+    compile_command = [cxx, "-fPIE", "-c", str(source), "-o", str(obj)]
+    if proc.run(proc.Command(compile_command, timeout_s=proc.TOOL_S)).exit != 0:
+        return False
+    archive.unlink(missing_ok=True)
+    return proc.run(proc.Command(["ar", "rcs", str(archive), str(obj)], timeout_s=proc.TOOL_S)).exit == 0
+
+
+def linker_words() -> list[list[str]]:
+    """Return the linker words of each link of the archive cases (THE ARCHIVE CASES).
+
+    The first list is empty, for the default linker of the compiler.  When
+    ASSAY_TEST_BUILD_DIR names a build, a second list holds the -fuse-ld and
+    -B words of the link line of that build.  O(n) for n words of that line.
+    """
+    build = os.environ.get(BUILD_DIR_VARIABLE)
+    if not build:
+        return [[]]
+    flags = runner.build_link_flags(Path(build))
+    tree = [flag for flag in flags if flag.startswith(USE_LINKER)] + program_flags(flags)
+    return [[], tree] if tree else [[]]
+
+
 def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
     """Run each case of the rules of the store in ``root`` (THE CASES)."""
-    include, early, library, early_library, scratch = (
-        root / name for name in ("include", "early", "library", "early_library", "scratch")
+    include, early, library, early_library, archives, scratch = (
+        root / name for name in ("include", "early", "library", "early_library", "archives", "scratch")
     )
-    for directory in (include, early, library, early_library, scratch):
+    for directory in (include, early, library, early_library, archives, scratch):
         directory.mkdir()
     (include / "probe.h").write_text("#pragma once\ninline constexpr int probe_value = 1;\n")
     expect("the scratch library builds", build_library(cxx, library, 7))
+    expect("the scratch archive builds", build_archive(cxx, archives, 3))
     static = [
         (
             "unit.cpp",
@@ -257,6 +297,41 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
         "a library on a path that the linker and the loader tried and did not find makes the program miss",
         not probed.is_stored and probed.stdout == "value 12\n",
     )
+
+    archived = [
+        (
+            "archived.cpp",
+            '#include <cstdio>\nint archived_number();\nint main() { std::printf("archived %d\\n", archived_number()); }\n',
+        )
+    ]
+    variants = linker_words()
+
+    def archive_store(words: Sequence[str]) -> UnitStore:
+        """Return a store of the archive cases, with the linker words ``words`` (THE ARCHIVE CASES).
+
+        The compile reads no include directory of the cases above, because
+        those cases changed them less than one settle period before.
+        """
+        return UnitStore(cxx, ["-std=c++20"], [*words, f"-L{archives}", "-larchived"], scratch, store_root)
+
+    for words in variants:
+        linker = linker_of(words)
+        cold_archived = archive_store(words).program(archived)
+        warm_archived = archive_store(words).program(archived)
+        expect(
+            f"a program that links a static archive comes from the store on its second build, with {linker}",
+            cold_archived.stdout == "archived 3\n"
+            and warm_archived.is_stored
+            and warm_archived.stdout == "archived 3\n",
+        )
+    expect("the changed scratch archive builds", build_archive(cxx, archives, 5))
+    for words in variants:
+        linker = linker_of(words)
+        relinked_archive = archive_store(words).program(archived)
+        expect(
+            f"a changed static archive that only the link reads makes the program miss, with {linker}",
+            not relinked_archive.is_stored and relinked_archive.stdout == "archived 5\n",
+        )
 
     with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
         disabled = UnitStore(cxx, flags, link_flags, scratch)

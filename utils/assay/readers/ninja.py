@@ -66,6 +66,14 @@ ERRORS
     the file.  NotNinja, a subclass, tells that a generator other than Ninja
     made the build, or that no configure wrote build.ninja.
 
+THE DRY RUN
+    Each tool of ninja runs with -n.  With no -n, ninja opens .ninja_deps
+    and .ninja_log for a write, and it recompacts a log that holds many
+    dead records.  A build that links each artifact again makes such a log.
+    On 2026-10-17, tests that read a Release build at the same time started
+    two recompactions.  The dependency lists of each object then went from
+    .ninja_deps.  With -n, ninja reads the two logs and writes no log.
+
 THE COST
     graph() reads build.ninja of the tree in about 0.5 s.  log() reads
     .ninja_log in less than 0.1 s.  deps() starts ninja, which reads
@@ -500,14 +508,14 @@ def _ninja_program(build_dir: Path) -> str:
 def _run_tool(build_dir: Path, words: Sequence[str]) -> str:
     """Run one tool of the ninja of a build directory, check its exit status, and return its standard output.
 
-    A byte of the output that is not UTF-8 stays as a surrogate escape, and a
+    The tool runs with -n, and ninja then writes no log (THE DRY RUN).  A byte of the output that is not UTF-8 stays as a surrogate escape, and a
     path in the output then names its file.
 
     Raises:
         NotNinja: If the generator of the build is not Ninja
         NinjaError: If the cache names no ninja, or the tool cannot start, runs too long or fails
     """
-    command = proc.Command([_ninja_program(build_dir), "-C", str(build_dir), "-t", *words], timeout_s=proc.TOOL_S)
+    command = proc.Command([_ninja_program(build_dir), "-n", "-C", str(build_dir), "-t", *words], timeout_s=proc.TOOL_S)
     try:
         return proc.decoded(proc.require(proc.run(command)).stdout, "surrogateescape")
     except proc.CannotStart as problem:

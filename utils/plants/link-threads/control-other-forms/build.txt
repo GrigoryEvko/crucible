@@ -1,0 +1,5 @@
+# The links give the same setting in other forms.  FLAGS of tool gives -fuse-ld=bfd, and the -fuse-ld=mold of
+# LINK_FLAGS comes after it.  tool gives the -B prefix as a second word with no slash, and the thread count with
+# -Xlinker.  libshared.so gives --threads=8 and then --thread-count 4, and --fork and then --no-fork.  The rule gives
+# no error.
+format 1

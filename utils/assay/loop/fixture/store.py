@@ -1413,11 +1413,15 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
 
 
 def parse_dependency_file(text: str) -> list[str] | None:
-    """Return the prerequisites of the one rule in a dependency file of GCC.
+    """Return the prerequisites of the first rule in a dependency file of GCC or of a linker.
 
     GCC puts a backslash before a space, a tab and a `#` in a file name, and it
-    writes a `$` two times.  The function returns None for a file with no rule
-    or with more than one rule.  The cost is O(n) in the length of the text.
+    writes a `$` two times.  After the first rule, the file can hold a phony
+    rule for each prerequisite.  A phony rule has no prerequisites, and its
+    target is a prerequisite of the first rule.  GCC writes such rules with
+    -MP, and GNU ld and mold write them with --dependency-file.  The function
+    returns None for a file with no rule, and for a different second rule.
+    The cost is O(n) in the length of the text.
     """
     words: list[str] = []
     current: list[str] = []
@@ -1450,9 +1454,17 @@ def parse_dependency_file(text: str) -> list[str] | None:
     if current:
         words.append("".join(current))
     targets = [position for position, word in enumerate(words) if word.endswith(":")]
-    if len(targets) != 1:
+    if not targets:
         return None
-    return words[targets[0] + 1 :]
+    end = targets[1] if len(targets) > 1 else len(words)
+    prerequisites = words[targets[0] + 1 : end]
+    named = set(prerequisites)
+    for position in targets[1:]:
+        is_last_word = position + 1 == len(words)
+        is_phony = (is_last_word or words[position + 1].endswith(":")) and words[position][:-1] in named
+        if not is_phony:
+            return None
+    return prerequisites
 
 
 # ── The compiler identity: the loader ──────────────────────────────

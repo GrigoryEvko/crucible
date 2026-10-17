@@ -26,7 +26,8 @@ THE LAYERS
                          (COMPILER_MADE of artifact_symbols), and each
                          import of a function of the support library of
                          GCC.  A linked file also gives each member of the
-                         support library that its link takes
+                         support library that the map of its link names
+                         (THE INPUTS of assay.readers.linkmap)
       4. link facts      each fact of the rule artifact-links of a linked
                          file.  A static library has no link, and the layer
                          gives its members and its COMDAT groups

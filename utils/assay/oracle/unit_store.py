@@ -49,10 +49,11 @@ THE KEY OF A STATIC UNIT
 
 THE KEY OF A PROGRAM
     The key hashes the compile key of each source, the link and the run:
-      - The link command, with a placeholder for each object file and for
-        the program.  The path and the bytes of collect2, of the linker, of
-        the LTO plugin and of lto-wrapper.  The shared objects that the
-        loader maps into collect2, into the linker and into the plugin.
+      - The link command, with a placeholder for each object file, for the
+        dependency file of the link and for the program.  The path and the
+        bytes of collect2, of the linker, of the LTO plugin and of
+        lto-wrapper.  The shared objects that the loader maps into collect2,
+        into the linker and into the plugin (THE LINKER).
       - The bytes of the configuration of the loader, of its cache and of
         its preload list.  The linker reads the configuration for the shared
         objects that a shared object uses.  These files are in /etc, which is
@@ -62,14 +63,32 @@ THE KEY OF A PROGRAM
         RUN_ENVIRONMENT_PREFIXES, THE RUN ENVIRONMENT).
     The inputs of a result of a program are the inputs of each compile, and
     these inputs:
-      - Each file that the linker opened, from its --verbose report, and
-        each path that it tried and did not find.
+      - Each file that the linker read, from the dependency file that the
+        link writes with --dependency-file.  The directory of each such file,
+        and each directory that a -L word of the link flags names, is a
+        search root.  A new file in a search root then makes the result a
+        miss.  Such a file can be a library that the next link finds first.
       - Each path that the loader tried for the program and each shared
         object that it maps, from a list of the loader with LD_DEBUG=libs.
     A file that is there is a dependency, and its bytes are an input.  A path
     with no file is a probed path, and a file at that path then makes the
-    result a miss.  The object files and the program are outputs, and they
-    are not inputs.  The program runs in an empty directory.
+    result a miss.  The object files, the dependency file and the program are
+    outputs, and they are not inputs.  The program runs in an empty
+    directory.
+
+THE LINKER
+    The last -fuse-ld=NAME word of the link flags names the linker ld.NAME.
+    With no such word, the linker is ld.  collect2 runs that program, and the
+    driver finds it with the -B words of the link flags, as collect2 does.
+    GNU ld and mold write the same dependency file.  The rule of the link is
+    the first rule of that file (parse_dependency_file of the result store).
+    mold writes no dependency file for a link with an error, and the store
+    then keeps no result.
+
+    The linker gives no path that it tried and did not find.  For that
+    reason, each -L directory is a search root, and the store lists each name
+    in it.  The directories that the driver gives the linker are not search
+    roots, because /usr/lib holds too many names.
 
 THE RUN ENVIRONMENT
     The run of a program and the list of its loader get the environment of
@@ -103,6 +122,7 @@ WHAT THE STORE DOES NOT STORE
     - A compile or a link with an exit code that is not 0 or 1, because a
       signal or an internal error can give a different result on the next
       run.
+    - A link that writes no dependency file that reads (THE LINKER).
     - A run that ended by a signal or by its time limit, and a run with a
       result that the caller calls unstable.  The run of a program can
       change with the time, and the caller knows which outcome does.
@@ -132,7 +152,6 @@ import contextlib
 import hashlib
 import json
 import os
-import re
 import shutil
 import tempfile
 import threading
@@ -168,15 +187,19 @@ RUN_ENVIRONMENT = frozenset({"LANG", "TZ"})
 RUN_ENVIRONMENT_PREFIXES = ("LD_", "LC_", "GLIBC_", "MALLOC_")
 # The search path of the loader, which the run environment keeps with no empty element (THE RUN ENVIRONMENT).
 LIBRARY_PATH = "LD_LIBRARY_PATH"
-# The programs of a link that the compiler driver finds.  The loader of the
+# The programs of a link that the compiler driver finds, other than the linker (THE LINKER).  The loader of the
 # linker also maps the shared objects of the LTO plugin.
-LINK_PROGRAMS = ("collect2", "ld", "liblto_plugin.so", "lto-wrapper")
+LINK_PROGRAMS = ("collect2", "liblto_plugin.so", "lto-wrapper")
+# The word of the link flags that names the linker, and the linker with no such word (THE LINKER).
+USE_LINKER = "-fuse-ld="
+DEFAULT_LINKER = "ld"
+# The file name of the dependency file of a link, in the scratch directory of its unit (THE LINKER).
+LINK_DEPENDENCIES = "link.d"
 # The configuration of the loader, its cache, and the preload list that it reads in each process.
 LOADER_CONFIG = Path("/etc/ld.so.conf")
 LOADER_CONFIG_DIRECTORY = Path("/etc/ld.so.conf.d")
 LOADER_CACHE = Path("/etc/ld.so.cache")
 PRELOAD_LIST = Path("/etc/ld.so.preload")
-_ATTEMPT = re.compile(r"^attempt to open (.+) (succeeded|failed)$", re.MULTILINE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,22 +318,65 @@ def _is_under(path: str, directory: Path) -> bool:
     return real == base or real.startswith(base + os.sep)
 
 
-def parse_link_report(text: str, directory: Path, outputs: Path) -> _Inputs:
-    """Return the inputs of a link from the --verbose report of GNU ld.
+def linker_of(link_flags: Sequence[str]) -> str:
+    """Return the program name of the linker of the link flags (THE LINKER).
 
-    Each file that the linker opened is a dependency, and each path that it
-    tried and did not find is a probed path.  A path under ``outputs`` is an
-    output of the unit and not an input.  A relative path is relative to
-    ``directory``.  Each path has no link in it (THE PATHS OF A RECORD).
-    O(length of the report).
+    The last -fuse-ld=NAME word names ld.NAME.  With no such word, the linker
+    is ld.  O(n) for n flags.
     """
-    inputs = _Inputs()
-    for match in _ATTEMPT.finditer(text):
-        path = os.path.realpath(os.path.join(directory, match.group(1)))
-        if _is_under(path, outputs):
-            continue
-        (inputs.dependencies if match.group(2) == "succeeded" else inputs.missing).append(path)
-    return inputs
+    names = [flag.removeprefix(USE_LINKER) for flag in link_flags if flag.startswith(USE_LINKER)]
+    return f"{DEFAULT_LINKER}.{names[-1]}" if names else DEFAULT_LINKER
+
+
+def program_flags(link_flags: Sequence[str]) -> list[str]:
+    """Return the -B words of the link flags, which give the driver its first directories for a program.
+
+    A -B word holds its directory, or the next word holds it.  O(n) for n flags.
+    """
+    words: list[str] = []
+    for index, flag in enumerate(link_flags):
+        if flag == "-B" and index + 1 < len(link_flags):
+            words += [flag, link_flags[index + 1]]
+        elif flag.startswith("-B") and flag != "-B":
+            words.append(flag)
+    return words
+
+
+def library_directories(link_flags: Sequence[str], directory: Path) -> list[str]:
+    """Return the path with no link of each directory that a -L word of the link flags names (THE LINKER).
+
+    A -L word holds its directory, or the next word holds it.  A relative
+    directory is relative to ``directory``.  O(n) for n flags.
+    """
+    named: list[str] = []
+    for index, flag in enumerate(link_flags):
+        if flag == "-L" and index + 1 < len(link_flags):
+            named.append(link_flags[index + 1])
+        elif flag.startswith("-L") and flag != "-L":
+            named.append(flag.removeprefix("-L"))
+    return list(dict.fromkeys(os.path.realpath(os.path.join(directory, name)) for name in named))
+
+
+def parse_link_dependencies(
+    text: str | None, directory: Path, outputs: Path, searched: Sequence[str]
+) -> _Inputs | None:
+    """Return the inputs of a link from the text of its dependency file, or None when the text does not read.
+
+    Each prerequisite of the rule of the link is a dependency, and each
+    directory of ``searched`` is a search root (THE LINKER).  A path in
+    ``outputs`` is an output of the unit and not an input.  A relative path is
+    relative to ``directory``.  Each path has no link in it (THE PATHS OF A
+    RECORD).  A link that wrote no file gives None for ``text``.  O(length of
+    the text).
+    """
+    parsed = compile_store.parse_dependency_file(text) if text is not None else None
+    if parsed is None:
+        return None
+    dependencies = (os.path.realpath(os.path.join(directory, name)) for name in parsed)
+    return _Inputs(
+        dependencies=list(dict.fromkeys(path for path in dependencies if not _is_under(path, outputs))),
+        named=list(searched),
+    )
 
 
 def respelled_roots(inputs: _Inputs) -> _Inputs:
@@ -335,6 +401,11 @@ def respelled_roots(inputs: _Inputs) -> _Inputs:
     return _Inputs(
         [respelled(path) for path in inputs.dependencies], list(inputs.missing), [real[root] for root in inputs.named]
     )
+
+
+def _dependency_word(work: Path) -> str:
+    """Return the link flag that makes the linker write its dependency file in ``work`` (THE LINKER)."""
+    return f"-Wl,--dependency-file={work / LINK_DEPENDENCIES}"
 
 
 def _run_environment(base: Mapping[str, str]) -> dict[str, str]:
@@ -407,6 +478,8 @@ class UnitStore:
         self.cxx = shutil.which(cxx) or cxx
         self.flags = list(flags)
         self.link_flags = list(link_flags)
+        self.linker = linker_of(self.link_flags)
+        self.program_flags = program_flags(self.link_flags)
         self.scratch = scratch
         self.latest_start_ns = latest_start_ns
         self.environment = compile_store.compile_environment(os.environ)
@@ -521,17 +594,16 @@ class UnitStore:
     def _program_path(self, program: str, directory: Path) -> str | None:
         """Return the path of the program or the file that the compiler driver finds as ``program``, or None.
 
-        The answer depends on the driver and on PATH, which stay the same in
-        one run, so one query of each program serves the run.
+        The query gives the driver the -B words of the link flags.  The driver
+        then finds the program that the link runs (THE LINKER).  The answer
+        depends on the driver, on those words and on PATH.  These stay the
+        same in one run, and one query of each program serves the run.
         """
         with self._lock:
             if program in self._program_paths:
                 return self._program_paths[program]
-        found = proc.run(
-            proc.Command(
-                [self.cxx, f"-print-prog-name={program}"], timeout_s=proc.QUICK_S, cwd=directory, env=self.environment
-            )
-        ).out.strip()
+        query = [self.cxx, *self.program_flags, f"-print-prog-name={program}"]
+        found = proc.run(proc.Command(query, timeout_s=proc.QUICK_S, cwd=directory, env=self.environment)).out.strip()
         if found and not os.path.isabs(found):
             found = shutil.which(found, path=self.environment.get("PATH")) or ""
         path = found if found and os.path.isfile(found) else None
@@ -540,15 +612,15 @@ class UnitStore:
         return path
 
     def _link_identity(self, directory: Path) -> list[object] | None:
-        """Return the identity of the link programs, or None when one of them cannot be found or read."""
+        """Return the identity of the link programs and of the linker, or None when one cannot be found or read."""
         assert self.store is not None
         paths: dict[str, str] = {}
-        for program in LINK_PROGRAMS:
+        for program in (*LINK_PROGRAMS, self.linker):
             path = self._program_path(program, directory)
             if path is None:
                 return None
             paths[program] = path
-        hosts = {"collect2": paths["collect2"], "ld": paths["ld"], "liblto_plugin.so": paths["ld"]}
+        hosts = {"collect2": paths["collect2"], self.linker: paths[self.linker], "liblto_plugin.so": paths[self.linker]}
         identity: list[object] = []
         try:
             for program, path in paths.items():
@@ -690,7 +762,7 @@ class UnitStore:
             "-o",
             str(work / "program"),
             *self.link_flags,
-            "-Wl,--verbose",
+            _dependency_word(work),
         ]
         unit = Unit("program", sources, work, compiles, link, tuple(arguments), is_stable)
         unit.key = self._unit_key(unit)
@@ -706,6 +778,7 @@ class UnitStore:
             return None
         placeholders = {str(unit.work / f"{index}.o"): f"<object {index}>" for index in range(len(unit.sources))}
         placeholders[str(unit.work / "program")] = "<program>"
+        placeholders[_dependency_word(unit.work)] = _dependency_word(Path("<scratch>"))
         parts: list[object] = []
         for command, source in zip(unit.compiles, unit.sources, strict=True):
             compile_key = self._compile_key([placeholders.get(arg, arg) for arg in command], unit.directory, source)
@@ -805,10 +878,22 @@ class UnitStore:
         if failed is not None:
             is_storable = all(completed.exit in (0, 1) for completed, _ in built)
             return UnitResult(failed.exit, _kept(failed.stdout), _kept(failed.stderr)), inputs, is_storable
+        dependency_file = work / LINK_DEPENDENCIES
+        dependency_file.unlink(missing_ok=True)
         with self._slots:
             linked = proc.run(proc.Command(link, timeout_s=proc.TOOL_S, cwd=directory, env=self.environment))
         if inputs is not None:
-            inputs.add(parse_link_report(_kept(linked.stdout), directory, work))
+            try:
+                text: str | None = dependency_file.read_text(errors="surrogateescape")
+            except OSError:
+                text = None
+            linked_inputs = parse_link_dependencies(
+                text, directory, work, library_directories(self.link_flags, directory)
+            )
+            if linked_inputs is None:
+                inputs = None
+            else:
+                inputs.add(linked_inputs)
         if linked.exit != 0:
             return UnitResult(linked.exit, _kept(linked.stdout), _kept(linked.stderr)), inputs, linked.exit == 1
         if inputs is not None:

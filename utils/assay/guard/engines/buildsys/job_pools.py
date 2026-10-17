@@ -1,4 +1,4 @@
-"""job-pools — the compile jobs and the link jobs at one time, and the Ninja pools of the build that hold them.
+"""job-pools — the compile jobs and the link jobs at one time, the Ninja pools that hold them, and the linker of a link.
 
 THE COUNTS
     The error threshold of the measured rule compile-jobs of
@@ -105,6 +105,36 @@ THE RULE link-jobs
     `input` for the pool link, each link and each archive.  No program of the tree
     has a count of links of its own.  The rule then gives no program-jobs.
 
+THE RULE link-threads
+    Each link of the tree runs mold (cmake/Linker.cmake).  The compiler gets
+    -fuse-ld=mold, -B with the bin directory of the pinned mold, and the
+    linker options --threads=N and --no-fork.  N is the error threshold of the
+    rule link-threads.  With its fork, mold links in a child process, and the
+    parent ends before the child.  wait4 of the build launcher then measures
+    only the compiler driver.  With --no-fork, the rules link-time and
+    link-memory measure the link.  The rule reads the variables FLAGS and
+    LINK_FLAGS of each link edge of build.ninja, in the sequence of the
+    command of CMake (link_setting()).  It reads a linker option from
+    -Wl,A,B and from -Xlinker A.  It gives:
+      `linker`            the last -fuse-ld of the edge is not mold, or the
+                          edge has no -fuse-ld
+      `linker-directory`  no -B prefix of the edge holds ld.mold.  GCC then
+                          runs an ld.mold of PATH.  The rule reads a prefix
+                          relative to the build directory, as the link does
+      `threads`           the last thread count that the edge gives mold is
+                          not the count of the rule.  --no-threads is one
+                          thread, and --threads with no count is the default
+                          of mold, one thread for each CPU
+      `fork`              the edge does not give mold --no-fork after its
+                          last --fork
+      `input`             the rule cannot read the graph, or it cannot divide
+                          a variable of an edge into words.  Or the threshold
+                          of the rule is not an integer above 0
+    One finding gives the number of the edges of each kind and value, and
+    the first edge.  An archive has no linker, and the rule does not read it.
+    The configure step refuses a mold of a different version.  For that
+    reason, the rule does not run ld.mold.
+
 A DIFFERENT DEPTH
     The cache variables CRUCIBLE_COMPILE_JOBS and CRUCIBLE_LINK_JOBS can give
     a build a different depth (cmake/JobPools.cmake).  The rules then give
@@ -117,7 +147,10 @@ THE PLANTS
     proc.py and CMakePresets.json.  Its planted registry gives the count 4 for
     compile-jobs and 2 for link-jobs.  plant_context() copies that tree first,
     and then the files of the plant over it.  A plant then holds only the
-    files that it changes.
+    files that it changes.  The control control-pooled of link-threads holds
+    a planted build.  Each link of that build gives the flags of
+    cmake/Linker.cmake, with the -B prefix planted-mold/ of the build
+    directory.  Its planted registry gives the count 4 for link-threads.
 
 Complexity: one read of the graph and its included files, linear in their length.
 """
@@ -125,9 +158,10 @@ Complexity: one read of the graph and its included files, linear in their length
 import ast
 import enum
 import operator
+import shlex
 import shutil
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -181,6 +215,35 @@ OPTION_DEST = "dest"
 OPTION_DEFAULT = "default"
 # The prefix of a long option word.
 LONG_OPTION = "--"
+# The rule of the linker of each link (THE RULE link-threads).
+THREADS_RULE = "link-threads"
+# The linker of the tree, the option of the compiler that selects it, and the program that GCC runs for it.
+LINKER = "mold"
+LINKER_OPTION = "-fuse-ld="
+LINKER_PROGRAM = "ld.mold"
+# The option of the compiler that adds a prefix to the search of its programs.
+PREFIX_OPTION = "-B"
+# The two forms that give the linker options: -Wl,A,B and -Xlinker A.
+LINKER_PASS = "-Wl,"
+LINKER_WORD = "-Xlinker"
+# The options of mold that give its thread count, the option of one thread, and the options of the fork.
+THREAD_COUNT_OPTIONS = ("--threads=", "--thread-count=")
+THREAD_COUNT_WORD = "--thread-count"
+DEFAULT_THREADS = "--threads"
+ONE_THREAD = "--no-threads"
+FORK = "--fork"
+NO_FORK = "--no-fork"
+# The thread count of a link with --threads and no count, in a finding.
+DEFAULT_COUNT = "the default of mold"
+# The variables of a link edge that hold the words of the compiler, in the sequence of the command of CMake.
+LINK_VARIABLES = ("FLAGS", "LINK_FLAGS")
+# The characters that a '$' escapes in a value of a Ninja variable.
+NINJA_ESCAPED = frozenset("$ :")
+# The repair of a link edge of the rule link-threads.
+THREADS_REPAIR = (
+    "Configure the build again: cmake/Linker.cmake gives each link -fuse-ld=mold, -B with the bin directory of the "
+    "pinned mold, the thread count of the rule link-threads and --no-fork"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,23 +286,28 @@ def error(rule: PoolRule, path: str, line: int, message: str, kind: str, entity:
     return check_report.Finding("error", path, line, rule.rule_id, message, kind, entity)
 
 
-def count_of(context: BuildContext, rule: PoolRule) -> int | check_report.Finding:
+def count_of(context: BuildContext, rule_id: str, meaning: str) -> int | check_report.Finding:
     """Return the count of a rule, the error threshold of its row in the registry of the context, or the error.
+
+    Args:
+        context: The context of the run
+        rule_id: The ID of the measured rule
+        meaning: What the count is, for the message of the error, such as "the number of jobs at one time"
 
     Raises:
         NotApplicable: If the registry has no measured rule with that ID
     """
-    threshold = context.budget(rule.rule_id).error
+    threshold = context.budget(rule_id).error
     if threshold.is_integer() and threshold >= 1:
         return int(threshold)
-    return error(
-        rule,
+    return check_report.Finding(
+        "error",
         "utils/registry.txt",
         0,
-        f"the error threshold {threshold:g} of the rule {rule.rule_id} is the number of jobs at one time, and it must "
-        f"be an integer above 0",
+        rule_id,
+        f"the error threshold {threshold:g} of the rule {rule_id} is {meaning}, and it must be an integer above 0",
         "input",
-        rule.rule_id,
+        rule_id,
     )
 
 
@@ -868,7 +936,7 @@ def findings_of(context: BuildContext, rule: PoolRule) -> list[check_report.Find
             if the registry has no measured rule with the ID
     """
     context.require_build()
-    count = count_of(context, rule)
+    count = count_of(context, rule.rule_id, "the number of jobs at one time")
     if isinstance(count, check_report.Finding):
         return [count]
     found = pool_findings(context, rule, count)
@@ -887,6 +955,200 @@ def link_findings(context: BuildContext) -> list[check_report.Finding]:
     return findings_of(context, LINK)
 
 
+@dataclass(frozen=True, slots=True)
+class LinkSetting:
+    """The linker words of one link edge (THE RULE link-threads).
+
+    `linker` is the value of the last -fuse-ld, or empty when the edge has
+    none.  `prefixes` holds each -B prefix in sequence.  `threads` is the
+    last thread count that the edge gives mold: None for no count, and
+    DEFAULT_COUNT for --threads with no count.  `has_no_fork` is True when
+    --no-fork comes after the last --fork.
+    """
+
+    linker: str
+    prefixes: tuple[str, ...]
+    threads: str | None
+    has_no_fork: bool
+
+
+def ninja_value(text: str) -> str:
+    """Return the value of a Ninja variable with no escape: $$ gives $, '$ ' a space and $: a colon.
+
+    The reader does not expand a variable reference such as $out, and this
+    function keeps it.  Complexity: linear in the length of the text.
+    """
+    kept: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "$" and index + 1 < len(text) and text[index + 1] in NINJA_ESCAPED:
+            kept.append(text[index + 1])
+            index += 2
+            continue
+        kept.append(text[index])
+        index += 1
+    return "".join(kept)
+
+
+def linker_options(words: Sequence[str]) -> list[str]:
+    """Return the options that the words of a compiler give the linker, from -Wl,A,B and -Xlinker A, in sequence."""
+    options: list[str] = []
+    for index, word in enumerate(words):
+        if word.startswith(LINKER_PASS):
+            options.extend(word[len(LINKER_PASS) :].split(","))
+        elif word == LINKER_WORD and index + 1 < len(words):
+            options.append(words[index + 1])
+    return options
+
+
+def link_setting(words: Sequence[str]) -> LinkSetting:
+    """Read the linker, the -B prefixes, the thread count and the fork from the words of one link.
+
+    The words are those of the variables FLAGS and LINK_FLAGS of the edge,
+    in that sequence.  The compiler uses the last -fuse-ld, and mold uses the
+    last thread count and the last of --fork and --no-fork.  Complexity:
+    linear in the words.
+    """
+    linker = ""
+    prefixes: list[str] = []
+    for index, word in enumerate(words):
+        if word.startswith(LINKER_OPTION):
+            linker = word[len(LINKER_OPTION) :]
+        elif word == PREFIX_OPTION and index + 1 < len(words):
+            prefixes.append(words[index + 1])
+        elif word.startswith(PREFIX_OPTION) and len(word) > len(PREFIX_OPTION):
+            prefixes.append(word[len(PREFIX_OPTION) :])
+    threads: str | None = None
+    has_no_fork = False
+    options = linker_options(words)
+    for index, option in enumerate(options):
+        count = next((option[len(prefix) :] for prefix in THREAD_COUNT_OPTIONS if option.startswith(prefix)), None)
+        if count is not None:
+            threads = count
+        elif option == THREAD_COUNT_WORD and index + 1 < len(options):
+            threads = options[index + 1]
+        elif option == DEFAULT_THREADS:
+            threads = DEFAULT_COUNT
+        elif option == ONE_THREAD:
+            threads = "1"
+        elif option in (FORK, NO_FORK):
+            has_no_fork = option == NO_FORK
+    return LinkSetting(linker, tuple(prefixes), threads, has_no_fork)
+
+
+def holds_linker(build: Path, prefix: str, known: dict[Path, bool]) -> bool:
+    """Return True when a -B prefix of a link, read relative to the build directory, holds ld.mold.
+
+    GCC adds a slash to a prefix that names a directory.  Each other prefix
+    is the start of the name of a program.  `known` keeps the answer for each
+    path.  The rule then reads each path one time.
+    """
+    base = build / prefix
+    candidate = base / LINKER_PROGRAM if prefix.endswith("/") or base.is_dir() else Path(f"{base}{LINKER_PROGRAM}")
+    if candidate not in known:
+        known[candidate] = candidate.is_file()
+    return known[candidate]
+
+
+def link_words(variables: Mapping[str, str]) -> list[str]:
+    """Return the words of the compiler of a link edge, from its variables FLAGS and LINK_FLAGS in that sequence.
+
+    Raises:
+        ValueError: If shlex cannot divide a variable into words
+    """
+    return [word for name in LINK_VARIABLES for word in shlex.split(ninja_value(variables.get(name, "")))]
+
+
+def threads_message(kind: str, value: str, count: int) -> str:
+    """Return the start of the message of a group of link edges of one kind and one value (THE RULE link-threads)."""
+    if kind == "linker":
+        given = f"{LINKER_OPTION}{value}, and not {LINKER_OPTION}{LINKER}" if value else f"no {LINKER_OPTION}{LINKER}"
+        return f"give the compiler {given}, and GCC then runs a different linker"
+    if kind == "linker-directory":
+        return (
+            f"give the compiler no {PREFIX_OPTION} prefix that holds {LINKER_PROGRAM}, and GCC then runs an "
+            f"{LINKER_PROGRAM} of PATH and not the pinned {LINKER}"
+        )
+    if kind == "threads":
+        if not value:
+            given = "no thread count"
+        elif value == DEFAULT_COUNT:
+            given = f"{DEFAULT_THREADS} with no count"
+        else:
+            given = f"the thread count {value}"
+        return f"give {LINKER} {given}, and the rule {THREADS_RULE} of utils/registry.txt gives {count} threads"
+    return (
+        f"do not give {LINKER} {NO_FORK}.  {LINKER} then links in a child process, and the build launcher "
+        f"measures only the compiler driver"
+    )
+
+
+def threads_findings(context: BuildContext) -> list[check_report.Finding]:
+    """Give the errors of the rule link-threads (THE RULE link-threads).
+
+    Complexity: linear in the edges and their variables, and one read of the
+    file system for each different -B prefix.
+
+    Raises:
+        NotApplicable: If the call gives no build directory, or a generator other than Ninja made the build.  Also
+            if the registry has no measured rule link-threads
+    """
+    build = context.require_build()
+    count = count_of(context, THREADS_RULE, "the number of threads of one link")
+    if isinstance(count, check_report.Finding):
+        return [count]
+    graph = build_graph.graph_or_error(context, THREADS_RULE)
+    if isinstance(graph, check_report.Finding):
+        return [graph]
+    shown = build_graph.graph_file_shown(context)
+    known: dict[Path, bool] = {}
+    groups: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
+    found: list[check_report.Finding] = []
+    for edge_id, edge in enumerate(graph.edges):
+        if ninja_reader.edge_kind(edge.rule) != "link":
+            continue
+        try:
+            setting = link_setting(link_words(graph.variables.get(edge_id, {})))
+        except ValueError as problem:
+            found.append(
+                check_report.Finding(
+                    "error",
+                    shown,
+                    edge.line,
+                    THREADS_RULE,
+                    f"the rule cannot divide the variables {' and '.join(LINK_VARIABLES)} of the link of "
+                    f"{edge.outputs[0]} into words: {problem}",
+                    "input",
+                    edge.outputs[0],
+                )
+            )
+            continue
+        if setting.linker != LINKER:
+            groups[("linker", setting.linker)].append(edge_id)
+        if not any(holds_linker(build, prefix, known) for prefix in setting.prefixes):
+            groups[("linker-directory", "")].append(edge_id)
+        if setting.threads != str(count):
+            groups[("threads", setting.threads or "")].append(edge_id)
+        if not setting.has_no_fork:
+            groups[("fork", "")].append(edge_id)
+    entities = {"linker-directory": LINKER_PROGRAM, "fork": NO_FORK}
+    for (kind, value), edge_ids in sorted(groups.items()):
+        first = graph.edges[edge_ids[0]]
+        found.append(
+            check_report.Finding(
+                "error",
+                shown,
+                first.line,
+                THREADS_RULE,
+                f"{len(edge_ids)} link edge(s) {threads_message(kind, value, count)}.  The first writes "
+                f"{first.outputs[0]}.  {THREADS_REPAIR}",
+                kind,
+                entities.get(kind, value or "none"),
+            )
+        )
+    return found
+
+
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
     """Copy the tree of the base control of a plant, then make the planted build of the plant over it (THE PLANTS).
 
@@ -901,4 +1163,5 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
 RULES = {
     "compile-jobs": meta_runner.Member(compile_findings),
     "link-jobs": meta_runner.Member(link_findings),
+    "link-threads": meta_runner.Member(threads_findings),
 }

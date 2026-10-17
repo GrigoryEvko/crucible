@@ -1,7 +1,7 @@
 """setup install — install each pinned tool, and find the program of an installed tool.
 
 usage:
-    setup install [TOOL]...           install each TOOL, by default tree-sitter, ast-grep and cmake
+    setup install [TOOL]...           install each TOOL, by default tree-sitter, ast-grep, cmake and mold
     setup install --print-bin TOOL    print the program of an installed TOOL.  No network
     setup install --print-dir TOOL    print the install directory of TOOL, also when it is absent.  No network
 
@@ -19,6 +19,11 @@ THE TOOLS
                  of the manylinux wheel of CMake on PyPI.  A wheel is a zip
                  file, so the install needs no pip.  --print-bin prints the
                  bin directory.
+    mold         The linker mold (the pin mold): the tarball of a release of
+                 mold.  Each link of the tree gives the compiler -fuse-ld=mold
+                 and -B with the bin directory of the install
+                 (cmake/Linker.cmake).  GCC then runs the link ld.mold of
+                 that directory.  --print-bin prints the bin directory.
     oracle       The toolchain of the crash-stop oracle of the session oracle
                  (the pins temurin-jdk, sbt and mcrl2), which
                  assay.setup.oracle installs into the cache of the oracle.
@@ -54,7 +59,8 @@ FAIL-CLOSED PINNING
     After the unpack, the kit must give the pinned lineage in MANIFEST.txt
     and parse a fixture that only the fork parses, ast-grep must give its
     pinned version and read a fixture as the guards need, and cmake and
-    ctest must give their pinned version.  mypy must give its pinned version
+    ctest must give their pinned version.  mold and its link ld.mold must give
+    the pinned version.  mypy must give its pinned version
     and the word that its compiled wheel gives, and ruff and clang-format must
     give their pinned version.  A failure at each step installs nothing.
 
@@ -128,7 +134,7 @@ STAMP = ".crucible-pin"
 LAST_USE = ".last-use"
 STAGING_PREFIX = ".staging."
 RETIRED_PREFIX = ".retired."
-DEFAULT_TOOLS = ("tree-sitter", "ast-grep", "cmake")
+DEFAULT_TOOLS = ("tree-sitter", "ast-grep", "cmake", "mold")
 INSTALL_COMMAND = "python3 utils/bin/setup install"
 
 # The fixture that only the fork of the kit parses: a conditional inside an argument list.  The upstream
@@ -497,8 +503,10 @@ def verify_kit(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     check_fork_parse(output)
 
 
-def unpack_kit(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
-    """Unpack the tarball of the kit into the staging directory, and return its top directory.
+def unpack_tarball(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
+    """Unpack a tarball of the kit or of mold into the staging directory, and return its top directory.
+
+    The name of the top directory is the name of the tarball with no suffix .tar.gz.
 
     Raises:
         InstallError: If the tarball does not unpack to the directory that its name gives
@@ -600,12 +608,12 @@ def unpack_zip(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
 
 
 def version_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
-    """Return the stamp of ast-grep, cmake or clang-format: the version and the SHA-256."""
+    """Return the stamp of ast-grep, cmake, mold or clang-format: the version and the SHA-256."""
     return f"{pin.version} {pin.digest}\n"
 
 
 def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
-    """Return why the stamp of ast-grep, cmake or clang-format does not name the pin, or None."""
+    """Return why the stamp of ast-grep, cmake, mold or clang-format does not name the pin, or None."""
     try:
         found = (directory / STAMP).read_text(encoding="utf-8").strip()
     except OSError:
@@ -662,6 +670,41 @@ def verify_clang_format(directory: Path, pin: pin_table.Pin, table: Pins) -> Non
         InstallError: If the program is missing, or its version line names a different version
     """
     verify_programs(directory, ("clang-format",), pin.version)
+
+
+# mold.
+
+# The programs of the bin directory of mold.  GCC runs ld.mold, a link to mold, for -fuse-ld=mold.
+MOLD_PROGRAMS = ("mold", "ld.mold")
+
+
+def check_mold_version(line: str, version: str) -> None:
+    """Make sure that the first line of `mold --version` names mold and the pinned version.
+
+    mold gives `mold VERSION (COMMIT; compatible with GNU ld)`.
+
+    Raises:
+        InstallError: If the line names a different program or a different version
+    """
+    if not line.startswith(f"mold {version} ("):
+        raise InstallError(f"mold gives {line!r}, the pin says mold {version}.", NOT_PINNED)
+
+
+def verify_mold(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that mold and ld.mold of the bin directory of a directory give the pinned version.
+
+    Raises:
+        InstallError: If a program is missing, or its version line names a different version
+    """
+    for name in MOLD_PROGRAMS:
+        program = directory / "bin" / name
+        if not is_executable(program):
+            raise InstallError(f"{program} is missing or not executable.", NOT_PINNED)
+        status, output = run_program([str(program), "--version"])
+        if status != 0:
+            raise InstallError(f"{program} --version fails.", NOT_PINNED)
+        lines = output.splitlines()
+        check_mold_version(lines[0].strip() if lines else "", pin.version)
 
 
 def unpack_wheel(package: str, download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
@@ -802,7 +845,7 @@ TOOLS: dict[str, Tool] = {
     "tree-sitter": Tool(
         "tree-sitter", "tree-sitter-kit", "tree-sitter-cpp-fork-",
         {"linux-x86_64": "linux-x64", "linux-aarch64": "linux-arm64", "darwin-aarch64": "macos-arm64"},
-        verify_kit, unpack_kit, kit_stamp, kit_stamp_matches, lambda directory: directory / "bin" / "tree-sitter",
+        verify_kit, unpack_tarball, kit_stamp, kit_stamp_matches, lambda directory: directory / "bin" / "tree-sitter",
         True),
     "ast-grep": Tool(
         "ast-grep", "ast-grep", "ast-grep-",
@@ -814,6 +857,9 @@ TOOLS: dict[str, Tool] = {
         "cmake", "cmake", "cmake-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_cmake, functools.partial(unpack_wheel, "cmake"), version_stamp, version_stamp_matches,
         lambda directory: directory / "bin", True),
+    "mold": Tool(
+        "mold", "mold", "mold-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
+        verify_mold, unpack_tarball, version_stamp, version_stamp_matches, lambda directory: directory / "bin", False),
     "mypy": Tool(
         "mypy", "mypy", "mypy-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_mypy, pip_unpack, functools.partial(pip_stamp, MYPY_REQUIRES),

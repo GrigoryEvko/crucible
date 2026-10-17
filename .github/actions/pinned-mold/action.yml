@@ -1,0 +1,44 @@
+# The linker mold that the rows of mold of utils/pins.txt pin.
+#
+# `setup install mold` (utils/assay/setup/install.py) installs it into the
+# tools directory of the shared cache root.  The configure step finds it there
+# with `setup install --print-bin mold`, and each link of the tree gives the
+# compiler -fuse-ld=mold and -B with its bin directory (cmake/Linker.cmake).
+# The install then puts nothing in PATH.  The Actions cache keeps the install
+# directory.  Its key is the name of that directory, which carries the pinned
+# version, the machine and the start of the pinned SHA256, and the hash of the
+# install module.  A cache miss downloads one tarball from the releases of mold
+# on GitHub.  The step that saves the cache runs immediately after the install.
+# A job that fails after that step then keeps the install.
+#
+# The job must check out the tree first, and it must have Python 3.14.
+name: pinned mold
+description: Install the pinned linker mold into the tools directory.
+runs:
+  using: composite
+  steps:
+    - name: Find the install directory of the pinned mold
+      id: locate
+      shell: bash
+      run: |
+        dir="$(python3 utils/bin/setup install --print-dir mold)"
+        printf 'dir=%s\nkey=%s-%s\n' "$dir" "${dir##*/}" "${{ hashFiles('utils/assay/setup/install.py') }}" \
+          >> "$GITHUB_OUTPUT"
+
+    - name: Restore the pinned mold
+      id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.locate.outputs.dir }}
+        key: ${{ steps.locate.outputs.key }}
+
+    - name: Install the pinned mold
+      shell: bash
+      run: python3 utils/bin/setup install mold
+
+    - name: Save the pinned mold
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.locate.outputs.dir }}
+        key: ${{ steps.locate.outputs.key }}

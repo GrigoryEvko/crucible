@@ -1828,7 +1828,6 @@ utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._loaded: exist |
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._loaded: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._program_path: depend | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._program_path: serve | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore._program_path: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore.build: beside | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore.build: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | UnitStore.program_unit: whether | A text of today.  The change that writes the text again in STE lowers the count
@@ -1841,7 +1840,6 @@ utils/assay/oracle/unit_store.py | refused-word | 1 | _loader_identity: need | A
 utils/assay/oracle/unit_store.py | refused-word | 2 | _loader_identity: preload | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | _loader_identity: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/oracle/unit_store.py | refused-word | 1 | _loader_identity: under | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/oracle/unit_store.py | refused-word | 1 | parse_link_report: under | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/readers/census.py | long-sentence | 4 | <module> | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/readers/census.py | refused-word | 1 | <module>: another | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/readers/census.py | refused-word | 1 | <module>: depend | A text of today.  The change that writes the text again in STE lowers the count

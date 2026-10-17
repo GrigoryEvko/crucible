@@ -40,14 +40,21 @@ THE CONTROL FLOW
     branch and each return.  An artifact of aarch64 must have the bits BTI
     and PAC of GNU_PROPERTY_AARCH64_FEATURE_1_AND.  The link keeps a bit only
     when each input object has it.  One input with no such bit then removes
-    the bit from the artifact, and the error names each such input.  The map
-    of the link (cmake/LinkMap.cmake) tells each merge that removed the
-    property (assay.readers.linkmap, THE MERGES), and lacking_inputs() reads
-    it.  An object of the tree gets the flag of cmake/CodeFlags.cmake.  A
-    start file or an archive of the toolchain gets the bits only from a
-    toolchain that builds its target libraries with the protection
-    (utils/assay/setup/gcc.py).  The error shows each path with the words of
-    artifact-links, such as {toolchain} for the prefix of the compiler.
+    the bit from the artifact, and the error names each such input.
+
+    InputReader reads the inputs of the map of the link (cmake/LinkMap.cmake,
+    THE INPUTS of assay.readers.linkmap).  It reads the feature property of
+    an object from its section .note.gnu.property, because an object has no
+    program header.  It reads a member of an archive through the archive
+    reader of assay.readers.elf, and it reads each archive one time in a
+    run.  The map names no object that keeps no section in the output.  When
+    such an object removed the bits, the error names no input.  An object of
+    the tree gets the flag of cmake/CodeFlags.cmake.  A start file or an
+    archive of the toolchain gets the bits only from a toolchain that builds
+    its target libraries with the protection (utils/assay/setup/gcc.py).
+    The error shows each path with the words of artifact-links, such as
+    {toolchain} for the prefix of the compiler and {build} for the build
+    directory.
 
 THE PLANTS
     A row `properties KIND...` of plant.txt limits the properties that the
@@ -64,7 +71,7 @@ NOT APPLICABLE
       * A build with no linked artifact, or one that has not made each one.
 
 Complexity: linear in the artifacts, their program headers and their dynamic entries.  Also linear in the lines of
-the merges of the maps of the artifacts with no control-flow protection.
+the maps of the artifacts with no control-flow protection, and in the bytes of their input files.
 """
 
 import os
@@ -88,9 +95,11 @@ CONTROL_FLOW = "control-flow"
 MACHINE = "machine"
 KINDS = (PIE, RELRO, BIND_NOW, STACK, CONTROL_FLOW, MACHINE)
 PROPERTIES_ROW = "properties"
-# The types of the feature properties of x86 and of aarch64 (THE CONTROL FLOW).
+# The types of the feature properties of x86 and of aarch64, and the section of the properties of an object (THE
+# CONTROL FLOW).
 X86_FEATURE_1_AND = 0xC0000002
 AARCH64_FEATURE_1_AND = 0xC0000000
+PROPERTY_SECTION = ".note.gnu.property"
 # The number of inputs that an error names before the count of the others.
 SHOWN_INPUTS = 8
 # The action of each kind of problem (THE PROPERTIES).
@@ -182,6 +191,18 @@ class Reading:
     libraries: int
 
 
+@dataclass(frozen=True, slots=True)
+class InputScan:
+    """The inputs of a link with no bit of a protection, and the inputs that the rule cannot read (THE CONTROL FLOW).
+
+    Each input is the file of the map, with the build directory before a relative path.  `unread` gives each input
+    that cannot be read with its reason.
+    """
+
+    lacking: tuple[str, ...]
+    unread: tuple[tuple[str, str], ...]
+
+
 # ── The facts ──────────────────────────────────────────────────────
 
 
@@ -256,26 +277,99 @@ def problems_of(facts: Facts, kinds: frozenset[str]) -> list[Problem]:
 # ── The control flow ───────────────────────────────────────────────
 
 
-def lacking_inputs(merges: Iterable[linkmap.PropertyMerge], protection: Protection) -> tuple[str, ...]:
-    """Return each input file of a link that has no bit of the protection, from the merges of its map.
+def object_word(member: elf.Member, kind: int) -> int | None:
+    """Return the word of the property KIND of the section .note.gnu.property of an object, or None with no such one.
 
-    The second file of a merge of the property is such an input when it has no such property.  It is one too when
-    its value does not hold each bit of the protection.  The first file of the first merge can be one too, because
-    it holds the properties of the first input with properties (assay.readers.linkmap, THE MERGES).  Each file comes
-    one time, in the sequence of the map.  Complexity: linear in the merges.
+    An object has no program header, and Member.properties() then gives no property of it (THE CONTROL FLOW).
+    Complexity: linear in the sections of the object and the bytes of its notes.
+
+    Raises:
+        elf.ElfError: If the section or a note of it is not fully in the file
     """
-    found: dict[str, None] = {}
-    is_first = True
-    required = protection.required
-    for merge in merges:
-        if merge.kind != protection.kind:
-            continue
-        if is_first and (merge.first_value is None or merge.first_value & required != required):
-            found.setdefault(merge.first)
-        is_first = False
-        if merge.second_value is None or merge.second_value & required != required:
-            found.setdefault(merge.second)
-    return tuple(found)
+    for section in member.named(PROPERTY_SECTION):
+        for item in elf.note_properties(member.data(section), member.where):
+            if item.kind == kind:
+                return item.word
+    return None
+
+
+def archive_words(path: Path, kind: int) -> dict[str, tuple[int | None, ...]]:
+    """Return the words of the property KIND of the members of an archive, by member name (THE CONTROL FLOW).
+
+    An archive can hold two members with one name, and the name then gives two words.  Complexity: linear in the
+    bytes of the archive.
+
+    Raises:
+        elf.ElfError: If the archive or a member of it is not ELF or is damaged
+        OSError: If the archive cannot be read
+    """
+    found: dict[str, list[int | None]] = {}
+    for member in elf.members(path):
+        found.setdefault(member.name, []).append(object_word(member, kind))
+    return {name: tuple(words) for name, words in found.items()}
+
+
+class InputReader:
+    """The reader of the feature property of the inputs of the links of one build (THE CONTROL FLOW).
+
+    `archives` keeps the words of each archive that the reader read, or the error of its read.  The reader then reads
+    each archive one time.
+    """
+
+    __slots__ = ("archives", "build_dir")
+
+    def __init__(self, build_dir: Path) -> None:
+        """Start a reader for the links of a build directory, the working directory of each link."""
+        self.build_dir = build_dir
+        self.archives: dict[tuple[Path, int], dict[str, tuple[int | None, ...]] | OSError | elf.ElfError] = {}
+
+    def words(self, item: str, kind: int) -> tuple[int | None, ...]:
+        """Return the word of the property KIND of each file that an input of a map names, or None for no property.
+
+        An object gives one word.  ARCHIVE(MEMBER) gives one word for each member of the archive with the name, and
+        no word when the archive has no such member.
+
+        Raises:
+            elf.ElfError: If a file is not ELF or is damaged
+            OSError: If a file cannot be read
+        """
+        archive, member = linkmap.split_member(item)
+        if not archive:
+            with elf.mapped(self.build_dir / member) as found:
+                return (object_word(found, kind),)
+        key = (self.build_dir / archive, kind)
+        if key not in self.archives:
+            try:
+                self.archives[key] = archive_words(key[0], kind)
+            except (OSError, elf.ElfError) as problem:
+                self.archives[key] = problem
+        held = self.archives[key]
+        if isinstance(held, (OSError, elf.ElfError)):
+            raise held
+        return held.get(member, ())
+
+    def scan(self, inputs: Iterable[str], protection: Protection) -> InputScan:
+        """Return the inputs with no bit of the protection, and the inputs that cannot be read, in their sequence.
+
+        An input has no bit of the protection when one file that it names has no feature property, or a word with no
+        such bit.
+        Complexity: linear in the inputs and the bytes of their files.
+        """
+        lacking: list[str] = []
+        unread: list[tuple[str, str]] = []
+        required = protection.required
+        for item in inputs:
+            shown = str(self.build_dir / item)
+            try:
+                words = self.words(item, protection.kind)
+            except (OSError, elf.ElfError) as problem:
+                unread.append((shown, str(problem)))
+                continue
+            if not words:
+                unread.append((shown, f"the archive has no member {linkmap.split_member(item)[1]}"))
+            elif any(word is None or word & required != required for word in words):
+                lacking.append(shown)
+        return InputScan(tuple(lacking), tuple(unread))
 
 
 def shown_inputs(inputs: Sequence[str], words: Iterable[tuple[str, str]]) -> str:
@@ -286,26 +380,44 @@ def shown_inputs(inputs: Sequence[str], words: Iterable[tuple[str, str]]) -> str
     return ", ".join(shown) + (f" and {rest} more" if rest > 0 else "")
 
 
-def control_flow_cause(artifact: Path, protection: Protection, words: Iterable[tuple[str, str]]) -> str:
+def control_flow_cause(
+    artifact: Path, protection: Protection, words: Iterable[tuple[str, str]], reader: InputReader
+) -> str:
     """Return the words that name the inputs of the link of an artifact with no control-flow protection.
 
-    The map of the link gives the inputs (THE CONTROL FLOW).  A map that cannot be read gives words that tell the
-    cause.
+    The inputs of the map of the link give the inputs (THE CONTROL FLOW).  A map or an input that cannot be read
+    gives words that tell the cause.
     """
+    pairs = tuple(words)
     path = artifact.with_name(artifact.name + artifact_links.MAP_SUFFIX)
     try:
-        inputs = lacking_inputs(linkmap.read_merges(path), protection)
+        scan = reader.scan(linkmap.read_inputs(path), protection)
     except (OSError, linkmap.LinkMapError) as problem:
         return f".  The rule cannot name the inputs, because the map of the link cannot be read: {problem}"
-    if not inputs:
-        return ".  The map of the link names no merge that removed the property, and no input of the link has it"
-    return f".  The link removed the bits, because these inputs do not have them: {shown_inputs(inputs, words)}"
+    said = ""
+    if scan.lacking:
+        named = shown_inputs(scan.lacking, pairs)
+        said = f".  The link removed the bits, because these inputs do not have them: {named}"
+    if scan.unread:
+        first, reason = scan.unread[0]
+        said += (
+            f".  The rule cannot read {len(scan.unread)} inputs of the map, such as "
+            f"{shown_inputs((first,), pairs)}: {reason}"
+        )
+    if not said:
+        said = (
+            ".  Each input of the map has the bits.  An object that keeps no section in the output has no line in the "
+            "map, and such an object removed them"
+        )
+    return said
 
 
-def control_flow_problem(problem: Problem, facts: Facts, artifact: Path, words: Iterable[tuple[str, str]]) -> Problem:
+def control_flow_problem(
+    problem: Problem, facts: Facts, artifact: Path, words: Iterable[tuple[str, str]], reader: InputReader
+) -> Problem:
     """Return the problem of the control flow with the inputs that removed the protection (THE CONTROL FLOW)."""
     protection = PROTECTIONS[facts.machine]
-    return Problem(problem.kind, problem.detail + control_flow_cause(artifact, protection, words))
+    return Problem(problem.kind, problem.detail + control_flow_cause(artifact, protection, words, reader))
 
 
 # ── The read and the findings ──────────────────────────────────────
@@ -343,6 +455,7 @@ def read_problems(context: runner.ElfContext) -> Reading:
     kinds = kinds_of(context)
     build_dir = context.build_dir if context.build_dir is not None else Path(context.root)
     words: tuple[tuple[str, str], ...] | None = None
+    reader = InputReader(build_dir)
     groups: dict[Problem, list[str]] = {}
     for artifact in linked:
         try:
@@ -354,7 +467,7 @@ def read_problems(context: runner.ElfContext) -> Reading:
             problem = found
             if found.kind == CONTROL_FLOW:
                 words = words if words is not None else artifact_links.path_words(context.compiler(), build_dir)
-                problem = control_flow_problem(found, facts, artifact.path, words)
+                problem = control_flow_problem(found, facts, artifact.path, words, reader)
             groups.setdefault(problem, []).append(build_census.shown(artifact.path, context.root))
     executables = sum(item.is_executable for item in linked)
     return Reading({key: tuple(value) for key, value in groups.items()}, executables, len(linked) - executables)

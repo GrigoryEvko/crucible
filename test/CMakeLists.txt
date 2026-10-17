@@ -4953,7 +4953,8 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its configured ledgers and of its
 # six rules build planted libraries, programs, modules and probe units with the
-# compiler of this build.  The test of codegen-shapes
+# compiler of this build, and they link with the pinned mold (the plants of
+# assay.guard.engines.elf.runner).  The test of codegen-shapes
 # also compiles the probe unit of this build with a planted header.  The test
 # of the command guard bom reads the artifacts of this build.  The test of the
 # command guard asm-compare compiles two planted units with the compiler of
@@ -5036,9 +5037,9 @@ set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
 # each reader with the text output of the compiler of this build.  The tests of
 # the ELF reader, of the DWARF reader and of the reader of a disassembly read
 # the objects that the compiler of this build gives.  The test of the reader of
-# a link map reads the map of a link that the compiler of this build does.  The
-# test of the reader of the statistics of ccache compiles through ccache with
-# the compiler of this build.
+# a link map reads the map that the pinned mold writes of a link with the
+# compiler of this build.  The test of the reader of the statistics of ccache
+# compiles through ccache with the compiler of this build.
 foreach(_assay_test readers.test_sarif readers.test_include_trace readers.test_elf readers.test_objdump
         readers.test_linkmap readers.test_dwarf readers.test_ccache)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
