@@ -8,7 +8,7 @@ words of a test.  Exit 0 when each case holds, else 1.
 
 from pathlib import Path
 
-from assay.core import git, testing
+from assay.core import cache, git, testing
 from assay.core import registry as rule_registry
 from assay.loop import inputs
 from assay.readers import compdb
@@ -154,6 +154,54 @@ def parse_cases(expect: testing.Expect) -> None:
     expect(
         "a relative import of a package resolves in the package itself",
         inputs.absolute_import("assay.core", ".rows", True) == "assay.core.rows",
+    )
+
+
+# A planted module for THE PARSE CACHE: an import, a function, a class, and the import code of the module.
+SHAPED_MODULE = (
+    "import os\n"
+    "from assay.core import rows as grammar\n"
+    "LIMIT = grammar.VALUE\n"
+    "def helper():\n"
+    "    return os.getcwd()\n"
+    "class Holder(grammar.Base):\n"
+    "    size = LIMIT\n"
+    "    def read(self):\n"
+    "        return helper()\n"
+)
+
+
+def shape_cache_cases(expect: testing.Expect) -> None:
+    """Check THE PARSE CACHE: an entry that gives back its parse, a hit, a text that does not parse, and the caches off."""
+    name, file = "assay.core.planted", "utils/assay/core/planted.py"
+    parsed = inputs.parse_module(name, file, SHAPED_MODULE)
+    expect(
+        "an entry gives back the imports and the shape of a module, with the sequence of its definitions",
+        inputs.parsed_of(inputs.shape_record(parsed)) == parsed
+        and parsed[1] is not None
+        and list(parsed[1].definitions) == ["helper", "Holder"],
+    )
+    broken = inputs.parse_module(name, file, "def broken(:\n")
+    expect(
+        "a text that does not parse gives an entry with no shape, and the entry gives back the same result",
+        broken == ((), None) and inputs.parsed_of(inputs.shape_record(broken)) == broken,
+    )
+    expect("an entry of a different shape gives no result", inputs.parsed_of(b'{"imports": 3}') is None)
+    with cache.scratch_root():
+        directory = cache.cache_root(inputs.SHAPES_CACHE)
+        first = inputs.stored_parse(directory, name, file, SHAPED_MODULE)
+        entries = sorted(path for path in directory.rglob("*") if path.is_file()) if directory is not None else []
+        second = inputs.stored_parse(directory, name, file, SHAPED_MODULE)
+        expect(
+            "the first parse writes one entry, and a second parse of the same text reads it",
+            first == parsed and second == parsed and len(entries) == 1,
+        )
+        inputs.stored_parse(directory, name, file, SHAPED_MODULE + "# a new line\n")
+        count = sum(1 for path in sorted(directory.rglob("*")) if path.is_file()) if directory is not None else 0
+        expect("a new text of the module writes a second entry", count == 2)
+    expect(
+        "with the caches off, the parse writes no entry and gives the same result",
+        inputs.stored_parse(None, name, file, SHAPED_MODULE) == parsed,
     )
 
 
@@ -373,6 +421,5 @@ def row_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(
-        __name__.removeprefix("assay."), argv, (parse_cases, rule_cases, group_cases, read_set_cases, row_cases)
-    )
+    groups = (parse_cases, shape_cache_cases, rule_cases, group_cases, read_set_cases, row_cases)
+    return testing.run(__name__.removeprefix("assay."), argv, groups)

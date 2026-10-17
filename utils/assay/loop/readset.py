@@ -279,8 +279,11 @@ def escaped(text: str) -> str:
 def unescaped(text: str) -> str | None:
     """Return the text of an escaped word or path, or None when an escape is not one of ESCAPES.
 
-    Complexity: linear in the length of the text.
+    A text with no backslash has no escape, and the function returns it with no loop.  Complexity: linear in the length
+    of the text.
     """
+    if "\\" not in text:
+        return text
     parts: list[str] = []
     index = 0
     while index < len(text):

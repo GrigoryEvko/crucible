@@ -173,6 +173,10 @@ LIMITS: dict[str, int] = {
     # The results of the rule history (THE CACHE of assay.guard.engines.meta.history).  On 2026-10-17, a cold run of
     # the tree wrote 15 MB in 302 files.  Each run at a new commit adds one state of the walk of 1 MB.
     "history": 256 << 20,
+    # The imports and the shapes of the modules of the package (THE PARSE CACHE of assay.loop.inputs).  Each module has
+    # one file of one 4 KB block.  On 2026-10-17, the entries of one tree held 1.6 MB.  Each change of a module adds one
+    # entry.
+    "python-shapes": 64 << 20,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = root_rule.COMPILED_CACHE
