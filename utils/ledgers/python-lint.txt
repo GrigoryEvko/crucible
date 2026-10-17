@@ -24,8 +24,6 @@ utils/assay/core/ruletable.py | SIM114 | 1 | parse_admit | An issue of ruff of t
 utils/assay/core/ruletable.py | format | 1 | _check_path | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/core/target.py | format | 1 | target_flags | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/check.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/meta/history.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/meta/history.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/layout.py | F401 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/layout.py | F541 | 2 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/layout.py | format | 1 | naming | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from assay.core import configuration as build_config
-from assay.core import testing
+from assay.core import jobserver, testing
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.loop import syntax
 from assay.readers import cmake, compdb, ninja, sections
@@ -203,11 +203,11 @@ print(build / "t.dir" / "a.cpp.o")
 """
 
 
-def planted_build(scratch: Path) -> tuple[Path, str]:
+def planted_build(scratch: Path, cmake_text: str = RECONFIGURE_CMAKE) -> tuple[Path, str]:
     """Plant a parse build of one unit a.cpp in a scratch directory, and return the build and the object of the unit.
 
     The cmake of the build writes a new stamp into the compile database at its first build of the input targets.  A
-    configure after a change of the plugin does the same.
+    configure after a change of the plugin does the same.  `cmake_text` is the program of that cmake.
     """
     build = scratch / "build"
     build.mkdir()
@@ -219,7 +219,7 @@ def planted_build(scratch: Path) -> tuple[Path, str]:
             build_config.SYNTAX_OPTION: ("BOOL", "ON"),
             "CMAKE_GENERATOR": "Ninja",
             "CMAKE_MAKE_PROGRAM": testing.planted_program(scratch, "ninja", INPUTS_NINJA),
-            "CMAKE_COMMAND": testing.planted_program(scratch, "cmake", RECONFIGURE_CMAKE),
+            "CMAKE_COMMAND": testing.planted_program(scratch, "cmake", cmake_text),
         },
     )
     output = str(build / "t.dir" / "a.cpp.o")
@@ -276,6 +276,52 @@ def check_cases(expect: testing.Expect) -> None:
             "a dependency that changed after the run makes the check plan the parse again",
             len(syntax.locked_plan(build, scratch, 2).planned) == 1,
         )
+
+
+# A cmake that writes the words of each call to argv.txt of the build, and then does what RECONFIGURE_CMAKE does.
+ARGV_CMAKE = """
+import pathlib, sys
+build = pathlib.Path(sys.argv[sys.argv.index("--build") + 1])
+with (build / "argv.txt").open("a", encoding="utf-8") as calls:
+    calls.write(" ".join(sys.argv[1:]) + "\\n")
+database = build / "compile_commands.json"
+database.write_text(database.read_text().replace("stamp=0ld0ld", "stamp=fe5hfe5h"))
+"""
+
+
+def jobserver_cases(expect: testing.Expect) -> None:
+    """Hold a run with a jobserver: the builds of step 1 get no -j, and the parses hold the slots (THE JOBSERVER)."""
+    import os
+
+    with jobserver.serving(1) as server:
+        flags = {jobserver.VARIABLE: server.makeflags}
+        expect(
+            "a build gets -j JOBS with no jobserver, and no -j with a jobserver",
+            syntax.build_job_words(4, {}) == ["-j", "4"] and syntax.build_job_words(4, flags) == [],
+        )
+        with tempfile.TemporaryDirectory(prefix="syntax-jobserver-") as scratch_text:
+            scratch = Path(scratch_text)
+            build, output = planted_build(scratch, ARGV_CMAKE)
+            saved = os.environ.get(jobserver.VARIABLE)
+            os.environ[jobserver.VARIABLE] = server.makeflags
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+                    status = syntax.run(build, scratch, 4)
+            finally:
+                if saved is None:
+                    os.environ.pop(jobserver.VARIABLE, None)
+                else:
+                    os.environ[jobserver.VARIABLE] = saved
+            calls = (build / "argv.txt").read_text(encoding="utf-8").splitlines()
+            section = sections.read_report(sections.report_directory(build, output))
+            expect(
+                f"a run with a jobserver of one job parses its unit on the implicit slot, and its builds get no -j: "
+                f"{calls} {errors.getvalue()!r}",
+                status == 0
+                and section is not None
+                and len(calls) == 2
+                and not any("-j" in line.split() for line in calls),
+            )
 
 
 def macro_cases(expect: testing.Expect) -> None:
@@ -371,6 +417,7 @@ def main(argv: list[str]) -> int:
             unit_cases,
             stamp_cases,
             check_cases,
+            jobserver_cases,
             macro_cases,
             change_cases,
         ),

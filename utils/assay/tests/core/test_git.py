@@ -38,6 +38,13 @@ def command_cases(expect: Callable[[str, bool], None]) -> None:
         expect("run raises GitError when git cannot start", problem is not None and "cannot run" in str(problem))
         completed = git.run_any_exit(root, "diff", "--quiet", "--no-index", "a.txt", "sub/b.txt")
         expect("run_any_exit gives the result for an exit that is not 0", completed.exit == 1)
+        number = git.version(root)
+        expect(
+            "version gives the number of the version of git, with no words before it",
+            number[:1].isdigit() and "." in number and " " not in number,
+        )
+        problem = refuses(lambda: git.version(root.parent / "no-such-directory"), git.GitError)
+        expect("version raises GitError when git cannot run in the tree", problem is not None)
 
 
 def answer_cases(expect: Callable[[str, bool], None]) -> None:

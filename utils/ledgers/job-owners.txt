@@ -24,7 +24,6 @@ utils/assay/loop/affected.py | argparse | 1 | <module> | A use of today.  The ch
 utils/assay/loop/affected.py | print | 4 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/affected.py | print | 2 | print_plan | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/affected.py | print | 7 | run | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/loop/affected.py | print | 1 | run_inherited | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/affected.py | print | 4 | save_history | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/affected.py | print | 3 | self_test | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/loop/bench.py | print | 1 | log | A use of today.  The change that calls the owner of the job lowers the count

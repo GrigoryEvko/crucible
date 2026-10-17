@@ -395,26 +395,58 @@ def absolute_import(name: str, imported: str, is_package: bool) -> str:
     return ".".join([*base, rest] if rest else base)
 
 
+def parse_module(name: str, file: str, text: str) -> tuple[tuple[str, ...], python_reader.Shape | None]:
+    """Return the modules of the package that a module imports, also in a function, and the shape of the module.
+
+    A text that does not parse gives no import and no shape.  The run of the module then fails, and its test runs.
+    Complexity: one parse and one walk of the text.
+    """
+    try:
+        source = python_reader.parse(text, file)
+    except python_reader.PythonError:
+        return (), None
+    is_package = file.endswith("/__init__.py")
+    resolved = (absolute_import(name, item, is_package) for item in python_reader.imports(source))
+    imports = tuple(sorted({item for item in resolved if item == PACKAGE or item.startswith(f"{PACKAGE}.")}))
+    return imports, python_reader.shape(source)
+
+
+# The imports and the shape of each module of the package, by its dotted name, its file and its text.
+type ParseCache = dict[tuple[str, str, str], tuple[tuple[str, ...], python_reader.Shape | None]]
+
+
 class Deriver:
-    """The inputs of the tests of the master guard in one tree, read one time for each call of `loop test`."""
+    """The inputs of the tests of the master guard in one tree, read one time for each call of `loop test`.
+
+    The parse cache can come from the caller.  A second Deriver of the same caller then parses only a module with a
+    new text.
+    """
 
     __slots__ = (
+        "_absolute",
         "_closures",
         "_declared",
         "_files",
         "_git_files",
         "_git_texts",
         "_parsed",
+        "_parses",
         "_registry",
         "_root",
+        "_rule_inputs",
         "_scopes",
         "_table",
         "_tracked",
     )
 
-    def __init__(self, root: Path) -> None:
-        """Keep the root of the tree.  Each other fact is read on its first use."""
+    def __init__(self, root: Path, parses: ParseCache | None = None) -> None:
+        """Keep the root of the tree and the parse cache, or a new parse cache.  Each other fact is read on its first use."""
         self._root = root
+        self._parses: ParseCache = {} if parses is None else parses
+        # The absolute path of each path relative to the root.
+        self._absolute: dict[str, str] = {}
+        # The inputs of each rule, by its ID and the subcommand.
+        self._rule_inputs: dict[tuple[str, str], Inputs] = {}
         self._registry: rule_registry.Registry | None = None
         self._table: ruletable.RuleTable | None = None
         self._tracked: tuple[str, ...] | None = None
@@ -497,15 +529,15 @@ class Deriver:
         runs.
         """
         if name not in self._parsed:
-            is_package = file.endswith("/__init__.py")
             try:
-                source = python_reader.read(self._root / file, file)
-            except OSError, python_reader.PythonError:
+                text = (self._root / file).read_text(encoding="utf-8")
+            except OSError:
                 self._parsed[name] = ((), None)
                 return self._parsed[name]
-            resolved = (absolute_import(name, item, is_package) for item in python_reader.imports(source))
-            imports = tuple(sorted({item for item in resolved if item == PACKAGE or item.startswith(f"{PACKAGE}.")}))
-            self._parsed[name] = (imports, python_reader.shape(source))
+            key = (name, file, text)
+            if key not in self._parses:
+                self._parses[key] = parse_module(name, file, text)
+            self._parsed[name] = self._parses[key]
         return self._parsed[name]
 
     def imports_of(self, name: str, file: str) -> tuple[str, ...]:
@@ -678,8 +710,18 @@ class Deriver:
         ]
 
     def absolute(self, files: Iterable[str]) -> tuple[str, ...]:
-        """Return the absolute path of each path relative to the root, one time each, sorted."""
-        return tuple(sorted({str(self._root / file) for file in files}))
+        """Return the absolute path of each path relative to the root, one time each, sorted.
+
+        Complexity: O(n log n) for n paths, with one join of each different path for each Deriver.
+        """
+        memo = self._absolute
+        found: set[str] = set()
+        for file in files:
+            path = memo.get(file)
+            if path is None:
+                path = memo[file] = str(self._root / file)
+            found.add(path)
+        return tuple(sorted(found))
 
     def rule_modules(
         self, rule: rule_registry.Rule, subcommand: str
@@ -730,9 +772,32 @@ class Deriver:
     def rule_inputs(self, rule_id: str, subcommand: str) -> Inputs:
         """Return the inputs of one rule for the subcommand check or witness (THE INPUTS OF A RULE).
 
+        The Deriver calculates the inputs of each rule and subcommand one time.
+
         Raises:
             git.GitError: If the root is not a git work tree, or it has no commit
         """
+        key = (rule_id, subcommand)
+        if key not in self._rule_inputs:
+            self._rule_inputs[key] = self._derive_rule_inputs(rule_id, subcommand)
+        return self._rule_inputs[key]
+
+    def warm(self) -> None:
+        """Calculate the inputs of each rule of the registry for the subcommands check and witness, and keep them.
+
+        `loop test` calls it while the build runs (THE WARM START of assay.loop.affected).  A tree that cannot be read
+        stops the warm start with no error, and test_inputs() then reports the problem.  Complexity: the cost of
+        rule_inputs() for each rule, with one parse of each module.
+        """
+        try:
+            for rule_id in sorted(self.registry.rules):
+                for subcommand in ("check", "witness"):
+                    self.rule_inputs(rule_id, subcommand)
+        except git.GitError, OSError, ruletable.TableError, rows_grammar.RowsError:
+            return
+
+    def _derive_rule_inputs(self, rule_id: str, subcommand: str) -> Inputs:
+        """Return the inputs of one rule for a subcommand, with no memo (rule_inputs())."""
         rule = self.registry.rules.get(rule_id)
         if rule is None:
             return Inputs(always=f"the registry has no readable row of the rule {rule_id}")

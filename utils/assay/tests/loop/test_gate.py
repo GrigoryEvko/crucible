@@ -19,14 +19,17 @@ a counted ledger with no configuration row must land with the write of the
 gate.
 """
 
+import itertools
 import json
 import os
 import sys
 import tempfile
+import time
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
-from assay.core import git, paths, proc, testing
+from assay.core import git, jobserver, paths, proc, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.loop import gate, syntax
@@ -78,19 +81,44 @@ COUNTED_REGISTRY = (
     "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
-# build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.
+# build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
+# master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode slow runs
+# for SLOW_S seconds, and the mode hang runs until a stop ends it.  The mode deep starts a child in a process group of
+# its own with assay.core.proc of this tree (UTILS_MARK).  It writes the pid of the child to deep.pid.  The mode
+# broken-after-deep waits for that file of the build of default, and then it is the mode broken.
 LOOP_MASTER = """import os
 import pathlib
 import sys
+import time
 
 words = sys.argv[1:]
 if words[:2] == ["syntax", "--changed"]:
     sys.exit(0)
 build = pathlib.Path(words[1])
+began = time.time()
 (build / "base.txt").write_text(os.environ.get("CRUCIBLE_CHANGE_BASE", "-"))
+(build / "makeflags.txt").write_text(os.environ.get("MAKEFLAGS", "-"))
 with open(build / "words.txt", "a") as handle:
     handle.write(" ".join(words[2:]) + "\\n")
 mode = (build / "mode.txt").read_text().strip()
+if mode == "slow":
+    time.sleep(@SLOW_S@)
+if mode == "hang":
+    time.sleep(600)
+if mode == "deep":
+    sys.path.insert(0, "@UTILS@")
+    from assay.core import proc
+
+    running = proc.start(proc.Command(["sleep", "600"], timeout_s=900.0))
+    (build / "deep.pid").write_text(str(running.pid))
+    running.wait()
+if mode == "broken-after-deep":
+    deadline = time.time() + 30.0
+    while not (build.parent / "build" / "deep.pid").is_file() and time.time() < deadline:
+        time.sleep(0.02)
+    mode = "broken"
+with open(build / "times.txt", "a") as handle:
+    handle.write(f"{began} {time.time()}\\n")
 if mode == "build":
     print("the build gives an error")
     sys.exit(1)
@@ -114,17 +142,23 @@ report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</test
 sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 """
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
-# apply.  In a build with the mode parse-falls, `check` gives findings after the fall of the planted ledger.  `write`
-# lowers the count 2 of the planted ledger to 1, as the write of a fall does, and writes its rule.  It also removes the
-# row of gone.h, as the write of a fall to 0 does.  The write of slow-row raises the value 10 of its ledger to 12, as
-# the write of a kept row does.  The write of trait-guard moves the row of include/old.h to include/new.h, as the
-# write of a divided header does (THE MOVE of assay.core.ledger).  The write of the rule history runs the guard of this
+# apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
+# of the planted ledger, as after the fold of the gate.  `write` lowers the count 2 of the planted ledger to 1, as the
+# write of a fall does, and writes its rule.  It also removes the row of gone.h, as the write of a fall to 0 does.  The
+# write of slow-row raises the value 10 of its ledger to 12, as the write of a kept row does.  The write of trait-guard
+# moves the row of include/old.h to include/new.h, as the write of a divided header does (THE MOVE of
+# assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for SLOW_S seconds.  It then writes its
+# rule and the times of its start and its end to intervals.txt.  The write of the rule history runs the guard of this
 # tree (GUARD_MARK).
 GUARD_MARK = "@GUARD@"
+UTILS_MARK = "@UTILS@"
+SLOW_MARK = "@SLOW_S@"
+SLOW_S = 1.0
 GUARD_MASTER = """import os
 import pathlib
 import subprocess
 import sys
+import time
 
 words = sys.argv[1:]
 if words[0] == "check":
@@ -132,11 +166,17 @@ if words[0] == "check":
     with open(build / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
     mode = (build / "mode.txt").read_text().strip() if (build / "mode.txt").is_file() else ""
-    if mode == "parse-falls" and "| 1 |" in pathlib.Path("utils/ledgers/door-unit.txt").read_text():
-        sys.exit(1)
+    if mode == "parse-falls":
+        shown = ["git", "show", "HEAD:utils/ledgers/door-unit.txt"]
+        if "| 1 |" in subprocess.run(shown, capture_output=True, text=True, check=False).stdout:
+            sys.exit(1)
 if words[:3] == ["write", "--rule", "history"]:
     sys.exit(subprocess.run([sys.executable, "@GUARD@", *words], check=False).returncode)
 if words[0] == "write":
+    build = pathlib.Path(words[4])
+    began = time.time()
+    if (build / "slow-writes.txt").is_file():
+        time.sleep(@SLOW_S@)
     name, old, new = {
         "slow-row": ("slow-row", "| 10 |", "| 12 |"),
         "trait-guard": ("trait-guard", "include/old.h", "include/new.h"),
@@ -144,10 +184,22 @@ if words[0] == "write":
     ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
     lines = ledger.read_text().replace(old, new).splitlines(keepends=True)
     ledger.write_text("".join(line for line in lines if "gone.h" not in line))
-    with open(pathlib.Path(words[4]) / "writes.txt", "a", encoding="utf-8") as handle:
+    with open(build / "writes.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]}\\n")
+    if (build / "slow-writes.txt").is_file():
+        with open(build / "intervals.txt", "a", encoding="utf-8") as handle:
+            handle.write(f"{words[2]} {began} {time.time()}\\n")
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
+"""
+# The planted cmake: `cmake --build BUILD --target TARGET` writes its target to cmake.txt of the build, and exits 0.
+CMAKE = """import pathlib
+import sys
+
+words = sys.argv[1:]
+build = pathlib.Path(words[words.index("--build") + 1])
+with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
+    handle.write(" ".join(words[words.index("--build") + 2 :]) + "\\n")
 """
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
 # unless it is test_broken, or test_ledger or guard_slow_row before the write of its ledger.
@@ -200,7 +252,8 @@ def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> st
     for name, text in {**PLANTED, **(files or {})}.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text.replace(GUARD_MARK, str(paths.GUARD)), encoding="utf-8")
+        marked = text.replace(GUARD_MARK, str(paths.GUARD)).replace(SLOW_MARK, str(SLOW_S))
+        path.write_text(marked.replace(UTILS_MARK, str(paths.REPO_ROOT / "utils")), encoding="utf-8")
     return git.commit_all(root, "Add the planted tree")
 
 
@@ -504,17 +557,17 @@ def listing(tree: Path, build: Path) -> str:
 
 
 def plant_build(work: Path, tree: Path, name: str, mode: str) -> None:
-    """Plant one build directory of the warm tree with a mode, a planted ctest and the listing of its tests."""
+    """Plant one build directory of the warm tree with a mode, a planted ctest, a planted cmake and its test listing."""
     build = tree / name
     build.mkdir(parents=True, exist_ok=True)
     ninja_reader.plant_graph(build, "")
     (build / "mode.txt").write_text(f"{mode}\n", encoding="utf-8")
     (build / "tests.json").write_text(listing(tree, build), encoding="utf-8")
-    ctest = work / "ctest"
-    ctest.write_text(f"#!{sys.executable}\n{CTEST}", encoding="utf-8")
-    ctest.chmod(0o755)
+    ctest = testing.planted_program(work, "ctest", CTEST)
+    cmake = testing.planted_program(work, "cmake", CMAKE)
     cmake_reader.cache_file(build).write_text("", encoding="utf-8")
-    cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": str(ctest), "CMAKE_HOME_DIRECTORY": str(tree)})
+    cache = {"CMAKE_CTEST_COMMAND": ctest, "CMAKE_COMMAND": cmake, "CMAKE_HOME_DIRECTORY": str(tree)}
+    cmake_reader.plant(build, cache=cache)
 
 
 def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[str, str] | None = None) -> gate.Gate:
@@ -559,14 +612,18 @@ def run_cases(expect: testing.Expect) -> None:
             verdicts["flaky"].is_accepted,
         )
         expect(
-            "a test that is red alone too rejects the commit, and the problem names it",
-            not verdicts["broken"].is_accepted and "red alone too: test_broken" in verdicts["broken"].problems[0],
+            "a test that is red alone too rejects the commit, the problem names it, and the focus gives the test",
+            not verdicts["broken"].is_accepted
+            and "red alone too: test_broken" in verdicts["broken"].problems[0]
+            and verdicts["broken"].focus == (gate.Focus("default", ("test_broken",)),),
         )
         expect(
-            "a build error rejects the commit",
+            "a build error rejects the commit, and the focus gives the configuration with no test",
             not verdicts["build"].is_accepted
-            and "the build or the test run gives an error" in verdicts["build"].problems[0],
+            and "the build or the test run gives an error" in verdicts["build"].problems[0]
+            and verdicts["build"].focus == (gate.Focus("default"),),
         )
+        expect("an accepted commit has no focus", verdicts["clean"].focus == ())
         expect(
             "an exit other than 0 after a run with no red test rejects the commit",
             not verdicts["late"].is_accepted and "with no red test" in verdicts["late"].problems[0],
@@ -756,17 +813,21 @@ def falls_parse_cases(expect: testing.Expect) -> None:
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         names = tuple(item.name for item in gate.CONFIGURATIONS if item.is_parse)
-        parses = {item.build: "parse-falls" for item in gate.CONFIGURATIONS if item.is_parse}
+        parses = {item.build: "clean" for item in gate.CONFIGURATIONS if item.is_parse}
+        parses[gate.BY_NAME[names[0]].build] = "parse-falls"
         planted = planted_gate(work, root, tree, "falls", parses)
         verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
         holds = (
             not verdict.is_accepted
-            and verdict.configurations == (*names, gate.ALWAYS, names[0])
-            and verdict.problems[0].startswith(f"{names[0]}: the rule ")
+            and verdict.configurations[:3] == (*names, gate.ALWAYS)
+            and names[0] in verdict.configurations[3:]
+            and all(problem.startswith(f"{names[0]}: the rule ") for problem in verdict.problems)
+            and verdict.focus == (gate.Focus(names[0]),)
         )
         label = (
             f"after the fold, a parse configuration checks again, and a folded ledger that makes its check red rejects "
-            f"the commit: the gate runs {verdict.configurations} and gives {verdict.problems[:1]}"
+            f"the commit, with the focus of that configuration: the gate runs {verdict.configurations} and gives "
+            f"{verdict.problems[:1]}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
@@ -819,7 +880,8 @@ def changed_tests_cases(expect: testing.Expect) -> None:
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         verdicts: dict[str, gate.Verdict] = {}
-        for mode in ("broken", "keep"):
+        words: dict[str, list[str]] = {}
+        for mode in ("clean", "broken", "keep"):
             others = {**OTHER_BUILDS, "build-bench-fuzz": mode}
             planted = planted_gate(work, root, tree, "clean", others)
             keeps = (gate.Keep("slow-row", "the bench grows"),) if mode == "keep" else ()
@@ -829,21 +891,26 @@ def changed_tests_cases(expect: testing.Expect) -> None:
                 return planted.check(candidate, False)
 
             verdicts[mode], _ = testing.captured(run)
-        words = {
-            name: (tree / name / "words.txt").read_text(encoding="utf-8").splitlines()
-            for name in ("build", "build-bench-fuzz")
-        }
+            if mode == "clean":
+                for name in ("build", "build-bench-fuzz"):
+                    words[name] = (tree / name / "words.txt").read_text(encoding="utf-8").splitlines()
         expect(
             "a change of a C++ test runs the suite of its configurations with --all, and the tests of the changed "
             "inputs in UBSan-strict and in the bench and fuzz build with no --all",
-            verdicts["broken"].configurations == ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
+            verdicts["clean"].is_accepted
+            and verdicts["clean"].configurations == ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
             and words["build"][0].endswith("--all")
             and not any(line.endswith("--all") for line in words["build-bench-fuzz"]),
         )
+        broken = verdicts["broken"]
         expect(
-            "a test that is red alone too in that configuration rejects the commit",
-            not verdicts["broken"].is_accepted
-            and verdicts["broken"].problems[0].startswith("bench-fuzz: red alone too: test_broken"),
+            f"a test that is red alone too in that configuration rejects the commit, with the focus of its test, and "
+            f"the stop ends no run with a problem of its own: {broken.problems}",
+            not broken.is_accepted
+            and broken.problems == (broken.problems[0],)
+            and broken.problems[0].startswith("bench-fuzz: red alone too: test_broken")
+            and broken.focus == (gate.Focus("bench-fuzz", ("test_broken",)),)
+            and "bench-fuzz" in broken.configurations,
         )
         kept = (git.show(root, verdicts["keep"].final, SLOW_LEDGER) or b"").decode()
         expect(
@@ -893,6 +960,229 @@ def touched_cases(expect: testing.Expect) -> None:
             )
             expect(label_text if holds else f"{label_text}.  The output of the gate:\n{printed}", holds)
             previous = commit
+
+
+def times_of(build: Path) -> list[tuple[float, float]]:
+    """Return the start and the end of each run of the planted master loop in a build, from times.txt."""
+    path = build / "times.txt"
+    if not path.is_file():
+        return []
+    return [(float(first), float(last)) for first, last in (line.split() for line in path.read_text().splitlines())]
+
+
+def thread_cases(expect: testing.Expect) -> None:
+    """Hold THE JOBSERVER and THE THREADS: each configuration gets MAKEFLAGS, and the configurations overlap."""
+    with tempfile.TemporaryDirectory(prefix="gate-threads-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        builds = ("build", "build-release", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
+        planted = planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "slow"))
+        wide = replace(planted, jobs=8)
+        verdict, printed = testing.captured(lambda: wide.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        flags = [(tree / name / "makeflags.txt").read_text(encoding="utf-8") for name in builds]
+        fifos = [Path(text.split("fifo:", 1)[1]) for text in flags if "fifo:" in text]
+        spans = [span for name in builds for span in times_of(tree / name)]
+        expect(
+            f"each configuration gets MAKEFLAGS of one jobserver with the jobs of the gate, and its FIFO goes at the "
+            f"end of the check: {flags[0]}",
+            verdict.is_accepted
+            and all(text.startswith("-j8 --jobserver-auth=fifo:") for text in flags)
+            and len(set(fifos)) == 1
+            and not fifos[0].exists(),
+        )
+        expect(
+            f"the configurations of the full suite and the other configurations run at the same time, in one heavy "
+            f"step: {len(spans)} runs, {printed.count('memwait: ')} memory waits",
+            len(spans) == len(builds)
+            and max(first for first, _ in spans) < min(last for _, last in spans)
+            and printed.count("memwait: ") == 1,
+        )
+        rule_commit = commit_change(root, BUILD_RULE_MODULE, "VALUE = 3\n", "Change the rule")
+        early = replace(planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "clean")), jobs=8)
+        for name in builds:
+            (tree / name / "times.txt").unlink(missing_ok=True)
+        verdict, printed = testing.captured(
+            lambda: early.check(gate.Candidate(commit, rule_commit, (BUILD_RULE_MODULE,)), False)
+        )
+        always = times_of(tree / "build")
+        bench = times_of(tree / "build-bench-fuzz")
+        regenerated = (tree / "build" / "cmake.txt").read_text(encoding="utf-8").splitlines()
+        holds = (
+            verdict.is_accepted
+            and regenerated[-1:] == ["--target build.ninja"]
+            and len(always) == 1
+            and len(bench) == 1
+            and bench[0][0] < always[0][1]
+        )
+        label = (
+            "the touched tests of the other configurations start when the build of ALWAYS holds its configure, before "
+            f"the run of ALWAYS ends: the targets {regenerated}, the run of default {always} and of bench-fuzz {bench}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def stop_cases(expect: testing.Expect) -> None:
+    """Hold THE STOP: the first problem stops each configuration that runs, and only its problem is in the verdict."""
+    with tempfile.TemporaryDirectory(prefix="gate-stop-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        others = {**dict.fromkeys(OTHER_BUILDS, "hang"), "build-bench-fuzz": "broken-after-deep"}
+        planted = replace(planted_gate(work, root, tree, "deep", others), jobs=8)
+        started = time.monotonic()
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        elapsed_s = time.monotonic() - started
+        hung = [
+            name for name in ("build", "build-release", "build-tsan", "build-ubsan-strict") if times_of(tree / name)
+        ]
+        pid_file = tree / "build" / "deep.pid"
+        grandchild = int(pid_file.read_text(encoding="utf-8")) if pid_file.is_file() else -1
+        holds = (
+            not verdict.is_accepted
+            and verdict.configurations == ("bench-fuzz",)
+            and verdict.problems == (verdict.problems[0],)
+            and verdict.problems[0].startswith("bench-fuzz: red alone too: test_broken")
+            and elapsed_s < 60.0
+            and not hung
+            and "the stop ends the run" in printed
+            and grandchild > 0
+            and testing.is_gone(grandchild)
+        )
+        label = (
+            f"a red test stops each configuration that runs at that time, also the child of a master in a process "
+            f"group of its own, and the verdict gives only its problem: the gate gives {verdict.configurations} and "
+            f"{verdict.problems[:1]} after {elapsed_s:.1f} s"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def masked_error_cases(expect: testing.Expect) -> None:
+    """Hold THE STOP: a thread that an error stopped does not hide the error, and a stop with no problem is an error."""
+    with tempfile.TemporaryDirectory(prefix="gate-masked-") as work_text, jobserver.serving(2) as server:
+        work = Path(work_text)
+        planted = gate.Gate(work, work / "land", 2, False)
+        with jobserver.connected(server.path) as client:
+            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, {}, False)
+
+            def work_of(index: int) -> int:
+                """Wait for the stop in the first item and give Stopped, and give an error in the second item."""
+                if index == 0:
+                    while not step.stop.is_set():
+                        time.sleep(0.01)
+                    raise gate.Stopped
+                raise gate.GateError("a planted error of a step")
+
+            try:
+                step.concurrently([0, 1], work_of)
+                raised = ""
+            except gate.Stopped:
+                raised = "Stopped"
+            except gate.GateError as problem:
+                raised = str(problem)
+            expect(
+                f"the error of a thread goes to the caller, also when an earlier item gives Stopped: {raised!r}",
+                raised == "a planted error of a step" and step.stop.is_set(),
+            )
+            try:
+                step.require_problem([gate.Outcome("default", (), (), 1.0, True)])
+                refused = ""
+            except gate.GateError as problem:
+                refused = str(problem)
+            expect(
+                f"a heavy step that the stop ended with no problem of a configuration is an error: {refused!r}",
+                "stopped with no problem" in refused,
+            )
+            outcomes = [gate.Outcome("default", ("default: a problem",), (), 1.0, False)]
+            step.require_problem(outcomes)
+            expect("a stop with a problem of a configuration is no error", True)
+
+
+def rule_lock_cases(expect: testing.Expect) -> None:
+    """Hold THE LOCKS OF THE LEDGERS: two configurations at the same time do not write one ledger at one time."""
+    with tempfile.TemporaryDirectory(prefix="gate-rule-lock-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        doors = (
+            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
+            "configuration x86_64-release kind x86_64-release\nsrc/door.cpp | header-door | 2 | door.h | -\n"
+        )
+        planted_repository(root, {"utils/ledgers/door-unit.txt": doors})
+        head = git.head(root)
+        commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = replace(planted_gate(work, root, tree, "flaky", {**OTHER_BUILDS, "build-release": "flaky"}), jobs=8)
+        for name in ("build", "build-release"):
+            (tree / name / "slow-writes.txt").write_text("slow\n", encoding="utf-8")
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        spans: list[tuple[float, float]] = []
+        for name in ("build", "build-release"):
+            for line in (tree / name / "intervals.txt").read_text(encoding="utf-8").splitlines():
+                rule, first, last = line.split()
+                if rule == "door-unit":
+                    spans.append((float(first), float(last)))
+        spans.sort()
+        holds = (
+            verdict.is_accepted
+            and len(spans) == 2
+            and all(later[0] >= earlier[1] for earlier, later in itertools.pairwise(spans))
+        )
+        label = (
+            f"the writes of one rule of two configurations at the same time do not overlap: {spans}, and the gate "
+            f"gives {verdict.problems[:1]}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def base_run_cases(expect: testing.Expect) -> None:
+    """Hold THE RUN OF THE BASE: the gate runs only the focus, with the words of the problems of the batch."""
+    with tempfile.TemporaryDirectory(prefix="gate-base-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        head = git.head(root)
+        commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        others = {**OTHER_BUILDS, "build-release": "broken"}
+        batch = planted_gate(work, root, tree, "clean", others)
+        batch_verdict, _ = testing.captured(lambda: batch.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        for name in ("build", "build-release", "build-tsan", "build-ubsan-strict", "build-bench-fuzz"):
+            (tree / name / "words.txt").unlink(missing_ok=True)
+        focus = batch_verdict.focus + (gate.Focus("bench-fuzz"),)
+        base = planted_gate(work, root, tree, "clean", others)
+        base_verdict, printed = testing.captured(
+            lambda: base.check(gate.Candidate(head, head, ("test/a.cpp",), (), focus), True)
+        )
+        ran = {
+            name: (tree / name / "words.txt").read_text(encoding="utf-8").splitlines()
+            for name in ("build", "build-release", "build-tsan", "build-bench-fuzz")
+            if (tree / name / "words.txt").is_file()
+        }
+        holds = (
+            batch_verdict.focus == (gate.Focus("release", ("test_broken",)),)
+            and set(ran) == {"build-release", "build-bench-fuzz"}
+            and ran["build-release"][-1].startswith("-j 1 --only ")
+            and ran["build-bench-fuzz"] == ["-j 1"]
+            and base_verdict.configurations == ("release", "bench-fuzz")
+            and base_verdict.problems == batch_verdict.problems
+            and base_verdict.final == head
+            and not base_verdict.ledgers
+            and printed.count("memwait: ") == 1
+        )
+        label = (
+            f"the run of the base runs the red tests of the focus with --only, a configuration with no red test in the "
+            f"mode of the changed inputs, and no other configuration.  Its problems are those of the batch: the batch "
+            f"gives {batch_verdict.focus}, and the base runs {sorted(ran)} with {base_verdict.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
 def lock_cases(expect: testing.Expect) -> None:
@@ -946,6 +1236,11 @@ def main(argv: list[str]) -> int:
             keep_cases,
             changed_tests_cases,
             touched_cases,
+            thread_cases,
+            stop_cases,
+            masked_error_cases,
+            rule_lock_cases,
+            base_run_cases,
             lock_cases,
         ),
     )

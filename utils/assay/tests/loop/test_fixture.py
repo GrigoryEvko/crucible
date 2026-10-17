@@ -19,14 +19,14 @@ loader, the search roots, the compile environment, the
 CPU budget of a compile with no user time, and the errors that no regex
 reaches.
 
-The store refuses a result while an input of the compile is less than one
-second old.  Each check waits for that period after it makes its tree, and
+The store refuses a result while an input of the compile changed in its
+settle period.  Each check waits for that period after it makes its tree, and
 after each check step that adds, deletes or edits a file that a later step
 stores.  A wait can only make a file older, so a slow host cannot change the
 verdict of a step after a wait.  A step that expects a refusal for a new file
 gives the driver the change time of that file as its clock
 (CRUCIBLE_NEG_NOW_NS).  Then the change is in the settle period also when the
-driver starts more than one second after the change.
+driver starts after the end of the period.
 """
 
 from __future__ import annotations
@@ -298,8 +298,8 @@ class StoreTest:
 
     @staticmethod
     def settle() -> None:
-        """Wait until each file of the tree is older than the settle period of the store."""
-        time.sleep(store._SETTLE_NS / 1e9 + 0.2)
+        """Wait until each file of the tree is older than the settle period of the store, with one period of margin."""
+        time.sleep(2 * store._SETTLE_NS / 1e9)
 
     @staticmethod
     def started_at(path: Path) -> dict[str, str]:
@@ -339,7 +339,7 @@ class StoreTest:
         edited = self.run("neg_size", *SIZE, **self.started_at(header))
         self.expect(self.has(edited[3], f"compiled (a dependency changed: {header})"),
                     f"a header edit compiles the fixture that reads it: {edited[3]}")
-        self.expect(self.has(edited[3], f"not stored (a dependency changed less than one second before the compile: "
+        self.expect(self.has(edited[3], f"not stored (a dependency changed in the settle period before the compile: "
                                         f"{header})"),
                     f"the store refuses a result while a dependency is new: {edited[3]}")
         other = self.run("neg_convert", *CONVERT)
@@ -407,7 +407,7 @@ class StoreTest:
         changed = self.run("neg_probe", *PROBE, **self.started_at(late))
         self.expect(changed[0] == 1 and self.has(changed[3], f"compiled (a search directory changed: {include})"),
                     f"a new probed file compiles the fixture again: {changed[0]} {changed[3]}")
-        self.expect(self.has(changed[3], f"not stored (a search directory changed less than one second before the "
+        self.expect(self.has(changed[3], f"not stored (a search directory changed in the settle period before the "
                                          f"compile: {include})"),
                     f"the store refuses a result while a probed file is new: {changed[3]}")
         self.settle()

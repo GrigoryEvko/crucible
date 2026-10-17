@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from assay.core import proc
+from assay.core import proc, testing
 
 PYTHON = sys.executable
 UTILS = str(Path(__file__).resolve().parents[3])
@@ -36,20 +36,6 @@ def refuses(action: Callable[[], object], error: type[BaseException]) -> BaseExc
     except error as problem:
         return problem
     return None
-
-
-def is_gone(pid: int, wait_s: float = 5.0) -> bool:
-    """Whether a process is gone or a zombie within a time.  init reaps an orphan that a signal stopped."""
-    deadline = time.monotonic() + wait_s
-    while time.monotonic() < deadline:
-        try:
-            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-        except FileNotFoundError, ProcessLookupError, IndexError:
-            return True
-        if state in ("Z", "X"):
-            return True
-        time.sleep(0.02)
-    return False
 
 
 def run_cases(expect: Callable[[str, bool], None]) -> None:
@@ -137,7 +123,7 @@ def start_failure_cases(expect: Callable[[str, bool], None]) -> None:
 def limit_cases(expect: Callable[[str, bool], None]) -> None:
     """Check the limit: SIGTERM to the group, SIGKILL after the grace, and no process of the group after it."""
     started = time.monotonic()
-    command = proc.Command(["sh", "-c", "sleep 60 & echo $!; wait"], timeout_s=0.5, grace_s=1.0)
+    command = proc.Command(["sh", "-c", "sleep 60 & echo $!; wait"], timeout_s=0.2, grace_s=0.2)
     problem = refuses(lambda: proc.run(command), proc.TimedOut)
     child_pid = (
         int(problem.completed.out.split()[0])
@@ -148,16 +134,11 @@ def limit_cases(expect: Callable[[str, bool], None]) -> None:
         "a command past its limit gives TimedOut with the output that it gave, soon after the limit",
         isinstance(problem, proc.TimedOut) and child_pid > 0 and time.monotonic() - started < 10,
     )
-    expect("no process of the group runs after the limit", child_pid > 0 and is_gone(child_pid))
+    expect("no process of the group runs after the limit", child_pid > 0 and testing.is_gone(child_pid))
     started = time.monotonic()
-    stubborn = proc.Command(
-        python(
-            "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-            "print('ready', flush=True)\ntime.sleep(60)"
-        ),
-        timeout_s=1.0,
-        grace_s=0.3,
-    )
+    # sh sets the trap in about 1 ms.  A short limit then gets to the child after the trap, and sleep keeps the
+    # ignored signal across the exec.
+    stubborn = proc.Command(["sh", "-c", "trap '' TERM; exec sleep 60"], timeout_s=0.2, grace_s=0.1)
     problem = refuses(lambda: proc.run(stubborn), proc.TimedOut)
     expect(
         "a command that ignores SIGTERM gets SIGKILL after the grace",
@@ -175,7 +156,7 @@ def limit_cases(expect: Callable[[str, bool], None]) -> None:
 
     previous = signal.signal(signal.SIGALRM, interrupt)
     running = proc.start(proc.Command(["sh", "-c", "sleep 60"], timeout_s=SAFE_S))
-    signal.setitimer(signal.ITIMER_REAL, 0.3)
+    signal.setitimer(signal.ITIMER_REAL, 0.1)
     try:
         caught = refuses(running.wait, Interrupt)
     finally:
@@ -183,10 +164,44 @@ def limit_cases(expect: Callable[[str, bool], None]) -> None:
         signal.signal(signal.SIGALRM, previous)
     expect(
         "an interrupt of the wait stops the group and then goes on",
-        isinstance(caught, Interrupt) and is_gone(running.pid),
+        isinstance(caught, Interrupt) and testing.is_gone(running.pid),
     )
     stopped = proc.start(proc.Command(["sh", "-c", "sleep 60"], timeout_s=SAFE_S)).stop()
     expect("stop() ends the group with SIGTERM and gives the result", stopped.exit == -signal.SIGTERM)
+    poll_cases(expect)
+
+
+def poll_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check the bounded loop: poll() gives None while the command runs, and the result or the limit at its end."""
+    running = proc.start(proc.Command(["sh", "-c", "sleep 60"], timeout_s=SAFE_S))
+    started = time.monotonic()
+    first = running.poll(0.2)
+    waited_s = time.monotonic() - started
+    stopped = running.stop()
+    expect(
+        f"poll() of a command that runs gives None after its time, and stop() then ends the group: {waited_s:.2f} s",
+        first is None and 0.15 <= waited_s < 5.0 and stopped.exit == -signal.SIGTERM and testing.is_gone(running.pid),
+    )
+    quick = proc.start(proc.Command(python("import sys; print('done'); sys.exit(4)"), timeout_s=SAFE_S))
+    found = None
+    deadline = time.monotonic() + SAFE_S
+    while found is None and time.monotonic() < deadline:
+        found = quick.poll(0.05)
+    expect(
+        "poll() gives the result of a command that ended, with its exit and its output",
+        found is not None and found.exit == 4 and found.out == "done\n",
+    )
+    limited = proc.start(proc.Command(["sh", "-c", "sleep 60"], timeout_s=0.2, grace_s=0.1))
+
+    def poll_to_end() -> None:
+        while limited.poll(0.05) is None:
+            pass
+
+    problem = refuses(poll_to_end, proc.TimedOut)
+    expect(
+        "poll() of a command past its limit gives TimedOut, as wait() does",
+        isinstance(problem, proc.TimedOut) and testing.is_gone(limited.pid),
+    )
 
 
 def interrupted(action: Callable[[], object], first_s: float, interval_s: float = 0.0) -> bool:
@@ -245,7 +260,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         and reached
         and summary.is_file()
         and summary.read_text() == "summary\n"
-        and is_gone(running.pid)
+        and testing.is_gone(running.pid)
         and time.monotonic() - started < 10,
     )
     summary.unlink(missing_ok=True)
@@ -258,7 +273,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     reached = interrupted(lambda: rest.extend(streamed), 0.1)
     expect(
         "an interrupt of a stream gives the lines that the command writes after SIGINT, and then goes on",
-        first == "ready\n" and rest == ["summary\n"] and reached and is_gone(streamed.pid),
+        first == "ready\n" and rest == ["summary\n"] and reached and testing.is_gone(streamed.pid),
     )
     deaf = proc.start(
         proc.Command(
@@ -272,21 +287,17 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     )
     next(deaf)
     started = time.monotonic()
-    reached = interrupted(deaf.wait, 0.1, 0.3)
+    reached = interrupted(deaf.wait, 0.1, 0.1)
     expect(
         "a second interrupt sends SIGKILL to a group that ignores SIGINT, and then goes on",
-        reached and is_gone(deaf.pid) and time.monotonic() - started < 10,
+        reached and testing.is_gone(deaf.pid) and time.monotonic() - started < 10,
     )
     started = time.monotonic()
     late = proc.start(
         proc.Command(
-            python(
-                "import signal, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\n"
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-                "print('ready', flush=True)\ntime.sleep(60)"
-            ),
-            timeout_s=1.0,
-            grace_s=0.3,
+            ["sh", "-c", "trap '' INT TERM; echo ready; exec sleep 60"],
+            timeout_s=0.3,
+            grace_s=0.1,
             stdout=proc.Output.STREAM,
         )
     )
@@ -294,7 +305,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     reached = interrupted(late.wait, 0.1)
     expect(
         "after one interrupt, the limit still stops a command that ignores SIGINT and SIGTERM",
-        reached and is_gone(late.pid) and time.monotonic() - started < 10,
+        reached and testing.is_gone(late.pid) and time.monotonic() - started < 10,
     )
     summary.unlink(missing_ok=True)
     ready.unlink(missing_ok=True)
@@ -308,7 +319,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     summary.unlink(missing_ok=True)
     ready.unlink(missing_ok=True)
     started = time.monotonic()
-    timed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=1.0, stop=proc.Stop.INTERRUPT))
+    timed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=0.5, stop=proc.Stop.INTERRUPT))
     is_ready = wait_for_file(ready)
     problem = refuses(timed.wait, proc.TimedOut)
     expect(
@@ -388,7 +399,7 @@ def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     unread = proc.start(proc.Command(["sh", "-c", "printf 'a\\nb\\n'"], timeout_s=SAFE_S, stdout=proc.Output.STREAM))
     expect("the result of a stream holds the lines that the loop did not give", unread.wait().stdout == b"a\nb\n")
     slow = proc.start(
-        proc.Command(["sh", "-c", "echo first; sleep 60"], timeout_s=0.5, grace_s=0.2, stdout=proc.Output.STREAM)
+        proc.Command(["sh", "-c", "echo first; sleep 60"], timeout_s=0.2, grace_s=0.1, stdout=proc.Output.STREAM)
     )
     first = next(slow)
     expect(

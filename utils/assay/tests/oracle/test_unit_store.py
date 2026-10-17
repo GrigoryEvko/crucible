@@ -63,7 +63,7 @@ from assay.tests import oracle as oracle_parts
 PARTED = True
 
 # The wait after the setup.  Each file of the setup is then older than the settle period of the store.
-SETTLED_S = compile_store._SETTLE_NS / 1e9 + 0.2
+SETTLED_S = 2 * compile_store._SETTLE_NS / 1e9
 # The slots of the store of the slot cases, the units that threads build at one time, and the wait of each compile.
 SLOTS = 2
 SLOT_UNITS = 6

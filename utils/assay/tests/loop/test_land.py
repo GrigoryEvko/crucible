@@ -44,7 +44,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -598,6 +597,37 @@ def red_base_cases(expect: testing.Expect) -> None:
         land.shown_problems(first) == land.shown_problems(second)
         and land.shown_problems(first) != frozenset(first.problems),
     )
+
+
+def focus_cases(expect: testing.Expect) -> None:
+    """Hold the focus of the run of the base: it is the focus of the first run of the batch (THE RUN OF THE BASE)."""
+    with tempfile.TemporaryDirectory(prefix="land-focus-") as work_text:
+        root = Path(work_text) / "repo"
+        planted_repository(root)
+        (root / "base.txt").write_text(RED, encoding="utf-8")
+        red_base = git.commit_all(root, "Make the branch red")
+        focus = (gate.Focus("debug", ("test_base.txt",)),)
+        seen: list[tuple[gate.Candidate, bool]] = []
+
+        def focusing(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Reject a commit with the red base.txt, with the focus of its test, and keep each call."""
+            seen.append((candidate, is_retry))
+            is_red = git.show(root, candidate.commit, "base.txt") == RED.encode()
+            problems = ("debug: red alone too: test_base.txt",) if is_red else ()
+            return gate.Verdict(("debug",), problems, 1.0, focus=focus if is_red else ())
+
+        decisions, _ = landed(root, own_requests(root, ("one\n",)), focusing)
+        expect(
+            "the run of the base is a retry of the commit of the batch with the focus of the first run, and a branch "
+            "that is red there too refuses the request",
+            len(seen) == 2
+            and seen[0][0].focus == ()
+            and seen[1][0].focus == focus
+            and seen[1][0].commit == red_base
+            and seen[1][1]
+            and decisions[1].status == ExitCode.FINDINGS
+            and any("red with no request" in line.content for line in decisions[1].lines),
+        )
 
 
 def revert_cases(expect: testing.Expect) -> None:
@@ -1459,14 +1489,6 @@ def heavy_lock_cases(expect: testing.Expect) -> None:
         )
 
 
-def wait_for(condition: Callable[[], bool], limit_s: float = WAIT_S) -> bool:
-    """Wait in steps of 20 ms until a condition holds, at most for the limit, and tell if it holds."""
-    deadline = time.monotonic() + limit_s
-    while not condition() and time.monotonic() < deadline:
-        time.sleep(0.02)
-    return condition()
-
-
 @dataclass(frozen=True, slots=True)
 class Part:
     """The part of one planted landing process: the subject, the own file and the patch of its request, and its behavior.
@@ -1509,7 +1531,7 @@ def started(work: Path, root: Path, log: Path, parts: Sequence[Part], before: in
             """Tell if the queue holds the request files of the processes that started."""
             return len(paths.listing(queue, f"*{land.REQUEST_SUFFIX}")) >= count
 
-        wait_for(has_entered)
+        testing.wait_until(has_entered, WAIT_S)
     return runs
 
 
@@ -1575,7 +1597,7 @@ def interrupt_cases(expect: testing.Expect, base: Path) -> None:
     ]
     with gate.tree_lock(work):
         runs = started(work, root, log, parts)
-    is_started = wait_for(lambda: Path(f"{go}.started").exists())
+    is_started = testing.wait_until(lambda: Path(f"{go}.started").exists(), WAIT_S)
     interrupted = runs[1].stop()
     go.write_text("go\n", encoding="utf-8")
     exits = [runs[0].wait().exit, runs[2].wait().exit]
@@ -1631,7 +1653,7 @@ def revert_process_cases(expect: testing.Expect, base: Path) -> None:
     go = base / "go-after"
     with gate.tree_lock(work):
         first = started(work, root, log, [Part("Change a line", "", go=str(go), patch=str(patch))])
-    is_started = wait_for(lambda: Path(f"{go}.started").exists())
+    is_started = testing.wait_until(lambda: Path(f"{go}.started").exists(), WAIT_S)
     second = started(work, root, log, [Part("Add a line", "shared.txt")], before=1)
     go.write_text("go\n", encoding="utf-8")
     exits = [first[0].wait().exit, second[0].wait().exit]
@@ -1656,6 +1678,7 @@ def main(argv: list[str]) -> int:
             compose_cases,
             batch_cases,
             red_base_cases,
+            focus_cases,
             revert_cases,
             early_cases,
             landing_cases,

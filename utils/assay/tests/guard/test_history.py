@@ -10,12 +10,16 @@ a file or many steps of the quarantine ledger.
 Exit 0 when each case holds, else 1.
 """
 
+import contextlib
+import os
+import random
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from unittest import mock
 
-from assay.core import git
+from assay.core import cache, cache_root, git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -1052,6 +1056,145 @@ def split_cases(expect: Expect, scratch: Path) -> None:
            status == 1 and any(other[:9] in item.message for item in errors_of(found)))
 
 
+@contextlib.contextmanager
+def caches_off() -> Iterator[None]:
+    """Turn each cache off for the block, as CRUCIBLE_CACHE_DIR=off does."""
+    saved = os.environ.get(cache_root.ROOT_VARIABLE)
+    os.environ[cache_root.ROOT_VARIABLE] = "off"
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop(cache_root.ROOT_VARIABLE, None)
+        else:
+            os.environ[cache_root.ROOT_VARIABLE] = saved
+
+
+def cold_verdict(root: Path) -> tuple[int, list[check_report.Finding]]:
+    """Run the rule on a tree with each cache off."""
+    with caches_off():
+        return verdict(root)
+
+
+def cache_tree(scratch: Path) -> Scratch:
+    """Return a throwaway repository with a quarantine ledger of two configurations in four commits.
+
+    The tree has POOL_FLOOR versions or more, and the first run reads them in worker processes (THE COLD RUN).
+    """
+    tree = Scratch(scratch)
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/a.cpp", "std::span"): 3}, {"arm": {("test/a.cpp", "std::span"): 1}}))
+    tree.commit("Count two configurations", "The first counts.")
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/a.cpp", "std::span"): 2}, {"arm": {("test/a.cpp", "std::span"): 1}}))
+    tree.commit("Lower the first count", "One finding goes.")
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/a.cpp", "std::span"): 1}, {"arm": {("test/a.cpp", "std::span"): 1}}))
+    tree.commit("Lower a count", "One finding goes.")
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/a.cpp", "std::span"): 1, ("test/a.cpp", "std::map"): 1},
+                                            {"arm": {("test/a.cpp", "std::span"): 2}}))
+    tree.commit("Raise two counts by hand", "Two findings come.")
+    return tree
+
+
+def cache_cases(expect: Expect, scratch: Path) -> None:
+    """Check the cache of the rule (THE CACHE): each run with the cache gives the findings of a run with no cache."""
+    tree = cache_tree(scratch / "cache")
+    first, hit, cold = tree.run(), tree.run(), cold_verdict(tree.root)
+    expect("a run that writes the cache, a run that reads it and a run with no cache give the same findings",
+           first == hit == cold and first[0] == 1)
+    store = history.HistoryStore.open(tree.root)
+    text = (tree.root / QUARANTINE_LEDGER).read_text(encoding="utf-8")
+    parsed = history.read_quarantine_version(text, QUARANTINE_LEDGER)
+    expect("an entry of a version gives the version that a read of its text gives",
+           store is not None and store.version(text) == parsed
+           and history.plain_version(history.version_plain(parsed)) == parsed)
+    tree.write(QUARANTINE_LEDGER, rows_text({("test/a.cpp", "std::span"): 1, ("test/a.cpp", "std::map"): 1},
+                                            {"arm": {("test/a.cpp", "std::span"): 4}}))
+    raised = tree.commit("Raise the configuration above its peak", "Two more findings of the CI leg.")
+    plan = history.plan_walk(history.read_history(tree.root))
+    expect("a run after a new commit continues from the state after the commits of the last run",
+           len(plan.steps) > 1 and plan.start == len(plan.steps) - 1)
+    resumed = tree.run()
+    expect("the run that continues from the cached state gives the findings of a run with no cache",
+           resumed == cold_verdict(tree.root) and any(raised[:9] in item.message for item in errors_of(resumed[1])))
+    if store is None:
+        return
+    for kind, key in ((history.VERSION_ENTRY, history.text_key(text)), (history.WALK_ENTRY, plan.keys[-1])):
+        entry = store.entry(kind, key)
+        entry.write_bytes(entry.read_bytes()[:-3] + b"bad")
+    expect("a damaged entry gives no value", store.version(text) is history.MISSING)
+    expect("a run with damaged entries reads the texts again and gives the same findings", tree.run() == resumed)
+    with mock.patch.object(history, "CACHE_FORMAT", history.CACHE_FORMAT + b"-next"):
+        other = history.code_identity(store.directory)
+    expect("a new version of the format of the entries gives a different identity",
+           other != history.code_identity(store.directory))
+    expect("a store of a different identity does not read an entry of the identity before it",
+           history.HistoryStore(store.directory, other).version(text) is history.MISSING
+           and store.version(text) == parsed)
+    (store.directory / history.CLOSURE_RECORD).write_bytes(b"{not json")
+    reopened = history.HistoryStore.open(tree.root)
+    expect("a damaged record of the closure gives the identity of a new walk of the imports",
+           reopened is not None and reopened.identity == store.identity)
+
+
+# The parts of the random versions of changed_rows_cases().
+RANDOM_FILES = ("a.cpp", "b.cpp", "c.cpp")
+RANDOM_ENTITIES = ("std::span", "std::map")
+RANDOM_KINDS = ("std-object", history.OPTED_OUT, history.REGION)
+RANDOM_NAMES = ("arm", "tsan")
+
+
+def random_version(rng: random.Random, base: str) -> history.QuarantineVersion:
+    """Return a random version of the quarantine ledger of format 3 or 4, with counts of 0 and negative differences."""
+    names = [name for name in RANDOM_NAMES if rng.random() < 0.7]
+    configurations = {base: {"machine": "x86_64"}, **{name: {"machine": "aarch64"} for name in names}}
+    rows = [(file, kind, entity) for file in RANDOM_FILES for kind in RANDOM_KINDS for entity in RANDOM_ENTITIES]
+    counts = {row: rng.randint(0, 3) for row in rows if rng.random() < 0.4}
+    deltas = {name: {row: rng.choice((-2, -1, 1, 2)) for row in rows if rng.random() < 0.25} for name in names}
+    return history.QuarantineVersion(rng.choice((3, 4)), configurations, counts, deltas, {})
+
+
+def naive_peaks(versions: list[history.QuarantineVersion]) -> dict[history.CountKey, int]:
+    """Return the peaks of some versions as a fold of absolute_counts() of each version gives them."""
+    peaks: dict[history.CountKey, int] = {}
+    for version in versions:
+        for key, count in history.absolute_counts(version).items():
+            peaks[key] = max(peaks.get(key, 0), count)
+    return peaks
+
+
+def changed_rows_cases(expect: Expect) -> None:
+    """Compare the reads of the changed rows with the reads of each count, on random versions (THE CHANGED ROWS)."""
+    rng = random.Random(42)
+    agrees = {"ledger_rises": True, "flow_paths": True, "paid_rises": True, "peaks": True, "regions": True}
+    for trial in range(400):
+        before, after = random_version(rng, "default"), random_version(rng, "default")
+        renames = history.Renames({file: rng.choice(RANDOM_FILES) for file in RANDOM_FILES if rng.random() < 0.3})
+        peaks = history.Peaks({(name, row[0], row[1], row[2]): rng.randint(0, 3) for name in RANDOM_NAMES
+                               for row in after.counts if rng.random() < 0.5})
+        state = history.History(git.PathHistory(()), root=Path("/"))
+        fast = history.ledger_rises(before, after, renames, peaks)
+        fast_paths = history.flow_paths(before, after, fast)
+        flows = frozenset((rng.choice(RANDOM_FILES), rng.choice(RANDOM_FILES)) for _ in range(rng.randint(0, 3)))
+        state.moved[(f"commit{trial}", tuple(fast_paths))] = flows
+        fast_paid = history.paid_rises(state, f"commit{trial}", before, after, fast)
+        with mock.patch.object(history, "has_shared_base", return_value=False):
+            slow = history.ledger_rises(before, after, renames, peaks)
+            slow_paths = history.flow_paths(before, after, slow)
+            slow_paid = history.paid_rises(state, f"commit{trial}", before, after, slow)
+        agrees["ledger_rises"] &= fast == slow
+        agrees["flow_paths"] &= fast_paths == slow_paths
+        agrees["paid_rises"] &= fast_paid == slow_paid
+        versions = [random_version(rng, rng.choice(("default", "default", "other"))) for _ in range(4)]
+        folded = history.Peaks()
+        for version in versions:
+            folded.fold(version)
+        naive = naive_peaks(versions)
+        agrees["peaks"] &= all(folded.get(key) == naive.get(key, 0) for key in set(naive) | set(folded.values))
+        agrees["regions"] &= history.has_region_count(before) == any(
+            kind == history.REGION for _name, _file, kind, _entity in history.absolute_counts(before))
+    for name, holds in agrees.items():
+        expect(f"{name} of the changed rows agrees with the read of each count on 400 random pairs of versions", holds)
+
+
 def applicability_cases(expect: Expect, tree: Scratch, scratch: Path) -> None:
     """Check that the rule does not apply to a shallow history or to a tree that is not a git work tree."""
     shallow = scratch / "shallow"
@@ -1084,7 +1227,8 @@ def main(argv: list[str]) -> int:
             failures.append(name)
 
     measurement_cases(expect)
-    with tempfile.TemporaryDirectory(prefix="test-history-") as scratch_name:
+    changed_rows_cases(expect)
+    with cache.scratch_root(), tempfile.TemporaryDirectory(prefix="test-history-") as scratch_name:
         scratch = Path(scratch_name)
         tree = threshold_cases(expect, scratch)
         ledger_cases(expect, tree)
@@ -1096,6 +1240,7 @@ def main(argv: list[str]) -> int:
         keep_cases(expect, scratch)
         quarantine_cases(expect, scratch)
         split_cases(expect, scratch)
+        cache_cases(expect, scratch)
         applicability_cases(expect, tree, scratch)
     if failures:
         print(f"tests.guard.test_history: FAILED, {len(failures)} case(s) did not hold")

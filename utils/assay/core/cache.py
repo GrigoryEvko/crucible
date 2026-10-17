@@ -166,6 +166,9 @@ LIMITS: dict[str, int] = {
     # approximately 7 blocks of 4 KB.  The limit holds approximately 2,300 full records: four keys of each of the 507
     # tests with a key of the Debug build on 2026-10-14.
     "evidence": 64 << 20,
+    # The results of the rule history (THE CACHE of assay.guard.engines.meta.history).  On 2026-10-17, a cold run of
+    # the tree wrote 15 MB in 302 files.  Each run at a new commit adds one state of the walk of 1 MB.
+    "history": 256 << 20,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = "pycache"

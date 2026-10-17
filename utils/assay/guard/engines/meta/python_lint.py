@@ -21,6 +21,14 @@ THE TOOL
     of the rule then gives the skip status.  `python3 utils/bin/setup install
     ruff` installs it.
 
+THE THREADS
+    ruff starts one thread for each CPU of the host in its pool, and each
+    thread waits in a loop for work.  On 2026-10-17, the build host had 256
+    CPUs.  There, a check of the package took 2.57 s of wall time and 3.64 s
+    of system time.  At RUFF_THREADS threads, it took 2.58 s and 0.28 s.  The
+    witness of the rule fell from 3.69 s to 0.09 s of system time.  The rule
+    then gives ruff the variable RAYON_NUM_THREADS.
+
 Complexity: two runs of ruff.  On 2026-10-08 each run on the package took
 0.1 s.
 """
@@ -40,6 +48,9 @@ OPTIONS = ("--isolated", "--no-cache", "--target-version", "py314", "--line-leng
 FORMAT_KIND = "format"
 # The exit statuses of ruff: no issue, and issues in the report.
 CLEAN, ISSUES = 0, 1
+# The threads of the pool of ruff, and the variable that sets them (THE THREADS).
+RUFF_THREADS = 8
+THREADS_VARIABLE = "RAYON_NUM_THREADS"
 
 
 def run_ruff(context: MetaContext, program: Path, words: list[str], files: list[str]) -> str:
@@ -50,7 +61,12 @@ def run_ruff(context: MetaContext, program: Path, words: list[str], files: list[
             or 1
     """
     completed = proc.run(
-        proc.Command([str(program), *words, *OPTIONS, *files], timeout_s=proc.TOOL_S, cwd=context.root / UTILS)
+        proc.Command(
+            [str(program), *words, *OPTIONS, *files],
+            timeout_s=proc.TOOL_S,
+            cwd=context.root / UTILS,
+            env=proc.environment({THREADS_VARIABLE: str(RUFF_THREADS)}),
+        )
     )
     if completed.exit not in (CLEAN, ISSUES):
         proc.require(completed)

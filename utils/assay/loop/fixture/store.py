@@ -967,8 +967,12 @@ _STORE_MAGIC = b"crucible-neg-store 8\n"
 _RESULTS_PER_ENTRY = 4
 # A change in this period before the compile started can be a change that the
 # compiler did not see.  The period is longer than one tick of the clock that
-# sets file times.
-_SETTLE_NS = 1_000_000_000
+# sets file times.  On 2026-10-17, the kernel 7.2 of the build host gave each of
+# 2000 writes on XFS a change time with a part below 1 ms.  No change time was
+# earlier than the clock read before its write.  Other kernels set the time of a
+# file from the clock of the timer tick.  That clock moves in steps of 1 ms at
+# HZ=1000 and of 10 ms at HZ=100.  The period of 50 ms is 5 of the longest steps.
+_SETTLE_NS = 50_000_000
 # The name of a bucket is the first two hexadecimal digits of a key.  A key is
 # a SHA-256 hash, so each bucket gets an equal part of the keys.
 _BUCKET_DIGITS = 2
@@ -2294,7 +2298,7 @@ class ResultStore:
             except OSError:
                 return False, f"a dependency cannot be read: {name}"
             if _stat_fields(before) != _stat_fields(after) or after.st_ctime_ns >= settled_ns:
-                return False, f"a dependency changed less than one second before the compile: {name}"
+                return False, f"a dependency changed in the settle period before the compile: {name}"
             if roots.holds_root(data):
                 return False, f"a dependency holds the text of a root: {name}"
             recorded.append([roots.relabel(name), _short_digest(data)])
@@ -2314,10 +2318,10 @@ class ResultStore:
                 return False, f"a precompiled header is in a search directory: {listing.precompiled}"
         for root, listing, _ in listed:
             if listing is not None and listing.newest_ctime_ns >= settled_ns:
-                return False, f"a search directory changed less than one second before the compile: {root}"
+                return False, f"a search directory changed in the settle period before the compile: {root}"
         changed = next((path for path in [*states, *probe_states] if _entry_ctime(path) >= settled_ns), None)
         if changed is not None:
-            return False, f"a search root changed less than one second before the compile: {changed}"
+            return False, f"a search root changed in the settle period before the compile: {changed}"
         listings = [[roots.relabel(root), listing.digest] for root, listing, _ in listed if listing is not None]
         new_result: dict[str, object] = {
             "dependencies": recorded,

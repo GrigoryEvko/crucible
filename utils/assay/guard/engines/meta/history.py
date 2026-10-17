@@ -245,20 +245,76 @@ NOT APPLICABLE
     tree, or when the history is shallow: a shallow history does not hold the
     lowest values.
 
-Complexity: O(c * r) for c commits and r measured rules, and linear in the size of the versions of the files.
+THE CACHE
+    Git names a version of a file and a commit by their bytes, and their
+    bytes do not change.  Each result that a version or a commit gives is
+    then the same on each run.  The cache "history" of assay.core.cache
+    (HistoryStore) keeps these results:
+    * The version of the quarantine ledger that a text gives, by the SHA-256
+      of the text.  A text that does not read keeps the value None.
+    * The thresholds of a version of a table of TABLES.
+    * The pairs of files of THE MOVE of a commit and a set of paths.
+    * The cause of a rebase row or a `grow` row at a commit (row_cause()).
+    * The state of the walk through the quarantine ledger (THE CHECKPOINT).
+    An entry is the mark ENTRY_MARK, a digest of its payload and the payload,
+    compressed JSON.  A damaged entry, an entry of a different shape and a
+    write that fails give no result.  The run then calculates the result
+    again.  With the caches off, the rule calculates each result.
+
+THE IDENTITY
+    The name of an entry holds a digest of the code that gives it.  The code
+    is each module of the package that this module can import, also in a
+    function, and the versions of git and Python.  A change of one of them
+    gives different names, and an entry does not become stale.  The walk of
+    the imports costs 0.3 s.  The cache then keeps a record of the closure
+    with the digest of each module (CLOSURE_RECORD).  The walk runs again
+    only when the record does not agree with the files.
+
+THE CHECKPOINT
+    The walk through the commits of the quarantine ledger keeps a state: the
+    peaks, the raised counts, the stale configurations and the errors.  The
+    state after a commit is a function of the commits up to it.  The hash of
+    a commit names its message, its first parent and its files.  The key of a
+    state is a digest of the identity and of each step up to it.  A step gives
+    its hash, its paths and its moved files.
+
+    A run continues from the newest state that the cache holds, reads the
+    newer commits, and writes the state after the last commit.  A history with
+    a different sequence of commits gives different keys.
+
+THE COLD RUN
+    A run with no usable entry reads each version of the quarantine ledger in
+    at most POOL_WORKERS worker processes, and the workers write the entries.
+    The moves of the commits before a commit do not change its raised counts.
+    The walk then reads the raised counts of each new commit first.  Then it
+    reads the diffs of THE MOVE in threads, and then the payments and the
+    errors.  The changed paths of the rebase rows also come from threads.
+
+Complexity: O(c * r) for c commits and r measured rules, and linear in the size of the versions of the files.  A
+run reads only the commits after the newest state of the cache, and the changed rows of each one.
 """
 
+import ast
 import enum
+import hashlib
+import json
 import math
 import shutil
-from collections.abc import Callable, Mapping, Sequence
+import sys
+import threading
+import zlib
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
-from assay.core import git
+
+from assay.core import cache, git, proc
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
+from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable
 from assay.guard.engines.plugin.quarantine import include_key
 
@@ -280,10 +336,17 @@ QUARANTINE_MACHINERY = ("utils/tools/quarantine/", RULE_TABLE, "utils/scripts/la
 # The earlier files of each rule whose ledger moved to the rows of assay.core.ledger.  A state before the move holds
 # the earlier files, and its row count is the sum of their row counts.
 EARLIER_FILES = {
-    "artifact-symbols": ("utils/ledgers/libstdcxx-symbols.txt", "utils/ledgers/no-throw-no-rtti.txt",
-                         "utils/scripts/libstdcxx-symbols-ledger.txt", "utils/scripts/no-throw-no-rtti-allowlist.txt"),
-    "banned-calls": ("utils/scripts/no-reinterpret-allowlist.txt", "utils/scripts/no-reserve-allowlist.txt",
-                     "utils/scripts/no-spawn-process-allowlist.txt"),
+    "artifact-symbols": (
+        "utils/ledgers/libstdcxx-symbols.txt",
+        "utils/ledgers/no-throw-no-rtti.txt",
+        "utils/scripts/libstdcxx-symbols-ledger.txt",
+        "utils/scripts/no-throw-no-rtti-allowlist.txt",
+    ),
+    "banned-calls": (
+        "utils/scripts/no-reinterpret-allowlist.txt",
+        "utils/scripts/no-reserve-allowlist.txt",
+        "utils/scripts/no-spawn-process-allowlist.txt",
+    ),
     "compile-cpu": ("utils/scripts/compile-cpu-ledger.txt",),
     "compile-instructions": ("utils/scripts/compile-instructions-ledger.txt",),
     "compile-memory": ("utils/scripts/compile-memory-ledger.txt",),
@@ -338,6 +401,15 @@ WORKING_TREE = "the working tree"
 TOTAL = "(the total of the kind)"
 SHOWN_RISES = 8
 HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+class Missing(enum.Enum):
+    """The result of a lookup in the cache that holds no usable entry, apart from an entry that holds None."""
+
+    TOKEN = enum.auto()
+
+
+MISSING = Missing.TOKEN
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,7 +507,8 @@ class History:
     """The states of the watched files, and each path that each commit of the quarantine ledger changed.
 
     `root` is the tree of the history, and `moved` keeps the pairs of files of THE MOVE of each commit and set of
-    paths.  A history with no root has no move.
+    paths.  A history with no root has no move.  `store` is the cache of the results that a text or a commit gives
+    (THE CACHE), and `versions`, `row_counts` and `tables` keep the reads of one run, by text.
     """
 
     states: git.PathHistory
@@ -443,24 +516,114 @@ class History:
     changes: dict[str, tuple[frozenset[str], dict[str, str]]] = field(default_factory=dict)
     root: Path | None = None
     moved: dict[tuple[str, tuple[str, ...]], frozenset[tuple[str, str]]] = field(default_factory=dict)
+    store: HistoryStore | None = None
+    versions: dict[str, QuarantineVersion | None] = field(default_factory=dict)
+    row_counts: dict[str, int | None] = field(default_factory=dict)
+    tables: dict[tuple[str, str], dict[str, Row]] = field(default_factory=dict)
 
     def flows(self, sha: str, paths: Sequence[str]) -> frozenset[tuple[str, str]]:
         """Return each pair of files (A, B) of the paths where a commit moved a line from A to B (THE MOVE).
 
         The commit "" is the working tree against HEAD.  A history with no root, a root commit and a git command that
-        does not succeed give no pair.  Complexity: one diff of the paths for each commit and set of paths.
+        does not succeed give no pair.  The cache keeps the pairs of a commit, because its hash names its diff.
+        Complexity: one diff of the paths for each commit and set of paths that the cache does not hold.
         """
         if self.root is None or not paths:
             return frozenset()
         key = (sha, tuple(sorted(set(paths))))
         if key not in self.moved:
+            stored = self.store.flows(key) if self.store is not None and sha else None
+            if stored is not None:
+                self.moved[key] = stored
+                return stored
             try:
-                found = (git.diff_moves(self.root, f"{sha}^1", sha, key[1]) if sha
-                         else git.diff_moves(self.root, "HEAD", None, key[1]))
+                found = (
+                    git.diff_moves(self.root, f"{sha}^1", sha, key[1])
+                    if sha
+                    else git.diff_moves(self.root, "HEAD", None, key[1])
+                )
                 self.moved[key] = found.flows
+                if self.store is not None and sha:
+                    self.store.keep_flows(key, found.flows)
             except git.GitError:
                 self.moved[key] = frozenset()
         return self.moved[key]
+
+    def fill_flows(self, keys: Iterable[tuple[str, Sequence[str]]]) -> None:
+        """Read the pairs of THE MOVE of each commit and set of paths that no cache holds, with the diffs in threads.
+
+        flows() then gives each of them with no diff.  The function fills no key of the working tree ("") and no
+        empty set of paths.
+        Complexity: one diff of each key that the caches do not hold, divided between the threads.
+        """
+        root = self.root
+        if root is None:
+            return
+        pending: dict[tuple[str, tuple[str, ...]], None] = {}
+        for sha, paths in keys:
+            key = (sha, tuple(sorted(set(paths))))
+            if not sha or not paths or key in self.moved or key in pending:
+                continue
+            stored = self.store.flows(key) if self.store is not None else None
+            if stored is None:
+                pending[key] = None
+            else:
+                self.moved[key] = stored
+        if not pending:
+            return
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(min(proc.DEFAULT_JOBS, len(pending))) as pool:
+            for key, found in zip(pending, pool.map(partial(moved_pairs, root), pending)):
+                self.moved[key] = frozenset() if found is None else found
+                if found is not None and self.store is not None:
+                    self.store.keep_flows(key, found)
+
+    def quarantine_version(self, text: str | None) -> QuarantineVersion | None:
+        """Return one version of the quarantine ledger, or None for no text and for a text that does not read.
+
+        Each caller ignores the text of a VersionError, and the read keys on the text alone.  The store keeps the
+        version of a text across runs (THE CACHE).  Complexity: one read of each text that the store does not hold.
+        """
+        if text is None:
+            return None
+        if text not in self.versions:
+            stored = self.store.version(text) if self.store is not None else MISSING
+            if stored is MISSING:
+                try:
+                    read: QuarantineVersion | None = read_quarantine_version(text, QUARANTINE_LEDGER)
+                except VersionError:
+                    read = None
+                if self.store is not None:
+                    self.store.keep_version(text, read)
+            else:
+                read = stored
+            self.versions[text] = read
+        return self.versions[text]
+
+    def table(self, path: str, text: str) -> dict[str, Row]:
+        """Return the thresholds of one version of a table of TABLES, one time for each text.
+
+        The store keeps the thresholds of a text across runs (THE CACHE).  Complexity: one read of each text that the
+        store does not hold.
+        """
+        key = (path, text)
+        if key not in self.tables:
+            stored = self.store.table(path, text) if self.store is not None else None
+            if stored is None:
+                stored = registry_rows(text) if path == REGISTRY else old_table_rows(text)
+                if self.store is not None:
+                    self.store.keep_table(path, text, stored)
+            self.tables[key] = stored
+        return self.tables[key]
+
+    def row_count(self, text: str | None) -> int | None:
+        """Return the row count of one version of a ledger (assay.core.ledger.count_rows()), one time for each text."""
+        if text is None:
+            return None
+        if text not in self.row_counts:
+            self.row_counts[text] = rule_ledger.count_rows(text)
+        return self.row_counts[text]
 
     def text(self, place: str, sha: str, paths: tuple[str, ...]) -> str | None:
         """Return the first of the paths that a state holds, at a commit ("at" or "before"), at HEAD or in the working tree."""
@@ -475,6 +638,14 @@ class History:
                 data = self.states.working.get(path)
             if data is not None:
                 return data.decode("utf-8", "replace")
+        return None
+
+
+def moved_pairs(root: Path, key: tuple[str, tuple[str, ...]]) -> frozenset[tuple[str, str]] | None:
+    """Return the pairs of files of THE MOVE of a commit and a set of paths, or None when git fails."""
+    try:
+        return git.diff_moves(root, f"{key[0]}^1", key[0], key[1]).flows
+    except git.GitError:
         return None
 
 
@@ -502,7 +673,7 @@ def registry_rows(text: str | None) -> dict[str, Row]:
         values = dict(word.partition("=")[::2] for word in parsed[0].words[2:])
         try:
             warn, error = float(values["warn"]), float(values["error"])
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
         if math.isfinite(warn) and math.isfinite(error) and values.get("unit"):
             rows[parsed[0].words[1]] = Row(warn, error, unit_word(values["unit"]))
@@ -532,9 +703,9 @@ def table_rows(history: History, place: str, sha: str = "") -> dict[str, Row] | 
     """Return the thresholds of one state: of the registry when the state holds it, else of the old table, else None."""
     registry_text = history.text(place, sha, (REGISTRY,))
     if registry_text is not None:
-        return registry_rows(registry_text)
+        return history.table(REGISTRY, registry_text)
     old_text = history.text(place, sha, (OLD_TABLE,))
-    return old_table_rows(old_text) if old_text is not None else None
+    return history.table(OLD_TABLE, old_text) if old_text is not None else None
 
 
 def is_word_character(character: str) -> bool:
@@ -570,9 +741,10 @@ def names_rule(sentence: str, rule_id: str) -> bool:
     start = sentence.find(rule_id)
     while start >= 0:
         before = sentence[start - 1] if start > 0 else ""
-        after = sentence[start + len(rule_id):start + len(rule_id) + 1]
+        after = sentence[start + len(rule_id) : start + len(rule_id) + 1]
         if not (before and (is_word_character(before) or before == "-")) and not (
-                after and (is_word_character(after) or after == "-")):
+            after and (is_word_character(after) or after == "-")
+        ):
             return True
         start = sentence.find(rule_id, start + 1)
     return False
@@ -591,8 +763,9 @@ def quantities(sentence: str, word: str) -> list[float]:
     needs_tail = word[-1:].isalnum()
     index = 0
     while index < len(sentence):
-        if not sentence[index].isdecimal() or (index > 0 and (is_word_character(sentence[index - 1])
-                                                              or sentence[index - 1] == ".")):
+        if not sentence[index].isdecimal() or (
+            index > 0 and (is_word_character(sentence[index - 1]) or sentence[index - 1] == ".")
+        ):
             index += 1
             continue
         end = index
@@ -604,9 +777,10 @@ def quantities(sentence: str, word: str) -> list[float]:
                 end += 1
         unit_start = end + 1 if end < len(sentence) and sentence[end].isspace() else end
         after = unit_start + len(word)
-        tail = sentence[after:after + 1]
-        if (sentence.startswith(word, unit_start)
-                and not (needs_tail and tail and (is_word_character(tail) or tail == "%"))):
+        tail = sentence[after : after + 1]
+        if sentence.startswith(word, unit_start) and not (
+            needs_tail and tail and (is_word_character(tail) or tail == "%")
+        ):
             try:
                 found.append(float(sentence[index:end].replace(",", "")))
             except ValueError:
@@ -636,6 +810,9 @@ def has_measurement(body: str, rule_id: str, unit: str, known: set[float], old: 
 def read_history(root: Path) -> History:
     """Read the commits of the watched files, each file at each such commit, its parent, HEAD and the working tree.
 
+    A thread opens the cache and reads the changes of the quarantine ledger while git reads the states of the
+    files (THE CACHE).
+
     Raises:
         NotApplicable: If the tree is not the top of a git work tree, or its history is shallow
     """
@@ -645,19 +822,52 @@ def read_history(root: Path) -> History:
         if git.is_shallow(root):
             raise NotApplicable("the history is shallow, and a shallow history does not hold the lowest values")
         ledgers = sorted(git.tracked_files(root, (f"{LEDGER_DIRECTORY}/*.txt",), with_new=True))
-        earlier = [path for ledger in ledgers for path in EARLIER_PATHS.get(ledger, ())]
-        watched = list(dict.fromkeys([*TABLES, *ledgers, *earlier]))
-        groups = [(ledger, *EARLIER_PATHS[ledger]) for ledger in ledgers if ledger in EARLIER_PATHS]
-        states = git.path_history(root, watched, groups)
-        changes = (git.changes(root, [*QUARANTINE_PATHS, *QUARANTINE_MACHINERY]) if QUARANTINE_LEDGER in ledgers
-                   else {})
+        side = SideRead(root, QUARANTINE_LEDGER in ledgers)
+        reader = threading.Thread(target=side.run, name="history-side")
+        reader.start()
+        try:
+            earlier = [path for ledger in ledgers for path in EARLIER_PATHS.get(ledger, ())]
+            watched = list(dict.fromkeys([*TABLES, *ledgers, *earlier]))
+            groups = [(ledger, *EARLIER_PATHS[ledger]) for ledger in ledgers if ledger in EARLIER_PATHS]
+            states = git.path_history(root, watched, groups)
+        finally:
+            reader.join()
+        if side.problem is not None:
+            raise side.problem
     except git.GitError as problem:
         raise NotApplicable(str(problem)) from None
-    return History(states, ledgers, changes, root)
+    return History(states, ledgers, side.changes, root, store=side.store)
 
 
-def rises_after_lowest(states: list[float | None], rises: list[tuple[int, Rise]], current: float | None,
-                       working_rise: Rise | None) -> tuple[float, list[Rise]] | None:
+class SideRead:
+    """The part of read_history() that a thread reads: the store of the run, and the changes of the quarantine ledger.
+
+    `problem` holds the failure of git in the thread, and read_history() raises it.
+    """
+
+    __slots__ = ("changes", "needs_changes", "problem", "root", "store")
+
+    def __init__(self, root: Path, needs_changes: bool) -> None:
+        """Hold the tree, and tell if the tree holds the quarantine ledger.  The walk reads the changes of it."""
+        self.root = root
+        self.needs_changes = needs_changes
+        self.store: HistoryStore | None = None
+        self.changes: dict[str, tuple[frozenset[str], dict[str, str]]] = {}
+        self.problem: git.GitError | None = None
+
+    def run(self) -> None:
+        """Open the store, and read the changes of the quarantine ledger, the plugin and the rule table."""
+        self.store = HistoryStore.open(self.root)
+        try:
+            if self.needs_changes:
+                self.changes = git.changes(self.root, [*QUARANTINE_PATHS, *QUARANTINE_MACHINERY])
+        except git.GitError as problem:
+            self.problem = problem
+
+
+def rises_after_lowest(
+    states: list[float | None], rises: list[tuple[int, Rise]], current: float | None, working_rise: Rise | None
+) -> tuple[float, list[Rise]] | None:
     """Return the lowest committed value and the rises after the newest state at it, when the current value is above it.
 
     `states` holds the value at each commit, newest first, and None where no value applies.
@@ -675,8 +885,9 @@ def rises_after_lowest(states: list[float | None], rises: list[tuple[int, Rise]]
     return lowest, named
 
 
-def threshold_findings(history: History, registry: rule_registry.Registry,
-                       kept: frozenset[tuple[str, str]] = frozenset()) -> list[check_report.Finding]:
+def threshold_findings(
+    history: History, registry: rule_registry.Registry, kept: frozenset[tuple[str, str]] = frozenset()
+) -> list[check_report.Finding]:
     """Compare each threshold with its history, and each rise with the body of its commit.
 
     `kept` holds the rule and the field of each `keep` row (THE KEPT THRESHOLDS).  A threshold above its lowest value
@@ -686,18 +897,28 @@ def threshold_findings(history: History, registry: rule_registry.Registry,
     commits = history.states.commits
     current = table_rows(history, "working") or {}
     # A commit that changed a table has a state, also when the commit or its parent holds no table.
-    tables = [(table_rows(history, "at", commit.sha) or {}) if any(path in commit.paths for path in TABLES)
-              else None for commit in commits]
-    parents = [(table_rows(history, "before", commit.sha) or {}) if any(path in commit.paths for path in TABLES)
-               else None for commit in commits]
+    tables = [
+        (table_rows(history, "at", commit.sha) or {}) if any(path in commit.paths for path in TABLES) else None
+        for commit in commits
+    ]
+    parents = [
+        (table_rows(history, "before", commit.sha) or {}) if any(path in commit.paths for path in TABLES) else None
+        for commit in commits
+    ]
     last_committed = table_rows(history, "head") or {}
     bodies = {commit.sha: commit.body for commit in commits}
     for rule_id, row in sorted(current.items()):
         rule = registry.rules.get(rule_id)
         line = rule.line if rule is not None else 0
         display = check_report.unit_text(row.unit)
-        known = {value for table in [*tables, *parents, current] if table
-                 for other in [table.get(rule_id)] if other is not None for value in (other.warn, other.error)}
+        known = {
+            value
+            for table in [*tables, *parents, current]
+            if table
+            for other in [table.get(rule_id)]
+            if other is not None
+            for value in (other.warn, other.error)
+        }
         for column in COLUMNS:
             states: list[float | None] = []
             rises: list[tuple[int, Rise]] = []
@@ -707,43 +928,81 @@ def threshold_findings(history: History, registry: rule_registry.Registry,
                     continue
                 new_row, old_row = table.get(rule_id), parent.get(rule_id)
                 states.append(new_row.value(column) if new_row is not None and new_row.unit == row.unit else None)
-                if (new_row is None or old_row is None or new_row.unit != row.unit or old_row.unit != row.unit
-                        or new_row.value(column) <= old_row.value(column)):
+                if (
+                    new_row is None
+                    or old_row is None
+                    or new_row.unit != row.unit
+                    or old_row.unit != row.unit
+                    or new_row.value(column) <= old_row.value(column)
+                ):
                     continue
-                rises.append((index, Rise(commit.short, commit.subject, old_row.value(column), new_row.value(column),
-                                          commit.sha)))
-            measured = {(rise.old, rise.new) for _, rise in rises
-                        if has_measurement(bodies[rise.sha], rule_id, row.unit, known, rise.old, rise.new)}
+                rises.append(
+                    (
+                        index,
+                        Rise(commit.short, commit.subject, old_row.value(column), new_row.value(column), commit.sha),
+                    )
+                )
+            measured = {
+                (rise.old, rise.new)
+                for _, rise in rises
+                if has_measurement(bodies[rise.sha], rule_id, row.unit, known, rise.old, rise.new)
+            }
             for _, rise in rises:
                 if (rise.old, rise.new) in measured:
                     continue
-                findings.append(check_report.Finding(
-                    "error", REGISTRY, line, RULE,
-                    f"the commit {rise.described()} raised the {column} threshold of {rule_id}, and no commit of this "
-                    f"step names a measurement: a number in {display} that no threshold of the rule was, in a sentence "
-                    f"with the rule name or above the old threshold and at most the new one.  Measure the quantity, "
-                    f"and add a row to {rule_ledger.shown_path(RULE)} with the measurement as its reason",
-                    column, f"{rise.where} {rule_id}"))
+                findings.append(
+                    check_report.Finding(
+                        "error",
+                        REGISTRY,
+                        line,
+                        RULE,
+                        f"the commit {rise.described()} raised the {column} threshold of {rule_id}, and no commit of this "
+                        f"step names a measurement: a number in {display} that no threshold of the rule was, in a sentence "
+                        f"with the rule name or above the old threshold and at most the new one.  Measure the quantity, "
+                        f"and add a row to {rule_ledger.shown_path(RULE)} with the measurement as its reason",
+                        column,
+                        f"{rise.where} {rule_id}",
+                    )
+                )
             old_row = last_committed.get(rule_id)
-            working_rise = (Rise(WORKING_TREE, "not committed", old_row.value(column), row.value(column))
-                            if old_row is not None and old_row.unit == row.unit
-                            and row.value(column) > old_row.value(column) else None)
+            working_rise = (
+                Rise(WORKING_TREE, "not committed", old_row.value(column), row.value(column))
+                if old_row is not None and old_row.unit == row.unit and row.value(column) > old_row.value(column)
+                else None
+            )
             above = rises_after_lowest(states, rises, row.value(column), working_rise)
             if above is not None:
                 lowest, named = above
                 raised = "; ".join(rise.described() for rise in named) if named else "by no single commit"
-                said = (f"the {column} threshold of {rule_id} is {number_text(row.value(column))} {display}, above its "
-                        f"lowest committed value {number_text(lowest)}.  Raised: {raised}")
+                said = (
+                    f"the {column} threshold of {rule_id} is {number_text(row.value(column))} {display}, above its "
+                    f"lowest committed value {number_text(lowest)}.  Raised: {raised}"
+                )
                 if (rule_id, column) in kept:
-                    findings.append(check_report.Finding(
-                        "error", REGISTRY, line, RULE,
-                        f"{said}.  A keep row of {OWN_LEDGER} gives the measurement that keeps it", KEEP_KIND,
-                        f"{rule_id} {column}"))
+                    findings.append(
+                        check_report.Finding(
+                            "error",
+                            REGISTRY,
+                            line,
+                            RULE,
+                            f"{said}.  A keep row of {OWN_LEDGER} gives the measurement that keeps it",
+                            KEEP_KIND,
+                            f"{rule_id} {column}",
+                        )
+                    )
                 else:
-                    findings.append(check_report.Finding(
-                        "warning", REGISTRY, line, RULE,
-                        f"{said}.  Lower it again when a measurement permits, or add a keep row to {OWN_LEDGER} that "
-                        f"gives the measurement", "above-lowest", rule_id))
+                    findings.append(
+                        check_report.Finding(
+                            "warning",
+                            REGISTRY,
+                            line,
+                            RULE,
+                            f"{said}.  Lower it again when a measurement permits, or add a keep row to {OWN_LEDGER} that "
+                            f"gives the measurement",
+                            "above-lowest",
+                            rule_id,
+                        )
+                    )
     return findings
 
 
@@ -756,8 +1015,8 @@ def ledger_rows(history: History, place: str, sha: str, path: str) -> int | None
     """Return the row count of a ledger in one state: of its file, else the sum of its earlier files, else None."""
     own = history.text(place, sha, (path,))
     if own is not None:
-        return rule_ledger.count_rows(own)
-    counts = [rule_ledger.count_rows(history.text(place, sha, (item,))) for item in EARLIER_PATHS.get(path, ())]
+        return history.row_count(own)
+    counts = [history.row_count(history.text(place, sha, (item,))) for item in EARLIER_PATHS.get(path, ())]
     held = [count for count in counts if count is not None]
     return sum(held) if held else None
 
@@ -772,8 +1031,7 @@ def counts_rows(path: str, registry: rule_registry.Registry) -> bool:
     return path not in (QUARANTINE_LEDGER, OWN_LEDGER) and not is_baseline
 
 
-def rebased(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]],
-            rows: Sequence[Rebase]) -> Rebased:
+def rebased(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]], rows: Sequence[Rebase]) -> Rebased:
     """Return the states of a ledger and its `Rise` records after some of its rebase rows and `grow` rows.
 
     The newest change of the key or the format keeps the states and the
@@ -794,8 +1052,10 @@ def rebased(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]],
             state = shifted[index]
             if state is not None:
                 shifted[index] = state + row.cause.rows
-        named = [(index, replace(rise, old=rise.old + row.cause.rows) if index == row.index else rise)
-                 for index, rise in named]
+        named = [
+            (index, replace(rise, old=rise.old + row.cause.rows) if index == row.index else rise)
+            for index, rise in named
+        ]
         named = [(index, rise) for index, rise in named if rise.new > rise.old]
     return Rebased(tuple(shifted), tuple(named), applied)
 
@@ -807,25 +1067,35 @@ def changes_result(value: float | None, without: Rebased, full: Rebased) -> bool
     row.
     """
     lowest_without, lowest_with = without.lowest, full.lowest
-    return (value is not None and lowest_without is not None and value > lowest_without
-            and (lowest_with is None or lowest_with > lowest_without))
+    return (
+        value is not None
+        and lowest_without is not None
+        and value > lowest_without
+        and (lowest_with is None or lowest_with > lowest_without)
+    )
 
 
 def rebase_text(row: Rebase, path: str) -> str:
     """Return the sentences that tell the cause of a rebase row or a `grow` row and its effect on the ledger."""
     if row.cause.change is Change.KEY:
-        return (f"The commit changed the key or the format of the ledger: {row.cause.text}.  The lowest count starts "
-                f"again at that commit")
+        return (
+            f"The commit changed the key or the format of the ledger: {row.cause.text}.  The lowest count starts "
+            f"again at that commit"
+        )
     if row.cause.change is Change.GROW:
         if path == QUARANTINE_LEDGER:
             return f"A grow row admits the growth of the commit: {row.cause.text}.  Each such count gives no warning"
-        return (f"A grow row admits the growth of the commit: {row.cause.text}.  These {row.cause.rows} rows do not "
-                f"count as growth")
+        return (
+            f"A grow row admits the growth of the commit: {row.cause.text}.  These {row.cause.rows} rows do not "
+            f"count as growth"
+        )
     scope = f"The commit made the scope of the rule larger: {row.cause.text}"
     if path == QUARANTINE_LEDGER:
         return f"{scope}.  Each count that it raised in a file that it did not change gives no warning"
-    return (f"{scope}.  {row.cause.rows} rows of its growth do not count as growth: the rows of files that it did not "
-            f"change, and at most the rows that it added in total")
+    return (
+        f"{scope}.  {row.cause.rows} rows of its growth do not count as growth: the rows of files that it did not "
+        f"change, and at most the rows that it added in total"
+    )
 
 
 def since_text(applied: Sequence[Rebase]) -> str:
@@ -888,9 +1158,15 @@ def moved_rows(history: History, commit: git.Commit, path: str, registry: rule_r
     except rows_grammar.RowsError:
         return 0
     old_tables, new_tables = configuration_counts(before), configuration_counts(after)
-    files = sorted({key.path for name, table in new_tables.items() if name in old_tables
-                    for key in set(table) | set(old_tables[name])
-                    if key.path and table.get(key, 0) != old_tables[name].get(key, 0)})
+    files = sorted(
+        {
+            key.path
+            for name, table in new_tables.items()
+            if name in old_tables
+            for key in set(table) | set(old_tables[name])
+            if key.path and table.get(key, 0) != old_tables[name].get(key, 0)
+        }
+    )
     flows = history.flows(commit.sha, files)
     if not flows:
         return 0
@@ -921,14 +1197,17 @@ def moved_growth(
     commits = history.states.commits
     found: dict[int, int] = {}
     for index, rise in rebased_rows.rises:
-        if index < newest and (rows := min(moved_rows(history, commits[index], path, registry),
-                                           int(rise.new - rise.old))) > 0:
+        if (
+            index < newest
+            and (rows := min(moved_rows(history, commits[index], path, registry), int(rise.new - rise.old))) > 0
+        ):
             found[index] = rows
     return found
 
 
-def after_moves(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]],
-                moved: Mapping[int, int]) -> tuple[list[float | None], list[tuple[int, Rise]]]:
+def after_moves(
+    states: Sequence[float | None], rises: Sequence[tuple[int, Rise]], moved: Mapping[int, int]
+) -> tuple[list[float | None], list[tuple[int, Rise]]]:
     """Return the states and the increases of a ledger with the rows of each move out of its growth (THE MOVE).
 
     A move at a commit increases each older state by its rows.  The increase of its own commit decreases by the same
@@ -945,8 +1224,9 @@ def after_moves(states: Sequence[float | None], rises: Sequence[tuple[int, Rise]
     return shifted, [(item, rise) for item, rise in named if rise.new > rise.old]
 
 
-def ledger_findings(history: History, registry: rule_registry.Registry,
-                    rebases: Mapping[str, Sequence[Rebase]]) -> list[check_report.Finding]:
+def ledger_findings(
+    history: History, registry: rule_registry.Registry, rebases: Mapping[str, Sequence[Rebase]]
+) -> list[check_report.Finding]:
     """Compare the row count of each ledger with its lowest committed count, after the rebase rows and the `grow` rows.
 
     Each rebase row or `grow` row that changes the result gives an error of the kind rebase or `grow`, which the row
@@ -972,9 +1252,12 @@ def ledger_findings(history: History, registry: rule_registry.Registry,
             if new is not None and new > old:
                 rises.append((index, Rise(commit.short, commit.subject, old, new, commit.sha)))
         committed = ledger_rows(history, "head", "", path)
-        current = rule_ledger.count_rows(history.text("working", "", (path,)))
-        working_rise = (Rise(WORKING_TREE, "not committed", committed, current)
-                        if committed is not None and current is not None and current > committed else None)
+        current = history.row_count(history.text("working", "", (path,)))
+        working_rise = (
+            Rise(WORKING_TREE, "not committed", committed, current)
+            if committed is not None and current is not None and current > committed
+            else None
+        )
         value = float(current) if current is not None else None
         rows = list(rebases.get(path, ()))
         full = rebased(states, rises, rows)
@@ -987,21 +1270,36 @@ def ledger_findings(history: History, registry: rule_registry.Registry,
             without = rebased(states, rises, [other for other in rows if other is not row])
             if not changes_result(value, without, full):
                 continue
-            findings.append(check_report.Finding(
-                "error", path, 0, RULE,
-                f"the ledger holds {current} rows, more than its lowest committed count "
-                f"{number_text(without.lowest or 0)} without the {row.kind} row at {row.commit.short} "
-                f"({row.commit.subject}).  {rebase_text(row, path)}.  A row of {OWN_LEDGER} gives the reason",
-                row.kind, row.commit.short))
+            findings.append(
+                check_report.Finding(
+                    "error",
+                    path,
+                    0,
+                    RULE,
+                    f"the ledger holds {current} rows, more than its lowest committed count "
+                    f"{number_text(without.lowest or 0)} without the {row.kind} row at {row.commit.short} "
+                    f"({row.commit.subject}).  {rebase_text(row, path)}.  A row of {OWN_LEDGER} gives the reason",
+                    row.kind,
+                    row.commit.short,
+                )
+            )
         above = rises_after_lowest(list(full.states), list(full.rises), value, working_rise)
         if above is not None:
             lowest, named = above
             raised = "; ".join(rise.described() for rise in named) if named else "by no single commit"
             since = since_text(full.applied)
-            findings.append(check_report.Finding(
-                "warning", path, 0, RULE,
-                f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}{since}.  "
-                f"Rows added: {raised}.  Remove a row when its item is fixed", "ledger-grew", path))
+            findings.append(
+                check_report.Finding(
+                    "warning",
+                    path,
+                    0,
+                    RULE,
+                    f"the ledger holds {current} rows, more than its lowest committed count {number_text(lowest)}{since}.  "
+                    f"Rows added: {raised}.  Remove a row when its item is fixed",
+                    "ledger-grew",
+                    path,
+                )
+            )
     return findings
 
 
@@ -1017,28 +1315,31 @@ def key_change(before: Mapping[str, str], after: Mapping[str, str], changed: fro
     in the bytes of the texts.
     """
     if set(before) != set(after):
-        return (f"the files of the ledger changed from {', '.join(sorted(before))} to {', '.join(sorted(after))}, so "
-                f"two ledgers joined or the ledger moved to another file")
+        return (
+            f"the files of the ledger changed from {', '.join(sorted(before))} to {', '.join(sorted(after))}, so "
+            f"two ledgers joined or the ledger moved to another file"
+        )
     if any(rule_ledger.format_row(before[item]) != rule_ledger.format_row(after[item]) for item in before):
         return "the format row of the ledger changed"
     old_keys = frozenset().union(*(rule_ledger.counted_keys(text) for text in before.values()))
     new_keys = frozenset().union(*(rule_ledger.counted_keys(text) for text in after.values()))
     if old_keys and new_keys and not old_keys & new_keys and any(is_guard_code(item) for item in changed):
-        return (f"no counted key of the {len(old_keys)} rows stayed in the {len(new_keys)} rows, and the commit changed "
-                f"the code of the guards")
+        return (
+            f"no counted key of the {len(old_keys)} rows stayed in the {len(new_keys)} rows, and the commit changed "
+            f"the code of the guards"
+        )
     return None
 
 
-def quarantine_keys(text: str) -> frozenset[tuple[str, ...]]:
+def quarantine_keys(history: History, text: str) -> frozenset[tuple[str, ...]]:
     """Return the keys of one version of the quarantine ledger, with the kind names and the include keys of this time.
 
     A base count gives its file, kind and entity, and a difference row gives
     @NAME before them, as assay.core.ledger.keyed_rows() gives the keys.  A
     version that does not read gives no key.  Complexity: linear in the rows.
     """
-    try:
-        version = read_quarantine_version(text, QUARANTINE_LEDGER)
-    except VersionError:
+    version = history.quarantine_version(text)
+    if version is None:
         return frozenset()
     keys: set[tuple[str, ...]] = {key for key in version.counts}
     keys.update((f"{rule_ledger.DELTA_MARK}{name}", *key) for name, table in version.deltas.items() for key in table)
@@ -1062,19 +1363,25 @@ def change_cause(history: History, commit: git.Commit, path: str, changed: froze
             return Cause(Change.KEY, text, 0, changed)
     if not any(is_guard_code(item) for item in changed):
         return None
-    read: Callable[[str], frozenset[tuple[str, ...]]] = (quarantine_keys if path == QUARANTINE_LEDGER
-                                                          else rule_ledger.version_keys)
+    read: Callable[[str], frozenset[tuple[str, ...]]] = (
+        partial(quarantine_keys, history) if path == QUARANTINE_LEDGER else rule_ledger.version_keys
+    )
     old_keys = frozenset().union(*(read(text) for text in before.values()))
     new_keys = frozenset().union(*(read(text) for text in after.values()))
-    outside = sorted(key for key in new_keys - old_keys
-                     if (file := rule_ledger.key_path(key)) and file not in changed)
+    outside = sorted(key for key in new_keys - old_keys if (file := rule_ledger.key_path(key)) and file not in changed)
     if not outside:
         return None
-    added = (sum(rule_ledger.count_rows(text) or 0 for text in after.values())
-             - sum(rule_ledger.count_rows(text) or 0 for text in before.values()))
+    added = sum(history.row_count(text) or 0 for text in after.values()) - sum(
+        history.row_count(text) or 0 for text in before.values()
+    )
     rows = 0 if path == QUARANTINE_LEDGER else max(0, min(len(outside), added))
-    return Cause(Change.SCOPE, f"it changed the code of the guards, and it added {len(outside)} rows of files that it "
-                               f"did not change, such as {rule_ledger.key_path(outside[0])}", rows, changed)
+    return Cause(
+        Change.SCOPE,
+        f"it changed the code of the guards, and it added {len(outside)} rows of files that it "
+        f"did not change, such as {rule_ledger.key_path(outside[0])}",
+        rows,
+        changed,
+    )
 
 
 def quarantine_rises(history: History, commit: git.Commit) -> list[LedgerRise]:
@@ -1083,17 +1390,18 @@ def quarantine_rises(history: History, commit: git.Commit) -> list[LedgerRise]:
     A version that does not read, or two versions that do not compare row by row, give no raised count.  Complexity:
     linear in the rows of the two versions.
     """
-    try:
-        before = read_quarantine_version(history.text("before", commit.sha, QUARANTINE_PATHS) or "",
-                                         f"{commit.short}^:{QUARANTINE_LEDGER}")
-        after = read_quarantine_version(history.text("at", commit.sha, QUARANTINE_PATHS) or "",
-                                        f"{commit.short}:{QUARANTINE_LEDGER}")
-    except VersionError:
+    before = history.quarantine_version(history.text("before", commit.sha, QUARANTINE_PATHS) or "")
+    after = history.quarantine_version(history.text("at", commit.sha, QUARANTINE_PATHS) or "")
+    if (
+        before is None
+        or after is None
+        or not before.configurations
+        or not after.configurations
+        or not comparable(before, after)
+    ):
         return []
-    if not before.configurations or not after.configurations or not comparable(before, after):
-        return []
-    moves = history.changes.get(commit.sha, (frozenset(), {}))[1]
-    rises = paid_rises(history, commit.sha, before, after, ledger_rises(before, after, moves, {}))
+    renames = Renames(history.changes.get(commit.sha, (frozenset(), {}))[1])
+    rises = paid_rises(history, commit.sha, before, after, ledger_rises(before, after, renames, Peaks()))
     return [rise for rise in rises if rise.file != TOTAL]
 
 
@@ -1113,8 +1421,9 @@ def grow_cause(history: History, commit: git.Commit, path: str, changed: frozens
         if not rises:
             return None
         where = " in files that it changed" if is_scope else ""
-        return Cause(Change.GROW, f"it raised {len(rises)} counts{where}, such as {rises[0].described()}", 0, changed,
-                     is_scope)
+        return Cause(
+            Change.GROW, f"it raised {len(rises)} counts{where}, such as {rises[0].described()}", 0, changed, is_scope
+        )
     new = ledger_rows(history, "at", commit.sha, path)
     if new is None:
         return None
@@ -1133,8 +1442,76 @@ def takes_rebase(path: str, registry: rule_registry.Registry) -> bool:
     return path == QUARANTINE_LEDGER or counts_rows(path, registry)
 
 
-def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registry: rule_registry.Registry,
-                    root: Path) -> tuple[dict[str, list[Rebase]], list[check_report.Finding]]:
+def fetch_changed_paths(root: Path, shas: Iterable[str]) -> dict[str, frozenset[str]]:
+    """Return each path that each commit changed (git.changed_paths()), with the git commands in threads.
+
+    Raises:
+        NotApplicable: If git fails
+    """
+    pending = list(dict.fromkeys(shas))
+    if not pending:
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        with ThreadPoolExecutor(min(proc.DEFAULT_JOBS, len(pending))) as pool:
+            return dict(zip(pending, pool.map(partial(git.changed_paths, root), pending)))
+    except git.GitError as failure:
+        raise NotApplicable(str(failure)) from None
+
+
+def row_cause(
+    history: History, root: Path, kind: str, commit: git.Commit, path: str, fetched: dict[str, frozenset[str]]
+) -> Cause | None:
+    """Return the cause of a rebase row (change_cause()) or a `grow` row (grow_cause()) at a commit of a ledger.
+
+    The cause is a function of the commit, because its hash names its files, its parent and each path that it
+    changed.  The cache keeps it (THE CACHE).  `fetched` gives the changed paths of some commits, and the function
+    adds the paths that it reads.
+
+    Raises:
+        NotApplicable: If git fails
+    """
+    stored = history.store.cause(kind, commit.sha, path) if history.store is not None else MISSING
+    if not isinstance(stored, Missing):
+        return stored
+    if commit.sha not in fetched:
+        fetched.update(fetch_changed_paths(root, [commit.sha]))
+    changed = fetched[commit.sha]
+    cause = (
+        grow_cause(history, commit, path, changed)
+        if kind == GROW_KIND
+        else change_cause(history, commit, path, changed)
+    )
+    if history.store is not None:
+        history.store.keep_cause(kind, commit.sha, path, cause)
+    return cause
+
+
+def uncached_rows(
+    history: History, ledger: rule_ledger.Ledger, registry: rule_registry.Registry, index_of: Mapping[str, int]
+) -> list[str]:
+    """Return the commit of each rebase row and each `grow` row with no cause in the cache, in the sequence of the rows.
+
+    rebase_findings() then reads the changed paths of these commits in threads.  A row that names no such commit of
+    its ledger reads no changed path.
+    """
+    shas: list[str] = []
+    for key in sorted(ledger.base):
+        index = index_of.get(key.entity)
+        if key.kind not in (REBASE_KIND, GROW_KIND) or index is None or key.path not in history.ledgers:
+            continue
+        commit = history.states.commits[index]
+        paths = (key.path, *EARLIER_PATHS.get(key.path, ()))
+        is_cached = history.store is not None and history.store.has_cause(key.kind, commit.sha, key.path)
+        if takes_rebase(key.path, registry) and any(item in commit.paths for item in paths) and not is_cached:
+            shas.append(commit.sha)
+    return shas
+
+
+def rebase_findings(
+    history: History, ledger: rule_ledger.Ledger | None, registry: rule_registry.Registry, root: Path
+) -> tuple[dict[str, list[Rebase]], list[check_report.Finding]]:
     """Read the rebase rows (THE REBASE) and the `grow` rows (THE GROWTH) of the ledger of this rule.
 
     Returns the rows of each ledger that name a rebase commit or a growth,
@@ -1151,6 +1528,7 @@ def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registr
     if ledger is None:
         return applied, errors
     index_of = {commit.short: index for index, commit in enumerate(history.states.commits)}
+    fetched = fetch_changed_paths(root, uncached_rows(history, ledger, registry, index_of))
     for key, entry in sorted(ledger.base.items()):
         if key.kind not in (REBASE_KIND, GROW_KIND):
             continue
@@ -1161,31 +1539,42 @@ def rebase_findings(history: History, ledger: rule_ledger.Ledger | None, registr
         if key.path not in history.ledgers:
             problem = f"the tree holds no ledger {key.path}"
         elif not takes_rebase(key.path, registry):
-            problem = (f"the rule does not compare the row count of {key.path} with its history.  The ledger of this "
-                       f"rule and a ledger of the policy baseline have no rebase and no admitted growth")
+            problem = (
+                f"the rule does not compare the row count of {key.path} with its history.  The ledger of this "
+                f"rule and a ledger of the policy baseline have no rebase and no admitted growth"
+            )
         elif commit is None or not any(item in commit.paths for item in paths):
             problem = f"the commit {key.entity} did not change {key.path} or an earlier file of it"
         else:
-            try:
-                changed = git.changed_paths(root, commit.sha)
-            except git.GitError as failure:
-                raise NotApplicable(str(failure)) from None
+            cause = row_cause(history, root, key.kind, commit, key.path, fetched)
             if key.kind == GROW_KIND:
-                cause = grow_cause(history, commit, key.path, changed)
-                problem = (f"the commit {commit.short} ({commit.subject}) did not grow {key.path} with rows that a "
-                           f"rebase row at a larger scope cannot hold")
+                problem = (
+                    f"the commit {commit.short} ({commit.subject}) did not grow {key.path} with rows that a "
+                    f"rebase row at a larger scope cannot hold"
+                )
             else:
-                cause = change_cause(history, commit, key.path, changed)
-                problem = (f"the commit {commit.short} ({commit.subject}) did not change the key or the format of "
-                           f"{key.path}, and it did not make the scope of the rule larger")
+                problem = (
+                    f"the commit {commit.short} ({commit.subject}) did not change the key or the format of "
+                    f"{key.path}, and it did not make the scope of the rule larger"
+                )
         if index is None or commit is None or cause is None:
-            told = ("A grow row names a commit that added rows to a ledger or raised a count of the quarantine ledger"
-                    if key.kind == GROW_KIND else
-                    "A rebase row names a commit that changed the key or the format of a ledger, or a commit that "
-                    "changed the code of the guards and added rows of files that it did not change")
-            errors.append(check_report.Finding(
-                "error", OWN_LEDGER, entry.line, RULE,
-                f"{problem}.  {told}.  Remove the row, or name such a commit", ROW_KIND, str(entry.line)))
+            told = (
+                "A grow row names a commit that added rows to a ledger or raised a count of the quarantine ledger"
+                if key.kind == GROW_KIND
+                else "A rebase row names a commit that changed the key or the format of a ledger, or a commit that "
+                "changed the code of the guards and added rows of files that it did not change"
+            )
+            errors.append(
+                check_report.Finding(
+                    "error",
+                    OWN_LEDGER,
+                    entry.line,
+                    RULE,
+                    f"{problem}.  {told}.  Remove the row, or name such a commit",
+                    ROW_KIND,
+                    str(entry.line),
+                )
+            )
             continue
         applied.setdefault(key.path, []).append(Rebase(commit, index, cause))
     for rows in applied.values():
@@ -1216,12 +1605,23 @@ REGION = "region"
 ADMITTED_KINDS = frozenset({OPTED_OUT, REGION})
 # The kind names of the plugin before format 2 of its report, and the names of this time.
 EARLIER_KINDS = {
-    "std_entity": "std-entity", "std_object": "std-object", "c_library_object": "c-library-object",
-    "raw_pointer_object": "raw-pointer-object", "raw_function_pointer": "raw-function-pointer",
-    "c_array_object": "c-array-object", "raw_new_delete": "raw-new-delete", "c_library_call": "c-library-call",
-    "foreign_symbol": "foreign-symbol", "compiler_builtin": "compiler-builtin", "inline_asm": "inline-asm",
-    "assert_expansion": "assert-expansion", "layer_header": "layer-header", "door_header": "door-header",
-    "upward_include": "upward-include", "contract_specifier": "contract-specifier", "opted_out": OPTED_OUT,
+    "std_entity": "std-entity",
+    "std_object": "std-object",
+    "c_library_object": "c-library-object",
+    "raw_pointer_object": "raw-pointer-object",
+    "raw_function_pointer": "raw-function-pointer",
+    "c_array_object": "c-array-object",
+    "raw_new_delete": "raw-new-delete",
+    "c_library_call": "c-library-call",
+    "foreign_symbol": "foreign-symbol",
+    "compiler_builtin": "compiler-builtin",
+    "inline_asm": "inline-asm",
+    "assert_expansion": "assert-expansion",
+    "layer_header": "layer-header",
+    "door_header": "door-header",
+    "upward_include": "upward-include",
+    "contract_specifier": "contract-specifier",
+    "opted_out": OPTED_OUT,
 }
 EARLIER_PENDING = "replace_pending:"
 PENDING = "replace-pending:"
@@ -1298,14 +1698,24 @@ class QuarantineVersion:
         exact = self.lines.get((name, *key)) or self.lines.get((self.base or "", *key), 0)
         if exact:
             return exact
-        return min((line for (row_name, file, _kind, _entity), line in self.lines.items()
-                    if file == key[0] and row_name in (name, self.base)), default=0)
+        return min(
+            (
+                line
+                for (row_name, file, _kind, _entity), line in self.lines.items()
+                if file == key[0] and row_name in (name, self.base)
+            ),
+            default=0,
+        )
 
 
 def is_delta_word(text: str) -> bool:
     """Whether a word is the difference of an earlier format: '+' or '-', and a number above 0 with no leading 0."""
-    return (len(text) >= 2 and text[0] in "+-" and "1" <= text[1] <= "9"
-            and all("0" <= character <= "9" for character in text[2:]))
+    return (
+        len(text) >= 2
+        and text[0] in "+-"
+        and "1" <= text[1] <= "9"
+        and all("0" <= character <= "9" for character in text[2:])
+    )
 
 
 def read_rows_version(text: str, where: str) -> QuarantineVersion:
@@ -1417,8 +1827,11 @@ def read_quarantine_version(text: str, where: str) -> QuarantineVersion:
     Raises:
         VersionError: If the text does not have a format of the ledger, or a count of a configuration is below 0
     """
-    rows = [(number, raw.strip()) for number, raw in enumerate(text.splitlines(), start=1)
-            if raw.strip() and not raw.strip().startswith("#")]
+    rows = [
+        (number, raw.strip())
+        for number, raw in enumerate(text.splitlines(), start=1)
+        if raw.strip() and not raw.strip().startswith("#")
+    ]
     if rows and rows[0][1] == f"format {rule_ledger.FORMAT}":
         return read_rows_version(text, where)
     version = read_earlier_version(rows, where)
@@ -1460,20 +1873,214 @@ def absolute_counts(ledger: QuarantineVersion, has_entity: bool = True) -> dict[
     return counts
 
 
-def renamed_counts(
-    before: QuarantineVersion, after: QuarantineVersion, has_entity: bool = True
-) -> dict[CountKey, int]:
+def renamed_counts(before: QuarantineVersion, after: QuarantineVersion, has_entity: bool = True) -> dict[CountKey, int]:
     """Return the absolute counts of the earlier version, and give its base the name of the base of the next version.
 
     The base keeps its history when its name changes.
     """
     base = after.base or ""
-    return {(base if name == before.base else name, file, kind, entity): count
-            for (name, file, kind, entity), count in absolute_counts(before, has_entity).items()}
+    return {
+        (base if name == before.base else name, file, kind, entity): count
+        for (name, file, kind, entity), count in absolute_counts(before, has_entity).items()
+    }
 
 
-def paid_rises(history: History, sha: str, before: QuarantineVersion, after: QuarantineVersion,
-               rises: Sequence[LedgerRise]) -> list[LedgerRise]:
+# THE CHANGED ROWS
+#     absolute_counts() gives each count of each configuration: 55,175 counts
+#     for the version of 2026-10-17.  A commit changes a small number of them.
+#     Two versions with the same base name and with entities compare only the
+#     rows that they change.  The absolute count of a row in a configuration
+#     is its base count.  A configuration that is not the base adds its
+#     difference (version_count()).
+#
+#     The changed rows of a configuration are the base rows and its difference
+#     rows that change.  Each other row has the same count in the two
+#     versions.  ledger_rises() and paid_rises() read only the changed rows,
+#     in the sequence of absolute_counts(), and their results stay the same.
+#     Two other versions compare each count.
+
+
+def dict_count(counts: Mapping[CountKey, int], key: CountKey) -> int:
+    """Return the count of a key in a table of absolute_counts(), or 0 for a key that the table does not hold."""
+    return counts.get(key, 0)
+
+
+def version_count(version: QuarantineVersion, name: str, row: RowKey) -> int:
+    """Return the count of one row of one configuration of a version, as absolute_counts() gives it, else 0.
+
+    Complexity: O(1).
+    """
+    if name not in version.configurations:
+        return 0
+    count = version.counts.get(row, 0)
+    if name == version.base:
+        return count
+    return count + version.deltas.get(name, {}).get(row, 0)
+
+
+def is_counted(version: QuarantineVersion, name: str, row: RowKey) -> bool:
+    """Tell if absolute_counts() of a version holds the row of a configuration.
+
+    The base holds each of its rows, also with the count 0.  Each other configuration holds a row with a count of not 0.
+    Complexity: O(1).
+    """
+    if name not in version.configurations:
+        return False
+    if name == version.base:
+        return row in version.counts
+    return version_count(version, name, row) != 0
+
+
+def changed_base_rows(before: QuarantineVersion, after: QuarantineVersion) -> set[RowKey]:
+    """Return each base row that one of two versions does not hold with the same count (THE CHANGED ROWS).
+
+    Complexity: linear in the base rows of the two versions.
+    """
+    return {row for row, _ in before.counts.items() ^ after.counts.items()}
+
+
+def changed_rows(before: QuarantineVersion, after: QuarantineVersion, name: str, base_rows: set[RowKey]) -> set[RowKey]:
+    """Return each row of a configuration with a count that can change between two versions with one base.
+
+    `base_rows` holds the result of changed_base_rows().  Each other row has the same count in the two versions (THE
+    CHANGED ROWS).  Complexity: linear in the difference rows of the configuration in the two versions.
+    """
+    if name == after.base:
+        return base_rows
+    old, new = before.deltas.get(name, {}), after.deltas.get(name, {})
+    return base_rows | {row for row, _ in old.items() ^ new.items()}
+
+
+def has_shared_base(before: QuarantineVersion, after: QuarantineVersion) -> bool:
+    """Tell if two versions compare on their changed rows: they have entities and one base name (THE CHANGED ROWS)."""
+    return has_entities(before, after) and before.base is not None and before.base == after.base
+
+
+def changed_counts(
+    before: QuarantineVersion, after: QuarantineVersion, names: Iterable[str]
+) -> tuple[dict[CountKey, int], dict[CountKey, int]]:
+    """Return the counts of the changed rows of some configurations in two versions with one base (THE CHANGED ROWS).
+
+    The two tables hold a key only where absolute_counts() of the version holds it.  Each key that the two
+    tables of absolute_counts() hold with different counts is in the result.  Complexity: linear in the changed rows.
+    """
+    base_rows = changed_base_rows(before, after)
+    old_counts: dict[CountKey, int] = {}
+    new_counts: dict[CountKey, int] = {}
+    for name in names:
+        for row in changed_rows(before, after, name, base_rows):
+            key = (name, row[0], row[1], row[2])
+            if is_counted(before, name, row):
+                old_counts[key] = version_count(before, name, row)
+            if is_counted(after, name, row):
+                new_counts[key] = version_count(after, name, row)
+    return old_counts, new_counts
+
+
+def has_region_count(version: QuarantineVersion) -> bool:
+    """Tell if absolute_counts() of a version holds a count of the kind region.
+
+    Complexity: linear in the rows of the version.
+    """
+    base = version.base
+    if base is None:
+        return False
+    if any(kind == REGION for _file, kind, _entity in version.counts):
+        return True
+    return any(
+        row[1] == REGION and version_count(version, name, row) != 0
+        for name in version.configurations
+        if name != base
+        for row in version.deltas.get(name, {})
+    )
+
+
+class Peaks:
+    """The largest count of each configuration and row in the versions of the quarantine ledger that the walk read.
+
+    The walk starts the peaks again at a version that does not compare with
+    the version before it.  A key that no version holds gives 0, and a count
+    below 0 also gives 0.  A key then has max(0, the largest count), as a
+    fold of absolute_counts() of each version gives it.  fold() reads only the
+    rows that changed after the last version that it read, when the two
+    versions have one base name.  Each other row keeps its count and its peak.
+    """
+
+    __slots__ = ("last", "values")
+
+    def __init__(self, values: dict[CountKey, int] | None = None) -> None:
+        """Hold the peaks of each key, or no peak, and no last version."""
+        self.values: dict[CountKey, int] = {} if values is None else values
+        self.last: QuarantineVersion | None = None
+
+    def get(self, key: CountKey, default: int = 0) -> int:
+        """Return the peak of one key, or the default for a key with no count above 0."""
+        return self.values.get(key, default)
+
+    def fold(self, version: QuarantineVersion) -> None:
+        """Add the counts of one version to the peaks.
+
+        Complexity: linear in the rows that changed after the last version, else linear in the counts of the version.
+        """
+        last = self.last
+        is_shared = last is not None and last.base is not None and last.base == version.base
+        base_rows = changed_base_rows(last, version) if last is not None and is_shared else set()
+        values = self.values
+        for name in version.configurations:
+            if last is not None and is_shared and name in last.configurations:
+                rows: Iterable[RowKey] = changed_rows(last, version, name, base_rows)
+            elif name == version.base:
+                rows = version.counts
+            else:
+                rows = version.counts.keys() | version.deltas.get(name, {}).keys()
+            for row in rows:
+                count = version_count(version, name, row)
+                key = (name, row[0], row[1], row[2])
+                if count > values.get(key, 0):
+                    values[key] = count
+        self.last = version
+
+
+def move_counts(
+    before: QuarantineVersion, after: QuarantineVersion, counted: Sequence[LedgerRise]
+) -> tuple[dict[CountKey, int], dict[CountKey, int]]:
+    """Return the counts of two versions that paid_rises() compares.
+
+    They are the changed rows of the configurations of the raised counts, else each count (THE CHANGED ROWS).
+    """
+    if has_shared_base(before, after):
+        return changed_counts(before, after, {rise.configuration for rise in counted})
+    return renamed_counts(before, after), absolute_counts(after)
+
+
+def move_files(
+    counted: Sequence[LedgerRise], old_counts: Mapping[CountKey, int], new_counts: Mapping[CountKey, int]
+) -> list[str]:
+    """Return the sorted files of the diff of paid_rises().
+
+    Each raised count gives its file.  A count that decreases in the configuration and the kind of a raised count also
+    gives its file.
+    """
+    wanted = {(rise.configuration, rise.kind) for rise in counted}
+    files = {rise.file for rise in counted} | {
+        file
+        for (name, file, kind, entity), count in old_counts.items()
+        if (name, kind) in wanted and count > new_counts.get((name, file, kind, entity), 0)
+    }
+    return sorted(files)
+
+
+def flow_paths(before: QuarantineVersion | None, after: QuarantineVersion, rises: Sequence[LedgerRise]) -> list[str]:
+    """Return the files of the diff that paid_rises() reads for a commit, or [] when it reads no diff."""
+    counted = [rise for rise in rises if rise.file != TOTAL]
+    if before is None or not counted or not has_entities(before, after):
+        return []
+    return move_files(counted, *move_counts(before, after, counted))
+
+
+def paid_rises(
+    history: History, sha: str, before: QuarantineVersion, after: QuarantineVersion, rises: Sequence[LedgerRise]
+) -> list[LedgerRise]:
     """Return the increases of a commit less the part that a fall of a file that the commit moved lines from pays.
 
     The fall and the increase are in the same configuration and have the same kind.  Their entities are equal or agree
@@ -1484,18 +2091,20 @@ def paid_rises(history: History, sha: str, before: QuarantineVersion, after: Qua
     counted = [rise for rise in rises if rise.file != TOTAL]
     if not counted or not has_entities(before, after):
         return list(rises)
-    old_counts, new_counts = renamed_counts(before, after), absolute_counts(after)
-    wanted = {(rise.configuration, rise.kind) for rise in counted}
-    files = {rise.file for rise in counted} | {
-        file for (name, file, kind, entity), count in old_counts.items()
-        if (name, kind) in wanted and count > new_counts.get((name, file, kind, entity), 0)}
-    flows = history.flows(sha, sorted(files))
+    old_counts, new_counts = move_counts(before, after, counted)
+    flows = history.flows(sha, move_files(counted, old_counts, new_counts))
     paid: dict[str, dict[rule_ledger.Key, int]] = {}
     for name in {rise.configuration for rise in counted}:
-        old_keys = {rule_ledger.Key(file, kind, entity): count
-                    for (row_name, file, kind, entity), count in old_counts.items() if row_name == name}
-        new_keys = {rule_ledger.Key(file, kind, entity): count
-                    for (row_name, file, kind, entity), count in new_counts.items() if row_name == name}
+        old_keys = {
+            rule_ledger.Key(file, kind, entity): count
+            for (row_name, file, kind, entity), count in old_counts.items()
+            if row_name == name
+        }
+        new_keys = {
+            rule_ledger.Key(file, kind, entity): count
+            for (row_name, file, kind, entity), count in new_counts.items()
+            if row_name == name
+        }
         paid[name] = rule_ledger.paid_counts(old_keys, new_keys, flows)
     kept: list[LedgerRise] = []
     for rise in rises:
@@ -1525,7 +2134,12 @@ def kind_totals(ledger: QuarantineVersion) -> dict[str, int]:
 
 def comparable(before: QuarantineVersion, after: QuarantineVersion) -> bool:
     """Whether two versions of the quarantine ledger compare row by row: both count files, or they have one format."""
-    return before.format == after.format or min(before.format, after.format) >= FILE_FORMAT
+    return formats_compare(before.format, after.format)
+
+
+def formats_compare(first: int, second: int) -> bool:
+    """Tell if versions of two formats compare row by row: the two count files, or they have one format."""
+    return first == second or min(first, second) >= FILE_FORMAT
 
 
 def has_entities(before: QuarantineVersion, after: QuarantineVersion) -> bool:
@@ -1533,8 +2147,20 @@ def has_entities(before: QuarantineVersion, after: QuarantineVersion) -> bool:
     return min(before.format, after.format) >= ENTITY_FORMAT
 
 
-def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dict[str, str],
-                 peaks: dict[CountKey, int]) -> list[LedgerRise]:
+@dataclass(frozen=True, slots=True)
+class Renames:
+    """The files that git reports as moved in one commit: the path before the commit of each file, by its new path."""
+
+    previous: Mapping[str, str] = field(default_factory=dict)
+
+    def source(self, path: str) -> str | None:
+        """Return the path before the commit of a moved file, or None for a file that the commit did not move."""
+        return self.previous.get(path)
+
+
+def ledger_rises(
+    before: QuarantineVersion, after: QuarantineVersion, renames: Renames, peaks: Peaks
+) -> list[LedgerRise]:
     """Return each count that rose from one version of the quarantine ledger to the next.
 
     * Two versions of different formats compare the total of each kind of the
@@ -1551,32 +2177,73 @@ def ledger_rises(before: QuarantineVersion, after: QuarantineVersion, moves: dic
       opted-out.
     * The first count of the kind region gives no finding: the ledger counts
       the regions from format 2 of the report of the plugin.
+    * The function reads only the changed rows of two versions with one base
+      name and with entities (THE CHANGED ROWS).  Each other row has the same
+      count, and no count of it increases.
 
-    Complexity: O(r log r) for r counts, and O(r * d) for d difference rows when the versions compare by file.
+    Complexity: O(c log c) for c changed rows of two versions with one base.  Else O(r log r) for r counts, and
+    O(r * d) for d difference rows when the versions compare by file.
     """
     if not comparable(before, after):
         old_totals, new_totals = kind_totals(before), kind_totals(after)
-        return [LedgerRise(after.base, TOTAL, kind, "", old_totals.get(kind, 0), count)
-                for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
+        return [
+            LedgerRise(after.base, TOTAL, kind, "", old_totals.get(kind, 0), count)
+            for kind, count in sorted(new_totals.items())
+            if count > old_totals.get(kind, 0)
+        ]
     keyed = has_entities(before, after)
     counts_opted_out = before.format >= OPTED_OUT_FORMAT
-    old_counts = renamed_counts(before, after, keyed)
-    counts_regions = any(kind == REGION for (_name, _file, kind, _entity) in old_counts)
-    new_counts = absolute_counts(after, keyed)
+    new_of: Callable[[CountKey], int]
+    old_of: Callable[[CountKey], int]
+    if has_shared_base(before, after):
+        base_rows = changed_base_rows(before, after)
+        keys = sorted(
+            (name, row[0], row[1], row[2])
+            for name in after.configurations
+            if name == after.base or name in before.configurations
+            for row in changed_rows(before, after, name, base_rows)
+            if is_counted(after, name, row)
+        )
+        counts_regions = has_region_count(before)
+
+        def new_of(key: CountKey) -> int:
+            """Return the count of a key in the new version, or 0."""
+            return version_count(after, key[0], (key[1], key[2], key[3]))
+
+        def old_of(key: CountKey) -> int:
+            """Return the count of a key in the version before the commit, or 0."""
+            return version_count(before, key[0], (key[1], key[2], key[3]))
+    else:
+        old_counts = renamed_counts(before, after, keyed)
+        counts_regions = any(kind == REGION for (_name, _file, kind, _entity) in old_counts)
+        new_counts = absolute_counts(after, keyed)
+        keys = sorted(new_counts)
+        new_of = partial(dict_count, new_counts)
+        old_of = partial(dict_count, old_counts)
     rises: list[LedgerRise] = []
-    for key in sorted(new_counts):
+    for key in keys:
         name, file, kind, entity = key
-        new, old = new_counts[key], old_counts.get(key, 0)
-        if (new <= old or (name not in before.configurations and name != after.base)
-                or (kind == OPTED_OUT and not counts_opted_out) or (kind == REGION and not counts_regions)):
+        new, old = new_of(key), old_of(key)
+        if (
+            new <= old
+            or (name not in before.configurations and name != after.base)
+            or (kind == OPTED_OUT and not counts_opted_out)
+            or (kind == REGION and not counts_regions)
+        ):
             continue
-        source = moves.get(file)
-        if (source is not None and old == 0 and new_counts.get((name, source, kind, entity), 0) == 0
-                and old_counts.get((name, source, kind, entity), 0) >= new):
+        source = renames.source(file)
+        if (
+            source is not None
+            and old == 0
+            and new_of((name, source, kind, entity)) == 0
+            and old_of((name, source, kind, entity)) >= new
+        ):
             continue
         row = (file, kind, entity)
-        if name != after.base and (new <= peaks.get(key, 0) or difference_of(after, name, row, keyed)
-                                   <= difference_of(before, name, row, keyed)):
+        if name != after.base and (
+            new <= peaks.get(key, 0)
+            or difference_of(after, name, row, keyed) <= difference_of(before, name, row, keyed)
+        ):
             continue
         rises.append(LedgerRise(name, file, kind, entity, old, new))
     return rises
@@ -1586,8 +2253,11 @@ def rise_line(ledger: QuarantineVersion, rise: LedgerRise) -> int:
     """Return the line of the row of a rise in a ledger.  A rise of a file and kind gives the first row of its file."""
     if rise.entity or ledger.format < ENTITY_FORMAT:
         return int(ledger.line_of(rise.configuration, rise.key))
-    lines = [line for (name, file, kind, _entity), line in ledger.lines.items()
-             if (file, kind) == (rise.file, rise.kind) and name in (rise.configuration, ledger.base)]
+    lines = [
+        line
+        for (name, file, kind, _entity), line in ledger.lines.items()
+        if (file, kind) == (rise.file, rise.kind) and name in (rise.configuration, ledger.base)
+    ]
     return min(lines, default=0)
 
 
@@ -1615,7 +2285,253 @@ def gives_reason(commit: git.Commit, reason: str) -> bool:
     return bool(reason) and reason in message
 
 
-def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> list[check_report.Finding]:
+# One commit of the walk: its hash, each path that it changed, and the files that it moved.
+Step = tuple[str, frozenset[str], Renames]
+
+
+@dataclass(frozen=True, slots=True)
+class QuarantineWalk:
+    """The state of the walk of quarantine_findings() through the commits of the history (THE CHECKPOINT).
+
+    `findings` holds the errors of the commits that the walk read, and
+    `standing` each raised count with its commit.  `stale` and `known` hold
+    the configurations other than the base.  `last_format` is the format of
+    the last version that the walk read, or None.  Each step of the walk gives
+    a new state, and the states share one object `peaks` until the peaks
+    start again.  A copy of each peak at each commit costs more than the
+    changed rows (Peaks).
+    """
+
+    findings: tuple[check_report.Finding, ...] = ()
+    peaks: Peaks = field(default_factory=Peaks)
+    standing: tuple[tuple[git.Commit, LedgerRise], ...] = ()
+    stale: frozenset[str] = frozenset()
+    known: frozenset[str] = frozenset()
+    last_format: int | None = None
+
+    def prepare(
+        self, history: History, commit: git.Commit | None, paths: frozenset[str], renames: Renames
+    ) -> tuple[QuarantineWalk, PreparedStep | None]:
+        """Read the part of one commit that reads no diff: the peaks, the configurations and the raised counts.
+
+        The function gives the state after this part, and the step that complete() reads.  A commit of only the plugin
+        or the rule table gives no step.  A commit with a version that does not read also gives no step.  The moves of
+        the commits before a commit do not change its raised counts.  complete() can then read the diffs of each commit
+        after this part (THE COLD RUN).  Complexity: linear in the changed rows of the two versions of the commit (THE
+        CHANGED ROWS).
+        """
+        is_machinery = changes_machinery(paths)
+        if commit is None:
+            return (replace(self, stale=self.stale | self.known) if is_machinery else self), None
+        after = history.quarantine_version(history.text("at", commit.sha, QUARANTINE_PATHS))
+        before = history.quarantine_version(history.text("before", commit.sha, QUARANTINE_PATHS))
+        if after is None:
+            return self, None
+        resets = before is None or not comparable(before, after)
+        starts_peaks = resets or (before is not None and before.format != after.format)
+        peaks = Peaks() if starts_peaks else self.peaks
+        rises = ledger_rises(before, after, renames, peaks) if before is not None else []
+        peaks.fold(after)
+        later = frozenset(name for name in after.configurations if name != after.base)
+        written = frozenset(
+            name
+            for name in later
+            if before is None
+            or after.deltas.get(name) != before.deltas.get(name)
+            or after.configurations[name] != before.configurations.get(name)
+        )
+        stale = (self.stale - written) | (later - written if is_machinery else frozenset())
+        walk = replace(self, peaks=peaks, stale=stale, known=later, last_format=after.format)
+        return walk, PreparedStep(commit, paths, before, after, rises, resets, self.stale)
+
+    def complete(self, history: History, step: PreparedStep) -> QuarantineWalk:
+        """Read the remaining part of one commit after prepare(): the moves, the raised counts that stay, and the errors.
+
+        The function gives the state after the commit.
+        """
+        commit, after = step.commit, step.after
+        rises = (
+            paid_rises(history, commit.sha, step.before, after, step.rises) if step.before is not None else step.rises
+        )
+        kept = () if step.resets else self.standing
+        standing = (*kept, *((commit, rise) for rise in rises if rise.file != TOTAL))
+        judged = [rise for rise in rises if rise.configuration not in step.stale or rise.configuration == after.base]
+        blocking = [rise for rise in judged if rise.kind not in ADMITTED_KINDS]
+        unreasoned = [
+            rise for rise in judged if rise.kind in ADMITTED_KINDS and not gives_reason(commit, region_reason(rise))
+        ]
+        if changes_machinery(step.paths):
+            return replace(self, standing=standing)
+        found: list[check_report.Finding] = []
+        if blocking:
+            shown = "; ".join(rise.described() for rise in blocking[:SHOWN_RISES])
+            more = f"; and {len(blocking) - SHOWN_RISES} more" if len(blocking) > SHOWN_RISES else ""
+            found.append(
+                check_report.Finding(
+                    "error",
+                    QUARANTINE_LEDGER,
+                    0,
+                    RULE,
+                    f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of {QUARANTINE_LEDGER}, "
+                    f"and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
+                    f"{RULE_TABLE}: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
+                    f"or add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason",
+                    RAISE_KIND,
+                    commit.short,
+                )
+            )
+        if unreasoned:
+            reasons = sorted({region_reason(rise) for rise in unreasoned})
+            shown = "; ".join(rise.described() for rise in unreasoned[:SHOWN_RISES])
+            more = f"; and {len(unreasoned) - SHOWN_RISES} more" if len(unreasoned) > SHOWN_RISES else ""
+            found.append(
+                check_report.Finding(
+                    "error",
+                    QUARANTINE_LEDGER,
+                    0,
+                    RULE,
+                    f"the commit {commit.short} ({commit.subject}) raised {len(unreasoned)} counts of opted-out or "
+                    f"region of {QUARANTINE_LEDGER} through `guard write --admit`, and its message does not give the "
+                    f"reason of the region: {shown}{more}.  A region only shrinks.  Give each reason in the message, "
+                    f"with its class, as the region spells it ({'; '.join(repr(reason) for reason in reasons)}), or "
+                    f"add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason",
+                    REASON_KIND,
+                    commit.short,
+                )
+            )
+        return replace(self, standing=standing, findings=(*self.findings, *found))
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedStep:
+    """One commit of the quarantine ledger after QuarantineWalk.prepare(): its versions and its raised counts.
+
+    `resets` tells that the commit starts the raised counts again, and `stale` holds the stale configurations before
+    the commit.
+    """
+
+    commit: git.Commit
+    paths: frozenset[str]
+    before: QuarantineVersion | None
+    after: QuarantineVersion
+    rises: list[LedgerRise]
+    resets: bool
+    stale: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class WalkPlan:
+    """The commits of the walk, oldest first, the key of the state after each one, and the state that the walk continues.
+
+    The walk reads the commits from the index `start` onward, with `walk` as the state after the commits before it
+    (THE CHECKPOINT).
+    """
+
+    steps: tuple[Step, ...]
+    keys: tuple[bytes, ...]
+    start: int = 0
+    walk: QuarantineWalk = field(default_factory=QuarantineWalk)
+
+
+def quarantine_commits(history: History) -> dict[str, git.Commit]:
+    """Return each commit of the history that changed the quarantine ledger or its earlier file, by its hash."""
+    return {
+        commit.sha: commit
+        for commit in history.states.commits
+        if any(item in commit.paths for item in QUARANTINE_PATHS)
+    }
+
+
+def step_keys(identity: bytes, steps: Sequence[Step]) -> tuple[bytes, ...]:
+    """Return the key of the state after each step: a digest of the identity and of each step up to it.
+
+    The state of the walk after a step is a function of the steps up to it.  The hash of a commit names its message,
+    its first parent and its files (THE CHECKPOINT).  Complexity: linear in the steps.
+    """
+    digest = hashlib.sha256(identity)
+    keys: list[bytes] = []
+    for sha, paths, renames in steps:
+        digest.update(json.dumps([sha, sorted(paths), sorted(renames.previous.items())]).encode())
+        keys.append(digest.copy().digest())
+    return tuple(keys)
+
+
+def plan_walk(history: History) -> WalkPlan:
+    """Return the walk of the quarantine ledger from the newest state that the cache holds, and read its versions.
+
+    The function reads the versions of the remaining steps, of HEAD and of the
+    working tree.  Worker processes read the versions that the cache does not
+    hold (THE COLD RUN).  Complexity: one lookup for each step from the newest
+    one, until a hit.
+    """
+    if QUARANTINE_LEDGER not in history.ledgers:
+        return WalkPlan((), ())
+    steps = tuple((sha, paths, Renames(moves)) for sha, (paths, moves) in reversed(list(history.changes.items())))
+    store = history.store
+    keys = step_keys(store.identity if store is not None else b"", steps)
+    start, walk = 0, QuarantineWalk()
+    if store is not None:
+        commits = quarantine_commits(history)
+        for index in range(len(steps) - 1, -1, -1):
+            restored = store.checkpoint(keys[index], commits)
+            if restored is not None:
+                start, walk = index + 1, restored
+                break
+    texts = [history.text(place, sha, QUARANTINE_PATHS) for sha, _, _ in steps[start:] for place in ("before", "at")]
+    texts += [history.text("head", "", QUARANTINE_PATHS), history.text("working", "", QUARANTINE_PATHS)]
+    fill_versions(history, [text for text in texts if text is not None])
+    return WalkPlan(steps, keys, start, walk)
+
+
+def read_pooled_version(task: tuple[str, str | None, bytes]) -> QuarantineVersion | None:
+    """Read one version of the quarantine ledger in a worker process, and write its entry when the cache is on.
+
+    `task` holds the text, the directory of the cache or None, and the identity of the store.
+    """
+    text, directory, identity = task
+    try:
+        version: QuarantineVersion | None = read_quarantine_version(text, QUARANTINE_LEDGER)
+    except VersionError:
+        version = None
+    if directory is not None:
+        HistoryStore(Path(directory), identity).keep_version(text, version)
+    return version
+
+
+def fill_versions(history: History, texts: Iterable[str]) -> None:
+    """Read each version of the quarantine ledger of the texts that no cache holds, in worker processes (THE COLD RUN).
+
+    Fewer than POOL_FLOOR such texts stay for quarantine_version() in this process.  Complexity: one lookup of each
+    text, and one read of each text that the cache does not hold, divided between the workers.
+    """
+    pending: list[str] = []
+    for text in dict.fromkeys(texts):
+        if text in history.versions:
+            continue
+        stored = history.store.version(text) if history.store is not None else MISSING
+        if stored is MISSING:
+            pending.append(text)
+        else:
+            history.versions[text] = stored
+    if len(pending) < POOL_FLOOR:
+        return
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    store = history.store
+    tasks = [
+        (text, None if store is None else str(store.directory), b"" if store is None else store.identity)
+        for text in pending
+    ]
+    workers = min(proc.DEFAULT_JOBS, POOL_WORKERS, len(tasks))
+    with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("forkserver")) as pool:
+        for text, version in zip(pending, pool.map(read_pooled_version, tasks)):
+            history.versions[text] = version
+
+
+def quarantine_findings(
+    history: History, rebases: Sequence[Rebase] = (), plan: WalkPlan | None = None
+) -> list[check_report.Finding]:
     """Read each raise of the quarantine ledger in the history and in the working tree.
 
     * A commit that raised a count and that changes neither the plugin nor the
@@ -1642,122 +2558,91 @@ def quarantine_findings(history: History, rebases: Sequence[Rebase] = ()) -> lis
     """
     if QUARANTINE_LEDGER not in history.ledgers:
         return []
-    parsed: dict[str, QuarantineVersion | None] = {}
-
-    def parse(text: str | None, where: str) -> QuarantineVersion | None:
-        """Read one version of the ledger, one time for each text, or None for no text or a malformed text."""
-        if text is None:
-            return None
-        if text not in parsed:
-            try:
-                parsed[text] = read_quarantine_version(text, where)
-            except VersionError:
-                parsed[text] = None
-        return parsed[text]
-
-    # A state holds the ledger or, before the move to the rows of assay.core.ledger, its earlier file.
+    plan = plan_walk(history) if plan is None else plan
+    walk = plan.walk
+    by_sha = quarantine_commits(history)
+    prepared: list[PreparedStep] = []
+    for sha, paths, renames in plan.steps[plan.start :]:
+        walk, step = walk.prepare(history, by_sha.get(sha), paths, renames)
+        if step is not None:
+            prepared.append(step)
+    history.fill_flows((item.commit.sha, flow_paths(item.before, item.after, item.rises)) for item in prepared)
+    for item in prepared:
+        walk = walk.complete(history, item)
+    if history.store is not None and plan.start < len(plan.steps):
+        history.store.keep_checkpoint(plan.keys[-1], walk)
+    findings = list(walk.findings)
     path = QUARANTINE_PATHS
-    findings: list[check_report.Finding] = []
-    peaks: dict[CountKey, int] = {}
-    standing: list[tuple[git.Commit, LedgerRise]] = []
-    stale: set[str] = set()
-    known: set[str] = set()
-    last: QuarantineVersion | None = None
-    by_sha = {commit.sha: commit for commit in history.states.commits
-              if any(item in commit.paths for item in QUARANTINE_PATHS)}
-    for sha, (paths, moves) in reversed(list(history.changes.items())):
-        commit = by_sha.get(sha)
-        if commit is None:
-            stale |= known if changes_machinery(paths) else set()
-            continue
-        after = parse(history.text("at", commit.sha, path), f"{commit.short}:{QUARANTINE_LEDGER}")
-        before = parse(history.text("before", commit.sha, path), f"{commit.short}^:{QUARANTINE_LEDGER}")
-        if after is None:
-            continue
-        if before is None or not comparable(before, after):
-            peaks, standing = {}, []
-        elif before.format != after.format:
-            peaks = {}
-        last = after
-        rises = ledger_rises(before, after, moves, peaks) if before is not None else []
-        rises = paid_rises(history, sha, before, after, rises) if before is not None else rises
-        for key, count in absolute_counts(after).items():
-            peaks[key] = max(peaks.get(key, 0), count)
-        standing += [(commit, rise) for rise in rises if rise.file != TOTAL]
-        later = {name for name in after.configurations if name != after.base}
-        written = {name for name in later if before is None or after.deltas.get(name) != before.deltas.get(name)
-                   or after.configurations[name] != before.configurations.get(name)}
-        judged = [rise for rise in rises if rise.configuration not in stale or rise.configuration == after.base]
-        blocking = [rise for rise in judged if rise.kind not in ADMITTED_KINDS]
-        unreasoned = [rise for rise in judged
-                      if rise.kind in ADMITTED_KINDS and not gives_reason(commit, region_reason(rise))]
-        stale = (stale - written) | (later - written if changes_machinery(paths) else set())
-        known = later
-        if changes_machinery(paths):
-            continue
-        if blocking:
-            shown = "; ".join(rise.described() for rise in blocking[:SHOWN_RISES])
-            more = f"; and {len(blocking) - SHOWN_RISES} more" if len(blocking) > SHOWN_RISES else ""
-            findings.append(check_report.Finding(
-                "error", QUARANTINE_LEDGER, 0, RULE,
-                f"the commit {commit.short} ({commit.subject}) raised {len(blocking)} counts of {QUARANTINE_LEDGER}, "
-                f"and it changes neither the plugin of utils/tools/quarantine/ nor the rule table "
-                f"{RULE_TABLE}: {shown}{more}.  A change can only lower a count.  Remove the new findings, "
-                f"or add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", RAISE_KIND,
-                commit.short))
-        if unreasoned:
-            reasons = sorted({region_reason(rise) for rise in unreasoned})
-            shown = "; ".join(rise.described() for rise in unreasoned[:SHOWN_RISES])
-            more = f"; and {len(unreasoned) - SHOWN_RISES} more" if len(unreasoned) > SHOWN_RISES else ""
-            findings.append(check_report.Finding(
-                "error", QUARANTINE_LEDGER, 0, RULE,
-                f"the commit {commit.short} ({commit.subject}) raised {len(unreasoned)} counts of opted-out or "
-                f"region of {QUARANTINE_LEDGER} through `guard write --admit`, and its message does not give the "
-                f"reason of the region: {shown}{more}.  A region only shrinks.  Give each reason in the message, "
-                f"with its class, as the region spells it ({'; '.join(repr(reason) for reason in reasons)}), or "
-                f"add a row to {rule_ledger.shown_path(RULE)} that gives the commit and the reason", REASON_KIND,
-                commit.short))
-    current = parse(history.text("working", "", path), QUARANTINE_LEDGER)
-    if current is None or last is None or not comparable(last, current):
+    current = history.quarantine_version(history.text("working", "", path))
+    if current is None or walk.last_format is None or not formats_compare(walk.last_format, current.format):
         return findings
-    counts = absolute_counts(current)
-    file_counts = absolute_counts(current, has_entity=False)
+    file_counts: dict[CountKey, int] | None = None
     by_kind = {kind: {row.commit.sha: row for row in rebases if row.kind == kind} for kind in (REBASE_KIND, GROW_KIND)}
     not_growth: dict[tuple[str, str], int] = {}
-    for commit, rise in standing:
-        value = (counts if rise.entity else file_counts).get((rise.configuration, *rise.key), 0)
+    for commit, rise in walk.standing:
+        if rise.entity:
+            value = version_count(current, rise.configuration, rise.key)
+        else:
+            file_counts = absolute_counts(current, has_entity=False) if file_counts is None else file_counts
+            value = file_counts.get((rise.configuration, *rise.key), 0)
         if value <= rise.old or (rise.kind in ADMITTED_KINDS and gives_reason(commit, region_reason(rise))):
             continue
         rebase, grow = by_kind[REBASE_KIND].get(commit.sha), by_kind[GROW_KIND].get(commit.sha)
-        holder = (rebase if rebase is not None and rise.file not in rebase.cause.changed
-                  else grow if grow is not None and (not grow.cause.is_scope or rise.file in grow.cause.changed)
-                  else None)
+        holder = (
+            rebase
+            if rebase is not None and rise.file not in rebase.cause.changed
+            else grow
+            if grow is not None and (not grow.cause.is_scope or rise.file in grow.cause.changed)
+            else None
+        )
         if holder is not None:
             not_growth[(commit.sha, holder.kind)] = not_growth.get((commit.sha, holder.kind), 0) + 1
             continue
         what = f"{rise.kind} {rise.entity}" if rise.entity else rise.kind
-        findings.append(check_report.Finding(
-            "warning", QUARANTINE_LEDGER, rise_line(current, rise), RULE,
-            f"{rise.file} {what} in the configuration {rise.configuration} has {value} findings, above "
-            f"{rise.old} before the commit {commit.short} ({commit.subject}) raised it to {rise.new}.  Lower it "
-            f"again, or add a grow row to {OWN_LEDGER} that gives the reason", "standing-raise",
-            f"{commit.short} {rise.file}"))
+        findings.append(
+            check_report.Finding(
+                "warning",
+                QUARANTINE_LEDGER,
+                rise_line(current, rise),
+                RULE,
+                f"{rise.file} {what} in the configuration {rise.configuration} has {value} findings, above "
+                f"{rise.old} before the commit {commit.short} ({commit.subject}) raised it to {rise.new}.  Lower it "
+                f"again, or add a grow row to {OWN_LEDGER} that gives the reason",
+                "standing-raise",
+                f"{commit.short} {rise.file}",
+            )
+        )
     for (sha, kind), count in sorted(not_growth.items()):
         row = by_kind[kind][sha]
         where = "in files that it did not change" if kind == REBASE_KIND else "that a grow row holds"
-        findings.append(check_report.Finding(
-            "error", QUARANTINE_LEDGER, 0, RULE,
-            f"the commit {row.commit.short} ({row.commit.subject}) raised {count} counts of {QUARANTINE_LEDGER} "
-            f"{where}, and each one stays above its value before the commit.  "
-            f"{rebase_text(row, QUARANTINE_LEDGER)}.  A row of {OWN_LEDGER} gives the reason", kind,
-            row.commit.short))
-    head = parse(history.text("head", "", path), f"HEAD:{QUARANTINE_LEDGER}")
+        findings.append(
+            check_report.Finding(
+                "error",
+                QUARANTINE_LEDGER,
+                0,
+                RULE,
+                f"the commit {row.commit.short} ({row.commit.subject}) raised {count} counts of {QUARANTINE_LEDGER} "
+                f"{where}, and each one stays above its value before the commit.  "
+                f"{rebase_text(row, QUARANTINE_LEDGER)}.  A row of {OWN_LEDGER} gives the reason",
+                kind,
+                row.commit.short,
+            )
+        )
+    head = history.quarantine_version(history.text("head", "", path))
     if head is not None and comparable(head, current):
-        for rise in paid_rises(history, "", head, current, ledger_rises(head, current, {}, peaks)):
-            findings.append(check_report.Finding(
-                "warning", QUARANTINE_LEDGER, rise_line(current, rise), RULE,
-                f"{WORKING_TREE} (not committed) raises {rise.described()}.  The commit must change the plugin or the "
-                f"rule table, or lower the count again", "working-raise", rise.file))
+        for rise in paid_rises(history, "", head, current, ledger_rises(head, current, Renames(), walk.peaks)):
+            findings.append(
+                check_report.Finding(
+                    "warning",
+                    QUARANTINE_LEDGER,
+                    rise_line(current, rise),
+                    RULE,
+                    f"{WORKING_TREE} (not committed) raises {rise.described()}.  The commit must change the plugin or the "
+                    f"rule table, or lower the count again",
+                    "working-raise",
+                    rise.file,
+                )
+            )
     return findings
 
 
@@ -1771,7 +2656,7 @@ def own_ledger(context: MetaContext) -> rule_ledger.Ledger | None:
         return None
     try:
         return rule_ledger.read(rule, context.root)
-    except (rows_grammar.RowsError, OSError):
+    except rows_grammar.RowsError, OSError:
         return None
 
 
@@ -1785,23 +2670,38 @@ def admission_findings(ledger: rule_ledger.Ledger | None) -> list[check_report.F
         commit = words[0] if words else ""
         is_commit = len(commit) == SHORT_HASH and set(commit) <= HEX_DIGITS
         is_threshold = key.path == REGISTRY and key.kind in COLUMNS and len(words) == 2 and is_commit
-        is_raise = (key.path == QUARANTINE_LEDGER and key.kind in (RAISE_KIND, REASON_KIND) and len(words) == 1
-                    and is_commit)
-        is_rebase = (key.kind in (REBASE_KIND, GROW_KIND) and key.path.startswith(f"{LEDGER_DIRECTORY}/")
-                     and key.path.endswith(".txt") and len(words) == 1 and is_commit)
+        is_raise = (
+            key.path == QUARANTINE_LEDGER and key.kind in (RAISE_KIND, REASON_KIND) and len(words) == 1 and is_commit
+        )
+        is_rebase = (
+            key.kind in (REBASE_KIND, GROW_KIND)
+            and key.path.startswith(f"{LEDGER_DIRECTORY}/")
+            and key.path.endswith(".txt")
+            and len(words) == 1
+            and is_commit
+        )
         is_kept = key.path == REGISTRY and key.kind == KEEP_KIND and len(words) == 2 and words[1] in COLUMNS
         if not (is_threshold or is_raise or is_rebase or is_kept):
-            found.append(check_report.Finding(
-                "error", OWN_LEDGER, entry.line, RULE,
-                f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{REGISTRY} | {KEEP_KIND} | "
-                f"admit | RULE warn|error | REASON', '{QUARANTINE_LEDGER} | {RAISE_KIND}|{REASON_KIND} | admit | "
-                f"COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND}|{GROW_KIND} | admit | COMMIT | "
-                f"REASON', with a commit of {SHORT_HASH} hexadecimal characters", ROW_KIND, str(entry.line)))
+            found.append(
+                check_report.Finding(
+                    "error",
+                    OWN_LEDGER,
+                    entry.line,
+                    RULE,
+                    f"a row is '{REGISTRY} | warn|error | admit | COMMIT RULE | REASON', '{REGISTRY} | {KEEP_KIND} | "
+                    f"admit | RULE warn|error | REASON', '{QUARANTINE_LEDGER} | {RAISE_KIND}|{REASON_KIND} | admit | "
+                    f"COMMIT | REASON' or '{LEDGER_DIRECTORY}/RULE.txt | {REBASE_KIND}|{GROW_KIND} | admit | COMMIT | "
+                    f"REASON', with a commit of {SHORT_HASH} hexadecimal characters",
+                    ROW_KIND,
+                    str(entry.line),
+                )
+            )
     return found
 
 
-def with_admissions(ledger: rule_ledger.Ledger, commit: str,
-                    reasons: Mapping[tuple[str, str], str]) -> rule_ledger.Ledger:
+def with_admissions(
+    ledger: rule_ledger.Ledger, commit: str, reasons: Mapping[tuple[str, str], str]
+) -> rule_ledger.Ledger:
     """Return the ledger of this rule with one row at a commit for each rule and kind of `reasons`, with its reason.
 
     A kind is REBASE_KIND or GROW_KIND.  The row names the ledger of the rule and the commit in SHORT_HASH
@@ -1832,13 +2732,12 @@ def growth_kinds(root: Path, registry: rule_registry.Registry, rule_id: str, com
     found = next((item for item in history.states.commits if item.sha == commit), None)
     if found is None:
         return ()
-    try:
-        changed = git.changed_paths(root, commit)
-    except git.GitError as problem:
-        raise NotApplicable(str(problem)) from None
-    cause = change_cause(history, found, path, changed)
+    fetched: dict[str, frozenset[str]] = {}
+    cause = row_cause(history, root, REBASE_KIND, found, path, fetched)
     kinds = [REBASE_KIND] if cause is not None else []
-    if (cause is None or cause.change is Change.SCOPE) and grow_cause(history, found, path, changed) is not None:
+    if (cause is None or cause.change is Change.SCOPE) and row_cause(
+        history, root, GROW_KIND, found, path, fetched
+    ) is not None:
         kinds.append(GROW_KIND)
     return tuple(kinds)
 
@@ -1847,8 +2746,13 @@ def kept_thresholds(ledger: rule_ledger.Ledger | None) -> frozenset[tuple[str, s
     """Return the rule and the field of each keep row of the ledger of this rule (THE KEPT THRESHOLDS)."""
     if ledger is None:
         return frozenset()
-    return frozenset((words[0], words[1]) for key in ledger.base if key.path == REGISTRY and key.kind == KEEP_KIND
-                     for words in [key.entity.split(" ")] if len(words) == 2 and words[1] in COLUMNS)
+    return frozenset(
+        (words[0], words[1])
+        for key in ledger.base
+        if key.path == REGISTRY and key.kind == KEEP_KIND
+        for words in [key.entity.split(" ")]
+        if len(words) == 2 and words[1] in COLUMNS
+    )
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
@@ -1856,10 +2760,438 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     history = read_history(context.root)
     registry = context.registry
     ledger = own_ledger(context)
+    plan = plan_walk(history)
     rebases, refused = rebase_findings(history, ledger, registry, context.root)
-    return (threshold_findings(history, registry, kept_thresholds(ledger))
-            + quarantine_findings(history, rebases.get(QUARANTINE_LEDGER, ()))
-            + ledger_findings(history, registry, rebases) + admission_findings(ledger) + refused)
+    return (
+        threshold_findings(history, registry, kept_thresholds(ledger))
+        + quarantine_findings(history, rebases.get(QUARANTINE_LEDGER, ()), plan)
+        + ledger_findings(history, registry, rebases)
+        + admission_findings(ledger)
+        + refused
+    )
+
+
+# ── The cache ──────────────────────────────────────────────────────
+
+CACHE_NAME = "history"
+# The version of the format of the entries.  Change it when the shape of an entry changes and no source changes.
+CACHE_FORMAT = b"history-entries-1"
+# The first bytes of an entry, before the digest of its payload.
+ENTRY_MARK = b"HS1"
+DIGEST_SIZE = 16
+# The record of the import closure of this module in the directory of the cache (THE IDENTITY).
+CLOSURE_RECORD = "closure.json"
+PACKAGE = "assay"
+VERSION_ENTRY = "version"
+FLOWS_ENTRY = "flows"
+CAUSE_ENTRY = "cause"
+TABLE_ENTRY = "table"
+WALK_ENTRY = "walk"
+# A cold run uses worker processes when it reads this number of versions or more (THE COLD RUN).
+POOL_FLOOR = 4
+# The largest number of the worker processes of a cold run.  On 2026-10-17, 16 workers read the 83 versions of the
+# tree in 0.66 s, and 32 workers took 0.67 s.  This process takes each version from the workers one at a time.
+POOL_WORKERS = 16
+
+
+@dataclass(frozen=True, slots=True)
+class ImportClosure:
+    """The modules of the package that a module can import, and each imported name that names no file (THE IDENTITY).
+
+    `digests` gives the SHA-256 of the bytes of each module, by its name.  `absent` holds each name that names no file,
+    sorted.  The record of the closure in the cache holds the two parts.
+    """
+
+    digests: Mapping[str, str]
+    absent: tuple[str, ...]
+
+
+def module_file(base: Path, name: str) -> Path | None:
+    """Return the file of a module of the package, or None when no file of the package has the name."""
+    stem = base.joinpath(*name.split("."))
+    for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def import_closure(base: Path, start: str) -> ImportClosure:
+    """Return the SHA-256 of each module of the package that a module can import, and each name that names no file.
+
+    The walk reads each import of a module, also an import in a function and
+    a relative import.  A name `from X import Y` gives the module X and the
+    candidate X.Y, which is a module only when a file has its name.
+
+    Raises:
+        SyntaxError: If a module of the closure does not parse
+        ValueError: If a module of the closure holds a null byte
+
+    Complexity: one parse of each module of the closure.
+    """
+    found: dict[str, str] = {}
+    absent: set[str] = set()
+    pending = [start]
+    while pending:
+        name = pending.pop()
+        if name in found or name in absent:
+            continue
+        file = module_file(base, name)
+        if file is None:
+            absent.add(name)
+            continue
+        data = file.read_bytes()
+        found[name] = hashlib.sha256(data).hexdigest()
+        package = name if file.name == "__init__.py" else name.rpartition(".")[0]
+        for node in ast.walk(ast.parse(data)):
+            if isinstance(node, ast.Import):
+                pending += [alias.name for alias in node.names if alias.name.split(".")[0] == PACKAGE]
+            elif isinstance(node, ast.ImportFrom):
+                module = absolute_module(package, node.level, node.module)
+                if module is not None and module.split(".")[0] == PACKAGE:
+                    pending += [module, *(f"{module}.{alias.name}" for alias in node.names)]
+    return ImportClosure(found, tuple(sorted(absent)))
+
+
+def absolute_module(package: str, level: int, module: str | None) -> str | None:
+    """Return the absolute name of the module of a `from` import in a package, or None above the top of the package.
+
+    `level` is the number of dots of a relative import, and 0 for an absolute import.
+    """
+    if level == 0:
+        return module
+    parts = package.split(".") if package else []
+    if level - 1 > len(parts):
+        return None
+    named = [*parts[: len(parts) - (level - 1)], *([module] if module else [])]
+    return ".".join(named) or None
+
+
+def recorded_closure(base: Path, record: Path) -> ImportClosure | None:
+    """Return the recorded closure, or None when a module changed or a file has a missing name.
+
+    The closure is a function of the bytes of its modules and of the names that
+    name no file.  An unchanged record then gives the closure of this time.
+    Complexity: one read and one hash of each module of the record.
+    """
+    try:
+        listed = json.loads(record.read_bytes())
+        modules, absent = listed["modules"], listed["absent"]
+        for name, digest in modules.items():
+            file = module_file(base, name)
+            if file is None or hashlib.sha256(file.read_bytes()).hexdigest() != digest:
+                return None
+        if any(module_file(base, name) is not None for name in absent):
+            return None
+        digests = {str(name): str(digest) for name, digest in modules.items()}
+        return ImportClosure(digests, tuple(str(name) for name in absent))
+    except OSError, ValueError, TypeError, KeyError, AttributeError:
+        return None
+
+
+def code_identity(directory: Path) -> bytes:
+    """Return the digest of the code that gives each entry: the modules of the import closure of this module.
+
+    The record of the closure in the cache saves the walk of THE IDENTITY when no module changes.
+
+    Raises:
+        SyntaxError: If a module of the closure does not parse, for example a file that an editor writes
+        ValueError: If a module holds a null byte, or the walk finds no file of this module
+        OSError: If a module cannot be read
+    """
+    base = REPO_ROOT / "utils"
+    record = directory / CLOSURE_RECORD
+    closure = recorded_closure(base, record)
+    if closure is None:
+        closure = import_closure(base, __name__)
+        if __name__ not in closure.digests:
+            raise ValueError(f"the walk of the imports finds no file of the module {__name__} under {base}")
+        listed = {"modules": dict(closure.digests), "absent": list(closure.absent)}
+        with suppress(OSError):
+            cache.write_atomic(record, json.dumps(listed, sort_keys=True).encode())
+    digest = hashlib.sha256(CACHE_FORMAT)
+    for name in sorted(closure.digests):
+        digest.update(f"{name}\0{closure.digests[name]}\0".encode())
+    return digest.digest()
+
+
+def encode_entry(value: object) -> bytes:
+    """Return the bytes of an entry: the mark, the digest of the payload, and the compressed JSON of the value."""
+    payload = zlib.compress(json.dumps(value, separators=(",", ":")).encode(), 1)
+    return ENTRY_MARK + hashlib.blake2b(payload, digest_size=DIGEST_SIZE).digest() + payload
+
+
+def decode_entry(data: bytes) -> object | Missing:
+    """Return the value of the bytes of an entry, or MISSING for bytes that a write of encode_entry() did not give."""
+    start = len(ENTRY_MARK) + DIGEST_SIZE
+    payload = data[start:]
+    if (
+        not data.startswith(ENTRY_MARK)
+        or hashlib.blake2b(payload, digest_size=DIGEST_SIZE).digest() != data[len(ENTRY_MARK) : start]
+    ):
+        return MISSING
+    try:
+        value: object = json.loads(zlib.decompress(payload))
+    except ValueError, zlib.error:
+        return MISSING
+    return value
+
+
+def version_plain(version: QuarantineVersion) -> list[object]:
+    """Return a version of the quarantine ledger as JSON values, in the sequence of each table of the version."""
+    return [
+        version.format,
+        [[name, list(facts.items())] for name, facts in version.configurations.items()],
+        [[*row, count] for row, count in version.counts.items()],
+        [[name, [[*row, count] for row, count in table.items()]] for name, table in version.deltas.items()],
+        [[*key, line] for key, line in version.lines.items()],
+    ]
+
+
+def plain_version(value: object) -> QuarantineVersion:
+    """Return the version that version_plain() gave as JSON values.
+
+    Raises:
+        ValueError: If the value does not have the shape of version_plain()
+        TypeError: If a part of the value has a different type
+    """
+    if not isinstance(value, list) or len(value) != 5 or not isinstance(value[0], int):
+        raise ValueError("the entry does not hold a version")
+    number, configurations, counts, deltas, lines = value
+    return QuarantineVersion(
+        number,
+        {str(name): {str(key): str(fact) for key, fact in facts} for name, facts in configurations},
+        {(file, kind, entity): int(count) for file, kind, entity, count in counts},
+        {
+            str(name): {(file, kind, entity): int(count) for file, kind, entity, count in table}
+            for name, table in deltas
+        },
+        {(name, file, kind, entity): int(line) for name, file, kind, entity, line in lines},
+    )
+
+
+class HistoryStore:
+    """The cache "history" of assay.core.cache for one run (THE CACHE).
+
+    The name of an entry is the SHA-256 of the identity of the code (THE
+    IDENTITY), the kind of the entry and its key.  A changed input gives a
+    different name, and an entry does not become stale.
+    """
+
+    __slots__ = ("directory", "identity")
+
+    def __init__(self, directory: Path, identity: bytes) -> None:
+        """Hold the directory of the cache and the identity of the code and of git."""
+        self.directory = directory
+        self.identity = identity
+
+    @classmethod
+    def open(cls, root: Path) -> HistoryStore | None:
+        """Return the store of a run in a git work tree, or None when the caches are off or the cache cannot open.
+
+        The cache does not open when git gives no version, or when its directory cannot be made.  A module of THE
+        IDENTITY that does not parse also stops it.  The call keeps the cache in the limit of its row of LIMITS when
+        its turn is due.
+        """
+        try:
+            directory = cache.cache_root(CACHE_NAME)
+            if directory is None:
+                return None
+            version = git.version(root).encode()
+            cache.hold_bound(directory, cache.LIMITS[CACHE_NAME])
+            python = f"{sys.version_info[0]}.{sys.version_info[1]}".encode()
+            return cls(directory, hashlib.sha256(code_identity(directory) + version + b"\0" + python).digest())
+        except OSError, ValueError, SyntaxError, git.GitError:
+            return None
+
+    def entry(self, kind: str, key: bytes) -> Path:
+        """Return the path of the entry of one kind and key."""
+        digest = hashlib.sha256(self.identity)
+        digest.update(kind.encode() + b"\0" + key)
+        name = digest.hexdigest()
+        return self.directory / name[:2] / name
+
+    def load(self, kind: str, key: bytes) -> object | Missing:
+        """Return the value of an entry, or MISSING when the cache holds no entry or a damaged one."""
+        entry = self.entry(kind, key)
+        try:
+            used = entry.stat().st_mtime
+            value = decode_entry(entry.read_bytes())
+        except OSError:
+            return MISSING
+        if value is not MISSING:
+            cache.mark_used(entry, used)
+        return value
+
+    def has(self, kind: str, key: bytes) -> bool:
+        """Tell if the cache holds an entry of one kind and key, with no read of it."""
+        return self.entry(kind, key).is_file()
+
+    def save(self, kind: str, key: bytes, value: object) -> None:
+        """Write an entry.  A write that fails writes no entry, and a subsequent run calculates the value again."""
+        with suppress(OSError):
+            cache.write_atomic(self.entry(kind, key), encode_entry(value))
+
+    def version(self, text: str) -> QuarantineVersion | None | Missing:
+        """Return the version of the quarantine ledger that a text gives, None for a text that does not read, or MISSING."""
+        value = self.load(VERSION_ENTRY, text_key(text))
+        if value is MISSING or value is None:
+            return value
+        try:
+            return plain_version(value)
+        except ValueError, TypeError:
+            return MISSING
+
+    def keep_version(self, text: str, version: QuarantineVersion | None) -> None:
+        """Write the version of a text, or None for a text that does not read."""
+        self.save(VERSION_ENTRY, text_key(text), None if version is None else version_plain(version))
+
+    def flows(self, key: tuple[str, tuple[str, ...]]) -> frozenset[tuple[str, str]] | None:
+        """Return the pairs of files of THE MOVE of a commit and its set of paths, or None for no usable entry."""
+        value = self.load(FLOWS_ENTRY, json.dumps([key[0], list(key[1])]).encode())
+        if not isinstance(value, list):
+            return None
+        try:
+            return frozenset((str(source), str(target)) for source, target in value)
+        except ValueError, TypeError:
+            return None
+
+    def keep_flows(self, key: tuple[str, tuple[str, ...]], flows: frozenset[tuple[str, str]]) -> None:
+        """Write the pairs of files of THE MOVE of a commit and its set of paths."""
+        self.save(FLOWS_ENTRY, json.dumps([key[0], list(key[1])]).encode(), sorted(flows))
+
+    def cause(self, kind: str, sha: str, path: str) -> Cause | None | Missing:
+        """Return the cause of a rebase row or a `grow` row at a commit, None for no cause, or MISSING."""
+        value = self.load(CAUSE_ENTRY, json.dumps([kind, sha, path]).encode())
+        if value is MISSING or value is None:
+            return value
+        if not isinstance(value, list) or len(value) != 5 or not isinstance(value[3], list):
+            return MISSING
+        try:
+            return Cause(
+                Change(value[0]),
+                str(value[1]),
+                int(value[2]),
+                frozenset(str(item) for item in value[3]),
+                bool(value[4]),
+            )
+        except ValueError, TypeError:
+            return MISSING
+
+    def keep_cause(self, kind: str, sha: str, path: str, cause: Cause | None) -> None:
+        """Write the cause of a rebase row or a `grow` row at a commit, or None for no cause."""
+        value = (
+            None
+            if cause is None
+            else [cause.change.value, cause.text, cause.rows, sorted(cause.changed), cause.is_scope]
+        )
+        self.save(CAUSE_ENTRY, json.dumps([kind, sha, path]).encode(), value)
+
+    def table(self, path: str, text: str) -> dict[str, Row] | None:
+        """Return the thresholds of one version of a table of TABLES, or None for no usable entry."""
+        value = self.load(TABLE_ENTRY, path.encode() + b"\0" + text_key(text))
+        if not isinstance(value, dict):
+            return None
+        try:
+            return {str(rule): Row(float(warn), float(error), str(unit)) for rule, (warn, error, unit) in value.items()}
+        except ValueError, TypeError:
+            return None
+
+    def keep_table(self, path: str, text: str, rows: Mapping[str, Row]) -> None:
+        """Write the thresholds of one version of a table of TABLES."""
+        value = {rule: [row.warn, row.error, row.unit] for rule, row in rows.items()}
+        self.save(TABLE_ENTRY, path.encode() + b"\0" + text_key(text), value)
+
+    def has_cause(self, kind: str, sha: str, path: str) -> bool:
+        """Tell if the cache holds an entry of the cause of a row at a commit, with no read of it."""
+        return self.has(CAUSE_ENTRY, json.dumps([kind, sha, path]).encode())
+
+    def checkpoint(self, key: bytes, commits: Mapping[str, git.Commit]) -> QuarantineWalk | None:
+        """Return the state of the walk after the steps of a key, or None for no usable entry (THE CHECKPOINT).
+
+        `commits` gives each commit of the quarantine ledger by its hash.  A state that names a different commit is no
+        usable entry.
+        """
+        if not self.has(WALK_ENTRY, key):
+            return None
+        value = self.load(WALK_ENTRY, key)
+        if value is MISSING:
+            return None
+        try:
+            return plain_walk(value, commits)
+        except ValueError, TypeError, KeyError:
+            return None
+
+    def keep_checkpoint(self, key: bytes, walk: QuarantineWalk) -> None:
+        """Write the state of the walk after the steps of a key."""
+        self.save(WALK_ENTRY, key, walk_plain(walk))
+
+
+def walk_plain(walk: QuarantineWalk) -> list[object]:
+    """Return a state of the walk as JSON values, in the sequence of each field of the state.
+
+    The findings and the raised counts keep their sequence.  The peaks keep their values and no last version.  The
+    next fold then reads each count of its version, and the values stay as an unbroken walk gives them (Peaks).
+    """
+    return [
+        [
+            [item.level, item.path, item.line, item.check, item.message, item.kind, item.entity]
+            for item in walk.findings
+        ],
+        [[*key, value] for key, value in walk.peaks.values.items()],
+        [
+            [commit.sha, rise.configuration, rise.file, rise.kind, rise.entity, rise.old, rise.new]
+            for commit, rise in walk.standing
+        ],
+        sorted(walk.stale),
+        sorted(walk.known),
+        walk.last_format,
+    ]
+
+
+def plain_walk(value: object, commits: Mapping[str, git.Commit]) -> QuarantineWalk:
+    """Return the state of the walk that walk_plain() gave as JSON values.
+
+    Raises:
+        ValueError: If the value does not have the shape of walk_plain(), or a finding has a field that is not valid
+        TypeError: If a part of the value has a different type
+        KeyError: If a finding has a level that is not known, or a raised count names a commit that `commits` does not
+            hold
+    """
+    if not isinstance(value, list) or len(value) != 6:
+        raise ValueError("the entry does not hold a state of the walk")
+    findings, peaks, standing, stale, known, last_format = value
+    if not (
+        isinstance(findings, list)
+        and isinstance(peaks, list)
+        and isinstance(standing, list)
+        and isinstance(stale, list)
+        and isinstance(known, list)
+    ):
+        raise TypeError("the entry does not hold a state of the walk")
+    if last_format is not None and not isinstance(last_format, int):
+        raise TypeError("the format of the last version is not a number")
+    levels = {level: level for level in check_report.LEVELS}
+    return QuarantineWalk(
+        tuple(
+            check_report.Finding(levels[level], str(where), int(line), str(check), str(message), str(kind), str(entity))
+            for level, where, line, check, message, kind, entity in findings
+        ),
+        Peaks(
+            {(str(name), str(file), str(kind), str(entity)): int(count) for name, file, kind, entity, count in peaks}
+        ),
+        tuple(
+            (commits[sha], LedgerRise(str(name), str(file), str(kind), str(entity), int(old), int(new)))
+            for sha, name, file, kind, entity, old, new in standing
+        ),
+        frozenset(str(name) for name in stale),
+        frozenset(str(name) for name in known),
+        last_format,
+    )
+
+
+def text_key(text: str) -> bytes:
+    """Return the key of a text in the cache: the SHA-256 of its UTF-8 bytes."""
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
 
 
 # ── The plants ─────────────────────────────────────────────────────

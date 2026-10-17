@@ -25,8 +25,8 @@
 #
 # A target reads CMAKE_JOB_POOL_COMPILE and CMAKE_JOB_POOL_LINK when it is
 # created, so this file comes before the first target.  The file of the quarantine
-# plugin includes it too, for the jobs of the plugin build and of the plugin
-# witness, and a scratch project of a self-test can include that file.
+# plugin includes it too, for the jobs of the plugin build, and a scratch project
+# of a self-test can include that file.
 
 include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/Guards.cmake")

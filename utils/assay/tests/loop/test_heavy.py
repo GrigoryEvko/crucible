@@ -14,13 +14,15 @@ the session, also when it gets the lock after the session starts.
 import fcntl
 import tempfile
 import threading
-import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO
 
 from assay.core import git, proc, testing
 from assay.loop import heavy
+
+# The table of the locks of the kernel (has_waiter()).
+LOCKS_FILE = Path("/proc/locks")
 
 
 def reader(values: list[float | None]) -> heavy.Reader:
@@ -51,17 +53,27 @@ def memory_cases(expect: testing.Expect) -> None:
     pauses: list[float] = []
     waited, value = heavy.wait_for_memory(16.0, reader([20.0]), pauses.append)
     expect(
-        "with the level from the first sample, the wait takes the samples of the rule and gives the last value",
-        waited == (heavy.SAMPLES - 1) * heavy.INTERVAL_S and value == 20.0 and len(pauses) == heavy.SAMPLES - 1,
+        "with the level from the first sample, the step does not wait, and the wait gives the value",
+        waited == 0.0 and value == 20.0 and not pauses,
+    )
+    waited, value = heavy.wait_for_memory(16.0, reader([5.0, 20.0]), pauses.append)
+    expect(
+        "after a first sample below the level, the wait takes the samples of the rule and gives the last value",
+        waited == heavy.SAMPLES * heavy.INTERVAL_S and value == 20.0 and len(pauses) == heavy.SAMPLES,
     )
     pauses.clear()
-    waited, value = heavy.wait_for_memory(16.0, reader([20.0, 5.0, 20.0]), pauses.append)
+    waited, value = heavy.wait_for_memory(16.0, reader([5.0, 20.0, 5.0, 20.0]), pauses.append)
     expect(
         "a sample below the level starts the count again",
-        waited == (heavy.SAMPLES + 1) * heavy.INTERVAL_S and value == 20.0,
+        waited == (heavy.SAMPLES + 2) * heavy.INTERVAL_S and value == 20.0,
     )
     waited, value = heavy.wait_for_memory(16.0, reader([None]), pauses.append)
     expect("a reader with no value ends the wait at once", waited == 0.0 and value is None)
+    waited, value = heavy.wait_for_memory(16.0, reader([5.0, None]), pauses.append)
+    expect(
+        "a reader that gives no value after a sample below the level ends the wait",
+        waited == heavy.INTERVAL_S and value is None,
+    )
 
 
 def lock_cases(expect: testing.Expect) -> None:
@@ -115,13 +127,28 @@ def is_free(path: Path) -> bool:
     return not heavy.is_held(path)
 
 
-def wait_until(condition: Callable[[], bool], limit_s: float = 10.0) -> bool:
-    """Wait in steps of 10 ms until a condition holds, at most for the limit, and tell if it holds."""
-    waited = 0.0
-    while not condition() and waited < limit_s:
-        time.sleep(0.01)
-        waited += 0.01
-    return condition()
+def wait_for_lock(condition: Callable[[], bool]) -> bool:
+    """Wait in steps of 1 ms until a condition of a lock holds, and tell if it holds (THE WAIT of assay.core.testing).
+
+    A lock changes in less than 1 ms.  A step of 20 ms makes each case slower.
+    """
+    return testing.wait_until(condition, step_s=0.001)
+
+
+def has_waiter(path: Path) -> bool:
+    """Tell if a request of flock(2) on a file waits in the kernel, from the blocked rows of /proc/locks.
+
+    A blocked request is a row with the second word "->".  Its seventh word names the device and the inode of the
+    file.  A step that waits in the kernel cannot enter its block until the holder frees the lock.  The check then
+    proves a wait with no sleep.  Complexity: O(rows of /proc/locks).
+    """
+    inode = f":{path.stat().st_ino}"
+    with open(LOCKS_FILE, encoding="ascii") as rows:
+        for row in rows:
+            words = row.split()
+            if len(words) > 6 and words[1] == "->" and words[6].endswith(inode):
+                return True
+    return False
 
 
 def gate_cases(expect: testing.Expect) -> None:
@@ -154,7 +181,9 @@ def gate_cases(expect: testing.Expect) -> None:
             worker.start()
             expect(
                 "a different step waits while a session of the gate runs, and it holds no lock of the heavy steps",
-                not entered.wait(0.3) and is_free(heavy.lock_path(root)),
+                wait_for_lock(lambda: has_waiter(heavy.gate_path(root)))
+                and not entered.is_set()
+                and is_free(heavy.lock_path(root)),
             )
         worker.join(10.0)
         expect("the step goes on after the session ends", entered.is_set())
@@ -163,15 +192,19 @@ def gate_cases(expect: testing.Expect) -> None:
             fcntl.flock(busy, fcntl.LOCK_EX)
             worker = threading.Thread(target=other_step, daemon=True)
             worker.start()
-            expect("a step waits for the lock of a step that runs", not entered.wait(0.3))
+            expect(
+                "a step waits for the lock of a step that runs",
+                wait_for_lock(lambda: has_waiter(heavy.lock_path(root))) and not entered.is_set(),
+            )
             with heavy.gate_session(root):
                 fcntl.flock(busy, fcntl.LOCK_UN)
                 expect(
                     "a step that gets the lock after a session started finds the session, frees the lock for the "
                     "gate, and waits",
                     found_session.wait(10.0)
-                    and wait_until(lambda: is_free(heavy.lock_path(root)))
-                    and not entered.wait(0.3),
+                    and wait_for_lock(lambda: is_free(heavy.lock_path(root)))
+                    and wait_for_lock(lambda: has_waiter(heavy.gate_path(root)))
+                    and not entered.is_set(),
                 )
             worker.join(10.0)
         expect("that step goes on after the session ends", entered.is_set())

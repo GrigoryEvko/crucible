@@ -40,13 +40,15 @@ THE COMMAND OF A STEP
     (assay.loop.land, THE LOCK OF A HEAVY STEP).
 
 THE MEMORY
-    While the step holds the lock, it waits until the host keeps a level of
-    memory available for SAMPLES samples in sequence, INTERVAL_S seconds
-    apart.  A sample below the level starts the count again.  The available
-    memory is the field MemAvailable of /proc/meminfo.  A step of a small
-    number of named targets or tests waits for NAMED_LEVEL_GB, and each other
-    heavy step waits for FULL_LEVEL_GB.  When the file cannot be read, the
-    step does not wait, and it writes a note.
+    While the step holds the lock, it reads the memory that the host keeps
+    available.  When the first sample gives the level, the step does not
+    wait.  After a sample below the level, the step waits until SAMPLES
+    samples in sequence, INTERVAL_S seconds apart, give the level.  A sample
+    below the level starts the count again.  The available memory is the
+    field MemAvailable of /proc/meminfo.  A step of a small number of named
+    targets or tests waits for NAMED_LEVEL_GB, and each other heavy step waits
+    for FULL_LEVEL_GB.  When the file cannot be read, the step does not wait,
+    and it writes a note.
 
 Usage
     loop heavy [--memory-gb N] [-C DIR] -- COMMAND [ARGUMENT]...
@@ -77,7 +79,7 @@ GATE_FILE = Path(".worktrees/.grun/gate.lock")
 NAMED_LEVEL_GB = 8.0
 FULL_LEVEL_GB = 16.0
 SAMPLES = 3
-INTERVAL_S = 10.0
+INTERVAL_S = 1.0
 MEMORY_FILE = Path("/proc/meminfo")
 MEMORY_FIELD = "MemAvailable:"
 KB_PER_GB = 1024 * 1024
@@ -178,7 +180,10 @@ def wait_for_gate(handle: IO[str]) -> None:
 def wait_for_memory(
     level_gb: float, read: Reader = available_gb, pause: Pause = time.sleep
 ) -> tuple[float, float | None]:
-    """Wait until SAMPLES samples in sequence give the level or more (THE MEMORY).
+    """Wait for the level of the available memory (THE MEMORY).
+
+    A first sample at the level or more ends the wait immediately.  After a first sample below the level, the wait ends
+    when SAMPLES samples in sequence give the level.
 
     Args:
         level_gb: The level of the available memory, in GB
@@ -188,19 +193,21 @@ def wait_for_memory(
     Returns:
         The seconds of the wait, and the available memory of the last sample, or None when the reader cannot read it
 
-    Complexity: one sample for each interval of the wait.
+    Complexity: one sample for each interval of the wait, plus the first sample.
     """
+    value = read()
+    if value is None or value >= level_gb:
+        return 0.0, value
     waited = 0.0
     good = 0
-    while True:
+    while good < SAMPLES:
+        pause(INTERVAL_S)
+        waited += INTERVAL_S
         value = read()
         if value is None:
             return waited, None
         good = good + 1 if value >= level_gb else 0
-        if good >= SAMPLES:
-            return waited, value
-        pause(INTERVAL_S)
-        waited += INTERVAL_S
+    return waited, value
 
 
 @contextlib.contextmanager

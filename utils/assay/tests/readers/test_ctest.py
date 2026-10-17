@@ -1,4 +1,4 @@
-"""The test of the reader of ctest: the test list, the results of a run and the records of the tests (assay.readers.ctest).
+"""The test of the reader of ctest: the test list, the results and the merge of reports, and the records (assay.readers.ctest).
 
 `guard selftest tests.readers.test_ctest` runs the test.  The planted cases
 use no program, or a planted ctest that writes a planted listing.  The last
@@ -218,6 +218,63 @@ def results_cases(expect: testing.Expect) -> None:
         )
 
 
+def suite(timestamp: str, cases: str, counts: str) -> str:
+    """Return a planted JUnit report of ctest with the given test cases and counts of the root."""
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n<testsuite name="(empty)" {counts} hostname="" time="1.5" '
+        f'timestamp="{timestamp}">{cases}</testsuite>\n'
+    )
+
+
+def merge_cases(expect: testing.Expect) -> None:
+    """Check the merge of the reports of two runs: the test cases, the counts of the root, and each refusal."""
+    with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
+        first, second, merged = (Path(scratch) / name for name in ("first.xml", "second.xml", "junit.xml"))
+        first.write_text(
+            suite(
+                "2026-10-17T12:00:00",
+                '<testcase name="fixture" status="run"/>'
+                '<testcase name="broken" status="fail"><failure message="Failed"/></testcase>',
+                'tests="2" failures="1" disabled="0" skipped="0"',
+            ),
+            encoding="utf-8",
+        )
+        second.write_text(
+            suite(
+                "2026-10-17T12:00:09",
+                '<testcase name="census" status="run"/>',
+                'tests="1" failures="0" disabled="0" skipped="0"',
+            ),
+            encoding="utf-8",
+        )
+        ctest.merge_reports([first, second], merged)
+        root = ctest.report_root(merged)
+        expect(
+            "merge_reports keeps each test case of each report and its status",
+            ctest.results(merged)
+            == {"fixture": ctest.TestStatus.RUN, "broken": ctest.TestStatus.FAIL, "census": ctest.TestStatus.RUN},
+        )
+        expect(
+            "merge_reports adds the counts and the time of the roots, and keeps the timestamp of the first report",
+            [root.get(name) for name in (*ctest.SUITE_COUNTS, ctest.SUITE_TIME, "timestamp")]
+            == ["3", "1", "0", "0", "3", "2026-10-17T12:00:00"],
+        )
+        expect(
+            "merge_reports leaves no temporary file",
+            sorted(path.name for path in Path(scratch).iterdir()) == ["first.xml", "junit.xml", "second.xml"],
+        )
+        second.write_text(suite("2026-10-17T12:00:09", "", 'tests="many"'), encoding="utf-8")
+        expect(
+            "merge_reports refuses a count of a root that is not a number",
+            "not a number" in refused(lambda: ctest.merge_reports([first, second], merged)),
+        )
+        expect(
+            "merge_reports refuses a report that does not exist, and a merge with no report",
+            "cannot be read" in refused(lambda: ctest.merge_reports([first, Path(scratch) / "missing.xml"], merged))
+            and "no report" in refused(lambda: ctest.merge_reports([], merged)),
+        )
+
+
 def record_cases(expect: testing.Expect) -> None:
     """Check the read of the records of the tests that assay.core.meter writes."""
     with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
@@ -344,5 +401,7 @@ def project_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (listing_cases, tool_cases, results_cases, record_cases, project_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (listing_cases, tool_cases, results_cases, merge_cases, record_cases, project_cases),
     )

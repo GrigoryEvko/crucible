@@ -4974,6 +4974,7 @@ foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifac
 endforeach()
 foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test_proc core.test_git
         core.test_paths core.test_testing core.test_record core.test_value core.test_budget core.test_configuration
+        core.test_jobserver
         guard.engines.buildsys.test_runner
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
         readers.test_compdb readers.test_python

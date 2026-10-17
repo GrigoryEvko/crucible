@@ -197,7 +197,9 @@ def run_rounds(
             reason = f"the budget of {budget_s:g} s has no room for a round of {estimate:.1f} s after {used:.1f} s"
             break
         round_start = time.monotonic()
-        status, statuses = affected.run_tests(keys.build_dir, [item.test.name for item in pending], state_dir, jobs, [])
+        entries = tuple(item.test for item in pending)
+        layers = affected.test_layers(entries, [entry.name for entry in entries], jobs)
+        status, statuses = affected.run_tests(keys.build_dir, layers, state_dir, jobs, [])
         round_s.append(time.monotonic() - round_start)
         if not statuses:
             reason = f"ctest gave no JUnit report (exit code {status})"

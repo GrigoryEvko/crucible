@@ -315,7 +315,7 @@ class Planted:
         """
         self.ledger("test-time", "")
         self.ledger("test-memory", "")
-        self.budget((0.5, 2000), (1000, 2000))
+        self.budget((0.2, 2000), (1000, 2000))
         warned = ": warning: [test-time] "
         changed = self.plant_test("test_changed", "#!/bin/sh\nexit 0\n")
         said = [self.launch(changed)[1] for _ in range(test_launcher.RECENT_RUNS - 1)]
@@ -324,7 +324,7 @@ class Planted:
             not any(warned in text for text in said)
             and len(self._walls_of("test_changed")) == test_launcher.RECENT_RUNS - 1,
         )
-        self.plant_test("test_changed", "#!/bin/sh\nsleep 0.6\n")
+        self.plant_test("test_changed", "#!/bin/sh\nsleep 0.25\n")
         status, text = self.launch(changed)
         expect(
             "a change of the program of a test drops its window, so the test that becomes slower warns on its first "
@@ -335,7 +335,7 @@ class Planted:
         script.write_text("exit 0\n")
         for _ in range(2):
             self.launch_script("planted_changed_script", "sh", str(script))
-        script.write_text("sleep 0.6\n")
+        script.write_text("sleep 0.25\n")
         status, text = self.launch_script("planted_changed_script", "sh", str(script))
         expect(
             "a change of a file that a word of a script test names drops its window",
@@ -428,8 +428,8 @@ class Planted:
         self.ledger("test-instructions", "")
         host_counts = cost_meter.host_gives_counter()
         on_host = f"(this host: {'a counter' if host_counts else 'no counter'})"
-        sleeper = self.plant_test("test_sleeping", "#!/bin/sh\nsleep 0.3\n")
-        self.budget((0.1, 0.2), (1000, 2000), (1000, 2000))
+        sleeper = self.plant_test("test_sleeping", "#!/bin/sh\nsleep 0.12\n")
+        self.budget((0.05, 0.1), (1000, 2000), (1000, 2000))
         status, said = self.launch(sleeper)
         count = self._count_of("test_sleeping")
         if host_counts:
@@ -453,7 +453,7 @@ class Planted:
             f"a run with {cost_meter.INSTRUCTIONS_ENV}=0 has no count, and test-time keeps its error",
             status == 1 and ": error: [test-time] " in said and self._count_of("test_sleeping") is None,
         )
-        self.budget((0.1, 0.2), (1000, 2000))
+        self.budget((0.05, 0.1), (1000, 2000))
         status, said = self.launch(sleeper)
         expect(
             "a registry with no rule test-instructions gives a count no error level, and test-time keeps its error",

@@ -37,7 +37,10 @@ THE RUN
        gives.  The compiler then uses its default target.  After a parse
        with the exit 0, the run writes the stamp of the compile command into
        the stamp file of the report directory.  It also writes the key of the
-       parse into KEY_FILE (THE KEPT REPORTS).  JOBS parses run at one time.
+       parse into KEY_FILE (THE KEPT REPORTS).  At most JOBS parses run at
+       one time, and a jobserver can give fewer (THE JOBSERVER).  An
+       interrupt cancels each parse that did not start, and the run ends
+       after the parses that run.
     4. The run prints the number of units, the number of kept reports and
        each unit that does not parse.  It also prints the wall time and the
        CPU time of the parses, and the time of step 1.
@@ -47,6 +50,15 @@ THE RUN
     or a check waits for it.  Two runs of `loop test` in two build
     directories can start a parse of one parse build at the same time.  The
     lock keeps the two parses apart.
+
+THE JOBSERVER
+    MAKEFLAGS can name the FIFO of a jobserver, as the gate of `loop land`
+    gives it (assay.core.jobserver).  The parses of step 3 then share the
+    jobs of that server with each other process of the server.  Each parse
+    holds one slot of the server, and the first parse uses the implicit slot
+    of the run.  The builds of step 1 get no -j, because ninja obeys the
+    jobserver only with no -j.  With no such MAKEFLAGS, the parses use no
+    slot, and the builds get -j JOBS.
 
 THE CHECK
     plan_of() does step 1 of THE RUN, and it finds the units that keep their
@@ -118,7 +130,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from assay.core import configuration as build_config
-from assay.core import paths, proc
+from assay.core import jobserver, paths, proc
 from assay.core import report as check_report
 from assay.guard.engines.plugin import runner as plugin_runner
 from assay.readers import compdb, ninja
@@ -420,6 +432,14 @@ def build_input_targets(build_dir: Path, jobs: int) -> float:
     return time.monotonic() - start
 
 
+def build_job_words(jobs: int, environment: Mapping[str, str]) -> list[str]:
+    """Return the words of the jobs of `cmake --build`: none with a jobserver, else -j JOBS (THE JOBSERVER).
+
+    ninja obeys the jobserver of MAKEFLAGS only when its command line gives no -j.
+    """
+    return [] if jobserver.client_path(environment) is not None else ["-j", str(jobs)]
+
+
 def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], what: str) -> None:
     """Build the targets with `cmake --build`, for the build of WHAT in an error.
 
@@ -429,7 +449,7 @@ def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], w
     try:
         done = proc.run(
             proc.Command(
-                [cmake, "--build", str(build_dir), "-j", str(jobs), "--target", *targets],
+                [cmake, "--build", str(build_dir), *build_job_words(jobs, os.environ), "--target", *targets],
                 timeout_s=INPUT_TIMEOUT_S,
                 stdout=proc.Output.CAPTURE,
                 stderr=proc.Output.MERGE,
@@ -469,6 +489,14 @@ def parse_unit(unit: Unit, words: list[str], key: str, report_dir: Path) -> Pars
         (report_dir / quarantine_sections.STAMP_FILE).write_text(f"{unit.stamp}\n", encoding="utf-8")
         (report_dir / KEY_FILE).write_text(f"{key}\n{started_ns}\n", encoding="utf-8")
     return Parsed(unit, done.exit, done.cpu_s, done.err)
+
+
+def parse_in_slot(item: Planned, report_dir: Path, client: jobserver.Client | None) -> Parsed:
+    """Parse one unit of the plan, and hold one slot of the jobserver for the parse when a client is given (THE JOBSERVER)."""
+    if client is None:
+        return parse_unit(item.unit, list(item.words), item.key, report_dir)
+    with client.held():
+        return parse_unit(item.unit, list(item.words), item.key, report_dir)
 
 
 def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
@@ -570,11 +598,20 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
         prune_reports(build_dir, set(plan.report_dirs.values()))
         start = time.monotonic()
         results = [Parsed(unit, 0, 0.0, "", True) for unit in plan.kept]
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            results += pool.map(
-                lambda item: parse_unit(item.unit, list(item.words), item.key, plan.report_dirs[item.unit]),
-                plan.planned,
-            )
+        try:
+            with jobserver.client_of(os.environ) as client, ThreadPoolExecutor(max_workers=jobs) as pool:
+                futures = [
+                    pool.submit(parse_in_slot, item, plan.report_dirs[item.unit], client) for item in plan.planned
+                ]
+                try:
+                    results += [future.result() for future in futures]
+                except BaseException:
+                    for future in futures:
+                        future.cancel()
+                    raise
+        except jobserver.JobserverError as problem:
+            check_report.write_line(f"loop syntax: {problem}", is_error=True)
+            return 1
         wall_s = time.monotonic() - start
         input_s = plan.input_s
     failed = [result for result in results if result.exit != 0]

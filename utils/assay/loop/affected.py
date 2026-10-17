@@ -152,6 +152,86 @@ THE PARSE BUILDS
     a build with an error does.  For a parse build that is not configured, the script
     prints the command that configures it.
 
+THE LAYERS
+    ctest runs a test after each test that its property DEPENDS names.  In a
+    run with such a property, ctest puts the tests in levels.  The deepest
+    level holds each test that the DEPENDS of a different test names, and
+    the last level holds each other test.  ctest starts the levels in that
+    sequence, and it sorts the tests by their cost only in a level.
+
+    The DEPENDS of each of the four census tests names each negative fixture
+    (test/CMakeLists.txt).  A long test with no DEPENDS, such as
+    guard_history, then started only after ctest started each fixture.  On
+    2026-10-17, the test phase of the gate used about 100 cores for 20 s, and
+    then about 7 cores for 40 s.
+
+    A deeper level delays the tests of the last level only when it holds
+    more tests than the jobs of ctest.  When it holds fewer, ctest starts
+    each of them and the longest tests of the last level in the same pass.
+    The dependencies of a test are the selected tests that its DEPENDS
+    names.  The listing of ctest also gives the DEPENDS of a test the setup
+    tests of each fixture in its FIXTURES_REQUIRED.  A test with as many
+    dependencies as the jobs, or more, is wide.
+
+    For this reason, the script gives ctest the selected tests in layers
+    (test_layers()).  A test with no dependency is in layer 0.  Each other
+    test is in the highest layer of its dependencies, and a wide test is one
+    layer above that layer.  ctest runs each layer in a run of its own, one
+    run after the other, with the same words.  In a run, ctest starts a test
+    after its dependencies in the same run, and these are fewer than its
+    jobs.  Then ctest sorts the other tests by cost, and the longest test
+    starts first.
+
+    A layer runs also when a test of an earlier layer gave a failure,
+    because DEPENDS sets a sequence and skips no test.  merge_reports() of
+    assay.readers.ctest puts the JUnit reports of the runs into one report,
+    BUILD_DIR/affected-tests/junit.xml.
+
+    The four census tests are wide, and they go into layer 1.  The tests
+    with the fixture of the parse trees have 8 setup tests as dependencies,
+    and they stay in layer 0.  A test of a subsequent layer waits for all of
+    the layers before it, and not only for its own dependencies.  The census
+    layer then adds its own time, about 4 s, to the end of the test phase.
+    A run of a subsequent layer adds the setup tests of each fixture in the
+    FIXTURES_REQUIRED of its tests, unless the option
+    `--fixture-exclude-setup` names the fixture.  This occurs only when the
+    jobs are as many as these setup tests or fewer.
+
+    Each run of ctest writes the files of ctest in Testing/Temporary of the
+    build directory again.  LastTest.log then holds the log of the last
+    layer.  A run with no failure keeps LastTestsFailed.log of an earlier
+    run, and a run with a failure writes it again.  After a failure in the
+    last layer, `ctest --rerun-failed` then does not see a failure of an
+    earlier layer.  The merged junit.xml holds each failure.
+
+THE JOBSERVER
+    A parent make, or a different program that operates a GNU make jobserver,
+    gives its children the variable MAKEFLAGS with a word
+    `--jobserver-auth=AUTH`.  Then the children use the jobs of the parent
+    together.  Ninja 1.13.2 obeys a FIFO jobserver only when its command
+    line gives no -j.  For this reason, when MAKEFLAGS names a FIFO
+    (client_path() of assay.core.jobserver), the build gets no -j
+    (_build_command()).  A jobserver of two descriptors keeps the -j.  On
+    2026-10-17, ninja 1.13.2 ignored that protocol with a warning, and then
+    it used its own count of jobs.  The build also gets no variable
+    CMAKE_BUILD_PARALLEL_LEVEL, because `cmake --build` gives ninja a -j from
+    that variable.  ctest 4.4.2 obeys the jobserver also with -j, and each
+    run of ctest keeps its -j.
+
+THE WARM START
+    The inputs of the tests of the master guard come from the source tree
+    only: the parse of each module of the package, the import closures and
+    the scopes (assay.loop.inputs).  The build does not change these files.
+    While the build runs, the main thread only waits.  For this reason, a
+    thread calculates the inputs of each rule of the registry during the
+    build (warm() of the Deriver).  The decision after the build reads them.
+    On 2026-10-17, the decision of the 2,858 tests of the Debug build took
+    6.4 s cold, and 1.9 s after the warm start.  A failure in the thread
+    stops only the warm start, and the decision then reports the problem.
+    The Planner keeps the parse of each module by its text when forget()
+    drops the other facts of a tree.  The decision after the tests then
+    parses only a module with a changed text.
+
 THE LOOP HISTORY
     After each call that builds or runs tests, the script appends one line to
     BUILD_DIR/loop-history/history.jsonl: the commit, the job count, the host
@@ -251,12 +331,13 @@ import shutil
 import struct
 import sys
 import tempfile
+import threading
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from assay.core import cache, cost_store, git, proc
+from assay.core import cache, cost_store, git, jobserver, proc
 from assay.core import cache_root as cache_rule
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
@@ -301,6 +382,10 @@ ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANU
 # The properties of a fixture.  A test of the master guard can hold the fixture of the parse trees.
 FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
+# The property that names the tests that a test runs after (THE LAYERS).
+DEPENDS_PROPERTY = "DEPENDS"
+# The variable that gives `cmake --build` a job count when its command gives none (THE JOBSERVER).
+BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
 TRUE_WORDS = frozenset({"1", "ON", "YES", "TRUE", "Y"})
 SHARED_LIBRARY = re.compile(r"\.so(\.[0-9]+)*$")
@@ -793,13 +878,18 @@ class Planner:
         self.used_scans: dict[str, object] = {}
         self.launcher_files: dict[str, tuple[list[str], tuple[str, ...]]] = {}
         self.derivers: dict[str, guard_inputs.Deriver] = {}
+        # The parse of each module, for each Deriver of the planner.  forget() keeps it (THE WARM START).
+        self.parses: guard_inputs.ParseCache = {}
         # The roots of the shared key, the longest first.  A build directory in the source tree then gets its own mark.
         given = ((trees.build_root, cost_store.BUILD_MARK), (trees.source_root, cost_store.ROOT_MARK))
         self.marks = tuple(sorted(given, key=lambda item: -len(item[0])))
         self.judge_files = frozenset(os.path.join(trees.build_root, name) for name in JUDGE_FILES)
 
     def forget(self) -> None:
-        """Forget each digest and each fact of a tree.  The next decision then reads each input again."""
+        """Forget each digest and each fact of a tree.  The next decision then reads each input again.
+
+        The parse of a module stays, by its text.  A module with a new text gets a new parse (THE WARM START).
+        """
         self.digests.forget()
         self.launcher_files.clear()
         self.derivers.clear()
@@ -807,8 +897,12 @@ class Planner:
     def deriver(self, root: str) -> guard_inputs.Deriver:
         """Return the reader of the inputs of the tests of the master guard of a tree, one for each tree."""
         if root not in self.derivers:
-            self.derivers[root] = guard_inputs.Deriver(Path(root))
+            self.derivers[root] = guard_inputs.Deriver(Path(root), self.parses)
         return self.derivers[root]
+
+    def warm(self) -> None:
+        """Calculate the inputs of each rule of the source tree, and keep them for the decision (THE WARM START)."""
+        self.deriver(self.trees.source_root).warm()
 
     def scan(self, path: str) -> Scan:
         """Return the scan of an ELF file, from the state when the state holds the scan of the same bytes."""
@@ -1152,48 +1246,114 @@ def write_list(path: Path, names: list[str]) -> None:
     path.write_text("".join(f"{name}\n" for name in names))
 
 
-def run_inherited(command: list[str]) -> int:
+def _run_inherited(command: list[str], environment: dict[str, str] | None = None) -> int:
     """Run a build or a test run with the standard streams of this process, and return its exit code.
 
-    A command that runs past the limit BUILD_S of assay.core.proc gives the exit code of its end on the signal of the
-    limit.
+    `environment` is the full environment of the command, or None for the environment of this process.  A command
+    that runs longer than the limit BUILD_S of assay.core.proc gives the exit code of its end on the signal of the limit.
 
     Raises:
         RunnerError: If the program cannot start
     """
     try:
-        return proc.run(proc.Command(command, timeout_s=proc.BUILD_S, stdout=proc.Output.INHERIT,
+        return proc.run(proc.Command(command, timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT,
                                      stderr=proc.Output.INHERIT)).exit
     except proc.TimedOut as problem:
-        print(f"loop test: {problem}")
+        check_report.write_line(f"loop test: {problem}", is_error=True)
         return problem.completed.exit if problem.completed is not None else 2
     except proc.CannotStart as problem:
         raise RunnerError(str(problem)) from None
 
 
-def run_tests(build_dir: Path, names: list[str], state_dir: Path, jobs: int,
+def test_layers(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], jobs: int) -> list[list[str]]:
+    """Return the selected tests in layers of the property DEPENDS (THE LAYERS).
+
+    The dependencies of a test are the tests of `names` that its DEPENDS names.  A test is wide when it has `jobs`
+    dependencies or more.  A test with no dependency is in layer 0.  Each other test is in the highest layer of its
+    dependencies, and a wide test is one layer above it.  The tests of a cycle of DEPENDS go into a last layer of their
+    own, and ctest then reports the cycle.  Each layer keeps the sequence of `names`.  Complexity: O(P * (n + e)) for
+    the longest chain P of DEPENDS, n tests of `names` and e names of DEPENDS between them.
+    """
+    chosen = set(names)
+    depends = {test.name: [name for name in test.words_of(DEPENDS_PROPERTY) if name in chosen and name != test.name]
+               for test in tests if test.name in chosen}
+    layer_of: dict[str, int] = {}
+    pending = list(names)
+    while pending:
+        ready = [name for name in pending if all(dependency in layer_of for dependency in depends.get(name, ()))]
+        if not ready:
+            cycle_layer = max(layer_of.values(), default=-1) + 1
+            layer_of.update((name, cycle_layer) for name in pending)
+            break
+        for name in ready:
+            dependencies = depends.get(name, [])
+            step = 1 if len(dependencies) >= jobs else 0
+            layer_of[name] = max((layer_of[dependency] + step for dependency in dependencies), default=0)
+        pending = [name for name in pending if name not in layer_of]
+    count = max(layer_of.values(), default=-1) + 1
+    layers = [[name for name in names if layer_of[name] == index] for index in range(count)]
+    return [layer for layer in layers if layer]
+
+
+def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: int,
               ctest_arguments: list[str]) -> tuple[int, dict[str, ctest_reader.TestStatus]]:
-    """Run the named tests with ctest, and return its exit code and the status of each test of its JUnit report."""
-    selection = state_dir / "run.txt"
+    """Run each layer of the selected tests in a ctest run of its own, one run after the other (THE LAYERS).
+
+    Return the first exit code of a run that is not 0, or 0, and the status of each test of the merged JUnit report.
+    A run that gives no report makes the exit code 2 when it was 0.  With no report at all, the statuses are empty.
+    """
     report = state_dir / "junit.xml"
-    write_list(selection, names)
-    report.unlink(missing_ok=True)
-    command = [build_program(build_dir, "ctest"), "--test-dir", str(build_dir), "--tests-from-file", str(selection),
-               "--fixture-exclude-setup", guard_inputs.TREE_FIXTURE, "--output-junit", str(report), f"-j{jobs}",
-               *ctest_arguments]
-    status = run_inherited(command)
-    if not report.is_file():
+    for stale in (*sorted(state_dir.glob("run*.txt")), *sorted(state_dir.glob("junit*.xml"))):
+        stale.unlink()
+    ctest = build_program(build_dir, "ctest")
+    status = 0
+    written: list[Path] = []
+    for index, names in enumerate(layers):
+        selection, layer_report = state_dir / f"run-{index}.txt", state_dir / f"junit-{index}.xml"
+        write_list(selection, names)
+        command = [ctest, "--test-dir", str(build_dir), "--tests-from-file", str(selection), "--fixture-exclude-setup",
+                   guard_inputs.TREE_FIXTURE, "--output-junit", str(layer_report), f"-j{jobs}", *ctest_arguments]
+        layer_status = _run_inherited(command)
+        status = status or layer_status
+        if layer_report.is_file():
+            written.append(layer_report)
+        else:
+            check_report.write_line(f"loop test: the ctest run of layer {index} gave no JUnit report (exit code "
+                                    f"{layer_status}).")
+            status = status or 2
+    if not written:
         return (status or 2), {}
     try:
+        if len(written) == 1:
+            os.replace(written[0], report)
+        else:
+            ctest_reader.merge_reports(written, report)
         return status, ctest_reader.results(report)
-    except ctest_reader.CtestError as problem:
+    except (OSError, ctest_reader.CtestError) as problem:
         check_report.write_line(f"loop test: {problem}")
         return (status or 2), {}
+    finally:
+        for layer_report in written:
+            layer_report.unlink(missing_ok=True)
+
+
+def _build_command(cmake_program: str, build_dir: Path, jobs: int,
+                   environment: Mapping[str, str]) -> tuple[list[str], dict[str, str]]:
+    """Return the words and the environment of the build of a build directory (THE JOBSERVER).
+
+    With no FIFO jobserver, the build gets -j with `jobs`, and the environment unchanged.  With a FIFO jobserver, the
+    build gets no -j, and an environment with no BUILD_PARALLEL_VARIABLE.  Ninja then takes its jobs from the jobserver.
+    """
+    if jobserver.client_path(environment) is None:
+        return [cmake_program, "--build", str(build_dir), f"-j{jobs}"], dict(environment)
+    kept = {name: value for name, value in environment.items() if name != BUILD_PARALLEL_VARIABLE}
+    return [cmake_program, "--build", str(build_dir)], kept
 
 
 def build(build_dir: Path, jobs: int) -> int:
-    """Build the tree with the cmake of the build directory, and return the exit code of the build."""
-    return run_inherited([build_program(build_dir, "cmake"), "--build", str(build_dir), f"-j{jobs}"])
+    """Build the tree with the cmake of the build directory, and return the exit code of the build (THE JOBSERVER)."""
+    words, environment = _build_command(build_program(build_dir, "cmake"), build_dir, jobs, proc.environment())
+    return _run_inherited(words, environment)
 
 
 def parse_arms(source_root: Path, jobs: int) -> int:
@@ -1317,6 +1477,11 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
     with open(state_dir / "lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         recorder = loop_history.Recorder(build_dir, Path(trees.source_root), jobs)
+        state_path = state_dir / "state.json"
+        state, note = load_state(state_path, trees)
+        planner = Planner(trees, state, ResultStore())
+        warmer = threading.Thread(target=planner.warm, name="loop-test-warm", daemon=True)
+        warmer.start()
         if should_build and not plan_only:
             with recorder.start_build():
                 status = build(build_dir, jobs)
@@ -1334,24 +1499,27 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
                 return 1
         elif not should_build:
             print("loop test: --no-build: the script does not make sure that each executable is current.")
-        state_path = state_dir / "state.json"
-        state, note = load_state(state_path, trees)
         if note:
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
-        planner = Planner(trees, state, ResultStore())
+        warmer.join()
         decisions = planner.decide(tests, run_all, only)
         unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
         write_list(state_dir / "skipped.txt", skipped)
         print_plan(decisions, build_dir)
+        layers = test_layers(tests, selected, jobs)
+        if len(layers) > 1:
+            check_report.write_line(f"loop test: {len(layers)} layers of the property DEPENDS, with "
+                                    f"{', '.join(str(len(layer)) for layer in layers)} tests.  ctest runs each layer "
+                                    f"after the layer before it.")
         if plan_only:
             return 0
         status, statuses = 0, {}
         if selected:
             with recorder.test_timer:
-                status, statuses = run_tests(build_dir, selected, state_dir, jobs, ctest_arguments)
+                status, statuses = run_tests(build_dir, layers, state_dir, jobs, ctest_arguments)
         if selected and not statuses:
             print(f"loop test: ctest gave no JUnit report (exit code {status}).  The script records no pass.")
             recorder.finish_tests(status or 2, {"selected": len(selected), "skipped": len(skipped)})
@@ -1405,8 +1573,15 @@ class SelfTest:
         (self.build_dir / "lib").mkdir()
         (self.source_dir / "data").mkdir()
         (self.source_dir / "test").mkdir()
+        # A stand-in for cmake.  It writes its words and its value of BUILD_PARALLEL_VARIABLE, and builds nothing.
+        self.cmake = root / "tools" / "cmake"
+        self.cmake.parent.mkdir()
+        self.cmake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "${{0%/*}}/argv.txt"\n'
+                              f'printf "%s\\n" "${{{BUILD_PARALLEL_VARIABLE}-unset}}" > "${{0%/*}}/level.txt"\n')
+        self.cmake.chmod(0o755)
         cmake.cache_file(self.build_dir).write_text("")
-        cmake.plant(self.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(self.source_dir), "CMAKE_CTEST_COMMAND": ctest})
+        cmake.plant(self.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(self.source_dir), "CMAKE_CTEST_COMMAND": ctest,
+                                           "CMAKE_COMMAND": str(self.cmake)})
         self.golden = self.source_dir / "data" / "golden.csv"
         self.golden.write_text("1,2\n")
         self.library = self.build_dir / "lib" / "libnamed.so"
@@ -1460,6 +1635,8 @@ class SelfTest:
             f'add_test([=[script_guard]=] "{shutil.which("true")}" "{self.source_dir}/test/check.py")',
             (f'add_test([=[neg_fixture]=] "{shutil.which("true")}" "{self.source_dir}/utils/bin/{LOOP_MASTER}" '
              f'"{FIXTURE_SUBCOMMAND}")'),
+            f'add_test([=[census_reader]=] "{shutil.which("true")}" "{self.source_dir}/test/census.py")',
+            f'set_tests_properties([=[census_reader]=] PROPERTIES {DEPENDS_PROPERTY} "neg_fixture;script_guard")',
             f'add_test([=[disabled_test]=] "{bin_dir}/ok")',
             f'set_tests_properties([=[disabled_test]=] PROPERTIES DISABLED TRUE)',
             f'add_test([=[skip_code_test]=] "{sys.executable}" "-S" "-c" "raise SystemExit(77)")',
@@ -1473,10 +1650,15 @@ class SelfTest:
         ]
         (self.build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
 
-    def call(self, *extra: str, path: str | None = None,
-             variables: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
-        """Run the script on the fake build tree without a build, and return its exit code and output."""
-        return call_script(self.build_dir, *extra, path=path, variables=variables)
+    def call(self, *extra: str, path: str | None = None, variables: tuple[tuple[str, str], ...] = (),
+             should_build: bool = False) -> tuple[int, str]:
+        """Run the script on the fake build tree, and return its exit code and output (call_script())."""
+        return call_script(self.build_dir, *extra, path=path, variables=variables, should_build=should_build)
+
+    def build_words(self) -> tuple[list[str], str]:
+        """Return the words that the stand-in cmake got at its last call, and its value of BUILD_PARALLEL_VARIABLE."""
+        return (self.cmake.with_name("argv.txt").read_text().splitlines(),
+                self.cmake.with_name("level.txt").read_text().strip())
 
     def skipped(self) -> list[str]:
         """Return the names in skipped.txt."""
@@ -1498,14 +1680,16 @@ def plant_launcher(source_dir: Path) -> Path:
 
 
 def call_script(build_dir: Path, *extra: str, path: str | None = None,
-                variables: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
-    """Run the script on a fake build tree without a build, and return its exit code and output.
+                variables: tuple[tuple[str, str], ...] = (), should_build: bool = False) -> tuple[int, str]:
+    """Run the script on a fake build tree, and return its exit code and output.
 
-    With `path`, the script runs with that PATH.  `variables` adds each pair to its environment.
+    With `path`, the script runs with that PATH.  `variables` adds each pair to its environment.  With no
+    `should_build`, the script gets --no-build.
     """
     overrides = dict(variables) | ({"PATH": path} if path is not None else {})
     environment = proc.environment(overrides) if overrides else None
-    result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(build_dir), "--no-build",
+    build_words = () if should_build else ("--no-build",)
+    result = proc.run(proc.Command([sys.executable, str(LOOP), "test", str(build_dir), *build_words,
                                     f"-j{proc.DEFAULT_JOBS}", *extra], timeout_s=proc.TOOL_S, env=environment))
     return result.exit, result.out + result.err
 
@@ -1789,6 +1973,52 @@ def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
             )
 
 
+def planted_entry(name: str, *depends: str) -> ctest_reader.TestEntry:
+    """Return a planted test with the property DEPENDS, when `depends` names a test."""
+    return ctest_reader.TestEntry(name, ("/s/b/t",), {DEPENDS_PROPERTY: depends} if depends else {})
+
+
+def layer_cases(expect: Callable[[str, bool, str], None]) -> None:
+    """Check test_layers() (THE LAYERS) on planted tests: a chain, a dependency that is not selected, and a cycle."""
+    planted = (planted_entry("alpha"), planted_entry("beta", "alpha"), planted_entry("gamma", "beta", "alpha"),
+               planted_entry("epsilon", "gamma"), planted_entry("delta", "outside"),
+               planted_entry("cycle_one", "cycle_two"), planted_entry("cycle_two", "cycle_one"))
+    names = [test.name for test in planted]
+    layers = test_layers(planted, names, 1)
+    expect("with one job, each test with a dependency is wide, and goes one layer above its dependencies, and a cycle "
+           "goes into a last layer", layers == [["alpha", "delta"], ["beta"], ["gamma"], ["epsilon"],
+                                                ["cycle_one", "cycle_two"]], str(layers))
+    layers = test_layers(planted, names, 2)
+    expect("a test with fewer dependencies than the jobs stays in the highest layer of its dependencies",
+           layers == [["alpha", "beta", "delta"], ["gamma", "epsilon"], ["cycle_one", "cycle_two"]], str(layers))
+    layers = test_layers(planted, names, proc.DEFAULT_JOBS)
+    expect("with no wide test, each test that is not in a cycle is in layer 0",
+           layers == [["alpha", "beta", "gamma", "epsilon", "delta"], ["cycle_one", "cycle_two"]], str(layers))
+    layers = test_layers(planted, ["gamma", "alpha"], 1)
+    expect("test_layers puts a test in layer 0 when the selection holds none of its dependencies",
+           test_layers(planted, ["gamma"], 1) == [["gamma"]] and layers == [["alpha"], ["gamma"]], str(layers))
+    layers = test_layers(planted, [], 1)
+    expect("test_layers gives no layer for no selected test", layers == [], str(layers))
+
+
+def jobserver_cases(expect: Callable[[str, bool, str], None]) -> None:
+    """Check _build_command() (THE JOBSERVER): the words and the environment of the build, with and with no jobserver."""
+    fifo = f"{jobserver.AUTH_PREFIX}{jobserver.FIFO_PREFIX}/s/jobserver"
+    plain = {BUILD_PARALLEL_VARIABLE: "3", jobserver.VARIABLE: f"-j{proc.DEFAULT_JOBS}"}
+    served = plain | {jobserver.VARIABLE: f"-j{proc.DEFAULT_JOBS} {fifo}"}
+    words, environment = _build_command("/x/cmake", Path("/s/b"), proc.DEFAULT_JOBS, plain)
+    expect("with no jobserver, the build gets -j, and keeps CMAKE_BUILD_PARALLEL_LEVEL",
+           words == ["/x/cmake", "--build", "/s/b", f"-j{proc.DEFAULT_JOBS}"] and environment == plain, str(words))
+    words, environment = _build_command("/x/cmake", Path("/s/b"), proc.DEFAULT_JOBS, served)
+    expect("with a FIFO jobserver, the build gets no -j and no CMAKE_BUILD_PARALLEL_LEVEL, and keeps MAKEFLAGS",
+           words == ["/x/cmake", "--build", "/s/b"] and environment == {jobserver.VARIABLE: served[jobserver.VARIABLE]},
+           str(words))
+    descriptors = plain | {jobserver.VARIABLE: f"-j{proc.DEFAULT_JOBS} {jobserver.AUTH_PREFIX}3,4"}
+    words, environment = _build_command("/x/cmake", Path("/s/b"), proc.DEFAULT_JOBS, descriptors)
+    expect("a jobserver of two descriptors keeps the -j of the build",
+           words[-1] == f"-j{proc.DEFAULT_JOBS}" and environment == descriptors, str(words))
+
+
 def self_test(ctest: str) -> int:
     """Run each plant with `ctest` as the ctest of the fake build tree, and return 0 when each one holds."""
     failures: list[str] = []
@@ -1838,6 +2068,8 @@ def self_test(ctest: str) -> int:
            is_fixture(("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", FIXTURE_SUBCOMMAND, "/s/b"))
            and not is_fixture(launched))
     expect("source_paths_in ignores the build tree", source_paths_in("/s/b/x /s/y", trees) == ["/s/y"])
+    layer_cases(expect)
+    jobserver_cases(expect)
 
     with tempfile.TemporaryDirectory(prefix="affected-tests-") as directory:
         fake = SelfTest(Path(directory), ctest)
@@ -1860,6 +2092,18 @@ def self_test(ctest: str) -> int:
         expect("a test that gave its skip code counts apart from the disabled test, which did not run",
                counts.get("skip_code") == 1 and counts.get("not_run") == 1
                and "1 failed, 1 gave their skip code, 1 did not run." in output, output)
+        state_dir = fake.build_dir / STATE_DIRECTORY
+        expect("a test with fewer dependencies than the jobs runs in the ctest run of its dependencies",
+               "layers of the property DEPENDS" not in output and not (state_dir / "run-1.txt").exists(), output)
+        # The PATH of the first call.  The next call then sees a different environment again.
+        status, output = fake.call("-j", "2", path=f"{wrong}:{os.environ.get('PATH', '')}")
+        merged = ctest_reader.results(state_dir / "junit.xml")
+        expect("a wide test runs in a second ctest run, and junit.xml holds the tests of the two runs",
+               "2 layers of the property DEPENDS" in output and (state_dir / "run-1.txt").read_text() == "census_reader\n"
+               and merged.get("census_reader") is ctest_reader.TestStatus.RUN
+               and merged.get("neg_fixture") is ctest_reader.TestStatus.RUN
+               and merged.get("exe_bad") is ctest_reader.TestStatus.FAIL
+               and not sorted(state_dir.glob("junit-*.xml")), output)
 
         # The first call had a different PATH, which the environment of each executable test holds.
         status, output = fake.call()
@@ -1930,7 +2174,7 @@ def self_test(ctest: str) -> int:
         expect("a changed test record makes the test run", "exe_ok" not in fake.skipped(), output)
 
         for name in ("exe_source_dir", "exe_fixtures", "exe_environment", "script_guard", "neg_fixture", "exe_bad",
-                     "script_launched"):
+                     "script_launched", "census_reader"):
             expect(f"{name} runs on each call", name not in fake.skipped(), output)
         expect("a source directory in an ELF file makes the test always run",
                "always: " in output and "which is not a file of the source tree" in output, output)
@@ -1955,6 +2199,20 @@ def self_test(ctest: str) -> int:
         expect("--plan runs no test", status == 0 and "tests selected" not in output, output)
         expect("--plan appends no line to the loop history",
                len(loop_history.read_lines(fake.build_dir)) == lines_before, output)
+
+        # --only with an empty file selects no test.  These calls then run the build and no ctest.
+        selects_none = Path(directory) / "selects-none.txt"
+        selects_none.write_text("")
+        level = (BUILD_PARALLEL_VARIABLE, "3")
+        served = (jobserver.VARIABLE,
+                  f"-j{proc.DEFAULT_JOBS} {jobserver.AUTH_PREFIX}{jobserver.FIFO_PREFIX}{directory}/jobserver")
+        status, output = fake.call("--only", str(selects_none), variables=(level, served), should_build=True)
+        expect("with a jobserver in MAKEFLAGS, the build gets no -j and no CMAKE_BUILD_PARALLEL_LEVEL",
+               status == 0 and fake.build_words() == (["--build", str(fake.build_dir)], "unset"), output)
+        status, output = fake.call("--only", str(selects_none), variables=(level,), should_build=True)
+        expect("with no jobserver, the build gets -j, and keeps CMAKE_BUILD_PARALLEL_LEVEL",
+               status == 0 and fake.build_words() == (["--build", str(fake.build_dir), f"-j{proc.DEFAULT_JOBS}"], "3"),
+               output)
 
         cmake.plant(fake.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(fake.source_dir)})
         status, output = fake.call()

@@ -38,7 +38,7 @@ THE SELECTION
     The gate holds one invariant: a landing cannot make a test red in a
     configuration of the gate when the test can see the change.  Each
     configuration of objects then runs for each change, in one of three
-    modes, in the sequence of CONFIGURATIONS (Mode):
+    modes (Mode):
       * The full suite, `loop test BUILD --all`.  select() gives these
         configurations:
           - default for each change
@@ -62,8 +62,9 @@ THE SELECTION
         configuration of objects, for each other change.  A touched test
         reads the build, and the change touches one of its inputs.
         build_tests() of assay.loop.affected gives the tests that read the
-        build from the build of default, after the run of default.  That run
-        configures the build with the change.  Inputs.is_touched() of
+        build from the build of default.  The run of default first builds
+        the target build.ninja of its build, which configures the build
+        again with the change (THE THREADS).  Inputs.is_touched() of
         assay.loop.inputs judges each one (THE TOUCH).  A test that reads no
         build gives the same result in each configuration, and default runs
         it.  When the change touches no such test, these configurations do
@@ -83,10 +84,10 @@ THE SELECTION
     aarch64 configuration of objects.  The gate then writes a note and does
     not build it.
 
-    The configurations of the last two modes run after the last
-    configuration of the full suite (THE RUN OF A CONFIGURATION).  The model
-    holds no inputs of a script test that reads a build, such as the parts of
-    the test of the fixture store.  Such a test runs only in the first two
+    The configurations of the last two modes run at the same time as the
+    configurations of the full suite (THE THREADS).  The model holds no
+    inputs of a script test that reads a build, such as the parts of the
+    test of the fixture store.  Such a test runs only in the first two
     modes.
 
     An executable test reads the build too.  Its inputs in the source tree
@@ -133,22 +134,18 @@ THE RUN OF A CONFIGURATION
     only the last commit.  For such a landing, the gate runs `guard check
     --rule quarantine-lines --build-dir BUILD` again, with the variable set
     to the commit that the composition started from.  `loop
-    syntax --changed` gets the variable too.  Each configuration of the
-    full suite runs as one heavy step (assay.loop.heavy), with the lock of
-    the repository of the landing.  The configurations of the two other
-    modes run after the last configuration of the full suite, in its heavy
-    step.  Each heavy step waits for the memory, and this sequence saves one
-    wait for each landing.  The landing holds the
-    session of the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).  The
-    step of the gate then does not wait for it.  The parse configurations
-    run first.  Then the tests guard_parse_* of the debug build read current
-    reports.
+    syntax --changed` gets the variable too.  Each check of the gate runs in
+    one heavy step (assay.loop.heavy), with the lock of the repository of
+    the landing.  The step waits for the memory one time.  The landing holds
+    the session of the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).
+    The step of the gate then does not wait for it.  In the heavy step, each
+    configuration runs in a thread of its own (THE THREADS):
       1. A build directory with no graph of Ninja gets its configure:
          `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
-         assay.guard.engines.buildsys.parse_builds.  A check that fails
-         gets THE FALLS, and then each check runs again.
+         assay.guard.engines.buildsys.parse_builds, at the same time.  A
+         check that fails gets THE FALLS, and then each check runs again.
       3. A configuration of objects: `loop test BUILD` with the words of its
          mode, which builds the target all and runs the tests of the mode
          (assay.loop.affected, THE SELECTION).  A retry after a move of HEAD
@@ -157,8 +154,8 @@ THE RUN OF A CONFIGURATION
          with an input that changed, and each test of a rule that reads a
          build.  The file of --only is in the directory of the logs.  A red
          test gets THE FALLS first.
-         Then each test that is red runs one more time, alone.  A test that
-         is red alone too rejects the commit.
+         Then each test that is red runs one more time, alone, one test at
+         a time.  A test that is red alone too rejects the commit.
          An exit other than 0 with no red test rejects the commit too.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
          kind, such as the tests guard_plugin (with the rule
@@ -169,22 +166,93 @@ THE RUN OF A CONFIGURATION
     Each step runs the masters of the warm tree.  Then the tests of the
     commit judge the commit.  The step writes its two outputs to a log in
     the directory of the logs of the gate (THE LOGS).  The first
-    configuration with a problem stops the gate.
+    configuration with a problem stops the others (THE STOP).
+
+THE JOBSERVER
+    The heavy step makes one jobserver of the jobs of the gate
+    (assay.core.jobserver).  Each command of the step gets the variable
+    MAKEFLAGS of that jobserver.  The gate holds one slot of the jobserver
+    for each command that it runs: its implicit slot, or one token.  The
+    command then runs its first job on that slot.  ninja, ctest and `loop
+    syntax` take one token for each other job.  `loop test` gives its build
+    no -j with the jobserver, because ninja obeys the jobserver only with no
+    -j (assay.loop.affected).  ctest and the pool of `loop syntax` get -j
+    JOBS too.  The jobs of all the configurations together are then at
+    most the jobs of the gate, and the memory stays that of one build.
+    Each check makes a new jobserver.  A token that a stopped command did
+    not give back then does not make the next check smaller.
+
+THE THREADS
+    Each configuration of the plan runs in a thread of its own, at the same
+    time as the others.  The other configurations of objects (the last two
+    modes of THE SELECTION) run in threads of their own too.  They start
+    when their plan is known.  A change that can change each build gives
+    their plan immediately.  Else, their plan reads the touched tests of the
+    build of ALWAYS.  The run of ALWAYS then first builds the target
+    build.ninja of its build, which configures the build again with the
+    change.  Then the other configurations start.  The checks of a parse
+    configuration run in threads of their own too.  The writes of THE FALLS
+    of a configuration also run in threads of their own.
+
+    The verdict gives the configurations, their times and their problems in
+    the sequence of the plan and then of the other configurations.  It does
+    not give them in the sequence of their ends.
+
+THE STOP
+    In the run of a commit, the first configuration with a problem stops
+    the others.  A run of the base has no such stop.  Each command
+    of the step looks at the stop event each STOP_POLL_S seconds.  At the
+    stop, the process group of the command gets the stop of
+    Running.stop() of assay.core.proc.  Its configuration then ends with no
+    problem of its own.  A command that did not start does not start.  The
+    verdict gives each problem of each configuration that ended, and it
+    does not give a configuration that the stop ended.  An error of a step
+    of the gate stops the others too, and the check raises it after each
+    thread ended.  A thread that the error stopped does not hide the error.
+    A heavy step that the stop ended with no problem of a configuration is
+    an error of the gate (require_problem()).  The landing then refuses the
+    commit with that error, and it does not accept it.
+
+    Each command of the gate has the stop word interrupt of
+    assay.core.proc.  Its group gets SIGINT, and SIGKILL after STOP_GRACE_S
+    seconds.  A master of the package then stops in its own way.  Its wait
+    sends SIGINT to the group of each child (AN INTERRUPT of
+    assay.core.proc), and ninja and ctest stop their jobs.  SIGTERM ends a
+    master with no such step.  Its children run in process groups of their
+    own, and they then go on in the warm tree.
+
+THE LOCKS OF THE LEDGERS
+    Two configurations that run at the same time can write one ledger.  An
+    example is the ledger of the rule quarantine, which holds rows of each
+    configuration.  A write reads the ledger, changes the counts of its
+    configuration and writes the ledger again.  When two such writes occur
+    at one time, the ledger can hold only one of them.  The heavy step then
+    holds one lock for each rule.  Each write of a rule, in THE FALLS and in
+    THE KEPT ROWS, holds the lock of its rule.  A write takes the lock
+    before its slot of the jobserver.  No thread then holds a slot while it
+    waits for a lock.  store() of
+    assay.core.ledger writes a new file and renames it over the ledger.  A
+    test that reads a ledger during a write then reads all of the earlier
+    file or all of the new file.  A write of the base count keeps the counts
+    of each other configuration (THE WRITE of assay.core.ledger).  The
+    sequence of the writes of two configurations then does not change the
+    ledger.
 
 THE FALLS
     A count that falls makes the check of its counted rule fail with a count
     below its row.  A row of the policy admit that admits no finding makes
     the check fail too.  The gate then runs `guard write --rule RULE
     --build-dir BUILD` of each counted rule with a ledger that holds the
-    configuration, in the mode lower.  That write refuses each count above
-    its row and each new row, other than an increase that a move pays (THE
-    MOVE of assay.core.ledger).  The write gets the variable
-    CRUCIBLE_CHANGE_BASE with the commit that the composition started from.
-    Its moves are then those of the full change, also after an earlier write
-    changed a ledger of the warm tree.  The check then keeps a refused count
-    as its error.  After the
-    last configuration, the gate folds each ledger that a write changed into
-    a new commit (replaced_commit() of assay.core.git).  The new commit has
+    configuration, in the mode lower.  These writes run at the same time,
+    each with the lock of its rule (THE LOCKS OF THE LEDGERS).  A write
+    refuses each count above its row and each new row, other than an
+    increase that a move pays (THE MOVE of assay.core.ledger).  The write
+    gets the variable CRUCIBLE_CHANGE_BASE with the commit that the
+    composition started from.  Its moves are then those of the full change,
+    also after an earlier write changed a ledger of the warm tree.  The
+    check then keeps a refused count as its error.  After each thread of the
+    heavy step ended, the gate folds each ledger that a write changed into a
+    new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
     ledgers.  A landing of more than one commit gets the ledgers in its last
     commit.  A row of THE GROWTH of assay.loop.land then names its first
@@ -200,14 +268,14 @@ THE FALLS
     in its registry gets no such write.
 
     The warm tree moves to the new commit.  Each configuration of the run
-    then runs again.  A parse configuration runs `guard check --build-dir
-    BUILD` of each rule of COUNTED_RULES again, on the reports that it
-    keeps, with no write.  A ledger that the gate folded can make such a
-    check red, and the gate then rejects the commit.  A configuration of the
-    full suite runs `loop test BUILD`, which runs each test with an input
-    that changed, as the run after a move of HEAD does.  The other
-    configurations get the mode of THE SELECTION again, with the ledgers in
-    the change.
+    then runs again, at the same time, in the same heavy step.  A parse
+    configuration runs `guard check --build-dir BUILD` of each rule of
+    COUNTED_RULES again, on the reports that it keeps, with no write.  A
+    ledger that the gate folded can make such a check red, and the gate then
+    rejects the commit.  A configuration of the full suite runs `loop test
+    BUILD`, which runs each test with an input that changed, as the run
+    after a move of HEAD does.  The other configurations get the mode of THE
+    SELECTION again, with the ledgers in the change.
 
     The verdict gives the new commit and the ledgers, and the landing moves
     the branch to that commit.  A change that lowers counts then lands with
@@ -223,20 +291,35 @@ THE KEPT ROWS
     not build.  The candidate can hold rows of `--keep` RULE REASON of
     assay.loop.land, each for such a rule.  When the test of such a rule is
     red in a configuration, the gate runs `guard write --rule RULE
-    --build-dir BUILD` there.  It runs the write after THE FALLS and before
-    the run of the test alone.  The write gives each row of the
-    configuration the measured value of its item.  It gives no row to an
-    item over the error threshold with no row, and it refuses such an item.
-    That error then stays, and the test stays red.  Each row with a value
-    that rose gets REASON as its reason.  The ledger goes into the commit of
-    THE FALLS, and the field kept of the verdict gives each raised row.  The
-    write adds no row to the ledger, and the rule history then sees no
-    growth.
+    --build-dir BUILD` there, with the lock of the rule.  It runs the write
+    after THE FALLS and before the run of the test alone.  The write gives
+    each row of the configuration the measured value of its item.  It gives
+    no row to an item over the error threshold with no row, and it refuses
+    such an item.  That error then stays, and the test stays red.  Each row
+    with a value that rose gets REASON as its reason.  The ledger goes into
+    the commit of THE FALLS, and the field kept of the verdict gives each
+    raised row.  The write adds no row to the ledger, and the rule history
+    then sees no growth.
+
+THE RUN OF THE BASE
+    A candidate with a focus is the commit of a run of the base (THE RUN OF
+    THE BASE of assay.loop.land).  The focus gives each configuration with
+    a problem in the run of the batch, and the tests that were red alone
+    too in it (Focus).  The gate runs only that focus, each configuration
+    in a thread of its own (focused_runs()).  It runs the red tests with
+    `loop test BUILD --only FILE`, a parse configuration in its mode, and
+    each other configuration in the mode of the changed inputs.  The run of
+    the base writes no fall and folds no ledger.  Its problems then have the
+    words of the problems of the batch.  A problem of a run of the base does
+    not stop the other configurations of the focus (THE STOP).  The run of
+    the base gives the result of each of them, because the landing compares
+    each problem of the two runs.
 
 THE VERDICT
     The gate has no base side: it does not compare the commit with HEAD.  A
     test that is red alone on HEAD then rejects each landing, until a commit
-    corrects it.  Main must stay green.
+    corrects it.  Main must stay green.  The verdict gives the focus of each
+    configuration with a problem, for THE RUN OF THE BASE.
 
 THE LOGS
     Each step writes its log into the directory of the logs of its gate.
@@ -244,7 +327,8 @@ THE LOGS
     run in LOGS.  next_run() makes a new directory of a run, one above the
     highest number of a run.  It removes each directory of a run, other than
     the last RUNS_KEPT.  The problems of a refused landing then name logs
-    that the next run does not change.
+    that the next run does not change.  The name of a log holds its
+    configuration and its step.  Two threads then do not write one log.
 
 THE LOCK OF THE TREE
     One landing at a time uses the warm tree.  tree_lock() holds an
@@ -258,14 +342,16 @@ THE LOCK OF THE TREE
 import contextlib
 import enum
 import fcntl
+import functools
 import shutil
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from assay.core import git, paths, proc
+from assay.core import git, jobserver, paths, proc
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -310,6 +396,11 @@ SKIPPED = ctest_reader.TestStatus.SKIPPED
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
 ALONE_S = 1500.0
+# The interval of the look of a command at the stop event, in seconds (THE STOP).  The other configurations wait for
+# the build of ALWAYS with the same interval (THE THREADS).  The wait between SIGINT and SIGKILL to the group of a
+# command at a stop or at its limit, in seconds.
+STOP_POLL_S = 0.2
+STOP_GRACE_S = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +444,10 @@ class GateError(Exception):
     """The warm tree cannot hold the commit, or a step of the gate cannot start."""
 
 
+class Stopped(Exception):
+    """A step of a run ends, because a different run of the heavy step gave a problem (THE STOP)."""
+
+
 class Mode(enum.Enum):
     """How one configuration runs (THE SELECTION).  The value is the words that the gate writes before its step."""
 
@@ -380,16 +475,29 @@ class Keep:
 
 
 @dataclass(frozen=True, slots=True)
+class Focus:
+    """One configuration of a run of the base, and the tests that were red alone too in it (THE RUN OF THE BASE).
+
+    With no names, the problem of the configuration was not a red test, and the run of the base runs the configuration.
+    """
+
+    configuration: str
+    names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Candidate:
     """The commit of a landing: the commit that the composition started from, the commit, the paths and the kept rules.
 
-    `keeps` holds the rows of `--keep` of the requests of the commit (THE KEPT ROWS).
+    `keeps` holds the rows of `--keep` of the requests of the commit (THE KEPT ROWS).  `focus` is empty for the commit
+    of a batch, and it gives the configurations of a run of the base (THE RUN OF THE BASE).
     """
 
     head: str
     commit: str
     changed: tuple[str, ...]
     keeps: tuple[Keep, ...] = ()
+    focus: tuple[Focus, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,7 +508,7 @@ class Verdict:
     its heavy step after the waits, in the sequence of `configurations`.  `final` is the commit that the gate judged
     last, and `ledgers` holds each ledger that THE FALLS folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `kept` gives each row that a rule of `--keep` raised
-    (THE KEPT ROWS).
+    (THE KEPT ROWS).  `focus` gives each configuration with a problem (THE VERDICT).
     """
 
     configurations: tuple[str, ...]
@@ -411,11 +519,27 @@ class Verdict:
     ledgers: tuple[str, ...] = ()
     logs: str = ""
     kept: tuple[str, ...] = ()
+    focus: tuple[Focus, ...] = ()
 
     @property
     def is_accepted(self) -> bool:
         """Tell if the gate accepts the commit: no configuration has a problem."""
         return not self.problems
+
+
+@dataclass(frozen=True, slots=True)
+class Outcome:
+    """The end of the run of one configuration in a heavy step (THE THREADS, THE STOP).
+
+    `red` holds the tests that were red alone too.  `is_stopped` tells that the stop ended the run, which then has no
+    problem of its own.
+    """
+
+    name: str
+    problems: tuple[str, ...]
+    red: tuple[str, ...]
+    seconds: float
+    is_stopped: bool
 
 
 # ── The selection ──────────────────────────────────────────────────────────
@@ -500,6 +624,31 @@ def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[s
     if is_each:
         return tuple(Run(item, Mode.CHANGED) for item in others)
     return tuple(Run(item, Mode.TOUCHED, tuple(names)) for item in others) if names else ()
+
+
+def focused_runs(focus: Sequence[Focus]) -> tuple[Run, ...]:
+    """Return the runs of a run of the base, one for each configuration of its focus (THE RUN OF THE BASE).
+
+    A parse configuration runs in its mode.  A configuration with red tests runs them in the mode TOUCHED, and each
+    other configuration runs in the mode CHANGED.
+
+    Raises:
+        GateError: If the focus names a configuration that the gate does not have
+    """
+    runs: list[Run] = []
+    for item in focus:
+        configuration = BY_NAME.get(item.configuration)
+        if configuration is None:
+            raise GateError(
+                f"the run of the base names the configuration {item.configuration}, which the gate does not have"
+            )
+        if configuration.is_parse:
+            runs.append(Run(configuration, Mode.PARSE))
+        elif item.names:
+            runs.append(Run(configuration, Mode.TOUCHED, item.names))
+        else:
+            runs.append(Run(configuration, Mode.CHANGED))
+    return tuple(runs)
 
 
 def guard_test_name(rule_id: str) -> str:
@@ -604,7 +753,7 @@ def build_words(tree: Path, configuration: Configuration, jobs: int) -> list[str
     return [cmake, "--build", str(build), "-j", str(jobs)]
 
 
-# ── The steps ──────────────────────────────────────────────────────────────
+# ── The gate ───────────────────────────────────────────────────────────────
 
 
 @dataclass(frozen=True, slots=True)
@@ -633,31 +782,7 @@ class Gate:
         """The directory of the logs of the run."""
         return self.work / LOGS / self.run if self.run else self.work / LOGS
 
-    def _run_logged(self, command: list[str], log: str, environment: Mapping[str, str], timeout_s: float) -> int:
-        """Run one command in the warm tree with its two outputs in a log, and return its exit.
-
-        A command that runs longer than its limit gives the exit of its end.
-
-        Raises:
-            GateError: If the program cannot start
-        """
-        self.logs.mkdir(parents=True, exist_ok=True)
-        command_line = proc.Command(
-            command,
-            timeout_s=timeout_s,
-            cwd=self.tree,
-            env=dict(environment),
-            stdout=self.logs / log,
-            stderr=proc.Output.MERGE,
-        )
-        try:
-            return proc.run(command_line).exit
-        except proc.TimedOut as problem:
-            return problem.completed.exit if problem.completed is not None else ExitCode.TOOL_FAILED
-        except proc.ToolFailed as problem:
-            raise GateError(f"{command[0]} cannot run: {problem}") from None
-
-    def _master(self, name: str) -> list[str]:
+    def master(self, name: str) -> list[str]:
         """Return the words that run a master of the warm tree."""
         return [sys.executable, str(self.tree / "utils" / "bin" / name)]
 
@@ -667,7 +792,7 @@ class Gate:
         Raises:
             GateError: If the command cannot run or gives an error
         """
-        command = [*self._master("loop"), "syntax", "--changed", "--root", str(self.tree)]
+        command = [*self.master("loop"), "syntax", "--changed", "--root", str(self.tree)]
         try:
             completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S, cwd=self.tree, env=dict(environment)))
         except proc.ToolFailed as problem:
@@ -675,251 +800,6 @@ class Gate:
         if completed.exit != ExitCode.OK:
             raise GateError(f"`loop syntax --changed` gives an error: {completed.err.strip()}")
         return completed.out.split()
-
-    def _configure(self, configuration: Configuration, environment: Mapping[str, str]) -> str | None:
-        """Configure the build directory of a configuration when it has no graph of Ninja, and give a problem."""
-        build = build_directory(self.tree, configuration)
-        if ninja_reader.graph_file(build).is_file():
-            return None
-        log = f"{configuration.name}.configure.log"
-        if self._run_logged(configure_words(self.tree, configuration), log, environment, CONFIGURE_S) != 0:
-            return f"{configuration.name}: the configure gives an error, see {self.logs / log}"
-        return None
-
-    def _checked(self, configuration: Configuration, rules: Sequence[str], environment: Mapping[str, str]) -> list[str]:
-        """Run `guard check --build-dir` of each rule on a build, and give a problem for each exit other than 0 or 77."""
-        build = build_directory(self.tree, configuration)
-        problems: list[str] = []
-        for rule in rules:
-            log = f"{configuration.name}.check-{rule}.log"
-            command = [*self._master("guard"), "check", "--rule", rule, "--build-dir", str(build)]
-            status = self._run_logged(command, log, environment, proc.TOOL_S)
-            if status not in (ExitCode.OK, ExitCode.SKIPPED):
-                problems.append(f"{configuration.name}: the rule {rule} gives findings, see {self.logs / log}")
-        return problems
-
-    def _write_falls(
-        self, configuration: Configuration, counted: Mapping[str, Sequence[str]], based: Mapping[str, str]
-    ) -> bool:
-        """Run `guard write` of each counted rule with a ledger that holds a configuration (THE FALLS).
-
-        `based` is the environment with the base of the change.  A write that refuses a count above its row exits 1,
-        and the check of the rule keeps that count as its error.  Return True when a rule holds the configuration.
-        """
-        build = build_directory(self.tree, configuration)
-        rules = holding(counted, configuration)
-        for rule in rules:
-            log = f"{configuration.name}.write-{rule}.log"
-            command = [*self._master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
-            status = self._run_logged(command, log, based, proc.TOOL_S)
-            check_report.write_line(f"loop land: {configuration.name}: the write of {rule} exits {status}")
-        return bool(rules)
-
-    def _checked_falls(
-        self,
-        configuration: Configuration,
-        rules: Sequence[str],
-        counted: Mapping[str, Sequence[str]],
-        environment: Mapping[str, str],
-        based: Mapping[str, str],
-    ) -> list[str]:
-        """Run the checks of some rules on a build, and after a failure THE FALLS and the checks again."""
-        problems = self._checked(configuration, rules, environment)
-        if problems and self._write_falls(configuration, counted, based):
-            problems = self._checked(configuration, rules, environment)
-        return problems
-
-    def _write_history(self, environment: Mapping[str, str]) -> None:
-        """Write the ledger of the rule history of the warm tree in the mode lower (THE FALLS).
-
-        The write removes each row that admits nothing.  A write that refuses a finding exits 1 and writes nothing, and
-        the test of the rule then keeps that finding as its error.  A tree with no rule history in its registry gets no
-        write.
-
-        Raises:
-            GateError: If the registry of the warm tree does not read
-        """
-        from assay.guard.engines.meta import history
-
-        try:
-            registry = rule_registry.load(self.tree / rule_registry.REGISTRY_PATH)
-        except (OSError, ValueError) as problem:
-            raise GateError(f"the registry of {self.tree} does not read: {problem}") from None
-        if history.RULE not in registry.rules:
-            return
-        command = [*self._master("guard"), "write", "--rule", history.RULE, "--root", str(self.tree)]
-        status = self._run_logged(command, f"write-{history.RULE}.log", environment, proc.TOOL_S)
-        check_report.write_line(f"loop land: the write of {history.RULE} exits {status}")
-
-    def _fold(self, candidate: Candidate, environment: Mapping[str, str]) -> tuple[str, tuple[str, ...]]:
-        """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
-
-        A change of a ledger first gets the write of the ledger of the rule history (_write_history()).  The warm tree
-        moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
-
-        Raises:
-            GateError: If the registry of the warm tree does not read
-            git.GitError: If a git command fails
-        """
-        if not git.work_changes(self.tree, "HEAD", [LEDGER_PREFIX]):
-            return candidate.commit, ()
-        self._write_history(environment)
-        ledgers = tuple(sorted(git.work_changes(self.tree, "HEAD", [LEDGER_PREFIX])))
-        files = {name: (self.tree / name).read_bytes() if (self.tree / name).is_file() else None for name in ledgers}
-        final = git.replaced_commit(self.root, candidate.commit, files)
-        move_tree(self.root, self.tree, final)
-        return final, ledgers
-
-    def _red_alone(
-        self, configuration: Configuration, names: Sequence[str], environment: Mapping[str, str]
-    ) -> list[str]:
-        """Run each test alone, one at a time, and return the names of the tests that are red alone too.
-
-        Raises:
-            GateError: If the CMake cache of the build names no ctest
-        """
-        if not names:
-            return []
-        build = build_directory(self.tree, configuration)
-        selection = self.logs / f"{configuration.name}.alone.txt"
-        report = self.logs / f"{configuration.name}.alone.junit.xml"
-        try:
-            ctest = cmake_pin.configured_program(build, "ctest")
-        except cmake_pin.PinError as problem:
-            raise GateError(str(problem)) from None
-        self.logs.mkdir(parents=True, exist_ok=True)
-        red: list[str] = []
-        for name in names:
-            selection.write_text(f"{name}\n", encoding="utf-8")
-            report.unlink(missing_ok=True)
-            command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection)]
-            command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
-            self._run_logged(command, f"{configuration.name}.alone.{name}.log", environment, ALONE_S)
-            try:
-                status = ctest_reader.results(report).get(name, ctest_reader.TestStatus.NOTRUN)
-            except ctest_reader.CtestError:
-                status = ctest_reader.TestStatus.NOTRUN
-            if status in RED:
-                red.append(name)
-        return red
-
-    def _run_parse(
-        self,
-        configuration: Configuration,
-        counted: Mapping[str, Sequence[str]],
-        environment: Mapping[str, str],
-        based: Mapping[str, str],
-    ) -> list[str]:
-        """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
-        problem = self._configure(configuration, environment)
-        if problem is not None:
-            return [problem]
-        build = build_directory(self.tree, configuration)
-        log = f"{configuration.name}.syntax.log"
-        command = [*self._master("loop"), "syntax", str(build), "-j", str(self.jobs)]
-        if self._run_logged(command, log, environment, TEST_RUN_S) != 0:
-            return [f"{configuration.name}: a unit does not parse, see {self.logs / log}"]
-        return self._checked_falls(configuration, COUNTED_RULES, counted, environment, based)
-
-    def _write_keeps(
-        self,
-        configuration: Configuration,
-        keeps: Sequence[Keep],
-        red: Sequence[str],
-        environment: Mapping[str, str],
-    ) -> list[str]:
-        """Write the measured value of each row of each rule of `--keep` with a red test, and return the raised rows.
-
-        A raised row gets the reason of its `--keep` (THE KEPT ROWS).  A write that refuses an item exits 1, and the
-        test of the rule keeps that item as its error.
-
-        Raises:
-            GateError: If the registry or a ledger of the warm tree does not read
-        """
-        build = build_directory(self.tree, configuration)
-        raised: list[str] = []
-        for keep in keeps:
-            if guard_test_name(keep.rule) not in red:
-                continue
-            try:
-                rule = rule_registry.load(self.tree / rule_registry.REGISTRY_PATH).rules[keep.rule]
-                before = rule_ledger.read(rule, self.tree)
-            except (OSError, ValueError, KeyError) as problem:
-                raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
-            log = f"{configuration.name}.keep-{keep.rule}.log"
-            command = [*self._master("guard"), "write", "--rule", keep.rule, "--build-dir", str(build)]
-            status = self._run_logged(command, log, environment, proc.TOOL_S)
-            check_report.write_line(f"loop land: {configuration.name}: the write of --keep {keep.rule} exits {status}")
-            if status != ExitCode.OK:
-                continue
-            try:
-                after = rule_ledger.read(rule, self.tree)
-            except (OSError, ValueError) as problem:
-                raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
-            base = dict(after.base)
-            for key, entry in after.base.items():
-                old = before.base.get(key)
-                if old is None or not isinstance(entry.value, int | float) or not isinstance(old.value, int | float):
-                    continue
-                if entry.value > old.value:
-                    base[key] = replace(entry, reason=keep.reason)
-                    values = f"from {rule_ledger.value_text(old.value)} to {rule_ledger.value_text(entry.value)}"
-                    raised.append(f"{keep.rule}: {key.path} in {key.kind} {values}")
-            rule_ledger.store(replace(after, base=base), self.tree)
-        return raised
-
-    def _run_objects(
-        self,
-        configuration: Configuration,
-        counted: Mapping[str, Sequence[str]],
-        environment: Mapping[str, str],
-        based: Mapping[str, str],
-        words: Sequence[str],
-        keeps: Sequence[Keep] = (),
-        kept: list[str] | None = None,
-    ) -> list[str]:
-        """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
-
-        `words` are the words of the mode after `loop test BUILD` (loop_words()).  With no counted rule in `counted`, a
-        red test gets no write (THE FALLS).  A red test of a rule of `keeps` gets the write of THE KEPT ROWS, and `kept`
-        receives each raised row.
-        """
-        problem = self._configure(configuration, environment)
-        if problem is not None:
-            return [problem]
-        build = build_directory(self.tree, configuration)
-        report = build / affected.STATE_DIRECTORY / "junit.xml"
-        report.unlink(missing_ok=True)
-        log = f"{configuration.name}.test.log"
-        command = [*self._master("loop"), "test", str(build), "-j", str(self.jobs), *words]
-        status = self._run_logged(command, log, environment, TEST_RUN_S)
-        statuses: dict[str, ctest_reader.TestStatus] = {}
-        if report.is_file():
-            try:
-                statuses = ctest_reader.results(report)
-            except ctest_reader.CtestError as problem_text:
-                return [f"{configuration.name}: the test report does not read: {problem_text}"]
-        elif status != 0:
-            return [f"{configuration.name}: the build or the test run gives an error, see {self.logs / log}"]
-        red = sorted(name for name, test_status in statuses.items() if test_status in RED)
-        if status != 0 and not red:
-            return [f"{configuration.name}: `loop test` exits {status} with no red test, see {self.logs / log}"]
-        skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
-        if skipped:
-            check_report.write_line(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
-        if red:
-            self._write_falls(configuration, counted, based)
-            raised = self._write_keeps(configuration, keeps, red, environment)
-            if kept is not None:
-                kept += raised
-            check_report.write_line(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
-        still = self._red_alone(configuration, red, environment)
-        if still:
-            return [f"{configuration.name}: red alone too: {' '.join(still)}, see {self.logs / log}"]
-        warnings_log = f"{configuration.name}.warnings.log"
-        if self._run_logged([*self._master("guard"), "warnings", str(build)], warnings_log, environment, proc.TOOL_S):
-            return [f"{configuration.name}: `guard warnings` gives an error, see {self.logs / warnings_log}"]
-        return []
 
     def history_problems(self, commit: str, first: str, grown: Sequence[str]) -> tuple[str, ...]:
         """Give the warm tree a commit, and return each error of the rule history there, with no build.
@@ -975,7 +855,7 @@ class Gate:
     def touched_names(self, change: guard_inputs.Change) -> tuple[str, ...]:
         """Return each touched test of the build of ALWAYS, sorted: it reads the build, and the change touches its inputs.
 
-        The run of ALWAYS configures its build with the change first (THE SELECTION).
+        The run of ALWAYS configures its build with the change first (THE THREADS).
 
         Raises:
             GateError: If the build of ALWAYS or its tests cannot be read
@@ -987,10 +867,22 @@ class Gate:
             raise GateError(f"the tests of {build} that read the build do not read: {problem}") from None
         return tuple(sorted(name for name, found in tests.items() if found.is_touched(change)))
 
+    def changes_each(self, candidate: Candidate, ledgers: Sequence[str] = ()) -> bool:
+        """Tell if the change of a candidate and `ledgers` can change each build (changes_each_build()).
+
+        Raises:
+            git.GitError: If git cannot read the registry at the commit that the change starts from
+        """
+        changed = (*candidate.changed, *ledgers)
+        return changes_each_build(self.tree, guard_inputs.read_change(self.tree, candidate.head, changed), changed)
+
     def other_plan(
-        self, candidate: Candidate, others: Sequence[Configuration], ledgers: Sequence[str] = ()
+        self, candidate: Candidate, others: Sequence[Configuration], ledgers: Sequence[str] = (), is_each: bool = False
     ) -> tuple[Run, ...]:
         """Return the runs of the configurations of objects with no full suite, for the change and `ledgers`.
+
+        `is_each` tells that the change can change each build (changes_each()).  Else, the plan reads the touched tests
+        of the build of ALWAYS.
 
         Raises:
             GateError: If the build of ALWAYS or its tests cannot be read
@@ -998,17 +890,18 @@ class Gate:
         """
         if not others:
             return ()
-        changed = (*candidate.changed, *ledgers)
-        change = guard_inputs.read_change(self.tree, candidate.head, changed)
-        if changes_each_build(self.tree, change, changed):
+        if is_each:
             return other_runs(others, True, ())
+        change = guard_inputs.read_change(self.tree, candidate.head, (*candidate.changed, *ledgers))
         names = self.touched_names(change)
         shown = " ".join(names) if names else "none"
         check_report.write_line(f"loop land: the touched tests of the other configurations of objects: {shown}")
         return other_runs(others, False, names)
 
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
-        """Give the warm tree the commit, select the configurations, and run each of them (THE RUN OF A CONFIGURATION).
+        """Give the warm tree the commit, select the configurations, and run them in one heavy step (THE THREADS).
+
+        A candidate with a focus runs only its focus (THE RUN OF THE BASE).
 
         Raises:
             GateError: If the warm tree cannot hold the commit, or a step cannot start
@@ -1019,109 +912,578 @@ class Gate:
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
         is_stacked = candidate.commit != candidate.head and git.parent(self.tree, candidate.commit) != candidate.head
-        presets = self._parse_presets(based)
-        uncompiled = [path for path in candidate.changed if not is_compiled_change(path)]
-        if touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled)):
-            presets += [item.name for item in CONFIGURATIONS if item.is_parse]
-        counted = counted_ledgers(self.tree)
-        for name in sorted({item for listed in counted.values() for item in listed}):
-            if name not in BY_LEDGER_NAME:
-                check_report.write_line(f"loop land: the host does not build the configuration {name} of a ledger")
-        selected = select(candidate.changed, presets, self.is_every)
-        plan = tuple(Run(item, Mode.PARSE if item.is_parse else Mode.FULL) for item in selected)
-        others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
-        shown = " ".join(item.name for item in selected)
-        rest = f", and then the tests of the change in {' '.join(item.name for item in others)}" if others else ""
-        check_report.write_line(
-            f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest}, logs in {self.logs}"
-        )
-        ran: list[str] = []
-        spent: list[float] = []
-        kept: list[str] = []
-
-        def run_of(run: Run, is_again: bool) -> list[str]:
-            """Run one configuration of the plan, or its tests again after THE FALLS, and give each problem."""
-            configuration = run.configuration
-            if configuration.is_parse and is_again:
-                return self._checked(configuration, COUNTED_RULES, environment)
-            if configuration.is_parse:
-                return self._run_parse(configuration, counted, environment, based)
-            problems = self._run_objects(
-                configuration,
-                {} if is_again else counted,
-                environment,
-                based,
-                self.loop_words(run, is_retry or is_again),
-                () if is_again else candidate.keeps,
-                kept,
-            )
-            if is_stacked and not problems:
-                problems = self._checked(configuration, (STACKED_RULE,), based)
-            return problems
-
-        def run_each(runs: Sequence[Run], is_again: bool) -> list[str]:
-            """Run some configurations in the heavy step of the caller, keep the name and the time of each, and give
-            each problem."""
-            for run in runs:
-                name = run.configuration.name
-                check_report.write_line(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
-                began = time.monotonic()
-                problems = run_of(run, is_again)
-                spent.append(round(time.monotonic() - began, 1))
-                check_report.write_line(f"loop land: {name}: {spent[-1]:.0f} s in the heavy step")
-                ran.append(name)
-                if problems:
-                    return problems
-            return []
-
-        def step(runs: Sequence[Run], is_again: bool, tail: Callable[[], Sequence[Run]] | None = None) -> list[str]:
-            """Run some configurations in one heavy step, then the runs that `tail` gives, and give each problem.
-
-            The step calls `tail` after the configurations, because the plan of the other configurations reads the
-            build of ALWAYS after its run (THE SELECTION).
-            """
-            with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root, read=self.read, pause=self.pause, is_gate_step=True):
-                problems = run_each(runs, is_again)
-                return problems if problems or tail is None else run_each(tail(), is_again)
-
-        def stopped(problems: Sequence[str]) -> Verdict:
-            """Return the verdict of a run that a configuration with a problem stopped."""
-            elapsed = time.monotonic() - started
-            return Verdict(
-                tuple(ran),
-                tuple(problems),
-                elapsed,
-                tuple(spent),
-                candidate.commit,
-                logs=str(self.logs),
-                kept=tuple(kept),
-            )
-
-        *first, last = plan
-        for run in first:
-            problems = step((run,), False)
-            if problems:
-                return stopped(problems)
-        problems = step((last,), False, lambda: self.other_plan(candidate, others))
-        if problems:
-            return stopped(problems)
-        final, ledgers = self._fold(candidate, environment)
-        if ledgers:
+        others: tuple[Configuration, ...] = ()
+        counted: dict[str, tuple[str, ...]] = {}
+        is_each = True
+        if candidate.focus:
+            plan = focused_runs(candidate.focus)
+            shown = " ".join(run.configuration.name + "".join(f" {name}" for name in run.names) for run in plan)
             check_report.write_line(
-                f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit {final[:9]}, "
-                f"and each configuration of the run runs again"
+                f"loop land: the run of the base at {candidate.commit[:9]} runs {shown}, logs in {self.logs}"
             )
-            # The checks of the parse configurations read kept reports, and they run in the first heavy step.
-            parses = tuple(run for run in plan if run.configuration.is_parse)
-            steps: list[tuple[Run, ...]] = [(run,) for run in plan if not run.configuration.is_parse]
-            steps[0] = (*parses, *steps[0])
-            for index, runs in enumerate(steps):
-                is_last = index == len(steps) - 1
-                problems = step(runs, True, (lambda: self.other_plan(candidate, others, ledgers)) if is_last else None)
-                if problems:
-                    break
-        elapsed = time.monotonic() - started
-        return Verdict(tuple(ran), tuple(problems), elapsed, tuple(spent), final, ledgers, str(self.logs), tuple(kept))
+        else:
+            presets = self._parse_presets(based)
+            uncompiled = [path for path in candidate.changed if not is_compiled_change(path)]
+            if touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled)):
+                presets += [item.name for item in CONFIGURATIONS if item.is_parse]
+            counted = counted_ledgers(self.tree)
+            for name in sorted({item for listed in counted.values() for item in listed}):
+                if name not in BY_LEDGER_NAME:
+                    check_report.write_line(f"loop land: the host does not build the configuration {name} of a ledger")
+            selected = select(candidate.changed, presets, self.is_every)
+            plan = tuple(Run(item, Mode.PARSE if item.is_parse else Mode.FULL) for item in selected)
+            others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
+            is_each = self.changes_each(candidate) if others else True
+            shown = " ".join(item.name for item in selected)
+            rest = f", and the tests of the change in {' '.join(item.name for item in others)}" if others else ""
+            check_report.write_line(
+                f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest} at the same time, logs in "
+                f"{self.logs}"
+            )
+        try:
+            with (
+                heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root, read=self.read, pause=self.pause, is_gate_step=True),
+                jobserver.serving(self.jobs) as server,
+                jobserver.connected(server.path) as client,
+            ):
+                flags = {jobserver.VARIABLE: server.makeflags}
+                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, counted, is_stacked)
+                if is_each:
+                    step.always_ready.set()
+
+                def first_plan() -> tuple[Run, ...]:
+                    """Return the runs of the other configurations of the first round."""
+                    return self.other_plan(candidate, others, (), is_each)
+
+                outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
+                step.require_problem(outcomes)
+                final: str = candidate.commit
+                ledgers: tuple[str, ...] = ()
+                if not candidate.focus and not any(item.problems for item in outcomes):
+                    final, ledgers = step.fold()
+                if ledgers:
+                    check_report.write_line(
+                        f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit "
+                        f"{final[:9]}, and each configuration of the run runs again"
+                    )
+                    is_each_again = self.changes_each(candidate, ledgers) if others else True
+
+                    def again_plan() -> tuple[Run, ...]:
+                        """Return the runs of the other configurations of the round after the fold."""
+                        return self.other_plan(candidate, others, ledgers, is_each_again)
+
+                    outcomes += step.run_all(plan, again_plan if others else None, True, is_retry)
+                    step.require_problem(outcomes)
+                kept = tuple(step.kept)
+        except jobserver.JobserverError as problem:
+            raise GateError(str(problem)) from None
+        ended = [item for item in outcomes if not item.is_stopped]
+        return Verdict(
+            tuple(item.name for item in ended),
+            tuple(problem for item in outcomes for problem in item.problems),
+            time.monotonic() - started,
+            tuple(item.seconds for item in ended),
+            final,
+            ledgers,
+            str(self.logs),
+            kept,
+            tuple(Focus(item.name, item.red) for item in outcomes if item.problems),
+        )
+
+
+# ── The heavy step ─────────────────────────────────────────────────────────
+
+
+class Step:
+    """The work of one heavy step of a check: its commands, its threads, its stop event and the locks of its rules.
+
+    `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
+    the base of the change (THE RUN OF A CONFIGURATION).  `always_ready` tells that the build of ALWAYS holds the
+    configure of the change (THE THREADS).  `kept` receives each row that a rule of `--keep` raised (THE KEPT ROWS).
+    """
+
+    __slots__ = (
+        "_locks",
+        "_locks_guard",
+        "_said",
+        "always_ready",
+        "based",
+        "candidate",
+        "client",
+        "counted",
+        "environment",
+        "gate",
+        "is_stacked",
+        "kept",
+        "stop",
+    )
+
+    def __init__(
+        self,
+        gate: Gate,
+        candidate: Candidate,
+        environment: Mapping[str, str],
+        based: Mapping[str, str],
+        client: jobserver.Client,
+        counted: Mapping[str, Sequence[str]],
+        is_stacked: bool,
+    ) -> None:
+        """Keep the gate, the candidate, the two environments, the client of the jobserver and the counted rules."""
+        self.gate = gate
+        self.candidate = candidate
+        self.environment = dict(environment)
+        self.based = dict(based)
+        self.client = client
+        self.counted = counted
+        self.is_stacked = is_stacked
+        self.stop = threading.Event()
+        self.always_ready = threading.Event()
+        self.kept: list[str] = []
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+        self._said = threading.Lock()
+
+    def say(self, text: str) -> None:
+        """Write one line of the gate, with no line of a different thread in it."""
+        with self._said:
+            check_report.write_line(text)
+
+    def rule_lock(self, rule: str) -> threading.Lock:
+        """Return the lock of the writes of a rule in the heavy step (THE LOCKS OF THE LEDGERS)."""
+        with self._locks_guard:
+            return self._locks.setdefault(rule, threading.Lock())
+
+    def concurrently[Item, Result](self, items: Sequence[Item], work: Callable[[Item], Result]) -> list[Result]:
+        """Run the work of each item in a thread of its own, and return the results in the sequence of the items.
+
+        An exception of a thread sets the stop event immediately.  After each thread ended, the first exception that is
+        not Stopped goes to the caller, and Stopped goes only when each exception is Stopped.  A Stopped of a thread that
+        a different error stopped then does not hide that error (THE STOP).  The pool has at most proc.DEFAULT_JOBS
+        threads.  Each caller gives fewer items.  Then each item gets a thread of its own, and no item waits for a
+        different item.  Complexity: one thread for each item.
+        """
+        from concurrent.futures import ThreadPoolExecutor, wait
+
+        def guarded(item: Item) -> Result:
+            """Do the work of one item, and set the stop event on an exception."""
+            try:
+                return work(item)
+            except BaseException:
+                self.stop.set()
+                raise
+
+        if not items:
+            return []
+        with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(items))) as pool:
+            futures = [pool.submit(guarded, item) for item in items]
+            try:
+                wait(futures)
+            except BaseException:
+                self.stop.set()
+                raise
+        errors = [error for future in futures if (error := future.exception()) is not None]
+        for error in errors:
+            if not isinstance(error, Stopped):
+                raise error
+        if errors:
+            raise errors[0]
+        return [future.result() for future in futures]
+
+    def run_logged(self, command: list[str], log: str, environment: Mapping[str, str], timeout_s: float) -> int:
+        """Run one command in the warm tree with its two outputs in a log, in one slot of the jobserver, and give its exit.
+
+        A command that runs longer than its limit gives the exit of its end.  The command looks at the stop event each
+        STOP_POLL_S seconds (THE STOP).
+
+        Raises:
+            Stopped: If the stop event is set before the command starts, or while it runs
+            GateError: If the program cannot start
+        """
+        logs = self.gate.logs
+        logs.mkdir(parents=True, exist_ok=True)
+        command_line = proc.Command(
+            command,
+            timeout_s=timeout_s,
+            cwd=self.gate.tree,
+            env=dict(environment),
+            stdout=logs / log,
+            stderr=proc.Output.MERGE,
+            grace_s=STOP_GRACE_S,
+            stop=proc.Stop.INTERRUPT,
+        )
+        with self.client.held(self.stop) as is_held:
+            if not is_held:
+                raise Stopped
+            try:
+                running = proc.start(command_line)
+            except proc.ToolFailed as problem:
+                raise GateError(f"{command[0]} cannot run: {problem}") from None
+            try:
+                completed = running.poll(STOP_POLL_S)
+                while completed is None:
+                    if self.stop.is_set():
+                        running.stop()
+                        raise Stopped
+                    completed = running.poll(STOP_POLL_S)
+            except proc.TimedOut as problem:
+                return problem.completed.exit if problem.completed is not None else ExitCode.TOOL_FAILED
+            return completed.exit
+
+    def configure(self, configuration: Configuration) -> str | None:
+        """Configure the build directory of a configuration when it has no graph of Ninja, and give a problem."""
+        build = build_directory(self.gate.tree, configuration)
+        if ninja_reader.graph_file(build).is_file():
+            return None
+        log = f"{configuration.name}.configure.log"
+        if self.run_logged(configure_words(self.gate.tree, configuration), log, self.environment, CONFIGURE_S) != 0:
+            return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
+        return None
+
+    def regenerate(self, configuration: Configuration) -> str | None:
+        """Build the target build.ninja of the build of a configuration, and give a problem (THE THREADS).
+
+        The build configures the build directory again when the change touches its configure.  It gets no -j, because
+        ninja obeys the jobserver only with no -j (THE JOBSERVER).
+
+        Raises:
+            GateError: If the CMake cache of the build names no cmake
+        """
+        build = build_directory(self.gate.tree, configuration)
+        try:
+            cmake = cmake_pin.configured_program(build, "cmake")
+        except cmake_pin.PinError as problem:
+            raise GateError(str(problem)) from None
+        log = f"{configuration.name}.regenerate.log"
+        command = [cmake, "--build", str(build), "--target", ninja_reader.GRAPH_NAME]
+        if self.run_logged(command, log, self.environment, CONFIGURE_S) != 0:
+            return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
+        return None
+
+    def checked(self, configuration: Configuration, rules: Sequence[str], environment: Mapping[str, str]) -> list[str]:
+        """Run `guard check --build-dir` of each rule on a build at the same time, and give a problem for each exit other
+        than 0 or 77."""
+        build = build_directory(self.gate.tree, configuration)
+
+        def check_one(rule: str) -> str | None:
+            """Run the check of one rule, and give its problem or None."""
+            log = f"{configuration.name}.check-{rule}.log"
+            command = [*self.gate.master("guard"), "check", "--rule", rule, "--build-dir", str(build)]
+            status = self.run_logged(command, log, environment, proc.TOOL_S)
+            if status in (ExitCode.OK, ExitCode.SKIPPED):
+                return None
+            return f"{configuration.name}: the rule {rule} gives findings, see {self.gate.logs / log}"
+
+        return [problem for problem in self.concurrently(list(rules), check_one) if problem is not None]
+
+    def write_falls(self, configuration: Configuration, counted: Mapping[str, Sequence[str]]) -> bool:
+        """Run `guard write` of each counted rule with a ledger that holds a configuration, at the same time (THE FALLS).
+
+        Each write gets the environment with the base of the change, and it holds the lock of its rule (THE LOCKS OF THE
+        LEDGERS).  A write that refuses a count above its row exits 1, and the check of the rule keeps that count as
+        its error.  Return True when a rule holds the configuration.
+        """
+        build = build_directory(self.gate.tree, configuration)
+        rules = holding(counted, configuration)
+
+        def write_one(rule: str) -> None:
+            """Write the ledger of one rule with the lock of the rule."""
+            log = f"{configuration.name}.write-{rule}.log"
+            command = [*self.gate.master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
+            with self.rule_lock(rule):
+                status = self.run_logged(command, log, self.based, proc.TOOL_S)
+            self.say(f"loop land: {configuration.name}: the write of {rule} exits {status}")
+
+        self.concurrently(rules, write_one)
+        return bool(rules)
+
+    def checked_falls(
+        self, configuration: Configuration, rules: Sequence[str], counted: Mapping[str, Sequence[str]]
+    ) -> list[str]:
+        """Run the checks of some rules on a build, and after a failure THE FALLS and the checks again."""
+        problems = self.checked(configuration, rules, self.environment)
+        if problems and self.write_falls(configuration, counted):
+            problems = self.checked(configuration, rules, self.environment)
+        return problems
+
+    def write_history(self) -> None:
+        """Write the ledger of the rule history of the warm tree in the mode lower (THE FALLS).
+
+        The write removes each row that admits nothing.  A write that refuses a finding exits 1 and writes nothing, and
+        the test of the rule then keeps that finding as its error.  A tree with no rule history in its registry gets no
+        write.
+
+        Raises:
+            GateError: If the registry of the warm tree does not read
+        """
+        from assay.guard.engines.meta import history
+
+        tree = self.gate.tree
+        try:
+            registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
+        except (OSError, ValueError) as problem:
+            raise GateError(f"the registry of {tree} does not read: {problem}") from None
+        if history.RULE not in registry.rules:
+            return
+        command = [*self.gate.master("guard"), "write", "--rule", history.RULE, "--root", str(tree)]
+        status = self.run_logged(command, f"write-{history.RULE}.log", self.environment, proc.TOOL_S)
+        self.say(f"loop land: the write of {history.RULE} exits {status}")
+
+    def fold(self) -> tuple[str, tuple[str, ...]]:
+        """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
+
+        A change of a ledger first gets the write of the ledger of the rule history (write_history()).  The warm tree
+        moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
+
+        Raises:
+            GateError: If the registry of the warm tree does not read
+            git.GitError: If a git command fails
+        """
+        tree = self.gate.tree
+        if not git.work_changes(tree, "HEAD", [LEDGER_PREFIX]):
+            return self.candidate.commit, ()
+        self.write_history()
+        ledgers = tuple(sorted(git.work_changes(tree, "HEAD", [LEDGER_PREFIX])))
+        files = {name: (tree / name).read_bytes() if (tree / name).is_file() else None for name in ledgers}
+        final = git.replaced_commit(self.gate.root, self.candidate.commit, files)
+        move_tree(self.gate.root, tree, final)
+        return final, ledgers
+
+    def red_alone(self, configuration: Configuration, names: Sequence[str]) -> list[str]:
+        """Run each test alone, one at a time, and return the names of the tests that are red alone too.
+
+        Raises:
+            GateError: If the CMake cache of the build names no ctest
+        """
+        if not names:
+            return []
+        build = build_directory(self.gate.tree, configuration)
+        logs = self.gate.logs
+        selection = logs / f"{configuration.name}.alone.txt"
+        report = logs / f"{configuration.name}.alone.junit.xml"
+        try:
+            ctest = cmake_pin.configured_program(build, "ctest")
+        except cmake_pin.PinError as problem:
+            raise GateError(str(problem)) from None
+        logs.mkdir(parents=True, exist_ok=True)
+        red: list[str] = []
+        for name in names:
+            selection.write_text(f"{name}\n", encoding="utf-8")
+            report.unlink(missing_ok=True)
+            command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection)]
+            command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
+            self.run_logged(command, f"{configuration.name}.alone.{name}.log", self.environment, ALONE_S)
+            try:
+                status = ctest_reader.results(report).get(name, ctest_reader.TestStatus.NOTRUN)
+            except ctest_reader.CtestError:
+                status = ctest_reader.TestStatus.NOTRUN
+            if status in RED:
+                red.append(name)
+        return red
+
+    def run_parse(self, configuration: Configuration, counted: Mapping[str, Sequence[str]]) -> list[str]:
+        """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
+        problem = self.configure(configuration)
+        if problem is not None:
+            return [problem]
+        build = build_directory(self.gate.tree, configuration)
+        log = f"{configuration.name}.syntax.log"
+        command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.gate.jobs)]
+        if self.run_logged(command, log, self.environment, TEST_RUN_S) != 0:
+            return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
+        return self.checked_falls(configuration, COUNTED_RULES, counted)
+
+    def write_keeps(self, configuration: Configuration, keeps: Sequence[Keep], red: Sequence[str]) -> list[str]:
+        """Write the measured value of each row of each rule of `--keep` with a red test, and return the raised rows.
+
+        A raised row gets the reason of its `--keep` (THE KEPT ROWS).  The write holds the lock of its rule (THE LOCKS OF
+        THE LEDGERS).  A write that refuses an item exits 1, and the test of the rule keeps that item as its error.
+
+        Raises:
+            GateError: If the registry or a ledger of the warm tree does not read
+        """
+        tree = self.gate.tree
+        build = build_directory(tree, configuration)
+        raised: list[str] = []
+        for keep in keeps:
+            if guard_test_name(keep.rule) not in red:
+                continue
+            with self.rule_lock(keep.rule):
+                raised += self.write_keep(configuration, build, keep)
+        return raised
+
+    def write_keep(self, configuration: Configuration, build: Path, keep: Keep) -> list[str]:
+        """Write the measured value of each row of one rule of `--keep`, and return its raised rows (THE KEPT ROWS).
+
+        The caller holds the lock of the rule.
+
+        Raises:
+            GateError: If the registry or the ledger of the rule does not read
+        """
+        tree = self.gate.tree
+        try:
+            rule = rule_registry.load(tree / rule_registry.REGISTRY_PATH).rules[keep.rule]
+            before = rule_ledger.read(rule, tree)
+        except (OSError, ValueError, KeyError) as problem:
+            raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
+        log = f"{configuration.name}.keep-{keep.rule}.log"
+        command = [*self.gate.master("guard"), "write", "--rule", keep.rule, "--build-dir", str(build)]
+        status = self.run_logged(command, log, self.environment, proc.TOOL_S)
+        self.say(f"loop land: {configuration.name}: the write of --keep {keep.rule} exits {status}")
+        if status != ExitCode.OK:
+            return []
+        try:
+            after = rule_ledger.read(rule, tree)
+        except (OSError, ValueError) as problem:
+            raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
+        raised: list[str] = []
+        base = dict(after.base)
+        for key, entry in after.base.items():
+            old = before.base.get(key)
+            if old is None or not isinstance(entry.value, int | float) or not isinstance(old.value, int | float):
+                continue
+            if entry.value > old.value:
+                base[key] = replace(entry, reason=keep.reason)
+                values = f"from {rule_ledger.value_text(old.value)} to {rule_ledger.value_text(entry.value)}"
+                raised.append(f"{keep.rule}: {key.path} in {key.kind} {values}")
+        rule_ledger.store(replace(after, base=base), tree)
+        return raised
+
+    def run_objects(
+        self, configuration: Configuration, words: Sequence[str], is_again: bool
+    ) -> tuple[list[str], tuple[str, ...]]:
+        """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
+
+        `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold, and
+        a run with no counted rule, give a red test no write (THE FALLS).  A red test of a rule of `--keep` gets the
+        write of THE KEPT ROWS.  The run of ALWAYS first builds the target build.ninja when the other configurations
+        wait for it (THE THREADS).  The second result holds the tests that are red alone too.
+        """
+        counted: Mapping[str, Sequence[str]] = {} if is_again else self.counted
+        keeps = () if is_again else self.candidate.keeps
+        problem = self.configure(configuration)
+        if problem is not None:
+            return [problem], ()
+        if configuration.name == ALWAYS and not self.always_ready.is_set():
+            problem = self.regenerate(configuration)
+            self.always_ready.set()
+            if problem is not None:
+                return [problem], ()
+        build = build_directory(self.gate.tree, configuration)
+        report = build / affected.STATE_DIRECTORY / "junit.xml"
+        report.unlink(missing_ok=True)
+        logs = self.gate.logs
+        log = f"{configuration.name}.test.log"
+        command = [*self.gate.master("loop"), "test", str(build), "-j", str(self.gate.jobs), *words]
+        status = self.run_logged(command, log, self.environment, TEST_RUN_S)
+        statuses: dict[str, ctest_reader.TestStatus] = {}
+        if report.is_file():
+            try:
+                statuses = ctest_reader.results(report)
+            except ctest_reader.CtestError as problem_text:
+                return [f"{configuration.name}: the test report does not read: {problem_text}"], ()
+        elif status != 0:
+            return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], ()
+        red = sorted(name for name, test_status in statuses.items() if test_status in RED)
+        if status != 0 and not red:
+            return [f"{configuration.name}: `loop test` exits {status} with no red test, see {logs / log}"], ()
+        skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
+        if skipped:
+            self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
+        if red:
+            self.write_falls(configuration, counted)
+            raised = self.write_keeps(configuration, keeps, red)
+            with self._locks_guard:
+                self.kept += raised
+            self.say(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
+        still = self.red_alone(configuration, red)
+        if still:
+            return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still)
+        warnings_log = f"{configuration.name}.warnings.log"
+        warnings = [*self.gate.master("guard"), "warnings", str(build)]
+        if self.run_logged(warnings, warnings_log, self.environment, proc.TOOL_S):
+            return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], ()
+        return [], ()
+
+    def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...]]:
+        """Run one configuration, or its tests again after THE FALLS, and give each problem and the tests red alone too."""
+        configuration = run.configuration
+        if configuration.is_parse and is_again:
+            return self.checked(configuration, COUNTED_RULES, self.environment), ()
+        if configuration.is_parse:
+            return self.run_parse(configuration, self.counted), ()
+        words = self.gate.loop_words(run, is_retry or is_again)
+        problems, red = self.run_objects(configuration, words, is_again)
+        if self.is_stacked and not problems:
+            problems = self.checked(configuration, (STACKED_RULE,), self.based)
+        return problems, red
+
+    def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:
+        """Run one configuration in the thread of the caller, and give its outcome (THE THREADS, THE STOP).
+
+        A problem sets the stop event, other than in a run of the base (THE RUN OF THE BASE).  An error of the run sets
+        it too, and goes to the caller.
+        """
+        name = run.configuration.name
+        self.say(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
+        began = time.monotonic()
+        try:
+            problems, red = self.run_of(run, is_again, is_retry)
+        except Stopped:
+            seconds = round(time.monotonic() - began, 1)
+            self.say(f"loop land: {name}: the stop ends the run after {seconds:.0f} s")
+            return Outcome(name, (), (), seconds, True)
+        except BaseException:
+            self.stop.set()
+            raise
+        finally:
+            if name == ALWAYS:
+                self.always_ready.set()
+        seconds = round(time.monotonic() - began, 1)
+        self.say(f"loop land: {name}: {seconds:.0f} s in the heavy step")
+        if problems and not self.candidate.focus:
+            self.stop.set()
+        return Outcome(name, tuple(problems), red, seconds, False)
+
+    def require_problem(self, outcomes: Sequence[Outcome]) -> None:
+        """Refuse a heavy step that the stop ended with no problem of a configuration (THE STOP).
+
+        Only a problem or an error sets the stop event, and an error goes to the caller.  A set event with no problem
+        then tells of an error that did not get to the caller.  The landing then refuses the commit, and it does not
+        accept it.
+
+        Raises:
+            GateError: If the stop event is set and no outcome has a problem
+        """
+        if self.stop.is_set() and not any(item.problems for item in outcomes):
+            raise GateError("the heavy step of the gate stopped with no problem of a configuration")
+
+    def run_all(
+        self, runs: Sequence[Run], others: Callable[[], Sequence[Run]] | None, is_again: bool, is_retry: bool
+    ) -> list[Outcome]:
+        """Run each configuration at the same time, and the runs that `others` gives, and give each outcome (THE THREADS).
+
+        `others` gives the runs of the other configurations of objects.  The function calls it when the build of ALWAYS
+        holds the configure of the change.  The outcomes are in the sequence of `runs`, and then of the runs of
+        `others`.
+        """
+        later: list[Outcome] = []
+
+        def run_others() -> None:
+            """Wait for the build of ALWAYS, then run the other configurations at the same time."""
+            while not self.always_ready.wait(STOP_POLL_S):
+                if self.stop.is_set():
+                    return
+            if self.stop.is_set() or others is None:
+                return
+            later.extend(self.concurrently(others(), lambda run: self.outcome_of(run, is_again, is_retry)))
+
+        tasks: list[Callable[[], Outcome | None]] = [
+            functools.partial(self.outcome_of, run, is_again, is_retry) for run in runs
+        ]
+        if others is not None:
+            tasks.append(run_others)
+        results = self.concurrently(tasks, lambda task: task())
+        return [*(item for item in results if item is not None), *later]
 
 
 def next_run(work: Path) -> str:

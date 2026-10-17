@@ -1411,7 +1411,12 @@ def count_rows(text: str | None) -> int | None:
     rows = [line for line in lines if line and not line.startswith("#")]
     if rows[:1] != [f"format {FORMAT}"]:
         return len(rows)
-    return sum(1 for line in rows if rows_grammar.SEPARATOR in line and not is_reason_line(line))
+    # A reason row starts with REASON_WORD, because the strip removes each space before its first word.
+    return sum(
+        1
+        for line in rows
+        if rows_grammar.SEPARATOR in line and not (line.startswith(REASON_WORD) and is_reason_line(line))
+    )
 
 
 def is_reason_line(line: str) -> bool:

@@ -43,13 +43,24 @@ THE CALL OF A TEST
     file that registers the test.  The add_test in the function is not that
     call.
 
+THE MERGE OF REPORTS
+    A caller can run the tests of one selection in more than one ctest run.
+    For example, assay.loop.affected runs the layers of the property DEPENDS
+    one after the other (THE LAYERS).  Each run writes its own JUnit report.  merge_reports() writes
+    one report with each test case of the reports, in their sequence.  The
+    root of the first report is the root of the merged report.  The counts
+    of SUITE_COUNTS and the time of the root are the sums of the reports.  A
+    reader of the merged report then sees one run.
+
 WHAT THE READER GIVES
     tests() gives each registered test as a TestEntry: its name, its command,
     its properties, and the CMake file and the line of its call.  With a
     label, it gives only the tests with that label.  parse() reads the JSON of
     a listing.  results() gives the status of each test of a JUnit report
-    (THE STATUS OF A TEST).  costs() gives the last record of each test by
-    its name, as a TestRecord of assay.core.record.
+    (THE STATUS OF A TEST).  merge_reports() writes one report from the
+    reports of more than one run (THE MERGE OF REPORTS).  costs() gives the
+    last record of each test by its name, as a TestRecord of
+    assay.core.record.
 
     A file of the build directory that the reader cannot read gives a
     CtestError, which names the file and the command that writes it.
@@ -59,13 +70,18 @@ Complexity: linear in the size of the JSON, of the report and of the records.
 
 import enum
 import json
-from collections.abc import Mapping
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import paths, proc
 from assay.core import record as cost_record
 from assay.readers import cmake
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from xml.etree import ElementTree
 
 TIMEOUT_S = 300.0
 # The calls that register a test, from the innermost frame of a backtrace (THE CALL OF A TEST).
@@ -102,6 +118,10 @@ JUNIT_STATUSES = {
 SKIP_CODE_MESSAGE = "SKIP_RETURN_CODE="
 # The message of the element skipped when the output of a test agrees with its skip expression.
 SKIP_OUTPUT_MESSAGE = "SKIP_REGULAR_EXPRESSION_MATCHED"
+# The integer counts and the time of the root element testsuite of a JUnit report.  A merge adds them (THE MERGE OF
+# REPORTS).
+SUITE_COUNTS = ("tests", "failures", "disabled", "skipped")
+SUITE_TIME = "time"
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,16 +268,8 @@ def results(report: Path) -> dict[str, TestStatus]:
     Raises:
         CtestError: If the report cannot be read, is not XML, or names a status that ctest does not write
     """
-    from xml.etree import ElementTree
-
-    try:
-        root = ElementTree.parse(report).getroot()
-    except (OSError, ElementTree.ParseError) as problem:
-        raise CtestError(
-            f"the JUnit report {report} cannot be read ({problem}).  `ctest --output-junit FILE` writes it"
-        ) from None
     statuses: dict[str, TestStatus] = {}
-    for case in root.iter("testcase"):
+    for case in report_root(report).iter("testcase"):
         name = case.get("name")
         if name is None:
             continue
@@ -275,6 +287,58 @@ def results(report: Path) -> dict[str, TestStatus]:
             status = TestStatus.SKIPPED
         statuses[name] = status
     return statuses
+
+
+def report_root(report: Path) -> ElementTree.Element:
+    """Return the root element of a JUnit report that `ctest --output-junit` wrote.
+
+    Raises:
+        CtestError: If the report cannot be read or is not XML
+    """
+    from xml.etree import ElementTree
+
+    try:
+        return ElementTree.parse(report).getroot()
+    except (OSError, ElementTree.ParseError) as problem:
+        raise CtestError(
+            f"the JUnit report {report} cannot be read ({problem}).  `ctest --output-junit FILE` writes it"
+        ) from None
+
+
+def merge_reports(reports: Sequence[Path], target: Path) -> None:
+    """Write one JUnit report with each test case of the reports, in their sequence (THE MERGE OF REPORTS).
+
+    The write goes through a temporary file and a rename.  A reader then sees no half of the report.  Complexity:
+    linear in the bytes of the reports.
+
+    Raises:
+        CtestError: If the list of reports is empty, a report or a count of its root does not read, or the write gives
+            an error
+    """
+    from xml.etree import ElementTree
+
+    if not reports:
+        raise CtestError(f"the merge into {target} has no report: give one report or more")
+    roots = [report_root(report) for report in reports]
+    merged = roots[0]
+    for root in roots[1:]:
+        merged.extend(list(root.iter("testcase")))
+    try:
+        for name in SUITE_COUNTS:
+            merged.set(name, str(sum(int(root.get(name, "0")) for root in roots)))
+        merged.set(SUITE_TIME, f"{sum(float(root.get(SUITE_TIME, '0')) for root in roots):g}")
+    except ValueError as problem:
+        raise CtestError(
+            f"a count of the root of a report of {', '.join(str(report) for report in reports)} is not a number "
+            f"({problem}).  `ctest --output-junit FILE` writes each report"
+        ) from None
+    temporary = target.with_name(f".{target.name}.{os.getpid()}")
+    try:
+        ElementTree.ElementTree(merged).write(temporary, encoding="UTF-8", xml_declaration=True)
+        os.replace(temporary, target)
+    except OSError as problem:
+        temporary.unlink(missing_ok=True)
+        raise CtestError(f"the merged JUnit report {target} cannot be written: {problem}") from None
 
 
 def costs(build_dir: Path) -> dict[str, cost_record.TestRecord]:

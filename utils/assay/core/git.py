@@ -188,7 +188,7 @@ READS_NEITHER = frozenset({
     "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files",
     "hash_object", "holds_patch", "hunk_of", "index_object", "init", "moves_of", "new_file_diff", "null_separated",
     "read_diff", "run", "run_any_exit", "scratch_repository", "set_index_entries", "set_index_entry", "side_path",
-    "swap_ref", "toplevel", "write_tree",
+    "swap_ref", "toplevel", "version", "write_tree",
 })
 
 
@@ -344,6 +344,18 @@ def init(root: Path) -> None:
     if Path(resolved).resolve() != (root / ".git").resolve():
         raise NotIsolated(f"the fixture repository {root} resolves to {resolved}; the self-test stops before it "
                           f"writes to a repository that is not its own")
+
+
+def version(root: Path) -> str:
+    """Return the number of the version of the git program that runs in a tree, such as "2.53.0".
+
+    Raises:
+        GitError: If git cannot start, or its first line is not `git version NUMBER`
+    """
+    words = run(root, "--version").decode("utf-8", "replace").split()
+    if len(words) < 3 or words[:2] != ["git", "version"]:
+        raise GitError(f"`git --version` in {root} gives no version line: {' '.join(words[:4])!r}")
+    return words[2]
 
 
 def toplevel(root: Path) -> Path:

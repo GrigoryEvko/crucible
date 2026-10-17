@@ -191,10 +191,20 @@ THE SEARCH
 THE RUN OF THE BASE
     The first run of a batch can be red, also for a batch of one request.
     The gate then runs on the commit of the batch with no request, with the
-    changed paths of the batch.  It then runs the configurations of the
-    batch.  The run of the base is a retry.  `loop test` then runs only the
-    tests with an input that changed.  When that run is red too, the branch
-    is red with no request.
+    changed paths of the batch.  The verdict of the first run gives the
+    focus of each configuration with a problem.  The focus of a
+    configuration holds the tests that were red alone too, or no test for a
+    problem of a different kind.  The run of the base runs only that focus
+    (THE RUN OF THE BASE of assay.loop.gate).  It does not run each
+    configuration of the batch.  It runs the red tests alone, and each
+    configuration with a different problem in the mode of the changed
+    inputs.
+
+    A verdict with no focus, such as the verdict of a planted gate, gives a
+    run of the base of each configuration of the batch.  The run of the
+    base is a retry.  `loop test` then runs only the tests with an input
+    that changed.  When that run is red too, the branch is red with no
+    request.
 
     The problems of a run name the directory of its logs.  The batch
     compares the problems of two runs with LOGS_MARK as the replacement of
@@ -322,8 +332,9 @@ THE RECORD
     the ledgers that it wrote.
 
     It also holds the wall time, the time of each configuration in its heavy
-    step and the logs.  The work directory is the directory land of the work
-    root of assay.core.cache.
+    step and the logs.  It holds the focus of each configuration with a
+    problem too.  The work directory is the directory land of the work root
+    of assay.core.cache.
 
 THE DRIVER
     A landing runs the copy of this module in the main work tree of the
@@ -1286,12 +1297,14 @@ class BatchLanding:
         self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
         return verdict
 
-    def base_gate_run(self, changed: Sequence[str]) -> gate.Verdict:
+    def base_gate_run(self, changed: Sequence[str], focus: Sequence[gate.Focus]) -> gate.Verdict:
         """Run the gate on the commit of the batch with the changed paths of the batch, and keep the run (THE RUN OF THE BASE).
 
-        The run is a retry.  It then runs the tests of the configurations of the batch with an input that changed.
+        The run is a retry.  With a focus, it runs only the focus: the red tests and the configurations with a problem
+        of the first run.  With no focus, it runs the tests of the configurations of the batch with an input that
+        changed.
         """
-        candidate = gate.Candidate(self.base, self.base, tuple(changed))
+        candidate = gate.Candidate(self.base, self.base, tuple(changed), focus=tuple(focus))
         verdict = self.check(candidate, True)
         self.runs.append(Run(candidate, (), (), verdict))
         self.base_run = len(self.runs) - 1
@@ -1430,7 +1443,7 @@ class BatchLanding:
                 continue
             batch_run = len(self.runs) - 1
             if not accepted and red_size is None and self.base_run < 0:
-                base_verdict = self.base_gate_run(chain_changed(links))
+                base_verdict = self.base_gate_run(chain_changed(links), verdict.focus)
                 is_unrepaired = shown_problems(base_verdict) <= shown_problems(verdict)
                 if not base_verdict.is_accepted and is_unrepaired:
                     self.reject_on_red_base(pending, batch_run)

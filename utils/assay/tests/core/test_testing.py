@@ -7,7 +7,9 @@ line.  Exit 0 when each case holds, else 1.
 import contextlib
 import io
 import os
+import sys
 import tempfile
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -147,10 +149,34 @@ def program_cases(expect: testing.Expect) -> None:
     )
 
 
+def wait_cases(expect: testing.Expect) -> None:
+    """Check wait_until() (THE WAIT) and is_gone() (THE END OF A PROCESS) with short limits."""
+    calls: list[int] = []
+
+    def holds_on_third_call() -> bool:
+        """Count each call, and hold from the third call."""
+        calls.append(len(calls))
+        return len(calls) >= 3
+
+    expect(
+        "wait_until() gives True when the condition holds before the limit",
+        testing.wait_until(holds_on_third_call, 5.0, 0.001) and len(calls) >= 3,
+    )
+    started = time.monotonic()
+    is_held = testing.wait_until(lambda: False, 0.05, 0.01)
+    expect("wait_until() gives False after the limit when the condition never holds", not is_held)
+    expect("wait_until() stops at the limit", time.monotonic() - started < 2.0)
+    running = proc.start(proc.Command([sys.executable, "-c", "pass"], timeout_s=proc.QUICK_S))
+    ended = running.wait()
+    expect("is_gone() gives True for a process that ended", ended.exit == 0 and testing.is_gone(running.pid, 5.0))
+    expect("is_gone() gives False for a process that runs", not testing.is_gone(os.getpid(), 0.05))
+    expect("process_state() gives X for a process with no file of /proc", testing.process_state(-1) == "X")
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (run_cases, output_cases, compiler_cases, environment_cases, program_cases),
+        (run_cases, output_cases, compiler_cases, environment_cases, program_cases, wait_cases),
     )

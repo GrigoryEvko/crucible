@@ -69,6 +69,12 @@ A LONG RUN
     not give, as UTF-8.  Running.stop() stops the group at once, as the
     limit does.  run(command) is start(command).wait().
 
+    The method poll(within_s) does the loop for at most within_s seconds.  It
+    returns the Completed when the command ended, else None.  Between two
+    calls, the caller can look at a stop event of its own, and then call the
+    method stop().  Only the thread that started a command calls the methods
+    of its object, because the loop of the object has no lock.
+
     Each Running reads and writes its pipes in one loop with a selector, so
     no pipe can fill and stop the command.  A pidfd of the command (Linux
     5.3) tells the loop the end of the command, and the loop reaps the
@@ -480,13 +486,29 @@ class Running:
         """
         while self._completed is None:
             self._advance()
+        return self._result(self._completed)
+
+    def poll(self, within_s: float) -> Completed | None:
+        """Do the loop for at most within_s seconds, and return the result when the command ended, else None (A LONG RUN).
+
+        Raises:
+            KeyboardInterrupt: If an interrupt came in the loop (AN INTERRUPT).  The command ended first
+            TimedOut: If the command runs longer than its limit
+        """
+        until = time.monotonic() + within_s
+        while self._completed is None and time.monotonic() < until:
+            self._advance(until)
+        return None if self._completed is None else self._result(self._completed)
+
+    def _result(self, completed: Completed) -> Completed:
+        """Return the result of a command that ended, or raise the interrupt or the limit of its loop."""
         if self._was_interrupted:
             raise KeyboardInterrupt
         if self._timed_out:
             first = "SIGINT" if self.command.stop == Stop.INTERRUPT else "SIGTERM"
             raise TimedOut(f"the command `{self.command.shown()}` ran past its limit of {self.command.timeout_s:g} s, "
-                           f"so its process group got {first} and then SIGKILL", self.command, self._completed)
-        return self._completed
+                           f"so its process group got {first} and then SIGKILL", self.command, completed)
+        return completed
 
     def stop(self) -> Completed:
         """Stop the process group of the command now, as the limit does, and return the result of the command.
@@ -499,15 +521,15 @@ class Running:
             self._advance()
         return self._completed
 
-    def _advance(self) -> None:
-        """Do one step of the loop.
+    def _advance(self, until: float | None = None) -> None:
+        """Do one step of the loop, which waits at most until the monotonic time `until` when it is given.
 
         The first KeyboardInterrupt sends SIGINT to the group, and the loop
         goes on (AN INTERRUPT).  A second one, an interrupt after the limit,
         or another exception sends SIGKILL to the group, and then it goes on.
         """
         try:
-            self._step()
+            self._step(until)
         except KeyboardInterrupt:
             if self._completed is not None:
                 raise
@@ -521,8 +543,11 @@ class Running:
                 self._kill_now()
             raise
 
-    def _step(self) -> None:
-        """Send the signal that the time asks for, then do one select and handle each ready pipe and the end."""
+    def _step(self, until: float | None = None) -> None:
+        """Send the signal that the time asks for, then do one select and handle each ready pipe and the end.
+
+        The select waits at most until the monotonic time `until` when it is given.
+        """
         now = time.monotonic()
         if self._phase == RUNNING and now >= self._deadline:
             self._timed_out = True
@@ -540,6 +565,8 @@ class Running:
             wait_s = self._phase_at + self.command.grace_s - now
         else:
             wait_s = self._phase_at + DRAIN_S - now if self._reads else None
+        if until is not None:
+            wait_s = until - now if wait_s is None else min(wait_s, until - now)
         for key, _events in self._selector.select(None if wait_s is None else max(0.0, wait_s)):
             if key.fd == self._pidfd:
                 self._has_exited = True

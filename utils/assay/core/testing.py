@@ -38,6 +38,17 @@ THE PLANTED PROGRAM
     runs the Python of this process.  The mode of the file lets each user
     run it.
 
+THE WAIT
+    wait_until() looks at a condition at a constant interval, until the
+    condition holds or a limit ends.  It tells if the condition holds at
+    the end.  A case that waits for a different thread or process calls it.
+
+THE END OF A PROCESS
+    is_gone() tells if a process ended before a limit.  It reads the state
+    of the process from /proc/PID/stat.  A process with no such file, and a
+    process in the state Z or X, is gone.  init reaps an orphan that a
+    signal stopped.  Then the file of such a process goes.
+
 `guard selftest tests.core.test_testing` does a test of the module.
 """
 
@@ -45,6 +56,7 @@ import contextlib
 import io
 import os
 import sys
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
@@ -55,6 +67,11 @@ type Expect = Callable[[str, bool], None]
 type Group = Callable[[Expect], None]
 TEST_COMPILER = "ASSAY_TEST_CXX"
 COMPILER_PREFIX = "CRUCIBLE_GCC16_PREFIX"
+WAIT_LIMIT_S = 10.0
+WAIT_STEP_S = 0.02
+# The state letters of /proc/PID/stat of a process that ended.  A process with no such file gets "X" (THE END OF A
+# PROCESS).
+GONE_STATES = frozenset({"Z", "X"})
 
 
 def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
@@ -106,6 +123,30 @@ def environment_variable(name: str, value: str | None) -> Iterator[None]:
             os.environ.pop(name, None)
         else:
             os.environ[name] = saved
+
+
+def wait_until(condition: Callable[[], bool], limit_s: float = WAIT_LIMIT_S, step_s: float = WAIT_STEP_S) -> bool:
+    """Wait in steps of `step_s` seconds until a condition holds, at most for `limit_s` seconds (THE WAIT).
+
+    Return True when the condition holds at the end.  Complexity: at most limit_s / step_s calls of the condition.
+    """
+    deadline = time.monotonic() + limit_s
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(step_s)
+    return condition()
+
+
+def process_state(pid: int) -> str:
+    """Return the state letter of a process from /proc/PID/stat, or "X" with no such file (THE END OF A PROCESS)."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()[0]
+    except FileNotFoundError, ProcessLookupError, IndexError:
+        return "X"
+
+
+def is_gone(pid: int, wait_s: float = WAIT_LIMIT_S) -> bool:
+    """Tell if a process is gone or a zombie before `wait_s` seconds end (THE END OF A PROCESS)."""
+    return wait_until(lambda: process_state(pid) in GONE_STATES, wait_s)
 
 
 def captured[Result](action: Callable[[], Result]) -> tuple[Result, str]:
