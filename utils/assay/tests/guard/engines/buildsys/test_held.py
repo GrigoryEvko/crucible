@@ -19,11 +19,12 @@ from assay.guard.engines.buildsys import cost_budgets, held, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 
-# A gauge record at 192 jobs.  The wall time of the build and of the test run are each over their error threshold.
+# A gauge record at the 128 jobs of the rule compile-jobs.  The wall time of the build and of the test run are each
+# over their error threshold.
 SLOW_RECORD = (
-    '{"jobs": 192, "steps": [], "medians": {'
-    '"build": {"wall_s": 40.0, "cpu_s": 1000.0, "instructions_g": 5000.0, "worst_others_pct": 2.0}, '
-    '"tests": {"wall_s": 31.0, "cpu_s": 1000.0, "instructions_g": 10000.0, "worst_others_pct": 2.0}}}\n'
+    '{"jobs": 128, "steps": [], "medians": {'
+    '"build": {"wall_s": 45.0, "cpu_s": 1000.0, "instructions_g": 5000.0, "worst_others_pct": 2.0}, '
+    '"tests": {"wall_s": 130.0, "cpu_s": 1000.0, "instructions_g": 10000.0, "worst_others_pct": 2.0}}}\n'
 )
 BUILD_HEAD = "format 1\nkind x86_64-debug-asan\n"
 # Two links of 25 s of CPU time each, 50 s together, more than two times the planted baseline of total-link-cpu.  Two

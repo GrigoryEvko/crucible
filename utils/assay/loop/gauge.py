@@ -83,8 +83,9 @@ THE MEASURED RULES
     count of the tests changes by a few percent.
     edit-build-cpu and edit-test-cpu give a warning only when the step has an
     exact instruction count, and an error otherwise.  edit-build-wall and
-    edit-test-wall hold the gate at WALL_JOBS jobs, so they are judged only
-    in a measurement at that job count.  They are judged only when the host
+    edit-test-wall hold the gate at the job count of compile-jobs
+    (gate_jobs()), so they are judged only in a measurement at that count.
+    They are judged only when the host
     was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
     the host CPU time in the step, in each run (assay.loop.history).  Else the report gives the
     wall time and the reason, and no finding.
@@ -154,11 +155,10 @@ MARK_BITS = 62
 LONGEST_MARK = (1 << MARK_BITS) - 1
 # The IndentWidth of the .clang-format of the tree: the indent step of a statement in its block.
 INDENT_WIDTH = 4
-# The job count of the gate.  The wall rules hold the wall times of a measurement at this job count.  The default
-# job count is lower (THE JOB COUNT of assay.core.proc).  A default run judges the instructions and the CPU time,
-# and it gives the wall times with no finding.  Give --jobs 192 for the wall gate.  Also at this job count, the copy runs
-# no more compiles at one time than the depth of its pool compile (cmake/JobPools.cmake).
-WALL_JOBS = 192
+# The measured rule that gives the job count of the gate in its error threshold (gate_jobs()).  The wall rules hold the
+# wall times of a measurement at this job count.  The rule compile-jobs holds DEFAULT_JOBS equal to that count.  A run
+# with the default --jobs is then a measurement of the gate.
+GATE_JOBS_RULE = "compile-jobs"
 DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_RUNS = 3
 DEFAULT_TIMEOUT_S = 600
@@ -490,6 +490,19 @@ def median_of(results: list[StepResult]) -> Median:
                   None if None in shares else max(share for share in shares if share is not None))
 
 
+def gate_jobs(budgets: Mapping[str, check_report.Budget]) -> int:
+    """Return the job count of the gate: the error threshold of the rule compile-jobs of the registry.
+
+    Raises:
+        GaugeError: If the registry has no such rule, or if its error threshold is not an integer above 0
+    """
+    budget = budgets.get(GATE_JOBS_RULE)
+    if budget is None or not budget.error.is_integer() or budget.error < 1:
+        raise GaugeError(f"the registry gives no job count of the gate: the rule {GATE_JOBS_RULE} must have an error "
+                         "threshold that is an integer above 0")
+    return int(budget.error)
+
+
 def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], place: str, jobs: int) -> tuple[
         list[check_report.Finding], list[str]]:
     """Compare the medians of the build and the tests with their measured rules.
@@ -505,6 +518,7 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
     """
     findings: list[check_report.Finding] = []
     notes: list[str] = []
+    wall_jobs = gate_jobs(budgets)
 
     def compare(row: str, value: float, unit: str, cap_to_warning: str = "") -> None:
         budget = budgets[row]
@@ -527,9 +541,9 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
             notes.append(f"the {step} step has no exact instruction count, so {cpu_row} holds the error level")
             compare(cpu_row, median.cpu_s, "s")
         share = median.worst_others_pct
-        if jobs != WALL_JOBS:
+        if jobs != wall_jobs:
             notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: the measurement ran {jobs} jobs, and "
-                         f"{wall_row} holds the gate at {WALL_JOBS} jobs")
+                         f"{wall_row} holds the gate at the {wall_jobs} jobs of the rule {GATE_JOBS_RULE}")
         elif share is not None and share <= loop_history.QUIET_OTHERS_PCT:
             compare(wall_row, median.wall_s, "s")
         else:
@@ -1069,34 +1083,50 @@ def self_test() -> int:
     expect("median_of gives no instruction count when one run has none",
            median_of([result("b", 1, 1, 1, 5), result("b", 1, 1, 1, None)]).instructions_g is None)
 
+    # A planted job count of the gate that is not the count of the tree.  Each case then reads it from its rows.
+    planted_jobs = 24
+
     def rows(warn: float, error: float) -> dict[str, check_report.Budget]:
         names = [name for triple in STEP_ROWS.values() for name in triple]
-        return {name: check_report.Budget(name, warn, error, "u", "m") for name in names}
+        gate = check_report.Budget(GATE_JOBS_RULE, planted_jobs, planted_jobs, "jobs", "m")
+        return {**{name: check_report.Budget(name, warn, error, "u", "m") for name in names}, GATE_JOBS_RULE: gate}
 
     with check_report.github_actions(False):
         quiet = {"build": Median(20, 200, 60, 1), "tests": Median(20, 200, 60, 1)}
-        found, notes = judge(quiet, rows(10, 100), "h", WALL_JOBS)
+        tree_gate = check_report.read_budgets()[GATE_JOBS_RULE]
+        found, notes = judge(quiet, {**rows(10, 100), GATE_JOBS_RULE: tree_gate}, "h", DEFAULT_JOBS)
+        expect("a run with the default --jobs judges the wall times, at the job count of compile-jobs of the registry",
+               {"edit-build-wall", "edit-test-wall"} <= {f.check for f in found} and not notes)
+        for name, budgets in (("no rule compile-jobs", {}),
+                              ("a job count that is not an integer",
+                               {GATE_JOBS_RULE: check_report.Budget(GATE_JOBS_RULE, 1.5, 1.5, "jobs", "m")})):
+            try:
+                gate_jobs(budgets)
+                expect(f"a registry with {name} is refused", False)
+            except GaugeError:
+                expect(f"a registry with {name} is refused", True)
+        found, notes = judge(quiet, rows(10, 100), "h", planted_jobs)
         expect("on a quiet host, each value over the warning threshold gives a warning, also the wall time",
                sorted((f.check, f.level) for f in found) == sorted((name, "warning") for triple in STEP_ROWS.values()
                                                                    for name in triple) and not notes)
-        found, _ = judge(quiet, rows(10, 50), "h", WALL_JOBS)
+        found, _ = judge(quiet, rows(10, 50), "h", planted_jobs)
         levels = {f.check: f.level for f in found}
         expect("an instruction count over the error threshold is an error, and the CPU time is a warning that says why",
                levels["edit-build-instructions"] == "error" and levels["edit-build-cpu"] == "warning"
                and any("holds the error level" in f.message for f in found if f.check == "edit-build-cpu"))
         no_count = {"build": Median(20, 200, None, 1), "tests": Median(20, 200, 60, 1)}
-        found, notes = judge(no_count, rows(10, 50), "h", WALL_JOBS)
+        found, notes = judge(no_count, rows(10, 50), "h", planted_jobs)
         expect("with no instruction count, the CPU time holds the error level",
                {f.check: f.level for f in found}["edit-build-cpu"] == "error"
                and any("no exact instruction count" in note for note in notes))
         busy = {"build": Median(20, 1, 1, 25), "tests": Median(20, 1, 1, None)}
-        found, notes = judge(busy, rows(10, 15), "h", WALL_JOBS)
+        found, notes = judge(busy, rows(10, 15), "h", planted_jobs)
         expect("on a busy host, the wall time gives no finding and a note",
                not found and len([note for note in notes if "is not judged" in note]) == 2)
-        found, notes = judge(quiet, rows(10, 15), "h", WALL_JOBS // 8)
+        found, notes = judge(quiet, rows(10, 15), "h", planted_jobs // 8)
         expect("at another job count, the wall time gives no finding and a note that names the job count",
                not any(f.check.endswith("-wall") for f in found)
-               and len([note for note in notes if f"{WALL_JOBS // 8} jobs" in note]) == 2)
+               and len([note for note in notes if f"{planted_jobs // 8} jobs" in note]) == 2)
         other_rows = {row: check_report.Budget(row, limit, limit, "u", "m")
                       for row, limit in (("configure-time", 10.0), ("noop-build-time", 0.5),
                                          ("build-peak-memory", 100.0), ("plugin-build-time", 6.0))}
@@ -1115,7 +1145,7 @@ def self_test() -> int:
                "fast build with nothing to do",
                sorted(f.check for f in found) == ["build-peak-memory", "configure-time"]
                and all(f.level == "warning" for f in found) and any("120 GB" in f.message for f in found))
-        record = {"jobs": WALL_JOBS, "steps": [asdict(step) for step in steps],
+        record = {"jobs": planted_jobs, "steps": [asdict(step) for step in steps],
                   "medians": {name: asdict(median) for name, median in quiet.items()}}
         parsed = parsed_record(json.loads(json.dumps(record)), "the record")
         found, notes = judged_record(parsed, {**rows(10, 100), **other_rows}, "h")
@@ -1123,7 +1153,7 @@ def self_test() -> int:
                sorted(f.check for f in found) == sorted(["build-peak-memory", "configure-time",
                                                          *(name for triple in STEP_ROWS.values() for name in triple)])
                and not notes)
-        direct, _ = judged_record(GaugeRecord(WALL_JOBS, tuple(steps), quiet), {**rows(10, 100), **other_rows}, "h")
+        direct, _ = judged_record(GaugeRecord(planted_jobs, tuple(steps), quiet), {**rows(10, 100), **other_rows}, "h")
         expect("a record that went through JSON gives the findings of the record of the run",
                [item.text() for item in found] == [item.text() for item in direct])
         for name, broken in (("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
@@ -1139,7 +1169,7 @@ def self_test() -> int:
         line = json.dumps(record)
         records.write_text(f"{line}\n\n{line}\n", encoding="utf-8")
         expect("read_records gives each record of the file and skips an empty line",
-               [item.jobs for item in read_records(records)] == [WALL_JOBS, WALL_JOBS])
+               [item.jobs for item in read_records(records)] == [planted_jobs, planted_jobs])
         for name, text in (("a line that is not JSON", "{\n"), ("a line that is not an object", "[1]\n")):
             records.write_text(text, encoding="utf-8")
             try:
