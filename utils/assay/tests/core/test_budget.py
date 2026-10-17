@@ -5,14 +5,15 @@ value against planted thresholds and planted rows.  Exit 0 when each case
 holds, else 1.
 """
 
+import os
 import tempfile
 from pathlib import Path
 
 from assay.core import budget as cost_budget
+from assay.core import cache, cache_root, testing
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core import testing
 
 BUDGET = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
 SPACE = check_report.Budget("compile-cpu", 10.0, 20.0, "s", "a planted time")
@@ -267,6 +268,38 @@ def rows_cases(expect: testing.Expect) -> None:
         expect("row_of() gives the row of the configuration first", found is not None and found.value == 7.0)
 
 
+def memo_cases(expect: testing.Expect) -> None:
+    """Hold the cache of the rows of a ledger (THE MEMO OF THE ROWS of assay.core.meter)."""
+    rule, form = "compile-memory", cost_meter.ITEM_OUTPUT
+    with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
+        ledger = str(Path(scratch) / "compile-memory.txt")
+        cost_meter.write_kind_rows(rule, form, ledger, {("k", "unit.o"): (5.0, "a planted reason")}, "# planted\n")
+        with cache.scratch_root():
+            memo = cost_meter.rows_memo(rule, form, ledger)
+            first, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
+            expect(
+                "a ledger that changed in the settle period gives its rows, and no entry",
+                memo is not None
+                and not memo[1]
+                and first == {("k", "unit.o"): (4, 5.0, "a planted reason")}
+                and not os.path.exists(memo[0]),
+            )
+            settled = testing.wait_until(lambda: (cost_meter.rows_memo(rule, form, ledger) or ("", False))[1], 2.0)
+            entry, _ = cost_meter.rows_memo(rule, form, ledger) or ("", False)
+            cost_meter.read_kind_rows(rule, form, ledger)
+            expect("a settled ledger gets an entry of its rows", settled and os.path.isfile(entry))
+            cost_meter.write_rows_memo(entry, {("k", "unit.o"): (3, 9.0, "the planted entry")}, [])
+            held, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
+            expect("a read takes the rows of the entry with no parse", held[("k", "unit.o")][1] == 9.0)
+            cost_meter.write_kind_rows(rule, form, ledger, {("k", "unit.o"): (6.0, "a new reason")}, "# planted\n")
+            fresh, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
+            expect("a changed ledger gets a new key, and its rows", fresh[("k", "unit.o")][1:] == (6.0, "a new reason"))
+        with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
+            expect("with the caches off, no entry", cost_meter.rows_memo(rule, form, ledger) is None)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (verdict_cases, row_cases, judge_cases, rows_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (verdict_cases, row_cases, judge_cases, rows_cases, memo_cases)
+    )

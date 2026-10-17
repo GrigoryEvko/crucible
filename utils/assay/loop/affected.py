@@ -324,7 +324,8 @@ THE SHARED STORE
       * --all runs each test, and it writes the store after each run with the
         status 0.
       * hold_bound() of assay.core.cache keeps the store in its row of LIMITS
-        after each call.
+        after each call.  It also keeps the cache of the rows of the measured
+        ledgers there (THE MEMO OF THE ROWS of assay.core.meter).
     The judge of the launcher is lenient in a build of a kind with tsan.  A
     ledger row keeps a test only in its configuration.  The result of such a
     build then stands for each build directory with the same key.  The key of
@@ -1771,6 +1772,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         update_state(state, planner, decisions, statuses, tests)
         save_state(state_path, state)
         planner.store.hold_bound()
+        rows_cache = cache.cache_root(cost_meter.ROWS_CACHE)
+        if rows_cache is not None:
+            cache.hold_bound(rows_cache, cache.LIMITS[cost_meter.ROWS_CACHE])
         counts = Counter(statuses.get(name, ctest_reader.TestStatus.NOTRUN) for name in selected)
         passed, failed = counts[ctest_reader.TestStatus.RUN], counts[ctest_reader.TestStatus.FAIL]
         skip_code = counts[ctest_reader.TestStatus.SKIPPED]

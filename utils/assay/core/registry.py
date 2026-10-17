@@ -574,16 +574,29 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
     return Registry(shown, rules, tuple(jobs), tuple(paths), tuple(terms)), problems
 
 
+# The text, the shown name and the registry of the last load() of this process (load()).
+_last_load: tuple[str, str, Registry] | None = None
+
+
 def load(path: Path = REGISTRY, shown: str = REGISTRY_PATH) -> Registry:
     """Read the registry, and refuse its first problem.
+
+    A load of the same text with the same shown name gives the registry of the last load of the process with no parse.
+    The launcher of a test then parses the registry one time for the three measured rules of a test.  In the gate of
+    a1df30f04, each of 12,629 processes parsed it three times.
 
     Raises:
         rows_grammar.RowsError: If a row does not obey the grammar or the schema
         OSError: If the file cannot be read
     """
-    registry, problems = examine(path.read_text(encoding="utf-8"), shown)
+    global _last_load
+    text = path.read_text(encoding="utf-8")
+    if _last_load is not None and _last_load[0] == text and _last_load[1] == shown:
+        return _last_load[2]
+    registry, problems = examine(text, shown)
     if problems:
         raise problems[0]
+    _last_load = (text, shown, registry)
     return registry
 
 
