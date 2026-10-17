@@ -204,6 +204,33 @@ THE LAYERS
     last layer, `ctest --rerun-failed` then does not see a failure of an
     earlier layer.  The merged junit.xml holds each failure.
 
+THE SHARDS
+    One ctest run starts its tests one after the other.  On 2026-10-17, one
+    ctest run started approximately 250 tests in each second at the maximum.
+    It ran the 2,151 negative fixtures of the Debug build in 8.4 s, with 10
+    to 20 busy cores.  Four runs of a quarter each took 2.1 s, and eight
+    runs took 1.4 s, with the same CPU time.  A fixture that the result
+    store holds is a short test.  The start of each test then held the end
+    of the run.
+
+    For this reason, the script divides a layer of two tests or more for
+    each shard into SHARDS ctest runs at the same time (test_shards()).
+    Each group of tests that DEPENDS connects goes into one shard, by the
+    CRC-32 of the first name of the group.  A test then stays in the same
+    shard from one call to the next.  Each run has a test directory of its
+    own in BUILD_DIR/affected-tests/shards/.  Its CTestTestfile.cmake reads
+    the tests of the build directory with subdirs().  ctest writes its cost
+    data and its log into the test directory.  For this reason, no two runs
+    write the same file, and each shard keeps the cost data of its tests.
+
+    A shard directory with no cost data gets a copy of the cost data of the
+    build.  The runs use one jobserver (THE JOBSERVER).  Each ctest run uses
+    one job of its own.  For this reason, the first run takes the implicit
+    slot of the script, and each other run takes a token.  With no jobserver
+    in MAKEFLAGS, the script makes one of the jobs of the call.  ctest keeps
+    a test with the property RUN_SERIAL apart only from the tests of its own
+    run.  Such a test then goes into a last layer of its own (serial_last()).
+
 THE JOBSERVER
     A parent make, or a different program that operates a GNU make jobserver,
     gives its children the variable MAKEFLAGS with a word
@@ -332,6 +359,7 @@ import struct
 import sys
 import tempfile
 import threading
+import zlib
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -384,6 +412,12 @@ FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 # The property that names the tests that a test runs after (THE LAYERS).
 DEPENDS_PROPERTY = "DEPENDS"
+# The property of a test that runs alone (THE SHARDS).
+SERIAL_PROPERTY = "RUN_SERIAL"
+# The ctest runs of one layer at the same time, and the directory of their test directories in the state directory
+# (THE SHARDS).
+SHARDS = 8
+SHARD_DIRECTORY = "shards"
 # The variable that gives `cmake --build` a job count when its command gives none (THE JOBSERVER).
 BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
@@ -1295,12 +1329,127 @@ def test_layers(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], job
     return [layer for layer in layers if layer]
 
 
-def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: int,
-              ctest_arguments: list[str]) -> tuple[int, dict[str, ctest_reader.TestStatus]]:
-    """Run each layer of the selected tests in a ctest run of its own, one run after the other (THE LAYERS).
+def serial_last(tests: tuple[ctest_reader.TestEntry, ...], layers: list[list[str]]) -> list[list[str]]:
+    """Move each test with the property RUN_SERIAL to a last layer of its own (THE SHARDS).
 
-    Return the first exit code of a run that is not 0, or 0, and the status of each test of the merged JUnit report.
-    A run that gives no report makes the exit code 2 when it was 0.  With no report at all, the statuses are empty.
+    The shards of a layer are different ctest runs, and ctest keeps a RUN_SERIAL test apart only from the tests of its
+    own run.  The last layer then runs in one ctest run, after each other layer.  Complexity: O(n) for n tests.
+    """
+    serial = {test.name for test in tests if any(word.upper() in TRUE_WORDS for word in test.words_of(SERIAL_PROPERTY))}
+    kept = [[name for name in layer if name not in serial] for layer in layers]
+    last = [name for layer in layers for name in layer if name in serial]
+    return [layer for layer in [*kept, last] if layer]
+
+
+def test_shards(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], count: int) -> dict[int, list[str]]:
+    """Return the tests of one layer in at most `count` shards, by the number of each shard (THE SHARDS).
+
+    Each group of tests that DEPENDS connects goes into one shard.  ctest then runs a dependency and its test in the
+    same run.  The CRC-32 of the first name of the group in the sequence of `names` gives the shard.  Each shard keeps
+    the sequence of `names`, and an empty shard is not in the result.  Complexity: O(n + e) for n tests and e names of
+    DEPENDS between them, with path compression.
+    """
+    chosen = set(names)
+    parent = {name: name for name in names}
+
+    def group_of(name: str) -> str:
+        """Return the representative of the group of a test, and compress the path to it."""
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
+
+    for test in tests:
+        if test.name not in chosen:
+            continue
+        for dependency in test.words_of(DEPENDS_PROPERTY):
+            if dependency in chosen and dependency != test.name:
+                parent[group_of(dependency)] = group_of(test.name)
+    first: dict[str, str] = {}
+    for name in names:
+        first.setdefault(group_of(name), name)
+    shards: dict[int, list[str]] = {}
+    for name in names:
+        shards.setdefault(zlib.crc32(first[group_of(name)].encode("utf-8")) % count, []).append(name)
+    return dict(sorted(shards.items()))
+
+
+def shard_directory(build_dir: Path, state_dir: Path, number: int) -> Path:
+    """Return the test directory of one shard, in which ctest reads the tests of the build directory (THE SHARDS).
+
+    Raises:
+        RunnerError: If the test directory cannot be written
+    """
+    directory = state_dir / SHARD_DIRECTORY / str(number)
+    try:
+        ctest_reader.mirror_tests(build_dir, directory)
+    except ctest_reader.CtestError as problem:
+        raise RunnerError(str(problem)) from None
+    return directory
+
+
+def give_slots(client: jobserver.Client, slots: list[jobserver.Slot]) -> None:
+    """Give each slot of the shards back to the jobserver (THE SHARDS)."""
+    for slot in slots:
+        client.give(slot)
+
+
+def run_shards(commands: list[list[str]], jobs: int) -> list[int]:
+    """Run the ctest runs of one layer at the same time with one jobserver, and return the exit code of each (THE SHARDS).
+
+    Each run takes one slot of the jobserver that MAKEFLAGS names.  The first run takes the implicit slot of this
+    process, and each other run takes a token.  With no such jobserver, the script makes one of `jobs` jobs for the
+    runs.  A run that ends on its time limit gives the exit code of that end.  An exception in a wait stops each other
+    run.
+
+    Raises:
+        RunnerError: If a program cannot start, or the jobserver cannot be used
+    """
+    running: list[proc.Running] = []
+    codes: list[int] = []
+    try:
+        with contextlib.ExitStack() as stack:
+            environment = proc.environment()
+            path = jobserver.client_path(environment)
+            if path is None:
+                server = stack.enter_context(jobserver.serving(jobs))
+                path = server.path
+                environment = {**environment, jobserver.VARIABLE: server.makeflags}
+            client = stack.enter_context(jobserver.connected(path))
+            slots: list[jobserver.Slot] = []
+            stack.callback(give_slots, client, slots)
+            for command in commands:
+                slot = client.take()
+                if slot is not None:
+                    slots.append(slot)
+                running.append(proc.start(proc.Command(command, timeout_s=proc.BUILD_S, env=environment,
+                                                       stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
+            for item in running:
+                try:
+                    codes.append(item.wait().exit)
+                except proc.TimedOut as problem:
+                    check_report.write_line(f"loop test: {problem}", is_error=True)
+                    codes.append(problem.completed.exit if problem.completed is not None else 2)
+            return codes
+    except jobserver.JobserverError as problem:
+        raise RunnerError(str(problem)) from None
+    except proc.CannotStart as problem:
+        raise RunnerError(str(problem)) from None
+    finally:
+        if len(codes) < len(running):
+            for item in running[len(codes):]:
+                item.stop()
+
+
+def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: int, ctest_arguments: list[str],
+              tests: tuple[ctest_reader.TestEntry, ...] = (),
+              shard_count: int = SHARDS) -> tuple[int, dict[str, ctest_reader.TestStatus]]:
+    """Run each layer of the selected tests, one layer after the other (THE LAYERS), in shards (THE SHARDS).
+
+    A layer of two tests or more for each shard runs as `shard_count` ctest runs at the same time, or fewer.  A smaller
+    layer runs in one ctest run of the build directory.  `tests` gives the DEPENDS of the tests.  Return the
+    first exit code of a run that is not 0, or 0, and the status of each test of the merged JUnit report.  A run that
+    gives no report makes the exit code 2 when it was 0.  With no report at all, the statuses are empty.
     """
     report = state_dir / "junit.xml"
     for stale in (*sorted(state_dir.glob("run*.txt")), *sorted(state_dir.glob("junit*.xml"))):
@@ -1309,18 +1458,30 @@ def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: i
     status = 0
     written: list[Path] = []
     for index, names in enumerate(layers):
-        selection, layer_report = state_dir / f"run-{index}.txt", state_dir / f"junit-{index}.xml"
-        write_list(selection, names)
-        command = [ctest, "--test-dir", str(build_dir), "--tests-from-file", str(selection), "--fixture-exclude-setup",
-                   guard_inputs.TREE_FIXTURE, "--output-junit", str(layer_report), f"-j{jobs}", *ctest_arguments]
-        layer_status = _run_inherited(command)
-        status = status or layer_status
-        if layer_report.is_file():
-            written.append(layer_report)
-        else:
-            check_report.write_line(f"loop test: the ctest run of layer {index} gave no JUnit report (exit code "
-                                    f"{layer_status}).")
-            status = status or 2
+        shards = test_shards(tests, names, shard_count) if len(names) >= 2 * shard_count else {0: names}
+        commands: list[list[str]] = []
+        layer_reports: list[Path] = []
+        for number, shard_names in shards.items():
+            suffix = f"{index}" if len(shards) == 1 else f"{index}-{number}"
+            selection, layer_report = state_dir / f"run-{suffix}.txt", state_dir / f"junit-{suffix}.xml"
+            write_list(selection, shard_names)
+            test_dir = build_dir if len(shards) == 1 else shard_directory(build_dir, state_dir, number)
+            commands.append([ctest, "--test-dir", str(test_dir), "--tests-from-file", str(selection),
+                             "--fixture-exclude-setup", guard_inputs.TREE_FIXTURE, "--output-junit", str(layer_report),
+                             f"-j{jobs}", *ctest_arguments])
+            layer_reports.append(layer_report)
+        if len(commands) > 1:
+            check_report.write_line(f"loop test: the {len(names)} tests of layer {index} run in {len(commands)} ctest "
+                                    f"runs at the same time.")
+        codes = [_run_inherited(commands[0])] if len(commands) == 1 else run_shards(commands, jobs)
+        for layer_report, layer_status in zip(layer_reports, codes, strict=True):
+            status = status or layer_status
+            if layer_report.is_file():
+                written.append(layer_report)
+            else:
+                check_report.write_line(f"loop test: the ctest run of {layer_report.stem} gave no JUnit report (exit "
+                                        f"code {layer_status}).")
+                status = status or 2
     if not written:
         return (status or 2), {}
     try:
@@ -1509,7 +1670,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
         write_list(state_dir / "skipped.txt", skipped)
         print_plan(decisions, build_dir)
-        layers = test_layers(tests, selected, jobs)
+        layers = serial_last(tests, test_layers(tests, selected, jobs))
         if len(layers) > 1:
             check_report.write_line(f"loop test: {len(layers)} layers of the property DEPENDS, with "
                                     f"{', '.join(str(len(layer)) for layer in layers)} tests.  ctest runs each layer "
@@ -1519,7 +1680,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         status, statuses = 0, {}
         if selected:
             with recorder.test_timer:
-                status, statuses = run_tests(build_dir, layers, state_dir, jobs, ctest_arguments)
+                status, statuses = run_tests(build_dir, layers, state_dir, jobs, ctest_arguments, tests)
         if selected and not statuses:
             print(f"loop test: ctest gave no JUnit report (exit code {status}).  The script records no pass.")
             recorder.finish_tests(status or 2, {"selected": len(selected), "skipped": len(skipped)})
@@ -2001,6 +2162,32 @@ def layer_cases(expect: Callable[[str, bool, str], None]) -> None:
     expect("test_layers gives no layer for no selected test", layers == [], str(layers))
 
 
+def shard_cases(expect: Callable[[str, bool, str], None]) -> None:
+    """Check test_shards() and serial_last() (THE SHARDS) on planted tests."""
+    planted = (planted_entry("alpha"), planted_entry("beta", "alpha"), planted_entry("gamma", "beta"),
+               *(planted_entry(f"single_{index}") for index in range(40)))
+    names = [test.name for test in planted]
+    shards = test_shards(planted, names, 4)
+    holders = {number for number, members in shards.items() if {"alpha", "beta", "gamma"} & set(members)}
+    expect("each group that DEPENDS connects goes into one shard", len(holders) == 1, str(holders))
+    expect("the shards hold each test one time, in the sequence of the selection",
+           sorted(name for members in shards.values() for name in members) == sorted(names)
+           and all(members == [name for name in names if name in members] for members in shards.values()),
+           str(shards))
+    expect("the 43 tests fill each of the four shards, and a shard number is below the count",
+           sorted(shards) == [0, 1, 2, 3], str(sorted(shards)))
+    full = {name: number for number, members in shards.items() for name in members}
+    fewer = {name: number for number, members in test_shards(planted, names[5:], 4).items() for name in members}
+    expect("a test with no DEPENDS keeps its shard when the selection holds fewer tests",
+           all(fewer[name] == full[name] for name in fewer), str(fewer))
+    serial = (*planted[:2], ctest_reader.TestEntry("alone", ("/s/b/t",), {SERIAL_PROPERTY: ("TRUE",)}))
+    layers = serial_last(serial, [["alpha", "alone"], ["beta"]])
+    expect("serial_last puts a RUN_SERIAL test into a last layer of its own",
+           layers == [["alpha"], ["beta"], ["alone"]], str(layers))
+    expect("serial_last keeps the layers of no RUN_SERIAL test",
+           serial_last(planted, [["alpha"], ["beta"]]) == [["alpha"], ["beta"]], "")
+
+
 def jobserver_cases(expect: Callable[[str, bool, str], None]) -> None:
     """Check _build_command() (THE JOBSERVER): the words and the environment of the build, with and with no jobserver."""
     fifo = f"{jobserver.AUTH_PREFIX}{jobserver.FIFO_PREFIX}/s/jobserver"
@@ -2069,6 +2256,7 @@ def self_test(ctest: str) -> int:
            and not is_fixture(launched))
     expect("source_paths_in ignores the build tree", source_paths_in("/s/b/x /s/y", trees) == ["/s/y"])
     layer_cases(expect)
+    shard_cases(expect)
     jobserver_cases(expect)
 
     with tempfile.TemporaryDirectory(prefix="affected-tests-") as directory:

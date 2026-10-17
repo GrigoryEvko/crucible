@@ -198,8 +198,8 @@ def run_rounds(
             break
         round_start = time.monotonic()
         entries = tuple(item.test for item in pending)
-        layers = affected.test_layers(entries, [entry.name for entry in entries], jobs)
-        status, statuses = affected.run_tests(keys.build_dir, layers, state_dir, jobs, [])
+        layers = affected.serial_last(entries, affected.test_layers(entries, [entry.name for entry in entries], jobs))
+        status, statuses = affected.run_tests(keys.build_dir, layers, state_dir, jobs, [], entries)
         round_s.append(time.monotonic() - round_start)
         if not statuses:
             reason = f"ctest gave no JUnit report (exit code {status})"

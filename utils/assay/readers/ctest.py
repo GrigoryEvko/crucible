@@ -43,6 +43,17 @@ THE CALL OF A TEST
     file that registers the test.  The add_test in the function is not that
     call.
 
+THE TEST DIRECTORY OF A RUN
+    A caller can run the tests of one build directory in more than one ctest
+    run at the same time (THE SHARDS of assay.loop.affected).  Two such runs
+    must not write the same files of Testing/, such as LastTest.log and the
+    cost data.  mirror_tests() makes a different directory in which ctest
+    reads the tests of the build directory.  Its CTestTestfile.cmake holds one
+    call subdirs() with the absolute path of the build directory.  A run in
+    that directory writes the files of Testing/ there.  ctest starts the tests
+    with the longest time in its cost data first.  A directory with no cost
+    data then gets a copy of the cost data of the build directory.
+
 THE MERGE OF REPORTS
     A caller can run the tests of one selection in more than one ctest run.
     For example, assay.loop.affected runs the layers of the property DEPENDS
@@ -58,7 +69,8 @@ WHAT THE READER GIVES
     label, it gives only the tests with that label.  parse() reads the JSON of
     a listing.  results() gives the status of each test of a JUnit report
     (THE STATUS OF A TEST).  merge_reports() writes one report from the
-    reports of more than one run (THE MERGE OF REPORTS).  costs() gives the
+    reports of more than one run (THE MERGE OF REPORTS).  mirror_tests() makes
+    a test directory of a run (THE TEST DIRECTORY OF A RUN).  costs() gives the
     last record of each test by its name, as a TestRecord of
     assay.core.record.
 
@@ -71,6 +83,7 @@ Complexity: linear in the size of the JSON, of the report and of the records.
 import enum
 import json
 import os
+import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,6 +135,10 @@ SKIP_OUTPUT_MESSAGE = "SKIP_REGULAR_EXPRESSION_MATCHED"
 # REPORTS).
 SUITE_COUNTS = ("tests", "failures", "disabled", "skipped")
 SUITE_TIME = "time"
+# The test file that ctest reads in a test directory, and the cost data that it writes there (THE TEST DIRECTORY OF A
+# RUN).
+TEST_FILE = "CTestTestfile.cmake"
+COST_DATA = Path("Testing") / "Temporary" / "CTestCostData.txt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,21 +252,25 @@ def _ctest_program(build_dir: Path) -> str:
     return program
 
 
-def tests(build_dir: Path, label: str | None = None) -> tuple[TestEntry, ...]:
+def tests(build_dir: Path, label: str | None = None, test_dir: Path | None = None) -> tuple[TestEntry, ...]:
     """Return each test that a build directory registers, or with a label each test that has the label.
+
+    The ctest of the cache of the build directory reads the tests of test_dir, or of the build directory when the
+    caller gives no test_dir.  A test directory of mirror_tests() holds no cache (THE TEST DIRECTORY OF A RUN).
 
     Raises:
         CtestError: If ctest cannot run or fails, or its output is not the JSON of the listing
     """
+    directory = build_dir if test_dir is None else test_dir
     command = proc.Command(
-        [_ctest_program(build_dir), "--show-only=json-v1", "--test-dir", str(build_dir)], timeout_s=TIMEOUT_S
+        [_ctest_program(build_dir), "--show-only=json-v1", "--test-dir", str(directory)], timeout_s=TIMEOUT_S
     )
     try:
         completed = proc.require(proc.run(command))
     except proc.CannotStart as problem:
         raise CtestError(f"the ctest of {build_dir} cannot start: {problem.error}") from None
     except proc.ToolFailed as problem:
-        raise CtestError(f"`{LISTING_COMMAND}` failed for {build_dir}: {problem}") from None
+        raise CtestError(f"`{LISTING_COMMAND}` failed for {directory}: {problem}") from None
     found = parse(completed.out)
     return found if label is None else tuple(test for test in found if label in test.words_of(LABELS))
 
@@ -339,6 +360,29 @@ def merge_reports(reports: Sequence[Path], target: Path) -> None:
     except OSError as problem:
         temporary.unlink(missing_ok=True)
         raise CtestError(f"the merged JUnit report {target} cannot be written: {problem}") from None
+
+
+def mirror_tests(build_dir: Path, directory: Path) -> None:
+    """Make a directory in which a ctest run reads the tests of a build directory (THE TEST DIRECTORY OF A RUN).
+
+    The function writes the test file only when its text changes.  It copies the cost data of the build directory
+    only into a directory with no cost data.  The runs in a directory keep their own cost data.
+
+    Raises:
+        CtestError: If the directory, the test file or the cost data cannot be written
+    """
+    testfile = directory / TEST_FILE
+    text = f"subdirs([=[{build_dir.resolve()}]=])\n"
+    costs = directory / COST_DATA
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        if not testfile.is_file() or testfile.read_text(encoding="utf-8") != text:
+            testfile.write_text(text, encoding="utf-8")
+        if not costs.is_file() and (build_dir / COST_DATA).is_file():
+            costs.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(build_dir / COST_DATA, costs)
+    except OSError as problem:
+        raise CtestError(f"the test directory {directory} cannot be written: {problem}") from None
 
 
 def costs(build_dir: Path) -> dict[str, cost_record.TestRecord]:

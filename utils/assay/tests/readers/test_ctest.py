@@ -302,6 +302,41 @@ def record_cases(expect: testing.Expect) -> None:
         expect("costs refuses a record that is not JSON", "cannot be read" in refused(lambda: ctest.costs(build)))
 
 
+def mirror_cases(expect: testing.Expect) -> None:
+    """Check the test directory of a run: its test file, the copy of the cost data, and its errors."""
+    with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
+        build, mirror = Path(scratch) / "build", Path(scratch) / "mirror"
+        build.mkdir()
+        ctest.mirror_tests(build, mirror)
+        expect(
+            "mirror_tests writes a test file with one call subdirs() and the absolute path of the build directory",
+            (mirror / ctest.TEST_FILE).read_text(encoding="utf-8") == f"subdirs([=[{build.resolve()}]=])\n",
+        )
+        expect(
+            "mirror_tests copies no cost data when the build directory has none",
+            not (mirror / ctest.COST_DATA).exists(),
+        )
+        (build / ctest.COST_DATA).parent.mkdir(parents=True)
+        (build / ctest.COST_DATA).write_text("planted_test 1 2.5\n", encoding="utf-8")
+        ctest.mirror_tests(build, mirror)
+        expect(
+            "mirror_tests copies the cost data of the build directory into a directory with no cost data",
+            (mirror / ctest.COST_DATA).read_text(encoding="utf-8") == "planted_test 1 2.5\n",
+        )
+        (mirror / ctest.COST_DATA).write_text("planted_test 4 9.0\n", encoding="utf-8")
+        ctest.mirror_tests(build, mirror)
+        expect(
+            "mirror_tests keeps the cost data of the runs in the directory",
+            (mirror / ctest.COST_DATA).read_text(encoding="utf-8") == "planted_test 4 9.0\n",
+        )
+        blocked = Path(scratch) / "blocked"
+        blocked.write_text("", encoding="utf-8")
+        expect(
+            "mirror_tests refuses a directory that it cannot make, and names it",
+            "cannot be written" in refused(lambda: ctest.mirror_tests(build, blocked / "mirror")),
+        )
+
+
 def program(name: str) -> str:
     """Return the program of the last case: the variable ASSAY_TEST_NAME, or the pinned program of PATH, or ""."""
     given = os.environ.get(f"ASSAY_TEST_{name.upper()}")
@@ -396,6 +431,14 @@ def project_cases(expect: testing.Expect) -> None:
             == {"planted_pass": ("passed", 0), "planted_fail": ("failed", 1), "planted_skip": ("failed", 77)}
             and records["planted_pass"].program == sys.executable,
         )
+        mirror = Path(scratch) / "mirror"
+        ctest.mirror_tests(build, mirror)
+        expect(
+            "a ctest run in the directory of mirror_tests reads the tests of the build directory, and the directory "
+            "holds the cost data of the run in the build directory",
+            {test.name for test in ctest.tests(build, test_dir=mirror)} == set(tests)
+            and (mirror / ctest.COST_DATA).read_bytes() == (build / ctest.COST_DATA).read_bytes(),
+        )
 
 
 def main(argv: list[str]) -> int:
@@ -403,5 +446,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (listing_cases, tool_cases, results_cases, merge_cases, record_cases, project_cases),
+        (listing_cases, tool_cases, results_cases, merge_cases, record_cases, mirror_cases, project_cases),
     )
