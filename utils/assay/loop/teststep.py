@@ -63,6 +63,12 @@ THE ENVIRONMENT
       * It keeps each absolute directory of PATH one time, in the same
         sequence.  It drops an empty item and a relative item, because the
         two name a directory that changes with the directory of the test.
+      * It drops MAKEFLAGS, the jobserver that ctest gives each test.  It
+        gives the value of MAKEFLAGS to the test as TEST_JOBSERVER_ENV of
+        assay.core.meter (THE JOBSERVER OF A TEST there).  The groups of a
+        test module then run at the same time on the free jobs.  ninja or
+        make in a test does not obey the jobserver.  The clean environment
+        holds no such variable, because a jobserver changes no result.
     `loop test` puts the same environment into the key of each test behind
     the launcher (assay.loop.affected).  A variable that the launcher drops
     then changes no result and no key.  A variable that a test gets from its
@@ -332,7 +338,11 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
     The result holds no CRUCIBLE_TEST_LAUNCHED, because the launcher sets it
     for each test.  Complexity: O(n log n) for n variables.
     """
-    kept = {name: value for name, value in environment.items() if is_kept(name) and name != LAUNCHED_ENV}
+    kept = {
+        name: value
+        for name, value in environment.items()
+        if is_kept(name) and name not in (LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV)
+    }
     if SEARCH_PATH in kept:
         directories = search_path(kept[SEARCH_PATH])
         if directories:
@@ -776,9 +786,12 @@ def main(argv: list[str]) -> int:
     # The launcher puts the clean environment and the variable in its own environment, which the test gets.  A copy of
     # the environment for the child costs more.
     clean = canonical_environment(os.environ)
+    makeflags = os.environ.get(cost_meter.MAKEFLAGS_ENV)
     os.environ.clear()
     os.environ.update(clean)
     os.environ[LAUNCHED_ENV] = name
+    if makeflags:
+        os.environ[cost_meter.TEST_JOBSERVER_ENV] = makeflags
     traced_dir = build_dir if is_built else None
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     try:

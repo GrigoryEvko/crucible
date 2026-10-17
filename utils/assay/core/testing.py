@@ -3,9 +3,33 @@
 THE CASES
     A test module gives its cases in groups.  A group is a function that
     takes the function `expect`.  It calls that function one time for each
-    case, with the name of the case and its result.  run() calls each group in sequence.
-    Each case writes one line through assay.core.report.  A case that does
-    not hold writes FAIL, and each other case writes ok.
+    case, with the name of the case and its result.  Each case writes one
+    line through assay.core.report.  A case that does not hold writes FAIL,
+    and each other case writes ok.
+
+THE GROUPS AT THE SAME TIME
+    `loop test-step` gives a test the jobserver of the test run as the
+    variable TEST_JOBSERVER_ENV of assay.core.meter (THE JOBSERVER OF A TEST
+    there).  With that variable, two groups or more and one thread, run()
+    runs each group in a child process of its own (forked() of
+    assay.core.proc).  A child starts only on a free job of the jobserver.
+    The test holds one job.  Its groups then run one after the other when
+    the other jobs are in use.  At the end of a test run, more jobs are free, and
+    more groups run at the same time.  run() writes the output of each group
+    in the sequence of the groups.  The output is then the same as the
+    output of a run in sequence.  With no such variable, run() calls each group in
+    sequence in this process.
+
+    The status of a child is ExitCode.OK or ExitCode.FINDINGS.  The FAIL
+    lines of its output give the number of its cases that do not hold.  A
+    different status counts one more case that does not hold.  Examples are
+    ExitCode.TOOL_FAILED after an exception, and the signal that ended the
+    child.
+
+    A group in a child cannot see a change that a different group makes in
+    the process, such as a variable of the module.  Each group then holds
+    its own state.  A group that raises an exception writes its traceback,
+    and run() counts one case that does not hold for it.
 
 THE STATUS
     run() returns ExitCode.OK when each case holds, and ExitCode.FINDINGS when
@@ -56,10 +80,13 @@ import contextlib
 import io
 import os
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
+from assay.core import meter as cost_meter
+from assay.core import proc
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 
@@ -72,6 +99,9 @@ WAIT_STEP_S = 0.02
 # The state letters of /proc/PID/stat of a process that ended.  A process with no such file gets "X" (THE END OF A
 # PROCESS).
 GONE_STATES = frozenset({"Z", "X"})
+# The marks of the line of a case that holds and of a case that does not hold (THE CASES).
+HOLDS_MARK = "  ok   "
+FAILS_MARK = "  FAIL "
 
 
 def patched_compiler(environment: Mapping[str, str] = os.environ) -> str:
@@ -155,8 +185,60 @@ def captured[Result](action: Callable[[], Result]) -> tuple[Result, str]:
         return action(), printed.getvalue()
 
 
+def run_group(group: Group) -> int:
+    """Run one group of cases in this process, and return the number of its cases that do not hold (THE CASES)."""
+    failures = 0
+
+    def expect(case: str, holds: bool) -> None:
+        """Write the line of one case, and count a case that does not hold."""
+        nonlocal failures
+        check_report.write_line(f"{HOLDS_MARK if holds else FAILS_MARK}{case}")
+        if not holds:
+            failures += 1
+
+    group(expect)
+    return failures
+
+
+def forked_failures(groups: Sequence[Group], makeflags: str) -> int:
+    """Run each group in a child process on the jobs of a jobserver, and return the cases that do not hold.
+
+    The function writes the output of each group in the sequence of the groups (THE GROUPS AT THE SAME TIME).  A
+    jobserver that cannot be opened gives the run in sequence, because the jobserver changes no result.
+    """
+    from assay.core import jobserver
+
+    # The status of a child tells if a case of its group does not hold.  The lines of the output give the number.
+    actions = [lambda group=group: ExitCode.FINDINGS if run_group(group) else ExitCode.OK for group in groups]
+    try:
+        with jobserver.client_of({jobserver.VARIABLE: makeflags}) as client:
+            if client is None:
+                return sum(run_group(group) for group in groups)
+            ends = proc.forked(actions, client)
+    except jobserver.JobserverError:
+        return sum(run_group(group) for group in groups)
+    failures = 0
+    for group, end in zip(groups, ends, strict=True):
+        text = proc.decoded(end.output)
+        if text:
+            check_report.write_line(text.removesuffix("\n"))
+        lines = sum(1 for line in text.splitlines() if line.startswith(FAILS_MARK))
+        if end.status == ExitCode.OK:
+            continue
+        if end.status == ExitCode.FINDINGS:
+            failures += max(lines, 1)
+            continue
+        name = getattr(group, "__name__", repr(group))
+        check_report.write_line(f"{FAILS_MARK}the group {name} ended with the status {end.status}")
+        failures += lines + 1
+    return failures
+
+
 def run(module: str, argv: Sequence[str], groups: Sequence[Group]) -> ExitCode:
     """Run each group of cases of one test module (THE CASES), and return its status (THE STATUS).
+
+    The groups run at the same time on the jobs of the test run when the launcher gives a jobserver (THE GROUPS AT THE
+    SAME TIME).
 
     Args:
         module: The dotted name of the test module in the package assay, such as tests.core.test_rows
@@ -166,18 +248,13 @@ def run(module: str, argv: Sequence[str], groups: Sequence[Group]) -> ExitCode:
     if argv:
         check_report.write_line(f"usage: guard selftest {module}", is_error=True)
         return ExitCode.USAGE
-    failures: list[str] = []
-
-    def expect(case: str, holds: bool) -> None:
-        """Write the line of one case, and keep the name of a case that does not hold."""
-        check_report.write_line(f"  {'ok  ' if holds else 'FAIL'} {case}")
-        if not holds:
-            failures.append(case)
-
-    for group in groups:
-        group(expect)
+    makeflags = os.environ.get(cost_meter.TEST_JOBSERVER_ENV, "")
+    if makeflags and len(groups) > 1 and threading.active_count() == 1:
+        failures = forked_failures(groups, makeflags)
+    else:
+        failures = sum(run_group(group) for group in groups)
     if failures:
-        check_report.write_line(f"{module}: FAILED, {len(failures)} case(s) did not hold")
+        check_report.write_line(f"{module}: FAILED, {failures} case(s) did not hold")
         return ExitCode.FINDINGS
     check_report.write_line(f"{module}: each case holds.")
     return ExitCode.OK

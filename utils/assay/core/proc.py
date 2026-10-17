@@ -80,6 +80,36 @@ A LONG RUN
     5.3) tells the loop the end of the command, and the loop reaps the
     command only at the end.
 
+A FORKED GROUP
+    forked(actions, slots) runs each action of a list in a child process of
+    its own.  It gives the end of each action in the sequence of the list.
+    The slots are the slots of a jobserver, such as a Client of
+    assay.core.jobserver: an object with try_take(), give(slot) and
+    fileno().  The function starts a child only on a free slot.  The
+    children then use no more jobs than the jobserver permits.  The implicit
+    slot of the process is free when no child runs, and the work always goes
+    on.
+    These are the rules:
+      * The process must have one thread, because a fork copies only the
+        thread that calls it.  forked() raises ValueError with more threads.
+      * Before each fork, the function writes the buffers of sys.stdout and
+        sys.stderr.  The child writes its standard output and its standard
+        error into one memory file (memfd_create(2)), also from its own
+        children.  The child gets new streams sys.stdout and sys.stderr on
+        that file, also when the parent redirected its streams to an object
+        in memory.  The result of the action holds the bytes of the file.
+      * An action returns a member of ExitCode of assay.core.exit.  The child
+        ends with os._exit() and that status.  It runs no handler of atexit
+        and no finalizer of the parent, such as the removal of a temporary
+        directory of the parent.  An action that raises an exception writes
+        its traceback, and its child ends with ExitCode.TOOL_FAILED.
+      * One poll(2) waits for a pidfd of each child (Linux 5.3) and for a
+        byte of the jobserver.  The function then starts a child when a slot
+        becomes free, and it reaps a child when the child ends.
+      * On an exception in the function, such as a KeyboardInterrupt, the
+        function sends SIGKILL to each child that runs.  Then it reaps the
+        child and gives its slot back.
+
 THE THREE STARTS OUTSIDE THIS MODULE
     loop step, loop test-step and loop meter-compiler put a meter in front of
     one compile, one link or one test.  measure() of assay.core.meter starts
@@ -132,6 +162,21 @@ import time
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     import subprocess
+    from collections.abc import Callable, Sequence
+    from typing import Protocol
+
+    class SlotPool[SlotT](Protocol):
+        """The slots of a jobserver that forked() uses (A FORKED GROUP)."""
+
+        def try_take(self) -> SlotT | None:
+            """Return a free slot with no wait, or None."""
+
+        def give(self, slot: SlotT) -> None:
+            """Give a slot back."""
+
+        def fileno(self) -> int:
+            """Return a descriptor that select(2) calls readable when a slot can be free."""
+
 
 # The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).  The rule compile-jobs holds
 # it equal to the error threshold of its row in utils/registry.txt.
@@ -683,6 +728,145 @@ class Running:
         stderr = b"".join(self._chunks.get(self._stderr_fd, ()))
         self._completed = Completed(self.command, wait_status, stdout, stderr, wall_s, usage.ru_utime, usage.ru_stime,
                                     usage.ru_maxrss)
+
+
+class Forked:
+    """The end of one action of forked(): its status and the bytes of its two standard streams (A FORKED GROUP).
+
+    The status is the ExitCode of the action, ExitCode.TOOL_FAILED after an exception, or minus the number of the
+    signal that ended its child.
+    """
+
+    __slots__ = ("output", "status")
+
+    def __init__(self, status: int, output: bytes) -> None:
+        """Keep the status and the output of one action."""
+        self.status = status
+        self.output = output
+
+    def __repr__(self) -> str:
+        """Show the status and the length of the output."""
+        return f"Forked(status={self.status}, output={len(self.output)} bytes)"
+
+
+def forked[SlotT](actions: Sequence[Callable[[], int]], slots: SlotPool[SlotT]) -> list[Forked]:
+    """Run each action in a child process of its own on a free slot, and return each end in sequence (A FORKED GROUP).
+
+    Complexity: one fork and one wait for each action, and one poll(2) for each start or end of a child.
+
+    Raises:
+        ValueError: If the process has more than one thread
+        OSError: If a fork, a pidfd or a memory file cannot be made
+    """
+    import select
+    import signal
+    import sys
+    import threading
+
+    if threading.active_count() > 1:
+        raise ValueError(f"forked() needs a process of one thread, and this process has {threading.active_count()}")
+    ends: list[Forked | None] = [None] * len(actions)
+    running: dict[int, tuple[int, int, SlotT, int]] = {}
+    next_action = 0
+    try:
+        while next_action < len(actions) or running:
+            while next_action < len(actions):
+                slot = slots.try_take()
+                if slot is None:
+                    break
+                try:
+                    pid, pidfd, output = _fork_action(actions[next_action], sys.stdout, sys.stderr)
+                except BaseException:
+                    slots.give(slot)
+                    raise
+                running[pidfd] = (pid, next_action, slot, output)
+                next_action += 1
+            poller = select.poll()
+            for descriptor in running:
+                poller.register(descriptor, select.POLLIN)
+            if next_action < len(actions):
+                poller.register(slots.fileno(), select.POLLIN)
+            for descriptor, _ in poller.poll():
+                if descriptor not in running:
+                    continue
+                pid, index, slot, output = running.pop(descriptor)
+                ends[index] = _reaped(pid, descriptor, output)
+                slots.give(slot)
+    finally:
+        for descriptor, (pid, _, slot, output) in running.items():
+            os.kill(pid, signal.SIGKILL)
+            _reaped(pid, descriptor, output)
+            slots.give(slot)
+    return [end for end in ends if end is not None]
+
+
+def _fork_action(action: Callable[[], int], *streams: object) -> tuple[int, int, int]:
+    """Fork one child that runs an action into a memory file, and return its pid, its pidfd and the file (A FORKED GROUP)."""
+    for stream in streams:
+        flush = getattr(stream, "flush", None)
+        if flush is not None:
+            flush()
+    output = os.memfd_create("forked-action", os.MFD_CLOEXEC)
+    pid = os.fork()
+    if pid == 0:
+        _run_child(action, output)
+    try:
+        pidfd = os.pidfd_open(pid)
+    except OSError:
+        os.kill(pid, 9)
+        os.waitpid(pid, 0)
+        os.close(output)
+        raise
+    return pid, pidfd, output
+
+
+def _run_child(action: Callable[[], int], output: int) -> None:
+    """Run an action in a forked child with its two streams in a memory file, and end the child (A FORKED GROUP).
+
+    An action that raises, or that returns a status that is not a member of ExitCode, writes its traceback.  The child
+    then ends with ExitCode.TOOL_FAILED.  The exception goes on to the finally block, which ends the child.
+    """
+    import contextlib
+    import io
+    import sys
+    import traceback
+
+    from assay.core.exit import ExitCode
+
+    status = ExitCode.TOOL_FAILED
+    try:
+        os.dup2(output, 1)
+        os.dup2(output, 2)
+        # The streams of the parent can be objects in memory, such as a StringIO of contextlib.redirect_stdout.  New
+        # streams on the two descriptors write each line into the memory file with no wait.  The lines then stay in
+        # sequence with the writes of the children of the action.
+        for descriptor, name in ((1, "stdout"), (2, "stderr")):
+            raw = io.FileIO(descriptor, "w", closefd=False)
+            setattr(sys, name, io.TextIOWrapper(raw, encoding="utf-8", errors="replace", line_buffering=True))
+        status = ExitCode(action())
+    except BaseException:
+        traceback.print_exc()
+        status = ExitCode.TOOL_FAILED
+        raise
+    finally:
+        for stream in (sys.stdout, sys.stderr):
+            with contextlib.suppress(OSError, ValueError):
+                stream.flush()
+        os._exit(ExitCode(status))
+
+
+def _reaped(pid: int, pidfd: int, output: int) -> Forked:
+    """Wait for one child, close its pidfd, and return its status and the bytes of its memory file (A FORKED GROUP)."""
+    _, wait_status = os.waitpid(pid, 0)
+    os.close(pidfd)
+    try:
+        os.lseek(output, 0, os.SEEK_SET)
+        chunks: list[bytes] = []
+        while chunk := os.read(output, READ_CHUNK):
+            chunks.append(chunk)
+    finally:
+        os.close(output)
+    return Forked(os.waitstatus_to_exitcode(wait_status), b"".join(chunks))
 
 
 def check_destination(program: str, name: str, value: object, words: frozenset[str]) -> None:

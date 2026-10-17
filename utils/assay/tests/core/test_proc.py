@@ -9,11 +9,13 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 
-from assay.core import proc, testing
+from assay.core import jobserver, proc, testing
+from assay.core.exit import ExitCode
 
 PYTHON = sys.executable
 UTILS = str(Path(__file__).resolve().parents[3])
@@ -478,6 +480,118 @@ def environment_cases(expect: Callable[[str, bool], None]) -> None:
     expect("a child gets the override", planted == "yes\n")
 
 
+def forked_writes() -> int:
+    """A forked action that writes one line to each standard descriptor."""
+    os.write(1, b"planted forked stdout\n")
+    os.write(2, b"planted forked stderr\n")
+    return ExitCode.OK
+
+
+def forked_fails() -> int:
+    """A forked action that gives the status FINDINGS."""
+    return ExitCode.FINDINGS
+
+
+def forked_wrong_status() -> int:
+    """A forked action that returns a status that is not a member of ExitCode."""
+    return 9
+
+
+def forked_raises() -> int:
+    """A forked action that raises an exception."""
+    raise RuntimeError("planted forked exception")
+
+
+def forked_killed() -> int:
+    """A forked action that SIGKILL ends."""
+    os.kill(os.getpid(), signal.SIGKILL)
+    return ExitCode.OK
+
+
+def forked_child() -> int:
+    """A forked action with a child that writes to the standard output of the action."""
+    proc.run(
+        proc.Command([PYTHON, "-c", "print('planted forked child')"], timeout_s=SAFE_S, stdout=proc.Output.INHERIT)
+    )
+    return ExitCode.OK
+
+
+def max_overlap(spans: list[tuple[float, float]]) -> int:
+    """Return the largest number of spans that run at one time.  Complexity: O(n log n) for n spans."""
+    events = sorted([(start, 1) for start, _ in spans] + [(end, -1) for _, end in spans])
+    running = largest = 0
+    for _, step in events:
+        running += step
+        largest = max(largest, running)
+    return largest
+
+
+def forked_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
+    """Check forked(): the status and the output of each action, the bound of the jobs, and the thread check."""
+    with jobserver.serving(2) as server, jobserver.connected(server.path) as client:
+        actions = [forked_writes, forked_fails, forked_raises, forked_killed, forked_child, forked_wrong_status]
+        ends = proc.forked(actions, client)
+        outputs = [end.output.decode() for end in ends]
+        expect(
+            "forked() gives the status of each action in sequence: the ExitCode of the action, TOOL_FAILED after an "
+            "exception or a status that is not an ExitCode, and minus the signal of a child that a signal ends: "
+            f"{[end.status for end in ends]}",
+            [end.status for end in ends]
+            == [
+                ExitCode.OK,
+                ExitCode.FINDINGS,
+                ExitCode.TOOL_FAILED,
+                -signal.SIGKILL,
+                ExitCode.OK,
+                ExitCode.TOOL_FAILED,
+            ],
+        )
+        expect(
+            "the output of an action holds its two standard streams, the traceback of its exception, and the output "
+            "of its own child",
+            outputs[0] == "planted forked stdout\nplanted forked stderr\n"
+            and "Traceback" in outputs[2]
+            and "planted forked exception" in outputs[2]
+            and outputs[4] == "planted forked child\n",
+        )
+        expect(
+            "a child ends with os._exit, so the temporary directory of the parent stays",
+            scratch.is_dir(),
+        )
+        log = scratch / "spans.txt"
+
+        def span() -> int:
+            started = time.monotonic()
+            time.sleep(0.2)
+            with log.open("a", encoding="utf-8") as stream:
+                stream.write(f"{started} {time.monotonic()}\n")
+            return ExitCode.OK
+
+        proc.forked([span] * 6, client)
+        spans = [(float(start), float(end)) for start, end in (line.split() for line in log.read_text().splitlines())]
+        expect(
+            f"with 2 jobs, 6 actions run two at a time and never more: {max_overlap(spans)} at the most",
+            len(spans) == 6 and max_overlap(spans) == 2,
+        )
+        slots = [client.try_take(), client.try_take(), client.try_take()]
+        expect(
+            "forked() gives each slot back: the implicit slot and the one token are free, and no third slot",
+            slots[0] is not None and slots[1] is not None and slots[2] is None,
+        )
+        for slot in slots:
+            if slot is not None:
+                client.give(slot)
+        waiting = threading.Event()
+        thread = threading.Thread(target=waiting.wait)
+        thread.start()
+        try:
+            refused = refuses(lambda: proc.forked([forked_writes], client), ValueError)
+        finally:
+            waiting.set()
+            thread.join()
+        expect("forked() refuses a process with a second thread", refused is not None)
+
+
 def import_cases(expect: Callable[[str, bool], None]) -> None:
     """Check that the import of the module costs little: it imports no heavy module (WHY THE MODULE IMPORTS LITTLE)."""
     heavy = ("subprocess", "selectors", "signal", "dataclasses", "enum", "typing", "pathlib", "collections")
@@ -521,6 +635,7 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="assay-proc-") as scratch:
         stream_cases(expect, Path(scratch))
         interrupt_cases(expect, Path(scratch))
+        forked_cases(expect, Path(scratch))
     environment_cases(expect)
     pidfd_failure_cases(expect)
     import_cases(expect)

@@ -116,6 +116,16 @@ A CI RUNNER
     a memory rule, of a size rule or of an input stays an error.  Each launcher
     and each check that judges a time calls ci_verdict().
 
+THE JOBSERVER OF A TEST
+    ctest gives each test the variable MAKEFLAGS of the GNU make jobserver
+    that `loop test` operates (assay.core.jobserver).  `loop test-step` gives
+    a test a clean environment, with no MAKEFLAGS.  ninja and make in a test
+    then do not obey that jobserver.  The launcher gives the value of
+    MAKEFLAGS to the test as TEST_JOBSERVER_ENV.  assay.core.testing reads it,
+    and it runs the groups of a test module at the same time on the free
+    jobs.  The variable changes no result.  The key of a test then does not
+    hold it.
+
 THE RECORD
     A launcher writes the record of each step with assay.core.record, from
     its Measurement (record.measured()).  That module holds the format of
@@ -215,6 +225,9 @@ COMPILER_COUNT_ENV = "CRUCIBLE_COMPILER_COUNT"
 COMPILER_COUNT_SUFFIX = ".compiler-count"
 INEXACT_COUNT = "-"
 CCACHE_PREFIX_ENV = "CCACHE_PREFIX"
+# The variable of the GNU make jobserver, and the variable that gives its value to a test (THE JOBSERVER OF A TEST).
+MAKEFLAGS_ENV = "MAKEFLAGS"
+TEST_JOBSERVER_ENV = "CRUCIBLE_TEST_MAKEFLAGS"
 # The directory utils.  This module is utils/assay/core/meter.py.  It calculates the paths with os.path and not with
 # assay.core.paths, because each compile and each link imports it, and pathlib costs an import.
 UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

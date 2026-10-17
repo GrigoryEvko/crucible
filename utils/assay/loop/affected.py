@@ -364,8 +364,9 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Protocol
 
-from assay.core import cache, cost_store, git, jobserver, proc
+from assay.core import cache, cost_store, git, jobserver, proc, testing
 from assay.core import cache_root as cache_rule
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
@@ -2206,14 +2207,25 @@ def jobserver_cases(expect: Callable[[str, bool, str], None]) -> None:
            words[-1] == f"-j{proc.DEFAULT_JOBS}" and environment == descriptors, str(words))
 
 
-def self_test(ctest: str) -> int:
-    """Run each plant with `ctest` as the ctest of the fake build tree, and return 0 when each one holds."""
-    failures: list[str] = []
+class DetailedExpect(Protocol):
+    """The case function of a group of the self-test: a name, a result, and the output of a case that does not hold."""
 
-    def expect(label: str, condition: bool, output: str = "") -> None:
-        if not condition:
-            failures.append(f"{label}\n{output}")
+    def __call__(self, label: str, condition: bool, output: str = "") -> None:
+        """Give one case."""
 
+
+def detailed(expect: testing.Expect) -> DetailedExpect:
+    """Return a case function of three arguments, which puts the output of a case that does not hold into its line."""
+
+    def expect_with_output(label: str, condition: bool, output: str = "") -> None:
+        """Give one case to `expect`, with its output after its name when it does not hold."""
+        expect(label if condition or not output else f"{label}\n{output}", condition)
+
+    return expect_with_output
+
+
+def unit_cases(expect: DetailedExpect) -> None:
+    """Check the scan of an ELF file, the program of a test command, the layers, the shards and the jobserver."""
     # The scan of an ELF file: each kind of section, and a file that is not an ELF64 file.
     trees = Trees(source_root="/s", build_root="/s/b")
     def is_refused(data: bytes) -> bool:
@@ -2259,6 +2271,9 @@ def self_test(ctest: str) -> int:
     shard_cases(expect)
     jobserver_cases(expect)
 
+
+def call_cases(ctest: str, expect: DetailedExpect) -> None:
+    """Check the calls of the script on one fake build tree, each call on the state of the calls before it."""
     with tempfile.TemporaryDirectory(prefix="affected-tests-") as directory:
         fake = SelfTest(Path(directory), ctest)
         # A ctest of PATH that fails on each call.  The script runs the ctest of the cache.
@@ -2407,20 +2422,46 @@ def self_test(ctest: str) -> int:
         expect("a cache that names no ctest gives exit code 2 and the reason",
                status == 2 and "has no entry CMAKE_CTEST_COMMAND" in output, output)
 
+
+def missing_build_cases(expect: DetailedExpect) -> None:
+    """Check the exit code of a call on a build directory that is not there."""
     status, output = proc.run(proc.Command([sys.executable, str(LOOP), "test", "/nonexistent/build"],
                                            timeout_s=proc.TOOL_S)).exit, ""
     expect("a missing build directory gives exit code 2", status == 2, output)
-    guard_cases(ctest, expect)
-    parse_cases(expect)
-    traced_cases(ctest, expect)
 
-    for failure in failures:
-        print(f"loop test --self-test: FAILED: {failure}")
-    if failures:
-        print(f"loop test --self-test: {len(failures)} case(s) did not hold.")
-        return 2
-    print("loop test --self-test: every case passes.")
-    return 0
+
+def self_test(ctest: str) -> int:
+    """Run each group of plants with `ctest` as the ctest of the fake build tree, and return 0 when each case holds.
+
+    The groups run at the same time on the jobs of the test run (THE GROUPS AT THE SAME TIME of assay.core.testing).
+    The longest groups come first.  They then start first.
+    """
+
+    def calls(expect: testing.Expect) -> None:
+        """The calls on one fake build tree."""
+        call_cases(ctest, detailed(expect))
+
+    def guards(expect: testing.Expect) -> None:
+        """The tests of the master guard."""
+        guard_cases(ctest, detailed(expect))
+
+    def traces(expect: testing.Expect) -> None:
+        """The traced tests."""
+        traced_cases(ctest, detailed(expect))
+
+    def units(expect: testing.Expect) -> None:
+        """The functions of the module."""
+        unit_cases(detailed(expect))
+
+    def missing(expect: testing.Expect) -> None:
+        """A build directory that is not there."""
+        missing_build_cases(detailed(expect))
+
+    def parses(expect: testing.Expect) -> None:
+        """The parse builds."""
+        parse_cases(detailed(expect))
+
+    return testing.run("loop.affected", [], (calls, guards, traces, units, missing, parses))
 
 
 # ── Main ───────────────────────────────────────────────────────────────────

@@ -13,7 +13,8 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from assay.core import proc, testing
+from assay.core import jobserver, proc, testing
+from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 
@@ -173,10 +174,60 @@ def wait_cases(expect: testing.Expect) -> None:
     expect("process_state() gives X for a process with no file of /proc", testing.process_state(-1) == "X")
 
 
+def raises(expect: testing.Expect) -> None:
+    """A planted group with one case that holds, and then an exception."""
+    expect("a planted case before the exception", True)
+    raise RuntimeError("planted group exception")
+
+
+def writes_through_child(expect: testing.Expect) -> None:
+    """A planted group with a child process that writes a line before the case of the group."""
+    proc.run(
+        proc.Command([sys.executable, "-c", "print('planted child line')"], timeout_s=60.0, stdout=proc.Output.INHERIT)
+    )
+    expect("a planted case after a child", True)
+
+
+def forked_cases(expect: testing.Expect) -> None:
+    """Check the groups at the same time: the same output as a run in sequence, an exception, and a broken jobserver."""
+    sequence = (
+        "  ok   a planted case that holds\n  FAIL a planted case that does not hold\n  ok   a planted case that holds\n"
+        "tests.planted: FAILED, 1 case(s) did not hold\n"
+    )
+    with jobserver.serving(3) as server, testing.environment_variable(cost_meter.TEST_JOBSERVER_ENV, server.makeflags):
+        status, out, err = captured([], [holds, fails, holds])
+        expect(
+            "with a jobserver, the groups run in child processes, and the output is the output of a run in sequence",
+            status == ExitCode.FINDINGS and out == sequence and not err,
+        )
+        status, out, err = captured([], [raises, holds])
+        expect(
+            "a group that raises writes its traceback and counts one case that does not hold, and the next group runs",
+            status == ExitCode.FINDINGS
+            and "Traceback" in out
+            and "planted group exception" in out
+            and "  FAIL the group raises ended with the status 4\n" in out
+            and out.endswith("  ok   a planted case that holds\ntests.planted: FAILED, 1 case(s) did not hold\n"),
+        )
+        status, out, err = captured([], [writes_through_child, holds])
+        expect(
+            "the output of a child process of a group comes before the next line of the group",
+            status == ExitCode.OK and out.startswith("planted child line\n  ok   a planted case after a child\n"),
+        )
+    with testing.environment_variable(
+        cost_meter.TEST_JOBSERVER_ENV, "-j3 --jobserver-auth=fifo:/nonexistent/jobs.fifo"
+    ):
+        status, out, err = captured([], [holds, fails, holds])
+    expect(
+        "a jobserver that cannot be opened gives the run in sequence, with the same output",
+        status == ExitCode.FINDINGS and out == sequence and not err,
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (run_cases, output_cases, compiler_cases, environment_cases, program_cases, wait_cases),
+        (run_cases, output_cases, compiler_cases, environment_cases, program_cases, wait_cases, forked_cases),
     )

@@ -11,6 +11,7 @@ also after an exception.  A child process must take a token through
 MAKEFLAGS and give it back.
 """
 
+import select
 import sys
 import threading
 import time
@@ -68,6 +69,39 @@ def protocol_cases(expect: testing.Expect) -> None:
             all(slot is not None for slot in again) and client.take(stop) is None,
         )
         for slot in again:
+            if slot is not None:
+                client.give(slot)
+
+
+def try_take_cases(expect: testing.Expect) -> None:
+    """Hold a take that does not wait, and the descriptor of the FIFO for select(2) (THE CLIENT)."""
+    with jobserver.serving(2) as server, jobserver.connected(server.path) as client:
+        first, second = client.try_take(), client.try_take()
+        started = time.monotonic()
+        third = client.try_take()
+        waited_s = time.monotonic() - started
+        expect(
+            f"try_take gives the implicit slot, then a token, then None at once with each slot held: {waited_s:.3f} s",
+            first is not None
+            and first.is_implicit
+            and second is not None
+            and not second.is_implicit
+            and third is None
+            and waited_s < 1.0,
+        )
+        empty, _, _ = select.select([client.fileno()], [], [], 0)
+        if second is not None:
+            client.give(second)
+        full, _, _ = select.select([client.fileno()], [], [], 0)
+        expect(
+            "select(2) calls the descriptor of the FIFO readable only when the FIFO holds a token",
+            not empty and full == [client.fileno()],
+        )
+        again = client.try_take()
+        expect(
+            "a token that a client gives back can be taken again at once", again is not None and not again.is_implicit
+        )
+        for slot in (again, first):
             if slot is not None:
                 client.give(slot)
 
@@ -189,5 +223,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (protocol_cases, bound_cases, removal_cases, environment_cases, child_cases),
+        (protocol_cases, try_take_cases, bound_cases, removal_cases, environment_cases, child_cases),
     )

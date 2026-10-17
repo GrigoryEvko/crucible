@@ -13,6 +13,7 @@ import signal
 import string
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from assay.core import meter as cost_meter
@@ -300,6 +301,19 @@ class Planted:
         expect(
             "the test gets the kept variables, the locale and the time zone of the launcher, the clean PATH, and no "
             "other variable",
+            status == 0,
+        )
+        makeflags = "-j4 --jobserver-auth=fifo:/tmp/planted.fifo"
+        given = cost_meter.TEST_JOBSERVER_ENV
+        status, _ = self.launch_script(
+            "planted_jobserver",
+            "sh",
+            "-c",
+            f'test -z "${{MAKEFLAGS+set}}" && test "${given}" = "{makeflags}"',
+            MAKEFLAGS=makeflags,
+        )
+        expect(
+            "the test gets no MAKEFLAGS, and it gets the value of MAKEFLAGS of the launcher as the jobserver of a test",
             status == 0,
         )
 
@@ -824,6 +838,8 @@ def environment_unit_cases(expect: testing.Expect) -> None:
         "SESSION_ORACLE_CACHE": "/cache",
         "ASAN_OPTIONS": "detect_leaks=0",
         test_launcher.LAUNCHED_ENV: "an_earlier_test",
+        cost_meter.MAKEFLAGS_ENV: "-j4 --jobserver-auth=fifo:/tmp/planted.fifo",
+        cost_meter.TEST_JOBSERVER_ENV: "-j4 --jobserver-auth=fifo:/tmp/earlier.fifo",
     }
     fixed = dict(test_launcher.canonical_environment(host))
     expect(
@@ -835,8 +851,16 @@ def environment_unit_cases(expect: testing.Expect) -> None:
         and fixed["SESSION_ORACLE_CACHE"] == "/cache",
     )
     expect(
-        "the launcher drops each other variable, and the name of the test that it sets itself",
-        not {"LD_LIBRARY_PATH", "GIT_DIR", test_launcher.LAUNCHED_ENV} & set(fixed),
+        "the launcher drops each other variable, the name of the test that it sets itself, and the two jobserver "
+        "variables, so the clean environment holds no FIFO of a test run",
+        not {
+            "LD_LIBRARY_PATH",
+            "GIT_DIR",
+            test_launcher.LAUNCHED_ENV,
+            cost_meter.MAKEFLAGS_ENV,
+            cost_meter.TEST_JOBSERVER_ENV,
+        }
+        & set(fixed),
     )
     expect(
         "the launcher sets the locale and the time zone, also over the values of the shell",
@@ -857,27 +881,41 @@ def environment_unit_cases(expect: testing.Expect) -> None:
     )
 
 
+def planted_group(cases: Callable[[Planted, testing.Expect], None]) -> testing.Group:
+    """Return a group that runs one method of Planted with a fixture of its own in its own scratch directory.
+
+    The groups can run at the same time (THE GROUPS AT THE SAME TIME of assay.core.testing).  Each one writes the
+    planted registry and ledgers of its fixture.
+    """
+
+    def group(expect: testing.Expect) -> None:
+        """Run the cases in a new scratch directory."""
+        with tempfile.TemporaryDirectory(prefix="test-step-") as work:
+            cases(Planted(Path(work)), expect)
+
+    group.__name__ = cases.__name__
+    return group
+
+
 def main(argv: list[str]) -> int:
-    """Run each case in a scratch directory, and write one line for each."""
-    with tempfile.TemporaryDirectory(prefix="test-step-") as work:
-        planted = Planted(Path(work))
-        return testing.run(
-            __name__.removeprefix("assay."),
-            argv,
-            (
-                planted.status_cases,
-                planted.script_cases,
-                planted.threshold_cases,
-                planted.count_cases,
-                planted.ledger_cases,
-                planted.core_cases,
-                planted.version_cases,
-                planted.emulator_cases,
-                planted.environment_cases,
-                unmeasured_cases,
-                window_cases,
-                version_unit_cases,
-                launched_cases,
-                environment_unit_cases,
-            ),
-        )
+    """Run each case, and write one line for each.  Each group of the launcher has a scratch directory of its own."""
+    return testing.run(
+        __name__.removeprefix("assay."),
+        argv,
+        (
+            planted_group(Planted.status_cases),
+            planted_group(Planted.script_cases),
+            planted_group(Planted.threshold_cases),
+            planted_group(Planted.count_cases),
+            planted_group(Planted.ledger_cases),
+            planted_group(Planted.core_cases),
+            planted_group(Planted.version_cases),
+            planted_group(Planted.emulator_cases),
+            planted_group(Planted.environment_cases),
+            unmeasured_cases,
+            window_cases,
+            version_unit_cases,
+            launched_cases,
+            environment_unit_cases,
+        ),
+    )

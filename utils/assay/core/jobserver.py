@@ -30,6 +30,10 @@ THE CLIENT
     byte of the FIFO.  The client opens its own descriptor of the FIFO with
     O_NONBLOCK, and it waits for a byte with select(2) and a timeout of
     WAIT_S seconds.  A wait with a stop event ends when the event is set.
+    Client.try_take() gives a slot only when a slot is free at the time of
+    the call, and else None.  Client.fileno() gives the descriptor of the
+    FIFO.  A caller can then wait for a byte and for a different event in one
+    select(2).
 
     A byte that a child holds when SIGKILL ends it does not come back.  The
     jobs of the heavy step then become fewer.  The implicit slot of each
@@ -48,10 +52,12 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import meter as cost_meter
+
 # The byte of one token, as GNU make writes it.
 TOKEN = b"+"
 # The variable of the jobserver, and the word that names its FIFO (THE PROTOCOL).
-VARIABLE = "MAKEFLAGS"
+VARIABLE = cost_meter.MAKEFLAGS_ENV
 AUTH_PREFIX = "--jobserver-auth="
 FIFO_PREFIX = "fifo:"
 # The directory and the FIFO of a server (THE SERVER).  A write of at most PIPE_BUF bytes to a pipe is atomic.  A server
@@ -129,6 +135,28 @@ class Client:
             if token == b"":
                 raise JobserverError(f"the jobserver FIFO {self.path} gives an end of file, so its server ended")
             select.select([self._descriptor], [], [], WAIT_S)
+
+    def try_take(self) -> Slot | None:
+        """Return the implicit slot when it is free, else one byte of the FIFO, else None with no wait (THE CLIENT).
+
+        Raises:
+            JobserverError: If the FIFO gives an end of file.  The FIFO of a server in its block gives none
+        """
+        with self._lock:
+            if self._is_implicit_free:
+                self._is_implicit_free = False
+                return Slot(b"")
+        try:
+            token = os.read(self._descriptor, 1)
+        except BlockingIOError:
+            return None
+        if token == b"":
+            raise JobserverError(f"the jobserver FIFO {self.path} gives an end of file, so its server ended")
+        return Slot(token)
+
+    def fileno(self) -> int:
+        """Return the descriptor of the FIFO, which select(2) calls readable when the FIFO holds a byte."""
+        return self._descriptor
 
     def give(self, slot: Slot) -> None:
         """Give a slot back: free the implicit slot, or write the byte of the slot into the FIFO."""
