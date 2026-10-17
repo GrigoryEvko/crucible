@@ -42,6 +42,13 @@ def root_cases(expect: testing.Expect) -> None:
             cache_root.base_root() == os.path.join(home, ".cache", "crucible")
             and cache.base_root() == Path(home) / ".cache" / "crucible",
         )
+    expect(
+        "a given environment names the root and the caches of the user, and the environment of the process does not",
+        cache_root.base_root({"HOME": "/planted/home"}) == "/planted/home/.cache/crucible"
+        and cache_root.base_root({cache_root.ROOT_VARIABLE: "/planted/given"}) == "/planted/given"
+        and cache_root.base_root({cache_root.ROOT_VARIABLE: cache_root.OFF}) is None
+        and cache_root.user_cache_home({cache_root.HOME_VARIABLE: "/planted/xdg"}) == "/planted/xdg",
+    )
 
 
 def main(argv: list[str]) -> int:

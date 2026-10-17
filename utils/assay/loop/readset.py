@@ -13,9 +13,11 @@ THE CLASSES OF A READ
     The read set holds each path with its kind (read, exec or list) and its
     role: a key part of the test, or a fact of the run.
       * A path in a runtime root is a fact.  The runtime roots are /proc,
-        /sys, /dev, /run, /tmp, /var/tmp, the TMPDIR of the test and the root
-        of the caches (assay.core.cache_root).  The kernel and the processes
-        write the files of these roots at run time.  The files then change
+        /sys, /dev, /run, /tmp, /var/tmp, the TMPDIR of the test, the root
+        of the caches (assay.core.cache_root) and the directory of ccache.
+        The directory of ccache is CCACHE_DIR, else the directory ccache in
+        the caches of the user, where ccache 4 keeps its files.  The kernel
+        and the processes write the files of these roots at run time.  The files then change
         from run to run, also with no change of the tree.  The launcher does
         not stat such a path, because /proc/self of the launcher is not
         /proc/self of the test.
@@ -109,6 +111,8 @@ KINDS = frozenset({READ, EXEC, LIST})
 KEY = "key"
 FACT = "fact"
 ROLES = frozenset({KEY, FACT})
+# The variable of the directory of ccache (THE CLASSES OF A READ).
+CCACHE_DIR = "CCACHE_DIR"
 # The signature of a path with no file, and of a path that the launcher cannot stat (THE SIGNATURE).
 ABSENT = "-"
 UNKNOWN = "?"
@@ -214,7 +218,7 @@ def is_runtime(path: str, roots: Sequence[str]) -> bool:
 
 
 def runtime_roots(environment: Mapping[str, str]) -> tuple[str, ...]:
-    """Return the runtime roots of a test: RUNTIME_ROOTS, its TMPDIR and the root of the caches.
+    """Return the runtime roots of a test: RUNTIME_ROOTS, its TMPDIR, the root of the caches and the directory of ccache.
 
     Args:
         environment: The environment of the test
@@ -223,9 +227,12 @@ def runtime_roots(environment: Mapping[str, str]) -> tuple[str, ...]:
     scratch = environment.get(TMPDIR, "")
     if os.path.isabs(scratch):
         roots.append(os.path.realpath(scratch).rstrip("/") or "/")
-    caches = cache_root.base_root()
+    caches = cache_root.base_root(environment)
     if caches is not None:
         roots.append(os.path.realpath(caches).rstrip("/") or "/")
+    named = environment.get(CCACHE_DIR, "")
+    compiler_cache = named if os.path.isabs(named) else os.path.join(cache_root.user_cache_home(environment), "ccache")
+    roots.append(os.path.realpath(compiler_cache).rstrip("/") or "/")
     return tuple(roots)
 
 

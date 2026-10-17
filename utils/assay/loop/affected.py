@@ -9,9 +9,9 @@ nothing new.  This subcommand builds the tree, and then it runs only these tests
   the fixture compiles again.
 - Each test of the master guard with changed inputs (THE TESTS OF THE MASTER
   GUARD).
-- Each other script test: a self-test of a module, or another test whose
-  program is not an executable of the build tree.  These tests read the source
-  tree, and they always run.
+- Each other script test with a change of its read set after its last pass
+  (THE SCRIPT TEST).  A script test is a self-test of a module, or another
+  test whose program is not an executable of the build tree.
 - Each executable test whose fingerprint is not the fingerprint of its last
   pass.
 
@@ -46,8 +46,8 @@ THE EXECUTABLE TEST
     information.
 
 THE READ SET
-    The test launcher can trace a run of a test with a program in the build
-    tree.  It then writes the read set of the run (assay.loop.readset).  The
+    The test launcher can trace a run of each test with a build directory.
+    It then writes the read set of the run (assay.loop.readset).  The
     read set holds each file that the test and its children opened for read,
     ran or listed.  It also holds a file that the test opened by a path that
     it made at run time.  The fingerprint holds these items of the key parts:
@@ -65,6 +65,31 @@ THE READ SET
     fingerprint with the read set of that run.  It records nothing when a key
     part has a different signature than at the end of the run.  The file then
     changed after the test read it.
+
+THE SCRIPT TEST
+    A script test has no program in the build tree, and it is no test of
+    the master guard with known inputs.  With a usable read set, it has the
+    kind KIND_TRACED.  Its fingerprint holds these items:
+      - The ctest record and the files of the build tree that its command
+        names
+      - The inputs of the test launcher and the environment
+      - The key parts of its read set.
+    It then runs only when one of these items changes, as an executable
+    test does.  With no usable
+    read set, it has the kind KIND_SCRIPT and it runs on each call.  The
+    launcher then traces it.  Its fingerprint with no read set is its static
+    fingerprint.  After its first traced pass, the script then records the
+    fingerprint with the new read set.
+
+    A traced script test is free of the build when its read set is current
+    and holds no key part in the build tree.  A path with no file in the
+    build tree counts, because a file there in a different configuration
+    can change the run.  Its command after the launcher and its property
+    ENVIRONMENT must also name no path of the build tree.  The trace does
+    not stop a stat or an access (assay.loop.tracer, THE CALLS).  A test
+    that knows the build directory can then probe a file of it with no open.
+    Such a test reads no file of a build, and it gives the same result in
+    each configuration.
 
 THE TESTS OF THE MASTER GUARD
     A test can start the master guard of the source tree with a Python
@@ -119,9 +144,10 @@ THE TESTS THAT READ THE BUILD
     line.  The script skips each other test with no change to its record.
 
     `--build-only` skips each test of the kind KIND_GUARD: a test of the
-    master guard with known inputs that reads no build.  Such a test gives
-    the same result in each configuration, and no file of a build is in its
-    shared key.  The gate gives the option to each configuration other than
+    master guard with known inputs that reads no build.  It also skips each
+    traced script test that is free of the build (THE SCRIPT TEST).  Such a
+    test gives the same result in each configuration, and no file of a build
+    is in its shared key.  The gate gives the option to each configuration other than
     default, and default runs each such test (assay.loop.gate, THE
     SELECTION).  The script skips such a test with no change to its record,
     also with --all.
@@ -454,14 +480,15 @@ KIND_SCRIPT = "script"
 KIND_ALWAYS = "always"
 KIND_GUARD = "guard"
 KIND_EXECUTABLE = "executable"
+KIND_TRACED = "traced"
 # The kind of a test that --only does not name.  The script skips it, and it reads no input of it.
 KIND_UNNAMED = "unnamed"
 # The kinds of a test that a fingerprint judges.
-FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE)
+FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE, KIND_TRACED)
 
 # The reason of each decision, as the summary prints it.
 REASON_FIXTURE = "the result store of `loop fixture` decides"
-REASON_SCRIPT = "a script test reads the source tree"
+REASON_SCRIPT = "a script test with no read set runs on each call, and the launcher traces it"
 REASON_CHANGED = "an input changed since the last pass"
 REASON_NO_RECORD = "no pass on record"
 REASON_ALL = "--all"
@@ -506,9 +533,10 @@ class Trees:
 class Decision:
     """What the script does with one test, and why.
 
-    `static` is the fingerprint with no read set (THE READ SET).  An executable test and a test of the master guard
-    have it.  A test that always runs for a reason that a read set can lift has it too.  `reads` is the usable read set
-    of an executable test, or None.
+    `static` is the fingerprint with no read set (THE READ SET).  An executable test, a script test and a test of the
+    master guard have it.  A test that always runs for a reason that a read set can lift has it too.  `reads` is the
+    usable read set of an executable test or a script test, or None.  `is_build_free` tells that a traced script test
+    reads no file of a build (THE SCRIPT TEST).
     """
 
     test: ctest_reader.TestEntry
@@ -519,6 +547,7 @@ class Decision:
     is_skipped: bool = False
     static: str = ""
     reads: readset.ReadSet | None = None
+    is_build_free: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1002,7 +1031,7 @@ class Planner:
             return guard
         program = self.build_program(test)
         if program is None:
-            return Decision(test, KIND_SCRIPT, REASON_SCRIPT)
+            return self.script_decision(test)
         start, launcher = launcher_prefix(test.command)
         always = self.property_reason(test)
         if always:
@@ -1031,6 +1060,34 @@ class Planner:
             return Decision(test, KIND_ALWAYS, lifted if is_usable else REASON_READS, static=static)
         fingerprint, shared = self.fingerprints(test, inputs, directories, texts, reads)
         return Decision(test, KIND_EXECUTABLE, "", fingerprint=fingerprint, shared=shared, static=static, reads=reads)
+
+    def script_decision(self, test: ctest_reader.TestEntry) -> Decision:
+        """Return the decision for a script test: KIND_TRACED with a usable read set, else KIND_SCRIPT (THE SCRIPT TEST).
+
+        Complexity: one read of the read set, and one signature of each key part.  The digest cache gives the digest of
+        each input and key part, or the call reads the file one time.
+        """
+        always = self.property_reason(test)
+        if always:
+            return Decision(test, KIND_ALWAYS, always)
+        start, launcher = launcher_prefix(test.command)
+        build_root = self.trees.build_root
+        named = [real(item) for item in test.command[start:] if os.path.isabs(item)]
+        inputs = {path for path in named if self.trees.is_in_build(path) and not os.path.isdir(path)}
+        texts: tuple[str, ...] = (environment_text(is_launched=False),)
+        if launcher:
+            launcher_files, texts = self.launcher_inputs(launcher)
+            inputs.update(launcher_files)
+        static, _ = self.fingerprints(test, inputs, set(), texts)
+        is_usable, reads = self.read_set(test, start)
+        if reads is None:
+            return Decision(test, KIND_SCRIPT, REASON_SCRIPT if is_usable else REASON_READS, static=static)
+        fingerprint, shared = self.fingerprints(test, inputs, set(), texts, reads)
+        names_build = any(build_root in item for item in (*test.command[start:], *test.words_of("ENVIRONMENT")))
+        reads_build = any(self.trees.is_in_build(entry.path) for entry in reads.key_parts())
+        is_build_free = not names_build and not reads_build and reads.is_current()
+        return Decision(test, KIND_TRACED, "", fingerprint=fingerprint, shared=shared, static=static, reads=reads,
+                        is_build_free=is_build_free)
 
     def read_set(self, test: ctest_reader.TestEntry, start: int) -> tuple[bool, readset.ReadSet | None]:
         """Return True when a test has no read set or a usable one, and its usable read set or None (THE READ SET).
@@ -1227,7 +1284,7 @@ class Planner:
                 decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
                 continue
             decision = self.classify(test)
-            if is_build_only and decision.kind == KIND_GUARD:
+            if is_build_only and (decision.kind == KIND_GUARD or decision.is_build_free):
                 decision.reason = REASON_BUILD_FREE
                 decision.is_skipped = True
             elif decision.kind in FINGERPRINTED:
@@ -1298,7 +1355,8 @@ def print_plan(decisions: list[Decision], build_dir: Path) -> None:
     groups = Counter(("skip" if decision.is_skipped else "run", decision.kind, decision.reason)
                      for decision in decisions)
     print(f"loop test: {len(decisions)} tests in {build_dir}")
-    order = {KIND_FIXTURE: 0, KIND_SCRIPT: 1, KIND_ALWAYS: 2, KIND_GUARD: 3, KIND_EXECUTABLE: 4, KIND_UNNAMED: 5}
+    order = {KIND_FIXTURE: 0, KIND_SCRIPT: 1, KIND_TRACED: 2, KIND_ALWAYS: 3, KIND_GUARD: 4, KIND_EXECUTABLE: 5,
+             KIND_UNNAMED: 6}
     for (action, kind, reason), count in sorted(groups.items(), key=lambda item: (item[0][0], order[item[0][1]])):
         print(f"  {action:4} {count:5}  {kind}: {reason}")
 
@@ -2140,13 +2198,14 @@ def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> No
 def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
     """Check the keys of the read set (THE READ SET) with the test launcher of the tree, on a fake build tree.
 
-    The program of each test is a copy of sh.  exe_traced reads a file by a path that its script makes at run time.
+    The program of each exe_ test is a copy of sh.  exe_traced reads a file by a path that its script makes at run time.
     exe_named names a file of the source tree, and it always runs with no read set.  exe_verdict exits with the status
-    1, and its property PASS_REGULAR_EXPRESSION makes ctest accept that status.  The trees are in the work root of
-    assay.core.cache.  A path in /tmp is a fact of a read set and not a key part.  On a host that refuses the filter
+    1, and its property PASS_REGULAR_EXPRESSION makes ctest accept that status.  The program of each script_ test is sh
+    of the host (THE SCRIPT TEST).  script_source reads a file of the source tree, and script_build reads a file of
+    the build tree.  The trees are in the work root of assay.core.cache.  A path in /tmp is a fact of a read set and not a key part.  On a host that refuses the filter
     of the trace, the launcher writes no read set.  The function then writes a note and checks nothing.
     """
-    names = {"exe_traced", "exe_named", "exe_verdict"}
+    names = {"exe_traced", "exe_named", "exe_verdict", "script_source", "script_build"}
     work = cache.work_root()
     work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="affected-traced-", dir=work) as directory:
@@ -2173,6 +2232,11 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
             program.chmod(0o755)
             lines.append(f'add_test([=[{name}]=] {launched} "{program}" "-c" [=[{script}]=]{extra})')
         lines.append("set_tests_properties([=[exe_verdict]=] PROPERTIES PASS_REGULAR_EXPRESSION [=[verdict-marker]=])")
+        shell = shutil.which("sh") or "/bin/sh"
+        for name, read in (("script_source", golden), ("script_build", target)):
+            script = f'read -r line < "$(dirname "$0")/{read.name}"'
+            lines.append(f'add_test([=[{name}]=] {launched} "--name" "{name}" "{shell}" "-c" [=[{script}]=] '
+                         f'"{read.parent}/x")')
         (build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
         _status, output = call_script(build_dir)
         if not (build_dir / "test-records" / f"exe_traced{readset.SUFFIX}").is_file():
@@ -2191,6 +2255,9 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
         _status, output = call_script(build_dir)
         expect("the tests are skipped again after their passes with the new key parts",
                set(skipped_tests(build_dir)) == names, output)
+        _status, output = call_script(build_dir, "--all", "--build-only")
+        expect("--build-only skips a traced script test that reads no file of a build, also with --all, and it runs a "
+               "script test that reads a file of the build tree", skipped_tests(build_dir) == ["script_source"], output)
 
 
 # The presets of the fake tree of the parse cases: one binaryDir for each parse build, and no build is configured.

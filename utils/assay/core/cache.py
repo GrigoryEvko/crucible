@@ -175,7 +175,7 @@ LIMITS: dict[str, int] = {
     "history": 256 << 20,
 }
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
-COMPILED_CACHE = "pycache"
+COMPILED_CACHE = root_rule.COMPILED_CACHE
 # The suffix of a compiled module of the package.
 COMPILED_SUFFIXES = (".pyc",)
 # The lock of the eviction of a cache.  An eviction holds it alone, and a reader of a long run shares it (THE TURN).

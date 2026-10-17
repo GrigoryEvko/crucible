@@ -56,8 +56,8 @@ THE SELECTION
         an input of the test launcher or of the fixture driver
         (meter_inputs() of assay.loop.affected).  The build then compiles
         again what the change touches.  `loop test` runs each test with a
-        changed input, each script test, each fixture, and each test that
-        reads the build.
+        changed input, each script test with no usable read set, each
+        fixture, and each test that reads the build.
       * The touched tests, `loop test BUILD --only FILE`, in each other
         configuration of objects, for each other change.  A touched test
         reads the build, and the change touches one of its inputs.

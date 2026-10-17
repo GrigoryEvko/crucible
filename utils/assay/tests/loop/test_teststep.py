@@ -16,8 +16,8 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from assay.core import cache_root, proc, testing
 from assay.core import meter as cost_meter
-from assay.core import proc, testing
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -878,6 +878,27 @@ def environment_unit_cases(expect: testing.Expect) -> None:
     expect(
         "a variable of FIXED_VALUES is not a kept variable, so a property cannot set it",
         not any(test_launcher.is_kept(name) for name, _ in test_launcher.FIXED_VALUES),
+    )
+    planted_root = {**host, cache_root.ROOT_VARIABLE: "/planted/caches"}
+    rooted = dict(test_launcher.canonical_environment(planted_root))
+    stopped = dict(test_launcher.canonical_environment({**host, cache_root.ROOT_VARIABLE: cache_root.OFF}))
+    expect(
+        "the launcher keeps the working directory and the script directory off sys.path, and it gives the "
+        "directory pycache of the cache root of the environment to each Python process of the test",
+        rooted[test_launcher.SAFE_PATH_ENV] == "1"
+        and rooted[test_launcher.PYCACHE_PREFIX_ENV] == "/planted/caches/pycache"
+        and test_launcher.NO_BYTECODE_ENV not in rooted,
+    )
+    expect(
+        "a command of the master guard behind a Python interpreter gets no trace, and each other command can get one",
+        test_launcher.runs_master_guard(["/usr/bin/python3", "-S", "/tree/utils/bin/guard", "check", "--rule", "x"])
+        and not test_launcher.runs_master_guard(["/usr/bin/python3", "-S", "/tree/utils/bin/loop", "fixture"])
+        and not test_launcher.runs_master_guard(["/tree/build/bin/test_x", "/tree/utils/bin/guard"])
+        and not test_launcher.runs_master_guard([]),
+    )
+    expect(
+        "with the caches off, the launcher stops the writes of compiled modules and names no prefix, as the masters do",
+        stopped[test_launcher.NO_BYTECODE_ENV] == "1" and test_launcher.PYCACHE_PREFIX_ENV not in stopped,
     )
 
 

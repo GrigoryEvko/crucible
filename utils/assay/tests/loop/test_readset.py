@@ -12,7 +12,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from assay.core import cache, testing
+from assay.core import cache, cache_root, testing
 from assay.loop import readset
 
 
@@ -127,6 +127,27 @@ def classify_cases(expect: testing.Expect) -> None:
         expect("a key part that changed while the test ran makes the read set not settled", not is_settled)
 
 
+def runtime_root_cases(expect: testing.Expect) -> None:
+    """Check the runtime roots of a planted environment (THE CLASSES OF A READ)."""
+    planted = {
+        readset.TMPDIR: "/planted/tmp",
+        cache_root.ROOT_VARIABLE: "/planted/caches",
+        cache_root.HOME_VARIABLE: "/planted/xdg",
+    }
+    roots = readset.runtime_roots(planted)
+    named = readset.runtime_roots({**planted, readset.CCACHE_DIR: "/planted/ccache"})
+    expect(
+        "the runtime roots hold the fixed roots, the TMPDIR, the cache root and the directory ccache in the caches "
+        "of the user",
+        set(readset.RUNTIME_ROOTS) <= set(roots)
+        and {"/planted/tmp", "/planted/caches", "/planted/xdg/ccache"} <= set(roots),
+    )
+    expect(
+        "CCACHE_DIR names the directory of ccache, and the caches of the user hold no runtime root of ccache",
+        "/planted/ccache" in named and "/planted/xdg/ccache" not in named,
+    )
+
+
 def plan_cases(expect: testing.Expect) -> None:
     """Call plan() for each condition of a retrace (THE RETRACE)."""
     work = cache.work_root()
@@ -161,5 +182,5 @@ def plan_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    groups = (record_cases, signature_cases, classify_cases, plan_cases)
+    groups = (record_cases, signature_cases, classify_cases, runtime_root_cases, plan_cases)
     return testing.run(__name__.removeprefix("assay."), argv, groups)

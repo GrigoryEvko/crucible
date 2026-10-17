@@ -60,6 +60,17 @@ THE ENVIRONMENT
         drops each other variable.
       * It sets each variable of FIXED_VALUES to its value: the locale
         C.UTF-8 and the time zone UTC.
+      * It sets PYCACHE_PREFIX_ENV to the cache of the compiled modules in
+        the cache root, the directory that each master names in
+        sys.pycache_prefix.  A Python process of the test then reads and
+        writes no __pycache__ directory of the tree.  A compiled module is
+        then in no read set, and the cache root is a runtime root of the
+        read set (assay.loop.readset).  With the caches off, the launcher
+        sets NO_BYTECODE_ENV, as the masters do.
+      * It sets SAFE_PATH_ENV.  A Python process of the test then keeps the
+        working directory and the directory of its script off sys.path.  Its
+        import system then lists no such directory, and the listing is in no
+        read set.  Each master puts the directory utils on sys.path itself.
       * It keeps each absolute directory of PATH one time, in the same
         sequence.  It drops an empty item and a relative item, because the
         two name a directory that changes with the directory of the test.
@@ -189,8 +200,10 @@ THE VERSION
     holds such a file (THE READ SET).
 
 THE READ SET
-    The launcher can trace the system calls of a test with a program in the
-    build directory (assay.loop.tracer).  The trace gives the read set of the
+    The launcher can trace the system calls of each test with a build
+    directory (assay.loop.tracer).  A test of the master guard gets no trace
+    (runs_master_guard()), because `loop test` gives such a test the inputs
+    of its rule and reads no read set of it.  The trace gives the read set of the
     run: each file that the test and its children open for read, run or list.
     The launcher writes it to BUILD/test-records/NAME.test.reads
     (assay.loop.readset).  `loop test` puts its key parts into the key of
@@ -260,6 +273,12 @@ KEPT_NAMES = frozenset(
 KEPT_PREFIXES = ("ASSAY_", "CCACHE_", "CRUCIBLE_", "SESSION_ORACLE_")
 # The variables that the launcher gives each test, with their values.
 FIXED_VALUES = (("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"), ("TZ", "UTC"))
+# The variable of the directory of the compiled modules of Python, and the variable that stops their writes (THE
+# ENVIRONMENT).
+PYCACHE_PREFIX_ENV = "PYTHONPYCACHEPREFIX"
+NO_BYTECODE_ENV = "PYTHONDONTWRITEBYTECODE"
+# The variable that keeps the working directory and the directory of the script off sys.path (THE ENVIRONMENT).
+SAFE_PATH_ENV = "PYTHONSAFEPATH"
 # The variables of the launcher that the clean environment does not hold.  The launcher gives the profile variables to
 # the test with no change (THE ENVIRONMENT).
 PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
@@ -272,7 +291,8 @@ OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words")
 MASTER = "utils/bin/loop"
 SUBCOMMAND = "test-step"
 # The ends of the paths of the three masters, which run the modules of the package (THE VERSION).
-MASTERS = ("utils/bin/guard", MASTER, "utils/bin/setup")
+GUARD_MASTER = "utils/bin/guard"
+MASTERS = (GUARD_MASTER, MASTER, "utils/bin/setup")
 PACKAGE = "assay"
 USAGE = (
     "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] "
@@ -357,6 +377,12 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
         else:
             del kept[SEARCH_PATH]
     kept.update(FIXED_VALUES)
+    kept[SAFE_PATH_ENV] = "1"
+    caches = cache_root.base_root(environment)
+    if caches is None:
+        kept[NO_BYTECODE_ENV] = "1"
+    else:
+        kept[PYCACHE_PREFIX_ENV] = os.path.join(caches, cache_root.COMPILED_CACHE)
     return tuple(sorted(kept.items()))
 
 
@@ -503,6 +529,19 @@ def command_files(command: Sequence[str]) -> list[str]:
         if word.endswith(MASTERS):
             paths.extend(package_modules(os.path.dirname(os.path.dirname(word))))
     return paths
+
+
+def runs_master_guard(command: Sequence[str]) -> bool:
+    """Tell if a command runs the master guard with a Python interpreter (THE READ SET).
+
+    The script is the first word after the options of the interpreter.  Complexity: linear in the options.
+    """
+    if not command or not os.path.basename(command[0]).startswith("python"):
+        return False
+    index = 1
+    while index < len(command) and command[index].startswith("-"):
+        index += 1
+    return index < len(command) and command[index].endswith(GUARD_MASTER)
 
 
 def version_of(words: Sequence[str], files: Iterable[str]) -> str:
@@ -801,7 +840,7 @@ def main(argv: list[str]) -> int:
     if makeflags:
         os.environ[cost_meter.TEST_JOBSERVER_ENV] = makeflags
     os.environ.update(profiles)
-    traced_dir = build_dir if is_built else None
+    traced_dir = None if runs_master_guard(command) else build_dir
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
     try:
         run = cost_meter.measure(command, count_instructions=True, supervisor=None if plan is None else plan.tracer)
