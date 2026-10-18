@@ -714,8 +714,18 @@ crucible_test(test_registration_seal_race
 # A token from an identifier that the fixture uses is not sufficient.  The
 # fixture can fail because it cannot find that identifier, and the output
 # then contains the token.
+#
+# One glob finds the source of each fixture, and the variable of its name
+# holds its path.  A name with two files gets a list of two, and its
+# registration refuses it.  On 2026-10-18, a glob for each of the 697
+# registrations made each configure 0.75 s longer.
+file(GLOB _crucible_neg_sources LIST_DIRECTORIES false "${CMAKE_CURRENT_SOURCE_DIR}/*_neg/*.cpp")
+foreach(_crucible_neg_source IN LISTS _crucible_neg_sources)
+  get_filename_component(_crucible_neg_name "${_crucible_neg_source}" NAME_WLE)
+  list(APPEND _crucible_neg_source_${_crucible_neg_name} "${_crucible_neg_source}")
+endforeach()
 function(crucible_neg_compile_test name)
-  file(GLOB sources LIST_DIRECTORIES false "${CMAKE_CURRENT_SOURCE_DIR}/*_neg/${name}.cpp")
+  set(sources ${_crucible_neg_source_${name}})
   list(LENGTH sources source_count)
   if(NOT source_count EQUAL 1)
     message(FATAL_ERROR
