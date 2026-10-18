@@ -201,9 +201,14 @@ THE VERSION
 
 THE READ SET
     The launcher can trace the system calls of each test with a build
-    directory (assay.loop.tracer).  A test of the master guard gets no trace
-    (runs_master_guard()), because `loop test` gives such a test the inputs
-    of its rule and reads no read set of it.  The trace gives the read set of the
+    directory (assay.loop.tracer).  A rule test and a group test of the
+    master guard get no trace (has_derived_inputs()).  `loop test` gives
+    such a test the inputs of its rule or its group, and it reads no read
+    set of it.  The test of one module, `guard selftest MODULE`, gets the
+    trace.  A module can import a module by name from a listing, and it can
+    read a ledger, a plant or a file of the tree.  On 2026-10-18, the traces
+    of 105 such tests read 227 modules and 66 ledgers that their import
+    closures do not hold.  The trace gives the read set of the
     run: each file that the test and its children open for read, run or list.
     The launcher writes it to BUILD/test-records/NAME.test.reads
     (assay.loop.readset).  `loop test` puts its key parts into the key of
@@ -213,6 +218,16 @@ THE READ SET
     of the run (THE VERSION) with the clean environment.  Each other run has
     no trace and costs no import of the tracer.  A failure of the trace or of
     the write of the read set does not change the status of the test.
+
+    The kernel admits one listener of seccomp in the chain of a task.  A
+    traced test cannot trace a test of its own, because its listener then
+    gets EBUSY.  The option `--trace never` keeps such a test untraced, and
+    crucible_script_test() of cmake/TestLauncher.cmake gives it.  A test with
+    the option runs on each call of `loop test`.  The launcher sets TRACED_ENV
+    for a traced run.  A test that must hold a listener reads the variable.
+    It fails when the variable is set, because its cases of the trace cannot
+    hold.  The clean environment does not hold the variable.  A launcher in
+    the test then drops it for the tests that it starts.
 
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
 registry and another directory of ledgers, which holds RULE.txt for each
@@ -251,6 +266,8 @@ CORES_ENV = "CRUCIBLE_TEST_CORES"
 CORES_KEEP = "keep"
 # The variable that tells a fixture driver in the command that this subcommand records and judges the test.
 LAUNCHED_ENV = "CRUCIBLE_TEST_LAUNCHED"
+# The variable that tells a test that this subcommand traces its run (THE READ SET).
+TRACED_ENV = "CRUCIBLE_TEST_TRACED"
 # The variables that the test gets from the environment of the launcher (THE ENVIRONMENT).  The sanitizer options and
 # GITHUB_ACTIONS change a result.  HOME, TMPDIR and XDG_CACHE_HOME give the caches and the scratch directories.
 KEPT_NAMES = frozenset(
@@ -282,10 +299,13 @@ SAFE_PATH_ENV = "PYTHONSAFEPATH"
 # The variables of the launcher that the clean environment does not hold.  The launcher gives the profile variables to
 # the test with no change (THE ENVIRONMENT).
 PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
-PASSED_THROUGH = frozenset({LAUNCHED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
+PASSED_THROUGH = frozenset({LAUNCHED_ENV, TRACED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
 SEARCH_PATH = "PATH"
-# The options before the command, each with one value.
-OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words")
+# The options before the command, each with one value, and the one value of --trace (THE READ SET).
+OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words", "--trace")
+TRACE_NEVER = "never"
+# The directory of the test groups of the subcommand selftest of the master guard, relative to the root (THE READ SET).
+TEST_GROUPS = "utils/assay/tests"
 # The end of the path of the master, and the subcommand that this module is.  A test command can name the master of
 # an export of the tree.  A reader then finds the master by the end of its path.
 MASTER = "utils/bin/loop"
@@ -296,7 +316,7 @@ MASTERS = (GUARD_MASTER, MASTER, "utils/bin/setup")
 PACKAGE = "assay"
 USAGE = (
     "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] "
-    "[EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
+    "[--trace never] [EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
 )
 # The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
 # module holds equal to WRITER_KEY.  A name does not start with '-' or '.'.
@@ -531,17 +551,29 @@ def command_files(command: Sequence[str]) -> list[str]:
     return paths
 
 
-def runs_master_guard(command: Sequence[str]) -> bool:
-    """Tell if a command runs the master guard with a Python interpreter (THE READ SET).
+def has_derived_inputs(command: Sequence[str]) -> bool:
+    """Tell if a command runs the master guard with words that `loop test` gives the inputs of (THE READ SET).
 
-    The script is the first word after the options of the interpreter.  Complexity: linear in the options.
+    The script is the first word after the options of the interpreter.  The words are a rule test, `guard check` or
+    `guard witness`, or a group test, `guard selftest GROUP` (assay.loop.inputs, THE TESTS).  GROUP names a group as
+    the subcommand selftest reads it: a name with no dot, and a directory of TEST_GROUPS in the root of the master.
+    The test of one module, `guard selftest MODULE`, gets no such inputs.  Complexity: linear in the options, and one
+    stat for a group test.
     """
     if not command or not os.path.basename(command[0]).startswith("python"):
         return False
     index = 1
     while index < len(command) and command[index].startswith("-"):
         index += 1
-    return index < len(command) and command[index].endswith(GUARD_MASTER)
+    if index >= len(command) or not command[index].endswith(GUARD_MASTER):
+        return False
+    words = command[index + 1:]
+    if words[:1] in (["check"], ["witness"]):
+        return True
+    if words[:1] != ["selftest"] or len(words) < 2 or "." in words[1]:
+        return False
+    root = os.path.abspath(command[index]).removesuffix(GUARD_MASTER)
+    return os.path.isdir(os.path.join(root, TEST_GROUPS, words[1]))
 
 
 def version_of(words: Sequence[str], files: Iterable[str]) -> str:
@@ -610,7 +642,7 @@ def is_test_name(name: str) -> bool:
 class Options:
     """The options of the command line: each one is None when the command line does not give it."""
 
-    __slots__ = ("build_dir", "emulator_words", "name", "warnings_dir")
+    __slots__ = ("build_dir", "emulator_words", "name", "trace", "warnings_dir")
 
     def __init__(self) -> None:
         """Start with no option."""
@@ -618,6 +650,7 @@ class Options:
         self.build_dir: str | None = None
         self.name: str | None = None
         self.emulator_words: str | None = None
+        self.trace: str | None = None
 
 
 def option_field(option: str) -> str:
@@ -792,7 +825,8 @@ def main(argv: list[str]) -> int:
     """Run the test of the command line, and end as it ended.
 
     Args:
-        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] [EMULATOR...] PROGRAM [ARG]...
+        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never]
+            [EMULATOR...] PROGRAM [ARG]...
 
     Returns:
         2 on a usage error.  Else the function ends the process as the test ended
@@ -801,12 +835,15 @@ def main(argv: list[str]) -> int:
     program_at = None if parsed is None else program_index(*parsed)
     program_word = "" if parsed is None or program_at is None else parsed[1][program_at]
     name = "" if parsed is None else parsed[0].name or os.path.basename(program_word)
-    if parsed is None or program_at is None or not is_test_name(name):
+    trace = None if parsed is None else parsed[0].trace
+    if parsed is None or program_at is None or not is_test_name(name) or trace not in (None, TRACE_NEVER):
         if parsed is None:
             problem = ""
         elif program_at is None:
             problem = (f"--emulator-words {parsed[0].emulator_words!r} is not a count of the words of the emulator "
                        f"before the program.  ")
+        elif trace not in (None, TRACE_NEVER):
+            problem = f"--trace takes the value {TRACE_NEVER}, and it got {trace!r}.  "
         else:
             problem = (f"the test name {name!r} is not a word of letters, digits, '_', '.' and '-' that starts with a "
                        f"letter, a digit or '_'.  ")
@@ -840,8 +877,10 @@ def main(argv: list[str]) -> int:
     if makeflags:
         os.environ[cost_meter.TEST_JOBSERVER_ENV] = makeflags
     os.environ.update(profiles)
-    traced_dir = None if runs_master_guard(command) else build_dir
+    traced_dir = None if trace == TRACE_NEVER or has_derived_inputs(command) else build_dir
     plan = None if traced_dir is None else safely(lambda: traced_run(traced_dir, name, command, version, clean), None)
+    if plan is not None:
+        os.environ[TRACED_ENV] = "1"
     try:
         run = cost_meter.measure(command, count_instructions=True, supervisor=None if plan is None else plan.tracer)
     except OSError as error:

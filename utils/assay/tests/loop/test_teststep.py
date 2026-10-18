@@ -21,6 +21,7 @@ from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.loop import readset
 from assay.loop import teststep as test_launcher
 
 
@@ -195,11 +196,20 @@ class Planted:
             and record["command"] == "sh"
             and record["result"] == "passed",
         )
+        traced = test_launcher.TRACED_ENV
+        status, _ = self.launch_script("planted_traced", "sh", "-c", f'test "${traced}" = 1')
+        expect("a script test that the launcher plans to trace gets the mark of a traced run", status == 0)
+        status, _ = self.launch_script("planted_untraced", "--trace", "never", "sh", "-c", f'test -z "${traced}"')
+        expect(
+            "a script test with --trace never gets no mark of a traced run, and the launcher writes no read set of it",
+            status == 0 and not Path(readset.read_set_file(self.build, "planted_untraced")).exists(),
+        )
         usage_errors = (
             ("an option with no value", ["--name"]),
             ("an option two times", ["--name", "a", "--name", "b", "sh"]),
             ("no program", ["--build-dir", str(self.build)]),
             ("the option of a self-test, which the launcher does not have", ["--self-test"]),
+            ("a value of --trace that is not never", ["--trace", "sometimes", "sh"]),
         )
         for label, words in usage_errors:
             done = proc.run(proc.Command([*self.launcher, *words], timeout_s=proc.TOOL_S, env=self._environment_of({})))
@@ -889,12 +899,30 @@ def environment_unit_cases(expect: testing.Expect) -> None:
         and rooted[test_launcher.PYCACHE_PREFIX_ENV] == "/planted/caches/pycache"
         and test_launcher.NO_BYTECODE_ENV not in rooted,
     )
+    with tempfile.TemporaryDirectory() as scratch:
+        (Path(scratch) / test_launcher.TEST_GROUPS / "sample").mkdir(parents=True)
+        master = [sys.executable, "-S", str(Path(scratch) / test_launcher.GUARD_MASTER)]
+        derived = test_launcher.has_derived_inputs
+        expect(
+            "a rule test and a group test of the master guard get no trace, because loop test gives their inputs",
+            derived([*master, "check", "--rule", "x"])
+            and derived([*master, "witness", "--engine", "plugin"])
+            and derived([*master, "selftest", "sample", "--part", "0/2"]),
+        )
+        expect(
+            "the test of one module, a name that is no group, a different master and an empty command get the trace",
+            not derived([*master, "selftest", "tests.loop.test_x"])
+            and not derived([*master, "selftest", "core.cache"])
+            and not derived([*master, "selftest", "absent"])
+            and not derived([*master, "warnings", scratch])
+            and not derived([sys.executable, "-S", str(Path(scratch) / test_launcher.MASTER), "fixture"])
+            and not derived(["/tree/build/bin/test_x", str(Path(scratch) / test_launcher.GUARD_MASTER)])
+            and not derived([]),
+        )
     expect(
-        "a command of the master guard behind a Python interpreter gets no trace, and each other command can get one",
-        test_launcher.runs_master_guard(["/usr/bin/python3", "-S", "/tree/utils/bin/guard", "check", "--rule", "x"])
-        and not test_launcher.runs_master_guard(["/usr/bin/python3", "-S", "/tree/utils/bin/loop", "fixture"])
-        and not test_launcher.runs_master_guard(["/tree/build/bin/test_x", "/tree/utils/bin/guard"])
-        and not test_launcher.runs_master_guard([]),
+        "the clean environment holds no mark of a traced run, so a launcher in the test drops it",
+        test_launcher.TRACED_ENV
+        not in dict(test_launcher.canonical_environment({**host, test_launcher.TRACED_ENV: "1"})),
     )
     expect(
         "with the caches off, the launcher stops the writes of compiled modules and names no prefix, as the masters do",

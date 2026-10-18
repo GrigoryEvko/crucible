@@ -4752,8 +4752,9 @@ set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_te
 # and runs only the tests whose inputs changed since their last pass.  It is
 # the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before
 # a landing run the full suite.  The self-test plants each kind of input in a
-# scratch tree with a CTestTestfile.cmake that it writes.
-crucible_script_test(NAME affected_tests_self_test
+# scratch tree with a CTestTestfile.cmake that it writes.  The cases of the read
+# set trace the planted tests, so the launcher does not trace the self-test.
+crucible_script_test(NAME affected_tests_self_test TRACE never
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest loop.affected
           --ctest ${CMAKE_CTEST_COMMAND})
 # loop_history_self_test — each call of `loop test` appends one line
@@ -4989,13 +4990,17 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
         loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset loop.test_audit
-        core.test_calls loop.test_tracer loop.test_evidence loop.evidence.test_store loop.evidence.test_status
+        core.test_calls loop.test_evidence loop.evidence.test_store loop.evidence.test_status
         loop.evidence.test_measurement loop.evidence.test_coverage loop.test_entry)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
   set_tests_properties(${_assay_test_name} PROPERTIES LABELS "ci_guard;meta")
 endforeach()
+# The test of the tracer traces planted tests, so the launcher does not trace it.
+crucible_script_test(NAME assay_loop_test_tracer TRACE never
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_tracer)
+set_tests_properties(assay_loop_test_tracer PROPERTIES LABELS "ci_guard;meta")
 # The tests of the items of the evidence and of the runner of the kind repetition run the ctest of this build on the
 # fake build tree of `loop test`.  The test of the items also builds a planted project with the compiler of this build.
 foreach(_assay_test loop.evidence.test_items loop.evidence.test_repetition loop.evidence.test_search)

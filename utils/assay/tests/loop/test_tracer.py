@@ -8,7 +8,8 @@ starts a child that opens a file, and one has no reads of its own.  The scratch
 build directory is in the work root of assay.core.cache.  A path in /tmp is a
 fact of a read set and not a key part.  On a host that refuses the filter, the
 launcher writes no read set, and the cases of the trace then write a note and
-hold.  Each case writes one line.  Exit 0 when each case holds, else 1.
+hold.  A launcher that traces this test makes the cases of the trace fail.
+Each case writes one line.  Exit 0 when each case holds, else 1.
 """
 
 import os
@@ -23,6 +24,7 @@ from assay.core import cache, proc, testing
 from assay.core import meter as cost_meter
 from assay.core import report as check_report
 from assay.loop import readset, tracer
+from assay.loop import teststep as test_launcher
 
 # The seccomp data of one call: the number, the architecture, the instruction pointer and six arguments.
 DATA = struct.Struct("=iIQ6Q")
@@ -128,7 +130,18 @@ def keys_of(found: readset.ReadSet | None) -> dict[tuple[str, str], readset.Entr
 
 
 def trace_cases(expect: testing.Expect) -> None:
-    """Check the read sets of the planted programs (THE TRACE, THE CALLS)."""
+    """Check the read sets of the planted programs (THE TRACE, THE CALLS).
+
+    A traced test cannot hold a listener of its own (assay.loop.teststep, THE READ SET).  The cases then fail, because
+    they cannot hold.
+    """
+    if os.environ.get(test_launcher.TRACED_ENV):
+        expect(
+            "the launcher of this test does not trace it, because the trace of the test refuses the listener of each "
+            "case.  Give the test the launcher option --trace never",
+            False,
+        )
+        return
     work = cache.work_root()
     work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="test-tracer-", dir=work) as scratch:

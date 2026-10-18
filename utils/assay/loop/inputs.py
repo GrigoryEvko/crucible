@@ -9,7 +9,8 @@ THE TESTS
       * a group test: `guard selftest GROUP [--part K/N]`, for a directory
         GROUP of utils/assay/tests/.
     A test of the master with other words, such as `guard selftest MODULE`,
-    gets no inputs.  `loop test` then runs it on each call.  A rule test
+    gets no inputs.  The test launcher then traces it, and `loop test` reads
+    its read set (assay.loop.affected, THE SCRIPT TEST).  A rule test
     that reads a build gets its inputs in the source tree, and the reason
     that it reads the build (THE BUILD).
 

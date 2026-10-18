@@ -79,7 +79,11 @@ THE SCRIPT TEST
     read set, it has the kind KIND_SCRIPT and it runs on each call.  The
     launcher then traces it.  Its fingerprint with no read set is its static
     fingerprint.  After its first traced pass, the script then records the
-    fingerprint with the new read set.
+    fingerprint with the new read set.  The test of one module of the
+    package, `guard selftest MODULE`, is a script test too, because
+    assay.loop.inputs gives it no inputs.  A script test with the launcher
+    option `--trace never` gets no read set, and it runs on each call
+    (assay.loop.teststep, THE READ SET).
 
     A traced script test is free of the build when its read set is current
     and holds no key part in the build tree.  A path with no file in the
@@ -500,6 +504,7 @@ FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE, KIND_TRACED)
 # The reason of each decision, as the summary prints it.
 REASON_FIXTURE = "the result store of `loop fixture` decides"
 REASON_SCRIPT = "a script test with no read set runs on each call, and the launcher traces it"
+REASON_UNTRACED = "a script test with the launcher option --trace never runs on each call"
 REASON_CHANGED = "an input changed since the last pass"
 REASON_NO_RECORD = "no pass on record"
 REASON_ALL = "--all"
@@ -1071,7 +1076,7 @@ class Planner:
         always = self.property_reason(test)
         if always:
             return Decision(test, KIND_ALWAYS, always)
-        start, launcher = launcher_prefix(test.command)
+        start, launcher, options = launcher_options(test.command)
         build_root = self.trees.build_root
         named = [real(item) for item in test.command[start:] if os.path.isabs(item)]
         inputs = {path for path in named if self.trees.is_in_build(path) and not os.path.isdir(path)}
@@ -1080,6 +1085,8 @@ class Planner:
             launcher_files, texts = self.launcher_inputs(launcher)
             inputs.update(launcher_files)
         static, _ = self.fingerprints(test, inputs, set(), texts)
+        if options.trace == test_launcher.TRACE_NEVER:
+            return Decision(test, KIND_SCRIPT, REASON_UNTRACED, static=static)
         is_usable, reads = self.read_set(test, start)
         if reads is None:
             return Decision(test, KIND_SCRIPT, REASON_SCRIPT if is_usable else REASON_READS, static=static)
@@ -2206,8 +2213,14 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
     1, and its property PASS_REGULAR_EXPRESSION makes ctest accept that status.  The program of each script_ test is sh
     of the host (THE SCRIPT TEST).  script_source reads a file of the source tree, and script_build reads a file of
     the build tree.  The trees are in the work root of assay.core.cache.  A path in /tmp is a fact of a read set and not a key part.  On a host that refuses the filter
-    of the trace, the launcher writes no read set.  The function then writes a note and checks nothing.
+    of the trace, the launcher writes no read set.  The function then writes a note and checks nothing.  A traced test
+    cannot hold a listener of its own (assay.loop.teststep, THE READ SET).  The cases then fail when a launcher
+    traces this self-test.
     """
+    if os.environ.get(test_launcher.TRACED_ENV):
+        expect("the launcher of this self-test does not trace it, because the trace of the self-test refuses the "
+               "listener of each case.  Give the test the launcher option --trace never", False, "")
+        return
     names = {"exe_traced", "exe_named", "exe_verdict", "script_source", "script_build"}
     work = cache.work_root()
     work.mkdir(parents=True, exist_ok=True)
@@ -2240,6 +2253,9 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
             script = f'read -r line < "$(dirname "$0")/{read.name}"'
             lines.append(f'add_test([=[{name}]=] {launched} "--name" "{name}" "{shell}" "-c" [=[{script}]=] '
                          f'"{read.parent}/x")')
+        untraced = f'read -r line < "$(dirname "$0")/{golden.name}"'
+        lines.append(f'add_test([=[script_untraced]=] {launched} "--name" "script_untraced" "--trace" "never" '
+                     f'"{shell}" "-c" [=[{untraced}]=] "{golden.parent}/x")')
         (build_dir / "CTestTestfile.cmake").write_text("\n".join(lines) + "\n")
         _status, output = call_script(build_dir)
         if not (build_dir / "test-records" / f"exe_traced{readset.SUFFIX}").is_file():
@@ -2249,6 +2265,9 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
         _status, output = call_script(build_dir)
         expect("a test with a usable read set is skipped when each key part is the same, also a test that ctest "
                "accepts with a status other than 0", set(skipped_tests(build_dir)) == names, output)
+        expect("a script test with the launcher option --trace never runs on each call, and it has no read set",
+               "script_untraced" not in skipped_tests(build_dir)
+               and not (build_dir / "test-records" / f"script_untraced{readset.SUFFIX}").exists(), output)
         target.write_text("two\n")
         golden.write_text("1,3\n")
         _status, output = call_script(build_dir)

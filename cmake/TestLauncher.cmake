@@ -34,17 +34,24 @@ set(CRUCIBLE_CHECK_WARNINGS_DIR "${CMAKE_BINARY_DIR}/check-warnings")
 file(REMOVE "${CMAKE_BINARY_DIR}/CTestCustom.cmake")
 
 # crucible_script_test(NAME <name> COMMAND <program> [<arg>...] [CONFIGURATIONS <config>...]
-#                      [WORKING_DIRECTORY <dir>] [COMMAND_EXPAND_LISTS])
+#                      [WORKING_DIRECTORY <dir>] [COMMAND_EXPAND_LISTS] [TRACE never])
 #
 # Register a script test, with the arguments of add_test(), and put the test
 # launcher with the name of the test in front of its command.  With no python3,
-# the test runs with no launcher.
+# the test runs with no launcher.  TRACE never gives the launcher the option
+# --trace never.  The launcher then does not trace the test, and the test runs
+# on each call of `loop test` (utils/assay/loop/teststep.py, THE READ SET).
+# Only a test that needs a listener of seccomp of its own takes it.
 function(crucible_script_test)
-  cmake_parse_arguments(PARSE_ARGV 0 _script "COMMAND_EXPAND_LISTS" "NAME;WORKING_DIRECTORY"
+  cmake_parse_arguments(PARSE_ARGV 0 _script "COMMAND_EXPAND_LISTS" "NAME;WORKING_DIRECTORY;TRACE"
                         "COMMAND;CONFIGURATIONS")
   if(NOT _script_NAME OR NOT _script_COMMAND OR _script_UNPARSED_ARGUMENTS OR _script_KEYWORDS_MISSING_VALUES)
     message(FATAL_ERROR "crucible_script_test() takes NAME <name> COMMAND <program> [<arg>...] and the other "
                         "keywords of add_test(), and it got: ${ARGV}")
+  endif()
+  if(DEFINED _script_TRACE AND NOT _script_TRACE STREQUAL "never")
+    message(FATAL_ERROR "crucible_script_test(${_script_NAME}): TRACE takes the value never, and it got "
+                        "${_script_TRACE}")
   endif()
   set(_script_options "")
   if(DEFINED _script_WORKING_DIRECTORY)
@@ -59,6 +66,9 @@ function(crucible_script_test)
   set(_script_launcher "")
   if(CRUCIBLE_TEST_STEP)
     set(_script_launcher ${CRUCIBLE_TEST_STEP} --name "${_script_NAME}")
+    if(DEFINED _script_TRACE)
+      list(APPEND _script_launcher --trace "${_script_TRACE}")
+    endif()
   endif()
   add_test(NAME "${_script_NAME}" COMMAND ${_script_launcher} ${_script_COMMAND} ${_script_options})
 endfunction()
