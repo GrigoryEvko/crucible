@@ -138,6 +138,7 @@ CLOSURES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
                 "assay",
                 "assay.core",
                 "assay.core.budget",
+                "assay.core.digests",
                 "assay.core.paths",
                 "assay.core.record",
                 "assay.core.value",

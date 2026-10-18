@@ -552,8 +552,6 @@ utils/assay/loop/affected.py | refused-word | 1 | <module>: never | A text of to
 utils/assay/loop/affected.py | refused-word | 2 | <module>: so | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 7 | <module>: whose | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | <module>: would | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 1 | DigestCache.forget: so | A text of today.  The change that writes the text again in STE lowers the count
-utils/assay/loop/affected.py | refused-word | 1 | DigestCache: compute | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | Planner: compute | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | Planner: decide | A text of today.  The change that writes the text again in STE lowers the count
 utils/assay/loop/affected.py | refused-word | 1 | SelfTest.__init__: under | A text of today.  The change that writes the text again in STE lowers the count

@@ -419,7 +419,22 @@ def row_cases(expect: testing.Expect) -> None:
         )
 
 
+def current_cases(expect: testing.Expect) -> None:
+    """Check that is_current() tells when a fact that a deriver read changed (THE FACTS OF A CALL)."""
+    with git.scratch_repository() as root:
+        plant(root)
+        deriver = inputs.Deriver(root)
+        deriver.test_inputs(["check", "--rule", "alpha"], ())
+        expect("a deriver of an unchanged tree is current", deriver.is_current())
+        (root / "utils/registry.txt").write_text(rule_registry.planted(RULES) + "\n")
+        expect("a change of the registry makes the deriver stale", not deriver.is_current())
+        listed = inputs.Deriver(root)
+        listed.test_inputs(["check", "--rule", "alpha"], ())
+        (root / "data/new.txt").write_text("new\n")
+        expect("a new file makes a deriver that read the list of the files stale", not listed.is_current())
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    groups = (parse_cases, shape_cache_cases, rule_cases, group_cases, read_set_cases, row_cases)
+    groups = (parse_cases, shape_cache_cases, rule_cases, group_cases, read_set_cases, row_cases, current_cases)
     return testing.run(__name__.removeprefix("assay."), argv, groups)

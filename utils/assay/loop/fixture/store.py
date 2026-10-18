@@ -456,6 +456,7 @@ from types import ModuleType
 
 from assay.core import budget as cost_budget
 from assay.core import record as cost_record
+from assay.core.digests import stat_fields
 from assay.core.paths import LOOP, REPO_ROOT
 from assay.readers import compdb, sarif
 
@@ -921,7 +922,7 @@ def write_index(build_dir: Path, fields: list[int]) -> None:
     compiles = compdb.entries(build_dir)
     source_root, build_root = root_texts(build_dir)
     after = os.stat(database)
-    if _stat_fields(after) != fields or after.st_ctime_ns >= _now_ns() - _SETTLE_NS:
+    if stat_fields(after) != fields or after.st_ctime_ns >= _now_ns() - _SETTLE_NS:
         return
     final = command_index(build_dir, fields)
     temporary = final.parent / f".{final.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
@@ -959,7 +960,7 @@ def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path
     import fcntl
 
     database = compdb.database_file(build_dir)
-    fields = _stat_fields(os.stat(database))
+    fields = stat_fields(os.stat(database))
     index = command_index(build_dir, fields)
     found = read_index(index, source)
     if found is False:
@@ -1141,11 +1142,6 @@ def _short_digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:32]
 
 
-def _stat_fields(status: os.stat_result) -> list[int]:
-    """Return the fields of `status` that change when the file changes."""
-    return [status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns]
-
-
 def _write_atomic(path: Path, data: bytes) -> None:
     """Write `data` to `path` through a temporary file and a rename.
 
@@ -1172,7 +1168,7 @@ def file_digest(path: str, memo_dir: Path) -> str:
     in the settle period, so a change in the same clock tick cannot hide.
     """
     status = os.stat(path)
-    fields = _stat_fields(status)
+    fields = stat_fields(status)
     memo = memo_dir / f"file-{_short_digest(os.fsencode(os.path.realpath(path)))}.json"
     try:
         recorded = json.loads(memo.read_text())
@@ -1186,7 +1182,7 @@ def file_digest(path: str, memo_dir: Path) -> str:
             hasher.update(chunk)
     digest = hasher.hexdigest()[:32]
     after = os.stat(path)
-    if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
+    if stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
         try:
             _write_atomic(memo, json.dumps({"stat": fields, "digest": digest}).encode("ascii"))
         except OSError:
@@ -1327,7 +1323,7 @@ def driver_answers(driver: str, directory: Path, env: Mapping[str, str], memo_di
     status = os.stat(driver)
     environment = sorted([name, value] for name, value in env.items()
                          if name in _GCC_ENVIRONMENT or name == "PATH" or name.startswith(_GCC_ENVIRONMENT_PREFIXES))
-    material = json.dumps([driver, os.path.realpath(driver), _stat_fields(status), str(directory), os.getcwd(),
+    material = json.dumps([driver, os.path.realpath(driver), stat_fields(status), str(directory), os.getcwd(),
                            environment])
     memo = memo_dir / f"answers-{_short_digest(material.encode('utf-8', 'surrogateescape'))}.json"
     try:
@@ -1641,11 +1637,11 @@ def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping
     """
     status = os.stat(program)
     loader_variables = sorted([name, value] for name, value in env.items() if name.startswith("LD_"))
-    material = json.dumps([program, interpreter, _stat_fields(status), str(directory), loader_variables])
+    material = json.dumps([program, interpreter, stat_fields(status), str(directory), loader_variables])
     memo = memo_dir / f"loader-{_short_digest(material.encode('ascii'))}.json"
     try:
         recorded = json.loads(memo.read_text())
-        if all(_stat_fields(os.stat(path)) == fields for path, fields in recorded["files"]) and all(
+        if all(stat_fields(os.stat(path)) == fields for path, fields in recorded["files"]) and all(
             _exists(path) == exists for path, exists in recorded["tried"]
         ):
             return list(recorded["objects"]), ""
@@ -1669,7 +1665,7 @@ def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping
         return None, f"the loader {interpreter} cannot list the shared objects of {program}"
     objects, tried, caches = parsed
     files = list(dict.fromkeys([*objects, *caches, *([_PRELOAD_LIST] if _exists(_PRELOAD_LIST) else [])]))
-    file_rows = [(path, _stat_fields(os.stat(path))) for path in files]
+    file_rows = [(path, stat_fields(os.stat(path))) for path in files]
     tried_rows = [(path, _exists(path)) for path in [*tried, _PRELOAD_LIST]]
     settled_ns = started_ns - _SETTLE_NS
     is_settled = all(fields[4] < settled_ns for _, fields in file_rows) and all(
@@ -2181,7 +2177,7 @@ class DigestMemo:
         The hash is None when the file cannot be read.
         """
         try:
-            fields = _stat_fields(os.stat(name))
+            fields = stat_fields(os.stat(name))
         except OSError:
             return None, False
         kept = self.kept.get(name)
@@ -2197,7 +2193,7 @@ class DigestMemo:
             return None, False
         digest = _short_digest(data)
         holds_root = self.roots.holds_root(data)
-        if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
+        if stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
             self.used[name] = [*fields, digest, holds_root]
         return digest, holds_root
 
@@ -2388,7 +2384,7 @@ class ResultStore:
                 after = os.stat(name)
             except OSError:
                 return False, f"a dependency cannot be read: {name}"
-            if _stat_fields(before) != _stat_fields(after) or after.st_ctime_ns >= settled_ns:
+            if stat_fields(before) != stat_fields(after) or after.st_ctime_ns >= settled_ns:
                 return False, f"a dependency changed in the settle period before the compile: {name}"
             if roots.holds_root(data):
                 return False, f"a dependency holds the text of a root: {name}"
@@ -2765,7 +2761,7 @@ def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
     stamps: list[list[int]] = []
     for path in paths:
         try:
-            stamps.append(_stat_fields(os.stat(path)))
+            stamps.append(stat_fields(os.stat(path)))
         except FileNotFoundError:
             stamps.append([])
         except OSError:

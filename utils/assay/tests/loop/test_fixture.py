@@ -43,8 +43,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from assay.core import digests, proc
 from assay.core import ledger as rule_ledger
-from assay.core import proc
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core.paths import LOOP
@@ -992,7 +992,7 @@ class StoreTest:
         source = str(self.root / "neg" / "neg_size.cpp")
         clock = self.started_at(database)["CRUCIBLE_NEG_NOW_NS"]
         fresh = self.run("neg_size", *SIZE, CRUCIBLE_NEG_NOW_NS=clock)
-        index = store.command_index(self.build, store._stat_fields(os.stat(database)))
+        index = store.command_index(self.build, digests.stat_fields(os.stat(database)))
         self.expect(fresh[0] == 0 and not index.exists(),
                     f"the driver writes no index while the compile database is new: {fresh[0]} {fresh[3]}")
         first = self.run("neg_size", *SIZE)
@@ -1015,7 +1015,7 @@ class StoreTest:
         database.write_text(database.read_text())
         self.settle()
         rewritten = self.run("neg_size", *SIZE)
-        renewed = store.command_index(self.build, store._stat_fields(os.stat(database)))
+        renewed = store.command_index(self.build, digests.stat_fields(os.stat(database)))
         self.expect(rewritten[0] == 0 and self.has(rewritten[3], "the result comes from the store")
                     and renewed.is_dir() and not index.exists(),
                     f"a rewritten compile database replaces the index: {rewritten[0]} {rewritten[3]}")

@@ -168,8 +168,8 @@ THE MEMO OF THE ROWS
     fields of each input of the parse: the ledger, the registry, and the
     modules of ROWS_MODULES.  A read with an entry imports no module but
     hashlib and json.  The function writes an entry only when no input
-    changed in ROWS_SETTLE_NS.  A change in the same clock tick then cannot
-    hide.  An entry holds the rows in the sequence of their lines, as the
+    changed in ROWS_SETTLE_NS (has_settled()).  A change in the same clock
+    tick then cannot hide.  An entry holds the rows in the sequence of their lines, as the
     parse gives them.  A read with an entry and a read with a parse then give
     the same sequence.  `loop test` holds the cache in its row of LIMITS of
     assay.core.cache.
@@ -796,8 +796,13 @@ def rows_memo(rule_id: str, form: str, path: str) -> tuple[str, bool] | None:
     fields = [[item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns] for item in statuses]
     material = json.dumps([ROWS_FORMAT, rule_id, form, os.path.realpath(path), fields])
     digest = hashlib.sha256(material.encode("utf-8", "surrogateescape")).hexdigest()[:32]
-    is_settled = max(item.st_ctime_ns for item in statuses) < time.time_ns() - ROWS_SETTLE_NS
+    is_settled = has_settled(max(item.st_ctime_ns for item in statuses), ROWS_SETTLE_NS)
     return os.path.join(base, ROWS_CACHE, digest[:2], f"{digest}.json"), is_settled
+
+
+def has_settled(change_ns: int, settle_ns: int) -> bool:
+    """Tell if a change time of an inode is more than `settle_ns` before the clock (THE MEMO OF THE ROWS)."""
+    return change_ns < time.time_ns() - settle_ns
 
 
 def read_rows_memo(entry: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]], list[tuple[int, str]]] | None:

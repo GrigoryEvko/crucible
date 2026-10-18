@@ -116,6 +116,14 @@ THE PARSE CACHE
     not hold an earlier result.  On 2026-10-17, the parse of the 227 modules of
     the closures took 1.79 s, and the read of their entries took 0.03 s.
 
+THE FACTS OF A CALL
+    A Deriver reads the registry, the rule table, the list of the files and
+    the HEAD commit one time, and its inputs come from them.  is_current()
+    tells if each fact that it read is the same at this time.  `loop test`
+    keeps a current Deriver after the tests (THE DIGEST MEMO of
+    assay.loop.affected).  A changed module of a closure changes no fact,
+    because each module is a file of the inputs, and its hash changes.
+
 THE SCOPE
     A path of a scope that ends with "/" names each file in it.  A path with
     no "/" at its end names one file, whatever its suffix, because the rule
@@ -532,6 +540,7 @@ class Deriver:
         "_root",
         "_rule_inputs",
         "_scopes",
+        "_seen",
         "_shapes",
         "_table",
         "_tracked",
@@ -561,6 +570,29 @@ class Deriver:
         self._closures: dict[frozenset[str], frozenset[str]] = {}
         # The directory of THE PARSE CACHE, or None when the caches are off, in a tuple after the first parse.
         self._shapes: tuple[Path | None] | None = None
+        # The SHA-256 of the registry and of the rule table at their first read (THE FACTS OF A CALL).
+        self._seen: dict[str, str] = {}
+
+    def table_digest(self, relative: str) -> str:
+        """Return the SHA-256 of the bytes of a table of the tree, or the empty text when the table is not a file."""
+        path = self._root / relative
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
+
+    def is_current(self) -> bool:
+        """Tell if each fact of the tree that this Deriver read is the same at this time (THE FACTS OF A CALL).
+
+        A fact that the Deriver did not read counts as the same.  A tree that cannot be read is not current.
+        Complexity: one read of each table that the Deriver read, and one listing of git when it read the files.
+        """
+        try:
+            if any(self.table_digest(relative) != digest for relative, digest in self._seen.items()):
+                return False
+            if self._tracked is not None and git.tracked_files(self._root, with_new=True) != self._tracked:
+                return False
+            head = self._git_texts.get(HEAD_TEXT)
+            return head is None or head == f"{HEAD_TEXT} {git.head(self._root)}"
+        except OSError, git.GitError:
+            return False
 
     @property
     def registry(self) -> rule_registry.Registry:
@@ -568,6 +600,7 @@ class Deriver:
         if self._registry is None:
             path = self._root / rule_registry.REGISTRY_PATH
             text = path.read_text(encoding="utf-8") if path.is_file() else ""
+            self._seen[rule_registry.REGISTRY_PATH] = self.table_digest(rule_registry.REGISTRY_PATH)
             self._registry = rule_registry.examine(text)[0]
         return self._registry
 
@@ -767,6 +800,7 @@ class Deriver:
     def class_of(self, path: str) -> str:
         """Return base, quarantined or "" for a file of the tree, from the rule table of the tree."""
         if self._table is None:
+            self._seen[RULE_TABLE] = self.table_digest(RULE_TABLE)
             self._table = ruletable.load(self._root / RULE_TABLE)
         return self._table.class_of(path)[0]
 

@@ -312,6 +312,16 @@ THE RECORD
     BUILD_DIR/affected-tests/lock keeps two calls on one build directory
     apart.
 
+THE DIGEST MEMO
+    A fingerprint holds the SHA-256 of each input file.  The planner reads
+    each hash through a memo of the stat fields of the file
+    (assay.core.digests).  The state keeps the memo of the files of the last
+    call.  The next call then hashes only a file with different stat fields.
+    After the tests, the record of THE RECORD compares the stat fields of
+    each input again.  It then hashes only a file that a test changed.  On
+    2026-10-17, the decision of 2861 tests took 2.47 s and the record took
+    3.85 s with no memo.
+
 THE PLAN
     After its decision, each call writes its plan,
     BUILD_DIR/affected-tests/plan.json (write_plan()).  It holds one entry
@@ -414,6 +424,7 @@ from typing import Protocol
 
 from assay.core import cache, cost_store, git, jobserver, proc, testing
 from assay.core import cache_root as cache_rule
+from assay.core import digests as digest_memo
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
@@ -796,32 +807,6 @@ def scan_elf(path: str, trees: Trees) -> Scan:
     return scan
 
 
-class DigestCache:
-    """The SHA-256 of each file, computed one time for each call of the script."""
-
-    def __init__(self) -> None:
-        """Make an empty cache."""
-        self._digests: dict[str, str] = {}
-
-    def digest(self, path: str) -> str:
-        """Return the SHA-256 of the bytes of `path`, or a word for a path that is not a regular file."""
-        if path not in self._digests:
-            try:
-                with open(path, "rb") as handle:
-                    self._digests[path] = hashlib.file_digest(handle, "sha256").hexdigest()
-            except FileNotFoundError:
-                self._digests[path] = "missing"
-            except IsADirectoryError:
-                self._digests[path] = "directory"
-            except OSError as error:
-                self._digests[path] = f"unreadable: {error.strerror}"
-        return self._digests[path]
-
-    def forget(self) -> None:
-        """Forget each digest, so that the next call reads each file again."""
-        self._digests.clear()
-
-
 def environment_text(is_launched: bool) -> str:
     """Return the text of the environment that a test gets, for its fingerprint (THE ENVIRONMENT).
 
@@ -921,7 +906,18 @@ def record_digest(build_root: str, name: str) -> str:
 def empty_state(trees: Trees) -> dict[str, object]:
     """Return a state with no record."""
     return {"version": STATE_VERSION, "source": trees.source_root, "build": trees.build_root, "passed": {},
-            "failed": {}, "scans": {}}
+            "failed": {}, "scans": {}, "digests": {}}
+
+
+def kept_digests(state: Mapping[str, object]) -> dict[str, list[object]]:
+    """Return the kept hashes of the files of the last call of a state (THE DIGEST MEMO), or none.
+
+    A state of an earlier script has no such field, and each file then gets its hash again.
+    """
+    kept = state.get("digests")
+    if not isinstance(kept, dict):
+        return {}
+    return {path: value for path, value in kept.items() if isinstance(path, str) and isinstance(value, list)}
 
 
 def load_state(path: Path, trees: Trees) -> tuple[dict[str, object], str]:
@@ -958,11 +954,11 @@ class Planner:
     """Decides for each test if it runs, and computes the fingerprint of each executable test."""
 
     def __init__(self, trees: Trees, state: dict[str, object], store: ResultStore) -> None:
-        """Keep the trees, the state and the shared store, and start with an empty digest cache."""
+        """Keep the trees, the state and the shared store, and start the digest memo with the kept hashes of the state."""
         self.trees = trees
         self.state = state
         self.store = store
-        self.digests = DigestCache()
+        self.digests = digest_memo.DigestMemo(kept_digests(state))
         self.used_scans: dict[str, object] = {}
         self.launcher_files: dict[str, tuple[list[str], tuple[str, ...]]] = {}
         self.derivers: dict[str, guard_inputs.Deriver] = {}
@@ -974,13 +970,18 @@ class Planner:
         self.judge_files = frozenset(os.path.join(trees.build_root, name) for name in JUDGE_FILES)
 
     def forget(self) -> None:
-        """Forget each digest and each fact of a tree.  The next decision then reads each input again.
+        """Forget each digest of this call and each changed fact of a tree.  The next decision compares each input again.
 
-        The parse of a module stays, by its text.  A module with a new text gets a new parse (THE WARM START).
+        The next answer for a file compares its stat fields with the kept hash (THE DIGEST MEMO).  A Deriver with a
+        changed fact goes, with the inputs of the launchers (THE FACTS OF A CALL of assay.loop.inputs).  The parse of
+        a module stays, by its text.  A module with a new text gets a new parse (THE WARM START).
         """
         self.digests.forget()
-        self.launcher_files.clear()
-        self.derivers.clear()
+        changed = [root for root, deriver in self.derivers.items() if not deriver.is_current()]
+        for root in changed:
+            del self.derivers[root]
+        if changed:
+            self.launcher_files.clear()
 
     def deriver(self, root: str) -> guard_inputs.Deriver:
         """Return the reader of the inputs of the tests of the master guard of a tree, one for each tree."""
@@ -1739,6 +1740,8 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
             passed.pop(name, None)
     earlier = state["scans"] if is_partial and isinstance(state["scans"], dict) else {}
     state["scans"] = {**earlier, **planner.used_scans}
+    earlier_digests = kept_digests(state) if is_partial else {}
+    state["digests"] = {**earlier_digests, **planner.digests.entries()}
 
 
 def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
