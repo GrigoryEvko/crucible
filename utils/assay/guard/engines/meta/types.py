@@ -41,6 +41,17 @@ THE BOUND
     stops the run.  The rule holds the lock of the cache for the run.  No
     eviction takes its turn during the run (THE ONE RUN AT A TIME).
 
+THE BROKEN CACHE
+    A rename puts each cache file at its path, but no run calls fsync.  A
+    host that stops before the kernel writes the bytes can then keep an empty
+    cache file.  mypy stops with an internal error on such a file, in each
+    run of each tree that shares the cache.  On 2026-10-18, a restart of the
+    host left 397 empty files, and no run of the rule passed.  When a run
+    of mypy gives an internal error (CRASH_WORDS), the rule removes the cache
+    of the version of Python of the run.  Then it runs mypy one more time
+    with a cold cache, which costs one cold run.  A second internal error is
+    a failure of mypy, and the rule gives it.
+
 THE RULE
     Each error of mypy is a finding.  The kind is the error code of mypy,
     such as type-arg, and the entity is the function or the class that holds
@@ -56,6 +67,9 @@ Complexity: one run of mypy.  On 2026-10-08 a cold run on the package took
 3.8 s and a warm run 0.1 s.
 """
 
+import shutil
+from pathlib import Path
+
 from assay.core import cache, proc
 from assay.core import report as check_report
 from assay.guard.engines.meta import package as package_scope
@@ -65,17 +79,21 @@ from assay.readers import tool_reports
 
 RULE = "types"
 UTILS = "utils"
+# The version of Python of the run.  mypy keeps the cache of the run in a directory of this name.
+PYTHON_VERSION = "3.14"
 OPTIONS = (
     "--strict",
     "--output",
     "json",
     "--scripts-are-modules",
     "--python-version",
-    "3.14",
+    PYTHON_VERSION,
     "--no-color-output",
     "--no-error-summary",
     "--no-sqlite-cache",
 )
+# The words that mypy writes to its standard error for an internal error (THE BROKEN CACHE).
+CRASH_WORDS = "INTERNAL ERROR"
 CACHE_NAME = "mypy"
 # The suffixes of the files of the cache of mypy: the format ff of mypy, and the format JSON (THE BOUND).
 ENTRY_SUFFIXES = (".ff", ".json")
@@ -87,19 +105,20 @@ NO_CACHE = "/dev/null"
 CLEAN, ERRORS = 0, 1
 
 
-def run_mypy(context: MetaContext, files: list[str]) -> str:
+def run_mypy(context: MetaContext, files: list[str], site: Path | None = None) -> str:
     """Run the pinned mypy on files of the directory utils/ of a tree, and return its report (THE RUN).
 
-    The run waits for each other run of the rule on the same cache (THE ONE RUN AT A TIME).
+    The run waits for each other run of the rule on the same cache (THE ONE RUN AT A TIME).  `site` is the site
+    directory of a mypy, and the pinned mypy when it is None.  A test gives a planted mypy.
 
     Raises:
         NotApplicable: If mypy is not installed at its pin
         proc.ToolFailed: If mypy cannot start, runs longer than its time limit, or ends with a status that is not 0
-            or 1
+            or 1.  A crash on a broken cache gives the status of the run with a cold cache (THE BROKEN CACHE)
     """
     from assay.setup import install
 
-    site = pinned_program("mypy")
+    site = pinned_program("mypy") if site is None else site
     directory = cache.cache_root(CACHE_NAME)
     arguments = [*OPTIONS, "--cache-dir", NO_CACHE if directory is None else str(directory), *files]
     command = proc.Command(install.mypy_command(site, arguments), timeout_s=proc.TOOL_S, cwd=context.root / UTILS)
@@ -109,6 +128,9 @@ def run_mypy(context: MetaContext, files: list[str]) -> str:
         cache.hold_tree_bound(directory, cache.LIMITS[CACHE_NAME], ENTRY_SUFFIXES, UNREAD_SUFFIXES)
         with cache.exclusive_use(directory):
             completed = proc.run(command)
+            if completed.exit not in (CLEAN, ERRORS) and CRASH_WORDS in completed.err:
+                shutil.rmtree(directory / PYTHON_VERSION, ignore_errors=True)
+                completed = proc.run(command)
     if completed.exit not in (CLEAN, ERRORS):
         proc.require(completed)
     return completed.out
