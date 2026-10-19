@@ -30,9 +30,9 @@ configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
 configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
 configuration x86_64-release kind x86_64-release
 configuration x86_64-release tier native-x86_64
-@build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/tests | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | comment | 1 | mold 3.0.0 (8de38c35a2df16a25f7ff87ac3ad07156a925beb; compatible with GNU ld) | a new toolchain: each link runs the pinned mold 3.0.0
+@build/tests | comment | 1 | {libc} | the start files of the C library of the host give the text of the compiler that built the C library, and the rule writes {libc} for it
 @build/tests | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tests | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | init | 1 | _GLOBAL__sub_I__ZN14test_mlp_trace8build_opEjj | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -170,9 +170,9 @@ configuration x86_64-release tier native-x86_64
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/tools | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | comment | 1 | mold 3.0.0 (8de38c35a2df16a25f7ff87ac3ad07156a925beb; compatible with GNU ld) | a new toolchain: each link runs the pinned mold 3.0.0
+@build/tools | comment | 1 | {libc} | the start files of the C library of the host give the text of the compiler that built the C library, and the rule writes {libc} for it
 @build/tools | elf-type | 1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @build/tools | init | 1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | init | 1 | __asan_init | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -274,9 +274,9 @@ configuration x86_64-release tier native-x86_64
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.32 | a new toolchain: each link runs the pinned mold 3.0.0
 @build/tools | version | 1 | libstdc++.so.6 GLIBCXX_3.4.9 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/vessel | comment | 1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @build/vessel | comment | 1 | GCC: (GNU) 16.2.1 20260829 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | comment | 1 | mold 3.0.0 (8de38c35a2df16a25f7ff87ac3ad07156a925beb; compatible with GNU ld) | a new toolchain: each link runs the pinned mold 3.0.0
+@build/vessel | comment | 1 | {libc} | the start files of the C library of the host give the text of the compiler that built the C library, and the rule writes {libc} for it
 @build/vessel | elf-type | 1 | shared | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | _ITM_deregisterTMCloneTable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | import | 1 | _ITM_registerTMCloneTable | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -554,9 +554,9 @@ configuration x86_64-release tier native-x86_64
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.26 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.30 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | version | 1 | libstdc++.so.6 GLIBCXX_3.4.35 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260819 (Red Hat 16.2.1-2) | The new host grigory-vm has the system GCC 16.2.1, which built the start files of glibc
 @x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | GCC: (GNU) 16.2.1 20260829 | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | mold 3.0.0 (8de38c35a2df16a25f7ff87ac3ad07156a925beb; compatible with GNU ld) | a new toolchain: each link runs the pinned mold 3.0.0
+@x86_64-debug-asan-bench-fuzz | @build/benches | comment | +1 | {libc} | the start files of the C library of the host give the text of the compiler that built the C library, and the rule writes {libc} for it
 @x86_64-debug-asan-bench-fuzz | @build/benches | elf-type | +1 | pie | each executable is a position-independent executable (PIE) with relative relocations in .relr.dyn
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _GLOBAL__sub_I__ZN23pipeline_dispatch_bench10small_dataE | a new build kind or target
 @x86_64-debug-asan-bench-fuzz | @build/benches | init | +1 | _ZN10foundation2os12_GLOBAL__N_1L22refuse_an_older_kernelEv | a new build kind or target

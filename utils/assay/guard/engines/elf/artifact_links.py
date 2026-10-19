@@ -36,6 +36,17 @@ THE PATHS
     directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
     prefix.
 
+THE COMPILER OF THE C LIBRARY
+    The start files of the C library of the host hold the text of .comment of
+    the compiler that built the C library.  An example is GCC: (GNU) 16.1.1
+    20260515 (Red Hat 16.1.1-2).  Each artifact gets that text.  Two hosts
+    with the same toolchain can then give different texts.  For this reason,
+    the rule writes {libc} for each text of .comment of the files of
+    LIBC_FILES (host_words()).  The driver of the compiler gives the path of
+    each such file with -print-file-name.  A text that the start file
+    TOOLCHAIN_FILE of the compiler itself also gives keeps its text.  The
+    ledger then holds no compiler of the C library of a host.
+
 THE RUN PATH DIRECTORIES
     The loader reads each directory of DT_RUNPATH and DT_RPATH on each start
     of an artifact.  The rule refuses each such directory that the host of
@@ -98,6 +109,7 @@ from pathlib import Path
 
 from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.elf import configured, runner
@@ -130,6 +142,11 @@ SHARED = "shared"
 # The words that THE PATHS writes for the prefix of the compiler and for the build directory.
 TOOLCHAIN_WORD = "{toolchain}"
 BUILD_WORD = "{build}"
+# LIBC_WORD replaces each text of .comment of the C library of the host.  The files of LIBC_FILES give such texts.
+# The texts of the start file of the toolchain stay (THE COMPILER OF THE C LIBRARY).
+LIBC_WORD = "{libc}"
+LIBC_FILES = ("crt1.o", "Scrt1.o", "crti.o", "crtn.o", "libc_nonshared.a")
+TOOLCHAIN_FILE = "crtbeginS.o"
 MAP_SUFFIX = ".map"
 FACTS_ROW = "facts"
 VERSION_MARK = "@"
@@ -179,6 +196,22 @@ class MissingDirectory:
 
 
 @dataclass(frozen=True, slots=True)
+class HostWords:
+    """The words that the rule writes for the facts of one host (THE PATHS, THE COMPILER OF THE C LIBRARY).
+
+    `paths` holds each path that the rule replaces with its word, the longest path first.  `libc` holds each text of
+    .comment that the files of LIBC_FILES give, less the texts of TOOLCHAIN_FILE.
+    """
+
+    paths: tuple[tuple[str, str], ...]
+    libc: frozenset[str]
+
+    def comment(self, text: str) -> str:
+        """Return the entity of one text of .comment: LIBC_WORD for a text of the C library of the host, else the text."""
+        return LIBC_WORD if text in self.libc else text
+
+
+@dataclass(frozen=True, slots=True)
 class LinkReading:
     """The facts of the linked artifacts, the number of artifacts of each group, and the missing run path directories.
 
@@ -198,6 +231,30 @@ def group_of(directory: str) -> str:
     return GROUPS.get(directory, TOOLS)
 
 
+def driver_file(compiler: str, name: str) -> Path | None:
+    """Return the file that the driver of the compiler links for a name, from -print-file-name, or None.
+
+    The driver gives the name itself when it finds no file, and the result is then None.  A compiler that cannot run
+    gives None too.
+    """
+    try:
+        completed = proc.run(proc.Command([compiler, f"-print-file-name={name}"], timeout_s=proc.QUICK_S))
+    except proc.CannotStart, proc.TimedOut:
+        return None
+    path = Path(completed.stdout.decode("utf-8", "surrogateescape").strip())
+    return path if completed.exit == 0 and path.is_absolute() and path.is_file() else None
+
+
+def file_comments(path: Path | None) -> frozenset[str]:
+    """Return each text of .comment of a file or of each member of an archive, or no text when it cannot be read."""
+    if path is None:
+        return frozenset()
+    try:
+        return frozenset(text for member in elf.members(path) for text in member.comments())
+    except OSError, elf.ElfError:
+        return frozenset()
+
+
 def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
     """Return each path that THE PATHS replaces with its word, the longest path first."""
     prefix = runner.toolchain_prefix(compiler)
@@ -208,6 +265,16 @@ def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
         str(build_dir.resolve()): BUILD_WORD,
     }
     return tuple(sorted(pairs.items(), key=lambda item: -len(item[0])))
+
+
+def host_words(compiler: str, build_dir: Path) -> HostWords:
+    """Return the words of the facts of the host of a build (THE PATHS, THE COMPILER OF THE C LIBRARY).
+
+    Complexity: one run of the driver of the compiler for each file of LIBC_FILES and for TOOLCHAIN_FILE.
+    """
+    libc = frozenset(text for name in LIBC_FILES for text in file_comments(driver_file(compiler, name)))
+    own = file_comments(driver_file(compiler, TOOLCHAIN_FILE))
+    return HostWords(path_words(compiler, build_dir), libc - own)
 
 
 def shown_path(directory: str, words: Iterable[tuple[str, str]]) -> str:
@@ -230,7 +297,7 @@ def file_type_of(member: elf.Member, entries: Iterable[elf.DynamicEntry]) -> str
 
 
 def member_facts(
-    member: elf.Member, entries: Sequence[elf.DynamicEntry], words: Iterable[tuple[str, str]], is_vessel: bool
+    member: elf.Member, entries: Sequence[elf.DynamicEntry], words: HostWords, is_vessel: bool
 ) -> set[tuple[str, str]]:
     """Return the facts of one linked artifact that its ELF file and its dynamic entries give (THE FACTS).
 
@@ -243,7 +310,7 @@ def member_facts(
     for entry in entries:
         if entry.tag in (elf.DT_RUNPATH, elf.DT_RPATH):
             kind = RUNPATH if entry.tag == elf.DT_RUNPATH else RPATH
-            found |= {(kind, shown_path(part, words)) for part in entry.directories()}
+            found |= {(kind, shown_path(part, words.paths)) for part in entry.directories()}
     found.add((ELF_TYPE, file_type_of(member, entries)))
     interpreter = member.interpreter()
     if interpreter:
@@ -254,7 +321,7 @@ def member_facts(
         (IFUNC, symbol.name) for symbol in member.symbols() if symbol.is_defined and symbol.kind == elf.STT_GNU_IFUNC
     }
     found |= {(SECTION, section.name) for section in member.sections() if section.name}
-    found |= {(COMMENT, text) for text in member.comments()}
+    found |= {(COMMENT, words.comment(text)) for text in member.comments()}
     if is_vessel:
         found |= {
             (IMPORT, f"{symbol.name}{VERSION_MARK}{symbol.version}" if symbol.version else symbol.name)
@@ -350,7 +417,7 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
     unmade = sorted(build_census.shown(item.path, context.root) for item in linked if not item.path.is_file())
     if unmade:
         raise runner.NotApplicable(f"the build has not made {len(unmade)} artifacts, such as {unmade[0]}")
-    words = path_words(context.compiler(), build_dir)
+    words = host_words(context.compiler(), build_dir)
     kinds = kinds_of(context)
     first: dict[tuple[str, str, str], str] = {}
     counts: dict[str, int] = {}
@@ -372,7 +439,7 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
             if kind in kinds:
                 first.setdefault((group, kind, entity), shown)
         for part, host_path, reason in parts:
-            key = (shown_path(part, words), host_path, reason)
+            key = (shown_path(part, words.paths), host_path, reason)
             example, number = missing.get(key, (shown, 0))
             missing[key] = (example, number + 1)
     return LinkReading(

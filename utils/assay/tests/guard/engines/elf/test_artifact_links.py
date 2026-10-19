@@ -4,8 +4,9 @@
 Each case writes one line.  Exit 0 when each case holds, else 1.
 
 THE CASES
-    The cases hold the groups and the paths of the rule, and the facts of
-    planted programs.  They also hold a link with no map, and the verdict of
+    The cases hold the groups, the paths and the word of the C library of the
+    rule, and the facts of planted programs.  They also hold a link with no
+    map, and the verdict of
     a planted ledger.  The directory cases hold each reason of a run path
     directory that the host does not give.  A planted program names such a
     directory in its run path.  The compile cases use the compiler that
@@ -43,11 +44,21 @@ def path_cases(expect: testing.Expect) -> None:
         [artifact_links.group_of(name) for name in ("vessel", "bench", "test", "examples", "")]
         == ["vessel", "benches", "tests", "tools", "tools"],
     )
-    words = artifact_links.path_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
+    words = artifact_links.host_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
     expect(
         "a run path gets the word of the toolchain and of the build directory, and a different path stays",
-        [artifact_links.shown_path(item, words) for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/usr/lib")]
+        [
+            artifact_links.shown_path(item, words.paths)
+            for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/usr/lib")
+        ]
         == ["{toolchain}/usr/lib64", "{build}/test", "/usr/lib"],
+    )
+    expect("a compiler that cannot run gives no text of the C library", words.libc == frozenset())
+    host = artifact_links.HostWords((), frozenset({"GCC: (GNU) 16.1.1 (host)"}))
+    expect(
+        "a text of the C library of the host gets the word {libc}, and a different text stays",
+        [host.comment(text) for text in ("GCC: (GNU) 16.1.1 (host)", "GCC: (GNU) 16.2.1", "mold 3.0.0")]
+        == [artifact_links.LIBC_WORD, "GCC: (GNU) 16.2.1", "mold 3.0.0"],
     )
 
 
@@ -93,6 +104,18 @@ def fact_cases(expect: testing.Expect) -> None:
             any(kind == "version" and entity.startswith("libc.so.6 GLIBC_") for _, kind, entity in found)
             and ("tools", "section", ".text") in found
             and any(kind == "comment" and entity.startswith("GCC:") for _, kind, entity in found),
+        )
+        words = artifact_links.host_words(compiler, scratch / "build")
+        comments = {entity for _, kind, entity in found if kind == "comment"}
+        expect(
+            "the start files of the C library give the word {libc} and no text of the C library of the host, and the "
+            "start file of the toolchain keeps its own text",
+            not words.libc
+            or (
+                artifact_links.LIBC_WORD in comments
+                and not words.libc & comments
+                and any(entity.startswith("GCC:") for entity in comments)
+            ),
         )
         expect(
             "only the group vessel gives its imports, with their versions",

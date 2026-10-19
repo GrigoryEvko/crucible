@@ -298,7 +298,7 @@ def link_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> li
         said = f"a static library has no link.  It has {len(members)} members and {len(groups)} COMDAT groups"
         return [f"4. link facts: {said}"]
     build_dir = context.directory()
-    words = artifact_links.path_words(context.compiler(), build_dir)
+    words = artifact_links.host_words(context.compiler(), build_dir)
     with elf.mapped(artifact.path) as member:
         is_vessel = artifact_links.group_of(artifact.directory) == artifact_links.VESSEL
         facts = artifact_links.member_facts(member, member.dynamic(), words, is_vessel)
