@@ -73,19 +73,6 @@ template <std::integral T>
     return sum >= lo && sum <= hi;
 }
 
-// All pairs rather than adjacent pairs.  The quadratic form states the ordering
-// property directly and leaves no room for an off-by-one in the walk.
-template <std::integral T>
-[[nodiscard]] constexpr bool weakly_increasing_oracle(std::span<const T> xs) noexcept {
-    std::size_t const n = xs.size();
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = i + 1; j < n; ++j) {
-            if (!(xs[i] <= xs[j])) return false;
-        }
-    }
-    return true;
-}
-
 template <std::integral T>
 [[nodiscard]] constexpr bool is_power_of_two_le_oracle(T x, T bound) noexcept {
     if constexpr (std::is_signed_v<T>) {

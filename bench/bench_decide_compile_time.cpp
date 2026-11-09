@@ -25,9 +25,8 @@
 // `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim) to
 // mark the bool return as observed.  Each procedure
 // covers the canonical instantiation it ships in production: integer
-// types for the overflow / range family, span<int32_t> for the
-// ordered-sequence predicate, span<Interval<uint64_t>> for the interval
-// predicate.  We do NOT iterate every primitive type — the body's
+// types for the overflow / range family, span<Interval<uint64_t>> for the
+// interval predicate.  We do NOT iterate every primitive type — the body's
 // asymptotic shape is independent of T width, and each extra
 // instantiation adds template-noise to the bench list without
 // signal.
@@ -66,7 +65,7 @@ enum class CipherBenchTier : std::uint8_t {
 
 namespace {
 
-// The sequence input of the ordered-sequence predicate, 64 elements long.
+// The buffer that valid_span points into, 64 elements long.
 constexpr std::size_t kSeqLen = 64;
 
 }  // namespace
@@ -95,8 +94,7 @@ int main() {
     volatile bool v_bool_t = true;
     volatile bool v_bool_f = false;
 
-    // The sequence of weakly_increasing, built once outside the lambda:
-    // 64 elements with stride 7, so the scan reaches the end.
+    // The buffer of valid_span, built once outside the lambda.
     std::array<std::int32_t, kSeqLen> inc_seq{};
     for (std::size_t i = 0; i < kSeqLen; ++i)
         inc_seq[i] = static_cast<std::int32_t>(i * 7);
@@ -160,14 +158,6 @@ int main() {
         bench::run("decide::is_power_of_two_le<u64>",
                    [&] {
                        bool r = dc::is_power_of_two_le<std::uint64_t>(v_pow2, v_pow2_bound);
-                       bench::do_not_optimize(r);
-                   }),
-
-        // ── Ordered sequence (linear scan, 64 elts) ───────────────
-        bench::run("decide::weakly_increasing<int32, 64>",
-                   [&] {
-                       bool r = dc::weakly_increasing<std::int32_t>(
-                           std::span<const std::int32_t>(inc_seq.data(), inc_seq.size()));
                        bench::do_not_optimize(r);
                    }),
 

@@ -62,59 +62,6 @@ static_assert(safe_add_u64(40, 2) == 42);
 static_assert(safe_add_i32(-100, 50) == -50);
 static_assert(safe_add_i32(std::numeric_limits<int32_t>::max() - 1, 1) == std::numeric_limits<int32_t>::max());
 
-static_assert(dc::weakly_increasing<int32_t>(std::span<const int32_t>{}));
-constexpr int32_t weakly_single[] = {42};
-static_assert(dc::weakly_increasing<int32_t>(weakly_single));
-
-constexpr int32_t weakly_two_strict[] = {1, 2};
-constexpr int32_t weakly_two_equal[] = {7, 7};
-constexpr int32_t weakly_two_decr[] = {3, 1};
-static_assert(dc::weakly_increasing<int32_t>(weakly_two_strict));
-static_assert(dc::weakly_increasing<int32_t>(weakly_two_equal));
-static_assert(!dc::weakly_increasing<int32_t>(weakly_two_decr));
-
-constexpr int32_t weakly_three_first_eq[] = {7, 7, 9};
-constexpr int32_t weakly_three_last_eq[] = {1, 5, 5};
-// The equal pair is neither the first nor the last pair, so an
-// implementation that inspects only the two end pairs misses it.  A
-// three-element array has no such pair, which is why this one has four.
-constexpr int32_t weakly_three_middle_eq[] = {1, 5, 5, 9};
-constexpr int32_t weakly_three_regress[] = {1, 5, 3};
-static_assert(dc::weakly_increasing<int32_t>(weakly_three_first_eq));
-static_assert(dc::weakly_increasing<int32_t>(weakly_three_last_eq));
-static_assert(dc::weakly_increasing<int32_t>(weakly_three_middle_eq));
-static_assert(!dc::weakly_increasing<int32_t>(weakly_three_regress));
-
-constexpr uint32_t all_zeros[] = {0u, 0u, 0u, 0u, 0u};
-static_assert(dc::weakly_increasing<uint32_t>(all_zeros));
-constexpr uint32_t all_max[] = {std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max()};
-static_assert(dc::weakly_increasing<uint32_t>(all_max));
-
-// Row-pointer offsets where adjacent zero-length rows share a start
-// offset. Repeated values are the reason the weak form exists.
-constexpr uint32_t row_offsets[] = {0u, 5u, 5u, 5u, 12u, 12u, 20u};
-static_assert(dc::weakly_increasing<uint32_t>(row_offsets));
-
-// front <= back holds while an interior pair regresses.
-constexpr uint32_t middle_regress_witness[] = {0u, 5u, 3u, 7u};
-static_assert(!dc::weakly_increasing<uint32_t>(middle_regress_witness));
-
-// Every pair but the last is weakly increasing, so a partial scan accepts.
-constexpr uint32_t tail_regress_witness[] = {1u, 2u, 3u, 5u, 4u};
-static_assert(!dc::weakly_increasing<uint32_t>(tail_regress_witness));
-
-constexpr int64_t weakly_signed[] = {-100, -50, -50, 0, 0, 50};
-static_assert(dc::weakly_increasing<int64_t>(weakly_signed));
-
-[[nodiscard]] constexpr uint32_t safe_last_offset(std::span<const uint32_t> offs) noexcept {
-    CRUCIBLE_PRE(dc::weakly_increasing(offs));
-    CRUCIBLE_PRE(!offs.empty());
-    return offs.back();
-}
-
-static_assert(safe_last_offset(row_offsets) == 20u);
-static_assert(safe_last_offset(all_zeros) == 0u);
-
 static_assert(dc::is_power_of_two_le<uint32_t>(1u, 64u));
 static_assert(dc::is_power_of_two_le<uint32_t>(2u, 64u));
 static_assert(dc::is_power_of_two_le<uint32_t>(4u, 64u));
@@ -655,32 +602,6 @@ int main() {
     }
     if (dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(), -1)) {
         std::fprintf(stderr, "test_decide: INT32_MIN+(-1) NOT flagged as overflow\n");
-        return 1;
-    }
-
-    // weakly_increasing.  An equal pair passes, and only a strict
-    // regression fails.
-    uint32_t volatile sa_offs[5] = {0, 5, 5, 12, 20};
-    uint32_t offs_copy[5] = {sa_offs[0], sa_offs[1], sa_offs[2], sa_offs[3], sa_offs[4]};
-    sink += static_cast<int>(dc::weakly_increasing<uint32_t>(std::span<const uint32_t>{offs_copy, 5}));
-
-    if (!dc::weakly_increasing<int32_t>(std::span<const int32_t>{})) {
-        std::fprintf(stderr, "test_decide: weakly empty NOT vacuously true\n");
-        return 1;
-    }
-    constexpr uint32_t weakly_stalled_ok[] = {1, 2, 2, 3};
-    if (!dc::weakly_increasing<uint32_t>(weakly_stalled_ok)) {
-        std::fprintf(stderr, "test_decide: weakly stalled-pair (2,2) WRONGLY rejected\n");
-        return 1;
-    }
-    constexpr uint32_t weakly_middle_regress[] = {0, 5, 3, 7};
-    if (dc::weakly_increasing<uint32_t>(weakly_middle_regress)) {
-        std::fprintf(stderr, "test_decide: weakly middle regress NOT detected\n");
-        return 1;
-    }
-    constexpr uint32_t weakly_tail_regress[] = {1, 2, 3, 5, 4};
-    if (dc::weakly_increasing<uint32_t>(weakly_tail_regress)) {
-        std::fprintf(stderr, "test_decide: weakly tail regress NOT detected\n");
         return 1;
     }
 

@@ -2,9 +2,8 @@
 //
 // Every predicate here is checked against a reference oracle that
 // reaches the same answer by a different route: widening into a larger
-// integer rather than asking the compiler about overflow, comparing
-// all pairs rather than each adjacent pair once, counting set bits
-// rather than clearing the lowest one, and a sorted sweep rather than a
+// integer rather than asking the compiler about overflow, counting set
+// bits rather than clearing the lowest one, and a sorted sweep rather than a
 // test of every pair of intervals.  The difference in algorithm is what
 // makes the check worth anything.  An oracle that restated the
 // production body would agree with it about every bug it has.
@@ -19,7 +18,7 @@
 // bugs these predicates are prone to: an off-by-one in a length, the
 // wrong comparison on the boundary element, a missed promotion while
 // widening, the wrong sign on a termination test.  The span-based
-// predicates draw a fresh length each round, so the empty span and the
+// predicate draws a fresh length each round, so the empty span and the
 // single-element span get covered alongside the interesting ones.
 //
 // These predicates are what the contract macros rest on.  A call site
@@ -72,16 +71,11 @@ namespace dco = foundation::decide::oracle;
 // Raising this is free.  Lowering it weakens the statistical claim.
 constexpr int kIterations = 10000;
 
-// Short enough that the all-pairs oracles stay cheap, long enough to
-// flush an off-by-one in a loop.
-constexpr std::size_t kMaxSpanLen = 16;
-
 // The keys themselves are arbitrary.  What matters is that they
 // differ, so that the streams are independent and a failure points at
 // one predicate.
 
 constexpr std::uint64_t kKeySum = 0xC001C0DE00020002ULL;
-constexpr std::uint64_t kKeyWeakInc = 0xC001C0DE00050005ULL;
 constexpr std::uint64_t kKeyPow2Le = 0xC001C0DE00060006ULL;
 constexpr std::uint64_t kKeyDisjoint = 0xC001C0DE000C000CULL;
 
@@ -147,37 +141,6 @@ void fuzz_no_overflow_sum() {
             if (!fuzz_sum_pair<T>(ctr[0], ctr[1])) fail_width<T>("no_overflow_sum", i);
         });
         g_sink ^= static_cast<int>(ctr[2] ^ ctr[3]);
-    }
-}
-
-void fuzz_weakly_increasing() {
-    for (int i = 0; i < kIterations; ++i) {
-        auto const ctr = generate(static_cast<std::uint64_t>(i), kKeyWeakInc);
-        std::size_t const len = ctr[0] % (kMaxSpanLen + 1);
-        std::int16_t buf[kMaxSpanLen]{};
-        // Noise almost never happens to be ordered, so half the rounds
-        // build an ordered sequence on purpose.  A delta of zero repeats
-        // the previous element, and a small range makes that frequent.
-        bool const make_monotone = (ctr[0] & 1u) == 1u;
-        std::int16_t prev = -8000;
-        for (std::size_t k = 0; k < len; ++k) {
-            auto const sub = generate(static_cast<std::uint64_t>(i) * 64 + k, kKeyWeakInc);
-            if (make_monotone) {
-                std::int16_t const delta = static_cast<std::int16_t>(sub[0] & 0x03u);
-                prev = static_cast<std::int16_t>(prev + delta);
-                buf[k] = prev;
-            } else {
-                buf[k] = static_cast<std::int16_t>(sub[0]);
-            }
-        }
-        std::span<const std::int16_t> xs{buf, len};
-        bool const fast = dc::weakly_increasing<std::int16_t>(xs);
-        bool const orcl = dco::weakly_increasing_oracle<std::int16_t>(xs);
-        if (fast != orcl) {
-            std::fprintf(stderr, "  len=%zu monotone=%d fast=%d oracle=%d\n", len, make_monotone ? 1 : 0, fast, orcl);
-            fail("weakly_increasing", i, "see preceding line");
-        }
-        g_sink ^= static_cast<int>(ctr[2]);
     }
 }
 
@@ -279,12 +242,11 @@ void fuzz_intervals_pairwise_disjoint() {
 
 int main() {
     std::fprintf(stderr,
-                 "test_decide_fuzz: %d iterations × 4 procedures "
+                 "test_decide_fuzz: %d iterations × 3 procedures "
                  "(Philox4x32-10 stream, fixed seed)\n",
                  kIterations);
 
     fuzz_no_overflow_sum();
-    fuzz_weakly_increasing();
     fuzz_is_power_of_two_le();
     fuzz_intervals_pairwise_disjoint();
 

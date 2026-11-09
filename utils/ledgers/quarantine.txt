@@ -10712,15 +10712,6 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_memory_plan_no_overlap.cpp | std-entity | +6 | std::array::operator[] | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_memory_plan_no_overlap.cpp | std-object | +1 | std::array | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_memory_plan_no_overlap.cpp | std-object | +1 | std::span | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | c-array-object | +1 | - | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | raw-pointer-object | +1 | - | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-entity | +1 | std::array::data | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-entity | +6 | std::array::operator[] | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-entity | +1 | std::is_sorted | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-entity | +1 | std::span::begin | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-entity | +1 | std::span::end | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-object | +1 | std::array | -
-@x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_monotonic_predicates.cpp | std-object | +2 | std::span | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_philox_determinism.cpp | raw-pointer-object | +1 | - | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_philox_determinism.cpp | std-object | +3 | std::array | -
 @x86_64-debug-asan-bench-fuzz | test/fuzz/property/prop_philox_simd_equivalence.cpp | c-library-call | +1 | fprintf | -

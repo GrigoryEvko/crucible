@@ -722,9 +722,7 @@ void Cipher::advance_head(OpenView const&, ContentHash content_hash, uint64_t st
     // at this gate.  The strict consecutive-by-one check belongs to the
     // session-event batch invariant, not to the head log.
     if (!log_.empty()) {
-        uint64_t const ordering[2] = {log_.back().step_id().value, step_id};
-        CRUCIBLE_PRE(
-            ::foundation::decide::weakly_increasing<std::uint64_t>(std::span<const std::uint64_t>{ordering, 2}));
+        CRUCIBLE_PRE(log_.back().step_id().value <= step_id);
     }
     head_ = content_hash;
 

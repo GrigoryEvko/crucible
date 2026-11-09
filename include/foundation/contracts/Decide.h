@@ -2,9 +2,8 @@
 //
 // The named predicates that a production precondition cites.  A predicate
 // earns its place here through its cites: the rule decide-cite-ratio
-// fails the build when a predicate has fewer than two production cites a
-// fixed time after it entered this header.  A predicate that no
-// precondition needs does not belong here.
+// fails the build when a predicate has fewer than two production cites.
+// A predicate that no precondition needs does not belong here.
 
 #pragma once
 
@@ -22,20 +21,6 @@ template <std::integral T>
 constexpr bool no_overflow_sum(T a, T b) noexcept {
     T r{};
     return !__builtin_add_overflow(a, b, &r);
-}
-
-// True iff every consecutive pair satisfies `xs[i - 1] <= xs[i]`. Equal
-// neighbours pass. Only a strict regression fails. Fewer than two elements is
-// vacuously true.
-template <std::integral T>
-[[nodiscard, gnu::pure]]
-constexpr bool weakly_increasing(std::span<const T> xs) noexcept {
-    for (std::size_t i = 1; i < xs.size(); ++i) {
-        if (xs[i - 1] > xs[i]) {
-            return false;
-        }
-    }
-    return true;
 }
 
 // True iff x has exactly one set bit and x <= bound. Zero and, for signed T,
