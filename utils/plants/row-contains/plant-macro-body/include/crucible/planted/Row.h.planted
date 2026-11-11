@@ -1,2 +1,0 @@
-#pragma once
-#define OWNS(C, E) effects::row_contains(^^effects::row_type_of_t<C>, E)

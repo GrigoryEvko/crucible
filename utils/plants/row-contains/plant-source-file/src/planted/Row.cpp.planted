@@ -1,1 +1,0 @@
-template <class C> requires (row_contains(^^row_type_of_t<C>, X)) void s();

@@ -1,1 +1,0 @@
-template <class C, class E> concept O = row_contains(^^row_type_of_t<C>, E);
