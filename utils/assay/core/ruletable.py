@@ -143,13 +143,13 @@ DENY_FORMAT = (
 )
 # The prefix of the field of an owner row that names the function of its sites.
 BY_PREFIX = "by="
-# The rules of the family home of the plugin (utils/tools/quarantine/home.cpp),
-# which the home rows and the home-args rows name.
-HOME_RULES = ("federation-admission", "host-owners", "no-combine-ids-duplicate", "splits-orphan", "trait-guard")
+# The classes of the rule home of the plugin (utils/tools/quarantine/home.cpp, THE CLASSES), which the home rows and
+# the home-args rows name.  The class of a row selects the sites of its entity.
+HOME_CLASSES = ("federation", "owner", "combine", "split", "trait")
 # The error of a home row that does not obey its format.  rule_table.cpp gives the same text.
 HOME_FORMAT = (
-    "a home row is 'home RULE ENTITY [PATH...] | REASON', and a home-args row is 'home-args RULE ENTITY "
-    "[PATH...] | REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and "
+    "a home row is 'home CLASS ENTITY [PATH...] | REASON', and a home-args row is 'home-args CLASS ENTITY "
+    "[PATH...] | REASON'.  CLASS is a class of the rule home, ENTITY is a qualified name or one name, and "
     "the reason is necessary"
 )
 # The prefix of a path of the build directory.  A file that the build writes
@@ -296,12 +296,12 @@ class Witness:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Home:
-    """One home row or home-args row of the family home: the rule, the entity, the paths, the reason and the line.
+    """One home row or home-args row of the rule home: the class, the entity, the paths, the reason and the line.
 
     An entity of one name names each namespace of that name.
     """
 
-    rule: str
+    home_class: str
     entity: str
     is_args: bool
     paths: tuple[str, ...]
@@ -360,10 +360,6 @@ class RuleTable:
     exempts: tuple[Exempt, ...] = ()
     # The line of each door row, in the sequence of doors.
     door_lines: tuple[int, ...] = ()
-
-    def homes_of(self, rule: str) -> tuple[Home, ...]:
-        """Return the home rows of one rule, in the sequence of the file."""
-        return tuple(home for home in self.homes if home.rule == rule)
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -435,18 +431,18 @@ def _check_path(path: str, where: str) -> None:
 
 
 def parse_home(args: list[str], is_args: bool, reason: str, number: int, where: str) -> Home:
-    """Parse the words of one home row or home-args row after the row kind: RULE, ENTITY and the paths.
+    """Parse the words of one home row or home-args row after the row kind: CLASS, ENTITY and the paths.
 
     Raises:
         TableError: When the row does not obey its format.  rule_table.cpp gives the same texts
     """
     if len(args) < 2 or not reason:
         raise TableError(f"{where}: {HOME_FORMAT}")
-    rule, entity, paths = args[0], args[1], tuple(args[2:])
-    if rule not in HOME_RULES:
+    home_class, entity, paths = args[0], args[1], tuple(args[2:])
+    if home_class not in HOME_CLASSES:
         raise TableError(
-            f"{where}: the rule {rule} is no rule of the family home; the rules are federation-admission, "
-            f"host-owners, no-combine-ids-duplicate, splits-orphan and trait-guard"
+            f"{where}: the class {home_class} is no class of the rule home; the classes are federation, owner, "
+            f"combine, split and trait"
         )
     if not all(part.isascii() and part.isidentifier() for part in entity.split("::")):
         raise TableError(f"{where}: the entity {entity} is not a qualified name: each part is an identifier")
@@ -457,7 +453,7 @@ def parse_home(args: list[str], is_args: bool, reason: str, number: int, where: 
             f"{where}: a path of a home row must be relative to the source root, with no '.', '..' or empty "
             f"component, and not in the build directory"
         )
-    return Home(rule, entity, is_args, paths, reason, number)
+    return Home(home_class, entity, is_args, paths, reason, number)
 
 
 def parse_owner(args: list[str], reason: str, number: int, where: str) -> Owner:

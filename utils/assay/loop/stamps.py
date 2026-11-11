@@ -104,7 +104,8 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         for grant in table.grants
     ]
     lines += [
-        f"{'home-args' if home.is_args else 'home'} {home.rule} {home.entity} {' '.join(sorted(home.paths))}".rstrip()
+        f"{'home-args' if home.is_args else 'home'} {home.home_class} {home.entity} "
+        f"{' '.join(sorted(home.paths))}".rstrip()
         for home in table.homes
     ]
     lines += [f"witness {witness.name}" for witness in table.witnesses]

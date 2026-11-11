@@ -264,27 +264,36 @@
 //     unread-grant          a grant file whose alias, enumeration, grants or
 //                           calls the plugin cannot read
 //     compared              no finding: the unit compared the two sets
-//     The rules of the family home (home.cpp, THE FAMILY) read where a
-//     definition or a specialization stands.  A finding of such a rule is an
+//     The rule home of the family home (home.cpp, THE SITES) reads where a
+//     definition or a specialization stands.  A finding of the rule is an
 //     error only in the mode error, no opt-out region covers it, and the
-//     module of its rule judges it against the ledger of the rule
-//     (is_family_kind).  Each rule has the kinds:
-//     outside-home          a definition or a specialization of an entity
-//                           outside the paths of its home row (the rules
-//                           federation-admission, host-owners,
-//                           no-combine-ids-duplicate and trait-guard)
+//     module of the rule judges it against the ledger of the rule
+//     (is_family_kind).  The class of a home row selects the sites and the
+//     kinds of its entity (home.cpp, THE CLASSES):
+//     outside-home          a specialization of a template of a trait row or
+//                           of a default home, or a declaration of a namespace
+//                           of a trait row, outside its home
+//     federation-outside-home
+//                           a definition or a specialization of the entity of
+//                           a federation row, or a definition of a part of it,
+//                           outside the paths of its row
+//     owner-outside-home    a definition or a specialization of a class of an
+//                           owner row outside the paths of its row
+//     combine-outside-home  the definition of the function of a combine row
+//                           outside the paths of its row
+//     second-body           a function named combine_ids outside the scope of
+//                           a combine row, or a function or a lambda with the
+//                           body of combine_ids
+//     derived-name          a declaration with a name that holds combine_ids
+//                           and more
+//     away-from-arguments   a specialization of the template of a split row
+//                           that is not in the file that defines each of its
+//                           arguments, and not in a path of its row
+//     open-read             a gate that reads a template that a unit can
+//                           specialize
 //     at-home               no finding: one site that a path of a home row
 //                           admits, so that the module of the rule finds a
 //                           home row with no site
-//     The rule no-combine-ids-duplicate also has:
-//     second-body           a function named combine_ids outside its home, or a
-//                           function or a lambda with the body of combine_ids
-//     derived-name          a declaration with a name that holds combine_ids
-//                           and more
-//     The rule splits-orphan has away-from-arguments, a specialization that is
-//     not in the file that defines each of its arguments, and at-home.  The
-//     rule trait-guard also has open-read: a gate that reads a template that a
-//     unit can specialize.
 //     The rules of the family owner (owner.cpp, THE OWNER ROWS, THE CLAIMS and
 //     THE NAMES OF THE SOURCE) read where the code uses an entity.  A finding
 //     of such a rule is an error only in the mode error, no opt-out region
@@ -665,11 +674,7 @@ enum class Rule : std::uint8_t {
     padded_list,
     refined_pre_subsumption,
     syscall_grant_coverage,
-    federation_admission,
-    host_owners,
-    no_combine_ids_duplicate,
-    splits_orphan,
-    trait_guard,
+    home,
     start_lifetime,
     syscall_capability,
     ctx_init_door,
@@ -681,10 +686,40 @@ enum class Rule : std::uint8_t {
     library_records,
 };
 
+// The class of a home row, which selects the sites and the kinds of its entity
+// in the rule home (home.cpp, THE CLASSES).
+enum class HomeClass : std::uint8_t {
+    federation,
+    owner,
+    combine,
+    split,
+    trait,
+};
+
+// The word of each class in a home row, in the order of the enumeration.
+inline constexpr HomeClass kHomeClasses[] = {HomeClass::federation, HomeClass::owner, HomeClass::combine,
+                                             HomeClass::split, HomeClass::trait};
+
+inline const char* home_class_name(HomeClass home_class) {
+    switch (home_class) {
+        case HomeClass::federation:
+            return "federation";
+        case HomeClass::owner:
+            return "owner";
+        case HomeClass::combine:
+            return "combine";
+        case HomeClass::split:
+            return "split";
+        case HomeClass::trait:
+            return "trait";
+    }
+    return "unknown";
+}
+
 // One home row or home-args row of the family home (home.cpp, THE ROWS).  The
 // entity is a qualified name, or one name for each namespace of that name.
 struct HomeRow {
-    Rule rule = Rule::trait_guard;
+    HomeClass home_class = HomeClass::trait;
     std::string entity;
     bool is_one_name = false;  // the entity names each namespace of that name
     bool is_args = false;  // a home-args row
@@ -803,20 +838,17 @@ enum class Kind : std::uint8_t {
     grant_wrong_helper,
     grant_unread,
     grant_compared,
-    // The family home (home.cpp): one kind for each kind of each rule.
+    // The rule home (home.cpp): the kinds of the sites of each class, and the
+    // record of a site that a home row admits.
     federation_outside_home,
-    federation_at_home,
     owner_outside_home,
-    owner_at_home,
     combine_outside_home,
     combine_second_body,
     combine_derived_name,
-    combine_at_home,
     split_away_from_arguments,
-    split_at_home,
     trait_outside_home,
     trait_open_read,
-    trait_at_home,
+    home_at_home,
     // The family owner (owner.cpp).
     lifetime_start,
     raw_syscall,
@@ -878,16 +910,8 @@ inline const char* rule_name(Rule rule) {
             return "refined-pre-subsumption";
         case Rule::syscall_grant_coverage:
             return "syscall-grant-coverage";
-        case Rule::federation_admission:
-            return "federation-admission";
-        case Rule::host_owners:
-            return "host-owners";
-        case Rule::no_combine_ids_duplicate:
-            return "no-combine-ids-duplicate";
-        case Rule::splits_orphan:
-            return "splits-orphan";
-        case Rule::trait_guard:
-            return "trait-guard";
+        case Rule::home:
+            return "home";
         case Rule::start_lifetime:
             return "start-lifetime";
         case Rule::syscall_capability:
@@ -905,10 +929,6 @@ inline const char* rule_name(Rule rule) {
     }
     return "unknown";
 }
-
-// The rules of the family home, in the order of the enumeration.
-inline constexpr Rule kHomeRules[] = {Rule::federation_admission, Rule::host_owners, Rule::no_combine_ids_duplicate,
-                                      Rule::splits_orphan, Rule::trait_guard};
 
 // The rules of the family owner, in the order of the enumeration.
 inline constexpr Rule kOwnerRules[] = {Rule::start_lifetime,       Rule::syscall_capability, Rule::ctx_init_door,
@@ -1059,15 +1079,14 @@ inline const char* kind_name(Kind kind) {
         case Kind::grant_compared:
             return "compared";
         case Kind::federation_outside_home:
+            return "federation-outside-home";
         case Kind::owner_outside_home:
+            return "owner-outside-home";
         case Kind::combine_outside_home:
+            return "combine-outside-home";
         case Kind::trait_outside_home:
             return "outside-home";
-        case Kind::federation_at_home:
-        case Kind::owner_at_home:
-        case Kind::combine_at_home:
-        case Kind::split_at_home:
-        case Kind::trait_at_home:
+        case Kind::home_at_home:
             return "at-home";
         case Kind::combine_second_body:
             return "second-body";
@@ -1186,23 +1205,15 @@ inline Rule rule_of(Kind kind) {
         case Kind::grant_compared:
             return Rule::syscall_grant_coverage;
         case Kind::federation_outside_home:
-        case Kind::federation_at_home:
-            return Rule::federation_admission;
         case Kind::owner_outside_home:
-        case Kind::owner_at_home:
-            return Rule::host_owners;
         case Kind::combine_outside_home:
         case Kind::combine_second_body:
         case Kind::combine_derived_name:
-        case Kind::combine_at_home:
-            return Rule::no_combine_ids_duplicate;
         case Kind::split_away_from_arguments:
-        case Kind::split_at_home:
-            return Rule::splits_orphan;
         case Kind::trait_outside_home:
         case Kind::trait_open_read:
-        case Kind::trait_at_home:
-            return Rule::trait_guard;
+        case Kind::home_at_home:
+            return Rule::home;
         case Kind::lifetime_start:
             return Rule::start_lifetime;
         case Kind::raw_syscall:
@@ -1258,11 +1269,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::padded_list:
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
-        case Rule::federation_admission:
-        case Rule::host_owners:
-        case Rule::no_combine_ids_duplicate:
-        case Rule::splits_orphan:
-        case Rule::trait_guard:
+        case Rule::home:
         case Rule::start_lifetime:
         case Rule::syscall_capability:
         case Rule::ctx_init_door:
@@ -1286,11 +1293,7 @@ inline bool is_record_kind(Kind kind) {
         case Kind::mint_record:
         case Kind::mint_alias:
         case Kind::grant_compared:
-        case Kind::federation_at_home:
-        case Kind::owner_at_home:
-        case Kind::combine_at_home:
-        case Kind::split_at_home:
-        case Kind::trait_at_home:
+        case Kind::home_at_home:
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1387,19 +1390,15 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"syscall-grant-coverage", "wrong-helper"},
     {"syscall-grant-coverage", "unread-grant"},
     {"syscall-grant-coverage", "compared"},
-    {"federation-admission", "outside-home"},
-    {"federation-admission", "at-home"},
-    {"host-owners", "outside-home"},
-    {"host-owners", "at-home"},
-    {"no-combine-ids-duplicate", "outside-home"},
-    {"no-combine-ids-duplicate", "second-body"},
-    {"no-combine-ids-duplicate", "derived-name"},
-    {"no-combine-ids-duplicate", "at-home"},
-    {"splits-orphan", "away-from-arguments"},
-    {"splits-orphan", "at-home"},
-    {"trait-guard", "outside-home"},
-    {"trait-guard", "open-read"},
-    {"trait-guard", "at-home"},
+    {"home", "outside-home"},
+    {"home", "federation-outside-home"},
+    {"home", "owner-outside-home"},
+    {"home", "combine-outside-home"},
+    {"home", "second-body"},
+    {"home", "derived-name"},
+    {"home", "away-from-arguments"},
+    {"home", "open-read"},
+    {"home", "at-home"},
     {"start-lifetime", "lifetime-start"},
     {"syscall-capability", "raw-syscall"},
     {"syscall-capability", "outside-door"},

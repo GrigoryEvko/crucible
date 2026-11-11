@@ -4745,10 +4745,10 @@ crucible_script_test(NAME plugin_witness_self_test
 # mint reads, with the two parts of that rule.
 crucible_script_test(NAME plugin_declarations_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_declarations)
-# plugin_home_self_test — the family home of the engine plugin
+# plugin_home_self_test — the rule home of the engine plugin
 # (utils/assay/guard/engines/plugin/home.py): the paths of a home row, the
-# files of a build, the findings of a rule, a path with no site, and the
-# ledger of the rule trait-guard.
+# files of a build, the findings and the texts of the rule, a path with no
+# site, and the ledger of the rule with its refused kinds.
 crucible_script_test(NAME plugin_home_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_home)
 # plugin_names_self_test — the rules that read the names of the source

@@ -1,0 +1,10 @@
+# A row with the value admit of the ledger of the rule home admits a reviewed
+# second body of combine_ids with its reason, as a row of the policy admit
+# does.  The module of the rule then gives no error, and the one body in its
+# home is a record and no finding.
+
+compile body src/body.cpp stage=c rules=utils/rule-table.txt
+exit body pass
+judge body
+finding body home at-home include/foundation/reflect/Hash.h:10:25 | foundation::reflect::combine_ids
+finding body home second-body src/body.cpp:5:25 | planted::mix_pair

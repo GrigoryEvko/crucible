@@ -309,28 +309,27 @@ constexpr const char* kWitnessFormat =
 // The error of a home row that does not obey the format of its words.
 // ruletable.HOME_FORMAT gives the same text.
 constexpr const char* kHomeFormat =
-    "a home row is 'home RULE ENTITY [PATH...] | REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] | "
-    "REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is "
+    "a home row is 'home CLASS ENTITY [PATH...] | REASON', and a home-args row is 'home-args CLASS ENTITY [PATH...] "
+    "| REASON'.  CLASS is a class of the rule home, ENTITY is a qualified name or one name, and the reason is "
     "necessary";
 
-// The words of one home row or home-args row after the row kind: RULE, ENTITY
+// The words of one home row or home-args row after the row kind: CLASS, ENTITY
 // and the paths.  Returns the error of the row, or an empty text when the row
 // obeys the format.
 std::string parse_home(const std::vector<std::string>& args, bool is_args, HomeRow& row) {
     if (args.size() < 2) {
         return kHomeFormat;
     }
-    bool is_rule = false;
-    for (Rule rule : kHomeRules) {
-        if (args[0] == rule_name(rule)) {
-            row.rule = rule;
-            is_rule = true;
+    bool is_class = false;
+    for (HomeClass home_class : kHomeClasses) {
+        if (args[0] == home_class_name(home_class)) {
+            row.home_class = home_class;
+            is_class = true;
         }
     }
-    if (!is_rule) {
-        return "the rule " + args[0]
-             + " is no rule of the family home; the rules are federation-admission, host-owners, "
-               "no-combine-ids-duplicate, splits-orphan and trait-guard";
+    if (!is_class) {
+        return "the class " + args[0]
+             + " is no class of the rule home; the classes are federation, owner, combine, split and trait";
     }
     row.entity = args[1];
     row.is_args = is_args;

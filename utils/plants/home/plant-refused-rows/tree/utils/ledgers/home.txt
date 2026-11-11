@@ -1,0 +1,5 @@
+# The ledger of the plant: one row of each kind that no row admits, with the key of a finding of the unit.
+format 1
+rule home
+src/forge.cpp | federation-outside-home | 1 | foundation::permissions::FederationAdmission | a row that tries to admit a second definition of the admission
+src/forge.cpp | owner-outside-home | 1 | foundation::effects::host::Forged | a row that tries to admit a second owner of a context

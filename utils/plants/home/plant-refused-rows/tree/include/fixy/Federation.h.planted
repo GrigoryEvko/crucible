@@ -1,0 +1,16 @@
+#pragma once
+
+#include <foundation/permissions/Permission.h>
+
+namespace foundation::permissions {
+
+template <class Org>
+class FederationAdmission final {
+public:
+    static constexpr FederationAdmission mint_federation_admission() noexcept { return {}; }
+
+private:
+    constexpr FederationAdmission() noexcept {}
+};
+
+}  // namespace foundation::permissions

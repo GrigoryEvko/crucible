@@ -1,0 +1,88 @@
+# Each definition of the admission or of a part of it outside its home is a
+# finding of the rule home.  One unit holds each forgery that
+# the legacy scan refused: an explicit and a partial specialization, a second
+# primary definition, an explicit specialization of a member through the
+# class name, an alias and a decltype, a member class, a comment and a line
+# splice in the name, each such shape in a macro that the unit expands, and a
+# macro of a different file that pastes the name.  The definition in the home
+# is a record and no finding.  The rule proof-routes refuses each explicit
+# specialization of the member mint_federation_admittance too.
+compile explicit src/explicit.cpp mode=error
+exit explicit fail
+finding explicit home federation-outside-home src/explicit.cpp:5:44 | foundation::permissions::FederationAdmission
+error explicit src/explicit.cpp:5 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile partial src/partial.cpp mode=error
+exit partial fail
+finding partial home federation-outside-home src/partial.cpp:3:65 | foundation::permissions::FederationAdmission
+error partial src/partial.cpp:3 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile primary src/primary.cpp mode=error
+exit primary fail
+finding primary home federation-outside-home src/primary.cpp:4:28 | foundation::permissions::FederationAdmission
+finding primary home federation-outside-home src/primary.cpp:4:69 | foundation::permissions::FederationAdmission
+error primary src/primary.cpp:4 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+error primary src/primary.cpp:4 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile member src/member.cpp mode=error
+exit member fail
+finding member home federation-outside-home src/member.cpp:6:1 | foundation::permissions::FederationAdmission
+finding member home at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding member proof-routes function-specialization src/member.cpp:6:1 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
+error member src/member.cpp:6 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+error member src/member.cpp:6 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
+compile alias src/alias.cpp mode=error
+exit alias fail
+finding alias home federation-outside-home src/alias.cpp:6:39 | foundation::permissions::FederationAdmission
+finding alias home federation-outside-home src/alias.cpp:7:23 | foundation::permissions::FederationAdmission
+finding alias home at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding alias proof-routes function-specialization src/alias.cpp:6:39 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
+error alias src/alias.cpp:6 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+error alias src/alias.cpp:6 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
+error alias src/alias.cpp:7 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile decltype src/decltype.cpp mode=error
+exit decltype fail
+finding decltype home federation-outside-home src/decltype.cpp:8:53 | foundation::permissions::FederationAdmission
+finding decltype home at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+error decltype src/decltype.cpp:8 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile nested src/nested.cpp mode=error
+exit nested fail
+finding nested home federation-outside-home src/nested.cpp:5:72 | foundation::permissions::FederationAdmission
+finding nested home at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+error nested src/nested.cpp:5 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile splice src/splice.cpp mode=error
+exit splice fail
+finding splice home federation-outside-home src/splice.cpp:5:44 | foundation::permissions::FederationAdmission
+error splice src/splice.cpp:5 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile comment src/comment.cpp mode=error
+exit comment fail
+finding comment home federation-outside-home src/comment.cpp:5:53 | foundation::permissions::FederationAdmission
+error comment src/comment.cpp:5 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile macro src/macro.cpp mode=error
+exit macro fail
+finding macro home federation-outside-home src/macro.cpp:6:1 | foundation::permissions::FederationAdmission
+error macro src/macro.cpp:6 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile macro_member src/macro_member.cpp mode=error
+exit macro_member fail
+finding macro_member home federation-outside-home src/macro_member.cpp:7:1 | foundation::permissions::FederationAdmission
+finding macro_member home at-home include/fixy/Federation.h:10:7 | foundation::permissions::FederationAdmission
+finding macro_member proof-routes function-specialization src/macro_member.cpp:7:1 | function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance
+error macro_member src/macro_member.cpp:7 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+error macro_member src/macro_member.cpp:7 | quarantine: function-specialization function-specialization: foundation::permissions::FederationAdmission::mint_federation_admittance;
+compile macro_splice src/macro_splice.cpp mode=error
+exit macro_splice fail
+finding macro_splice home federation-outside-home src/macro_splice.cpp:7:1 | foundation::permissions::FederationAdmission
+error macro_splice src/macro_splice.cpp:7 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile macro_alignas src/macro_alignas.cpp mode=error
+exit macro_alignas fail
+finding macro_alignas home federation-outside-home src/macro_alignas.cpp:4:1 | foundation::permissions::FederationAdmission
+error macro_alignas src/macro_alignas.cpp:4 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile macro_name src/macro_name.cpp mode=error
+exit macro_name fail
+finding macro_name home federation-outside-home src/macro_name.cpp:7:1 | foundation::permissions::FederationAdmission
+error macro_name src/macro_name.cpp:7 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile macro_paste src/macro_paste.cpp mode=error
+exit macro_paste fail
+finding macro_paste home federation-outside-home src/macro_paste.cpp:6:1 | foundation::permissions::FederationAdmission
+error macro_paste src/macro_paste.cpp:6 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;
+compile expand src/expand/use.cpp mode=error
+exit expand fail
+finding expand home federation-outside-home src/expand/use.cpp:7:1 | foundation::permissions::FederationAdmission
+error expand src/expand/use.cpp:7 | quarantine: federation-outside-home foundation::permissions::FederationAdmission;

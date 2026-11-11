@@ -1,0 +1,9 @@
+# The rule table of the plant of the refused kinds of the rule home:
+# include/foundation/ and include/fixy/ are base code, and src/ is
+# quarantined.  The admission and the init owner have one home each.
+layer low 0 include/foundation/
+layer high 1 include/fixy/
+quarantine src/
+home federation foundation::permissions::FederationAdmission include/fixy/Federation.h | the one definition of the admission of the plant
+home owner host | a class of a namespace named host is an owner, and only an owner row gives it a home
+home owner foundation::effects::host::InitOwner include/foundation/effects/Effect.h | the init context of the plant

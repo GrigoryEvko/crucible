@@ -1,0 +1,4 @@
+# The ledger of the control: a reviewed second body of combine_ids, admitted with its reason.
+format 1
+rule home
+src/body.cpp | second-body | admit | planted::mix_pair | a reviewed copy of the fold of the control

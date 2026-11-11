@@ -1,0 +1,14 @@
+#include <fixy/Federation.h>
+#include <foundation/effects/Effect.h>
+
+struct Evil;
+
+template <> class foundation::permissions::FederationAdmission<Evil> { public: int grant(); };
+
+namespace foundation::effects::host {
+
+struct Forged {
+    static int key() noexcept;
+};
+
+}  // namespace foundation::effects::host

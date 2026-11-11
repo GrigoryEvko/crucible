@@ -1,1 +1,1 @@
-home-args splits-orphan can_split_into | one name
+home-args split can_split_into | one name

@@ -1,0 +1,15 @@
+#pragma once
+
+namespace foundation::reflect {
+
+constexpr unsigned long fmix64(unsigned long value) noexcept {
+    value ^= value >> 33;
+    return value;
+}
+
+constexpr unsigned long combine_ids(unsigned long a, unsigned long b) noexcept {
+    a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
+    return fmix64(a);
+}
+
+}  // namespace foundation::reflect

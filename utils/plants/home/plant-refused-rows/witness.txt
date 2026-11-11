@@ -1,0 +1,12 @@
+# No ledger row admits a finding of the kinds federation-outside-home and
+# owner-outside-home.  The ledger of the tree holds a row of the key of each
+# finding of the unit, and the module of the rule home still gives an error for
+# the second definition of the admission and for the owner with no home row.
+
+compile forge src/forge.cpp stage=c rules=utils/rule-table.txt
+exit forge pass
+judge forge
+finding forge home at-home include/fixy/Federation.h:8:7 | foundation::permissions::FederationAdmission
+finding forge home at-home include/foundation/effects/Effect.h:5:8 | foundation::effects::host::InitOwner
+finding forge home federation-outside-home src/forge.cpp:6:44 | foundation::permissions::FederationAdmission
+finding forge home owner-outside-home src/forge.cpp:10:8 | foundation::effects::host::Forged

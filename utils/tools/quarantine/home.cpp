@@ -2,39 +2,42 @@
 // its home.  C++ has no orphan rule: each unit can define or specialize each
 // entity that it can name.  A specialization of a trait outside the file that
 // owns the trait changes what a concept admits, and a second definition of a
-// door class mints the authority of the door.  So each rule of this family
-// names where an entity is at home, and gives a finding for each site of the
-// entity outside its home.
+// door class mints the authority of the door.  So the rule home names where an
+// entity is at home, and gives a finding for each site of the entity outside
+// its home.
 //
 // THE ROWS
 //     The rule table (utils/rule-table.txt) gives each home in a row:
-//         home RULE ENTITY [PATH...] | REASON
-//         home-args RULE ENTITY [PATH...] | REASON
-//     RULE is a rule of the family, and ENTITY is a qualified name.  An ENTITY
-//     of one name names each namespace of that name.  A PATH admits each file
-//     that it holds: a directory each file under it, and a file that file.  A
-//     row with no path admits no file.  The row of an entity also governs each
-//     declaration inside the entity: a member of a class, and a declaration of
-//     a namespace and of the namespaces in it.  The innermost row decides: the
-//     row of a class decides for the class, and the row of its namespace
-//     decides for each class with no row of its own.
+//         home CLASS ENTITY [PATH...] | REASON
+//         home-args CLASS ENTITY [PATH...] | REASON
+//     CLASS is a class of THE CLASSES, and ENTITY is a qualified name.  An
+//     ENTITY of one name names each namespace of that name.  A PATH admits
+//     each file that it holds: a directory each file under it, and a file that
+//     file.  A row with no path admits no file.  The row of an entity also
+//     governs each declaration inside the entity: a member of a class, and a
+//     declaration of a namespace and of the namespaces in it.  The innermost
+//     row decides: the row of a class decides for the class, and the row of
+//     its namespace decides for each class with no row of its own.
 //     A home-args row also admits a specialization in the file that defines
 //     each of its arguments (THE ARGUMENTS).
 //
+// THE CLASSES
+//     The class of a row selects the sites of its entity and the kind of a
+//     site outside its home:
+//       federation  the definition of the entity, each explicit or partial
+//                   specialization, the definition of each member and each
+//                   class inside it: federation-outside-home
+//       owner       the definition of a class: owner-outside-home
+//       combine     the definition of a function named combine_ids:
+//                   combine-outside-home, and THE BODY OF combine_ids
+//       split       each explicit or partial specialization, and each explicit
+//                   specialization of a member: away-from-arguments
+//       trait       each explicit or partial specialization, each explicit
+//                   specialization of a member, and each declaration of a
+//                   namespace of a row: outside-home
+//     A site that a path of its row admits is the record at-home.
+//
 // THE SITES
-//     Each rule reads the sites of its entities:
-//       federation-admission  the definition of the entity, each explicit or
-//                             partial specialization, the definition of each
-//                             member and each class inside it
-//       host-owners           the definition of a class
-//       no-combine-ids-duplicate
-//                             the definition of a function named combine_ids,
-//                             and THE BODY OF combine_ids
-//       splits-orphan         each explicit or partial specialization, and each
-//                             explicit specialization of a member
-//       trait-guard           each explicit or partial specialization, each
-//                             explicit specialization of a member, and each
-//                             declaration of a namespace of a row
 //     An explicit specialization and a partial specialization are on the lists
 //     of their template (DECL_TEMPLATE_INSTANTIATIONS and
 //     DECL_TEMPLATE_SPECIALIZATIONS), also when the unit only declares them.
@@ -50,7 +53,7 @@
 // THE DEFAULT HOME
 //     A class template or a variable template that a header of
 //     include/foundation/ or include/fixy/ defines has a home with no row in
-//     the rule trait-guard: the file that defines the template.  A concept of
+//     the class trait: the file that defines the template.  A concept of
 //     the two layers can read such a template, and a specialization from a
 //     different file changes what the concept admits.  A row of the template
 //     replaces the default home.
@@ -83,10 +86,10 @@
 //     combine_ids and THE GATES.
 //
 // THE BODY OF combine_ids
-//     The rule no-combine-ids-duplicate gives second-body for a function named
-//     combine_ids outside the namespace of its row, and for a function or a
-//     lambda whose body holds the salt 0x9e3779b97f4a7c15, a shift left by 6,
-//     a shift right by 2 and a call of fmix64.  It gives derived-name for a
+//     The class combine gives second-body for a function named combine_ids
+//     outside the namespace of its row, and for a function or a lambda whose
+//     body holds the salt 0x9e3779b97f4a7c15, a shift left by 6, a shift right
+//     by 2 and a call of fmix64.  It gives derived-name for a
 //     declaration with a name that holds combine_ids and more, such as
 //     combine_ids_runtime.
 //
@@ -125,36 +128,29 @@ constexpr char kHeaderTree[] = "include/";
 constexpr const char* kLayerTrees[] = {"include/foundation/", "include/fixy/"};
 constexpr char kCrucibleTree[] = "include/crucible/";
 
-// The kinds of each rule of the family.
-struct RuleKinds {
-    Rule rule;
-    Kind outside;
-    Kind at_home;
-};
-
-constexpr RuleKinds kRuleKindsOfHome[] = {
-    {Rule::federation_admission, Kind::federation_outside_home, Kind::federation_at_home},
-    {Rule::host_owners, Kind::owner_outside_home, Kind::owner_at_home},
-    {Rule::no_combine_ids_duplicate, Kind::combine_outside_home, Kind::combine_at_home},
-    {Rule::splits_orphan, Kind::split_away_from_arguments, Kind::split_at_home},
-    {Rule::trait_guard, Kind::trait_outside_home, Kind::trait_at_home},
-};
-
-const RuleKinds& kinds_of(Rule rule) {
-    for (const RuleKinds& kinds : kRuleKindsOfHome) {
-        if (kinds.rule == rule) {
-            return kinds;
-        }
+// The kind of a site outside its home, for each class (THE CLASSES).
+Kind outside_kind_of(HomeClass home_class) {
+    switch (home_class) {
+        case HomeClass::federation:
+            return Kind::federation_outside_home;
+        case HomeClass::owner:
+            return Kind::owner_outside_home;
+        case HomeClass::combine:
+            return Kind::combine_outside_home;
+        case HomeClass::split:
+            return Kind::split_away_from_arguments;
+        case HomeClass::trait:
+            return Kind::trait_outside_home;
     }
-    return kRuleKindsOfHome[0];
+    return Kind::trait_outside_home;
 }
 
 // The home of one entity: its row, or the default home of a template (THE
-// DEFAULT HOME), and the qualified name of the entity.
+// DEFAULT HOME), the class of the row, and the qualified name of the entity.
 struct Home {
     const HomeRow* row = nullptr;
     const FileEntry* default_file = nullptr;
-    Rule rule = Rule::trait_guard;
+    HomeClass home_class = HomeClass::trait;
     std::string entity;
 
     [[nodiscard]] bool is_set() const { return row != nullptr || default_file != nullptr; }
@@ -379,11 +375,10 @@ void record_site(const Home& home, location_t location, bool is_beside = false) 
     if (place.file == nullptr) {
         return;
     }
-    const RuleKinds& kinds = kinds_of(home.rule);
     std::string path = read_as(place.file->relative);
     if (home.row != nullptr && row_admits(*home.row, path)) {
         if (at_home_keys.insert(std::to_string(home.row->line) + ' ' + place.file->relative).second) {
-            add_home_finding(kinds.at_home, place, home.row->entity);
+            add_home_finding(Kind::home_at_home, place, home.row->entity);
         }
         return;
     }
@@ -393,7 +388,7 @@ void record_site(const Home& home, location_t location, bool is_beside = false) 
     if (home.row != nullptr && home.row->is_args && is_beside) {
         return;
     }
-    add_home_finding(kinds.outside, place, home.entity);
+    add_home_finding(outside_kind_of(home.home_class), place, home.entity);
 }
 
 // ── The templates ───────────────────────────────────────────────────────
@@ -438,14 +433,14 @@ const Home& home_of_template(tree template_decl) {
     tree named = NULL_TREE;
     home.row = governing_row(general, named);
     if (home.row != nullptr) {
-        home.rule = home.row->rule;
+        home.home_class = home.row->home_class;
         home.entity = entity_text(named);
     } else if (is_class_template(general) || is_variable_template(general)) {
         const FileEntry* file = file_at(defining_location(general));
         if (file != nullptr && file->file_class == FileClass::base
             && has_any_prefix(file->relative, {kLayerTrees[0], kLayerTrees[1]})) {
             home.default_file = file;
-            home.rule = Rule::trait_guard;
+            home.home_class = HomeClass::trait;
             home.entity = qualified_name(general);
         }
     }
@@ -520,7 +515,7 @@ void read_specializations(tree template_decl) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (!home.is_set() || home.rule == Rule::no_combine_ids_duplicate) {
+    if (!home.is_set() || home.home_class == HomeClass::combine) {
         return;
     }
     bool is_args = home.row != nullptr && home.row->is_args;
@@ -577,7 +572,7 @@ void read_member_specialization(tree decl) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (!home.is_set() || home.rule == Rule::no_combine_ids_duplicate) {
+    if (!home.is_set() || home.home_class == HomeClass::combine) {
         return;
     }
     location_t location = DECL_SOURCE_LOCATION(decl);
@@ -630,10 +625,10 @@ void read_combine_definition(tree function) {
     tree named = NULL_TREE;
     const HomeRow* row = governing_row(function, named);
     location_t location = DECL_SOURCE_LOCATION(function);
-    if (row != nullptr && row->rule == Rule::no_combine_ids_duplicate && named == function) {
+    if (row != nullptr && row->home_class == HomeClass::combine && named == function) {
         Home home;
         home.row = row;
-        home.rule = row->rule;
+        home.home_class = row->home_class;
         home.entity = row->entity;
         record_site(home, location);
         return;
@@ -1050,11 +1045,11 @@ location_t site_location(tree decl) {
 void read_row_site(tree decl, const HomeRow& row, tree named, bool is_class) {
     Home home;
     home.row = &row;
-    home.rule = row.rule;
+    home.home_class = row.home_class;
     home.entity = entity_text(named);
     bool is_complete = !is_class || COMPLETE_TYPE_P(TREE_TYPE(decl));
-    switch (row.rule) {
-        case Rule::host_owners:
+    switch (row.home_class) {
+        case HomeClass::owner:
             // The definition of a class or of a class template, named by
             // itself.  The lists of a class template give its specializations.
             if (is_class && is_complete) {
@@ -1066,7 +1061,7 @@ void read_row_site(tree decl, const HomeRow& row, tree named, bool is_class) {
                 record_site(home, site_location(decl));
             }
             break;
-        case Rule::federation_admission: {
+        case HomeClass::federation: {
             // The entity, each member and each class inside it.
             bool is_pattern = TREE_CODE(decl) == TEMPLATE_DECL && is_class_template(decl);
             if (is_pattern && !COMPLETE_TYPE_P(TREE_TYPE(DECL_TEMPLATE_RESULT(decl)))) {
@@ -1077,7 +1072,7 @@ void read_row_site(tree decl, const HomeRow& row, tree named, bool is_class) {
             }
             break;
         }
-        case Rule::trait_guard:
+        case HomeClass::trait:
             // Each declaration of a namespace of a row.  The row of a template
             // governs its specializations, and not its own declaration.
             if (TREE_CODE(named) == NAMESPACE_DECL && (!DECL_ARTIFICIAL(decl) || is_class)) {

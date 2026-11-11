@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::permissions {
+
+template <class Org>
+class FederationAdmission;
+
+}  // namespace foundation::permissions

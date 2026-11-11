@@ -6,5 +6,5 @@ compile sentinel src/use.cpp sentinel=include/fixy/Special.h stage=c
 exit sentinel pass
 judge sentinel
 finding sentinel syscall-capability raw-syscall include/fixy/Special.h:12:40 | planted::Reader::read(): getpid
-finding sentinel trait-guard outside-home include/fixy/Special.h:11:8 | planted::Reader
+finding sentinel home outside-home include/fixy/Special.h:11:8 | planted::Reader
 finding sentinel quarantine base-c-library-call include/fixy/Special.h:12:40 | getpid

@@ -76,9 +76,9 @@ table tables/a-witness-header-with-no-angle-brackets.txt refused 1 | a witness r
 table tables/a-witness-row-with-an-empty-expression.txt refused 1 | a witness row is 'witness HEADER REFUSAL \| TYPE \| EXPRESSION', with the HEADER of the type in angle brackets, a REFUSAL of private, deleted or no-match, the class TYPE with its template arguments, and the expression of a forger
 table tables/a-class-with-two-witness-rows.txt refused 2 | the class fixy::Door has a second witness row, and its first witness row is on line 1
 table tables/witness-rows-accepted.txt accepted
-table tables/a-home-row-with-no-reason.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
-table tables/a-home-row-with-no-entity.txt refused 1 | a home row is 'home RULE ENTITY [PATH...] \| REASON', and a home-args row is 'home-args RULE ENTITY [PATH...] \| REASON'.  RULE is a rule of the family home, ENTITY is a qualified name or one name, and the reason is necessary
-table tables/a-home-row-of-no-rule-of-the-family.txt refused 1 | the rule quarantine is no rule of the family home; the rules are federation-admission, host-owners, no-combine-ids-duplicate, splits-orphan and trait-guard
+table tables/a-home-row-with-no-reason.txt refused 1 | a home row is 'home CLASS ENTITY [PATH...] \| REASON', and a home-args row is 'home-args CLASS ENTITY [PATH...] \| REASON'.  CLASS is a class of the rule home, ENTITY is a qualified name or one name, and the reason is necessary
+table tables/a-home-row-with-no-entity.txt refused 1 | a home row is 'home CLASS ENTITY [PATH...] \| REASON', and a home-args row is 'home-args CLASS ENTITY [PATH...] \| REASON'.  CLASS is a class of the rule home, ENTITY is a qualified name or one name, and the reason is necessary
+table tables/a-home-row-of-no-class.txt refused 1 | the class quarantine is no class of the rule home; the classes are federation, owner, combine, split and trait
 table tables/a-home-entity-that-is-no-qualified-name.txt refused 2 | the entity fixy::::retag is not a qualified name: each part is an identifier
 table tables/a-home-args-row-of-one-name.txt refused 1 | a home-args row names a template by its qualified name, and can_split_into is one name
 table tables/a-home-path-with-a-parent.txt refused 1 | a path of a home row must be relative to the source root, with no '.', '..' or empty component, and not in the build directory
