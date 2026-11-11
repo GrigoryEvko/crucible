@@ -8,8 +8,7 @@ THE COMMAND
     Then one run of c++filt (assay.readers.elf.demangle) gives the text of
     each name of a function and of a relocation symbol.  A disassembly has no
     structured shape.  This module holds its grammar and its test.  No other
-    module of the package starts objdump, and the rule structured-reads
-    refuses a run of objdump in a different module.
+    module of the package starts objdump.
 
 THE LINES
     The module reads these lines of the text, and it ignores each other line.

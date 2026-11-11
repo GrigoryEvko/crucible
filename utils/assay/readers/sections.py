@@ -17,15 +17,13 @@ THE OBJECT
     read() maps an object with assay.readers.elf, and it reads the bytes of
     each section with the name.  Two sections with the name, as a relocatable
     link can make, give their bytes one after the other.  No other module of
-    the package names the section, and the rule structured-reads refuses each
-    other read of it.
+    the package names the section.
 
 THE ENTITIES OF THE RECORDS
     The plugin writes the entity of some kinds in a grammar of its own, and
     the writer of each kind gives the grammar.  A function of this module
     reads such an entity into a typed record, and a rule reads the fields of
-    the record.  No other module reads the entity of a finding as text.  The
-    kind entity-text of the rule structured-reads refuses such a read.  In a
+    the record.  No other module reads the entity of a finding as text.  In a
     record of library-code, quarantine and the family home, a field that
     holds words has one space between each two words.  The plugin can write
     more spaces:

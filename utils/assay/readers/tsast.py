@@ -2022,8 +2022,7 @@ def prose_text(node: Node) -> str:
 
     A guard may read the words of a comment or a string with a regex, because
     prose has no C++ structure to lose.  A guard reads that text through this
-    function, never through Node.text, so the rule structured-reads can tell a
-    prose read from a regex over code.
+    function, never through Node.text.
 
     Args:
         node: A comment, string_literal, raw_string_literal, their content
@@ -2046,9 +2045,8 @@ def lexeme(item: Token | Node) -> str:
     A guard may test the spelling of one token with a regex or a string
     method, for example a naming convention on one identifier, because one
     token has no structure to lose.  A guard reads that spelling through this
-    function, never through Node.text, so the rule structured-reads can tell a
-    read of one token from a regex over code.  The spelling of a node
-    comes after phase 2, so a name that a splice cuts is one name.
+    function, never through Node.text.  The spelling of a node comes after
+    phase 2, so a name that a splice cuts is one name.
 
     Args:
         item: A Token, or a node that holds exactly one token, such as an

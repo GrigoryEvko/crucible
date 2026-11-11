@@ -2,9 +2,7 @@
 
 THE READERS
     Each read of an ELF file or of an archive in the package goes through
-    this module.  The rule structured-reads refuses each other read: a run of
-    nm, readelf or c++filt, and the ELF magic, in a different module.  These
-    modules use it:
+    this module.  These modules use it:
       * The rule artifact-symbols reads the symbols and the relocations of
         the members of the static libraries.  It also reads the symbols of
         each provider of an import, with the versions of a shared library.

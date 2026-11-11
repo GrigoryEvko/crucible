@@ -126,14 +126,6 @@ jobs:
           python3 utils/bin/guard selftest tests.setup.test_install
           python3 utils/bin/setup install tree-sitter
 
-      # The guards read shell scripts with ast-grep's bash grammar, so a git
-      # call inside a heredoc body or a comment is not a call.  The install
-      # verifies the release zip against the SHA256 of its pin and runs a
-      # fixture through the binary.  The binary lands in the tools directory
-      # of the shared cache root.
-      - name: Install the pinned ast-grep
-        run: python3 utils/bin/setup install ast-grep
-
       # The rule types runs the pinned mypy, and the rule python-lint runs the
       # pinned ruff.  pip installs each wheel with the SHA-256 of its pin into
       # the tools directory of the shared cache root.
@@ -167,8 +159,7 @@ jobs:
 
       # The rules of the engine meta read the registry, the ledgers, the plants,
       # the modules of the package, the prose and the git history.  The witness
-      # runs each rule on its plants of utils/plants/.  The rule structured-reads
-      # reads shell with the pinned ast-grep, and the rules types and
+      # runs each rule on its plants of utils/plants/.  The rules types and
       # python-lint run the pinned mypy and ruff, that the steps above install.
       # The rule test-registration reads the tests of a configured build, so its
       # scan runs in the build legs through ctest, and here it does not apply.
@@ -338,10 +329,6 @@ jobs:
       # download instead of a full build.  The pin covers both matrix arches.
       - name: Install the pinned tree-sitter C++ kit
         run: python3 utils/bin/setup install tree-sitter
-
-      # The rule structured-reads reads shell scripts with the pinned ast-grep.
-      - name: Install the pinned ast-grep
-        run: python3 utils/bin/setup install ast-grep
 
       # The rule types runs the pinned mypy, and the rule python-lint runs the
       # pinned ruff.  pip of the package python3-pip installs each wheel with

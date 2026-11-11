@@ -4,7 +4,7 @@ Prose is the one input that is text by nature (the plan, section 18.4): a
 comment, a docstring, a string and a page of Markdown.  A rule that refuses a
 pattern in prose reads each file through this module.  It gives its pattern to
 Pattern.  This module is a reader.  It can read the text of a node of the parse
-tree and call the module re (the rule structured-reads).
+tree and call the module re.
 
 THE PROSE OF A FILE
     prose_of() gives the prose lines of each file, each with its one-based
