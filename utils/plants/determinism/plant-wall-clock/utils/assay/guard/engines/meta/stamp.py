@@ -1,4 +1,4 @@
-"""A planted module: reads of the wall clock in a module that is not an owner of the clock."""
+"""A planted rule module: reads of the wall clock, of the date and of a time measure."""
 
 import datetime
 import time
@@ -17,3 +17,8 @@ def day() -> str:
 def text() -> str:
     """Return the year of the wall clock."""
     return time.strftime("%Y")
+
+
+def elapsed(start: float) -> float:
+    """Return the time since a start on the monotonic clock."""
+    return time.monotonic() - start

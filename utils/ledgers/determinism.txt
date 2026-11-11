@@ -1,50 +1,15 @@
-# The ledger of the rule determinism.  `python3 utils/bin/guard explain determinism` tells the rule and its policy,
-# and `python3 utils/bin/guard write --rule determinism` writes this file.
+# The ledger of the rule determinism: the reviewed reads of a rule module that give no verdict.  A row
+# PATH | KIND | admit | ENTITY | REASON admits each finding of the kind KIND in the function ENTITY of the file PATH.
+# The reason tells why no verdict reads the value.  A reviewer writes each row.  A row that admits no finding passes,
+# and `python3 utils/bin/guard write --rule determinism` removes it.  `python3 utils/bin/guard explain determinism`
+# tells the rule.
 format 1
 rule determinism
-utils/assay/core/cache.py | listing | 1 | _walk | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | listing | 2 | entries | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | listing | 2 | remove_stale | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | listing | 1 | self_test.exact | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | wall-clock | 1 | eviction_turn | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | wall-clock | 1 | mark_used | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | wall-clock | 1 | remove_stale | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | wall-clock | 6 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/cache.py | wall-clock | 1 | victims | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/core/report.py | listing | 1 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/engines/meta/rule_witness.py | listing | 1 | findings | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/affected.py | listing | 1 | shared_libraries | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/fixture/store.py | listing | 1 | ResultStore.evict | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/fixture/store.py | listing | 1 | ResultStore.sweep_memos | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/fixture/store.py | listing | 1 | _walk | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/fixture/store.py | wall-clock | 1 | _now_ns | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/gauge.py | wall-clock | 1 | measure | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/gauge_cold.py | listing | 1 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/history.py | listing | 1 | configure_time | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/pgo.py | wall-clock | 1 | collect | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/stamps.py | listing | 2 | remove_stale | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/stamps.py | listing | 1 | self_test.stamps | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/loop/stamps.py | listing | 1 | source_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/runner.py | listing | 1 | _write_tests | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/runner.py | listing | 2 | evaluate_semantics | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/unit_store.py | listing | 1 | Unit.holds_only_sources | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/unit_store.py | wall-clock | 1 | UnitStore.build | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/oracle/unit_store.py | wall-clock | 1 | UnitStore.sweep_sources | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/readers/tsast.py | listing | 1 | _self_test_cache | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/readers/tsast.py | listing | 1 | cpp_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/readers/tsast.py | listing | 1 | tracked_files | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/readers/tsast.py | wall-clock | 4 | _self_test_cache | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/setup/install.py | listing | 1 | unpack_wheel | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/setup/install.py | wall-clock | 1 | mark_used | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/setup/install.py | wall-clock | 1 | prune | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/setup/oracle.py | listing | 1 | _only_child | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/core/test_proc.py | listing | 2 | pidfd_failure_cases | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/loop/test_fixture.py | listing | 1 | StoreTest.check_eviction | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/loop/test_fixture.py | listing | 1 | StoreTest.check_memo_sweep | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/loop/test_fixture.py | wall-clock | 2 | StoreTest.check_eviction | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/loop/test_fixture.py | wall-clock | 2 | StoreTest.check_memo_sweep | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/loop/test_fixture.py | wall-clock | 1 | check_roots | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/setup/test_install.py | listing | 2 | install_cases | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/setup/test_install.py | listing | 1 | prune_every_other | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/setup/test_install.py | wall-clock | 1 | directory_cases | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/tests/setup/test_install.py | wall-clock | 1 | set_age | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
+utils/assay/guard/engines/buildsys/gate_mutants.py | host | admit | <module> | JOBS is the number of the compiles of the mutants at one time, and no verdict reads it
+utils/assay/guard/engines/buildsys/vessel_acceptance.py | clock | admit | run_tests | The time of each test is only in the printed line, and the verdict is the exit status of the test
+utils/assay/guard/engines/elf/configured.py | history | admit | write_inspection | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
+utils/assay/guard/engines/meta/rule_witness.py | listing | admit | findings | The listing gives the names of the entries to any(), and the sequence of the names changes no verdict
+utils/assay/guard/engines/plugin/counted.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
+utils/assay/guard/engines/plugin/home.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
+utils/assay/guard/engines/plugin/runner.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
+utils/assay/guard/engines/plugin/syscall_capability.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them

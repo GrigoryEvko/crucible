@@ -1,11 +1,14 @@
-"""A planted module: each listing is sorted, and no read of the wall clock."""
+"""A planted rule module: each listing is sorted, and each read gives a fact of the tree.
+
+The docstring names /proc/loadavg, and a docstring is no read of the host.
+"""
 
 import glob
 import os
 import time
 from pathlib import Path
 
-from assay.core import paths
+from assay.core import git, paths
 
 
 def names(directory: Path) -> list[str]:
@@ -28,11 +31,21 @@ def files(directory: str) -> list[str]:
     return sorted(os.listdir(directory)) + sorted(glob.glob(f"{directory}/*"))
 
 
-def elapsed(start: float) -> float:
-    """Return the time since a start on the monotonic clock, which is not the wall clock."""
-    return time.monotonic() - start
-
-
 def year_of(seconds: float) -> str:
     """Return the year of a time that the caller gives."""
     return time.strftime("%Y", time.gmtime(seconds))
+
+
+def tracked(root: Path) -> tuple[str, ...]:
+    """Return the files of the tree, which reads the index and no commit."""
+    return git.tracked_files(root)
+
+
+def staged(root: Path) -> None:
+    """Put each file of a scratch tree into its index, with a command that reads no commit."""
+    git.run(root, "add", "-A", "--", ".")
+
+
+def kernel_directories() -> tuple[str, str]:
+    """Return the two directories of the files of the kernel, which name no file."""
+    return "/proc/", "/sys/"

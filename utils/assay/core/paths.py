@@ -9,7 +9,7 @@ caller do not change the result.
 
 listing() gives the entries of a directory, sorted.  The file system gives
 the entries of a directory in a sequence that changes from one host to the
-next host.  The rule determinism holds that a module sorts each listing.
+next host.  The rule determinism holds that a rule module sorts each listing.
 """
 
 from pathlib import Path
