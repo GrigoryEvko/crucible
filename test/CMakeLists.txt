@@ -4792,47 +4792,42 @@ foreach(_loop_module loop.gauge_cold loop.pgo loop.bench loop.fuzz loop.derive)
   set_tests_properties(${_loop_self_test} PROPERTIES LABELS "ci_guard")
 endforeach()
 
-# The rule vessel-acceptance is the acceptance gate of the PyTorch vessel
-# under vessel/torch (utils/assay/guard/engines/buildsys/vessel_acceptance.py).
-# Its test guard_vessel_acceptance, from the block of the engine build below,
-# builds the vessel targets and accepts the vessel of this build only when the
-# vessel compiles against a PyTorch with DispatchKey::Crucible at -Werror,
-# each vessel/torch/test_*.py exits 0, and replay gives the bytes of PyTorch
-# alone.  Its witness needs no PyTorch, so it is a guard of every build.
+# The tests of the PyTorch vessel under vessel/torch.  A build with a
+# TORCH_DIR compiles the vessel against that PyTorch at -Werror, and each
+# vessel/torch/test_*.py is a test vessel_test_NAME of the build, with the
+# label vessel.  vessel/torch/test_replay_equivalence.py makes sure that
+# replay gives the bytes of PyTorch alone.  CRUCIBLE_BUILD_DIR names the
+# vessel libraries of this build, and the loader of crucible_native refuses a
+# library with a sanitizer runtime.  The interpreter runs with -E, so the
+# directory of the script is on sys.path and the test imports crucible_mode.
+# -B writes no compiled module into the tree.  The lock vessel_torch runs the
+# tests one at a time, because they share the vessel libraries.
 #
-# A build with no TORCH_DIR does not compile the vessel, and the test of the
-# rule skips.  A build with a TORCH_DIR that cannot operate the gate gets the
-# test of the rule as a disabled test.  ctest shows it as "Not Run (Disabled)"
-# with the others that did not run.  A build that must
-# operate the gate sets CRUCIBLE_REQUIRE_VESSEL, and the configure step then
-# stops with the reason.  CRUCIBLE_VESSEL_PYTHON is the interpreter of the
-# PyTorch that TORCH_DIR names.  The default is the interpreter of the
-# virtual environment that holds TORCH_DIR, when one exists.
+# A build with no TORCH_DIR does not compile the vessel, and it has no vessel
+# test.  A build with a TORCH_DIR that cannot operate the tests gets each one
+# as a disabled test.  ctest shows it as "Not Run (Disabled)" with the others
+# that did not run.  A build that must operate the tests sets
+# CRUCIBLE_REQUIRE_VESSEL, and the configure step then stops with the reason.
+# CRUCIBLE_VESSEL_PYTHON is the interpreter of the PyTorch that TORCH_DIR
+# names.  The default is the interpreter of the virtual environment that
+# holds TORCH_DIR, when one exists.
 option(CRUCIBLE_REQUIRE_VESSEL
-  "Fail the configure step when the build cannot operate the vessel acceptance gate" OFF)
-set(_vessel_gate_blocker "")
+  "Fail the configure step when the build cannot operate the vessel tests" OFF)
+set(_vessel_blocker "")
 if(NOT TARGET crucible_dispatch)
-  set(_vessel_gate_blocker
+  set(_vessel_blocker
     "the build has no crucible_dispatch target, because TORCH_DIR names no PyTorch tree with torch/include")
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
-  set(_vessel_gate_blocker
-    "the vessel libraries of this build carry a sanitizer runtime, and the gate runs Python with no sanitizer runtime preloaded")
+  set(_vessel_blocker
+    "the vessel libraries of this build carry a sanitizer runtime, and the tests run Python with no sanitizer runtime preloaded")
 elseif(NOT CRUCIBLE_WERROR)
-  set(_vessel_gate_blocker "the build sets CRUCIBLE_WERROR to OFF, and the gate accepts only a -Werror build")
+  set(_vessel_blocker "the build sets CRUCIBLE_WERROR to OFF, and the vessel tests accept only a -Werror build")
 endif()
-set(_vessel_disabled FALSE)
-if(_vessel_gate_blocker)
-  if(CRUCIBLE_REQUIRE_VESSEL)
-    message(FATAL_ERROR "vessel_acceptance: ${_vessel_gate_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or "
-                        "configure a build of the release or bench preset with -DTORCH_DIR=<the PyTorch fork>.")
-  endif()
-  if("${TORCH_DIR}" STREQUAL "")
-    message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the test of the rule skips")
-  else()
-    message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the test of the rule is registered as disabled")
-    set(_vessel_disabled TRUE)
-  endif()
-else()
+if(_vessel_blocker AND CRUCIBLE_REQUIRE_VESSEL)
+  message(FATAL_ERROR "vessel tests: ${_vessel_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or configure a build "
+                      "of the release or bench preset with -DTORCH_DIR=<the PyTorch fork>.")
+endif()
+if(NOT "${TORCH_DIR}" STREQUAL "")
   get_filename_component(_vessel_venv_python "${TORCH_DIR}/../../../bin/python" ABSOLUTE)
   if(EXISTS "${_vessel_venv_python}")
     set(_vessel_default_python "${_vessel_venv_python}")
@@ -4840,7 +4835,22 @@ else()
     set(_vessel_default_python "python3")
   endif()
   set(CRUCIBLE_VESSEL_PYTHON "${_vessel_default_python}" CACHE FILEPATH
-    "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
+    "The interpreter of the PyTorch that TORCH_DIR names, for the vessel tests")
+  file(GLOB _vessel_tests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/vessel/torch/test_*.py")
+  foreach(_vessel_test IN LISTS _vessel_tests)
+    get_filename_component(_vessel_stem "${_vessel_test}" NAME_WE)
+    crucible_script_test(NAME vessel_${_vessel_stem}
+      COMMAND ${CRUCIBLE_VESSEL_PYTHON} -E -B ${_vessel_test}
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/vessel/torch)
+    set_tests_properties(vessel_${_vessel_stem} PROPERTIES LABELS vessel TIMEOUT 1800 RESOURCE_LOCK vessel_torch
+      ENVIRONMENT "CRUCIBLE_BUILD_DIR=${CMAKE_BINARY_DIR}")
+    if(_vessel_blocker)
+      set_tests_properties(vessel_${_vessel_stem} PROPERTIES DISABLED TRUE)
+    endif()
+  endforeach()
+  if(_vessel_blocker)
+    message(STATUS "vessel tests: ${_vessel_blocker}, so each vessel test is registered as disabled")
+  endif()
 endif()
 
 # The self-test of the parse reader.  Exit 3 (the pinned kit is absent) is a
@@ -4902,13 +4912,8 @@ endforeach()
 # ctest test cannot do that to the build that runs it.  So it gets only its
 # witness, and a step of the CI build job runs the check.  The rule
 # gate-mutants runs only on the headers that a call names, so it gets only
-# its witness too.  A build with a TORCH_DIR that cannot operate the vessel
-# gate disables the test of vessel-acceptance (the block of the vessel above).
-# The label ci_guard puts the disabled test in the list of tests that did not
-# run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.  In a
-# build that operates the gate, the gate builds the vessel targets in this
-# build directory, so no other test runs beside it.  The test of
-# session-oracle has the label session_oracle of the emitted tests.  The census rules
+# its witness too.  The test of session-oracle has the label session_oracle
+# of the emitted tests.  The census rules
 # parse-total, header-fanout and instruction-total, and the rule
 # fixture-quarantine, read the record of each negative fixture.  Each fixture
 # registration appends its name to the global property
@@ -4917,13 +4922,6 @@ endforeach()
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
 set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
-if(_vessel_disabled)
-  set_tests_properties(guard_vessel_acceptance PROPERTIES DISABLED TRUE)
-  set_property(TEST guard_vessel_acceptance APPEND PROPERTY LABELS vessel)
-elseif(NOT _vessel_gate_blocker)
-  set_tests_properties(guard_vessel_acceptance PROPERTIES TIMEOUT 3600 RUN_SERIAL TRUE)
-  set_property(TEST guard_vessel_acceptance APPEND PROPERTY LABELS vessel)
-endif()
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
   set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total guard_fixture_quarantine
