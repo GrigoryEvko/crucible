@@ -7,7 +7,7 @@ The cases hold the refused counts of a write, the problems of a ledger and
 the counts of the written set.  They also hold the run of an inspection, the
 writes that stop before the ledger, a write that keeps each row of the set,
 and the reduce over two planted builds.  The tests of the rules
-artifact-symbols and artifact-links hold the write on planted builds.
+artifact-symbols and artifacts hold the write on planted builds.
 """
 
 from pathlib import Path

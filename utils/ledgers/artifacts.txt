@@ -1,0 +1,67 @@
+# The ledger of the rule artifacts: the link facts of the programs, the shared libraries and the modules of the
+# target all, for each group.  `python3 utils/bin/guard explain artifacts` tells the rule, and the head comment of
+# utils/assay/guard/engines/elf/artifacts.py gives the rules.
+#
+# The ledger holds one set of rows for each build, and no configuration row.  Each build is judged against the
+# full set.  No row admits a missing hardening property or a run path directory that the host does not give.
+#
+# A fact row:  @build/GROUP | KIND | 1 | ENTITY | -
+#   An artifact of the group GROUP gives the fact KIND ENTITY: a needed library, a directory of the run path, or
+#   an archive member from outside the build directory.  The first directory of the source directory of the
+#   target gives the group: vessel, benches, tests, or tools.
+#
+# A new fact fails the test.  A row whose fact goes passes.  A write keeps each row, and it adds the rows of the
+# build:
+#   python3 utils/bin/guard write --rule artifacts --build-dir build
+# The write refuses a new fact without --raise.  The head comment of the rule gives the reasons for --raise.
+format 1
+rule artifacts
+@build/benches | needed | 1 | ld-linux-x86-64.so.2 | a new toolchain: each link runs the pinned mold 3.0.0
+@build/benches | needed | 1 | libasan.so.8 | a new build kind or target
+@build/benches | needed | 1 | libbpf.so.1 | a new build kind or target
+@build/benches | needed | 1 | libc.so.6 | a new build kind or target
+@build/benches | needed | 1 | libgcc_s.so.1 | a new build kind or target
+@build/benches | needed | 1 | libm.so.6 | a new build kind or target
+@build/benches | needed | 1 | libstdc++.so.6 | a new build kind or target
+@build/benches | runpath | 1 | {toolchain}/usr/lib64 | a new build kind or target
+@build/benches | static-member | 1 | libc_nonshared.a(at_quick_exit.oS) | a new build kind or target
+@build/benches | static-member | 1 | libc_nonshared.a(atexit.oS) | a new build kind or target
+@build/benches | static-member | 1 | libc_nonshared.a(pthread_atfork.oS) | a new build kind or target
+@build/benches | static-member | 1 | libgcc.a(cpuinfo.o) | a new build kind or target
+@build/tests | needed | 1 | ld-linux-x86-64.so.2 | a new toolchain: each link runs the pinned mold 3.0.0
+@build/tests | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libtest_producer_claim_owner.so | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libtest_producer_claim_winner.so | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | runpath | 1 | {build}/test/foundation | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | static-member | 1 | libc_nonshared.a(at_quick_exit.oS) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | static-member | 1 | libc_nonshared.a(atexit.oS) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | static-member | 1 | libc_nonshared.a(pthread_atfork.oS) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tests | static-member | 1 | libgcc.a(cpuinfo.o) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/tools | static-member | 1 | libgcc.a(cpuinfo.o) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | ld-linux-x86-64.so.2 | a new toolchain: each link runs the pinned mold 3.0.0
+@build/vessel | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | static-member | 1 | libc_nonshared.a(pthread_atfork.oS) | The vessel links the signal door, the exit hook door and the fork hook of fixy through the watch of the session layer: pthread_atfork of libc_nonshared.a, its import __register_atfork, and sigaltstack

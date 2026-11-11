@@ -1,4 +1,0 @@
-# A program of the group tools with a call of atexit.  The ledger holds its needed libraries and the member
-# atexit.oS of libc_nonshared.a that its link takes.  These facts are the same on x86_64 and on aarch64.
-facts needed static-member
-program examples planted_tool tool.cpp

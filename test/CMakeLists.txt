@@ -4949,7 +4949,7 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its ledgers of one set and of its
-# five rules build planted libraries, programs, modules and probe units with the
+# four rules build planted libraries, programs, modules and probe units with the
 # compiler of this build, and they link with the pinned mold (the plants of
 # assay.guard.engines.elf.runner).  The test of codegen-shapes
 # also compiles the probe unit of this build with a planted header.  The test
@@ -4962,7 +4962,7 @@ crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES codegen-shapes)
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
         guard.engines.elf.test_one_set
         guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls
-        guard.engines.elf.test_artifact_links guard.engines.elf.test_artifact_hardening
+        guard.engines.elf.test_artifacts
         guard.test_bom guard.test_asm_compare)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}

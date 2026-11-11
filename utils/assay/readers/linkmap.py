@@ -53,8 +53,8 @@ THE INPUTS
 WHAT THE MAP DOES NOT HOLD
     mold writes no cause of an inclusion, no merge of the program
     properties, no discarded section and no library of `--as-needed`.  The
-    rule artifact-hardening then reads the program properties of each input
-    file (assay.guard.engines.elf.artifact_hardening, THE CONTROL FLOW).
+    rule artifacts then reads the program properties of each input file
+    (assay.guard.engines.elf.artifacts, THE CONTROL FLOW).
 
 THE MEMBERS AND GNU LD
     On 2026-10-17, mold 3.0.0 and GNU ld 2.46.1 each linked
@@ -66,9 +66,9 @@ THE MEMBERS AND GNU LD
     that is not allocated (THE INPUTS).
 
 THE USERS
-    The rule artifact-links reads the archive members of the map of each
-    link with read_members().  The rule artifact-hardening reads the inputs
-    of the map of a link with read_inputs().
+    The rule artifacts reads the archive members of the map of each link
+    with read_members(), and the inputs of the map of a link with
+    read_inputs().
 
 `guard selftest tests.readers.test_linkmap` does the test of the module.
 """

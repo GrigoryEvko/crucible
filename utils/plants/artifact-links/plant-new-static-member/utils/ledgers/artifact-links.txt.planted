@@ -1,7 +1,0 @@
-# A planted ledger: the facts of the planted program, with no row of the member of libc_nonshared.a.
-format 1
-rule artifact-links
-@build/tools | needed | 1 | libc.so.6 | -
-@build/tools | needed | 1 | libgcc_s.so.1 | -
-@build/tools | needed | 1 | libm.so.6 | -
-@build/tools | needed | 1 | libstdc++.so.6 | -

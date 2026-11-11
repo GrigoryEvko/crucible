@@ -6,11 +6,9 @@ THE READERS
       * The rule artifact-symbols reads the symbols and the relocations of
         the members of the static libraries.  It also reads the symbols of
         each provider of an import, with the versions of a shared library.
-      * The rule artifact-links reads the dynamic section with its run path
+      * The rule artifacts reads the file type, the machine, the dynamic
+        section with its run path, the segments and the program properties
         of each linked artifact.
-      * The rule artifact-hardening reads the file type, the machine, the
-        dynamic section, the segments and the program properties of each
-        linked artifact.
       * The rules function-size and object-text read the code sections and the
         function symbols of each object.
       * assay.readers.dwarf reads the debug sections, their relocations and

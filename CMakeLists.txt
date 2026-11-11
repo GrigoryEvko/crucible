@@ -297,7 +297,7 @@ include(utils/tools/quarantine/Quarantine.cmake)
 include(cmake/BuildLauncher.cmake)
 
 # The linker writes the map of each link beside its output.  The rule
-# artifact-links reads the maps.
+# artifacts reads the maps.
 include(cmake/LinkMap.cmake)
 
 # Each link of the tree gets the run path of the libstdc++ of the toolchain,

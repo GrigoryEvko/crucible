@@ -29,7 +29,7 @@ THE LAYERS
                          GCC.  A linked file also gives each member of the
                          support library that the map of its link names
                          (THE INPUTS of assay.readers.linkmap)
-      4. link facts      each fact of the rule artifact-links of a linked
+      4. link facts      each link fact of the rule artifacts of a linked
                          file.  A static library has no link, and the layer
                          gives its members and its COMDAT groups
       5. source facts    the count of each rule and kind of the findings of the
@@ -54,7 +54,7 @@ from pathlib import Path
 
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.elf import artifact_links, artifact_symbols, runner
+from assay.guard.engines.elf import artifact_symbols, artifacts, runner
 from assay.readers import census as build_census
 from assay.readers import dwarf, elf, library_bytes, linkmap, sections
 
@@ -152,10 +152,10 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
         runner.NotApplicable: If the build has not made each static library of the root
         runner.BuildError: If a library, a provider or the code model cannot be read
     """
-    artifacts, _, _ = artifact_symbols.read_libraries(context)
+    libraries, _, _ = artifact_symbols.read_libraries(context)
     archive = artifact.path.name
-    if archive not in artifacts:
-        artifacts = {**artifacts, archive: artifact_symbols.read_artifact(artifact.path)}
+    if archive not in libraries:
+        libraries = {**libraries, archive: artifact_symbols.read_artifact(artifact.path)}
     providers = artifact_symbols.providers_of(context.compiler(), context.link_libraries())
     places: dict[str, str] = {}
     try:
@@ -175,7 +175,7 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
             build_census.names_text(item.members),
             places.get(item.symbol, ""),
         )
-        for item in artifact_symbols.imports_of(artifacts, {archive: artifact.name}, providers, context.kind())
+        for item in artifact_symbols.imports_of(libraries, {archive: artifact.name}, providers, context.kind())
     ]
     return Imports(names, [], providers.support)
 
@@ -286,8 +286,8 @@ def call_layer(context: runner.ElfContext, artifact: Artifact, imports: Imports 
     if not artifact.is_library and context.build_dir is not None:
         members = sorted(
             entity
-            for kind, entity in artifact_links.map_facts(artifact.path, context.build_dir)
-            if kind == artifact_links.STATIC_MEMBER and entity.startswith(artifact_symbols.SUPPORT_ARCHIVES)
+            for kind, entity in artifacts.map_facts(artifact.path, context.build_dir)
+            if kind == artifacts.STATIC_MEMBER and entity.startswith(artifact_symbols.SUPPORT_ARCHIVES)
         )
         lines.append(f"{INDENT}members of the support library: {', '.join(members) or 'none'}")
     return lines
@@ -307,16 +307,16 @@ def link_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> li
         said = f"a static library has no link.  It has {len(members)} members and {len(groups)} COMDAT groups"
         return [f"4. link facts: {said}"]
     build_dir = context.directory()
-    words = artifact_links.path_words(context.compiler(), build_dir)
+    words = artifacts.path_words(context.compiler(), build_dir)
     with elf.mapped(artifact.path) as member:
         entries = member.dynamic()
-    facts = artifact_links.member_facts(entries, words)
-    facts |= artifact_links.map_facts(artifact.path, build_dir)
+    facts = artifacts.member_facts(entries, words)
+    facts |= artifacts.map_facts(artifact.path, build_dir)
     kinds = Counter(kind for kind, _ in facts)
-    counted = ", ".join(f"{kind} {kinds[kind]}" for kind in artifact_links.KINDS if kinds[kind])
+    counted = ", ".join(f"{kind} {kinds[kind]}" for kind in artifacts.FACT_KINDS if kinds[kind])
     rows = [
         f"{kind}  {entity}"
-        for kind, entity in sorted(facts, key=lambda item: (artifact_links.KINDS.index(item[0]), item[1]))
+        for kind, entity in sorted(facts, key=lambda item: (artifacts.FACT_KINDS.index(item[0]), item[1]))
     ]
     return [f"4. link facts: {len(facts)} facts ({counted})"] + limited(rows, limit)
 

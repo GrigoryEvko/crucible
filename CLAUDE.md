@@ -1070,15 +1070,16 @@ configure stops when `check_pie_supported()` cannot link a PIE. Each link takes
 link of a target that does not link `crucible_dialect`. libstdc++ stays a
 shared library with the run path of the toolchain (§XVI).
 
-The rule `artifact-hardening` (`utils/assay/guard/engines/elf/artifact_hardening.py`,
-the test `guard_artifact_hardening`) reads each executable, shared library and
-module of `all`. An executable must be a PIE: the type `ET_DYN` with the bit
-`DF_1_PIE`. Each artifact must have a segment `PT_GNU_RELRO`, immediate binding
-and a segment `PT_GNU_STACK` with no execute bit. On x86_64, it must have the
-bits IBT and SHSTK of the x86 feature property, and on aarch64 the bits BTI and
-PAC. The link removes such a bit when one input object does not have it. The
-error names each input file of the map of the link with no such bit in its
-section `.note.gnu.property`. No ledger row admits a missing property.
+The rule `artifacts` (`utils/assay/guard/engines/elf/artifacts.py`, the test
+`guard_artifacts`) reads each executable, shared library and module of `all`.
+An executable must be a PIE: the type `ET_DYN` with the bit `DF_1_PIE`. Each
+artifact must have a segment `PT_GNU_RELRO`, immediate binding and a segment
+`PT_GNU_STACK` with no execute bit. On x86_64, it must have the bits IBT and
+SHSTK of the x86 feature property, and on aarch64 the bits BTI and PAC. The
+link removes such a bit when one input object does not have it. The error
+names each input file of the map of the link with no such bit in its section
+`.note.gnu.property`. No ledger row admits a missing property. The same rule
+holds the link facts of each artifact (§XXII "The doors (R4, R5)").
 
 `cmake/CodeFlags.cmake` holds the one definition of each flag of the dialect
 that changes the machine code, and `crucible_dialect` applies its lists. The
@@ -1134,9 +1135,9 @@ In each preset, `cmake/LinkMap.cmake` adds `-Wl,-Map=<TARGET>.map` to each link
 of an executable, a shared library and a module. mold then writes the map of
 the link beside the artifact. The map names each input section that the output
 keeps, with its file. It then names each archive member that keeps a section
-(`utils/assay/readers/linkmap.py`). It names no cause of a member. The rules
-`artifact-links` (§XXII "The doors (R4, R5)") and `artifact-hardening` read
-these maps. On 2026-10-17, the 364 maps of the Debug build held 66 MB. The row
+(`utils/assay/readers/linkmap.py`). It names no cause of a member. The rule
+`artifacts` (§XXII "The doors (R4, R5)") reads these maps. On 2026-10-17, the
+364 maps of the Debug build held 66 MB. The row
 of the rule `link-threads` in `utils/registry.txt` gives the time of a relink
 of each artifact.
 
@@ -2559,8 +2560,7 @@ The other rules of the table count findings or facts, and some of them also give
 | `quarantine` | The distinct findings of the quarantine plugin in each file, kind and entity, from the sections of the objects of `all` (§XXII "The ratchet") | A count above its ledger row, and a finding in a file that the ledger does not hold. Each directory with a row of `utils/ledgers/quarantine.txt` gives a warning | The test `guard_plugin` | Test run, CI build job |
 | `fixture-quarantine` | The distinct findings of the quarantine plugin in the source of each negative fixture, kind and entity, from the census in the record of its run (§XXII "The ratchet") | A count above its ledger row, a fixture with a finding and no row, a fixture with the plugin and no census of its run, and a file of the tree that only the compiles of fixtures read. Each directory of fixtures with a row of `utils/ledgers/fixture-quarantine.txt` gives a warning | The test `guard_fixture_quarantine` | Test run, after the fixtures |
 | `artifact-symbols` | The imports of each static library of the root, with the provider of each import, in one set of rows for each build (§XXII "The doors (R4, R5)"), and the references of each library outside the base to each throw helper of libstdc++ (§XII) | An import with no row, with no provider or with no record that explains it, and a count of a throw helper above its row. Each library of the ledger gives a warning | The test `guard_artifact_symbols` | Test run |
-| `artifact-links` | The needed libraries, the run path directories and the archive members from outside the build of each executable, shared library and module of `all`, for each group, in one set of rows for each build (§XXII "The doors (R4, R5)") | A fact with no row, and a run path directory that the host does not give, which no row admits | The test `guard_artifact_links` | Test run |
-| `artifact-hardening` | The hardening properties of each executable, shared library and module of `all`: PIE, RELRO, immediate binding, a stack that the processor cannot execute and the control-flow protection (§V) | Each missing property | The test `guard_artifact_hardening` | Test run |
+| `artifacts` | The needed libraries, the run path directories and the archive members from outside the build of each executable, shared library and module of `all`, for each group, in one set of rows for each build (§XXII "The doors (R4, R5)"). Also the hardening properties of each such artifact: PIE, RELRO, immediate binding, a stack that the processor cannot execute and the control-flow protection (§V) | A fact with no row. Also, which no row admits: a run path directory that the host does not give, and each missing property | The test `guard_artifacts` | Test run |
 | `static-tls` | The bytes of the base thread-local variables of one member of a static library of the root (§XXII "Static TLS (R19)") | 256 bytes | The test `guard_static_tls` | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 45 G | The fixture driver | Test run |
 | `instruction-total` | The user instructions of the compiles that made the objects of `all`, also for a ccache hit, and of the fixtures, against the baseline, in a build of the configuration `x86_64-debug-asan` | A growth over 5 % | The test `guard_instruction_total` | Test run, after the fixtures |
@@ -3202,15 +3202,15 @@ Each compile of the tree gives the quarantine plugin the argument `library-recor
 
 The rule `artifact-symbols` also explains each import of a member of an archive with the records of the member (THE HIDDEN IMPORTS of `artifact_symbols.py`). A record connects the member to its symbol, and a relocation of a connected section connects it to more names. An import that a live section names and that no record connects to has the kind `hidden-import`, and no row admits it. A dead local function and a section with no named symbol, such as the type data of UBSan, are no live section. A call that the compiler adds itself, such as `memcpy`, takes no record. A member with no section of the plugin in an archive with such sections is an error. On 2026-10-09, the Debug, Release, TSan and UBSan-strict builds held no hidden import.
 
-The rule `artifact-links` (`utils/assay/guard/engines/elf/artifact_links.py`, the test `guard_artifact_links`) holds the link facts of each executable, shared library and module of the target `all`. The first directory of the source directory of the target gives the group of the artifact: `vessel`, `benches`, `tests`, or `tools` for each other directory. A fact is a kind and an entity. The kinds are each needed library, each directory of the run path and each archive member from outside the build directory. The rule reads no fact that changes with the host and not with the code, such as the interpreter, a needed version or a text of `.comment`. The rule reads the archive members from the map of the link (§V). mold names a member in the map only when the member keeps a section in the output, such as a debug section. A member with no section after `--gc-sections` then gives no fact. The host of the build must give each directory of a run path, after the expansion of `$ORIGIN` to the directory of the artifact. A run path directory that the host does not give is an error. An empty part, a relative part and a part with a `$` other than `$ORIGIN` are errors too. No ledger row admits such an error, and `guard write` refuses a build with one.
+The rule `artifacts` (`utils/assay/guard/engines/elf/artifacts.py`, the test `guard_artifacts`) holds the link facts of each executable, shared library and module of the target `all`, and their hardening properties (§V). The first directory of the source directory of the target gives the group of the artifact: `vessel`, `benches`, `tests`, or `tools` for each other directory. A fact is a kind and an entity. The kinds are each needed library, each directory of the run path and each archive member from outside the build directory. The rule reads no fact that changes with the host and not with the code, such as the interpreter, a needed version or a text of `.comment`. The rule reads the archive members from the map of the link (§V). mold names a member in the map only when the member keeps a section in the output, such as a debug section. A member with no section after `--gc-sections` then gives no fact. The host of the build must give each directory of a run path, after the expansion of `$ORIGIN` to the directory of the artifact. A run path directory that the host does not give is an error. An empty part, a relative part and a part with a `$` other than `$ORIGIN` are errors too. No ledger row admits such an error or a missing hardening property, and `guard write` refuses a build with one.
 
-`utils/ledgers/artifact-links.txt` holds each fact of each group with the count 1, in one set of rows that judges each build, as the ledger of the rule `artifact-symbols` does. The paths of the compiler and of the build directory have the words `{toolchain}` and `{build}`. A new fact fails the test. A row whose fact goes passes. A write from one build keeps the row, and the reduce of the gate removes it. `guard write --rule artifact-links` writes a new fact only with `--raise` and its reason, such as a new library on a link line.
+`utils/ledgers/artifacts.txt` holds each fact of each group with the count 1, in one set of rows that judges each build, as the ledger of the rule `artifact-symbols` does. The paths of the compiler and of the build directory have the words `{toolchain}` and `{build}`. A new fact fails the test. A row whose fact goes passes. A write from one build keeps the row, and the reduce of the gate removes it. `guard write --rule artifacts` writes a new fact only with `--raise` and its reason, such as a new library on a link line.
 
 `python3 utils/bin/guard bom --build-dir DIR ARTIFACT` (`utils/assay/guard/bom.py`) prints the bill of materials of one static library, program, shared library or module of a build, and writes nothing. ARTIFACT is the name of a target or the path of its file. The command prints five layers:
 1. The imports, each with the file that gives it and its version
 2. The bytes of each class of code, from DWARF, with the largest library bodies
 3. The calls that GCC adds to the code itself, such as `memcpy`, `__stack_chk_fail` and `__cxa_guard_acquire`
-4. The link facts of the rule `artifact-links`
+4. The link facts of the rule `artifacts`
 5. The findings of the quarantine plugin in the objects of the artifact, and the count of each kind of record of the library code.
 
 For a static library, layer 1 also gives the family and the mark of each import (rule `artifact-symbols`), and the line of the source of the first record that names the import. A layer that cannot be read gives one line, and the other layers stay. On 2026-10-09, the command took 0.6 s to 1.5 s for an artifact of the Debug build.
