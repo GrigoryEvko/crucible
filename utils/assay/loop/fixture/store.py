@@ -357,27 +357,23 @@ judges them, because the CPU time rises with the load of the host.  The entry
 of the store keeps the times and the count, and a result from the store gives
 the cost of the compile that made it.
 
-The measured rule fixture-instructions of utils/registry.txt gives the
-thresholds of the instruction count.  A count above the warning threshold
-prints a warning in the format of utils/assay/core/report.py, and writes it to
-the warnings directory, in a file of this fixture
-(`fixture-instructions.NAME.txt`).  A count above the error threshold fails the
-test, and the driver does not store that result, so the next run measures
-again.  A compile with no count has no cost judge.  The ledger
-utils/ledgers/fixture-instructions.txt keeps the fixtures above the warning
-threshold, `- | - | VALUE | FIXTURE | REASON`, with VALUE the count of the
-compile when the row was written, in G.  A row applies to each build.  A kept
-fixture gives a warning up to VALUE with the noise of the unit
-(assay.core.budget, THE NOISE).  A count above that gives the level of a
-fixture with no row.  A kept fixture at or below the warning threshold gives
-no finding, because a value below its row passes (THE POLICIES of
-assay.core.ledger).  A ledger that does not exist has no row.  A registry that
-cannot be read stays an error.  CRUCIBLE_NEG_REGISTRY and
-CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and a different
-ledger in the same format, for the tests of the driver.
+The measured rule fixture-instructions of utils/registry.txt gives the limit
+of the instruction count.  A count above the limit prints an error in the
+format of utils/assay/core/report.py and fails the test, and the driver does
+not store that result, so the next run measures again.  A count at or below
+the limit gives no output.  A compile with no count has no cost judge.  The
+ledger utils/ledgers/fixture-instructions.txt keeps the fixtures above the
+limit, `- | - | VALUE | FIXTURE | REASON`, with VALUE the count of the compile
+when the row was written, in G.  A row applies to each build.  A kept fixture
+gives no output up to VALUE with the noise of the unit (assay.core.budget, THE
+NOISE).  A count above that gives the error of a fixture with no row.  A
+ledger that does not exist has no row.  A registry that cannot be read stays
+an error.  CRUCIBLE_NEG_REGISTRY and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a
+different registry and a different ledger in the same format, for the tests
+of the driver.
 
-A memo in the store keeps the measured rule, its ledger and the thresholds of
-the rules of the test launcher (The test record).  The memo stays while the
+A memo in the store keeps the measured rule, its ledger and the limits of the
+rules of the test launcher (The test record).  The memo stays while the
 two registries and the ledger have the same stat fields.
 A ledger that does not exist has the stamp of an absent file, so a new ledger
 replaces the memo.
@@ -413,9 +409,9 @@ that it started.  A host with no accurate count gives no count
 (assay.core.meter, THE OWN RUN).
 
 The judge holds the measured rules test-memory and test-instructions, with
-the thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and
-its ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over
-an error threshold that no ledger row keeps.  The driver writes the record
+the limits of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
+ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails above a
+limit that no ledger row keeps.  The driver writes the record
 BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
 launcher.  In a run of the test launcher, the environment holds
 CRUCIBLE_TEST_LAUNCHED.  The driver then gives the judge and the record to
@@ -1090,10 +1086,10 @@ _ANSWERS_FORMAT = 1
 # The format of the record of the hashes of the dependencies of one fixture.
 _DIGESTS_FORMAT = 2
 _DIGESTS_SUFFIX = ".digests"
-# The format of the memo of the budget rows and the ledgers.  Format 2 keeps the path of each ledger as a finding
-# names it, and the stamp of a ledger that does not exist.  Format 3 also keeps the thresholds of the rules of the
-# test launcher.  Format 4 keeps the kept value of each ledger row with its reason.
-_BUDGET_FORMAT = 4
+# The format of the memo of the budget rows and the ledgers.  It keeps the path of each ledger as a finding names
+# it, the stamp of a ledger that does not exist, the limits of the rules of the test launcher, and the kept value of
+# each ledger row with its reason.  Format 5 keeps one limit for each rule.
+_BUDGET_FORMAT = 5
 
 _driver_digest_value: str | None = None
 
@@ -2572,18 +2568,16 @@ _ADVICE = "Include only the header that the fixture attacks, or make the tables 
 
 
 class BudgetRow:
-    """The thresholds of one measured rule of a fixture compile, and the kept value and the reason of each fixture of
-    its ledger."""
+    """The limit of one measured rule of a fixture compile, and the kept value and the reason of each fixture of its
+    ledger."""
 
-    __slots__ = ("check", "warn", "error", "ledger", "ledger_shown")
+    __slots__ = ("check", "limit", "ledger", "ledger_shown")
 
-    def __init__(self, check: str, warn: float, error: float, ledger: dict[str, tuple[float, str]],
-                 ledger_shown: str) -> None:
-        """Hold the check name, the two thresholds, the ledger rows and the path of the ledger of one rule, relative
-        to the root of the tree when the ledger is in the tree."""
+    def __init__(self, check: str, limit: float, ledger: dict[str, tuple[float, str]], ledger_shown: str) -> None:
+        """Hold the check name, the limit, the ledger rows and the path of the ledger of one rule, relative to the root
+        of the tree when the ledger is in the tree."""
         self.check = check
-        self.warn = warn
-        self.error = error
+        self.limit = limit
         self.ledger = ledger
         self.ledger_shown = ledger_shown
 
@@ -2593,21 +2587,21 @@ class CostBudget:
 
     `problems` gives, for each check whose rule or ledger cannot be read, the
     reason.  A budget with a problem fails the test.  `test_rows` gives the
-    two thresholds of each rule of the test launcher, from the registry of
-    the launcher (assay.loop.teststep, THE MEASURED RULES).  The launcher
-    reads their ledgers itself.
+    limit of each rule of the test launcher, from the registry of the
+    launcher (assay.loop.teststep, THE MEASURED RULES).  The launcher reads
+    their ledgers itself.
     """
 
     __slots__ = ("rows", "problems", "test_rows")
 
     def __init__(self, rows: dict[str, BudgetRow], problems: dict[str, str],
-                 test_rows: dict[str, tuple[float, float]] | None = None) -> None:
+                 test_rows: dict[str, float] | None = None) -> None:
         """Hold the rules by check name, the reason of each check with a problem, and the rules of the test launcher."""
         self.rows = rows
         self.problems = problems
         self.test_rows = test_rows or {}
 
-    def is_over_error(self, fixture_name: str, result: CompileResult) -> bool:
+    def is_over_limit(self, fixture_name: str, result: CompileResult) -> bool:
         """Return True when the instruction count of the compile fails the test.
 
         A compile with no count has no cost judge.  A ledger row keeps the
@@ -2616,12 +2610,8 @@ class CostBudget:
         """
         if self.problems or result.instructions is None:
             return False
-        value = result.instructions / _GIGA
-        found = _row_verdict(self.rows[_INSTRUCTIONS_CHECK], fixture_name, value)
-        return found == cost_budget.ERROR or (
-            found == cost_budget.RISEN
-            and cost_budget.risen_level(value, self.rows[_INSTRUCTIONS_CHECK].error) == cost_budget.ERROR
-        )
+        found = _row_verdict(self.rows[_INSTRUCTIONS_CHECK], fixture_name, result.instructions / _GIGA)
+        return found in (cost_budget.ERROR, cost_budget.RISEN)
 
 
 def _report_module() -> ModuleType:
@@ -2716,7 +2706,7 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_re
         if problem:
             problems[check] = problem
             continue
-        rows[check] = BudgetRow(check, row.warn, row.error, ledger, _shown(path))
+        rows[check] = BudgetRow(check, row.limit, ledger, _shown(path))
     return CostBudget(rows, problems, test_rows)
 
 
@@ -2744,7 +2734,7 @@ def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
 
 
 def read_cost_budget(memo_dir: Path | None) -> CostBudget:
-    """Read the measured rule fixture-instructions of the registry, its ledger, and the thresholds of the rules of the
+    """Read the measured rule fixture-instructions of the registry, its ledger, and the limits of the rules of the
     test launcher.
 
     CRUCIBLE_NEG_REGISTRY and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a
@@ -2769,12 +2759,11 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
             recorded = json.loads(memo.read_text())
             if (recorded["format"] == _BUDGET_FORMAT and set(recorded["rows"]) == set(_LEDGERS)
                     and recorded["stamps"] == _file_stamps(files)):
-                return CostBudget({check: BudgetRow(check, float(warn), float(error),
+                return CostBudget({check: BudgetRow(check, float(limit),
                                                     {name: (float(kept), str(reason))
                                                      for name, (kept, reason) in ledger.items()}, str(shown))
-                                   for check, (warn, error, ledger, shown) in recorded["rows"].items()}, {},
-                                  {rule: (float(warn), float(error))
-                                   for rule, (warn, error) in recorded["test_rows"].items()})
+                                   for check, (limit, ledger, shown) in recorded["rows"].items()}, {},
+                                  {rule: float(limit) for rule, limit in recorded["test_rows"].items()})
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             pass
     started_ns = _now_ns()
@@ -2783,8 +2772,8 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
     if memo is None or budget.problems or before is None or _file_stamps(files) != before:
         return budget
     if all(not stamp or stamp[4] < started_ns - _SETTLE_NS for stamp in before):
-        rows = {check: [row.warn, row.error, row.ledger, row.ledger_shown] for check, row in budget.rows.items()}
-        test_rows = {rule: [warn, error] for rule, (warn, error) in budget.test_rows.items()}
+        rows = {check: [row.limit, row.ledger, row.ledger_shown] for check, row in budget.rows.items()}
+        test_rows = dict(budget.test_rows)
         try:
             _write_atomic(memo, json.dumps({"format": _BUDGET_FORMAT, "stamps": before, "rows": rows,
                                             "test_rows": test_rows}).encode("utf-8", "surrogateescape"))
@@ -2800,31 +2789,23 @@ def _row_verdict(row: BudgetRow, fixture_name: str, value: float) -> str:
     THE NOISE).
     """
     kept = row.ledger.get(fixture_name)
-    return cost_budget.verdict(value, row.warn, row.error, None if kept is None else kept[0],
+    return cost_budget.verdict(value, row.limit, None if kept is None else kept[0],
                                cost_budget.noise_of(_UNITS[row.check]))
 
 
 def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: str, place: str, text: str,
-               unit: str, value: float) -> list[object]:
+               unit: str) -> list[object]:
     """Return the finding of one measure of a fixture compile, for the verdict of `_row_verdict`."""
-    if verdict in (cost_budget.ADMITTED, cost_budget.RISEN):
+    if verdict == cost_budget.RISEN:
         kept, reason = row.ledger[fixture_name]
         noise = cost_budget.noise_of(unit)
-        if verdict == cost_budget.ADMITTED:
-            return [report.judged("warning", place, 0, row.check,
-                                  f"{text}, more than the warning threshold {row.warn:g} {unit}.  The row of "
-                                  f"{row.ledger_shown} keeps it up to {kept:g} {unit} with the noise {noise:.0%}: "
-                                  f"{reason}")]
-        return [report.judged(cost_budget.risen_level(value, row.error), place, 0, row.check,
-                              f"{text}, more than the row of {row.ledger_shown} keeps: {kept:g} {unit} with the "
-                              f"noise {noise:.0%}.  {_ADVICE}  When the growth is wanted, write the measure into "
-                              f"the row: {reason}")]
+        return [report.judged("error", place, 0, row.check,
+                              f"{text}, more than the limit {row.limit:g} {unit} and more than the row of "
+                              f"{row.ledger_shown} keeps: {kept:g} {unit} with the noise {noise:.0%}.  {_ADVICE}  When "
+                              f"the growth is wanted, write the measure into the row with a reason: {reason}")]
     if verdict == cost_budget.ERROR:
         return [report.judged("error", place, 0, row.check,
-                              f"{text}, more than the error threshold {row.error:g} {unit}.  {_ADVICE}")]
-    if verdict == cost_budget.WARNING:
-        return [report.judged("warning", place, 0, row.check,
-                              f"{text}, more than the warning threshold {row.warn:g} {unit}.")]
+                              f"{text}, more than the limit {row.limit:g} {unit}.  {_ADVICE}")]
     return []
 
 
@@ -2869,7 +2850,8 @@ def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_sto
         verdicts[_INSTRUCTIONS_CHECK] = _row_verdict(budget.rows[_INSTRUCTIONS_CHECK], fixture_name,
                                                      result.instructions / _GIGA)
     findings: dict[str, list[object]] = {_INSTRUCTIONS_CHECK: []}
-    if not budget.problems and not any(verdicts.values()):
+    failing = (cost_budget.ERROR, cost_budget.RISEN)
+    if not budget.problems and not any(found in failing for found in verdicts.values()):
         return findings
     report = _report_module()
     try:
@@ -2883,7 +2865,7 @@ def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_sto
         text = f"{measured} of the fixture {fixture_name} ran {result.instructions / _GIGA:.2f} G user instructions"
         findings[_INSTRUCTIONS_CHECK] += _judge_row(report, budget.rows[_INSTRUCTIONS_CHECK],
                                                     verdicts[_INSTRUCTIONS_CHECK], fixture_name, place, text,
-                                                    _UNITS[_INSTRUCTIONS_CHECK], result.instructions / _GIGA)
+                                                    _UNITS[_INSTRUCTIONS_CHECK])
     return findings
 
 
@@ -2982,8 +2964,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     runs in the compile environment, with or without the store, and
     `store_reason` tells why `store` is None.  The key and the stored result
     hold the marks of `roots` in place of the source root and the build root.
-    A stored result whose compile is over the error threshold of the rule that
-    holds the error level is a miss, so the driver measures again.  A stored
+    A stored result whose compile is above the limit of the rule that holds the
+    instruction count is a miss, so the driver measures again.  A stored
     result of a compile with no error is a miss too.  The store keeps no such
     compile, because its census reads the object (The quarantine plugin).  The
     store keeps no compile that ends in an internal compiler error, and a
@@ -3000,8 +2982,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         digests = DigestMemo(depfile.parent / f"{fixture_name}{_DIGESTS_SUFFIX}", roots)
         stored, reason = store.lookup(key, digests, roots)
         digests.save()
-        if stored is not None and budget.is_over_error(fixture_name, stored):
-            stored, reason = None, "the stored compile ran more user instructions than the error threshold"
+        if stored is not None and budget.is_over_limit(fixture_name, stored):
+            stored, reason = None, "the stored compile ran more user instructions than the limit"
         if stored is not None and stored.returncode == 0:
             stored, reason = None, _SUCCEEDED
         stored_failure = internal_error(stored) if stored is not None else ""
@@ -3051,8 +3033,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             is_stored, why = False, _SUCCEEDED
         elif result.returncode != 1:
             is_stored, why = False, f"the exit code is {result.returncode}"
-        elif budget.is_over_error(fixture_name, result):
-            is_stored, why = False, "the compile ran more user instructions than the error threshold"
+        elif budget.is_over_limit(fixture_name, result):
+            is_stored, why = False, "the compile ran more user instructions than the limit"
         elif compile_key(argv, directory, protected, store.memo, env, roots)[0] != key:
             # The compiler, a shared object, a path that the loader tried or a
             # file of the command changed between the key and the compile.
@@ -3348,7 +3330,7 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
         source: The source of the fixture, which a finding names
         status: The status of the test before the judge
         start: The start of the measure at the start of main() (assay.core.meter, start_self())
-        budget: The cost budget, which holds the thresholds of the rules of the launcher, or None
+        budget: The cost budget, which holds the limits of the rules of the launcher, or None
         warnings_dir: The warnings directory, or None
 
     Returns:

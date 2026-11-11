@@ -1,6 +1,5 @@
 # A bench build: CRUCIBLE_BENCH is on, and the name of its configuration is x86_64-debug-asan-bench.  An object of
-# 800 KB of machine code has a ledger row of that name.  The row keeps the object, and the rule gives one warning of
-# the kind admitted.
+# 800 KB of machine code has a ledger row of that name.  The row keeps the object, and the rule gives no finding.
 format 1
 kind x86_64-debug-asan
 configuration x86_64-debug-asan-bench

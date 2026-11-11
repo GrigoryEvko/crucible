@@ -291,7 +291,7 @@ foreach(_process_wide_library process_wide_writer process_wide_reader)
   target_link_libraries(test_${_process_wide_library} PRIVATE crucible)
 endforeach()
 # The run-time witness of the rule static-tls.  The initial-exec block of the
-# control holds the error threshold of the rule, and the control loads after
+# control holds the limit of the rule, and the control loads after
 # the writer and the reader.  The block of the plant has 64 times that size.
 # glibc 2.43 keeps 1664 bytes of static TLS free for dlopen with the default
 # tunables, so dlopen refuses the plant.  The test clears GLIBC_TUNABLES, so
@@ -4675,7 +4675,7 @@ endif()
 # warning does not.  ctest shows no output of a test that passes, so a check
 # that gets --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR} also writes its
 # warnings there, and `guard warnings` (utils/assay/guard/warnings.py) prints them.
-# The measured rules of utils/registry.txt give the thresholds of the checks
+# The measured rules of utils/registry.txt give the limits of the checks
 # that measure a quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
 crucible_script_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
@@ -4699,7 +4699,7 @@ set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts `loop step` (utils/assay/loop/step.py) in front of
 # each compile and each link.  The launcher writes the cost of the step beside
-# its output, fails a step over the memory error threshold that no ledger row
+# its output, fails a step above the memory limit that no ledger row
 # admits, and stops a compile at 600 s and a link at 150 s of CPU time.
 # build_launcher_test runs the launcher with planted tools, and with the real
 # compiler and the real ccache.

@@ -1,5 +1,5 @@
-# The object a.o ran 2.84 G instructions, and the total is 6 % more than its baseline, over the error threshold: an
-# error that tells how to raise the baseline.
+# The object a.o ran 2.84 G instructions, and the total is 6 % more than its baseline, over the limit 5 %: an error
+# that tells how to raise the baseline.
 format 1
 kind x86_64-debug-asan
 file include/Base.h size=1000

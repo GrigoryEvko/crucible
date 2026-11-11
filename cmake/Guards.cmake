@@ -3,13 +3,12 @@
 #
 # utils/registry.txt is the registry of the rules of the utils system.  A measured rule row is
 #
-#     rule ID engine=ENGINE scope=SCOPE ledger=POLICY warn=N error=N unit=UNIT ... doc=REF | MEASURES | ACTION
+#     rule ID engine=ENGINE scope=SCOPE ledger=POLICY limit=N unit=UNIT ... doc=REF | MEASURES | ACTION
 #
-# utils/assay/core/registry.py is the reader of the registry for the Python modules.  A limit that GCC
-# enforces, such as -fconstexpr-ops-limit, has no warning form, so its row has two equal thresholds,
-# and the build reads the error threshold here.  The quarantine plugin gets the error threshold of the
-# rule padded-list in the same way (utils/tools/quarantine/Quarantine.cmake), and that file includes
-# this file before the root CMakeLists.txt does.
+# utils/assay/core/registry.py is the reader of the registry for the Python modules.  The build reads
+# the limit of a rule that GCC enforces, such as -fconstexpr-ops-limit, here.  The quarantine plugin
+# gets the limit of the rule padded-list in the same way (utils/tools/quarantine/Quarantine.cmake),
+# and that file includes this file before the root CMakeLists.txt does.
 
 include_guard(GLOBAL)
 
@@ -28,20 +27,19 @@ endfunction()
 
 # crucible_rule_limit(<rule> <out-var>)
 #
-# Set <out-var> to the error threshold of the measured rule <rule>, which must be a whole number.  A
-# missing row and a threshold that is not a whole number stop the configure.
+# Set <out-var> to the limit of the measured rule <rule>, which must be a whole number.  A missing row
+# and a limit that is not a whole number stop the configure.
 function(crucible_rule_limit rule out_var)
   crucible_rule_rows("^rule[ \t]+${rule}[ \t]" rows)
   list(LENGTH rows row_count)
   if(NOT row_count EQUAL 1)
     message(FATAL_ERROR "utils/registry.txt: the registry holds ${row_count} rows of the rule ${rule}, and the build "
-                        "needs one measured rule row with the field error=N.")
+                        "needs one measured rule row with the field limit=N.")
   endif()
-  string(REGEX MATCH "[ \t]error=([^ \t|]*)" match "${rows}")
+  string(REGEX MATCH "[ \t]limit=([^ \t|]*)" match "${rows}")
   set(limit "${CMAKE_MATCH_1}")
   if(NOT limit MATCHES "^[1-9][0-9]*$")
-    message(FATAL_ERROR "utils/registry.txt: the error threshold `${limit}` of the rule ${rule} is not a whole "
-                        "number.")
+    message(FATAL_ERROR "utils/registry.txt: the limit `${limit}` of the rule ${rule} is not a whole number.")
   endif()
   set(${out_var} "${limit}" PARENT_SCOPE)
 endfunction()

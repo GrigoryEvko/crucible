@@ -33,7 +33,7 @@
 # a check file that has no header.
 #
 # Each header also compiles alone in a one-line unit, with
-# -fconstexpr-ops-limit at the error threshold of the rule
+# -fconstexpr-ops-limit at the limit of the rule
 # header-constexpr-ops in utils/registry.txt.  A constant evaluation
 # that runs where the header stands runs again in each translation unit that
 # includes the header, so an evaluation of more operations stops the build.
@@ -96,7 +96,7 @@ foreach(_row IN LISTS _not_standalone_rows)
   list(APPEND _not_standalone "${_header}")
 endforeach()
 
-# The operation limit of a header alone: the error threshold of the rule
+# The operation limit of a header alone: the limit of the rule
 # header-constexpr-ops in utils/registry.txt (cmake/Guards.cmake).
 crucible_rule_limit(header-constexpr-ops _ops_limit)
 

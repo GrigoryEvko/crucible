@@ -43,7 +43,7 @@ def main(argv: list[str]) -> int:
     print(f"  engine:  {rule.engine.value}, scope {', '.join(rule.scope)}")
     print(f"  held by: {holder(rule)}")
     if rule.threshold is not None:
-        print(f"  thresholds: warning {rule.threshold.warn:g}, error {rule.threshold.error:g}, unit {rule.threshold.unit}")
+        print(f"  limit:   {rule.threshold.limit:g} {rule.threshold.unit}")
     ledger = rule_ledger.shown_path(rule.id)
     if rule.policy == rule_registry.Policy.NONE:
         print("  ledger:  none")

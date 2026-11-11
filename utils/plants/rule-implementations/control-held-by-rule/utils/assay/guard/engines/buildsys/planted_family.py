@@ -1,4 +1,4 @@
-"""A planted family module that holds the rule alpha-rule, and the thresholds of the rule alpha-size."""
+"""A planted family module that holds the rule alpha-rule, and the limit of the rule alpha-size."""
 
 
 def alpha_values(context):

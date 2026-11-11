@@ -35,7 +35,7 @@ def context_cases(expect: testing.Expect) -> None:
         "budget() of an ID with no measured rule is not applicable",
         raises_not_applicable(lambda: empty.budget("registry-shape")),
     )
-    expect("budget() of a measured rule gives its thresholds", empty.budget("header-constexpr-ops").error == 1e6)
+    expect("budget() of a measured rule gives its limit", empty.budget("header-constexpr-ops").limit == 1e6)
     expect(
         "shown() gives a path of the tree relative to the root",
         empty.shown(REPO_ROOT / "utils" / "registry.txt") == "utils/registry.txt",

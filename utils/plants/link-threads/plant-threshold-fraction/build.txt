@@ -1,3 +1,0 @@
-# The planted registry gives the rule link-threads the error threshold 4.5, which is no number of threads.  The
-# rule gives one error input.
-format 1

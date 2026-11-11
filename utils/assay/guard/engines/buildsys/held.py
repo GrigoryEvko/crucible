@@ -6,7 +6,7 @@ THE HOLDERS
     command reads a build.  The witness of such a rule runs the judge of the
     holder on the planted build of each plant and control of
     utils/plants/RULE/ (assay.guard.engines.buildsys.planted).  The judge reads
-    the planted input with the reader of the holder, and the thresholds of the
+    the planted input with the reader of the holder, and the limits of the
     registry of the copy of the plant (BuildContext.budget()):
       loop-gauge      judged_record() of assay.loop.gauge for each record of
                       the file GAUGE_RECORDS of the build
@@ -22,8 +22,8 @@ THE HOLDERS
 
     The witness keeps each finding of the held rule.  When the holder is a
     rule, the witness keeps each finding of the holder.  The plants of the
-    held rule then hold only the items that the thresholds of the held rule
-    judge.
+    held rule then hold only the items that the limit of the held rule
+    judges.
 
 THE RECORDS OF A FIXTURE
     The census (assay.readers.census) gives the CPU time and the instruction
@@ -39,22 +39,20 @@ THE WRITE
     the ledger of each such rule.  The function of test-memory and
     test-instructions is test_written(), which writes the rows of the
     configuration of the build again from the records of its tests.  A
-    registered test gets a row when its measure is over the error threshold.
-    A row keeps its test over the warning threshold, and its value becomes
-    the measure.  A test with no record, or with no measure of the rule,
+    registered test gets a row when its measure is over the limit.  A row
+    keeps its test over the limit, and its value becomes the measure.  A test with no record, or with no measure of the rule,
     keeps its row.  A row of a different name stays, and a row of the build
     kind keeps a test of a build with options.  The function of
     fixture-instructions is fixture_written(), which writes its ledger from
     the records of the fixtures of the build.  A fixture gets a row when its
-    instruction count is over the error threshold.  The write refuses a
+    instruction count is over the limit.  The write refuses a
     build with a fixture that has no record.  A held rule with no row in
     WRITERS has no write, and `guard write` refuses it.
 
 THE FINDINGS
-    A measured rule with two equal thresholds gives a warning only.  The
-    witness of a held rule then counts each finding of a plant, also a
-    warning (assay.guard.engines.meta.runner, THE WITNESS).  A plant must give
-    a finding, and a control must give no finding.  An input of a plant that
+    The witness of a held rule counts each finding of a plant, also a warning
+    (assay.guard.engines.meta.runner, THE WITNESS).  A plant must give a
+    finding, and a control must give no finding.  An input of a plant that
     the holder cannot read makes the plant fail, with the reason.
 
 `guard selftest tests.guard.engines.buildsys.test_held` does a test of the module.
@@ -135,7 +133,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     build = context.require_build()
     kind = context.kind()
     configuration = cost_meter.read_configuration(str(build))
-    budget = {row: (context.budget(row).warn, context.budget(row).error) for row in teststep.ROWS}
+    budget = {row: context.budget(row).limit for row in teststep.ROWS}
     ledgers = str(rule_ledger.ledger_path(rule.id, context.root).parent)
     try:
         records = ctest_reader.costs(build)
@@ -287,7 +285,7 @@ def test_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str 
         earlier = ledger.base.get(key)
         level = check_report.classify(measure, budget)
         has_kind_row = name != kind and rule_ledger.Key("", kind, test_name) in ledger.base
-        if level is None or (earlier is None and (level != "error" or has_kind_row)):
+        if level is None or (earlier is None and has_kind_row):
             continue
         kept = earlier.reason if earlier is not None else reason or TEST_REASON
         base[key] = rule_ledger.Entry(key, cost_budget.kept_value(measure), kept)
@@ -297,9 +295,8 @@ def test_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str 
 def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
     """Return the ledger of fixture-instructions written again from the records of the build (THE WRITE).
 
-    A fixture with an instruction count over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`,
-    with VALUE in G.  A row keeps its fixture over the warning threshold, and its value becomes the count, rounded
-    up.  The row keeps its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes, also the row
+    A fixture with an instruction count over the limit gets the row `- | - | VALUE | FIXTURE | REASON`, with VALUE
+    in G, and its value is the count, rounded up.  The row keeps its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes, also the row
     of a fixture with no count.  Complexity: linear in the tests of the build and in the records of the fixtures.
 
     Raises:
@@ -328,10 +325,8 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
             continue
         key = rule_ledger.Key("", "", name)
         earlier = ledger.base.get(key)
-        # A row keeps a fixture over the warning threshold.  A fixture with no row gets one over the error threshold.
-        limit = budget.warn if earlier is not None else budget.error
         measure = None if record.instructions is None else record.instructions / GIGA
-        if measure is None or measure <= limit:
+        if measure is None or measure <= budget.limit:
             continue
         base[key] = rule_ledger.Entry(
             key, cost_budget.kept_value(measure), earlier.reason if earlier is not None else reason or FIXTURE_REASON

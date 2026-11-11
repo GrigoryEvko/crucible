@@ -10,11 +10,10 @@ THE INPUTS
 THE RULE header-constexpr-ops
     test/layer/CMakeLists.txt compiles each header of include/ alone, in a
     one-line unit `#include <header>` in BUILD/test/layer/sentinels/LAYER/.
-    The unit compiles with -fconstexpr-ops-limit at the error threshold of the
-    measured rule header-constexpr-ops of utils/registry.txt.  An evaluation of
-    more operations runs at the position of the header, in each unit that
-    includes the header, and GCC stops the compile.  GCC gives no warning
-    shape of the limit.  The limit is an error only.
+    The unit compiles with -fconstexpr-ops-limit at the limit of the measured
+    rule header-constexpr-ops of utils/registry.txt, the threshold of this
+    module.  An evaluation of more operations runs at the position of the
+    header, in each unit that includes the header, and GCC stops the compile.
     test/layer/header-constexpr-ops.txt gives a higher limit to a header, with
     its reason:
 
@@ -39,9 +38,8 @@ THE RULE header-constexpr-ops
       row-limit    a listed header that does not compile alone at the limit of its row
       unneeded     a listed header that compiles alone at the threshold.  Its row has no use
       other-error  a listed header that fails at the threshold for a cause other than the limit
-      listed       a warning for each listed header, with each evaluation over the threshold
     The entity of a finding is the header, relative to include/, when the
-    finding names one.
+    finding names one.  A row that keeps its header gives no finding.
 
 THE WRITE
     `guard write --rule header-constexpr-ops --build-dir BUILD_DIR` writes
@@ -281,7 +279,7 @@ def list_rows(context: BuildContext, relative: str, rule: str) -> tuple[rows_gra
 
 
 def threshold_of(context: BuildContext) -> int | check_report.Finding:
-    """Return the error threshold of the measured rule header-constexpr-ops, or the error of an incorrect threshold."""
+    """Return the limit of the measured rule header-constexpr-ops, or the error of an incorrect limit."""
     try:
         budget = context.budget(OPS_RULE)
     except meta_runner.NotApplicable as problem:
@@ -290,20 +288,19 @@ def threshold_of(context: BuildContext) -> int | check_report.Finding:
             REGISTRY,
             0,
             OPS_RULE,
-            f"{problem}.  Add the measured rule {OPS_RULE} with warn=LIMIT, error=LIMIT and unit=operations",
+            f"{problem}.  Add the measured rule {OPS_RULE} with limit=LIMIT and unit=operations",
             "threshold",
         )
-    if budget.error != int(budget.error) or budget.error < 1:
+    if budget.limit != int(budget.limit) or budget.limit < 1:
         return finding(
             "error",
             REGISTRY,
             0,
             OPS_RULE,
-            f"the error threshold {budget.error} of {OPS_RULE} has a fraction.  Give a number of operations with no "
-            f"fraction",
+            f"the limit {budget.limit} of {OPS_RULE} has a fraction.  Give a number of operations with no fraction",
             "threshold",
         )
-    return int(budget.error)
+    return int(budget.limit)
 
 
 def limit_rows(
@@ -442,12 +439,18 @@ def ops_findings(context: BuildContext) -> list[check_report.Finding]:
     )
     for row in limited:
         if row.header in chosen:
-            found.append(judged_row(row, threshold, outcomes[(row, threshold)], outcomes[(row, row.limit)]))
+            judged = judged_row(row, threshold, outcomes[(row, threshold)], outcomes[(row, row.limit)])
+            if judged is not None:
+                found.append(judged)
     return found
 
 
-def judged_row(row: LimitRow, threshold: int, low: Outcome, high: Outcome) -> check_report.Finding:
-    """Return the finding of one listed header from its compile at the threshold and at the limit of its row."""
+def judged_row(row: LimitRow, threshold: int, low: Outcome, high: Outcome) -> check_report.Finding | None:
+    """Return the error of one listed header from its compile at the threshold and at the limit of its row.
+
+    A row that keeps its header gives no finding: the header fails at the threshold for the operation limit, and it
+    compiles at the limit of its row.
+    """
     if not high.passes:
         needs = ", ".join(high.owners) or "; ".join(high.others[:2])
         return finding(
@@ -482,18 +485,7 @@ def judged_row(row: LimitRow, threshold: int, low: Outcome, high: Outcome) -> ch
             "other-error",
             row.header,
         )
-    return finding(
-        "warning",
-        LIST,
-        row.line,
-        OPS_RULE,
-        f"{row.header} holds a constant evaluation of more than "
-        f"{threshold} operations, which runs again in each unit that includes it: {', '.join(low.owners)}.  "
-        f"Its row gives it the limit {row.limit}.  Make the evaluation a variable template or a member of a "
-        f"template, and remove the row",
-        "listed",
-        row.header,
-    )
+    return None
 
 
 def ops_refresh(context: BuildContext) -> str:

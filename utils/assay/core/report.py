@@ -48,13 +48,12 @@ THE KIND AND THE ENTITY
     The text of the finding does not show the two fields.
 
 THE MEASURED RULES
-    A measured rule of utils/registry.txt gives the warning threshold, the
-    error threshold and the unit of a quantity (assay.core.registry).
-    read_budgets() reads the measured rules, and classify() compares one value
-    with one rule through verdict() of assay.core.budget.  A value that is
-    equal to a threshold does not exceed it.
-    A shell script gets the error threshold of one rule with `loop budget
-    --error-threshold RULE`.
+    A measured rule of utils/registry.txt gives the limit and the unit of a
+    quantity (assay.core.registry).  read_budgets() reads the measured rules,
+    and classify() compares one value with one rule through verdict() of
+    assay.core.budget.  A value that is equal to the limit does not exceed
+    it.  A shell script gets the limit of one rule with `loop budget --limit
+    RULE`.
 
 `guard selftest core.report` does a test of the module.
 """
@@ -147,11 +146,10 @@ class Finding:
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """The thresholds of one measured rule.  The unit is its display text, such as "G instructions"."""
+    """The limit of one measured rule.  The unit is its display text, such as "G instructions"."""
 
     check: str
-    warn: float
-    error: float
+    limit: float
     unit: str
     meaning: str
 
@@ -230,7 +228,7 @@ def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
         path: The registry
 
     Returns:
-        The thresholds of each measured rule, by its ID
+        The limit of each measured rule, by its ID
 
     Raises:
         ValueError: If a row of the registry does not obey its schema (the error names the line)
@@ -240,26 +238,31 @@ def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
         registry = rule_registry.load(path, str(path))
     except rows_grammar.RowsError as problem:
         raise ValueError(str(problem)) from None
-    return {rule.id: Budget(rule.id, rule.threshold.warn, rule.threshold.error, unit_text(rule.threshold.unit),
-                            rule.refuses)
-            for rule in registry.rules.values() if rule.threshold is not None}
+    return {rule.id: budget_of(rule) for rule in registry.rules.values() if rule.threshold is not None}
+
+
+def budget_of(rule: rule_registry.Rule) -> Budget:
+    """Return the limit of one measured rule, with the display text of its unit.
+
+    Raises:
+        ValueError: If the rule has no limit
+    """
+    if rule.threshold is None:
+        raise ValueError(f"the rule {rule.id} has no limit and unit")
+    return Budget(rule.id, rule.threshold.limit, unit_text(rule.threshold.unit), rule.refuses)
 
 
 def classify(value: float, budget: Budget) -> Level | None:
-    """Compare one measured value with the thresholds of its check.
+    """Compare one measured value with the limit of its check.
 
     Args:
         value: The value, in the unit of the measured rule
         budget: The measured rule
 
     Returns:
-        "error" when the value exceeds the error threshold, "warning" when it exceeds only the
-        warning threshold, and None when it exceeds neither
+        "error" when the value exceeds the limit, else None
     """
-    found = cost_budget.verdict(value, budget.warn, budget.error, None)
-    if found == cost_budget.NO_FINDING:
-        return None
-    return "error" if found == cost_budget.ERROR else "warning"
+    return "error" if cost_budget.verdict(value, budget.limit, None) == cost_budget.ERROR else None
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -440,19 +443,18 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check-report-") as scratch:
         root = Path(scratch)
         table = root / "registry.txt"
-        table.write_text(rule_registry.planted([rule_registry.measured_rule("alpha", 1, 2, "s", "a value"),
-                                                rule_registry.measured_rule("beta", 1, 2, "G", "a count")]),
+        table.write_text(rule_registry.planted([rule_registry.measured_rule("alpha", 2, "s", "a value"),
+                                                rule_registry.measured_rule("beta", 2, "G", "a count")]),
                          encoding="utf-8")
         row = read_budgets(table)["alpha"]
-        expect("a measured rule reads", row == Budget("alpha", 1.0, 2.0, "s", "a value"))
+        expect("a measured rule reads", row == Budget("alpha", 2.0, "s", "a value"))
         expect("the unit G reads as G instructions", read_budgets(table)["beta"].unit == "G instructions")
-        expect("at the warning threshold: none", classify(1.0, row) is None)
-        expect("over the warning threshold: warning", classify(1.5, row) == "warning")
-        expect("at the error threshold: warning", classify(2.0, row) == "warning")
-        expect("over the error threshold: error", classify(2.1, row) == "error")
-        alpha = rule_registry.measured_rule("alpha", 1, 2, "s")
-        for name, row_text in (("a word threshold", alpha.replace("warn=1", "warn=one")),
-                               ("warn over error", alpha.replace("warn=1", "warn=3")),
+        expect("below the limit: none", classify(1.5, row) is None)
+        expect("at the limit: none", classify(2.0, row) is None)
+        expect("above the limit: error", classify(2.1, row) == "error")
+        alpha = rule_registry.measured_rule("alpha", 2, "s")
+        for name, row_text in (("a word limit", alpha.replace("limit=2", "limit=two")),
+                               ("a missing limit", alpha.replace(" limit=2", "")),
                                ("an unknown unit", alpha.replace("unit=s", "unit=hours")),
                                ("a missing unit", alpha.replace(" unit=s", "")),
                                ("a second row", f"{alpha}\n{alpha}")):
@@ -510,11 +512,11 @@ def self_test() -> int:
     expect("threshold_text writes a whole number with no exponent", threshold_text(33554432.0) == "33554432")
     expect("threshold_text keeps a fraction", threshold_text(1.25) == "1.25")
     with contextlib.redirect_stdout(io.StringIO()) as printed:
-        found_row = print_error_threshold("header-constexpr-ops")
-    expect("--error-threshold prints the rule header-constexpr-ops of the repository registry",
+        found_row = print_limit("header-constexpr-ops")
+    expect("--limit prints the rule header-constexpr-ops of the repository registry",
            found_row == 0 and printed.getvalue().strip().isdigit())
     with contextlib.redirect_stderr(io.StringIO()):
-        expect("--error-threshold fails for a missing rule", print_error_threshold("no-such-check") == 1)
+        expect("--limit fails for a missing rule", print_limit("no-such-check") == 1)
 
     expect("no measured rule of the repository registry judges a time",
            not any(row.unit == "s" for row in budgets.values()))
@@ -540,10 +542,10 @@ def self_test() -> int:
 
 
 def threshold_text(value: float) -> str:
-    """Return a threshold as the text of a number, with no exponent and no '.0' for a whole number.
+    """Return a limit as the text of a number, with no exponent and no '.0' for a whole number.
 
     Args:
-        value: The threshold
+        value: The limit
 
     Returns:
         The text
@@ -551,8 +553,8 @@ def threshold_text(value: float) -> str:
     return str(int(value)) if value.is_integer() else repr(value)
 
 
-def print_error_threshold(check: str) -> int:
-    """Print the error threshold of one measured rule of the registry, for a shell script.
+def print_limit(check: str) -> int:
+    """Print the limit of one measured rule of the registry, for a shell script.
 
     Args:
         check: The ID of the rule
@@ -568,22 +570,22 @@ def print_error_threshold(check: str) -> int:
     if budget is None:
         print(f"loop budget: the registry {REGISTRY} has no measured rule {check}", file=sys.stderr)
         return 1
-    print(threshold_text(budget.error))
+    print(threshold_text(budget.limit))
     return 0
 
 
 def main(argv: list[str]) -> int:
-    """Run the self-test, or print one error threshold (`loop budget --error-threshold RULE`).
+    """Run the self-test, or print one limit (`loop budget --limit RULE`).
 
     Args:
-        argv: --self-test, or --error-threshold RULE
+        argv: --self-test, or --limit RULE
 
     Returns:
         The exit status of the mode, or 2 on a usage error
     """
     if argv == ["--self-test"]:
         return self_test()
-    if len(argv) == 2 and argv[0] == "--error-threshold":
-        return print_error_threshold(argv[1])
-    print("usage: loop budget --error-threshold RULE | guard selftest core.report", file=sys.stderr)
+    if len(argv) == 2 and argv[0] == "--limit":
+        return print_limit(argv[1])
+    print("usage: loop budget --limit RULE | guard selftest core.report", file=sys.stderr)
     return 2

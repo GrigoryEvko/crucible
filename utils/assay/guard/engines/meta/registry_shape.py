@@ -7,8 +7,8 @@ THE RULE
       - A row kind that is not format, rule or path
       - A missing field, an unknown field, and a second field with the same key
       - An engine or a policy that is not one of its words
-      - A measured rule with only some of the fields `warn`, `error` and `unit`
-      - A warning threshold above the error threshold, and an unknown unit
+      - A measured rule with only one of the fields `limit` and `unit`
+      - A limit that is not a decimal number, and an unknown unit
       - A rule with no two cells
       - A second row with the same key.
     This rule also refuses these rows:
@@ -49,7 +49,7 @@ def doc_findings(registry: rule_registry.Registry, guide: str, guide_name: str) 
                 and rule.held_by not in registry.rules):
             found.append(check_report.Finding(
                 "error", shown, rule.line, RULE, f"the holder {rule.held_by} of the rule {rule.id} is not a rule of "
-                f"the registry.  Name the rule or the command that reads its thresholds", "holder", rule.id))
+                f"the registry.  Name the rule or the command that reads its limit", "holder", rule.id))
     return found
 
 

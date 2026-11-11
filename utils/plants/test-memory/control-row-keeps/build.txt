@@ -1,0 +1,5 @@
+# The record of one test of the build gives a peak memory of 2 GB, above the limit 1.5 GB of test-memory.  A ledger
+# row keeps the test up to 2 GB with the noise of the unit GB.  judge() of `loop test-step` gives no finding.
+format 1
+kind x86_64-debug-asan
+test-record test_kept wall=1 peak=2

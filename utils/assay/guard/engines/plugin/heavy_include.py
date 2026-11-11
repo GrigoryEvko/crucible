@@ -11,7 +11,7 @@ THE RULE
     heavy and light rows of the rule table utils/rule-table.txt give the cost
     of each library header (assay.loop.derive.header_costs).  A header is
     heavy when its compile alone costs more than the compile alone of <meta>
-    times the error threshold of this rule in utils/registry.txt.  The
+    times the limit of this rule in utils/registry.txt.  The
     quarantine plugin gives these findings to the includes of a file in
     include/ (include.cpp, THE HEAVY HEADERS):
       * a finding of the kind `heavy-include` for each include of a header

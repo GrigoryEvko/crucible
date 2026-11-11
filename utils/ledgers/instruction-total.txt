@@ -13,10 +13,10 @@
 #   store of the fixture driver keeps the count of the compile that made it.  A direct compile and a
 #   ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
 #
-# A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives
-# a warning, and over its error threshold an error.  A total less than the baseline gives no finding, and
-# a write with no reason lowers the baseline.  The count covers the template instantiation and the
-# constant evaluation.  To accept a growth, raise the baseline in the same commit with a reason:
+# A growth over the limit of the measured rule instruction-total of utils/registry.txt gives an error.  A
+# total less than the baseline gives no finding, and a write with no reason lowers the baseline.  The count
+# covers the template instantiation and the constant evaluation.  To accept a growth, raise the baseline in
+# the same commit with a reason:
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total

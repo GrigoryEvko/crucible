@@ -1,4 +1,4 @@
-# The last cold compile of one negative fixture ran 50 G user instructions, over the error threshold 45 G of
+# The last cold compile of one negative fixture ran 50 G user instructions, above the limit 45 G of
 # fixture-instructions.  The fixture driver gives one error.
 format 1
 kind x86_64-debug-asan

@@ -1,7 +1,7 @@
 """The test of the judge of a measured value against a rule of the policy max (assay.core.budget).
 
 `guard selftest tests.core.test_budget` runs the test.  Each case judges one
-value against planted thresholds and planted rows.  Exit 0 when each case
+value against a planted limit and planted rows.  Exit 0 when each case
 holds, else 1.
 """
 
@@ -15,7 +15,7 @@ from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 
-BUDGET = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
+BUDGET = check_report.Budget("compile-memory", 4.0, "GB", "a planted quantity")
 UNSETTLED_NS = 3_600_000_000_000
 
 
@@ -37,39 +37,31 @@ def level_of(found: check_report.Finding | None) -> str:
 
 
 def verdict_cases(expect: testing.Expect) -> None:
-    """Give the verdict of one value against two thresholds and a row (THE VERDICT)."""
+    """Give the verdict of one value against the limit and a row (THE VERDICT)."""
     cases: dict[tuple[float, float | None], str] = {
         (2.0, None): cost_budget.NO_FINDING,
-        (3.0, None): cost_budget.WARNING,
-        (4.0, None): cost_budget.WARNING,
+        (4.0, None): cost_budget.NO_FINDING,
         (4.5, None): cost_budget.ERROR,
         (4.5, 5.0): cost_budget.ADMITTED,
         (5.5, 5.0): cost_budget.ADMITTED,
         (5.6, 5.0): cost_budget.RISEN,
-        (3.0, 3.0): cost_budget.ADMITTED,
-        (3.5, 3.0): cost_budget.RISEN,
-        (2.0, 3.0): cost_budget.NO_FINDING,
-        (1.0, 5.0): cost_budget.NO_FINDING,
-        (1.9, 5.0): cost_budget.NO_FINDING,
+        (3.0, 5.0): cost_budget.NO_FINDING,
+        (4.0, 5.0): cost_budget.NO_FINDING,
     }
     for (value, kept), wanted in cases.items():
         expect(
             f"the value {value} with the kept value {kept} and a noise of 10 % gives the verdict {wanted or 'none'}",
-            cost_budget.verdict(value, 2.0, 4.0, kept, 0.1 if kept != 3.0 else 0.0) == wanted,
+            cost_budget.verdict(value, 4.0, kept, 0.1) == wanted,
         )
     expect(
         "a value equal to the kept value with its noise is not more than it",
-        cost_budget.verdict(4.4, 2.0, 4.0, 4.0, 0.1) == cost_budget.ADMITTED,
+        cost_budget.verdict(4.4, 4.0, 4.0, 0.1) == cost_budget.ADMITTED,
     )
     expect(
-        "a row of a time gives no finding for a test at or below the warning threshold, also when the time halves, "
-        "because a ledger fails only on a growth",
-        cost_budget.verdict(4.0, 5.0, 30.0, 6.0, 1.0) == cost_budget.NO_FINDING
-        and cost_budget.verdict(2.5, 5.0, 30.0, 6.0, 1.0) == cost_budget.NO_FINDING,
-    )
-    expect(
-        "the level of a RISEN verdict is the level of a value with no row",
-        cost_budget.risen_level(4.5, 4.0) == cost_budget.ERROR and cost_budget.risen_level(3.5, 4.0) == "warning",
+        "a row gives no finding for a value at or below the limit, also when the value halves, because a ledger "
+        "fails only on a growth",
+        cost_budget.verdict(4.0, 4.0, 6.0, 1.0) == cost_budget.NO_FINDING
+        and cost_budget.verdict(2.5, 4.0, 6.0, 1.0) == cost_budget.NO_FINDING,
     )
     expect(
         "the noise of a time, a memory and an instruction count is that of NOISE, and another unit has none",
@@ -78,7 +70,7 @@ def verdict_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="test-budget-noise-") as scratch:
         table = Path(scratch) / "registry.txt"
         table.write_text(
-            rule_registry.planted([rule_registry.measured_rule("compile-instructions", 55, 110, "G", "a count")]),
+            rule_registry.planted([rule_registry.measured_rule("compile-instructions", 110, "G", "a count")]),
             encoding="utf-8",
         )
         counted = check_report.read_budgets(table)["compile-instructions"]
@@ -91,16 +83,15 @@ def verdict_cases(expect: testing.Expect) -> None:
     )
     expect(
         "a rule with the unit G that read_budgets() gives has the noise of an instruction count.  A count 0.05 % over "
-        "its row is admitted, and a count 2.6 % over it is an error",
+        "its row gives no finding, and a count 2.6 % over it is an error",
         counted.unit == cost_budget.UNIT_TEXTS["G"]
         and cost_budget.noise_of(counted.unit) == cost_budget.NOISE["G"]
-        and level_of(grown) == "warning"
+        and level_of(grown) == "none"
         and level_of(drifted) == "error",
     )
-    budget = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
     expect(
         "check_report.classify() agrees with verdict() for each value with no row",
-        [check_report.classify(value, budget) for value in (2.0, 3.0, 4.5)] == [None, "warning", "error"],
+        [check_report.classify(value, BUDGET) for value in (2.0, 4.0, 4.5)] == [None, None, "error"],
     )
 
 
@@ -134,68 +125,54 @@ def row_cases(expect: testing.Expect) -> None:
 
 
 def judge_cases(expect: testing.Expect) -> None:
-    """Judge one value against the thresholds and the rows (THE JUDGE)."""
+    """Judge one value against the limit and the rows (THE JUDGE)."""
     empty = rows_of({})
     measure = cost_budget.Measure("unit.o", "@build/unit.o", 5.0, "the compile took 5.00 GB")
     with check_report.github_actions(False):
         expect(
-            "a value at a threshold gives no finding",
-            cost_budget.judge("compile-memory", BUDGET, cost_budget.Measure("u", "u", 2.0, "said"), empty) is None,
-        )
-        expect(
-            "a value over the warning threshold gives a warning",
-            level_of(cost_budget.judge("compile-memory", BUDGET, cost_budget.Measure("u", "u", 3.0, "said"), empty))
-            == "warning",
+            "a value at the limit gives no finding, and a value below it gives none",
+            cost_budget.judge("compile-memory", BUDGET, cost_budget.Measure("u", "u", 4.0, "said"), empty) is None
+            and cost_budget.judge("compile-memory", BUDGET, cost_budget.Measure("u", "u", 3.0, "said"), empty) is None,
         )
         found = cost_budget.judge("compile-memory", BUDGET, measure, empty)
         expect(
-            "a value over the error threshold with no row gives an error at the item",
+            "a value above the limit with no row gives an error at the item",
             found is not None
             and found.level == "error"
             and found.path == "@build/unit.o"
-            and "over the error threshold 4 GB" in found.message,
+            and "above the limit 4 GB" in found.message,
         )
         admitted = cost_budget.judge("compile-memory", BUDGET, measure, rows_of({"unit.o": 5.2}))
-        expect(
-            "a row of the item over the error threshold gives a warning that names the row",
-            admitted is not None and admitted.level == "warning" and "compile-memory.txt:3" in admitted.message,
+        expect("a row of the item above the limit keeps it, and gives no finding", admitted is None)
+        noisy = cost_budget.judge(
+            "compile-memory", BUDGET, cost_budget.Measure("unit.o", "u", 5.7, "s"), rows_of({"unit.o": 5.2})
         )
+        expect("a row keeps its item up to the kept value with the noise of its unit", noisy is None)
         spare = cost_budget.judge(
             "compile-memory", BUDGET, cost_budget.Measure("unit.o", "@build/unit.o", 1.5, "s"), rows_of({"unit.o": 5.2})
         )
         expect(
-            "a row of an item at or under the warning threshold gives no finding, because a ledger fails only on a growth",
+            "a row of an item at or under the limit gives no finding, because a ledger fails only on a growth",
             spare is None,
-        )
-        kept = cost_budget.judge(
-            "compile-memory", BUDGET, cost_budget.Measure("unit.o", "@build/unit.o", 3.0, "s"), rows_of({"unit.o": 3.0})
-        )
-        expect(
-            "a row of an item over the warning threshold only keeps it, with a warning that names the row and its value",
-            kept is not None and kept.level == "warning" and "keeps it up to 3 GB with the noise 10%" in kept.message,
         )
         risen = cost_budget.judge(
             "compile-memory", BUDGET, cost_budget.Measure("unit.o", "u", 6.0, "s"), rows_of({"unit.o": 5.2})
         )
         expect(
-            "a value over the kept value with its noise and over the error threshold is an error that names the row",
-            risen is not None and risen.level == "error" and "more than the row" in risen.message,
-        )
-        drift = cost_budget.judge(
-            "compile-memory", BUDGET, cost_budget.Measure("unit.o", "u", 3.5, "s"), rows_of({"unit.o": 3.0})
-        )
-        expect(
-            "a value over the kept value with its noise and under the error threshold is a warning again",
-            drift is not None and drift.level == "warning" and "more than the row" in drift.message,
+            "a value over the kept value with its noise is an error that names the row",
+            risen is not None
+            and risen.level == "error"
+            and "more than the row" in risen.message
+            and "compile-memory.txt:3" in risen.message,
         )
         held = cost_budget.judge(
             "header-alone",
             BUDGET,
-            cost_budget.Measure("h", "h", 3.0, "said", threshold_rule="header-alone-fixy"),
+            cost_budget.Measure("h", "h", 5.0, "said", threshold_rule="header-alone-fixy"),
             empty,
         )
         expect(
-            "a held rule of the thresholds is named in the message",
+            "a held rule of the limit is named in the message",
             held is not None and held.check == "header-alone" and "header-alone-fixy" in held.message,
         )
     with check_report.github_actions(True):
@@ -204,7 +181,7 @@ def judge_cases(expect: testing.Expect) -> None:
 
 
 def rows_cases(expect: testing.Expect) -> None:
-    """Read the rows of one kind, and give a warning for a row with no item (THE ROWS)."""
+    """Read the rows of one kind (THE ROWS)."""
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = Path(scratch) / "compile-memory.txt"
         rows = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k")
@@ -220,15 +197,6 @@ def rows_cases(expect: testing.Expect) -> None:
         expect(
             "read_rows() gives only the rows of the kind",
             list(rows.admitted) == ["unit.o"] and rows.admitted["unit.o"].value == 5.0,
-        )
-        stale = cost_budget.unused("compile-memory", rows, ["main.o"])
-        expect(
-            "a row whose item the build does not hold gives a warning",
-            len(stale) == 1 and stale[0].level == "warning" and "holds no unit.o" in stale[0].message,
-        )
-        expect(
-            "a row whose item the build holds gives no warning",
-            cost_budget.unused("compile-memory", rows, ["unit.o"]) == [],
         )
         cost_meter.write_kind_rows(
             "compile-memory",
@@ -250,16 +218,10 @@ def rows_cases(expect: testing.Expect) -> None:
             and bench.admitted["base.o"].value == 4.5
             and bench.own == frozenset({"unit.o", "bench.o"}),
         )
-        expect(
-            "unused() gives no warning for a row of the build kind in a build with options",
-            [item.line for item in cost_budget.unused("compile-memory", bench, ["unit.o"])]
-            == [bench.admitted["bench.o"].line],
-        )
         plain = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "k")
         expect(
-            "a build with no option reads only the rows of its build kind, and gives no warning for a bench row",
-            set(plain.admitted) == {"unit.o", "base.o"}
-            and cost_budget.unused("compile-memory", plain, ["unit.o", "base.o"]) == [],
+            "a build with no option reads only the rows of its build kind",
+            set(plain.admitted) == {"unit.o", "base.o"},
         )
         found, _, _ = cost_budget.row_of(
             "compile-memory", cost_meter.ITEM_OUTPUT, str(ledger), "k", "unit.o", "k-bench"

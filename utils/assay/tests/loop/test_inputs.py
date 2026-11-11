@@ -18,7 +18,7 @@ RULES = (
     "rule alpha engine=meta scope=data/ ledger=none doc=XV | a planted rule | change nothing",
     "rule beta engine=tsast scope=tracked ledger=none inputs=extra/ doc=XV | a planted rule | change nothing",
     "rule gamma engine=build scope=builddir ledger=none doc=XV | a planted rule of the build | change nothing",
-    "rule held engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=alpha doc=XV | a value | lower it",
+    "rule held engine=build scope=builddir ledger=none limit=2 unit=s held-by=alpha doc=XV | a value | lower it",
     "rule delta engine=plugin scope=include/ ledger=none doc=XV | a planted rule of the plugin | change nothing",
 )
 # The files of the planted tree.  The check imports the runner of each engine in a function, and the closure of a

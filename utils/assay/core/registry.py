@@ -15,12 +15,11 @@ THE ROWS
                    builddir and package
       ledger       none, count, admit, max or baseline (assay.core.ledger)
       kinds        the finding kinds of the rule
-      warn, error, unit
-                   the two thresholds and the unit of a measured rule.  A
-                   rule has the three fields or none of them.  The unit is
-                   one word: s, G (10^9 instructions), GB, MB, KB, bytes,
-                   %, operations, elements, x (a multiple), links, jobs or
-                   threads
+      limit, unit  the limit and the unit of a measured rule.  A rule has the
+                   two fields or none of them.  A value above the limit
+                   fails.  The unit is one word: s, G (10^9 instructions),
+                   GB, MB, KB, bytes, %, operations, elements, x (a
+                   multiple), links, jobs or threads
       inputs       the paths that the rule reads and that its module does not
                    show
       doc          the section of CLAUDE.md that states the rule, such as XV,
@@ -29,11 +28,11 @@ THE ROWS
                    when no module of assay/guard/engines/ holds it
       legacy-args  the words that select the mode of the legacy module,
                    divided by commas
-      held-by      the rule or the command that reads the thresholds of a
+      held-by      the rule or the command that reads the limit of a
                    measured rule that has no module of its own: a rule ID,
                    or loop-gauge, loop-step, loop-test-step or loop-fixture.
                    A step meter (loop-step, loop-test-step or loop-fixture)
-                   can also hold a rule with no thresholds, which it judges
+                   can also hold a rule with no limit, which it judges
                    for each step
       holder       the function of the holder that judges a rule with
                    held-by, as MODULE:FUNCTION, such as
@@ -78,8 +77,7 @@ RULE_FIELDS = frozenset(
         "scope",
         "ledger",
         "kinds",
-        "warn",
-        "error",
+        "limit",
         "unit",
         "inputs",
         "doc",
@@ -90,7 +88,7 @@ RULE_FIELDS = frozenset(
     }
 )
 REQUIRED_FIELDS = ("engine", "scope", "ledger", "doc")
-THRESHOLD_FIELDS = ("warn", "error", "unit")
+THRESHOLD_FIELDS = ("limit", "unit")
 # The prefix of the module of the field holder: a module of the package.
 PACKAGE_OWNER = "assay."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
@@ -111,7 +109,7 @@ UNITS = frozenset(
         "threads",
     }
 )
-# The commands that read the thresholds of a measured rule with no module of its own.
+# The commands that read the limit of a measured rule with no module of its own.
 HOLDING_COMMANDS = frozenset(
     {
         "loop-gauge",
@@ -120,7 +118,7 @@ HOLDING_COMMANDS = frozenset(
         "loop-fixture",
     }
 )
-# The step meters, which judge each step that they run.  Such a meter can also hold a rule with no thresholds.
+# The step meters, which judge each step that they run.  Such a meter can also hold a rule with no limit.
 STEP_METERS = frozenset({"loop-step", "loop-test-step", "loop-fixture"})
 # The character between the module and the function in the field holder.
 HOLDER_SEPARATOR = ":"
@@ -158,10 +156,9 @@ class Policy(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Threshold:
-    """The two thresholds and the unit of a measured rule."""
+    """The limit and the unit of a measured rule.  A value above the limit fails."""
 
-    warn: float
-    error: float
+    limit: float
     unit: str
 
 
@@ -234,7 +231,7 @@ class Registry:
     paths: tuple[PathRow, ...] = ()
 
     def measured(self) -> dict[str, Rule]:
-        """Return each rule with thresholds, by its ID."""
+        """Return each rule with a limit, by its ID."""
         return {rule_id: rule for rule_id, rule in self.rules.items() if rule.threshold is not None}
 
 
@@ -303,17 +300,12 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
     given = [name for name in THRESHOLD_FIELDS if name in values]
     threshold = None
     if given and len(given) != len(THRESHOLD_FIELDS):
-        raise row.error(f"the rule {rule_id} has {', '.join(given)}, and a measured rule has warn, error and unit")
+        raise row.error(f"the rule {rule_id} has {', '.join(given)}, and a measured rule has limit and unit")
     if given:
-        warn = rows_grammar.decimal(values["warn"], row, "warning threshold")
-        error = rows_grammar.decimal(values["error"], row, "error threshold")
-        if warn > error:
-            raise row.error(
-                f"the warning threshold {values['warn']} of {rule_id} is above its error threshold {values['error']}"
-            )
+        limit = rows_grammar.decimal(values["limit"], row, "limit")
         if values["unit"] not in UNITS:
             raise row.error(f"the unit {values['unit']!r} of {rule_id} is not one of {', '.join(sorted(UNITS))}")
-        threshold = Threshold(warn, error, values["unit"])
+        threshold = Threshold(limit, values["unit"])
     if not is_doc_reference(values["doc"]):
         raise row.error(
             f"the doc {values['doc']!r} of {rule_id} is not a section of CLAUDE.md, such as XV, XV.4, XXII.R11 or L0"
@@ -332,7 +324,7 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
         raise row.error(f"the rule {rule_id} has a legacy module and a holder.  A rule has at most one of the two")
     if held_by is not None and threshold is None and held_by not in STEP_METERS:
         raise row.error(
-            f"the rule {rule_id} has the holder {held_by} and no thresholds.  Only a measured rule, or a "
+            f"the rule {rule_id} has the holder {held_by} and no limit.  Only a measured rule, or a "
             f"rule that a step meter judges ({', '.join(sorted(STEP_METERS))}), has a holder"
         )
     if held_by is not None and held_by not in HOLDING_COMMANDS and not is_rule_id(held_by):
@@ -503,7 +495,7 @@ def doc_section(guide: str, reference: str) -> str | None:
     return None
 
 
-def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: str = "a planted quantity") -> str:
+def measured_rule(rule_id: str, limit: float, unit: str, measures: str = "a planted quantity") -> str:
     """Return the text of one measured rule row, for a planted registry of a test.  The gauge holds the rule.
 
     Raises:
@@ -520,8 +512,7 @@ def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: 
             "engine=build",
             "scope=builddir",
             "ledger=max",
-            f"warn={number_text(warn)}",
-            f"error={number_text(error)}",
+            f"limit={number_text(limit)}",
             f"unit={unit}",
             "held-by=loop-gauge",
             "doc=XV",

@@ -26,7 +26,7 @@ THE ROWS
     output of the same unit.
 
     A header is heavy when its instructions are more than the instructions of
-    <meta> times the error threshold of the rule heavy-include of
+    <meta> times the limit of the rule heavy-include of
     utils/registry.txt.  A header that does not compile alone with those
     flags is unmeasured.  It is heavy, because no measure shows that it is
     light.  The rule heavy-include of the quarantine plugin reads the rows
@@ -91,7 +91,7 @@ MARKER = (
     "# The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` "
     "writes each line after this one."
 )
-# The rule of the registry with the error threshold that multiplies the instructions of REFERENCE.
+# The rule of the registry with the limit that multiplies the instructions of REFERENCE.
 RULE = "heavy-include"
 # The header with the cost that sets the limit: the heaviest header that each layer can include.
 REFERENCE = "<meta>"
@@ -183,7 +183,7 @@ def parse_cell(header: str, cell: str) -> Cost:
 
 
 def threshold_of(root: Path) -> float:
-    """Return the error threshold of the rule heavy-include of the registry of a tree.
+    """Return the limit of the rule heavy-include of the registry of a tree.
 
     Raises:
         CostError: If the registry cannot be read or has no measured rule heavy-include
@@ -194,8 +194,8 @@ def threshold_of(root: Path) -> float:
         raise CostError(f"the registry cannot be read: {problem}") from None
     rule = registry.rules.get(RULE)
     if rule is None or rule.threshold is None:
-        raise CostError(f"the registry has no measured rule {RULE}.  Give it warn=FACTOR, error=FACTOR and unit=x")
-    return rule.threshold.error
+        raise CostError(f"the registry has no measured rule {RULE}.  Give it limit=FACTOR and unit=x")
+    return rule.threshold.limit
 
 
 def limit_of(costs: dict[str, Cost], threshold: float) -> float:

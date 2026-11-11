@@ -166,8 +166,8 @@ PLANTED_ARGUMENT_FILES = {
 }
 
 
-def planted_registry(*rules: tuple[str, float, float, str]) -> str:
-    """Return the text of a planted registry with one measured rule for each (rule, warning, error, unit)."""
+def planted_registry(*rules: tuple[str, float, str]) -> str:
+    """Return the text of a planted registry with one measured rule for each (rule, limit, unit)."""
     return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
 
 
@@ -664,7 +664,7 @@ class StoreTest:
         env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(ledger),
                "CRUCIBLE_COUNT_INSTRUCTIONS": "0"}
         error_mark = ": error: [fixture-instructions] "
-        table.write_text(planted_registry(("fixture-instructions", 0, 0, "G")))
+        table.write_text(planted_registry(("fixture-instructions", 0, "G")))
         quiet = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         stored = self.newest_result(self.entry_path(quiet[3]))
         times = [] if stored is None else [stored.get("user_s"), stored.get("system_s")]
@@ -672,7 +672,7 @@ class StoreTest:
         self.expect(quiet[0] == 0 and "[fixture-instructions]" not in quiet[1] and stored is not None
                     and stored["instructions"] is None and cpu_s > 0
                     and not (warnings / "fixture-instructions.neg_convert.txt").exists(),
-                    f"a compile with no count gives no cost finding at a threshold of 0 G, and its entry keeps its CPU "
+                    f"a compile with no count gives no cost finding at a limit of 0 G, and its entry keeps its CPU "
                     f"time and no count: {quiet[0]} {quiet[3]}")
         plant_ledger(ledger, "fixture-instructions", "neg_convert | - | 1 | - | a planted reason\n")
         malformed = self.run("neg_convert", *CONVERT, warnings_dir=None, **env)
@@ -686,7 +686,7 @@ class StoreTest:
         self.expect(malformed[0] == 1 and line is not None and f"{ledger}:4: " in line,
                     f"a ledger row with no reason fails at its line: {malformed[0]} {line}")
         ledger.unlink()
-        table.write_text(planted_registry(("other-check", 1, 2, "s")))
+        table.write_text(planted_registry(("other-check", 2, "s")))
         missing = self.run("neg_convert", *CONVERT, warnings_dir=None, GITHUB_ACTIONS="true", **env)
         line = next((text for text in missing[1].splitlines() if error_mark in text), None)
         self.expect(missing[0] == 1 and line is not None and "has no measured rule fixture-instructions" in line,
@@ -704,59 +704,47 @@ class StoreTest:
         warnings = self.root / "warnings"
         env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(ledger)}
 
-        def budget(count: tuple[float, float]) -> None:
+        def budget(limit: float) -> None:
             """Write a registry with the rule fixture-instructions."""
-            table.write_text(planted_registry(("fixture-instructions", *count, "G")))
+            table.write_text(planted_registry(("fixture-instructions", limit, "G")))
 
         def finding(text: str, level: str, check: str) -> str | None:
             """Return the first finding line of the level and the check in a standard output, or None."""
             return next((line for line in text.splitlines() if f": {level}: [{check}] " in line), None)
 
-        budget((1000, 2000))
+        budget(2000)
         loaded = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         entry = self.entry_path(loaded[3])
         stored = self.newest_result(entry)
         self.expect(loaded[0] == 0 and "[fixture-instructions]" not in loaded[1] and stored is not None
                     and isinstance(stored["instructions"], int) and stored["instructions"] > 0,
-                    f"a compile under the budget gives no finding, and its entry keeps the count: {loaded[0]} "
+                    f"a compile under the limit gives no finding, and its entry keeps the count: {loaded[0]} "
                     f"{loaded[3]}")
-        budget((0, 2000))
-        warned = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
-        own_file = warnings / "fixture-instructions.neg_convert.txt"
-        line = finding(warned[1], "warning", "fixture-instructions")
-        self.expect(warned[0] == 0 and self.has(warned[3], "the result comes from the store") and line is not None
-                    and "the stored compile of the fixture neg_convert ran" in line and own_file.is_file()
-                    and own_file.read_text().strip() == line,
-                    f"a stored count above the warning threshold warns in the file of its fixture: {warned[0]} {line}")
-        budget((0, 0))
+        budget(0)
         failed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(failed[1], "error", "fixture-instructions")
-        self.expect(failed[0] == 1 and line is not None and "more than the error threshold 0 G" in line
-                    and self.has(failed[3], "compiled (the stored compile ran more user instructions than the error")
-                    and self.has(failed[3], "not stored (the compile ran more user instructions than the error"),
-                    f"a count above the error threshold fails, and the driver does not store it: {failed[0]} "
-                    f"{failed[3]}")
+        self.expect(failed[0] == 1 and line is not None and "more than the limit 0 G" in line
+                    and self.has(failed[3], "compiled (the stored compile ran more user instructions than the limit")
+                    and self.has(failed[3], "not stored (the compile ran more user instructions than the limit"),
+                    f"a count above the limit fails, and the driver does not store it: {failed[0]} {failed[3]}")
         ci_run = self.run("neg_convert", *CONVERT, warnings_dir=warnings, GITHUB_ACTIONS="true", **env)
         self.expect(ci_run[0] == 1 and finding(ci_run[1], "error", "fixture-instructions") is not None,
-                    f"on a CI runner, a count above the error threshold still fails: {ci_run[0]}")
+                    f"on a CI runner, a count above the limit still fails: {ci_run[0]}")
         plant_ledger(ledger, "fixture-instructions", "- | - | 1000 | neg_convert | a planted reason\n")
         listed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
-        line = finding(listed[1], "warning", "fixture-instructions")
-        self.expect(listed[0] == 0 and line is not None and "a planted reason" in line,
-                    f"a fixture with a ledger row above the error threshold warns: {listed[0]} {line}")
+        self.expect(listed[0] == 0 and "[fixture-instructions]" not in listed[1],
+                    f"a fixture with a ledger row above the limit gives no finding: {listed[0]} {listed[1]}")
         plant_ledger(ledger, "fixture-instructions", "- | - | 0.000001 | neg_convert | a planted reason\n")
         risen = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(risen[1], "error", "fixture-instructions")
         self.expect(risen[0] == 1 and line is not None and "more than the row of" in line,
                     f"a count above the kept value of its row with the noise fails again: {risen[0]} {line}")
-        budget((1000, 2000))
+        budget(2000)
         stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
-        self.expect(stale[0] == 0 and finding(stale[1], "error", "fixture-instructions") is None
-                    and finding(stale[1], "warning", "fixture-instructions") is None and not own_file.exists(),
-                    f"a ledger row of a fixture at or below the warning threshold gives no finding: {stale[0]} "
-                    f"{stale[1]}")
+        self.expect(stale[0] == 0 and "[fixture-instructions]" not in stale[1],
+                    f"a ledger row of a fixture at or below the limit gives no finding: {stale[0]} {stale[1]}")
         ledger.unlink()
-        table.write_text(planted_registry(("other-check", 1000, 2000, "s")))
+        table.write_text(planted_registry(("other-check", 2000, "s")))
         missing = self.run("neg_convert", *CONVERT, **env)
         line = finding(missing[1], "error", "fixture-instructions")
         self.expect(missing[0] == 1 and line is not None and "has no measured rule fixture-instructions" in line,
@@ -818,15 +806,15 @@ class StoreTest:
     def check_test_record(self) -> None:
         """The driver judges a fixture as the test launcher judges a test, and writes the same record.
 
-        A planted registry of the launcher with the error threshold 0 GB of
-        test-memory makes each judge refuse the test.  The check runs the
+        A planted registry of the launcher with the limit 0 GB of test-memory
+        makes each judge refuse the test.  The check runs the
         fixture through the driver, and then through the launcher, which gives
         the driver the variable of the launcher.  The two records must hold
         the same keys and the same values, apart from the cost.  The two runs
         must give the same status, with one error line of the judge.
         """
         table = self.root / "test-registry.txt"
-        table.write_text(planted_registry(("test-memory", 0, 0, "GB")))
+        table.write_text(planted_registry(("test-memory", 0, "GB")))
         ledgers = self.root / "test-ledgers"
         ledgers.mkdir()
         record_path = Path(cost_record.test_record_file(self.build, "neg_size"))
@@ -852,7 +840,7 @@ class StoreTest:
         status, said = run_driver("")
         driver = record()
         self.expect(status == 1 and said.count("error: [test-memory] the test neg_size took") == 1,
-                    f"the driver refuses a fixture over the error threshold of test-memory: {status} {said[-400:]}")
+                    f"the driver refuses a fixture above the limit of test-memory: {status} {said[-400:]}")
         source = str(self.root / "neg" / "neg_size.cpp")
         # The launcher gives the driver the variable of the launcher.  The run has no store and no GITHUB_ACTIONS.
         # Its verdict is then the same on a CI runner.
@@ -876,10 +864,10 @@ class StoreTest:
         self.expect(same_fields and same_costs and driver.get("result") == "rejected" and driver.get("step") == "test",
                     f"the record of the driver and the record of the launcher hold the same fields and the same "
                     f"verdict: {driver} {launcher}")
-        table.write_text(planted_registry(("test-memory", 1000, 2000, "GB")))
+        table.write_text(planted_registry(("test-memory", 2000, "GB")))
         status, said = run_driver("")
         self.expect(status == 0 and "[test-" not in said and record().get("result") == "passed",
-                    f"a fixture under the thresholds passes with no finding, and its record says passed: {status}")
+                    f"a fixture under the limit passes with no finding, and its record says passed: {status}")
         # A run from the store starts no process.  Its CPU time is then a part of its wall time, from the start of
         # the interpreter on.  The record gives each time with a precision of 1 ms.
         status, said = run_driver("")
@@ -1012,18 +1000,18 @@ class StoreTest:
         table = self.root / "registry.txt"
         count_ledger = self.root / "fixture-instructions.txt"
         env = {"CRUCIBLE_NEG_REGISTRY": str(table), "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(count_ledger)}
-        table.write_text(planted_registry(("fixture-instructions", 1000, 2000, "G")))
+        table.write_text(planted_registry(("fixture-instructions", 2000, "G")))
         self.settle()
         quiet = self.run("neg_convert", *CONVERT, **env)
         memos = sorted((self.store / "memo").glob("budget-*.json"))
-        self.expect(quiet[0] == 0 and ": warning: [fixture-" not in quiet[1] and len(memos) == 1,
-                    f"a run under the budget gives no warning and keeps the settled budget: {quiet[0]} {memos}")
+        self.expect(quiet[0] == 0 and "[fixture-" not in quiet[1] and len(memos) == 1,
+                    f"a run under the limit gives no finding and keeps the settled budget: {quiet[0]} {memos}")
         plant_ledger(count_ledger, "fixture-instructions", "neg_convert | - | 1 | - | a planted reason\n")
         listed = self.run("neg_convert", *CONVERT, **env)
         self.expect(listed[0] == 1 and f"{count_ledger}:4: a row is `- | - | VALUE | FIXTURE" in listed[1],
                     f"a new ledger replaces the kept budget: {listed[0]} {listed[3]}")
         count_ledger.unlink()
-        table.write_text(planted_registry(("other-check", 1000, 2000, "s")))
+        table.write_text(planted_registry(("other-check", 2000, "s")))
         replaced = self.run("neg_convert", *CONVERT, **env)
         self.expect(replaced[0] == 1 and "has no measured rule fixture-instructions" in replaced[1],
                     f"a new registry replaces the kept budget: {replaced[0]} {replaced[3]}")

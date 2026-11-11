@@ -13,7 +13,7 @@
 #                     Else it runs an ld.mold of PATH, such as the mold 2.40.4
 #                     of Fedora 44, which cannot read the linker script
 #                     libatomic_asneeded.so of GCC 16
-#   -Wl,--threads=N   N is the error threshold of the rule link-threads of
+#   -Wl,--threads=N   N is the limit of the rule link-threads of
 #                     utils/registry.txt
 #   -Wl,--no-fork     mold links in its own process.  With its fork, mold links
 #                     in a child process, and the parent ends before the child.

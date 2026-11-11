@@ -1,4 +1,0 @@
-# A planted ledger of the rule fixture-instructions: a row of a fixture that is below the warning threshold.
-format 1
-rule fixture-instructions
-- | - | 50 | neg_heavy | a planted reason

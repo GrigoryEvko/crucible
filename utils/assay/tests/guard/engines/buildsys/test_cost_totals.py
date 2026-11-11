@@ -45,7 +45,7 @@ deps CMakeFiles/b.o | src/b.cpp include/Base.h
 fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h
 fixture neg_two neg/neg_two.cpp instructions=5 | neg/neg_two.cpp include/Base.h
 """
-# The same build with objects of 4 G: 18 G, a growth over the error threshold.
+# The same build with objects of 4 G: 18 G, a growth over the limit.
 GROWN_ROWS = BUILD_ROWS.replace("instructions=2", "instructions=4")
 # The same build with fixtures of 1 G: 6 G, a fall.
 FALLEN_ROWS = BUILD_ROWS.replace("instructions=5", "instructions=1")
@@ -223,14 +223,14 @@ def fall_cases(expect: testing.Expect) -> None:
 
 
 def growth_cases(expect: testing.Expect) -> None:
-    """A write refuses a growth over the warning threshold with no reason, and raises the rows with a reason."""
+    """A write refuses a growth with no reason, and raises the rows with a reason."""
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
         plant(root, GROWN_ROWS, LEDGER_ROWS)
         before, _ = total_of(root)
         refusal = refused_write(root, configuration_of(KIND))
         expect(
-            "a write with no reason refuses a growth over the warning threshold, and names --reason",
+            "a write with no reason refuses a growth, and names --reason",
             "--reason TEXT" in refusal and total_of(root)[0] == before,
         )
         written_text(root, configuration_of(KIND), "a planted growth")
@@ -238,6 +238,14 @@ def growth_cases(expect: testing.Expect) -> None:
         expect(
             "a write with a reason raises the rows, and gives the two rows that reason",
             after > before and reason == "a planted growth",
+        )
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        plant(root, BUILD_ROWS.replace("instructions=5", "instructions=5.05"), LEDGER_ROWS)
+        before, _ = total_of(root)
+        expect(
+            "a write with no reason refuses also a growth below the limit, because a higher baseline needs a reason",
+            "--reason TEXT" in refused_write(root, configuration_of(KIND)) and total_of(root)[0] == before,
         )
 
 

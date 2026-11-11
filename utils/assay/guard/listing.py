@@ -5,7 +5,7 @@ usage: guard list [--engine E]
        guard list --build-dir DIR [--path FILE|DIRECTORY] [--kind KIND]
 
 The first form prints one line for each rule: its ID, its engine, its
-policy, its thresholds, and the module that holds it (its own module, its
+policy, its limit, and the module that holds it (its own module, its
 legacy module or its holder).  The second form prints each ledger row of each
 rule of utils/ledgers/ whose path is FILE, so a reader at the code sees each
 admission of that file.
@@ -88,8 +88,7 @@ def main(argv: list[str]) -> int:
         if options.engine is not None and rule.engine.value != options.engine:
             continue
         listed += 1
-        threshold = (f" warn {check_report.threshold_text(rule.threshold.warn)} error "
-                     f"{check_report.threshold_text(rule.threshold.error)} {rule.threshold.unit}"
+        threshold = (f" limit {check_report.threshold_text(rule.threshold.limit)} {rule.threshold.unit}"
                      if rule.threshold is not None else "")
         print(f"{rule.id:28} {rule.engine.value:6} {rule.policy.value:8}{threshold}; {holder(rule)}")
     selection = f" of the engine {options.engine}" if options.engine is not None else ""

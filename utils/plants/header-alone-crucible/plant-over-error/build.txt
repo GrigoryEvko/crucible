@@ -1,5 +1,5 @@
-# A header of include/crucible includes 7.6 MB alone, more than the error threshold 7.35 MB of
-# header-alone-crucible.  The rule header-alone gives one error of the held rule of the layer.
+# A header of include/crucible includes 7.6 MB alone, more than the limit 7.35 MB of header-alone-crucible.  The rule
+# header-alone gives one error of the held rule of the layer.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000

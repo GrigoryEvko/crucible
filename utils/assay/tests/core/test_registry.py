@@ -12,7 +12,7 @@ from assay.core import rows as rows_grammar
 
 GOOD_RULE = "rule alpha-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix it"
 # A measured rule with a holder, and the text of a field holder.
-SLOW_RULE = rule_registry.measured_rule("slow-row", 10, 20, "s")
+SLOW_RULE = rule_registry.measured_rule("slow-row", 20, "s")
 HOLDER_TEXT = "assay.loop.gauge:judged_record"
 GUIDE = (
     "# A planted guide\n\n## XV. Headers\n\n1. **A rule.** Text.\n2. **Another.** Text.\n\n### The ratchet (R11)\n\n"
@@ -32,8 +32,8 @@ def problem_of(row: str) -> str:
 
 
 def rule_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check the rule rows: the fields, the engine, the policy, the thresholds and the holder."""
-    registry, problems = examined(GOOD_RULE, rule_registry.measured_rule("slow-row", 10, 20, "s"))
+    """Check the rule rows: the fields, the engine, the policy, the limit and the holder."""
+    registry, problems = examined(GOOD_RULE, rule_registry.measured_rule("slow-row", 20, "s"))
     rule = registry.rules.get("alpha-rule")
     expect(
         "a good registry has no problem, and a rule row gives its fields",
@@ -49,15 +49,15 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
     )
     slow = registry.rules["slow-row"]
     expect(
-        "a measured rule gives its thresholds and its holder, and has no module",
-        slow.threshold == rule_registry.Threshold(10.0, 20.0, "s")
+        "a measured rule gives its limit and its holder, and has no module",
+        slow.threshold == rule_registry.Threshold(20.0, "s")
         and slow.held_by == "loop-gauge"
         and not slow.has_module
         and set(registry.measured()) == {"slow-row"},
     )
     judged, problems = examined(GOOD_RULE.replace("doc=XV", "held-by=loop-fixture doc=XV"))
     expect(
-        "a step meter holds a rule with no thresholds",
+        "a step meter holds a rule with no limit",
         not problems
         and judged.rules["alpha-rule"].held_by == "loop-fixture"
         and not judged.rules["alpha-rule"].has_module,
@@ -84,11 +84,11 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         "an absolute scope": GOOD_RULE.replace("scope=tracked", "scope=/etc"),
         "a scope that goes up": GOOD_RULE.replace("scope=tracked", "scope=../x"),
         "a doc that is not a section": GOOD_RULE.replace("doc=XV", "doc=section-15"),
-        "only some of warn, error and unit": GOOD_RULE.replace("doc=XV", "warn=1 error=2 doc=XV"),
-        "a warning threshold above the error threshold": rule_registry.measured_rule("slow-row", 20, 10, "s"),
-        "an unknown unit": rule_registry.measured_rule("slow-row", 1, 2, "s").replace("unit=s", "unit=hours"),
-        "a holder with no thresholds": GOOD_RULE.replace("doc=XV", "held-by=loop-gauge doc=XV"),
-        "a legacy module and a holder": rule_registry.measured_rule("slow-row", 1, 2, "s").replace(
+        "a limit with no unit": GOOD_RULE.replace("doc=XV", "limit=2 doc=XV"),
+        "a limit that is a word": SLOW_RULE.replace("limit=20", "limit=twenty"),
+        "an unknown unit": rule_registry.measured_rule("slow-row", 2, "s").replace("unit=s", "unit=hours"),
+        "a holder with no limit": GOOD_RULE.replace("doc=XV", "held-by=loop-gauge doc=XV"),
+        "a legacy module and a holder": rule_registry.measured_rule("slow-row", 2, "s").replace(
             "held-by=loop-gauge", "held-by=loop-gauge legacy=guard.legacy.x"
         ),
         "legacy-args with no legacy module": GOOD_RULE.replace("doc=XV", "legacy-args=--check,x doc=XV"),

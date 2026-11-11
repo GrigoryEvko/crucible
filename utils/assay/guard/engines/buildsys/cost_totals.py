@@ -37,12 +37,10 @@ THE LEDGER
     A change of the rule then changes the comment in the same commit.
 
 THE FINDINGS
-    The measured rule instruction-total of the registry gives the two
-    thresholds, in percent of the baseline.  The rule gives:
-      growth         a total more than the baseline by more than the warning
-                     threshold gives a warning, and by more than the error
-                     threshold an error.  The message names the largest
-                     compiles
+    The measured rule instruction-total of the registry gives the limit, in
+    percent of the baseline.  The rule gives:
+      growth         a total more than the baseline by more than the limit
+                     gives an error.  The message names the largest compiles
       zero-baseline  a baseline of 0 gives an error, because no change has a
                      measure against it
     A total less than the baseline gives no finding (THE POLICIES of
@@ -73,9 +71,9 @@ THE FINDINGS
 THE WRITE
     `guard write --rule instruction-total --build-dir DIR` writes the two
     rows again from a build of BASE_CONFIGURATION.  The write refuses a
-    growth of more than the warning threshold with no --reason TEXT.  A write
-    with no reason keeps the last reason, and a write with a reason gives the
-    two rows that reason.
+    growth with no --reason TEXT, so a higher baseline always has a reason.
+    A write with no reason keeps the last reason, and a write with a reason
+    gives the two rows that reason.
 
     The rule and the write do not apply to a call with no build directory.
     They also do not apply to a build that the census does not read:
@@ -127,16 +125,16 @@ INSTRUCTION_LEDGER_COMMENT = (
     "#   store of the fixture driver keeps the count of the compile that made it.  A direct compile and a\n"
     "#   ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).\n"
     "#\n"
-    "# A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives\n"
-    "# a warning, and over its error threshold an error.  A total less than the baseline gives no finding, and\n"
-    "# a write with no reason lowers the baseline.  The count covers the template instantiation and the\n"
-    "# constant evaluation.  To accept a growth, raise the baseline in the same commit with a reason:\n"
+    "# A growth over the limit of the measured rule instruction-total of utils/registry.txt gives an error.  A\n"
+    "# total less than the baseline gives no finding, and a write with no reason lowers the baseline.  The count\n"
+    "# covers the template instantiation and the constant evaluation.  To accept a growth, raise the baseline in\n"
+    "# the same commit with a reason:\n"
     "#   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT\n"
 )
 
 
 class CensusRefusal(rule_ledger.LedgerError):
-    """An input that the rule cannot use: the build kind, the configuration, the thresholds, the ledger or the census.
+    """An input that the rule cannot use: the build kind, the configuration, the limit, the ledger or the census.
 
     The refusal is an error finding of the rule, at a path and a line, with
     a kind and an entity (THE FINDINGS).  It is also a LedgerError.  Then
@@ -173,7 +171,7 @@ class CensusTotal:
 
 @dataclass(frozen=True, slots=True)
 class CensusFrame:
-    """The facts that the rule reads before the census: the rule, the configuration, the thresholds and the ledger."""
+    """The facts that the rule reads before the census: the rule, the configuration, the limit and the ledger."""
 
     rule: rule_registry.Rule
     configuration: build_config.BuildConfiguration
@@ -206,9 +204,9 @@ def instruction_text(count: int) -> str:
 
 
 def census_frame(context: BuildContext, given: rule_ledger.Ledger | None = None) -> CensusFrame:
-    """Read the rule, the configuration, the thresholds and the ledger of the call (THE CONFIGURATION).
+    """Read the rule, the configuration, the limit and the ledger of the call (THE CONFIGURATION).
 
-    The check of the configuration comes before the read of the thresholds and of the ledger.  A build of a different
+    The check of the configuration comes before the read of the limit and of the ledger.  A build of a different
     configuration then gives no finding.
 
     Args:
@@ -251,8 +249,7 @@ def census_frame(context: BuildContext, given: rule_ledger.Ledger | None = None)
         budget = context.budget(rule.id)
     except meta_runner.NotApplicable as reason:
         raise CensusRefusal(
-            f"{reason}, and the rule reads its warning threshold and its error threshold there.  Give the row of the "
-            f"rule its thresholds",
+            f"{reason}, and the rule reads its limit there.  Give the row of the rule its limit",
             rule_registry.REGISTRY_PATH,
             0,
             "no-threshold",
@@ -361,7 +358,7 @@ def census_judged(
     A total less than its rows gives no finding (THE POLICIES of assay.core.ledger), and a write lowers the rows.
 
     Args:
-        frame: The rule, the configuration and the thresholds
+        frame: The rule, the configuration and the limit
         total: The total rows of the ledger
         value: The total of the build
         said: The words that tell the total of the build
@@ -382,16 +379,14 @@ def census_judged(
             )
         ]
     change = (value - total.value) / total.value * 100.0
-    level = check_report.classify(change, frame.budget)
-    if level is None:
+    if check_report.classify(change, frame.budget) is None:
         return []
-    limit = frame.budget.error if level == "error" else frame.budget.warn
     message = (
-        f"{said}, {change:.2f}% more than the baseline of {instruction_text(total.value)}, over the {level} "
-        f"threshold {limit:g}%.  Remove the cost, or raise the baseline in the same commit with a reason: {write} "
+        f"{said}, {change:.2f}% more than the baseline of {instruction_text(total.value)}, above the limit "
+        f"{frame.budget.limit:g}%.  Remove the cost, or raise the baseline in the same commit with a reason: {write} "
         f"--reason TEXT.  {named()}"
     )
-    return [check_report.Finding(level, frame.shown, total.line, rule_id, message, "growth", frame.name)]
+    return [check_report.Finding("error", frame.shown, total.line, rule_id, message, "growth", frame.name)]
 
 
 def census_change_text(value: int, baseline: int) -> str:
@@ -403,19 +398,18 @@ def census_change_text(value: int, baseline: int) -> str:
 
 
 def census_refused(frame: CensusFrame, old: CensusTotal | None, value: int, reason: str | None) -> None:
-    """Refuse a write that raises the total by more than the warning threshold with no reason.
+    """Refuse a write that raises the total with no reason (THE WRITE).
 
     Raises:
-        LedgerError: If the write has no reason and the total increased by more than the warning threshold
+        LedgerError: If the write has no reason and the total increased
     """
-    if old is None or old.value <= 0 or reason:
+    if old is None or old.value <= 0 or reason or value <= old.value:
         return
     growth = (value - old.value) / old.value * 100.0
-    if growth > frame.budget.warn:
-        raise rule_ledger.LedgerError(
-            f"the total increased by {growth:.2f}% over the baseline of {instruction_text(old.value)}, more than the "
-            f"warning threshold {frame.budget.warn:g}%.  Give the reason of the growth with --reason TEXT"
-        )
+    raise rule_ledger.LedgerError(
+        f"the total increased by {growth:.2f}% over the baseline of {instruction_text(old.value)}, and a higher "
+        f"baseline needs a reason.  Give the reason of the growth with --reason TEXT"
+    )
 
 
 def census_total_entries(total: CensusTotal) -> list[rule_ledger.Entry]:
@@ -536,7 +530,7 @@ def instruction_written(context: BuildContext, ledger: rule_ledger.Ledger, reaso
         NotApplicable: If the census does not apply to the build, the build has a different configuration, or the
             host gives no counter
         LedgerError: If an input cannot be used, or a unit has no instruction count.  Also if the write has no
-            reason for a growth over the warning threshold
+            reason for a growth
     """
     frame = census_frame(context, ledger)
     old = census_baseline(frame)

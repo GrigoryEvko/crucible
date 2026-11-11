@@ -4,7 +4,7 @@ THE CASES
     The cases hold these parts of the rule:
       * The base thread-local variables of one member
       * The read of the members of the libraries, and its errors
-      * The judge of the members against the thresholds and the ledger rows
+      * The judge of the members against the limit and the ledger rows
       * The write of the ledger on a planted build directory.
     The compile cases use the compiler that ASSAY_TEST_CXX names.  The
     registration of the test gives the compiler of the build.
@@ -38,11 +38,11 @@ UNITS = {
 }
 
 
-def planted_rule(warn: int = 64, error: int = 256) -> rule_registry.Rule:
-    """Return the rule static-tls of a planted registry with the thresholds."""
+def planted_rule(limit: int = 256) -> rule_registry.Rule:
+    """Return the rule static-tls of a planted registry with the limit."""
     row = (
-        f"rule {RULE} engine=elf scope=builddir ledger=max warn={warn} error={error} unit=bytes doc=XV | a planted "
-        f"quantity | lower it"
+        f"rule {RULE} engine=elf scope=builddir ledger=max limit={limit} unit=bytes doc=XV | a planted quantity | "
+        f"lower it"
     )
     return rule_registry.planted_rules((row,))[RULE]
 
@@ -144,24 +144,21 @@ def member_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the judge of the members against the thresholds and the rows (THE JUDGE, THE ERRORS)."""
+    """Hold the judge of the members against the limit and the rows (THE JUDGE, THE ERRORS)."""
     scratch.archive("foundation", ["counter", "plain"])
     scratch.archive("crucible", ["cache", "header", "plain"])
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a base buffer over the error threshold in a member of crucible is an error, and no other member is judged",
+        "a base buffer above the limit in a member of crucible is an error, and no other member is judged",
         [item.entity for item in found] == ["libcrucible.a(header.cpp.o)"] and len(errors_of(found)) == 1,
     )
-    found = static_tls.judge(planted_rule(warn=2, error=1024), scratch.planted())
-    expect(
-        "a value over the warning threshold is a warning",
-        errors_of(found) == [] and len(warnings_of(found)) == 2,
-    )
+    found = static_tls.judge(planted_rule(limit=1024), scratch.planted())
+    expect("a value at or below the limit gives no finding", found == [])
     scratch.ledger(f"@build/libcrucible.a(header.cpp.o) | {KIND} | 512 | - | a planted buffer\n")
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a row of the kind keeps a member over the error threshold up to its kept value, with a warning",
-        errors_of(found) == [] and any("keeps it up to 512 bytes" in message for message in warnings_of(found)),
+        "a row of the kind keeps a member above the limit up to its kept value, with no finding",
+        errors_of(found) == [] and warnings_of(found) == [],
     )
     scratch.ledger("@build/libcrucible.a(header.cpp.o) | other-kind | 512 | - | a row of a different kind\n")
     expect(
@@ -171,7 +168,7 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.ledger(f"@build/libfoundation.a(counter.cpp.o) | {KIND} | 512 | - | a row that admits nothing\n")
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a row of a member under the error threshold gives no finding, because a ledger fails only on a growth",
+        "a row of a member under the limit gives no finding, because a ledger fails only on a growth",
         not any("counter.cpp.o" in message for message in (*errors_of(found), *warnings_of(found))),
     )
     scratch.ledger("")
@@ -198,7 +195,7 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.archive("crucible", ["header", "plain"])
     scratch.directory()
     status, text = scratch.write(rule)
-    expect("a write refuses a member over the error threshold with no reason", status == 1 and "--reason" in text)
+    expect("a write refuses a member above the limit with no reason", status == 1 and "--reason" in text)
     status, _ = scratch.write(rule, "a planted buffer")
     ledger = rule_ledger.read(rule, scratch.root)
     expect(
@@ -246,7 +243,7 @@ def written_cases(expect: testing.Expect) -> None:
     new = static_tls.written(budget, KIND, (big, small), ledger, "a planted buffer")
     rows = {key.path: (key.kind, entry.value, entry.reason) for key, entry in new.base.items()}
     expect(
-        "written() keeps a row of a different kind, writes the member over the error threshold, and removes the rest",
+        "written() keeps a row of a different kind, writes the member above the limit, and removes the rest",
         rows
         == {
             other.path: ("other-kind", 300, "a row of a different kind"),
@@ -263,7 +260,7 @@ def written_cases(expect: testing.Expect) -> None:
         said = ""
     except rule_ledger.LedgerError as problem:
         said = str(problem)
-    expect("written() refuses a member over the error threshold with no row and no reason", item in said)
+    expect("written() refuses a member above the limit with no row and no reason", item in said)
 
 
 def cases(expect: testing.Expect) -> None:

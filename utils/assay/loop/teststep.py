@@ -124,7 +124,7 @@ THE MEASURED RULES
       * A test that waits for a different thread in a loop runs more
         instructions when the host is in use.  On 2026-10-12, with two tests
         for each CPU, the counts of such tests increased up to 21 times, to
-        at most 12.1 G.  That count is less than the warning threshold of
+        at most 12.1 G.  That count is much less than the limit of
         test-instructions, and such a test has no row.
       * The record keeps the wall time of the run as a plain fact, and no
         rule judges it.  The wall time increases with the load of the host.
@@ -132,28 +132,24 @@ THE MEASURED RULES
         time on a quiet host.  On 2026-10-12, the same test took 56 s to 166 s
         of wall time, when the host was short of memory.  The timeout of the
         test preset is the hard stop of a test.
-      * Over the warning threshold of a rule, the subcommand prints a warning
-        line in the format of utils/assay/core/report.py and writes it to
-        DIR/RULE.NAME.txt, so the tests that run at the same time do not write
-        one file.  Under the warning threshold, it removes that file.  The
-        line names the program when the program is a file of the build
-        directory, and the record of the test for a script test.
-      * Over the error threshold, it prints an error line, and a test that
-        passed fails with status 1.
-      * A row of the ledger utils/ledgers/RULE.txt keeps a test over the
-        warning threshold: '- | KIND | VALUE | TEST | REASON'.  KIND is the
-        name of the configuration of the build or its build kind, and VALUE
-        is the measure when the row was written, in the unit of the rule
-        (meter.py, THE REGISTRY AND THE LEDGERS).  A kept test gives a
-        warning that names the row, up to VALUE with the noise of the unit
-        (assay.core.budget, THE NOISE).  A test over that value gives the
-        level of a test with no row.  A row whose test stays at or below the
-        warning threshold gives no finding.  A ledger fails only on a growth
-        (THE POLICIES of assay.core.ledger).  A ledger that does not
-        exist has no row, and the subcommand then imports no ledger module.
+      * Above the limit of a rule, the subcommand prints an error line in the
+        format of utils/assay/core/report.py, and a test that passed fails
+        with status 1.  The line names the program when the program is a
+        file of the build directory, and the record of the test for a script
+        test.  At or below the limit, it prints no line.
+      * A row of the ledger utils/ledgers/RULE.txt keeps a test above the
+        limit: '- | KIND | VALUE | TEST | REASON'.  KIND is the name of the
+        configuration of the build or its build kind, and VALUE is the
+        measure when the row was written, in the unit of the rule (meter.py,
+        THE REGISTRY AND THE LEDGERS).  A kept test gives no line, up to
+        VALUE with the noise of the unit (assay.core.budget, THE NOISE).  A
+        test above that value gives the error of a test with no row.  The
+        subcommand reads the ledger only for a measure above the limit.  A
+        ledger that does not exist has no row, and the subcommand then
+        imports no ledger module.
     Memory and the instruction count are almost the same on each run, so
-    their error thresholds sit above the largest measure.  An error of the
-    two rules is an error also on a GitHub runner.
+    their limits sit above the largest measure.  An error of the two rules
+    is an error also on a GitHub runner.
     A test that failed keeps its status, so a failure, a skip code and a
     WILL_FAIL test keep the meaning that ctest gives them.  A WILL_FAIL test
     over its budget therefore does not fail.  No test of the tree has
@@ -396,7 +392,7 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
     return None if found is None else (f"{shown}:{found.line}", found.reason, found.value)
 
 
-def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
+def judge(name: str, run: cost_meter.Measurement, budget: dict[str, float],
           kind: str | None, ledgers: str | None = None,
           configuration: str | None = None) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
@@ -408,7 +404,7 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
     Args:
         name: The name of the test
         run: The measurement of the command, with its accurate instruction count or None
-        budget: The thresholds of the measured rules that the registry gives
+        budget: The limit of each measured rule that the registry gives
         kind: The kind of the build, or None
         ledgers: The directory of the ledgers (ledger_row()), or None
         configuration: The name of the configuration of the build, or None for the build kind
@@ -422,35 +418,24 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         giga = run.instructions / GIGA
         measures.append(("test-instructions", giga, "G", f"ran {giga:.2f} G user instructions"))
     for row, measure, unit, text in measures:
-        if row not in budget:
+        if row not in budget or measure <= budget[row]:
             continue
-        warn, error = budget[row]
+        limit = budget[row]
         admitted = ledger_row(row, name, kind, ledgers, configuration)
         kept = None if admitted is None else admitted[2]
-        said = f"the test {name} {text}"
+        above = f"the test {name} {text}, above the limit of {limit:g} {unit}"
         noise = cost_budget.noise_of(unit)
-        found = cost_budget.verdict(measure, warn, error, kept, noise)
-        over = (f"over the {'error' if measure > error else 'warning'} threshold of "
-                f"{error if measure > error else warn:g}")
-        if admitted is not None and found == cost_budget.ADMITTED:
-            level = "warning"
-            message = (f"{said}, {over} {unit}, and the row {admitted[0]} keeps it up to {admitted[2]:g} {unit} with "
-                       f"the noise {noise:.0%}: {admitted[1]}")
-        elif admitted is not None and found == cost_budget.RISEN:
-            level = cost_budget.risen_level(measure, error)
-            message = (f"{said}, {over} {unit}, and more than the row {admitted[0]} keeps: {admitted[2]:g} {unit} with "
-                       f"the noise {noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured "
-                       f"value into the row")
+        found = cost_budget.verdict(measure, limit, kept, noise)
+        if admitted is not None and found == cost_budget.RISEN:
+            message = (f"{above}, and more than the row {admitted[0]} keeps: {admitted[2]:g} {unit} with the noise "
+                       f"{noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured value "
+                       f"into the row with a reason")
         elif found == cost_budget.ERROR:
-            level = "error"
-            message = (f"{said}, over the error threshold of {error:g} {unit}, and no row of utils/ledgers/{row}.txt "
-                       f"keeps it for {configuration or kind}.  Make the test smaller, or split it into tests over "
-                       f"disjoint cases")
-        elif found == cost_budget.WARNING:
-            level, message = "warning", f"{said}, over the warning threshold of {warn:g} {unit}"
+            message = (f"{above}, and no row of utils/ledgers/{row}.txt keeps it for {configuration or kind}.  Make "
+                       f"the test smaller, or split it into tests over disjoint cases")
         else:
             continue
-        findings.append((level, row, message))
+        findings.append(("error", row, message))
     return findings
 
 
@@ -668,8 +653,8 @@ def launched_program(command: list[str]) -> str | None:
     return command[0] if command else None
 
 
-def read_budget() -> dict[str, tuple[float, float]]:
-    """Read the thresholds of the rules of the launcher from the registry, or give none when it cannot be read."""
+def read_budget() -> dict[str, float]:
+    """Read the limit of each rule of the launcher from the registry, or give none when it cannot be read."""
     try:
         return cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
     except (OSError, ValueError):
@@ -690,7 +675,7 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
 
 def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
                      run: cost_meter.Measurement, warnings_dir: str | None,
-                     budget: dict[str, tuple[float, float]] | None = None) -> int:
+                     budget: dict[str, float] | None = None) -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
     `loop test-step` and `loop fixture` call this function.  The two then
@@ -704,7 +689,7 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         build_dir: The build directory, or None for no record and no build kind
         run: The measurement of the test, with its status
         warnings_dir: The warnings directory, or None
-        budget: The thresholds of the rules, or None to read them from the registry (read_budget())
+        budget: The limit of each rule, or None to read them from the registry (read_budget())
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0

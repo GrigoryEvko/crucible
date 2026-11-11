@@ -631,7 +631,7 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
 
     A plant with no build.txt and no planted-build/ gives a context with no
     build directory.  A plant that holds utils/registry.txt gives the
-    thresholds of that registry.
+    limits of that registry.
 
     Raises:
         NotApplicable: If build.txt or the planted registry does not obey its rows

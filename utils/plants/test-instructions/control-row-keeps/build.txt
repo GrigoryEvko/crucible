@@ -1,0 +1,6 @@
+# The record of one test of the build gives 610 G user instructions, above the limit 500 G of test-instructions.  A
+# ledger row keeps the test up to 600 G, and 612 G with the noise of the unit G.  judge() of `loop test-step` gives no
+# finding.
+format 1
+kind x86_64-debug-asan
+test-record test_kept wall=1 instructions=610

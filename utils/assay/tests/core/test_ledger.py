@@ -18,7 +18,7 @@ from assay.core import rows as rows_grammar
 
 COUNT_RULE = "rule count-rule engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix it"
 ADMIT_RULE = "rule admit-rule engine=meta scope=tracked ledger=admit doc=XV | a planted refusal | fix it"
-MAX_RULE = rule_registry.measured_rule("max-rule", 1, 2, "s")
+MAX_RULE = rule_registry.measured_rule("max-rule", 2, "s")
 Expect = Callable[[str, bool], None]
 
 

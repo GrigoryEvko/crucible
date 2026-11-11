@@ -1,5 +1,5 @@
-# The ledger of the rule header-alone of utils/registry.txt: the items that a row keeps over the warning threshold
-# of the rule, one row for each item and build kind or configuration.  A row is 'FILE | KIND | VALUE | - | REASON'.
+# The ledger of the rule header-alone of utils/registry.txt: the items that a row keeps over the limit of the rule,
+# one row for each item and build kind or configuration.  A row is 'FILE | KIND | VALUE | - | REASON'.
 # KIND is the build kind of BUILD_DIR/build-kind.txt or the name of BUILD_DIR/build-configuration.txt, and
 # VALUE is the value at the last write, in MB.  A row keeps its item up to VALUE with the noise of its
 # unit (THE NOISE of utils/assay/core/budget.py).  `python3 utils/bin/guard explain header-alone` tells the rule,

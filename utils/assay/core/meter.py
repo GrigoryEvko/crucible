@@ -131,7 +131,7 @@ THE RECORD
     each record and its one reader and writer.
 
 THE REGISTRY AND THE LEDGERS
-    budget_rows() reads the two thresholds of some measured rules of
+    budget_rows() reads the limit of some measured rules of
     utils/registry.txt, through the rows reader of assay.core.rows, which
     imports no module.  assay.core.registry is the full reader of the
     registry, and its import of dataclasses costs 13 ms, so a launcher does not
@@ -139,7 +139,7 @@ THE REGISTRY AND THE LEDGERS
 
     read_kind_rows() reads the ledger of a measured rule of the policy max,
     utils/ledgers/RULE.txt, through assay.core.ledger.  A row keeps one item
-    over the warning threshold of the rule, for one build kind or one
+    over the limit of the rule, for one build kind or one
     configuration (assay.core.budget, THE VERDICT and THE ROWS):
 
         PATH | KIND | VALUE | ENTITY | REASON
@@ -665,22 +665,22 @@ def end_like(exit_code: int) -> None:
     os._exit(exit_code)
 
 
-def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, tuple[float, float]]:
-    """Read the warning threshold and the error threshold of some measured rules of the registry.
+def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, float]:
+    """Read the limit of some measured rules of the registry.
 
     The rule registry-shape holds the schema of each row, so this reader
-    reads only the fields warn and error of the named rules.
+    reads only the field limit of the named rules.
 
     Args:
         path: The registry
         names: The IDs of the rules
 
     Returns:
-        The thresholds of each named rule that the registry gives with both fields
+        The limit of each named rule that the registry gives with the field
 
     Raises:
         OSError: If the registry cannot be read
-        ValueError: If the registry does not obey the rows grammar, or a threshold of a named rule is not a number
+        ValueError: If the registry does not obey the rows grammar, or the limit of a named rule is not a number
 
     Complexity: linear in the length of the registry.
     """
@@ -692,14 +692,13 @@ def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, tuple[float, flo
         parsed = rows_grammar.parse(text, path)
     except rows_grammar.RowsError as problem:
         raise ValueError(str(problem)) from None
-    found: dict[str, tuple[float, float]] = {}
+    found: dict[str, float] = {}
     for row in parsed:
         if row.words[0] != "rule" or len(row.words) < 2 or row.words[1] not in names:
             continue
         values = dict(word.partition("=")[::2] for word in row.words[2:])
-        if "warn" in values and "error" in values:
-            found[row.words[1]] = (rows_grammar.decimal(values["warn"], row, "warning threshold"),
-                                   rows_grammar.decimal(values["error"], row, "error threshold"))
+        if "limit" in values:
+            found[row.words[1]] = rows_grammar.decimal(values["limit"], row, "limit")
     return found
 
 

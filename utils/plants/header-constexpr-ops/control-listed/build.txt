@@ -1,5 +1,5 @@
-# Two listed headers that compile alone at the limits of their rows and not at the threshold 1000: a warning for
-# each.  The evaluation of crucible/Heavy.h is an inline constant at namespace scope, and the evaluation of
+# Two listed headers that compile alone at the limits of their rows and not at the threshold 1000: no finding,
+# because each row keeps its header.  The evaluation of crucible/Heavy.h is an inline constant at namespace scope, and the evaluation of
 # foundation/Body.h is a constant local of a function that is not a template.  The header crucible/Away.h of the
 # not-standalone list has no unit.  The variable template of fixy/Lazy.h has no instance, so it costs nothing.
 format 1

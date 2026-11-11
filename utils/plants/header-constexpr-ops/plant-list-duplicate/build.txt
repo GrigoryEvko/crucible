@@ -1,4 +1,4 @@
-# A second row of the list for one header.  The first row holds, so the header also gives its warning.
+# A second row of the list for one header: an error of the kind list.  The first row keeps the header.
 format 1
 kind x86_64-debug-asan
 compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/sentinels/crucible/crucible_Heavy_h.cpp.o build/test/layer/sentinels/crucible/crucible_Heavy_h.cpp record=no | {cxx} -std=c++26 -I {root}/include -fconstexpr-ops-limit=100000 -o {build}/heavy.o -c {build}/test/layer/sentinels/crucible/crucible_Heavy_h.cpp

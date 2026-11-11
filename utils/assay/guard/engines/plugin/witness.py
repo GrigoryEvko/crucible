@@ -44,7 +44,7 @@ THE KEYS OF A COMPILE
       rules=PATH    the plugin argument rules.  The default is rules.txt
       mode=WORD     the plugin argument mode.  The default is report
       padded-list-limit=N   the plugin argument padded-list-limit.  The
-                    default is the error threshold of the row padded-list
+                    default is the limit of the row padded-list
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
       library-records=on
@@ -402,17 +402,17 @@ def shape(row: rows_grammar.Row, words: int, cells: int, at_least: bool = False)
 
 @functools.cache
 def padded_limit() -> str:
-    """Return the error threshold of the row padded-list of utils/registry.txt, the default of PADDED_LIMIT_KEY.
+    """Return the limit of the row padded-list of utils/registry.txt, the default of PADDED_LIMIT_KEY.
 
     Raises:
-        ValueError: If the registry gives the rule no thresholds
+        ValueError: If the registry gives the rule no limit
     """
     from assay.core import registry as rule_registry
 
     threshold = rule_registry.load().rules[PADDED_LIMIT_RULE].threshold
     if threshold is None:
-        raise ValueError(f"the row {PADDED_LIMIT_RULE} of utils/registry.txt has no error threshold")
-    return f"{threshold.error:g}"
+        raise ValueError(f"the row {PADDED_LIMIT_RULE} of utils/registry.txt has no limit")
+    return f"{threshold.limit:g}"
 
 
 def with_limit(arguments: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:

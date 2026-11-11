@@ -1,5 +1,5 @@
-# A function of 300 KB of machine code has a ledger row of the kind of the build.  The rule gives one warning of the
-# kind admitted.
+# A function of 300 KB of machine code, above the limit 256 KB, has a ledger row that keeps it up to 300 KB.  The
+# rule gives no finding.
 format 1
 kind x86_64-debug-asan
 compile CMakeFiles/lib.dir/giant.cpp.o src/giant.cpp functions=_Z5giantv:307200

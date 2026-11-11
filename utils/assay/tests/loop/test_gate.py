@@ -42,7 +42,7 @@ from assay.readers import ninja as ninja_reader
 # trait-guard is there too, and no parse configuration checks it.
 REGISTRY = (
     "format 1\n"
-    "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge doc=XV | a time | "
+    "rule slow-row engine=build scope=builddir ledger=max limit=20 unit=s held-by=loop-gauge doc=XV | a time | "
     "lower the value\n"
     "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
     "rule plan-check engine=meta scope=builddir ledger=none doc=XIII | a planted rule of the build | change nothing\n"
@@ -402,7 +402,7 @@ def change_cases(expect: testing.Expect) -> None:
         root = work / "repo"
         head = planted_repository(root)
         (root / "notes.txt").unlink()
-        (root / rule_registry.REGISTRY_PATH).write_text(REGISTRY.replace("error=20", "error=21"), encoding="utf-8")
+        (root / rule_registry.REGISTRY_PATH).write_text(REGISTRY.replace("limit=20", "limit=21"), encoding="utf-8")
         commit = git.commit_all(root, "Raise the slow row and remove the notes")
         tree = work / "warm"
         gate.move_tree(root, tree, commit)

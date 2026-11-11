@@ -46,7 +46,7 @@ THE RULE header-alone
     alone.  For each sentinel, the rule reads its list in the dependency log of
     Ninja (assay.readers.ninja) and adds the bytes of the files after the
     source.  The header is the first file of the list in include/, after each
-    symbolic link resolves.  The thresholds come from the held rule of the
+    symbolic link resolves.  The limit comes from the held rule of the
     layer of the header: header-alone-foundation, header-alone-fixy or
     header-alone-crucible.  These problems each give an error of the kind
     input: a header of a different layer, a sentinel with no VALID list, and a
@@ -56,26 +56,21 @@ THE RULE header-alone
     made.
 
 THE JUDGE
-    assay.core.budget judges each value against the thresholds and the ledger
-    rows that judge the build (assay.core.budget, THE VERDICT and THE ROWS).
-    The kinds of the findings:
-      over-threshold     a value over the warning or the error threshold, with
-                         no ledger row
-      admitted           a value over the warning threshold that a row keeps:
-                         a warning that gives the row and its reason
-      risen              a value over the kept value of its row with the noise
-                         of its unit: the level of a value with no row
-      `row-unused`       a row of the name of the configuration of the build
-                         with an item that the build does not hold: a warning
-                         at the row
+    assay.core.budget judges each value against the limit and the ledger rows
+    that judge the build (assay.core.budget, THE VERDICT and THE ROWS).  Each
+    finding is an error.  The kinds of the findings:
+      over-limit         a value above the limit, with no ledger row
+      risen              a value above the limit and above the kept value of
+                         its row with the noise of its unit
       no-record          an output with no usable record
       not-wired          no output with a usable record
       input              an input that the rule cannot read
     The entity of a finding is the item: the output relative to the build
     directory, or the header relative to the source root.  It is empty for
-    not-wired and for an input of the full build.  A row of an item at or
-    below the warning threshold gives no finding, because a ledger fails
-    only on a growth.  A write removes such a row (THE LEDGERS).
+    not-wired and for an input of the full build.  A value that a row keeps
+    gives no finding.  A row of an item at or below the limit gives no
+    finding, because a ledger fails only on a growth.  A row whose item the
+    build does not hold gives no finding either.
 
 THE LEDGERS
     utils/ledgers/RULE.txt holds one row for each item and each build kind or
@@ -88,14 +83,12 @@ THE LEDGERS
     `guard write --rule RULE --build-dir DIR [--reason TEXT]` writes the rows
     of the name of the configuration of the build again, through the member
     function written of the rule.  It writes the measured value of each item
-    with a row over the warning threshold.  It removes each row of an item at
-    or below that threshold.  It keeps the rows of the other names and the
-    rows of a ccache hit.  It keeps the reason of each item that keeps its
-    row.  It gives the ledger the head comment LEDGER_COMMENT
-    (assay.core.ledger, THE HEAD COMMENT).  An item over the error threshold with no row
-    gets a new row with the reason of --reason.  An item over the warning
-    threshold only gets a keep row by hand, with its reason, and the next
-    write gives it its value.  A row of the build kind keeps an item of a
+    with a row over the limit.  It removes each row of an item at or below
+    the limit.  It keeps the rows of the other names and the rows of a
+    ccache hit.  It keeps the reason of each item that keeps its row.  It
+    gives the ledger the head comment LEDGER_COMMENT (assay.core.ledger, THE
+    HEAD COMMENT).  An item over the limit with no row gets a new row with
+    the reason of --reason.  A row of the build kind keeps an item of a
     build with options.  The write then gives such an item no row of its own.
     A ledger with no row has no file.
 
@@ -140,8 +133,8 @@ HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 # The head comment that the member function written gives each ledger.  ROW is the row of the item of the rule.
 LEDGER_COMMENT = (
-    "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the warning threshold\n"
-    "# of the rule, one row for each item and build kind or configuration.  A row is '{row}'.\n"
+    "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the limit of the rule,\n"
+    "# one row for each item and build kind or configuration.  A row is '{row}'.\n"
     "# KIND is the build kind of BUILD_DIR/build-kind.txt or the name of BUILD_DIR/build-configuration.txt, and\n"
     "# VALUE is the value at the last write, in {unit}.  A row keeps its item up to VALUE with the noise of its\n"
     "# unit (THE NOISE of utils/assay/core/budget.py).  `python3 utils/bin/guard explain {rule}` tells the rule,\n"
@@ -276,14 +269,14 @@ def cached_name(build: Path, kind: str) -> str | None:
 
 
 def threshold_rules(rule_id: str) -> tuple[str, ...]:
-    """Return the measured rules that give the thresholds of a rule: the held rules of header-alone, or the rule."""
+    """Return the measured rules that give the limit of a rule: the held rules of header-alone, or the rule."""
     return tuple(HEADER_ALONE_LAYERS.values()) if rule_id == HEADER_ALONE else (rule_id,)
 
 
 def budgets_of(
     context: BuildContext, rule_id: str
 ) -> tuple[dict[str, check_report.Budget], list[check_report.Finding]]:
-    """Return the thresholds of each measured rule that a rule reads, and an error for each one that is missing."""
+    """Return the limit of each measured rule that a rule reads, and an error for each one that is missing."""
     budgets: dict[str, check_report.Budget] = {}
     problems: list[check_report.Finding] = []
     for name in threshold_rules(rule_id):
@@ -660,33 +653,17 @@ def ledger_shape(rule_id: str) -> str:
 def judged_values(
     rule_id: str, budgets: Mapping[str, check_report.Budget], measured: Measured, rows: cost_budget.Rows
 ) -> list[check_report.Finding]:
-    """Judge each value against its thresholds and the ledger rows that judge the build (THE JUDGE).
+    """Judge each value against its limit and the ledger rows that judge the build (THE JUDGE).
 
-    Complexity: linear in the values and the rows.
+    Complexity: linear in the values.
     """
     found: list[check_report.Finding] = []
     for value in measured.values:
-        budget = budgets[value.threshold_rule or rule_id]
-        row = rows.admitted.get(value.item)
-        verdict = cost_budget.judge(rule_id, budget, value, rows)
-        if verdict is None:
-            continue
-        found.append(replace(verdict, kind=finding_kind(value, budget, row), entity=value.item))
-    held = {value.item for value in measured.values} | measured.held
-    for item, row in sorted(rows.admitted.items(), key=lambda pair: pair[1].line):
-        single = cost_budget.Rows(rows.shown, rows.kind, {item: row})
-        found += [
-            replace(unused, kind="row-unused", entity=item) for unused in cost_budget.unused(rule_id, single, held)
-        ]
+        verdict = cost_budget.judge(rule_id, budgets[value.threshold_rule or rule_id], value, rows)
+        if verdict is not None:
+            kind = "over-limit" if value.item not in rows.admitted else "risen"
+            found.append(replace(verdict, kind=kind, entity=value.item))
     return found
-
-
-def finding_kind(value: cost_budget.Measure, budget: check_report.Budget, row: cost_budget.Admission | None) -> str:
-    """Return the kind of the finding of one judged value with a finding (THE JUDGE)."""
-    if row is None:
-        return "over-threshold"
-    found = cost_budget.verdict(value.value, budget.warn, budget.error, row.value, cost_budget.noise_of(budget.unit))
-    return "admitted" if found == cost_budget.ADMITTED else "risen"
 
 
 def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Finding]:
@@ -750,11 +727,11 @@ def budget_written(
         path, entity = cost_meter.item_cells(value.item, shape)
         key = rule_ledger.Key(path, name, entity)
         earlier = ledger.base.get(key)
-        if value.value <= budget.warn:
+        if value.value <= budget.limit:
             base.pop(key, None)
             continue
-        if earlier is None and (value.value <= budget.error or rule_ledger.Key(path, kind, entity) in ledger.base):
-            # A row of the build kind keeps the item.  An item over the warning threshold only gets a keep row by hand.
+        if earlier is None and rule_ledger.Key(path, kind, entity) in ledger.base:
+            # A row of the build kind keeps the item.
             continue
         why = earlier.reason if earlier is not None else reason
         if not why:
@@ -763,8 +740,8 @@ def budget_written(
         base[key] = rule_ledger.Entry(key, cost_budget.kept_value(value.value), why)
     if unexplained:
         raise rule_ledger.LedgerError(
-            f"these items are more than the error threshold and have no row.  Give the reason of their rows with "
-            f"--reason: {', '.join(unexplained)}"
+            f"these items are more than the limit and have no row.  Give the reason of their rows with --reason: "
+            f"{', '.join(unexplained)}"
         )
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, row=cost_meter.ITEM_ROWS[shape], unit=units)

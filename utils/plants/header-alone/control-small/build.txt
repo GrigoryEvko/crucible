@@ -1,4 +1,4 @@
-# A header of include/fixy includes 1 MB alone, which is less than the warning threshold 6 MB of the held rule
+# A header of include/fixy includes 1 MB alone, which is less than the limit 6.5 MB of the held rule
 # header-alone-fixy.  The rule gives no finding.
 format 1
 kind x86_64-debug-asan

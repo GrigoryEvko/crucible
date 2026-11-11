@@ -21,16 +21,15 @@ from assay.guard.engines.meta import runner as meta_runner
 
 # The rule of the gauge that the cases judge.
 GAUGE_RULE = "edit-build-instructions"
-# A gauge record whose edit build has a median of COUNT G instructions.  The thresholds of the rule of the tree are
-# 11000 G and 11800 G.  The count of the test run is no measure of a rule.
+# A gauge record whose edit build has a median of COUNT G instructions.  The limit of the rule of the tree is 11800 G.
+# The count of the test run is no measure of a rule.
 GAUGE_RECORD = (
     '{"jobs": 24, "steps": [], "medians": {'
     '"build": {"wall_s": 45.0, "cpu_s": 1000.0, "instructions_g": COUNT, "worst_others_pct": 2.0}, '
     '"tests": {"wall_s": 130.0, "cpu_s": 1000.0, "instructions_g": 99999.0, "worst_others_pct": 2.0}}}\n'
 )
-OVER_ERROR = GAUGE_RECORD.replace("COUNT", "12000.0")
-OVER_WARNING = GAUGE_RECORD.replace("COUNT", "11500.0")
-UNDER_WARNING = GAUGE_RECORD.replace("COUNT", "5000.0")
+OVER_LIMIT = GAUGE_RECORD.replace("COUNT", "12000.0")
+UNDER_LIMIT = GAUGE_RECORD.replace("COUNT", "11500.0")
 BUILD_HEAD = "format 1\nkind x86_64-debug-asan\n"
 
 
@@ -74,10 +73,10 @@ def gauge_records(records: str) -> tuple[str, str]:
 def gauge_cases(expect: testing.Expect) -> None:
     """The judge of the gauge keeps the findings of the held rule, and refuses a record that does not read."""
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
-        context = context_of(Path(scratch), BUILD_HEAD, [gauge_records(OVER_ERROR)])
+        context = context_of(Path(scratch), BUILD_HEAD, [gauge_records(OVER_LIMIT)])
         found = held.held_findings(tree_rule(GAUGE_RULE), context)
         expect(
-            "a gauge record over the error threshold gives one error of the held rule, and no finding of the tests",
+            "a gauge record above the limit gives one error of the held rule, and no finding of the tests",
             [(item.check, item.level) for item in found] == [(GAUGE_RULE, "error")],
         )
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
@@ -88,7 +87,7 @@ def gauge_cases(expect: testing.Expect) -> None:
 def routing_cases(expect: testing.Expect) -> None:
     """A rule with no holder, or with a holder that the witness cannot judge, is refused."""
     planted_rows = [
-        rule_registry.measured_rule("planted-step", 1, 2, "s").replace("held-by=loop-gauge", "held-by=loop-step")
+        rule_registry.measured_rule("planted-step", 2, "s").replace("held-by=loop-gauge", "held-by=loop-step")
     ]
     step_rule = rule_registry.planted_rules(planted_rows)["planted-step"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
@@ -121,22 +120,22 @@ def witness_cases(expect: testing.Expect) -> None:
     rule = tree_rule(GAUGE_RULE)
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         plants = Path(scratch) / "utils" / "plants" / rule.id
-        plant_of(plants, "plant-over", BUILD_HEAD, [gauge_records(OVER_WARNING)])
-        plant_of(plants, "control-under", BUILD_HEAD, [gauge_records(UNDER_WARNING)])
+        plant_of(plants, "plant-over", BUILD_HEAD, [gauge_records(OVER_LIMIT)])
+        plant_of(plants, "control-under", BUILD_HEAD, [gauge_records(UNDER_LIMIT)])
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             holds = held.witness(rule, Path(scratch))
-        expect("a plant with a warning and a clean control hold, because a warning counts", holds == 0)
+        expect("a plant above the limit and a control below it hold", holds == 0)
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         plants = Path(scratch) / "utils" / "plants" / rule.id
-        plant_of(plants, "plant-under", BUILD_HEAD, [gauge_records(UNDER_WARNING)])
-        plant_of(plants, "control-over", BUILD_HEAD, [gauge_records(OVER_WARNING)])
+        plant_of(plants, "plant-under", BUILD_HEAD, [gauge_records(UNDER_LIMIT)])
+        plant_of(plants, "control-over", BUILD_HEAD, [gauge_records(OVER_LIMIT)])
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             fails = held.witness(rule, Path(scratch))
-        expect("a plant with no finding and a control with a warning fail", fails == 1)
+        expect("a plant with no finding and a control with an error fail", fails == 1)
 
 
 def fixture_write_cases(expect: testing.Expect) -> None:
-    """The write of the ledger of the fixture driver: a row for each instruction count over the error threshold."""
+    """The write of the ledger of the fixture driver: a row for each instruction count above the limit."""
     rows = (
         BUILD_HEAD
         + "fixture neg_slow test/neg/slow.cpp user=19 system=1\n"

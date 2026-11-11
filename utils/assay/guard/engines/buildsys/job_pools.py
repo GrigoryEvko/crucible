@@ -107,8 +107,8 @@ THE RULE link-jobs
 THE RULE link-threads
     Each link of the tree runs mold (cmake/Linker.cmake).  The compiler gets
     -fuse-ld=mold, -B with the bin directory of the pinned mold, and the
-    linker options --threads=N and --no-fork.  N is the error threshold of the
-    rule link-threads.  With its fork, mold links in a child process, and the
+    linker options --threads=N and --no-fork.  N is the limit of the rule
+    link-threads.  With its fork, mold links in a child process, and the
     parent ends before the child.  wait4 of the build launcher then measures
     only the compiler driver.  With --no-fork, the rule link-memory
     measures the link.  The rule reads the variables FLAGS and
@@ -127,8 +127,8 @@ THE RULE link-threads
       `fork`              the edge does not give mold --no-fork after its
                           last --fork
       `input`             the rule cannot read the graph, or it cannot divide
-                          a variable of an edge into words.  Or the threshold
-                          of the rule is not an integer above 0
+                          a variable of an edge into words.  Or the limit of
+                          the rule is not an integer above 0
     One finding gives the number of the edges of each kind and value, and
     the first edge.  An archive has no linker, and the rule does not read it.
     The configure step refuses a mold of a different version.  For that
@@ -278,7 +278,7 @@ def error(rule: PoolRule, path: str, line: int, message: str, kind: str, entity:
 
 
 def count_of(context: BuildContext, rule_id: str, meaning: str) -> int | check_report.Finding:
-    """Return the count of a rule, the error threshold of its row in the registry of the context, or the error.
+    """Return the count of a rule, the limit of its row in the registry of the context, or the error.
 
     Args:
         context: The context of the run
@@ -288,15 +288,15 @@ def count_of(context: BuildContext, rule_id: str, meaning: str) -> int | check_r
     Raises:
         NotApplicable: If the registry has no measured rule with that ID
     """
-    threshold = context.budget(rule_id).error
-    if threshold.is_integer() and threshold >= 1:
-        return int(threshold)
+    limit = context.budget(rule_id).limit
+    if limit.is_integer() and limit >= 1:
+        return int(limit)
     return check_report.Finding(
         "error",
         "utils/registry.txt",
         0,
         rule_id,
-        f"the error threshold {threshold:g} of the rule {rule_id} is {meaning}, and it must be an integer above 0",
+        f"the limit {limit:g} of the rule {rule_id} is {meaning}, and it must be an integer above 0",
         "input",
         rule_id,
     )

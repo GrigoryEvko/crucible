@@ -79,8 +79,8 @@ def manifest_cases(expect: testing.Expect) -> None:
     )
     threshold = rule_registry.load().rules["padded-list"].threshold
     expect(
-        "the default threshold of padded-list is the error threshold of its row of the registry",
-        threshold is not None and witness.padded_limit() == f"{threshold.error:g}",
+        "the default threshold of padded-list is the limit of its row of the registry",
+        threshold is not None and witness.padded_limit() == f"{threshold.limit:g}",
     )
     expect(
         "a compile of a procedure gets the default threshold, and keeps a threshold that it names",

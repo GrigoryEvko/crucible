@@ -44,7 +44,7 @@ def plant_tree(root: Path, ledger_rows: str, table_rows: str = COST_ROWS) -> Non
     path.write_text(LEDGER_HEAD + ledger_rows, encoding="utf-8")
     (root / header_costs.TABLE).write_text("quarantine src/\n" + table_rows, encoding="utf-8")
     (root / rule_registry.REGISTRY_PATH).write_text(
-        rule_registry.planted([rule_registry.measured_rule(RULE, 1.25, 1.25, "x", "the planted threshold")]),
+        rule_registry.planted([rule_registry.measured_rule(RULE, 1.25, "x", "the planted threshold")]),
         encoding="utf-8",
     )
 

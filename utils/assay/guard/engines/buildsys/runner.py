@@ -146,7 +146,7 @@ class BuildContext:
         return not self.paths or key.path in self.paths
 
     def budget(self, rule_id: str) -> check_report.Budget:
-        """Return the thresholds of a measured rule of the registry of the context, for check_report.classify().
+        """Return the limit of a measured rule of the registry of the context, for check_report.classify().
 
         Raises:
             NotApplicable: If the registry has no measured rule with that ID
@@ -156,16 +156,10 @@ class BuildContext:
         rule = registry.rules.get(rule_id)
         if rule is None or rule.threshold is None:
             raise meta_runner.NotApplicable(f"the registry has no measured rule {rule_id}")
-        return check_report.Budget(
-            rule.id,
-            rule.threshold.warn,
-            rule.threshold.error,
-            check_report.unit_text(rule.threshold.unit),
-            rule.refuses,
-        )
+        return check_report.budget_of(rule)
 
     def budgets(self) -> dict[str, check_report.Budget]:
-        """Return the thresholds of each measured rule of the registry of the context, by the ID of the rule.
+        """Return the limit of each measured rule of the registry of the context, by the ID of the rule.
 
         Complexity: linear in the rules of the registry.
         """

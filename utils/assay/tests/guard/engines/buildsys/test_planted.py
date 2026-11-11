@@ -137,17 +137,17 @@ def refused_cases(expect: testing.Expect) -> None:
 
 
 def registry_cases(expect: testing.Expect) -> None:
-    """A plant with no build.txt has no build directory, and a planted registry gives the thresholds."""
+    """A plant with no build.txt has no build directory, and a planted registry gives the limit."""
     with tempfile.TemporaryDirectory(prefix="test-planted-") as scratch:
         plant = Path(scratch) / "plant-registry"
         (plant / "utils").mkdir(parents=True)
         (plant / rule_registry.REGISTRY_PATH).write_text(
-            rule_registry.planted([rule_registry.measured_rule("planted-size", 3, 9, "x")]), encoding="utf-8"
+            rule_registry.planted([rule_registry.measured_rule("planted-size", 9, "x")]), encoding="utf-8"
         )
         context = planted.plant_context(plant, Path(scratch) / "tree")
         expect("a plant with no build.txt gives no build directory", context.build_dir is None)
         budget = context.budget("planted-size")
-        expect("a planted registry gives the thresholds of a rule", (budget.warn, budget.error) == (3.0, 9.0))
+        expect("a planted registry gives the limit of a rule", budget.limit == 9.0)
         expect("the build kind file name is the one of the meter", cost_meter.KIND_FILE == "build-kind.txt")
 
 

@@ -48,7 +48,7 @@
 #     flags, of the compiler, of a fact or of that list changes each compile
 #     line, and each object compiles again.  A change of a reason or of a
 #     comment of the rule table changes no compile line.
-#   - The argument padded-list-limit is the error threshold of the row
+#   - The argument padded-list-limit is the limit of the row
 #     padded-list of utils/registry.txt (crucible_rule_limit of
 #     cmake/Guards.cmake).  The plugin gives a padded list only above it.  A
 #     change of that threshold changes each compile line, and a change of each

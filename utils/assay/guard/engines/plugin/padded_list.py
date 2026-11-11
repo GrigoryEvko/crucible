@@ -17,7 +17,7 @@ THE RULE
     reads the return type and each parameter that a function takes by value.
     It reads no template, and it reads the files of include/ and src/
     (utils/tools/quarantine/declaration.cpp, THE RULE padded-list).  The
-    plugin argument padded-list-limit is the error threshold of the row of
+    plugin argument padded-list-limit is the limit of the row of
     this rule in utils/registry.txt (utils/tools/quarantine/Quarantine.cmake).
     The plugin reads each element type that has a padding bit.  It gives one
     line for the longest list in a declaration, when the list has more
@@ -78,7 +78,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
         BuildError: If the build cannot be read
     """
     rule = declarations.rule_of(context, RULE)
-    limit = rule.threshold.error if rule.threshold is not None else 0.0
+    limit = rule.threshold.limit if rule.threshold is not None else 0.0
     found = context.census().errors(RULE)
     kept: list[plugin_sections.Finding] = []
     lists: dict[tuple[str, str], plugin_sections.PaddedList] = {}

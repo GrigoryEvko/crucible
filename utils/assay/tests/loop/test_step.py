@@ -6,11 +6,11 @@ holds a build-kind.txt, as the top directory of a build does.  The
 command is a planted compiler (a Python script that writes an object), a
 planted ccache (a Python script that writes a stats log as ccache 4 does) or
 a planted linker.  A planted registry and a directory of ledgers of the test
-set the thresholds and the admitted outputs.  A case examines the status, the
+set the limits and the admitted outputs.  A case examines the status, the
 output and the record of the launcher.  Each case runs with no
 GITHUB_ACTIONS, except the cases that set it to "true": on a CI runner, a
-step past its CPU limit runs to its end with a warning, and a compile over
-the memory error threshold still fails.  The limit of a step is
+step past its CPU limit runs to its end with a warning, and a compile above
+the memory limit still fails.  The CPU limit of a step is
 COMPILE_CPU_LIMIT_S or LINK_CPU_LIMIT_S of the launcher, and no registry row
 gives it.  A case of a step at its limit gives the launcher a hard
 RLIMIT_CPU of 1 s, and the launcher keeps that lower limit.  The cases of a
@@ -162,13 +162,13 @@ int main() {
 COUNT_TOLERANCE = 0.005
 
 
-def planted_registry(*rules: tuple[str, float, float, str]) -> str:
-    """Return the text of a planted registry with one measured rule for each (rule, warning, error, unit)."""
+def planted_registry(*rules: tuple[str, float, str]) -> str:
+    """Return the text of a planted registry with one measured rule for each (rule, limit, unit)."""
     return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
 
 
-QUIET = planted_registry(("compile-memory", 1000, 2000, "GB"),
-                         ("link-memory", 1000, 2000, "GB"))
+QUIET = planted_registry(("compile-memory", 2000, "GB"),
+                         ("link-memory", 2000, "GB"))
 
 
 class Bench:
@@ -265,7 +265,7 @@ def last_finding(stderr: bytes) -> check_report.Finding | None:
 
 
 def run_records(bench: Bench, verdicts: Verdicts) -> None:
-    """The status, the output and the record of a compile, a failed compile, a signal, a ccache hit and a warning."""
+    """The status, the output and the record of a compile, a failed compile, a signal and a ccache hit."""
     expect = verdicts.expect
     result = bench.launch(bench.tool)
     expect("a compile passes its status and its output unchanged",
@@ -334,16 +334,11 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
            and result.stderr == b"tool stderr\n" and not count_file.exists())
 
-    bench.table(planted_registry(("compile-memory", 0, 1000, "GB")))
+    bench.table(planted_registry(("compile-memory", 1000, "GB")))
     result = bench.launch(bench.tool)
-    lines = result.stderr.decode().splitlines()
-    found = [check_report.parse_line(line) for line in lines[1:]]
-    expect("a compile over the memory warning threshold prints one warning line after the tool output, and the "
-           "line gives no CPU time, because no rule judges the CPU time of a compile",
-           result.exit == 0 and lines[0] == "tool stderr" and len(found) == 1 and found[0] is not None
-           and found[0].level == "warning" and found[0].check == "compile-memory"
-           and "peak memory" in found[0].message and "CPU" not in found[0].message)
-    bench.table(planted_registry(("compile-memory", 0, 1, "GB")).replace(" warn=0 ", " warn=zero "))
+    expect("a compile at or below the memory limit prints no line after the tool output",
+           result.exit == 0 and result.stderr == b"tool stderr\n")
+    bench.table(planted_registry(("compile-memory", 0.0001, "GB")).replace(" limit=0.0001 ", " limit=zero "))
     result = bench.launch(bench.tool)
     expect("a broken registry changes neither the status nor the output",
            result.exit == 0 and result.stderr == b"tool stderr\n")
@@ -411,22 +406,20 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
 
 
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
-    """A compile over the memory error threshold, and the rows of the ledger that admit it or do not."""
+    """A compile above the memory limit, and the rows of the ledger that admit it or do not."""
     expect = verdicts.expect
-    bench.table(planted_registry(("compile-memory", 0.0001, 0.0002, "GB")))
+    bench.table(planted_registry(("compile-memory", 0.0002, "GB")))
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a compile over the memory error threshold fails, removes the object and gives a rejected record",
+    expect("a compile above the memory limit fails, removes the object and gives a rejected record",
            result.exit == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
            and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory"
            and "no row of" in found_line.message)
     bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.05 | - | the test admits it\n")
     result = bench.launch(bench.tool)
-    found_line = last_finding(result.stderr)
-    expect("a ledger row with a reason admits the compile, with a warning that names the row",
+    expect("a ledger row with a reason admits the compile, and the launcher prints no line",
            result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
-           and found_line is not None and found_line.level == "warning" and "the test admits it" in
-           found_line.message and "compile-memory.txt:4 " in found_line.message)
+           and last_finding(result.stderr) is None)
     bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.000001 | - | a kept value under the peak\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
@@ -435,9 +428,8 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     (bench.root / "build-configuration.txt").write_text(f"{KIND}-bench\n", encoding="utf-8")
     bench.ledger("compile-memory", f"@build/out/source.o | {KIND}-bench | 0.05 | - | the bench build admits it\n")
     result = bench.launch(bench.tool)
-    found_line = last_finding(result.stderr)
     expect("a row of the name of the configuration admits the compile",
-           result.exit == 0 and found_line is not None and "the bench build admits it" in found_line.message)
+           result.exit == 0 and last_finding(result.stderr) is None)
     (bench.root / "build-configuration.txt").unlink()
     bench.ledger("compile-memory", "@build/out/source.o | other-kind | 0.05 | - | another kind\n")
     result = bench.launch(bench.tool)
@@ -495,7 +487,7 @@ def run_step_limit(verdicts: Verdicts) -> None:
         return cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, 1024, 1.0, 1.0, None)
 
     for step, limit in (("compile", step_meter.COMPILE_CPU_LIMIT_S), ("link", step_meter.LINK_CPU_LIMIT_S)):
-        budget = {step_meter.MEMORY_ROWS[step]: (1000.0, 2000.0)}
+        budget = {step_meter.MEMORY_ROWS[step]: 2000.0}
         expect(f"the CPU limit of a {step} is {limit} s, and no registry row gives it",
                step_meter.cpu_limit(step)[0] == limit)
         with check_report.github_actions(False):
@@ -515,18 +507,18 @@ def run_step_limit(verdicts: Verdicts) -> None:
 
 
 def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:
-    """On a CI runner, a compile over the memory error threshold still fails."""
-    bench.table(planted_registry(("compile-memory", 0.0001, 0.0002, "GB")))
+    """On a CI runner, a compile above the memory limit still fails."""
+    bench.table(planted_registry(("compile-memory", 0.0002, "GB")))
     result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
-    verdicts.expect("on a CI runner, a compile over the memory error threshold still fails and removes the object",
+    verdicts.expect("on a CI runner, a compile above the memory limit still fails and removes the object",
                     result.exit == 1 and not bench.object.exists()
                     and bench.record().get("result") == "rejected" and found_line is not None
                     and found_line.level == "error" and found_line.check == "compile-memory")
 
 
 def run_link(bench: Bench, verdicts: Verdicts) -> None:
-    """The record of a link, and a link over the memory error threshold."""
+    """The record of a link, and a link above the memory limit."""
     expect = verdicts.expect
     linked = bench.root / "out" / "program"
     bench.launch(bench.tool)
@@ -536,10 +528,10 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
            and "source" not in link_record and link_record.get("output") == str(linked)
            and not any(key.endswith("instructions") for key in link_record["cost"]))
-    bench.table(planted_registry(("link-memory", 0.0001, 0.0002, "GB")))
+    bench.table(planted_registry(("link-memory", 0.0002, "GB")))
     result = bench.launch(bench.tool, link=True, output=linked)
     found_line = last_finding(result.stderr)
-    expect("a link over the memory error threshold fails with a link-memory error",
+    expect("a link above the memory limit fails with a link-memory error",
            result.exit == 1 and not linked.exists() and found_line is not None
            and found_line.check == "link-memory")
 

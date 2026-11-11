@@ -506,8 +506,8 @@ def host_flags(words: Sequence[str]) -> list[str]:
 def mold_words() -> tuple[str, ...]:
     """Return the words that make the compiler link with the pinned mold (THE PLANTS).
 
-    The thread count is the error threshold of the rule link-threads of the registry of the repository.  The check
-    of the install runs mold two times, and the cache does it one time in a process.
+    The thread count is the limit of the rule link-threads of the registry of the repository.  The check of the
+    install runs mold two times, and the cache does it one time in a process.
 
     Raises:
         BuildError: If the pinned mold is not installed, or the registry gives no integer thread count
@@ -520,9 +520,9 @@ def mold_words() -> tuple[str, ...]:
         raise BuildError(f"the plant cannot link, because {problem}") from None
     rule = rule_registry.load().rules.get(THREADS_RULE)
     threshold = rule.threshold if rule is not None else None
-    if threshold is None or not threshold.error.is_integer() or threshold.error < 1:
+    if threshold is None or not threshold.limit.is_integer() or threshold.limit < 1:
         raise BuildError(f"the rule {THREADS_RULE} of utils/registry.txt gives no thread count above 0")
-    threads = int(threshold.error)
+    threads = int(threshold.limit)
     return (f"-fuse-ld={LINKER_TOOL}", f"-B{directory}/", f"-Wl,--threads={threads}", NO_FORK_WORD)
 
 

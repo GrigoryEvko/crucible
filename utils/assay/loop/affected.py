@@ -1908,7 +1908,7 @@ class SelfTest:
         self.launcher = plant_launcher(self.source_dir)
         (self.source_dir / "utils" / "ledgers").mkdir()
         self.registry = self.source_dir / "utils" / "registry.txt"
-        self.plant_registry(5, 10)
+        self.plant_registry(10)
         shutil.copyfile(false_program, self.build_dir / "bin" / "bad")
         (self.build_dir / "bin" / "bad").chmod(0o755)
         build_text, source_text = str(self.build_dir).encode(), str(self.source_dir).encode()
@@ -1923,9 +1923,9 @@ class SelfTest:
         self.extra_argument = ""
         self.write_tests()
 
-    def plant_registry(self, warn: float, error: float) -> None:
+    def plant_registry(self, limit: float) -> None:
         """Write the registry of the fake source tree, with the measured rule test-memory."""
-        self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("test-memory", warn, error, "GB")]))
+        self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("test-memory", limit, "GB")]))
 
     def write_tests(self) -> None:
         """Write the CTestTestfile.cmake of the fake build tree."""
@@ -2495,7 +2495,7 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         expect("the summary gives the count of skipped tests and the reason",
                f"4 tests skipped, because {REASON_SKIPPED}" in output, output)
 
-        fake.plant_registry(5, 20)
+        fake.plant_registry(20)
         status, output = fake.call()
         expect("a changed registry of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)

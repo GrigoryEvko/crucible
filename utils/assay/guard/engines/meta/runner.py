@@ -639,8 +639,7 @@ def witness(
             way.  None judges the findings of the rule against the ledger of the copy (judged())
         module: The module that gives plant_context and applies(), or None for the module of the rule
             (rule_module()).  A rule with a holder has no module of its own
-        counts_warnings: True when a warning counts as a finding of a plant too.  A measured rule with two equal
-            thresholds gives a warning only
+        counts_warnings: True when a warning counts as a finding of a plant and of a control too
 
     Returns:
         0 when each plant is refused and each control is accepted, 1 otherwise, 2 when the rule has no plant.

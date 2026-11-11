@@ -47,13 +47,13 @@ THE MEASURED RULES
         operating system refused the limit) fails after the step, as the
         limit would stop it.
       * The peak memory, which is almost the same on each run of one step.
-        Over the error threshold, the subcommand removes the output, prints
-        an error line and exits with status 1, unless a row of the ledger
+        Above the limit, the subcommand removes the output, prints an error
+        line and exits with status 1, unless a row of the ledger
         utils/ledgers/<memory rule>.txt admits the output for the kind of the
         build, with a reason: '@build/OUTPUT | KIND | GB | - | REASON', with
         OUTPUT relative to the build directory (meter.py, THE REGISTRY AND THE
-        LEDGERS).  The subcommand reads that ledger only for a step over the
-        error threshold.  Over the warning threshold, it prints a warning line.
+        LEDGERS).  The subcommand reads that ledger only for a step above the
+        limit.  A step that a row admits prints no line.
     The subcommand prints at most one line, after the output of the command,
     in the format of utils/assay/core/report.py.  A GB is 2^30 bytes.
 
@@ -155,7 +155,7 @@ def step_paths(step: str, command: list[str]) -> tuple[str, str | None] | None:
 
 
 def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
-    """Look for the ledger row that keeps an output over the error threshold of its memory row.
+    """Look for the ledger row that keeps an output above the limit of its memory row.
 
     A row keeps the output up to its kept value with the noise of the unit GB (assay.core.budget, THE NOISE).
 
@@ -202,7 +202,7 @@ def cpu_limit(step: str) -> tuple[int, str]:
     return CPU_LIMITS_S[step], f"the hard stop for a {step} that does not end"
 
 
-def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
+def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, float],
           hit: bool) -> tuple[str, tuple[str, str, str] | None]:
     """Decide the result of one step and the one line to print.
 
@@ -210,7 +210,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         step: "compile" or "link"
         output: The absolute output path
         run: The measurement of the command
-        budget: The thresholds of the memory row of the step that the registry gives
+        budget: The limit of the memory row of the step that the registry gives
         hit: Whether ccache gave the output
 
     Returns:
@@ -227,12 +227,12 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
                               f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
                               f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
         return "failed", None
-    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.ERROR:
+    if memory_row in budget and cost_budget.verdict(run.peak_gb, budget[memory_row], None) == cost_budget.ERROR:
         is_admitted, words = admission(memory_row, output, run.peak_gb)
-        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, over the error threshold of "
-                   f"{budget[memory_row][1]:g} GB, and {words}")
         if is_admitted:
-            return "built", ("warning", memory_row, message)
+            return "built", None
+        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, above the limit of "
+                   f"{budget[memory_row]:g} GB, and {words}")
         return "rejected", ("error", memory_row, f"{message}.  The launcher removed the output.  Make the step "
                                                  f"smaller, or add a row with a reason")
     if run.cpu_limit_s is None and run.cpu_s > limit:
@@ -243,10 +243,6 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
             # A runner is slower than the build host, so the error of the hard stop is a warning there.
             return "built", ("warning", LIMIT_CHECK, f"{message}.  {cost_meter.CI_DEMOTION}.")
         return "rejected", ("error", LIMIT_CHECK, f"{message}.  The launcher removed the output")
-    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.WARNING:
-        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, over the warning threshold of "
-                   f"{budget[memory_row][0]:g} GB")
-        return "built", ("warning", memory_row, message)
     return "built", None
 
 

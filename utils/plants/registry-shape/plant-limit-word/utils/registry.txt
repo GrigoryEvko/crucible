@@ -1,0 +1,5 @@
+# a planted registry: the limit of the measured rule is a word and not a number
+format 1
+rule slow-row engine=build scope=builddir ledger=max limit=ten unit=s held-by=loop-gauge doc=XV | a planted time | lower the value
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file
+path utils/registry.txt | the planted registry

@@ -1,25 +1,20 @@
 """The judge of the measured value of one item against a measured rule and the ledger row of the policy max.
 
 THE VERDICT
-    verdict() compares the value of one item with the two thresholds of a
-    measured rule (assay.core.registry).  It also reads the kept value of the
-    ledger row of the item, when the ledger has a row that judges the build:
-      ERROR     the value is over the error threshold, and no row keeps it
-      WARNING   the value is over the warning threshold only, and no row
-                keeps it
-      ADMITTED  a row keeps the item.  The value is over the warning
-                threshold, and it is not more than the kept value with the
-                noise of its unit.  The judge gives a warning that names the
-                row and its reason
+    verdict() compares the value of one item with the limit of a measured
+    rule (assay.core.registry).  It also reads the kept value of the ledger
+    row of the item, when the ledger has a row that judges the build:
+      ERROR     the value is above the limit, and no row keeps it
+      ADMITTED  a row keeps the item.  The value is above the limit, and it
+                is not more than the kept value with the noise of its unit.
+                The judge gives no finding
       RISEN     a row keeps the item, and the value is more than the kept
-                value with the noise of its unit.  The judge gives the level
-                of a value with no row: an error over the error threshold,
-                else a warning.  A row then cannot hide a drift
+                value with the noise of its unit.  The judge gives an error
+                that names the row.  A row then cannot hide a drift
     NO_FINDING is the verdict of each other value.  A value at or below the
-    warning threshold gives no finding, also when a row keeps its item.  A
-    ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
-    row above its value passes, and a write of the rule lowers the row or
-    removes it.  A value that is equal to a threshold or to the kept value
+    limit gives no finding, also when a row keeps its item.  A ledger fails
+    only on a growth (THE POLICIES of assay.core.ledger).  A row above its
+    value passes.  A value that is equal to the limit or to the kept value
     with its noise is not more than it.  Each judge of a measured value
     calls verdict(): judge() of this module, check_report.classify(), and
     the judges of the step meters.
@@ -43,9 +38,8 @@ THE NOISE
     unit too.
 
 THE JUDGE
-    judge() gives the finding of one verdict for a check of the engines.  On a
-    GitHub runner, an error of a time rule is a warning (assay.core.meter, A
-    CI RUNNER), through check_report.judged().
+    judge() gives the finding of one verdict for a check of the engines: an
+    error for ERROR and RISEN, and no finding for each other verdict.
 
 THE ROWS
     The ledger of a rule of the policy max holds one row for each item and
@@ -56,14 +50,8 @@ THE ROWS
     configuration, and the rows of its build kind for each other item.
     row_of() gives the row of one item in the same sequence, with no finding.
     A build with no option has the build kind as the name of its
-    configuration.
-
-    unused() gives a warning for each row of the name of the configuration of
-    the build with an item that the build does not hold.  The bench and fuzz
-    build then gives no warning for a row of its build kind.  A bench object
-    gets a row of the name of the bench and fuzz build.  The build of the
-    build kind gives no warning for that row.  Such a row stays until no build
-    of its configuration makes the item.
+    configuration.  A row whose item the build does not hold gives no
+    finding.
 
 THE STEP METERS
     `loop step`, `loop test-step` and `loop fixture` judge each step with
@@ -81,14 +69,13 @@ from assay.core.value import Value
 # The names are only for the types, and a step meter does not pay their imports.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     from assay.core import report as check_report
 
 # The verdicts of one value (THE VERDICT).
 NO_FINDING = ""
-WARNING = "warning"
 ERROR = "error"
 ADMITTED = "admitted"
 RISEN = "risen"
@@ -104,7 +91,7 @@ class Measure(Value):
     `item` is the item of the ledger key (assay.core.meter, item_of()).
     `path` is the position of the finding.  `said` tells the value, for example
     "the test t took 3.10 s of wall time".  `threshold_rule` names the held
-    rule that gives the thresholds, when it is not the rule of the finding,
+    rule that gives the limit, when it is not the rule of the finding,
     such as header-alone-fixy for the rule header-alone.
     """
 
@@ -116,7 +103,7 @@ class Measure(Value):
     threshold_rule: str | None
 
     def __init__(self, item: str, path: str, value: float, said: str, threshold_rule: str | None = None) -> None:
-        """Hold the item, the position, the value, the words and the held rule of the thresholds."""
+        """Hold the item, the position, the value, the words and the held rule of the limit."""
         super().__init__(item, path, value, said, threshold_rule)
 
 
@@ -180,26 +167,20 @@ def kept_value(value: float) -> float:
     return math.ceil(value * 1000.0 - 1e-9) / 1000.0
 
 
-def verdict(value: float, warning: float, error: float, kept: float | None, noise: float = 0.0) -> str:
-    """Return the verdict of one value against two thresholds and the ledger row of its item (THE VERDICT).
+def verdict(value: float, limit: float, kept: float | None, noise: float = 0.0) -> str:
+    """Return the verdict of one value against the limit and the ledger row of its item (THE VERDICT).
 
     Args:
         value: The value, in the unit of the measured rule
-        warning: The warning threshold
-        error: The error threshold
+        limit: The limit of the rule
         kept: The kept value of the row that keeps the item for the build, or None for no row
         noise: The noise of the unit of the rule (noise_of())
     """
-    if value <= warning:
+    if value <= limit:
         return NO_FINDING
     if kept is None:
-        return ERROR if value > error else WARNING
+        return ERROR
     return ADMITTED if value <= kept * (1.0 + noise) else RISEN
-
-
-def risen_level(value: float, error: float) -> check_report.Level:
-    """Return the level of a RISEN verdict: the level of the value with no row (THE VERDICT)."""
-    return "error" if value > error else "warning"
 
 
 def lookup(
@@ -289,74 +270,31 @@ def judge(rule_id: str, budget: check_report.Budget, measure: Measure, rows: Row
 
     Args:
         rule_id: The ID of the rule of the finding
-        budget: The thresholds: of the rule, or of the held rule that measure.threshold_rule names
+        budget: The limit: of the rule, or of the held rule that measure.threshold_rule names
         measure: The value of the item
         rows: The ledger rows that judge the build
 
     Returns:
-        The finding, or None when the value is not more than a threshold and no row keeps the item
+        The error of a value above the limit that no row keeps, or None
     """
     row = rows.admitted.get(measure.item)
     noise = noise_of(budget.unit)
-    found = verdict(measure.value, budget.warn, budget.error, None if row is None else row.value, noise)
-    if found == NO_FINDING:
+    found = verdict(measure.value, budget.limit, None if row is None else row.value, noise)
+    if found in (NO_FINDING, ADMITTED):
         return None
     from assay.core import report as check_report
 
     of_rule = f" of the measured rule {measure.threshold_rule}" if measure.threshold_rule else ""
+    above = f"{measure.said}, above the limit{of_rule} {budget.limit:g} {budget.unit}"
     if row is None:
-        limit = budget.error if found == ERROR else budget.warn
-        return check_report.judged(
-            "error" if found == ERROR else "warning",
-            measure.path,
-            0,
-            rule_id,
-            f"{measure.said}, over the {found} threshold{of_rule} {limit:g} {budget.unit}",
-        )
-    over = "error" if measure.value > budget.error else "warning"
-    limit = budget.error if over == "error" else budget.warn
+        return check_report.judged("error", measure.path, 0, rule_id, above)
     kept = f"{row.value:g} {budget.unit} with the noise {noise:.0%} of the unit {budget.unit}"
-    if found == ADMITTED:
-        return check_report.Finding(
-            "warning",
-            measure.path,
-            0,
-            rule_id,
-            f"{measure.said}, over the {over} threshold{of_rule} {limit:g} {budget.unit}.  The row {rows.shown}:"
-            f"{row.line} keeps it up to {kept}: {row.reason}",
-        )
     return check_report.judged(
-        risen_level(measure.value, budget.error),
+        "error",
         measure.path,
         0,
         rule_id,
-        f"{measure.said}, over the {over} threshold{of_rule} {limit:g} {budget.unit}, and more than the row "
-        f"{rows.shown}:{row.line} keeps: {kept}.  Make the item smaller.  When the growth is wanted, measure it "
-        f"again and write the row with `python3 utils/bin/guard write --rule {rule_id}`",
+        f"{above}, and more than the row {rows.shown}:{row.line} keeps: {kept}.  Make the item smaller.  When the "
+        f"growth is wanted, measure it again and write the row with `python3 utils/bin/guard write --rule {rule_id} "
+        f"--build-dir DIR --reason TEXT`",
     )
-
-
-def unused(rule_id: str, rows: Rows, held: Iterable[str]) -> list[check_report.Finding]:
-    """Give a warning for each row of the name of the configuration with an item that the build does not hold.
-
-    Complexity: linear in the rows and the held items.
-
-    Args:
-        rule_id: The ID of the rule
-        rows: The ledger rows that judge the build
-        held: Each item that the build holds, also an item that the rule does not judge, such as a ccache hit
-    """
-    from assay.core import report as check_report
-
-    present = frozenset(held)
-    return [
-        check_report.Finding(
-            "warning",
-            rows.shown,
-            row.line,
-            rule_id,
-            f"the build of {rows.kind} holds no {item}.  When no build of {rows.kind} makes it, remove the row",
-        )
-        for item, row in sorted(rows.admitted.items(), key=lambda pair: pair[1].line)
-        if item in rows.own and item not in present
-    ]

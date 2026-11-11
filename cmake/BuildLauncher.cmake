@@ -6,7 +6,7 @@
 # writes its CPU time, wall time and peak memory to <output>.cost, and exits
 # with the status of the step.  A ccache hit gives a record that says "hit"
 # and holds no time.  The launcher also holds the budget of the step: a step
-# over the memory error threshold fails, and RLIMIT_CPU stops a step that
+# above the memory limit fails, and RLIMIT_CPU stops a step that
 # runs away (the docstring of the launcher gives the rules).
 # The rules compile-instructions, compile-memory and link-memory
 # (`guard check --rule ID`) read the records and the outputs.

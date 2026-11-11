@@ -80,7 +80,7 @@ def record_cases(expect: testing.Expect) -> None:
         status, said = run_write(context, "test-memory", "a planted reason")
         expect(
             "guard write writes the ledger of the held rule test-memory: a row with the peak GB of each registered "
-            f"test over the error threshold, and the row of the kind {OTHER_KIND} stays",
+            f"test over the limit, and the row of the kind {OTHER_KIND} stays",
             status == 0
             and ledger_values(context, "test-memory")
             == {
@@ -92,7 +92,7 @@ def record_cases(expect: testing.Expect) -> None:
         status, said = run_write(context, "test-instructions", "a planted reason")
         expect(
             "guard write writes the ledger of the held rule test-instructions: a row with the count in G of each "
-            "registered test over the error threshold, and no row of a test whose record holds no count",
+            "registered test over the limit, and no row of a test whose record holds no count",
             status == 0
             and ledger_values(context, "test-instructions") == {(KIND, "heavy_test"): (600.0, "a planted reason")}
             and "test-instructions.txt holds 1 rows" in said,

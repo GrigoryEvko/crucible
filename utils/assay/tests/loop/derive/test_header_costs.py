@@ -67,9 +67,7 @@ def plant(root: Path, rows: str = GOOD_ROWS, threshold: float = THRESHOLD) -> No
     (root / writer.TABLE).parent.mkdir(parents=True, exist_ok=True)
     (root / writer.TABLE).write_text(TABLE_HEAD + rows, encoding="utf-8")
     (root / rule_registry.REGISTRY_PATH).write_text(
-        rule_registry.planted(
-            [rule_registry.measured_rule(writer.RULE, threshold, threshold, "x", "the planted threshold")]
-        ),
+        rule_registry.planted([rule_registry.measured_rule(writer.RULE, threshold, "x", "the planted threshold")]),
         encoding="utf-8",
     )
 

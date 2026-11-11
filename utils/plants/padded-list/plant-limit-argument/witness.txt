@@ -1,5 +1,5 @@
 # The plugin needs the threshold of the rule padded-list, a whole number of 1
-# or more.  Each compile of the tree gets the error threshold of the row of
+# or more.  Each compile of the tree gets the limit of the row of
 # utils/registry.txt.  A compile with no threshold, with 0 and with a word
 # fails when the plugin loads.  A unit with the threshold of the registry
 # compiles.

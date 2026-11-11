@@ -559,11 +559,7 @@ def judge(
     level = check_report.classify(count, budget)
     if level is None:
         return [], []
-    threshold = budget.error if level == "error" else budget.warn
-    message = (
-        f"the median of the runs is {count:g} G instructions, over the {level} threshold of {threshold:g} G "
-        f"instructions"
-    )
+    message = f"the median of the runs is {count:g} G instructions, above the limit of {budget.limit:g} G instructions"
     return [check_report.judged(level, place, 0, BUILD_RULE, message)], []
 
 
@@ -1149,17 +1145,16 @@ def self_test() -> int:
     )
 
     planted_jobs = 24
-    budgets = {BUILD_RULE: check_report.Budget(BUILD_RULE, 10, 50, "G", "m")}
-    quiet = {"build": Median(20, 200, 30, 1), "tests": Median(20, 200, 9999, 1)}
+    budgets = {BUILD_RULE: check_report.Budget(BUILD_RULE, 50, "G", "m")}
+    quiet = {"build": Median(20, 200, 50, 1), "tests": Median(20, 200, 9999, 1)}
     found, notes = judge(quiet, budgets, "h")
     expect(
-        "an instruction count of the build over the warning threshold gives a warning of edit-build-instructions, "
-        "and the count of the tests gives no finding",
-        [(f.check, f.level) for f in found] == [(BUILD_RULE, "warning")] and not notes,
+        "an instruction count of the build at the limit gives no finding, and the count of the tests gives none",
+        not found and not notes,
     )
     found, _ = judge({**quiet, "build": Median(20, 200, 60, 1)}, budgets, "h")
     expect(
-        "an instruction count of the build over the error threshold is an error",
+        "an instruction count of the build above the limit is an error of edit-build-instructions",
         [(f.check, f.level) for f in found] == [(BUILD_RULE, "error")],
     )
     found, notes = judge({**quiet, "build": Median(20, 9999, None, 90)}, budgets, "h")
@@ -1189,10 +1184,11 @@ def self_test() -> int:
         and printed[3].split()[-1] == "2.0"
         and any(line.startswith("median edit build") and "120.0" in line for line in printed),
     )
+    loud = {**quiet, "build": Median(20, 200, 60, 1)}
     record = {
         "jobs": planted_jobs,
         "steps": [asdict(step) for step in steps],
-        "medians": {name: asdict(median) for name, median in quiet.items()},
+        "medians": {name: asdict(median) for name, median in loud.items()},
     }
     parsed = parsed_record(json.loads(json.dumps(record)), "the record")
     found, notes = judged_record(parsed, budgets, "h")
@@ -1200,7 +1196,7 @@ def self_test() -> int:
         "judged_record judges the median of the build of a record that went through JSON",
         [f.check for f in found] == [BUILD_RULE] and not notes,
     )
-    direct, _ = judged_record(GaugeRecord(quiet), budgets, "h")
+    direct, _ = judged_record(GaugeRecord(loud), budgets, "h")
     expect(
         "a record that went through JSON gives the findings of the record of the run",
         [item.text() for item in found] == [item.text() for item in direct],

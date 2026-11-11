@@ -29,16 +29,16 @@ NIGHTLY = tiers.Tier.NIGHTLY
 REGISTRY = (
     "format 1\n"
     "rule tested engine=meta scope=tracked ledger=none doc=XV | a fault | repair it\n"
-    "rule gauged engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-gauge doc=XV | a time | "
+    "rule gauged engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-gauge doc=XV | a time | "
     "lower it\n"
-    "rule launched engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-fixture doc=XV | a time | "
+    "rule launched engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-fixture doc=XV | a time | "
     "lower it\n"
-    "rule header-alone engine=build scope=builddir ledger=max warn=1 error=2 unit=MB doc=XV | a size | lower it\n"
-    "rule alone engine=build scope=builddir ledger=max warn=1 error=2 unit=MB held-by=header-alone doc=XV | a size | "
+    "rule header-alone engine=build scope=builddir ledger=max limit=2 unit=MB doc=XV | a size | lower it\n"
+    "rule alone engine=build scope=builddir ledger=max limit=2 unit=MB held-by=header-alone doc=XV | a size | "
     "lower it\n"
     "rule reconfigure-noop engine=build scope=builddir ledger=none doc=XV | a compile | repair it\n"
     "rule lonely engine=meta scope=tracked ledger=none doc=XV | a fault | repair it\n"
-    "rule stranger engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=nobody doc=XV | a time | "
+    "rule stranger engine=build scope=builddir ledger=max limit=2 unit=s held-by=nobody doc=XV | a time | "
     "lower it\n"
 )
 
