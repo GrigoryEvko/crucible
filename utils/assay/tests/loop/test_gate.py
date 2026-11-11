@@ -16,7 +16,8 @@ inputs in each other configuration of objects.  A red test there must
 reject the commit.  A change of the module of the rule that reads the build
 must run that test in each other configuration of objects.  A moved row of
 a counted ledger with no configuration row must land with the write of the
-gate.
+gate.  The first run of each configuration of objects must end with the
+rule reconfigure-noop, and a failure of that rule must reject the commit.
 """
 
 import itertools
@@ -137,7 +138,8 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 """
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
-# of the planted ledger, as after the fold of the gate.  `write` lowers the count 2 of the planted ledger to 1, as the
+# of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
+# reconfigure-noop gives findings.  `write` lowers the count 2 of the planted ledger to 1, as the
 # write of a fall does, and writes its rule.  The write of trait-guard moves the row of include/old.h to
 # include/new.h, as the write of a divided header does (THE MOVE of assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for
 # SLOW_S seconds.  It then writes its rule and the times of its start and its end to intervals.txt.
@@ -156,6 +158,8 @@ if words[0] == "check":
     with open(build / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
     mode = (build / "mode.txt").read_text().strip() if (build / "mode.txt").is_file() else ""
+    if mode == "reconfigure" and words[2] == "reconfigure-noop":
+        sys.exit(1)
     if mode == "parse-falls":
         shown = ["git", "show", "HEAD:utils/ledgers/door-unit.txt"]
         if "| 1 |" in subprocess.run(shown, capture_output=True, text=True, check=False).stdout:
@@ -490,7 +494,10 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Hold the verdict of a run: a red test that is green alone, a test that is red alone too, and a build error."""
+    """Hold the verdict of a run: a red test that is green alone, a test that is red alone too, and a build error.
+
+    A second configure that compiles again rejects the commit too (RECONFIGURE_RULE).
+    """
     with tempfile.TemporaryDirectory(prefix="gate-run-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -501,7 +508,7 @@ def run_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         verdicts: dict[str, gate.Verdict] = {}
         outputs: dict[str, str] = {}
-        for mode in ("clean", "flaky", "broken", "build", "late"):
+        for mode in ("clean", "flaky", "broken", "build", "late", "reconfigure"):
             planted = planted_gate(work, root, tree, mode)
 
             def run(planted: gate.Gate = planted) -> gate.Verdict:
@@ -537,12 +544,24 @@ def run_cases(expect: testing.Expect) -> None:
             "an exit other than 0 after a run with no red test rejects the commit",
             not verdicts["late"].is_accepted and "with no red test" in verdicts["late"].problems[0],
         )
+        reconfigured = verdicts["reconfigure"]
+        expect(
+            f"a second configure that compiles again rejects the commit, and the focus gives the configuration with no "
+            f"test: {reconfigured.problems}",
+            not reconfigured.is_accepted
+            and reconfigured.problems == (reconfigured.problems[0],)
+            and reconfigured.problems[0].startswith("default: the rule reconfigure-noop gives findings")
+            and reconfigured.focus == (gate.Focus("default"),),
+        )
         expect("each run leaves the warm tree at the commit", git.head(tree) == commit)
         build = tree / "build"
+        checks = (build / "checks.txt").read_text(encoding="utf-8").splitlines()
         expect(
-            "the suite of one commit gets no base of the change, and no rule runs again",
-            (build / "base.txt").read_text(encoding="utf-8") == "-" and not (build / "checks.txt").exists(),
+            f"the suite of one commit gets no base of the change, and only the rule reconfigure-noop runs after it, "
+            f"one time in each run with no other problem: {checks}",
+            (build / "base.txt").read_text(encoding="utf-8") == "-" and checks == ["reconfigure-noop -"] * 3,
         )
+        (build / "checks.txt").unlink()
         commit_change(root, "notes.txt", "the first of two commits\n")
         second = commit_change(root, "notes.txt", "the second of two commits\n")
         stacked = planted_gate(work, root, tree, "clean")
@@ -552,10 +571,10 @@ def run_cases(expect: testing.Expect) -> None:
 
         verdict, _ = testing.captured(run_stacked)
         expect(
-            "the suite of two commits gets no base of the change either, and no rule runs again",
+            "the suite of two commits gets no base of the change either, and only the rule reconfigure-noop runs",
             verdict.is_accepted
             and (build / "base.txt").read_text(encoding="utf-8") == "-"
-            and not (build / "checks.txt").exists(),
+            and (build / "checks.txt").read_text(encoding="utf-8") == "reconfigure-noop -\n",
         )
 
 
@@ -596,6 +615,11 @@ def falls_cases(expect: testing.Expect) -> None:
         expect(
             "after the fold, the tests run again on the new commit",
             "folded into the commit" in printed and "each configuration of the run runs again" in printed,
+        )
+        checks = (tree / "build" / "checks.txt").read_text(encoding="utf-8").splitlines()
+        expect(
+            f"the rule reconfigure-noop runs after the first build of the run, and not again after the fold: {checks}",
+            checks == ["reconfigure-noop -"],
         )
 
 
@@ -776,15 +800,26 @@ def touched_cases(expect: testing.Expect) -> None:
             words = tree / "build-bench-fuzz" / "words.txt"
             lines = words.read_text(encoding="utf-8").splitlines() if words.is_file() else []
             words.unlink(missing_ok=True)
+            checked = tree / "build-bench-fuzz" / "checks.txt"
+            checks = checked.read_text(encoding="utf-8").splitlines() if checked.is_file() else []
+            checked.unlink(missing_ok=True)
             only = planted.logs / "bench-fuzz.only.txt"
             last = lines[-1] if lines else ""
             if last.startswith("-j 1 --only ") and only.is_file():
                 last = f"--only {only.read_text(encoding='utf-8').strip()}"
             steps = printed.count("memory: ")
-            holds = verdict.is_accepted and verdict.configurations == expected and last == shown and steps == 1
+            reconfigured = ["reconfigure-noop -"] if lines else []
+            holds = (
+                verdict.is_accepted
+                and verdict.configurations == expected
+                and last == shown
+                and steps == 1
+                and checks == reconfigured
+            )
             label_text = (
-                f"a change of {label} runs in {expected} with the words {shown!r} in the bench and fuzz build, in one "
-                f"heavy step, and the gate gives {verdict.configurations} and {last!r} in {steps} heavy steps"
+                f"a change of {label} runs in {expected} with the words {shown!r} in the bench and fuzz build, and the "
+                f"rule reconfigure-noop after each run in that build, in one heavy step.  The gate gives "
+                f"{verdict.configurations}, {last!r} and the checks {checks} in {steps} heavy steps"
             )
             expect(label_text if holds else f"{label_text}.  The output of the gate:\n{printed}", holds)
             previous = commit
@@ -1036,6 +1071,26 @@ def base_run_cases(expect: testing.Expect) -> None:
             f"the run of the base runs the red tests of the focus with --only, a configuration with no red test in the "
             f"mode of the changed inputs, and no other configuration.  Its problems are those of the batch: the batch "
             f"gives {batch_verdict.focus}, and the base runs {sorted(ran)} with {base_verdict.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        notes = commit_change(root, "notes.txt", "a change of the notes\n")
+        reconfigured = planted_gate(work, root, tree, "reconfigure", OTHER_BUILDS)
+        batch_verdict, _ = testing.captured(
+            lambda: reconfigured.check(gate.Candidate(commit, notes, ("notes.txt",)), False)
+        )
+        base_verdict, printed = testing.captured(
+            lambda: reconfigured.check(gate.Candidate(commit, commit, ("notes.txt",), batch_verdict.focus), True)
+        )
+        holds = (
+            batch_verdict.focus == (gate.Focus("default"),)
+            and base_verdict.configurations == ("default",)
+            and base_verdict.problems == batch_verdict.problems
+            and base_verdict.problems[0].startswith("default: the rule reconfigure-noop gives findings")
+        )
+        label = (
+            f"a problem of the rule reconfigure-noop gives the focus of its configuration, and the run of the base "
+            f"runs the rule again with the words of the batch: the batch gives {batch_verdict.problems}, and the base "
+            f"gives {base_verdict.problems}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 

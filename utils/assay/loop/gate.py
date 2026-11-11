@@ -165,6 +165,14 @@ THE RUN OF A CONFIGURATION
          A second run of these checks gives no new verdict.  A test that gives
          a skip does not reject the commit, and the gate writes its name.
          A red test that runs alone writes its output to its log.
+      4. A configuration of objects, after step 3 with no problem: `guard
+         check --rule reconfigure-noop --build-dir BUILD` (RECONFIGURE_RULE).
+         The rule configures the build of the warm tree again and builds it
+         two times.  A build that compiles again or a dependency of the log
+         of Ninja that does not exist rejects the commit.  No test of the
+         suite can configure the build that runs it, so the gate runs the
+         rule.  The step runs in each mode of THE SELECTION and in THE RUN OF
+         THE BASE.  The run again after THE FALLS does not run it.
     Each step runs the masters of the warm tree.  Then the tests of the
     commit judge the commit.  The step writes its two outputs to a log in
     the directory of the logs of the gate (THE LOGS).  The first
@@ -361,6 +369,9 @@ LEDGER_PREFIX = "utils/ledgers/"
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
+# The rule that configures the build of a configuration of objects again after its first build (THE RUN OF A
+# CONFIGURATION).
+RECONFIGURE_RULE = "reconfigure-noop"
 # The engines and the policies of a counted rule (THE COUNTED RULES).
 COUNTED_ENGINES = frozenset({rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF})
 COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT})
@@ -1203,9 +1214,9 @@ class Step:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
         `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  After the tests, THE FALLS
-        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger.  The run
-        of ALWAYS first builds the target build.ninja when the other configurations wait for it (THE THREADS).  The
-        second result holds the tests that are red alone too.
+        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger, and it
+        does not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other
+        configurations wait for it (THE THREADS).  The second result holds the tests that are red alone too.
         """
         counted: Mapping[str, Sequence[str]] = {} if is_again else self.counted
         problem = self.configure(configuration)
@@ -1247,7 +1258,9 @@ class Step:
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
         if self.run_logged(warnings, warnings_log, self.environment, proc.TOOL_S):
             return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], ()
-        return [], ()
+        if is_again:
+            return [], ()
+        return self.checked(configuration, (RECONFIGURE_RULE,), self.environment), ()
 
     def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...]]:
         """Run one configuration, or its tests again after THE FALLS, and give each problem and the tests red alone too."""
