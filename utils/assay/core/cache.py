@@ -36,10 +36,9 @@ THE WORK ROOT
 THE LIMITS
     LIMITS gives the size limit of each subdirectory of the root, in
     allocated bytes.  It is the one place that declares a limit.  The
-    eviction of each cache reads its row, and the rule cache-size (`guard
-    check --rule cache-size`) reports a subdirectory over its row.  A size in
-    this module is the space that a file takes on the disk (st_blocks), so a
-    lock or a small file counts with its block.
+    eviction of each cache reads its row.  A size in this module is the space
+    that a file takes on the disk (st_blocks), so a lock or a small file
+    counts with its block.
 
 THE COMPILED MODULES
     Each master of utils/bin sets sys.pycache_prefix to the cache "pycache",
@@ -494,22 +493,6 @@ def estimated_bytes(directory: Path, rng=None, full_walk: int = FULL_WALK) -> in
     if files <= full_walk:
         size, _files = _walk(str(directory), None, chooser)
     return int(size)
-
-
-def sizes(root: Path) -> dict[str, int]:
-    """Return the estimated allocated bytes of each cache in a root, by its name (THE SAMPLE).
-
-    A cache is each subdirectory of the root that is not a symbolic link.
-    The rule cache-size compares the bytes of each cache with the row of
-    LIMITS of its name.  A missing root has no cache.
-
-    Complexity: one sample of each cache (estimated_bytes()).
-    """
-    if not root.is_dir():
-        return {}
-    return {
-        path.name: estimated_bytes(path) for path in sorted(root.iterdir()) if path.is_dir() and not path.is_symlink()
-    }
 
 
 @contextlib.contextmanager

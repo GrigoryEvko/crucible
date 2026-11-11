@@ -14,9 +14,7 @@ THE CONTEXT
 THE BUILD DIRECTORY
     A rule with the scope word builddir reads the build directory of
     --build-dir.  require_build() raises NotApplicable when the call gives no
-    build directory, and the run then exits 77.  The rule cache-size reads
-    the caches of the host and no build.  cache_root and cache_limits give
-    the root of the caches and the limit of each one.
+    build directory, and the run then exits 77.
 
 THE PATHS
     A call can name paths with --path.  A rule that reads only the paths
@@ -61,10 +59,9 @@ THE MODULES THAT JUDGE THEIR LEDGER
 Complexity: one read of each input that a rule of the call reads.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from assay.core import cache
 from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
@@ -98,8 +95,6 @@ class BuildContext:
         "_model",
         "add_configuration",
         "build_dir",
-        "cache_limits",
-        "cache_root",
         "paths",
         "registry",
         "root",
@@ -111,19 +106,15 @@ class BuildContext:
         root: Path,
         build_dir: Path | None,
         *,
-        cache_root: Path | None = None,
-        cache_limits: Mapping[str, int] | None = None,
         registry: rule_registry.Registry | None = None,
         paths: Sequence[str] = (),
         configuration: build_config.BuildConfiguration | None = None,
     ) -> None:
-        """Keep the root, the build directory, the caches, the registry, the paths and a planted configuration.
+        """Keep the root, the build directory, the registry, the paths and a planted configuration.
 
         Args:
             root: The root of the tree
             build_dir: The build directory, or None when the call gives none
-            cache_root: The root of the caches, or None for the root of assay.core.cache
-            cache_limits: The limit of each cache, or None for LIMITS of assay.core.cache
             registry: The registry that gives the thresholds of the measured rules, or None for the registry of
                 this tree
             paths: The paths that the call names with --path (THE PATHS)
@@ -134,8 +125,6 @@ class BuildContext:
         self.build_dir = build_dir
         self.paths: tuple[str, ...] = tuple(paths)
         self.rule: rule_registry.Rule | None = None
-        self.cache_root = cache_root if cache_root is not None else cache.base_root()
-        self.cache_limits: Mapping[str, int] = cache_limits if cache_limits is not None else cache.LIMITS
         self.registry = registry
         self._census: tuple[build_census.Census, bool] | None = None
         self._entries: tuple[compdb.CompileEntry, ...] | None = None

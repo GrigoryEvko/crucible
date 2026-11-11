@@ -31,8 +31,6 @@ THE FILE
                                           a registered test and its command
         test-record NAME [FIELD=VALUE]... the record of the last run of a test
         file PATH size=BYTES              a file of the tree with that number of bytes
-        cache-file PATH size=BYTES        a file in the root of the caches
-        limit NAME BYTES                  the limit of one cache, as an alternative to LIMITS
         configure seconds=SECONDS         a last configure that ends SECONDS after its start
 
     The fields of a compile:
@@ -103,7 +101,6 @@ BUILD_FILE = "build.txt"
 FORMAT = "1"
 BUILD = "build"
 COPIED_BUILD = "planted-build"
-CACHES = "cache"
 TOOLS = "planted-tools"
 GIGA = 10**9
 KB_PER_GB = cost_meter.KB_PER_GB
@@ -182,7 +179,6 @@ class Planted:
     deps: MutableMapping[str, str] = field(default_factory=dict)
     tests: list[Mapping[str, object]] = field(default_factory=list)
     cache: MutableMapping[str, str | tuple[str, str]] = field(default_factory=dict)
-    limits: MutableMapping[str, int] = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)
     configures: list[tuple[float, float]] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
@@ -609,10 +605,6 @@ def read_rows(plant_file_path: Path, root: Path, build: Path) -> Planted:
                 plant_test_record(row, root, build)
             elif kind == "file":
                 plant_file(row, root)
-            elif kind == "cache-file":
-                plant_file(row, root / CACHES)
-            elif kind == "limit" and len(row.words) == 3:
-                planted.limits[row.words[1]] = rows_grammar.number(row.words[2], 1 << 50, row, "limit")
             elif kind == "configure" and len(row.words) in (2, 3):
                 fields = rows_grammar.fields(row, CONFIGURE_FIELDS, start=1)
                 if "seconds" not in fields:
@@ -687,9 +679,7 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
 
     A plant with no build.txt and no planted-build/ gives a context with no
     build directory.  A plant that holds utils/registry.txt gives the
-    thresholds of that registry.  The root of the caches is the directory
-    cache/ of the copy, also when the plant has none.  The context then does
-    not read the caches of the host.
+    thresholds of that registry.
 
     Raises:
         NotApplicable: If build.txt or the planted registry does not obey its rows
@@ -715,11 +705,4 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
     configuration = None
     if planted.kind is not None:
         configuration = build_config.BuildConfiguration(planted.kind, ((build_config.KIND_KEY, planted.kind),))
-    return BuildContext(
-        scratch,
-        build,
-        cache_root=scratch / CACHES,
-        cache_limits=planted.limits or None,
-        registry=registry,
-        configuration=configuration,
-    )
+    return BuildContext(scratch, build, registry=registry, configuration=configuration)

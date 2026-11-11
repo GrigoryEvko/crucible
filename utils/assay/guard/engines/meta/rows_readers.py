@@ -177,7 +177,7 @@ def host_program() -> Iterator[Path]:
             compile_program(compiler, program)
             yield program
         return
-    # The rule cache-size gives a warning for a cache with no row of LIMITS, and the eviction reads that row.
+    # The eviction of the cache reads its row of LIMITS.  A cache with no row has no eviction.
     limit = cache.LIMITS.get(CACHE_NAME)
     if limit is not None:
         cache.hold_bound(directory, limit)

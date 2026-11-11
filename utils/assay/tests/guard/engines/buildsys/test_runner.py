@@ -2,7 +2,7 @@
 
 `guard selftest tests.guard.engines.buildsys.test_runner` runs the test.  Each
 case gives the context a planted build or no build, and reads the inputs or
-runs the rule cache-size of the registry.  Exit 0 when each case holds, else 1.
+runs the rule build-order of the registry.  Exit 0 when each case holds, else 1.
 """
 
 import tempfile
@@ -27,7 +27,7 @@ def raises_not_applicable(action: object) -> bool:
 
 def context_cases(expect: testing.Expect) -> None:
     """A context with no build refuses each input of a build, and a context reads each input one time."""
-    empty = runner.BuildContext(REPO_ROOT, None, cache_root=Path("/nonexistent"), cache_limits={})
+    empty = runner.BuildContext(REPO_ROOT, None)
     expect("require_build() with no build directory is not applicable", raises_not_applicable(empty.require_build))
     expect("kind() with no build directory is not applicable", raises_not_applicable(empty.kind))
     expect("census() with no build directory is not applicable", raises_not_applicable(empty.census))
@@ -35,7 +35,7 @@ def context_cases(expect: testing.Expect) -> None:
         "budget() of an ID with no measured rule is not applicable",
         raises_not_applicable(lambda: empty.budget("registry-shape")),
     )
-    expect("budget() of a measured rule gives its thresholds", empty.budget("cache-size").error == 2.0)
+    expect("budget() of a measured rule gives its thresholds", empty.budget("header-constexpr-ops").error == 1e6)
     expect(
         "shown() gives a path of the tree relative to the root",
         empty.shown(REPO_ROOT / "utils" / "registry.txt") == "utils/registry.txt",
@@ -51,24 +51,22 @@ def context_cases(expect: testing.Expect) -> None:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run the rule cache-size on its plants, and give its findings to the judge of the ledger."""
-    rule = rule_registry.load().rules["cache-size"]
+    """Run the rule build-order on its plants, and give its findings to the judge of the ledger."""
+    rule = rule_registry.load().rules["build-order"]
     status, _ = testing.captured(lambda: runner.witness(rule))
-    expect("the witness of the rule cache-size holds", status == 0)
+    expect("the witness of the rule build-order holds", status == 0)
     with tempfile.TemporaryDirectory(prefix="test-runner-") as scratch:
-        plant = Path(scratch) / "plant-over"
-        plant.mkdir()
-        (plant / planted.BUILD_FILE).write_text(
-            "format 1\ncache-file neg/aa/entry size=65536\nlimit neg 4096\n", encoding="utf-8"
-        )
+        plant = REPO_ROOT / meta_runner.PLANTS / rule.id / "plant-link-order-only"
         context = planted.plant_context(plant, Path(scratch) / "tree")
         findings = context.findings_of(rule)
         expect(
-            "findings_of() gives the error of a cache over twice its limit",
-            [item.level for item in findings] == ["error"] and context.rule is rule,
+            "findings_of() gives the error of a compile that waits for a link",
+            bool(findings) and all(item.level == "error" for item in findings) and context.rule is rule,
         )
         status, said = testing.captured(lambda: meta_runner.run(rule, context, None))
-        expect("the run of the rule exits 1 with an error", status == 1 and "1 error(s)" in said)
+        expect(
+            "the run of the rule exits 1 with an error", status == 1 and f"{len(findings)} error(s)" in said
+        )
 
 
 def main(argv: list[str]) -> int:

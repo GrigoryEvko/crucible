@@ -37,8 +37,6 @@ fixture neg_planted test/neg/planted.cpp instructions=2 | test/neg/planted.cpp i
 test exe_planted labels=ci_guard,meta | {build}/test/exe_planted
 test-record exe_planted wall=4.5 cpu=4 peak=0.75 instructions=3
 file include/one.h size=100
-cache-file neg/aa/entry size=64
-limit neg 4096
 """
 
 
@@ -124,12 +122,6 @@ def build_cases(expect: testing.Expect) -> None:
         )
         expect("a file row writes a file of the tree", (context.root / "include" / "one.h").stat().st_size == 100)
         expect(
-            "a cache-file row writes a file in the root of the caches, and a limit row gives its limit",
-            context.cache_root is not None
-            and (context.cache_root / "neg" / "aa" / "entry").stat().st_size == 64
-            and context.cache_limits == {"neg": 4096},
-        )
-        expect(
             "the CMake cache names the planted tools and the cache rows",
             cmake_reader.cache(build)["CRUCIBLE_PLANTED"].value == "yes",
         )
@@ -182,15 +174,12 @@ def registry_cases(expect: testing.Expect) -> None:
         plant = Path(scratch) / "plant-registry"
         (plant / "utils").mkdir(parents=True)
         (plant / rule_registry.REGISTRY_PATH).write_text(
-            rule_registry.planted([rule_registry.measured_rule("cache-size", 3, 9, "x")]), encoding="utf-8"
+            rule_registry.planted([rule_registry.measured_rule("planted-size", 3, 9, "x")]), encoding="utf-8"
         )
         context = planted.plant_context(plant, Path(scratch) / "tree")
         expect("a plant with no build.txt gives no build directory", context.build_dir is None)
-        budget = context.budget("cache-size")
+        budget = context.budget("planted-size")
         expect("a planted registry gives the thresholds of a rule", (budget.warn, budget.error) == (3.0, 9.0))
-        expect(
-            "the root of the caches is in the copy of the plant", context.cache_root == Path(scratch) / "tree" / "cache"
-        )
         expect("the build kind file name is the one of the meter", cost_meter.KIND_FILE == "build-kind.txt")
 
 
