@@ -2532,7 +2532,7 @@ A row of the ledger of a measured rule of the policy max, `utils/ledgers/<rule>.
 
 Three rules with a limit have a ledger of a different policy. The rule `instruction-total` compares a total with the baseline rows of its ledger, and a write with no reason lowers the baseline (rule 16). The rules `heavy-include` and `padded-list` count findings in their ledgers. A row gives no output, with a reason or with none.
 
-The other rules of the table count findings or facts, and some of them also give a warning. A check writes its warnings to `<build>/check-warnings`, because ctest shows no output of a test that passes. `python3 utils/bin/guard warnings BUILD_DIR` prints them, and the CI step "Check warnings" runs it after the tests. Each test of the table has the label `ci_guard`, so it runs in each local test run and in the step "Test" of the CI build job.
+The other rules of the table count findings or facts, and no rule gives a warning. A measure that fails nothing is a plain number. A check writes such numbers to `<build>/check-warnings`, because ctest shows no output of a test that passes. `python3 utils/bin/guard warnings BUILD_DIR` prints them after the totals of the build, and the CI step "Check warnings" runs it after the tests. Each test of the table has the label `ci_guard`, so it runs in each local test run and in the step "Test" of the CI build job.
 
 | Budget | What it measures | Limit | Held by | Runs in |
 |---|---|---|---|---|
