@@ -96,8 +96,6 @@ BUILD = REPO_ROOT / "build"
 CHECKS = (
     ("prose", (sys.executable, str(GUARD), "check", "--rule", "prose-bans")),
     ("derived files", (sys.executable, str(GUARD), "check", "--rule", "derived-files", "--build-dir", str(BUILD))),
-    ("walk units", (sys.executable, str(GUARD), "check", "--rule", "walk-units")),
-    ("header lists", (sys.executable, str(GUARD), "check", "--rule", "header-lists")),
 )
 LABEL_WIDTH = 34
 

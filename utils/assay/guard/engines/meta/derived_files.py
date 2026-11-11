@@ -8,16 +8,29 @@ THE TARGETS
                           manifest (assay.loop.derive.witness_fixtures)
         header-costs      the kind of each heavy and light row of the rule
                           table (assay.loop.derive.header_costs)
+        walk-units        test/layer/walk-checks.txt, the check files that the
+                          walk units compile a second time, from the parse
+                          trees of include/ and test/layer/checks/
+                          (assay.loop.derive.walk_units)
+        header-lists      test/layer/walk-headers.cmake and
+                          test/permission-row-headers.cmake, the header lists
+                          of CMake, from the parse trees of include/
+                          (assay.loop.derive.header_lists)
         mint-inventory    misc/mint-inventory.md, from the mint records of the
                           quarantine plugin in the objects of a build
                           (assay.loop.derive.mint_inventory)
         row-hashes        utils/tools/row_hash_golden.txt, the output of the
                           program dump_row_hashes of a build
                           (assay.loop.derive.row_hashes)
-    The rule walk-units keeps the check of test/layer/walk-checks.txt,
-    because it reads the parse trees of the tree.  The targets aten-ops and
-    session-oracle read inputs that are not in the tree, and their own checks
-    hold them.
+    The targets aten-ops and session-oracle read inputs that are not in the
+    tree, and their own checks hold them.
+
+THE PARSE TREES
+    The targets walk-units and header-lists read the parse trees of one
+    context of the engine tsast (assay.guard.engines.tsast.runner).  The
+    context keeps each tree, so the two targets load each tree one time.
+    Each target gives an error for each file that the kit cannot parse.
+    With no pinned parse kit, the rule does not apply.
 
 THE BUILD
     The targets mint-inventory and row-hashes read the build of --build-dir:
@@ -30,15 +43,19 @@ THE BUILD
 THE PLANTS
     The control control-agree holds a rule table with a witness row and the
     heavy and light rows.  It also holds a registry, the header of the
-    witness row, its fixture and the manifest.  The copy of each other plant
-    starts with that tree, and the files of the plant go over it
-    (runner.copy_overlay()).  A plant has no build.  The plants hold the
-    targets witness-fixtures and header-costs.  The test of the module
-    mint_inventory compares the inventory with a planted census.  The test
-    of the module row_hashes compares the golden with the output of a
-    planted program.
+    witness row, its fixture and the manifest.  It also holds the list of the
+    walk units and the two header lists, with no row and no header.  The copy
+    of each other plant starts with that tree, and the files of the plant go
+    over it (runner.copy_overlay()).  A plant has no build.  The plants hold
+    the targets witness-fixtures, header-costs, walk-units and header-lists.
+    A copy cannot remove a file of the base.  Thus the tests of the modules
+    walk_units and header_lists hold a tree with no list and a tree with no
+    fragment.  The test of the module mint_inventory compares the inventory
+    with a planted census.  The test of the module row_hashes compares the
+    golden with the output of a planted program.
 
-Complexity: linear in the rows of the rule table, the fixtures, the mint records and the lines of the golden.
+Complexity: linear in the rows of the rule table, the fixtures, the mint records and the lines of the golden.  The
+parse trees add the cost of the analysis of the walk units (assay.loop.derive.walk_units).
 """
 
 from pathlib import Path
@@ -46,9 +63,10 @@ from pathlib import Path
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import ruletable
-from assay.guard.engines.meta.runner import MetaContext, copy_overlay
+from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_overlay
 from assay.guard.engines.plugin import runner as plugin_runner
-from assay.loop.derive import header_costs, mint_inventory, row_hashes, witness_fixtures
+from assay.guard.engines.tsast.runner import TsastContext
+from assay.loop.derive import header_costs, header_lists, mint_inventory, row_hashes, walk_units, witness_fixtures
 from assay.readers import tsast
 
 RULE = "derived-files"
@@ -79,6 +97,19 @@ def header_part(context: MetaContext) -> list[check_report.Finding]:
         return [check_report.Finding("error", header_costs.TABLE.as_posix(), 0, RULE, message)]
 
 
+def tree_part(context: MetaContext) -> list[check_report.Finding]:
+    """Return the findings of the targets walk-units and header-lists, which read the parse trees (THE PARSE TREES).
+
+    Raises:
+        NotApplicable: If the pinned parse kit is not installed
+    """
+    trees = TsastContext(context.root, context.build_dir, keep=True)
+    try:
+        return [*walk_units.drift(trees), *header_lists.drift(trees)]
+    except tsast.KitMissing as problem:
+        raise NotApplicable(f"the parse kit is not installed: {problem}") from None
+
+
 def inventory_part(context: MetaContext) -> list[check_report.Finding]:
     """Return the finding of the target mint-inventory, or a warning when the build does not apply (THE BUILD)."""
     if context.build_dir is None:
@@ -86,7 +117,7 @@ def inventory_part(context: MetaContext) -> list[check_report.Finding]:
         return [check_report.Finding("warning", mint_inventory.INVENTORY, 0, RULE, message)]
     try:
         return mint_inventory.drift(plugin_runner.PluginContext(context.root, context.build_dir))
-    except (plugin_runner.NotApplicable, tsast.KitMissing) as problem:
+    except plugin_runner.NotApplicable as problem:
         message = f"the inventory was not compared: {problem}"
         return [check_report.Finding("warning", mint_inventory.INVENTORY, 0, RULE, message)]
     except mint_inventory.InventoryError as problem:
@@ -110,5 +141,15 @@ def golden_part(context: MetaContext) -> list[check_report.Finding]:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give the findings of each target of THE TARGETS."""
-    return [*witness_part(context), *header_part(context), *inventory_part(context), *golden_part(context)]
+    """Give the findings of each target of THE TARGETS.
+
+    Raises:
+        NotApplicable: If the pinned parse kit is not installed (THE PARSE TREES)
+    """
+    return [
+        *tree_part(context),
+        *witness_part(context),
+        *header_part(context),
+        *inventory_part(context),
+        *golden_part(context),
+    ]

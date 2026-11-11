@@ -505,9 +505,10 @@ crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
 # The roster test reads each permission tag of include/ by reflection.  It
 # includes each header that declares a permission row, or a parent tag that
-# gives a row.  The rule header-lists reads the parse trees, and
-# `loop derive header-lists --write` writes these headers into the fragment
-# permission-row-headers.cmake as CRUCIBLE_PERMISSION_ROW_HEADERS.
+# gives a row.  `loop derive header-lists --write` reads the parse trees,
+# and it writes these headers into the fragment permission-row-headers.cmake
+# as CRUCIBLE_PERMISSION_ROW_HEADERS.  The rule derived-files (the test
+# guard_derived_files) fails when the fragment and the tree disagree.
 include("${CMAKE_CURRENT_SOURCE_DIR}/permission-row-headers.cmake")
 set(_permission_row_includes "")
 foreach(_candidate IN LISTS CRUCIBLE_PERMISSION_ROW_HEADERS)
@@ -4642,10 +4643,10 @@ endif()
 #
 # include/foundation/ and include/fixy/ are the canonical substrate.  These
 # guards hold it to its rules.  cmake/Guards.cmake registers the tests of the
-# tsast rules, such as guard_derived_pins, guard_header_checks,
-# guard_layer_residual and guard_walk_units.  The test guard_plugin runs the
-# rules of the quarantine plugin, such as layer-boundary, detsafe-ledger and
-# heavy-include.
+# tsast rules, such as guard_derived_pins, guard_header_checks and
+# guard_layer_residual, and the test guard_derived_files of the meta rule
+# derived-files.  The test guard_plugin runs the rules of the quarantine
+# plugin, such as layer-boundary, detsafe-ledger and heavy-include.
 #
 #   guard_layer_residual — foundation < fixy < crucible: an #include of a base
 #                         file in each preprocessor arm names only its own
@@ -4662,7 +4663,7 @@ endif()
 #                         utils/ledgers/header-checks.txt holds the items
 #                         that remain.  Each header with rows in the ledger
 #                         gives a warning, and the counts can only decrease.
-#   guard_walk_units    — test/layer/walk-checks.txt lists each check file
+#   guard_derived_files — test/layer/walk-checks.txt lists each check file
 #                         whose checks can call members_of on the reflection
 #                         of a namespace that a header opens, and no other
 #                         file.  The walk units of test/layer compile each

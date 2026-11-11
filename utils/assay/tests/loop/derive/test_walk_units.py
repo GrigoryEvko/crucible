@@ -1,8 +1,9 @@
-"""The test of the writer of the list of the walk units (assay.loop.derive.walk_units).
+"""The test of the list of the walk units (assay.loop.derive.walk_units): its writer, its drift and its measure.
 
 `guard selftest tests.loop.derive.test_walk_units` runs the test.  Each case
 plants its input in a throwaway repository or directory, and writes one line.
-Exit 0 when each case holds, else 1.
+The plants of the rule derived-files start with a tree that holds a list, so
+the case of a tree with no list is here.  Exit 0 when each case holds, else 1.
 """
 
 import sys
@@ -13,7 +14,6 @@ from pathlib import Path
 from assay.core import git, testing
 from assay.core import meter as cost_meter
 from assay.core.exit import ExitCode
-from assay.guard.engines.tsast import walk_units as rule
 from assay.guard.engines.tsast.runner import TsastContext
 from assay.loop.derive import walk_units as writer
 from assay.readers import compdb
@@ -32,8 +32,8 @@ NO_WALK_CHECK = (
 )
 TREE = {
     "include/foundation/Walk.h": WALK_HEADER,
-    f"{rule.CHECKS}/fixy/Uses.cpp": USES_CHECK,
-    f"{rule.CHECKS}/crucible/NoWalk.cpp": NO_WALK_CHECK,
+    f"{writer.CHECKS}/fixy/Uses.cpp": USES_CHECK,
+    f"{writer.CHECKS}/crucible/NoWalk.cpp": NO_WALK_CHECK,
 }
 USES_ROW = "fixy/Uses.cpp | {weight} | ::foundation::tags\n"
 UNIT_DIRECTORY = "/build/test/layer/walk_units/0"
@@ -62,28 +62,47 @@ def write_cases(expect: testing.Expect) -> None:
     """Check --write: the rows of the joined check files, the head comment, the weights that stay and a parse error."""
     with git.scratch_repository(TREE) as root:
         status, _text = testing.captured(lambda: writer.written(root))
-        listed = (root / rule.LIST).read_text(encoding="utf-8")
+        listed = (root / writer.LIST).read_text(encoding="utf-8")
         expect(
             "--write writes a row for the check file that joins, with the weight unmeasured",
-            status == ExitCode.OK and USES_ROW.format(weight=rule.UNMEASURED) in listed and "NoWalk" not in listed,
+            status == ExitCode.OK and USES_ROW.format(weight=writer.UNMEASURED) in listed and "NoWalk" not in listed,
         )
-        expect("--write gives the list its head comment", listed.startswith(rule.LIST_HEADER))
+        expect("--write gives the list its head comment", listed.startswith(writer.LIST_HEADER))
         expect(
-            "the rule accepts the list that --write writes",
-            not [found for found in rule.findings(TsastContext(root)) if found.level == "error"],
+            "the drift of the rule derived-files accepts the list that --write writes",
+            not [found for found in writer.drift(TsastContext(root)) if found.level == "error"],
         )
-        (root / rule.LIST).write_text(listed.replace(rule.UNMEASURED, "2.5"), encoding="utf-8")
+        (root / writer.LIST).write_text(listed.replace(writer.UNMEASURED, "2.5"), encoding="utf-8")
         testing.captured(lambda: writer.written(root))
-        kept = (root / rule.LIST).read_text(encoding="utf-8")
+        kept = (root / writer.LIST).read_text(encoding="utf-8")
         expect("--write keeps the weight of a row that stays", USES_ROW.format(weight="2.5") in kept)
-        (root / rule.CHECKS / "crucible/Broken.cpp").write_text("static_assert(1 == 1;\n", encoding="utf-8")
+        (root / writer.CHECKS / "crucible/Broken.cpp").write_text("static_assert(1 == 1;\n", encoding="utf-8")
         status, text = testing.captured(lambda: writer.written(root))
         expect(
             "--write writes nothing while a file does not parse",
             status == ExitCode.FINDINGS
             and "does not parse" in text
-            and (root / rule.LIST).read_text(encoding="utf-8") == kept,
+            and (root / writer.LIST).read_text(encoding="utf-8") == kept,
         )
+
+
+def drift_cases(expect: testing.Expect) -> None:
+    """Check drift() and --check: a tree with no list, and the list that --write writes."""
+    with git.scratch_repository(TREE) as root:
+        found = writer.drift(TsastContext(root))
+        expect(
+            "the drift of a tree with a check file and no list gives one error no-list for the rule derived-files",
+            [(item.level, item.kind, item.check) for item in found if item.kind == "no-list"]
+            == [("error", "no-list", "derived-files")],
+        )
+        status, _text = testing.captured(lambda: writer.checked(root))
+        expect(
+            "--check of a tree with no list exits 1 and writes no list",
+            status == ExitCode.FINDINGS and not (root / writer.LIST).exists(),
+        )
+        testing.captured(lambda: writer.written(root))
+        status, _text = testing.captured(lambda: writer.checked(root))
+        expect("--check of the list that --write writes exits 0", status == ExitCode.OK)
 
 
 def command_cases(expect: testing.Expect) -> None:
@@ -134,8 +153,8 @@ def measure_cases(expect: testing.Expect) -> None:
     """Check --measure: a malformed list, a build with no database, and a measure with the compiler of the test."""
     with git.scratch_repository(TREE) as root, tempfile.TemporaryDirectory(prefix="test-walk-units-") as scratch:
         build = Path(scratch)
-        list_path = root / rule.LIST
-        malformed = rule.LIST_HEADER + "a row with no separator\n"
+        list_path = root / writer.LIST
+        malformed = writer.LIST_HEADER + "a row with no separator\n"
         list_path.write_text(malformed, encoding="utf-8")
         status, text = testing.captured(lambda: writer.measured(build, list_path, 1))
         expect(
@@ -144,7 +163,7 @@ def measure_cases(expect: testing.Expect) -> None:
             and "no malformed row" in text
             and list_path.read_text(encoding="utf-8") == malformed,
         )
-        listed = rule.LIST_HEADER + USES_ROW.format(weight=rule.UNMEASURED)
+        listed = writer.LIST_HEADER + USES_ROW.format(weight=writer.UNMEASURED)
         list_path.write_text(listed, encoding="utf-8")
         status, text = testing.captured(lambda: writer.measured(build, list_path, 1))
         expect(
@@ -157,15 +176,15 @@ def measure_cases(expect: testing.Expect) -> None:
         probe = cost_meter.open_instruction_counter()
         has_counter = probe is not None and cost_meter.read_instruction_counter(probe) is not None
         status, text = testing.captured(lambda: writer.measured(build, list_path, 2, 3))
-        rows = rule.read_list(list_path).rows
+        rows = writer.read_list(list_path).rows
         if has_counter:
             expect(
                 "--measure with three runs writes a measured weight to each row",
                 status == ExitCode.OK
                 and "the median of 3 measure(s)" in text
                 and "fixy/Uses.cpp" in rows
-                and rows["fixy/Uses.cpp"].weight != rule.UNMEASURED
-                and rule.is_weight(rows["fixy/Uses.cpp"].weight),
+                and rows["fixy/Uses.cpp"].weight != writer.UNMEASURED
+                and writer.is_weight(rows["fixy/Uses.cpp"].weight),
             )
         else:
             expect(
@@ -194,7 +213,7 @@ def median_cases(expect: testing.Expect) -> None:
 def explain_cases(expect: testing.Expect) -> None:
     """Check --explain: the path of a walk to the call of members_of, and a target that is not a check file."""
     with git.scratch_repository(TREE) as root:
-        status, text = testing.captured(lambda: writer.explained(root, f"{rule.CHECKS}/fixy/Uses.cpp"))
+        status, text = testing.captured(lambda: writer.explained(root, f"{writer.CHECKS}/fixy/Uses.cpp"))
         expect(
             "--explain prints the path of the walk to the call of members_of",
             status == ExitCode.OK
@@ -230,5 +249,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (write_cases, command_cases, measure_cases, median_cases, explain_cases, usage_cases),
+        (write_cases, drift_cases, command_cases, measure_cases, median_cases, explain_cases, usage_cases),
     )

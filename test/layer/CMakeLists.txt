@@ -164,10 +164,10 @@ endforeach()
 
 # The headers that each walk unit at the foot of this file includes: each
 # foundation and fixy header, and each crucible header that can add a
-# member to a namespace of foundation or fixy.  The rule header-lists reads
-# the parse trees, and `loop derive header-lists --write` writes the
-# crucible headers into the fragment walk-headers.cmake as
-# CRUCIBLE_WALK_HEADERS.
+# member to a namespace of foundation or fixy.  `loop derive header-lists
+# --write` reads the parse trees, and it writes the crucible headers into the
+# fragment walk-headers.cmake as CRUCIBLE_WALK_HEADERS.  The rule
+# derived-files fails when the fragment and the tree disagree.
 include("${CMAKE_CURRENT_SOURCE_DIR}/walk-headers.cmake")
 
 # The one-line units of the headers with a check file cost about 500 s of
@@ -279,7 +279,7 @@ endforeach()
 # whose checks can call members_of on the reflection of a namespace that a
 # header opens, one row `<layer>/<path>.cpp | weight | namespaces` each.
 # `loop derive walk-units --write` (utils/assay/loop/derive/walk_units.py)
-# writes the list from the parse tree, and the test guard_walk_units fails
+# writes the list from the parse tree, and the test guard_derived_files fails
 # when the list and the tree disagree.  Each build compiles the units, so a
 # refused member stops the build.  file(CONFIGURE) rewrites a list only when
 # its text changes.

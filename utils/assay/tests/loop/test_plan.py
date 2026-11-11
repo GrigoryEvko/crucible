@@ -209,8 +209,8 @@ def tree_cases(expect: testing.Expect) -> None:
     registry = rule_registry.load(paths.REPO_ROOT / rule_registry.REGISTRY_PATH)
     presets = tiers.read(paths.REPO_ROOT)
     default = next(item for item in presets.configure if item.name == "default")
-    walk_test = guard_test("guard_walk_units", "check", "--rule", "walk-units")
-    build = plan.Build(default, paths.REPO_ROOT / "build", (walk_test,))
+    derived_test = guard_test("guard_derived_files", "check", "--rule", "derived-files")
+    build = plan.Build(default, paths.REPO_ROOT / "build", (derived_test,))
     targets = plan.derive_targets(paths.REPO_ROOT)
     expect(
         "the read of the table of loop derive gives each target with its module",

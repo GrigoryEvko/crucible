@@ -1,0 +1,14 @@
+# test/layer/walk-checks.txt — the check files that the walk units compile a second time.
+# `python3 utils/bin/loop derive walk-units --write` writes this file from the tree, and the
+# test guard_derived_files fails when the file and the tree disagree.  Do not edit it by hand.
+#
+# A check file joins when one of its checks can call members_of on the reflection of a
+# namespace that a header under include/ opens, because a header can add a member to it.
+# test/layer/CMakeLists.txt compiles each listed file after each header that can add to
+# such a namespace, in test/layer/walks_across_headers.cpp.
+#
+# A row:  <layer>/<path>.cpp | weight | the namespaces that the checks can walk
+#   unknown stands for a walk whose namespace the analysis cannot name.
+#   The weight is the share of the check file in a walk unit, in units of 10^9 instructions.
+#   test/layer/CMakeLists.txt divides the check files into units by weight.  --write keeps
+#   each weight, and --measure BUILD_DIR measures each weight again.
