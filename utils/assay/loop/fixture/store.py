@@ -2814,24 +2814,19 @@ def _warnings_file(warnings_dir: Path, check: str, fixture_name: str) -> Path:
     return warnings_dir / f"{check}.{fixture_name}.txt"
 
 
-def report_cost(fixture_name: str, source: Path, result: CompileResult, is_stored: bool, budget: CostBudget,
-                warnings_dir: Path | None) -> int:
+def report_cost(fixture_name: str, source: Path, result: CompileResult, is_stored: bool, budget: CostBudget) -> int:
     """Report the instruction count of the compile against the budget, and return 1 when it fails.
 
-    The warning lines of each check go to the file of this fixture in the
-    warnings directory, so the many fixtures that run at the same time do not
-    write one file.  A run with no finding, whose fixture has no warnings file,
-    has nothing to write, and it does not import the report module.
+    Each finding is an error, and the warnings directory gets no line.  A run with no finding does not import the
+    report module.
     """
     findings = cost_findings(fixture_name, source, result, is_stored, budget)
-    has_file = warnings_dir is not None and any(_warnings_file(warnings_dir, check, fixture_name).exists()
-                                                for check in _LEDGERS)
-    if not any(findings.values()) and not has_file:
+    if not any(findings.values()):
         return 0
     report = _report_module()
     status = 0
     for check, found in findings.items():
-        status |= report.emit(found, check, warnings_dir, fixture_name)
+        status |= report.emit(found, check, None)
     return status
 
 
@@ -3267,7 +3262,7 @@ def main(argv: list[str]) -> int:
               f"a letter, a digit or '_'", file=sys.stderr)
         return 2
     status, budget = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
-    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir)
+    return judge_test(fixture_name, build_dir, source, status, start, budget)
 
 
 def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
@@ -3314,12 +3309,12 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     own_reason = 0
     if unmatched is not None:
         own_reason = report_own_reason(fixture_name, source, unmatched, is_stored, warnings_dir)
-    over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)
+    over_budget = report_cost(fixture_name, source, result, is_stored, budget)
     return verdict or own_reason or over_budget, budget
 
 
 def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: OwnStart,
-               budget: CostBudget | None, warnings_dir: Path | None) -> int:
+               budget: CostBudget | None) -> int:
     """Judge the run of the fixture as a test, and write its record, as the test launcher does (The test record).
 
     In a run of the test launcher, the launcher judges and records the test, and the function gives the status.
@@ -3331,7 +3326,6 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
         status: The status of the test before the judge
         start: The start of the measure at the start of main() (assay.core.meter, start_self())
         budget: The cost budget, which holds the limits of the rules of the launcher, or None
-        warnings_dir: The warnings directory, or None
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -3343,5 +3337,4 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
     run = _cost_meter_module().measure_self(status, start)
     sys.stdout.flush()
     return test_launcher.judge_and_record(fixture_name, sys.executable, _shown(source), str(build_dir), run,
-                                          None if warnings_dir is None else str(warnings_dir),
                                           None if budget is None else budget.test_rows)

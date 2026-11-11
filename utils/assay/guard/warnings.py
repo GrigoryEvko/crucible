@@ -25,18 +25,14 @@ THE TOTALS
     total gives the count of such units.  When the census or the test
     records cannot be read, one line tells why.
 
-The test launcher and the fixture driver write one file for each test:
-CHECK.TEST.txt for each check of TEST_KEYED_CHECKS.  No run writes the file of
-a test again after the test goes from the tree.  Before it reads the files,
-`guard warnings` reads the tests that the build registers (assay.readers.ctest),
-and it removes the file of each test that the build does not register.  When
-it cannot read the tests, it keeps each file and tells why.
-
 Each writer of a warnings file names a rule of the registry.  No run writes the
-file of a rule again after the rule goes from the registry.  `guard warnings`
-also removes the file of each rule that the registry does not name.  When it
-cannot read the registry, it keeps each file and tells why.  Each line that it
-writes about the files and the totals starts with PREFIX.
+file of a rule again after the rule goes from the registry.  Before it reads the
+files, `guard warnings` removes the file of each rule that the registry does not
+name.  It also removes each file of a measured rule of a policy of
+SILENT_POLICIES, because such a rule gives no warning (assay.core.budget, THE
+VERDICT), and no run writes its file again.  When it cannot read the registry,
+it keeps each file and tells why.  Each line that it writes about the files and
+the totals starts with PREFIX.
 
     python3 utils/bin/guard warnings BUILD_DIR
     python3 utils/bin/guard selftest guard.warnings
@@ -47,7 +43,6 @@ case of the self-test does not hold, and it is 2 for a usage error.
 """
 
 import os
-import sys
 import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -62,55 +57,20 @@ from assay.core import testing
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
 from assay.readers import census as build_census
-from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 
 USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
 # The prefix of each line that the command writes about the warnings files and the totals.
 PREFIX = "guard warnings:"
-# The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
-TEST_KEYED_CHECKS = frozenset({"test-memory", "test-instructions", "fixture-instructions"})
+# The policies of a measured rule that gives no warning, so that no run writes its warnings file.
+SILENT_POLICIES = frozenset({rule_registry.Policy.MAX, rule_registry.Policy.BASELINE, rule_registry.Policy.NONE})
 
 
-def test_keyed_files(warnings_dir: Path) -> list[tuple[str, str]]:
-    """Return the check and the test of each warnings file that has the name of a test as its writer key.
+def remove_stale_files(warnings_dir: Path, registry_path: Path = rule_registry.REGISTRY) -> None:
+    """Remove the warnings file of each rule that no run writes again, and write one line for each.
 
-    The file is CHECK.TEST.txt, and the name of a test can hold a dot (assay.core.report, THE WARNINGS DIRECTORY).
-    Complexity: linear in the files of the warnings directory.
-    """
-    if not warnings_dir.is_dir():
-        return []
-    named = (path.name.removesuffix(".txt").partition(".") for path in sorted(warnings_dir.glob("*.*.txt")))
-    return [(check, test) for check, _, test in named if check in TEST_KEYED_CHECKS and test]
-
-
-def remove_gone_tests(build_dir: Path, warnings_dir: Path) -> None:
-    """Remove the warnings file of each test that the build does not register, and write one line for each.
-
-    Complexity: one listing of ctest when a file has the key of a test, and linear in the files.
-    """
-    keyed = test_keyed_files(warnings_dir)
-    if not keyed:
-        return
-    try:
-        registered = {test.name for test in ctest_reader.tests(build_dir)}
-    except ctest_reader.CtestError as problem:
-        check_report.write_line(
-            f"{PREFIX} each warnings file of a test stays, because the tests of the build are not known: {problem}"
-        )
-        return
-    for check, test in keyed:
-        if test not in registered:
-            check_report.write_warnings(warnings_dir, check, [], test)
-            check_report.write_line(
-                f"{PREFIX} removed {warnings_dir / f'{check}.{test}.txt'}, because the build registers no test {test}"
-            )
-
-
-def remove_gone_rules(warnings_dir: Path, registry_path: Path = rule_registry.REGISTRY) -> None:
-    """Remove the warnings file of each rule that the registry does not name, and write one line for each.
-
-    Complexity: one read of the registry when the directory holds a file, and linear in the files.
+    Such a rule is a rule that the registry does not name, or a measured rule of SILENT_POLICIES.  Complexity: one
+    read of the registry when the directory holds a file, and linear in the files.
     """
     files = sorted(warnings_dir.glob("*.txt")) if warnings_dir.is_dir() else []
     if not files:
@@ -122,9 +82,15 @@ def remove_gone_rules(warnings_dir: Path, registry_path: Path = rule_registry.RE
         return
     for path in files:
         rule_id = path.name.split(".", 1)[0]
-        if rule_id not in rules:
-            path.unlink(missing_ok=True)
-            check_report.write_line(f"{PREFIX} removed {path}, because the registry names no rule {rule_id}")
+        rule = rules.get(rule_id)
+        if rule is None:
+            why = f"the registry names no rule {rule_id}"
+        elif rule.threshold is not None and rule.policy in SILENT_POLICIES:
+            why = f"the measured rule {rule_id} gives no warning"
+        else:
+            continue
+        path.unlink(missing_ok=True)
+        check_report.write_line(f"{PREFIX} removed {path}, because {why}")
 
 
 def test_times(build_dir: Path) -> list[float | None]:
@@ -248,8 +214,7 @@ def main(argv: list[str]) -> int:
         return ExitCode.USAGE
     build_dir = Path(argv[0]).resolve()
     warnings_dir = build_dir / check_report.WARNINGS_SUBDIR
-    remove_gone_tests(build_dir, warnings_dir)
-    remove_gone_rules(warnings_dir)
+    remove_stale_files(warnings_dir)
     findings, problems = check_report.read_warnings_dir(warnings_dir)
     for line in total_lines(build_dir):
         check_report.write_line(line)
@@ -295,63 +260,31 @@ def print_cases(expect: testing.Expect) -> None:
     expect("a call with no build directory is a usage error", status == 2)
 
 
-def gone_test_cases(expect: testing.Expect) -> None:
-    """Remove the warnings file of a test that a planted build does not register, and keep each other file."""
+def stale_file_cases(expect: testing.Expect) -> None:
+    """Remove the warnings file of a rule that the registry does not name and of a silent measured rule.
+
+    The file of a rule with warnings stays, also the file of a measured rule of the policy count.
+    """
     with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
         for check, key in (
+            ("python-lint", None),
+            ("padded-list", None),
+            ("gone-rule", None),
+            ("gone-rule", "part1"),
             ("test-memory", "kept_test"),
-            ("test-memory", "gone_test"),
-            ("python-lint", "gone_test"),
-            ("test-instructions", "kept.sh"),
-            ("test-instructions", "gone.sh"),
+            ("fixture-instructions", "neg_one"),
+            ("fixture-own-reason", "neg_one"),
         ):
-            found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
-            check_report.write_warnings(warnings_dir, check, [found], key)
-        status, text = testing.captured(lambda: main([str(build)]))
-        expect(
-            "a build whose tests are not known keeps each warnings file of a test, and tells why",
-            status == 0 and "each warnings file of a test stays" in text and "test-memory gone_test" in text,
-        )
-        tool = build / "planted-ctest"
-        tool.write_text(
-            f'#!{sys.executable} -S\nprint(\'{{"tests": [{{"name": "kept_test"}}, {{"name": "kept.sh"}}]}}\')\n',
-            encoding="utf-8",
-        )
-        tool.chmod(0o755)
-        cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": ("FILEPATH", str(tool))})
-        status, text = testing.captured(lambda: main([str(build)]))
-        expect(
-            "the file of a test that the build does not register goes, and the file of a registered test and the file "
-            "of a check with another key stay",
-            status == 0
-            and "because the build registers no test gone_test" in text
-            and "test-memory gone_test" not in text
-            and "test-memory kept_test" in text
-            and "python-lint gone_test" in text
-            and test_keyed_files(warnings_dir) == [("test-instructions", "kept.sh"), ("test-memory", "kept_test")],
-        )
-        expect(
-            "the file of a test whose name holds a dot goes when the build does not register the test",
-            "because the build registers no test gone.sh" in text and "test-instructions kept.sh" in text,
-        )
-
-
-def gone_rule_cases(expect: testing.Expect) -> None:
-    """Remove the warnings file of a rule that the registry does not name, and keep the file of a named rule."""
-    with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
-        build = Path(scratch)
-        warnings_dir = build / check_report.WARNINGS_SUBDIR
-        for check, key in (("python-lint", None), ("gone-rule", None), ("gone-rule", "part1")):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
         broken = build / "registry.txt"
         broken.write_text("format 1\nrule gone-rule\n", encoding="utf-8")
-        _, text = testing.captured(lambda: remove_gone_rules(warnings_dir, broken))
+        _, text = testing.captured(lambda: remove_stale_files(warnings_dir, broken))
         expect(
             "a registry that cannot be read keeps each warnings file, and tells why",
-            "each warnings file stays" in text and len(sorted(warnings_dir.glob("*.txt"))) == 3,
+            "each warnings file stays" in text and len(sorted(warnings_dir.glob("*.txt"))) == 7,
         )
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
@@ -360,8 +293,15 @@ def gone_rule_cases(expect: testing.Expect) -> None:
             and "because the registry names no rule gone-rule" in text
             and "gone-rule None" not in text
             and "gone-rule part1" not in text
-            and "python-lint None" in text
-            and [path.name for path in sorted(warnings_dir.glob("*.txt"))] == ["python-lint.txt"],
+            and "python-lint None" in text,
+        )
+        expect(
+            "the files of a measured rule of the policy max go, also the file of one test, and the file of a measured "
+            "rule of the policy count and the file of a rule with no limit stay",
+            "because the measured rule test-memory gives no warning" in text
+            and "because the measured rule fixture-instructions gives no warning" in text
+            and [path.name for path in sorted(warnings_dir.glob("*.txt"))]
+            == ["fixture-own-reason.neg_one.txt", "padded-list.txt", "python-lint.txt"],
         )
 
 
@@ -490,5 +430,5 @@ def self_test() -> int:
     return testing.run(
         "guard.warnings",
         [],
-        (print_cases, gone_test_cases, gone_rule_cases, time_line_cases, build_line_cases, record_cases),
+        (print_cases, stale_file_cases, time_line_cases, build_line_cases, record_cases),
     )

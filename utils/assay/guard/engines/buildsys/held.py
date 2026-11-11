@@ -145,9 +145,8 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
         )
         place = context.shown(cost_record.test_record_file(build, name))
         program = teststep.program_item(record.program, str(build))
-        for level, row, message in teststep.judge(name, program, run, budget, ledgers):
-            shown_level: check_report.Level = "error" if level == "error" else "warning"
-            found.append(check_report.Finding(shown_level, place, 0, row, message))
+        for row, message in teststep.judge(name, program, run, budget, ledgers):
+            found.append(check_report.Finding("error", place, 0, row, message))
     return found
 
 

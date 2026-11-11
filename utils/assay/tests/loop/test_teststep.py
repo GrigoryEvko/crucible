@@ -37,7 +37,6 @@ class Planted:
         self.ledgers = root / "ledgers"
         self.ledgers.mkdir()
         self.table = root / "registry.txt"
-        self.warnings = self.build / "check-warnings"
         self.program = self.plant_test("test_planted", '#!/bin/sh\nexit "${1:-0}"\n')
         self.killer = self.plant_test("test_killed", "#!/bin/sh\nkill -TERM $$\n")
         self.hard_killer = self.plant_test("test_hard_killed", "#!/bin/sh\nkill -KILL $$\n")
@@ -91,7 +90,7 @@ class Planted:
         """Run the launcher on one planted executable test, and return its exit code and its standard error."""
         done = proc.run(
             proc.Command(
-                [*self.launcher, "--warnings-dir", str(self.warnings), str(target), *args],
+                [*self.launcher, str(target), *args],
                 timeout_s=proc.TOOL_S,
                 env=self._environment_of(extra),
             )
@@ -102,7 +101,7 @@ class Planted:
         """Run the launcher on one planted test, and return the wait status, which holds the core dump bit."""
         done = proc.run(
             proc.Command(
-                [*self.launcher, "--warnings-dir", str(self.warnings), str(target)],
+                [*self.launcher, str(target)],
                 timeout_s=proc.TOOL_S,
                 env=self._environment_of(extra),
                 stdout=self.root / "wait-status.log",
@@ -115,16 +114,7 @@ class Planted:
         """Run the launcher on a script test as crucible_script_test() registers it: a program of PATH, with --name."""
         done = proc.run(
             proc.Command(
-                [
-                    *self.launcher,
-                    "--warnings-dir",
-                    str(self.warnings),
-                    "--build-dir",
-                    str(self.build),
-                    "--name",
-                    name,
-                    *command,
-                ],
+                [*self.launcher, "--build-dir", str(self.build), "--name", name, *command],
                 timeout_s=proc.TOOL_S,
                 env=self._environment_of(extra),
             )
@@ -234,8 +224,6 @@ class Planted:
             proc.Command(
                 [
                     *self.launcher,
-                    "--warnings-dir",
-                    str(self.warnings),
                     "--build-dir",
                     str(self.build),
                     "--emulator-words",
@@ -535,12 +523,12 @@ def bench_scope_cases(expect: testing.Expect) -> None:
         judged = test_launcher.judge("test_heavy", "test/test_heavy", run, budget, directory)
         expect(
             "a test of a different directory above the limit has an error",
-            [row for _, row, _ in judged] == ["test-memory"],
+            [row for row, _ in judged] == ["test-memory"],
         )
         outside = test_launcher.judge("test_away", "/elsewhere/bench/x", run, budget, directory)
         expect(
             "a program outside the build directory is judged, also in a directory with the name bench",
-            [row for _, row, _ in outside] == ["test-memory"],
+            [row for row, _ in outside] == ["test-memory"],
         )
 
 
@@ -595,7 +583,7 @@ def launched_cases(expect: testing.Expect) -> None:
     executable = ["/build/test/test_planted", "1"]
     expect(
         "an executable test runs its program behind the launcher",
-        test_launcher.launched([*launcher, "--warnings-dir", "/w", "--build-dir", "/build", *executable]) == executable,
+        test_launcher.launched([*launcher, "--build-dir", "/build", *executable]) == executable,
     )
     expect(
         "a script test with a name runs its program behind the launcher",

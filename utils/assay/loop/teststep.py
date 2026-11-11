@@ -4,12 +4,12 @@ cmake/TestLauncher.cmake puts this subcommand in front of each test of the
 tree, apart from a negative fixture.  CMAKE_TEST_LAUNCHER puts it in front of
 a test of an executable target:
 
-    python3 -S utils/bin/loop test-step --warnings-dir DIR --build-dir BUILD EXECUTABLE ARG...
+    python3 -S utils/bin/loop test-step --build-dir BUILD EXECUTABLE ARG...
 
 The function crucible_script_test() puts it in front of each script test,
 with the name of the test:
 
-    python3 -S utils/bin/loop test-step --warnings-dir DIR --build-dir BUILD --name NAME PROGRAM ARG...
+    python3 -S utils/bin/loop test-step --build-dir BUILD --name NAME PROGRAM ARG...
 
 CMake gives a launcher no test name, and each executable test of the tree has
 the name of its target.  The name of a test with no --name is the file name
@@ -267,7 +267,7 @@ PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
 PASSED_THROUGH = frozenset({LAUNCHED_ENV, TRACED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
 SEARCH_PATH = "PATH"
 # The options before the command, each with one value, and the one value of --trace (THE READ SET).
-OPTIONS = ("--warnings-dir", "--build-dir", "--name", "--emulator-words", "--trace")
+OPTIONS = ("--build-dir", "--name", "--emulator-words", "--trace")
 TRACE_NEVER = "never"
 # The directory of the test groups of the subcommand selftest of the master guard, relative to the root (THE READ SET).
 TEST_GROUPS = "utils/assay/tests"
@@ -280,8 +280,8 @@ GUARD_MASTER = "utils/bin/guard"
 MASTERS = (GUARD_MASTER, MASTER, "utils/bin/setup")
 PACKAGE = "assay"
 USAGE = (
-    "usage: loop test-step [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] "
-    "[--trace never] [EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
+    "usage: loop test-step [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never] "
+    "[EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
 )
 # The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
 # module holds equal to WRITER_KEY.  A name does not start with '-' or '.'.
@@ -401,7 +401,7 @@ def program_item(program: str, build_dir: str | None) -> str:
 
 
 def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float],
-          ledgers: str | None = None) -> list[tuple[str, str, str]]:
+          ledgers: str | None = None) -> list[tuple[str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
     The witness of test-memory judges the planted record of a test with this
@@ -417,9 +417,9 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
         ledgers: The directory of the ledgers (ledger_row()), or None
 
     Returns:
-        One (level, rule, message) for each rule with a finding
+        One (rule, message) for each rule with an error
     """
-    findings: list[tuple[str, str, str]] = []
+    findings: list[tuple[str, str]] = []
     if not cost_budget.is_judged(program):
         return findings
     measures = [("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
@@ -444,7 +444,7 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
                        f"into tests over disjoint cases")
         else:
             continue
-        findings.append(("error", row, message))
+        findings.append((row, message))
     return findings
 
 
@@ -537,34 +537,21 @@ def version_of(words: Sequence[str], files: Iterable[str]) -> str:
     return f"{binascii.crc32(text):08x}{binascii.crc32(text[::-1]):08x}"
 
 
-def report(name: str, place: str, findings: list[tuple[str, str, str]], warnings_dir: str | None) -> None:
-    """Print each finding, and write or remove the warnings file of this test for each row.
+def report(place: str, findings: list[tuple[str, str]]) -> None:
+    """Print each error of judge() in the format of utils/assay/core/report.py.
 
-    utils/assay/core/report.py is imported only when a finding or a stale
-    warnings file needs it, because each test pays for the import.
+    That module is imported only when a finding needs it, because each test pays for the import.
 
     Args:
-        name: The name of the test, the writer key of its warnings files
         place: The path that a finding names
         findings: The findings of judge()
-        warnings_dir: The warnings directory, or None
     """
-    stale = warnings_dir is not None and any(
-        os.path.exists(os.path.join(warnings_dir, f"{row}.{name}.txt")) for row in ROWS)
-    if not findings and not stale:
+    if not findings:
         return
-    from pathlib import Path
-
     from assay.core import report as check_report
 
-    for row in ROWS:
-        lines = [check_report.Finding(level, place, 0, row, message)
-                 for level, finding_row, message in findings if finding_row == row]
-        for line in lines:
-            print(line.text(), file=sys.stderr)
-        if warnings_dir is not None:
-            check_report.write_warnings(Path(warnings_dir), row, [line for line in lines if line.level == "warning"],
-                                        name)
+    for row, message in findings:
+        print(check_report.Finding("error", place, 0, row, message).text(), file=sys.stderr)
 
 
 def is_test_name(name: str) -> bool:
@@ -575,11 +562,10 @@ def is_test_name(name: str) -> bool:
 class Options:
     """The options of the command line: each one is None when the command line does not give it."""
 
-    __slots__ = ("build_dir", "emulator_words", "name", "trace", "warnings_dir")
+    __slots__ = ("build_dir", "emulator_words", "name", "trace")
 
     def __init__(self) -> None:
         """Start with no option."""
-        self.warnings_dir: str | None = None
         self.build_dir: str | None = None
         self.name: str | None = None
         self.emulator_words: str | None = None
@@ -683,8 +669,7 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
 
 
 def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
-                     run: cost_meter.Measurement, warnings_dir: str | None,
-                     budget: dict[str, float] | None = None) -> int:
+                     run: cost_meter.Measurement, budget: dict[str, float] | None = None) -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
     `loop test-step` and `loop fixture` call this function.  The two then
@@ -697,7 +682,6 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         finding_path: The path that a finding names
         build_dir: The build directory, or None for no record
         run: The measurement of the test, with its status
-        warnings_dir: The warnings directory, or None
         budget: The limit of each rule, or None to read them from the registry (read_budget())
 
     Returns:
@@ -706,12 +690,12 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     status = run.exit_code
     result = "passed" if status == 0 else "failed"
     thresholds = read_budget() if budget is None else budget
-    no_findings: list[tuple[str, str, str]] = []
+    no_findings: list[tuple[str, str]] = []
     item = program_item(program, build_dir)
     findings = safely(lambda: judge(name, item, run, thresholds), no_findings)
-    if status == 0 and any(level == "error" for level, _, _ in findings):
+    if status == 0 and findings:
         status, result = 1, "rejected"
-    safely(lambda: report(name, finding_path, findings, warnings_dir), None)
+    safely(lambda: report(finding_path, findings), None)
     if build_dir is not None:
         record_path = cost_record.test_record_file(build_dir, name)
         counts = () if run.instructions is None else ((cost_record.TEST_COUNT_KEY, run.instructions),)
@@ -741,8 +725,7 @@ def main(argv: list[str]) -> int:
     """Run the test of the command line, and end as it ended.
 
     Args:
-        argv: [--warnings-dir DIR] [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never]
-            [EMULATOR...] PROGRAM [ARG]...
+        argv: [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never] [EMULATOR...] PROGRAM [ARG]...
 
     Returns:
         2 on a usage error.  Else the function ends the process as the test ended
@@ -804,7 +787,7 @@ def main(argv: list[str]) -> int:
         sys.exit(127)
     if plan is not None:
         safely(lambda: plan.save(run.exit_code), None)
-    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget)
+    status = judge_and_record(name, program, place, build_dir, run, budget)
     stop_core_dumps()
     cost_meter.end_like(status)
     return status

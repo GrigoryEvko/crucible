@@ -1604,9 +1604,9 @@ def check_parsers(failures: list[str]) -> None:
                         f"{ledger_directory} of utils/assay/core/ledger.py")
     with tempfile.TemporaryDirectory(prefix="neg-warnings-") as scratch:
         warnings_dir = Path(scratch)
-        report.write_warnings(warnings_dir, "fixture-instructions",
-                              [report.Finding("warning", "x.cpp", 0, "fixture-instructions", "m")], "neg_one")
-        if not store._warnings_file(warnings_dir, "fixture-instructions", "neg_one").is_file():
+        report.write_warnings(warnings_dir, store._REASON_CHECK,
+                              [report.Finding("warning", "x.cpp", 0, store._REASON_CHECK, "m")], "neg_one")
+        if not store._warnings_file(warnings_dir, store._REASON_CHECK, "neg_one").is_file():
             failures.append("the warnings file of a fixture has the name that check_report.write_warnings gives it")
     check_roots(failures)
     check_entry_format(failures)

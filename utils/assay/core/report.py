@@ -21,7 +21,7 @@ THE WARNINGS DIRECTORY
     own directory.
 
     A check of which many processes run at the same time, for example one
-    for each test or each fixture, gives each process a key.  Each process
+    for each fixture, gives each process a key.  Each process
     then writes DIR/CHECK.KEY.txt, and it removes only that file.  A key is a
     word of letters, digits, '_', '.' and '-', and it starts with a letter, a
     digit or '_'.  A check name holds no '.'.  The check name is then the

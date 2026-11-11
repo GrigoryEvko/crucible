@@ -1945,8 +1945,7 @@ class SelfTest:
             f'add_test([=[skip_code_test]=] "{sys.executable}" "-S" "-c" "raise SystemExit(77)")',
             "set_tests_properties([=[skip_code_test]=] PROPERTIES SKIP_RETURN_CODE 77)",
             (f'add_test([=[exe_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
-             f'"--warnings-dir" "{self.build_dir}/check-warnings" "--build-dir" "{self.build_dir}" '
-             f'"{bin_dir}/ok_launched")'),
+             f'"--build-dir" "{self.build_dir}" "{bin_dir}/ok_launched")'),
             (f'add_test([=[script_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
              f'"--build-dir" "{self.build_dir}" "--name" "script_launched" "{shutil.which("true")}" '
              f'"{self.source_dir}/test/check.py")'),
@@ -2417,8 +2416,8 @@ def unit_cases(expect: DetailedExpect) -> None:
     expect("data_sections refuses a file with no section header table", is_refused(bytes(no_table)))
     expect("program_index skips cmake -E env", program_index(("/x/cmake", "-E", "env", "A=1", "/b/t")) == 4)
     expect("program_index skips valgrind options", program_index(("/v/valgrind", "-q", "/b/t", "x")) == 2)
-    launched = ("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", LAUNCHER_SUBCOMMAND, "--warnings-dir",
-                "/s/b/w", "/s/b/t")
+    launched = ("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", LAUNCHER_SUBCOMMAND, "--build-dir",
+                "/s/b", "/s/b/t")
     expect("program_index skips the test launcher", program_index(launched) == 6)
     expect("program_index skips the test launcher and then cmake -E env",
            program_index(launched[:6] + ("/x/cmake", "-E", "env", "A=1", "/s/b/t")) == 10)

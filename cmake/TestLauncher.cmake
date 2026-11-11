@@ -82,7 +82,7 @@ if(NOT CRUCIBLE_PYTHON3)
 endif()
 cmake_path(SET _crucible_test_masters NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../utils/bin")
 set(CRUCIBLE_TEST_STEP "${CRUCIBLE_PYTHON3}" -S "${_crucible_test_masters}/loop" test-step
-    --warnings-dir "${CRUCIBLE_CHECK_WARNINGS_DIR}" --build-dir "${CMAKE_BINARY_DIR}")
+    --build-dir "${CMAKE_BINARY_DIR}")
 set(CMAKE_TEST_LAUNCHER ${CRUCIBLE_TEST_STEP})
 
 # CMake puts CMAKE_CROSSCOMPILING_EMULATOR after the launcher and before the
