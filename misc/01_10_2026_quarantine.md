@@ -610,7 +610,7 @@ Section 18 is the design reference. Section 18.22 gives the parity protocol, the
 | 1B.0 | The high and medium defects of section 18.21, each as a small correction of its own, at the paths of today | None | No unit. It lands first |
 | 1B.1 | The package and the masters, with no change of behavior. Each check script and each audit of section 18.19, `check_plugin.py`, the attack test of use-after-move and the contract test of header units move to `assay/guard/legacy/`. A temporary table in `assay/guard/` gives the legacy module of each rule. Each other Python file moves into `utils/assay/`, with its module name of section 18.20. CMake, ccache, ctest and CI start the masters. `sys.pycache_prefix` goes to the cache root. Each `sys.path` insert, CMake path, CI path and CLAUDE.md path changes | Each Python file of `utils/scripts/`, `utils/tools/session_oracle/`, `utils/tools/mutation/` and `utils/tools/quarantine/test/`, and the Python helpers of `test/`, at their paths of today | Unit 1e, and the sync point 1B.1 |
 | 1B.2 | `assay.core.rows` and the schema modules in Python. The registry, from `guard-engines.txt` and `budgets.txt`, with the `path` rows of section 18.5. `assay.core.ledger`, from the ratchet. `guard list`, `write`, `warnings` and `explain`, and `cmake/Guards.cmake`. The meta rules `registry-shape`, `rule-implementations`, `rule-witness`, `layout` and `test-registration`. The ledgers of `rule-implementations` and `rule-witness` hold each rule with only a legacy module or with no plant, and each subsequent unit removes its rows. The registry replaces the temporary table of 1B.1 | `guard-engines.txt`, `budgets.txt`, and the legacy modules of `check-guard-engines.py`, `check-git-isolation.py`, `check-ci-guard-labels.py` and `check-budget-history.py`. The print part of `report-check-warnings.py` goes, and its totals stay in its legacy module until 1B.8i | 1B.1 |
-| 1B.3 | Each ledger and allowlist in `utils/ledgers/` with format 1, through `assay.core.ledger`. `process-wide-roster.txt` and `escape-doors.txt` become ledgers, `contracts-baseline.json` becomes `utils/ledgers/contract-cites.txt`, and `compile-first.txt` goes to `cmake/`. Each owner reads its new file in the same commit. The meta rule `ledger-owners` | The 15 empty ledgers, the 19 allowlists and the 23 other ledgers as separate files, and the allowlist part of `check-allowlist-keys.sh` | 1B.2 |
+| 1B.3 | Each ledger and allowlist in `utils/ledgers/` with format 1, through `assay.core.ledger`. `process-wide-roster.txt` and `escape-doors.txt` become ledgers, and `compile-first.txt` goes to `cmake/`. Each owner reads its new file in the same commit. The meta rule `ledger-owners` | The 15 empty ledgers, the 19 allowlists and the 23 other ledgers as separate files, and the allowlist part of `check-allowlist-keys.sh` | 1B.2 |
 | 1B.4 | The rules of the bar (section 18.14) as ratchets, each with a ledger of the findings of today. The rules `types` and `python-lint` with the rows of mypy and ruff in `utils/pins.txt` (decision 16) | None | 1B.3, and 1B.5 for `utils/pins.txt` |
 | 1B.5 | The shell scripts become modules, with no change of behavior: `setup install`, `setup check` and `setup gcc` with `utils/pins.txt`, and `loop pgo`, `loop derive`, `loop gauge --cold`, `loop bench` and `loop fuzz` (decision 21). The shell checks `check-clang-format.sh`, `check-no-throw-no-rtti.sh` and `check-allowlist-keys.sh`, and the check of `session-oracle.sh`, become legacy modules | Each shell script of `utils/`, `test/fuzz/run-afl.sh`, `bench/run-bench.sh`, `utils/toolchain/gcc/BASE`, `utils/toolchain/cmake/requirements.txt`, `utils/tools/mutation/survivors.txt`, and `check-atom-roster-joined.sh` with two fixtures in its place | 1B.2 |
 | 1B.6a | `assay.core.proc` and `assay.core.git`. Each process start and each git command of the package moves to them | None | 1B.3 |
@@ -1120,7 +1120,7 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 - The plugin in error mode in every tree.
 - The link guard passes for every binary except the vessel library.
 - The gauge numbers at or below the S0 numbers.
-- vessel_acceptance passes in Release.
+- The tests `vessel_test_NAME` of the vessel pass in Release.
 
 ---
 
@@ -1543,9 +1543,9 @@ The other data files of `utils/scripts/` and `utils/` go to these places, in the
 | `layer-rules.txt`, `quarantine-admitted-audit.txt` | `utils/rule-table.txt` and `utils/admitted-audit.txt` | 1B.7 |
 | `compile-first.txt` | `cmake/compile-first.txt`, beside `cmake/CompileFirst.cmake`, which reads it at configure time | 1B.3 |
 | `fixy-only-paths.txt` | Deleted. Its directories are the constant `RUNTIME_DIRECTORIES` of the rule `banned`, and the kind `file-stream` stays (section 8.6a) | 1B.8g |
-| `contracts-baseline.json` | `utils/ledgers/contract-cites.txt`, with the policy `baseline` | 1B.3 |
+| `contracts-baseline.json` | none | 1B.3 |
 | `utils/toolchain/cmake/requirements.txt`, `utils/toolchain/gcc/BASE` | Rows of `utils/pins.txt` | 1B.5 |
-| `utils/tools/mutation/invalid-exemptions.txt` | `utils/ledgers/gate-mutants.txt`, with the policy `admit` | 1B.3 |
+| `utils/tools/mutation/invalid-exemptions.txt` | `utils/assay/loop/evidence/admitted-gates.txt`, with the policy `admit` | 1B.3 |
 | `utils/tools/mutation/survivors.txt` | Deleted, because no code reads it | 1B.5 |
 
 The lists of `test/layer/` and `test/fixy/neg/witness-fixtures.json` stay where they are, because CMake reads them at configure time.
@@ -2112,7 +2112,7 @@ The files of `utils/tools/`, `utils/toolchain/`, `test/` and `bench/` that table
 | `utils/tools/row_hash_golden.txt` | The golden of `dump_row_hashes`, which `loop derive row-hashes` writes and the rule `derived-files` compares | It stays |
 | The 2 files of `utils/tools/lsp_code_action_plugin/` | A C++ tool | They stay |
 | `utils/tools/mutation/gates.py`, `run.py` | The gate mutants | `assay/mutation/gates.py` and `assay/mutation/run.py`, behind `loop evidence` |
-| `utils/tools/mutation/invalid-exemptions.txt` | The admitted invalid mutants | `utils/ledgers/gate-mutants.txt` |
+| `utils/tools/mutation/invalid-exemptions.txt` | The admitted invalid mutants | `utils/assay/loop/evidence/admitted-gates.txt` |
 | `utils/tools/mutation/survivors.txt` | No reader | Deleted |
 | `utils/tools/session_oracle/session_oracle.py` | The driver of the oracle | `assay/oracle/runner.py` |
 | The 13 other Python files of `utils/tools/session_oracle/`, except `toolchain.py` | The oracle modules | `assay/oracle/`, with the same names |
@@ -2161,10 +2161,10 @@ The 56 data files of `utils/scripts/`. A target `ledgers/NAME.txt` is the file `
 | `quarantine-ledger.txt` | `check-quarantine-ratchet.py` | 8,984 | Format 4, with configurations | `ledgers/quarantine.txt` |
 | `quarantine-region-ledger.txt` | `check-quarantine-regions.py` | 8 | `FILE \| REASON` | The kind `region` of `ledgers/quarantine.txt` |
 | `open-gate-reads.txt` | `check-trait-injection.py` | 142 | `template \| count [\| reason]` | `ledgers/open-gate-read.txt` |
-| `parse-total`, `instruction-total`, `header-fanout` ledgers | `check-parse-cost.py` | 293, 1, 30 | Total rows, file rows, header rows | `ledgers/parse-total.txt`, `ledgers/instruction-total.txt`, `ledgers/header-fanout.txt` |
-| `budget-history-ledger.txt` | `check-budget-history.py` | 1 | `COMMIT \| ROW \| COLUMN \| REASON` | `ledgers/history.txt` |
-| `contracts-baseline.json` | `audit-pre-callsite-count.py` | 1 object | JSON | `ledgers/contract-cites.txt` |
-| The 19 allowlists | Their guards | 0 to 64 each, 295 in total | 9 formats with `:`, ` — `, `\|` or spaces | The rows of the ledgers of their rules. The 2 rows of `no-reserve` name `std::vector::reserve` calls of `bench/bench_mpsc_contention.cpp`. The legacy ban reads `bench/`, but the rule `banned` reads only base files, and the quarantine ledger holds the two calls. So the rows go. Unit 1B.0 deleted the false row of `ExprPool::reserve`. The row of `no-spawn-process` names the ATen operator `clone` in a macro table of `vessel/torch/`. It becomes an admit row of `banned`. The 16 rows of `start-lifetime` count negative fixtures, and they go (decision 9) |
+| `parse-total`, `instruction-total`, `header-fanout` ledgers | `check-parse-cost.py` | 293, 1, 30 | Total rows, file rows, header rows | `ledgers/instruction-total.txt` |
+| `budget-history-ledger.txt` | `check-budget-history.py` | 1 | `COMMIT \| ROW \| COLUMN \| REASON` | none |
+| `contracts-baseline.json` | `audit-pre-callsite-count.py` | 1 object | JSON | none |
+| The 19 allowlists | Their guards | 0 to 64 each, 295 in total | 9 formats with `:`, ` — `, `\|` or spaces | The rows of the ledgers of their rules. The 2 rows of `no-reserve` name `std::vector::reserve` calls of `bench/bench_mpsc_contention.cpp`, and they become admit rows of `banned`. Unit 1B.0 deleted the false row of `ExprPool::reserve`. The row of `no-spawn-process` names the ATen operator `clone` in a macro table of `vessel/torch/`. It becomes an admit row of `banned`. The 16 rows of `start-lifetime` count negative fixtures, and they go (decision 9) |
 | `host-owner-roster.txt`, `witness-roster.txt` | Their guards | 4, 120 | ` — ` and `\|` | `home` and `witness` rows of the rule table |
 | `process-wide-roster.txt`, `escape-doors.txt` | Their guards | 13, 3 | `\|`, two spaces | Ledger rows of their rules |
 | `guard-engines.txt`, `budgets.txt` | `check-guard-engines.py`, `check_report.py`, `cmake/Budgets.cmake` | 114, 37 | `\|` | `utils/registry.txt`. The 114 `script` rows go (section 18.5) |
