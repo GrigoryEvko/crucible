@@ -39,7 +39,7 @@
 // SnapshotValue also requires ImplicitLifetimeThroughout, because the
 // checked lifetime start refuses any other T.  The payload words and the
 // read buffers are std::array, because a Debug build checks each subscript
-// of a std::array.  No build checks a subscript of a C array data member.
+// of a std::array.
 
 #include <fixy/Mutation.h>
 
