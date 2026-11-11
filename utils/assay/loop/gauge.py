@@ -259,15 +259,25 @@ def edit_site(header: Path) -> EditSite:
         if tsast.namespace_path(node) != EDIT_NAMESPACE or body.type != "compound_statement":
             continue
         if not tsast.non_comment_children(body):
-            raise GaugeError(f"the body of {name}() in {header} holds no statement.  clang-format puts a body of one "
-                             f"statement on the line of its declaration, and the edit writes a body of more lines.  "
-                             f"Give the function a statement, or give the gauge a different edit site")
+            raise GaugeError(
+                f"the body of {name}() in {header} holds no statement.  clang-format puts a body of one "
+                f"statement on the line of its declaration, and the edit writes a body of more lines.  "
+                f"Give the function a statement, or give the gauge a different edit site"
+            )
         children = body.children
-        return EditSite(body.start_offset, body.end_offset - 1, b" " * node.start[1], children[0].start_offset,
-                        children[-1].end_offset, body.start[0] == body.end[0])
-    raise GaugeError(f"{header} holds no definition of {name}() with a body.  Give EDIT_HEADER, EDIT_NAMESPACE and "
-                     f"EDIT_FUNCTION of utils/assay/loop/gauge.py a function of a base header that each translation "
-                     f"unit includes")
+        return EditSite(
+            body.start_offset,
+            body.end_offset - 1,
+            b" " * node.start[1],
+            children[0].start_offset,
+            children[-1].end_offset,
+            body.start[0] == body.end[0],
+        )
+    raise GaugeError(
+        f"{header} holds no definition of {name}() with a body.  Give EDIT_HEADER, EDIT_NAMESPACE and "
+        f"EDIT_FUNCTION of utils/assay/loop/gauge.py a function of a base header that each translation "
+        f"unit includes"
+    )
 
 
 def edited_text(original: bytes, site: EditSite, mark: int) -> bytes:
@@ -290,9 +300,17 @@ def edited_text(original: bytes, site: EditSite, mark: int) -> bytes:
     after_open = site.open_brace + 1
     if not site.is_one_line:
         return original[:after_open] + statement + original[after_open:]
-    statements = original[site.first_statement:site.last_statement]
-    return (original[:after_open] + statement + b"\n" + inner + statements + b"\n" + site.indent
-            + original[site.close_brace:])
+    statements = original[site.first_statement : site.last_statement]
+    return (
+        original[:after_open]
+        + statement
+        + b"\n"
+        + inner
+        + statements
+        + b"\n"
+        + site.indent
+        + original[site.close_brace :]
+    )
 
 
 def check_edit_format(tree: Path) -> str | None:
@@ -323,9 +341,11 @@ def check_edit_format(tree: Path) -> str | None:
         what = f"cannot format all of {EDIT_HEADER} after the edit"
     else:
         what = f"gives no verdict on {EDIT_HEADER} after the edit: {verdict.detail}"
-    raise GaugeError(f"the pinned clang-format {what}.  Each run of the test guard_clang_format of the copy then gives "
-                     f"a failure.  Make edited_text() of utils/assay/loop/gauge.py write the shape of the .clang-format "
-                     f"of the tree")
+    raise GaugeError(
+        f"the pinned clang-format {what}.  Each run of the test guard_clang_format of the copy then gives "
+        f"a failure.  Make edited_text() of utils/assay/loop/gauge.py write the shape of the .clang-format "
+        f"of the tree"
+    )
 
 
 # ── The copy ───────────────────────────────────────────────────────────────
@@ -359,8 +379,15 @@ def clone_tree(source: Path, destination: Path) -> str:
     commit = head_commit(source)
     try:
         # The clone writes each file of the tree, so it gets the limit of one run of a tool.
-        git.run(source, "clone", "--quiet", "--shared", str(source.absolute()), str(destination.absolute()),
-                timeout_s=proc.TOOL_S)
+        git.run(
+            source,
+            "clone",
+            "--quiet",
+            "--shared",
+            str(source.absolute()),
+            str(destination.absolute()),
+            timeout_s=proc.TOOL_S,
+        )
     except git.GitError as problem:
         raise GaugeError(f"git clone of {source} failed: {problem}") from None
     copied = head_commit(destination)
@@ -377,8 +404,15 @@ def runs_without_ccache(name: str) -> bool:
     return name == UNCACHED_STEP
 
 
-def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], logs: Path,
-             build: Path | None = None, configured: Path | None = None) -> StepResult:
+def run_step(
+    name: str,
+    command: list[str],
+    cwd: Path,
+    environment: dict[str, str],
+    logs: Path,
+    build: Path | None = None,
+    configured: Path | None = None,
+) -> StepResult:
     """Run one step with its output in a log, and measure it.
 
     Args:
@@ -400,8 +434,9 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
     """
     before = ninja_files.log(build) if build is not None else {}
     counter = cost_meter.open_instruction_counter()
-    step_command = proc.Command(command, timeout_s=proc.BUILD_S, cwd=cwd, env=environment,
-                                stdout=logs / f"{name}.log", stderr=proc.Output.MERGE)
+    step_command = proc.Command(
+        command, timeout_s=proc.BUILD_S, cwd=cwd, env=environment, stdout=logs / f"{name}.log", stderr=proc.Output.MERGE
+    )
     with loop_history.StepTimer() as timer:
         try:
             status = proc.run(step_command).exit
@@ -409,14 +444,23 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
             status = problem.completed.exit if problem.completed is not None else 1
     instructions = cost_meter.read_instruction_counter(counter) if counter is not None else None
     result = timer.result
-    step = StepResult(name, status, float(result["wall_s"]), float(result["cpu_s"]), float(result["system_s"]),
-                      None if result["others_pct"] is None else float(result["others_pct"]),
-                      None if instructions is None else round(instructions / GIGA, 1))
+    # StepTimer gives each of the three times as a float, so the fallback 0.0 applies to no step.
+    wall_s, cpu_s, system_s = (loop_history.number(result, key) or 0.0 for key in ("wall_s", "cpu_s", "system_s"))
+    step = StepResult(
+        name,
+        status,
+        wall_s,
+        cpu_s,
+        system_s,
+        loop_history.number(result, "others_pct"),
+        None if instructions is None else round(instructions / GIGA, 1),
+    )
     if configured is not None:
         step.plugin_build_s = loop_history.plugin_build_since(configured, timer.started_epoch)
     if build is not None:
-        facts = loop_history.summarize_build(build, loop_history.load_graph(build), before, ninja_files.log(build),
-                                             timer.started_epoch)
+        facts = loop_history.summarize_build(
+            build, loop_history.load_graph(build), before, ninja_files.log(build), timer.started_epoch
+        )
         step.peak_memory_gb = loop_history.number(facts, "peak_memory_gb")
         step.critical_path_s = loop_history.number(facts, "critical_path_s")
         path = facts.get("critical_path")
@@ -479,21 +523,27 @@ def median_of(results: list[StepResult]) -> Median:
     """
     counts = [result.instructions_g for result in results]
     shares = [result.others_pct for result in results]
-    return Median(statistics.median(result.wall_s for result in results),
-                  statistics.median(result.cpu_s for result in results),
-                  None if None in counts else statistics.median(count for count in counts if count is not None),
-                  None if None in shares else max(share for share in shares if share is not None))
+    return Median(
+        statistics.median(result.wall_s for result in results),
+        statistics.median(result.cpu_s for result in results),
+        None if None in counts else statistics.median(count for count in counts if count is not None),
+        None if None in shares else max(share for share in shares if share is not None),
+    )
 
 
 def median_peak(results: list[StepResult]) -> float | None:
     """Return the median of the peak concurrent memory of the edit builds, or None when no edit build has one."""
-    peaks = [result.peak_memory_gb for result in results
-             if result.name.startswith(EDIT_BUILD_PREFIX) and result.peak_memory_gb is not None]
+    peaks = [
+        result.peak_memory_gb
+        for result in results
+        if result.name.startswith(EDIT_BUILD_PREFIX) and result.peak_memory_gb is not None
+    ]
     return statistics.median(peaks) if peaks else None
 
 
-def judge(medians: Mapping[str, Median], budgets: Mapping[str, check_report.Budget], place: str) -> tuple[
-        list[check_report.Finding], list[str]]:
+def judge(
+    medians: Mapping[str, Median], budgets: Mapping[str, check_report.Budget], place: str
+) -> tuple[list[check_report.Finding], list[str]]:
     """Compare the median of the instruction counts of the edit builds with its measured rule (THE MEASURED RULE).
 
     Args:
@@ -512,8 +562,10 @@ def judge(medians: Mapping[str, Median], budgets: Mapping[str, check_report.Budg
     if level is None:
         return [], []
     threshold = budget.error if level == "error" else budget.warn
-    message = (f"the median of the runs is {count:g} G instructions, over the {level} threshold of {threshold:g} G "
-               f"instructions")
+    message = (
+        f"the median of the runs is {count:g} G instructions, over the {level} threshold of {threshold:g} G "
+        f"instructions"
+    )
     return [check_report.judged(level, place, 0, BUILD_RULE, message)], []
 
 
@@ -568,11 +620,19 @@ def record_step(item: object, where: str) -> StepResult:
     path = item.get("critical_path", [])
     if not isinstance(status, int) or isinstance(status, bool) or not isinstance(path, (list, tuple)):
         raise GaugeError(f"{where} has no whole status or no list critical_path")
-    return StepResult(str(item["name"]), status, record_number(item, "wall_s", where),
-                      record_number(item, "cpu_s", where), record_number(item, "system_s", where),
-                      loop_history.number(item, "others_pct"), loop_history.number(item, "instructions_g"),
-                      loop_history.number(item, "peak_memory_gb"), loop_history.number(item, "critical_path_s"),
-                      tuple(str(part) for part in path), loop_history.number(item, "plugin_build_s"))
+    return StepResult(
+        str(item["name"]),
+        status,
+        record_number(item, "wall_s", where),
+        record_number(item, "cpu_s", where),
+        record_number(item, "system_s", where),
+        loop_history.number(item, "others_pct"),
+        loop_history.number(item, "instructions_g"),
+        loop_history.number(item, "peak_memory_gb"),
+        loop_history.number(item, "critical_path_s"),
+        tuple(str(part) for part in path),
+        loop_history.number(item, "plugin_build_s"),
+    )
 
 
 def record_median(item: object, where: str) -> Median:
@@ -583,8 +643,12 @@ def record_median(item: object, where: str) -> Median:
     """
     if not isinstance(item, dict):
         raise GaugeError(f"{where} is not a median")
-    return Median(record_number(item, "wall_s", where), record_number(item, "cpu_s", where),
-                  loop_history.number(item, "instructions_g"), loop_history.number(item, "worst_others_pct"))
+    return Median(
+        record_number(item, "wall_s", where),
+        record_number(item, "cpu_s", where),
+        loop_history.number(item, "instructions_g"),
+        loop_history.number(item, "worst_others_pct"),
+    )
 
 
 def parsed_record(value: object, where: str) -> GaugeRecord:
@@ -596,8 +660,12 @@ def parsed_record(value: object, where: str) -> GaugeRecord:
     if not isinstance(value, dict):
         raise GaugeError(f"{where} is not a JSON object")
     jobs, steps, medians = value.get("jobs"), value.get("steps"), value.get("medians")
-    if not isinstance(jobs, int) or isinstance(jobs, bool) or not isinstance(steps, list) \
-            or not isinstance(medians, dict):
+    if (
+        not isinstance(jobs, int)
+        or isinstance(jobs, bool)
+        or not isinstance(steps, list)
+        or not isinstance(medians, dict)
+    ):
         raise GaugeError(f"{where} has no whole jobs, no list steps or no object medians")
     missing = sorted(set(EDIT_STEPS) - set(medians))
     if missing:
@@ -609,8 +677,9 @@ def parsed_record(value: object, where: str) -> GaugeRecord:
     )
 
 
-def judged_record(record: GaugeRecord, budgets: Mapping[str, check_report.Budget],
-                  position: str) -> tuple[list[check_report.Finding], list[str]]:
+def judged_record(
+    record: GaugeRecord, budgets: Mapping[str, check_report.Budget], position: str
+) -> tuple[list[check_report.Finding], list[str]]:
     """Judge one record of the gauge with the rule edit-build-instructions (judge(), THE MEASURED RULE).
 
     measure() judges its own record with this function, and the witness of the rule judges a planted record with it
@@ -631,17 +700,42 @@ def table(results: list[StepResult], medians: dict[str, Median]) -> str:
     """Return the measures of each step and the medians as a table, each a plain number with its unit."""
     rows = [("step", "status", "wall s", "CPU s", "system s", "others %", "G instr", "peak GB", "plugin s")]
     for result in results:
-        rows.append((result.name, str(result.status), f"{result.wall_s:.1f}", f"{result.cpu_s:.0f}",
-                     f"{result.system_s:.0f}", loop_history.cell(result.others_pct), loop_history.cell(result.instructions_g),
-                     loop_history.cell(result.peak_memory_gb), loop_history.cell(result.plugin_build_s)))
+        rows.append(
+            (
+                result.name,
+                str(result.status),
+                f"{result.wall_s:.1f}",
+                f"{result.cpu_s:.0f}",
+                f"{result.system_s:.0f}",
+                loop_history.cell(result.others_pct),
+                loop_history.cell(result.instructions_g),
+                loop_history.cell(result.peak_memory_gb),
+                loop_history.cell(result.plugin_build_s),
+            )
+        )
     for step, median in medians.items():
         peak = median_peak(results) if step == "build" else None
-        rows.append((f"median edit {step}", "", f"{median.wall_s:.1f}", f"{median.cpu_s:.0f}", "",
-                     loop_history.cell(median.worst_others_pct), loop_history.cell(median.instructions_g),
-                     loop_history.cell(peak), ""))
+        rows.append(
+            (
+                f"median edit {step}",
+                "",
+                f"{median.wall_s:.1f}",
+                f"{median.cpu_s:.0f}",
+                "",
+                loop_history.cell(median.worst_others_pct),
+                loop_history.cell(median.instructions_g),
+                loop_history.cell(peak),
+                "",
+            )
+        )
     widths = [max(len(row[index]) for row in rows) for index in range(len(rows[0]))]
-    return "\n".join("  ".join(text.ljust(width) if index == 0 else text.rjust(width)
-                               for index, (text, width) in enumerate(zip(row, widths, strict=True))) for row in rows)
+    return "\n".join(
+        "  ".join(
+            text.ljust(width) if index == 0 else text.rjust(width)
+            for index, (text, width) in enumerate(zip(row, widths, strict=True))
+        )
+        for row in rows
+    )
 
 
 def reconfigure_check(tree: Path, build: Path) -> list[str]:
@@ -649,8 +743,12 @@ def reconfigure_check(tree: Path, build: Path) -> list[str]:
     return [sys.executable, str(tree / GUARD_MASTER), "check", "--rule", RECONFIGURE_RULE, "--build-dir", str(build)]
 
 
-def closing_steps(step: Callable[[str, list[str]], StepResult], build_command: list[str],
-                  configure_command: list[str], check_command: list[str]) -> None:
+def closing_steps(
+    step: Callable[[str, list[str]], StepResult],
+    build_command: list[str],
+    configure_command: list[str],
+    check_command: list[str],
+) -> None:
     """Run the steps after the edit runs: a build with nothing to do, a second configure and the rule reconfigure-noop.
 
     Args:
@@ -703,9 +801,11 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     build = tree / "build"
     environment = proc.environment({"CRUCIBLE_CACHE_DIR": str(work / "cache")})
     jobs = str(options.jobs)
-    print(f"edit-loop-gauge: host {socket.gethostname()}, commit {commit[:12]}, {state.get('changed_files')} changed "
-          f"file(s) in the source work tree that the copy does not hold, preset {options.preset}, {jobs} jobs, "
-          f"{options.runs} run(s), work directory {work}")
+    print(
+        f"edit-loop-gauge: host {socket.gethostname()}, commit {commit[:12]}, {state.get('changed_files')} changed "
+        f"file(s) in the source work tree that the copy does not hold, preset {options.preset}, {jobs} jobs, "
+        f"{options.runs} run(s), work directory {work}"
+    )
     build_command: list[str] = []
     test_command: list[str] = []
     results: list[StepResult] = []
@@ -715,23 +815,36 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         if report is not None:
             report.unlink(missing_ok=True)
         step_environment = {**environment, **CCACHE_OFF} if runs_without_ccache(name) else environment
-        result = run_step(name, command, tree, step_environment, logs, build if command is build_command else None,
-                          build if name in CONFIGURE_STEPS else None)
+        result = run_step(
+            name,
+            command,
+            tree,
+            step_environment,
+            logs,
+            build if command is build_command else None,
+            build if name in CONFIGURE_STEPS else None,
+        )
         results.append(result)
         path = ""
         if result.plugin_build_s is not None:
-            path = (f", {result.wall_s - result.plugin_build_s:.1f} s less its plugin build of "
-                    f"{result.plugin_build_s:g} s")
+            path = (
+                f", {result.wall_s - result.plugin_build_s:.1f} s less its plugin build of {result.plugin_build_s:g} s"
+            )
         if result.critical_path:
-            path = (f", peak {loop_history.cell(result.peak_memory_gb)} GB, critical path {result.critical_path_s:g} s: "
-                    f"{' -> '.join(result.critical_path)}")
+            path = (
+                f", peak {loop_history.cell(result.peak_memory_gb)} GB, critical path {result.critical_path_s:g} s: "
+                f"{' -> '.join(result.critical_path)}"
+            )
         failure = ""
         if result.status != 0:
             failures.append(failure_line(result, report))
             failure = f"\nedit-loop-gauge: FAILED {failures[-1]}"
-        print(f"edit-loop-gauge: {name}: status {result.status}, {result.wall_s:.1f} s wall, {result.cpu_s:.0f} s CPU, "
-              f"{loop_history.cell(result.instructions_g)} G instructions, others "
-              f"{loop_history.cell(result.others_pct)} %{path}{failure}", flush=True)
+        print(
+            f"edit-loop-gauge: {name}: status {result.status}, {result.wall_s:.1f} s wall, {result.cpu_s:.0f} s CPU, "
+            f"{loop_history.cell(result.instructions_g)} G instructions, others "
+            f"{loop_history.cell(result.others_pct)} %{path}{failure}",
+            flush=True,
+        )
         return result
 
     def test_step(name: str) -> StepResult:
@@ -751,8 +864,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         print(f"edit-loop-gauge: {error}  The logs are in {logs}.")
         return 1, True
     build_command = [cmake, "--build", str(build), "-j", jobs]
-    test_command = [ctest, "--test-dir", str(build), "-j", jobs, "--timeout", str(options.timeout),
-                    "--no-tests=error"]
+    test_command = [ctest, "--test-dir", str(build), "-j", jobs, "--timeout", str(options.timeout), "--no-tests=error"]
     configure_command = [cmake, "--preset", options.preset, "-B", str(build)]
     if options.reuse is None and not failed:
         failed = step(UNCACHED_STEP, build_command).status != 0
@@ -785,18 +897,26 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         return 1, True
     medians = {step_name: median_of(step_results) for step_name, step_results in runs.items()}
     print(table(results, medians))
-    record = {"time": started, "commit": commit, "changed_files": state.get("changed_files"),
-              "host": socket.gethostname(), "jobs": options.jobs, "runs": options.runs, "preset": options.preset,
-              "steps": [asdict(result) for result in results],
-              "medians": {name: asdict(median) for name, median in medians.items()}}
+    record = {
+        "time": started,
+        "commit": commit,
+        "changed_files": state.get("changed_files"),
+        "host": socket.gethostname(),
+        "jobs": options.jobs,
+        "runs": options.runs,
+        "preset": options.preset,
+        "steps": [asdict(result) for result in results],
+        "medians": {name: asdict(median) for name, median in medians.items()},
+    }
     budgets = check_report.read_budgets()
     findings, notes = judged_record(GaugeRecord(options.jobs, tuple(results), medians), budgets, str(EDIT_HEADER))
     for note in notes:
         print(f"edit-loop-gauge: {note}")
     status = 0
     for row in sorted({finding.check for finding in findings}):
-        status |= check_report.emit([finding for finding in findings if finding.check == row], row,
-                                    options.warnings_dir)
+        status |= check_report.emit(
+            [finding for finding in findings if finding.check == row], row, options.warnings_dir
+        )
     if options.record is not None:
         with options.record.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, separators=(",", ":")) + "\n")
@@ -820,13 +940,19 @@ inline void breakpoint_if_debugging() noexcept {}
 # Two more edit sites in the namespace foundation::detail.  Each row gives the name of the case, the planted code,
 # and the code after the edit with the mark 42.
 PLANTED_SITES = (
-    ("a body of more lines gets the statement on a line of its own before its first statement",
-     "inline void breakpoint() noexcept {\n    __builtin_trap();\n}",
-     "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}"),
-    ("the edit of a member keeps the indent of the line of its definition",
-     "struct holder {\n    static void breakpoint() noexcept { __builtin_trap(); }\n};",
-     ("struct holder {\n    static void breakpoint() noexcept {\n        static_cast<void>(42LL);\n"
-      "        __builtin_trap();\n    }\n};")),
+    (
+        "a body of more lines gets the statement on a line of its own before its first statement",
+        "inline void breakpoint() noexcept {\n    __builtin_trap();\n}",
+        "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}",
+    ),
+    (
+        "the edit of a member keeps the indent of the line of its definition",
+        "struct holder {\n    static void breakpoint() noexcept { __builtin_trap(); }\n};",
+        (
+            "struct holder {\n    static void breakpoint() noexcept {\n        static_cast<void>(42LL);\n"
+            "        __builtin_trap();\n    }\n};"
+        ),
+    ),
 )
 
 
@@ -893,6 +1019,7 @@ def failure_cases(record_case: Callable[[str, bool], None]) -> None:
     Args:
         record_case: The recorder of one case of the self-test
     """
+
     def stopped(name: str) -> StepResult:
         return StepResult(name, 8, 1, 1, 0, None, None)
 
@@ -901,24 +1028,34 @@ def failure_cases(record_case: Callable[[str, bool], None]) -> None:
         report = junit_report(logs, "edit-tests-1")
         report.write_text(PLANTED_JUNIT, encoding="utf-8")
         line = failure_line(stopped("edit-tests-1"), report)
-        record_case("the line of a test step names each test with a failure in sequence, then each test that ctest "
-                    "did not start, and no skipped test",
-                    line == "edit-tests-1: status 8, 2 test(s) with a failure: test_fails, test_times_out, and 1 "
-                            "test(s) that ctest did not start: test_after_setup")
+        record_case(
+            "the line of a test step names each test with a failure in sequence, then each test that ctest "
+            "did not start, and no skipped test",
+            line == "edit-tests-1: status 8, 2 test(s) with a failure: test_fails, test_times_out, and 1 "
+            "test(s) that ctest did not start: test_after_setup",
+        )
         alone = junit_report(logs, "edit-tests-3")
         alone.write_text(PLANTED_JUNIT_NOT_RUN, encoding="utf-8")
-        record_case("the line of a test step with no failure names the test that ctest did not start",
-                    failure_line(stopped("edit-tests-3"), alone)
-                    == "edit-tests-3: status 8, 1 test(s) that ctest did not start: test_no_program")
+        record_case(
+            "the line of a test step with no failure names the test that ctest did not start",
+            failure_line(stopped("edit-tests-3"), alone)
+            == "edit-tests-3: status 8, 1 test(s) that ctest did not start: test_no_program",
+        )
         missing = failure_line(stopped("edit-tests-2"), junit_report(logs, "edit-tests-2"))
-        record_case("the line of a test step with no JUnit report gives the status and tells why no test name is known",
-                    missing.startswith("edit-tests-2: status 8, and no test name is known: "))
-        record_case("the line of a step other than a test step gives its status",
-                    failure_line(stopped("edit-build-1"), None) == "edit-build-1: status 8")
+        record_case(
+            "the line of a test step with no JUnit report gives the status and tells why no test name is known",
+            missing.startswith("edit-tests-2: status 8, and no test name is known: "),
+        )
+        record_case(
+            "the line of a step other than a test step gives its status",
+            failure_line(stopped("edit-build-1"), None) == "edit-build-1: status 8",
+        )
         text = failure_report([line], logs, "a step gave a status that is not 0")
-        record_case("the report of the measurement says FAILED and gives each step with a status that is not 0",
-                    text.startswith("edit-loop-gauge: FAILED: a step gave a status that is not 0")
-                    and f"edit-loop-gauge:   {line}" in text)
+        record_case(
+            "the report of the measurement says FAILED and gives each step with a status that is not 0",
+            text.startswith("edit-loop-gauge: FAILED: a step gave a status that is not 0")
+            and f"edit-loop-gauge:   {line}" in text,
+        )
 
 
 def self_test() -> int:
@@ -941,21 +1078,33 @@ def self_test() -> int:
         try:
             site = edit_site(header)
         except tsast.KitMissing:
-            print("edit-loop-gauge --self-test: the parse-tree kit is not installed; run python3 utils/bin/setup install tree-sitter")
+            print(
+                "edit-loop-gauge --self-test: the parse-tree kit is not installed; run python3 utils/bin/setup install tree-sitter"
+            )
             return NOT_RUNNABLE
         edited = edited_text(header.read_bytes(), site, 42).decode()
-        expect("the edit goes into the body of foundation::detail::breakpoint, and not into another breakpoint, with "
-               "each statement on a line of its own",
-               "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}\n" in edited
-               and "namespace other {\ninline void breakpoint() noexcept {}" in edited)
+        expect(
+            "the edit goes into the body of foundation::detail::breakpoint, and not into another breakpoint, with "
+            "each statement on a line of its own",
+            "inline void breakpoint() noexcept {\n    static_cast<void>(42LL);\n    __builtin_trap();\n}\n" in edited
+            and "namespace other {\ninline void breakpoint() noexcept {}" in edited,
+        )
         for name, planted, expected in PLANTED_SITES:
             header.write_text(f"namespace foundation::detail {{\n{planted}\n}}\n", encoding="utf-8")
             expect(name, expected in edited_text(header.read_bytes(), edit_site(header), 42).decode())
-        for name, planted in (("a header with no edit site stops the gauge",
-                               PLANTED_HEADER.replace("inline void breakpoint() noexcept { __builtin_trap(); }",
-                                                      "inline void breakpoint_moved() noexcept {}")),
-                              ("a body with no statement stops the gauge",
-                               "namespace foundation::detail {\ninline void breakpoint() noexcept {}\n}\n")):
+        for name, planted in (
+            (
+                "a header with no edit site stops the gauge",
+                PLANTED_HEADER.replace(
+                    "inline void breakpoint() noexcept { __builtin_trap(); }",
+                    "inline void breakpoint_moved() noexcept {}",
+                ),
+            ),
+            (
+                "a body with no statement stops the gauge",
+                "namespace foundation::detail {\ninline void breakpoint() noexcept {}\n}\n",
+            ),
+        ):
             header.write_text(planted, encoding="utf-8")
             try:
                 edit_site(header)
@@ -972,11 +1121,15 @@ def self_test() -> int:
         (source / "tracked.txt").write_text("changed in the work tree\n", encoding="utf-8")
         copy = root / "copy"
         commit = clone_tree(source, copy)
-        expect("the copy holds the HEAD commit of the source and not a change of its work tree",
-               commit == head_commit(source) and (copy / "tracked.txt").read_text(encoding="utf-8") == "one\n")
+        expect(
+            "the copy holds the HEAD commit of the source and not a change of its work tree",
+            commit == head_commit(source) and (copy / "tracked.txt").read_text(encoding="utf-8") == "one\n",
+        )
         (copy / "tracked.txt").write_text("edited in the copy\n", encoding="utf-8")
-        expect("an edit of the copy does not change the source",
-               (source / "tracked.txt").read_text(encoding="utf-8") == "changed in the work tree\n")
+        expect(
+            "an edit of the copy does not change the source",
+            (source / "tracked.txt").read_text(encoding="utf-8") == "changed in the work tree\n",
+        )
     failure_cases(expect)
     expect(
         "the warm build alone runs its compiles with no ccache, so each compile record of the copy holds its "
@@ -984,7 +1137,8 @@ def self_test() -> int:
         runs_without_ccache("warm-build")
         and CCACHE_OFF == {"CCACHE_DISABLE": "1"}
         and not any(
-            runs_without_ccache(name) for name in ("configure", "warm-tests", "edit-build-1", "edit-tests-1", "noop-build")
+            runs_without_ccache(name)
+            for name in ("configure", "warm-tests", "edit-build-1", "edit-tests-1", "noop-build")
         ),
     )
     chosen_work = default_work_dir().resolve()
@@ -1008,59 +1162,92 @@ def self_test() -> int:
 
     copy_tree, copy_build = Path("/work/tree"), Path("/work/tree/build")
     closing_steps(recorded, ["build"], ["configure"], reconfigure_check(copy_tree, copy_build))
-    expect("after the runs, the gauge builds with nothing to do, configures again and runs the rule reconfigure-noop "
-           "with the master guard of the copy on its build",
-           [name for name, _ in called] == ["noop-build", "reconfigure", RECONFIGURE_RULE]
-           and called[2][1] == [sys.executable, str(copy_tree / GUARD_MASTER), "check", "--rule", RECONFIGURE_RULE,
-                                "--build-dir", str(copy_build)]
-           and (REPO_ROOT / GUARD_MASTER).is_file())
+    expect(
+        "after the runs, the gauge builds with nothing to do, configures again and runs the rule reconfigure-noop "
+        "with the master guard of the copy on its build",
+        [name for name, _ in called] == ["noop-build", "reconfigure", RECONFIGURE_RULE]
+        and called[2][1]
+        == [
+            sys.executable,
+            str(copy_tree / GUARD_MASTER),
+            "check",
+            "--rule",
+            RECONFIGURE_RULE,
+            "--build-dir",
+            str(copy_build),
+        ]
+        and (REPO_ROOT / GUARD_MASTER).is_file(),
+    )
 
     median = median_of([result("b", 10, 100, 2, 50), result("b", 30, 300, 4, 70), result("b", 20, 200, 12, 60)])
-    expect("median_of takes the median of each measure and the largest other share",
-           median == Median(20, 200, 60, 12))
-    expect("median_of gives no instruction count when one run has none",
-           median_of([result("b", 1, 1, 1, 5), result("b", 1, 1, 1, None)]).instructions_g is None)
+    expect("median_of takes the median of each measure and the largest other share", median == Median(20, 200, 60, 12))
+    expect(
+        "median_of gives no instruction count when one run has none",
+        median_of([result("b", 1, 1, 1, 5), result("b", 1, 1, 1, None)]).instructions_g is None,
+    )
 
     planted_jobs = 24
     budgets = {BUILD_RULE: check_report.Budget(BUILD_RULE, 10, 50, "G", "m")}
     quiet = {"build": Median(20, 200, 30, 1), "tests": Median(20, 200, 9999, 1)}
     found, notes = judge(quiet, budgets, "h")
-    expect("an instruction count of the build over the warning threshold gives a warning of edit-build-instructions, "
-           "and the count of the tests gives no finding",
-           [(f.check, f.level) for f in found] == [(BUILD_RULE, "warning")] and not notes)
+    expect(
+        "an instruction count of the build over the warning threshold gives a warning of edit-build-instructions, "
+        "and the count of the tests gives no finding",
+        [(f.check, f.level) for f in found] == [(BUILD_RULE, "warning")] and not notes,
+    )
     found, _ = judge({**quiet, "build": Median(20, 200, 60, 1)}, budgets, "h")
-    expect("an instruction count of the build over the error threshold is an error",
-           [(f.check, f.level) for f in found] == [(BUILD_RULE, "error")])
+    expect(
+        "an instruction count of the build over the error threshold is an error",
+        [(f.check, f.level) for f in found] == [(BUILD_RULE, "error")],
+    )
     found, notes = judge({**quiet, "build": Median(20, 9999, None, 90)}, budgets, "h")
-    expect("with no exact instruction count of the build, the gauge judges nothing and gives a note",
-           not found and any("no exact instruction count" in note for note in notes))
+    expect(
+        "with no exact instruction count of the build, the gauge judges nothing and gives a note",
+        not found and any("no exact instruction count" in note for note in notes),
+    )
     found, notes = judge({"build": Median(9999, 9999, 5, 90), "tests": Median(9999, 9999, 5, 90)}, budgets, "h")
-    expect("a slow build and a slow test run on a busy host give no finding, because no rule judges a time",
-           not found and not notes)
-    steps = [result("configure", 12.0, 1, 1, None), result("noop-build", 0.3, 0, 1, None),
-             result("reconfigure", 6.0, 1, 1, None)]
+    expect(
+        "a slow build and a slow test run on a busy host give no finding, because no rule judges a time",
+        not found and not notes,
+    )
+    steps = [
+        result("configure", 12.0, 1, 1, None),
+        result("noop-build", 0.3, 0, 1, None),
+        result("reconfigure", 6.0, 1, 1, None),
+    ]
     steps[2].plugin_build_s = 2.0
     for name, peak in (("edit-build-1", 90.0), ("edit-build-2", 120.0), ("edit-build-3", 130.0)):
         steps.append(result(name, 20, 200, 1, 30))
         steps[-1].peak_memory_gb = peak
     expect("median_peak gives the median of the peak memory of the edit builds", median_peak(steps) == 120.0)
     printed = table(steps, quiet).splitlines()
-    expect("the table gives the peak memory and the plugin build of each step, and the median peak of the edit builds",
-           printed[0].split()[-4:] == ["peak", "GB", "plugin", "s"]
-           and printed[3].split()[-1] == "2.0"
-           and any(line.startswith("median edit build") and "120.0" in line for line in printed))
-    record = {"jobs": planted_jobs, "steps": [asdict(step) for step in steps],
-              "medians": {name: asdict(median) for name, median in quiet.items()}}
+    expect(
+        "the table gives the peak memory and the plugin build of each step, and the median peak of the edit builds",
+        printed[0].split()[-4:] == ["peak", "GB", "plugin", "s"]
+        and printed[3].split()[-1] == "2.0"
+        and any(line.startswith("median edit build") and "120.0" in line for line in printed),
+    )
+    record = {
+        "jobs": planted_jobs,
+        "steps": [asdict(step) for step in steps],
+        "medians": {name: asdict(median) for name, median in quiet.items()},
+    }
     parsed = parsed_record(json.loads(json.dumps(record)), "the record")
     found, notes = judged_record(parsed, budgets, "h")
-    expect("judged_record judges the median of the build of a record that went through JSON",
-           [f.check for f in found] == [BUILD_RULE] and not notes)
+    expect(
+        "judged_record judges the median of the build of a record that went through JSON",
+        [f.check for f in found] == [BUILD_RULE] and not notes,
+    )
     direct, _ = judged_record(GaugeRecord(planted_jobs, tuple(steps), quiet), budgets, "h")
-    expect("a record that went through JSON gives the findings of the record of the run",
-           [item.text() for item in found] == [item.text() for item in direct])
-    for name, broken in (("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
-                         ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
-                         ("a jobs that is no whole number", {**record, "jobs": "many"})):
+    expect(
+        "a record that went through JSON gives the findings of the record of the run",
+        [item.text() for item in found] == [item.text() for item in direct],
+    )
+    for name, broken in (
+        ("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
+        ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
+        ("a jobs that is no whole number", {**record, "jobs": "many"}),
+    ):
         try:
             parsed_record(broken, "the record")
             expect(f"parsed_record refuses a record with {name}", False)
@@ -1070,8 +1257,10 @@ def self_test() -> int:
         records = Path(work) / "records.jsonl"
         line = json.dumps(record)
         records.write_text(f"{line}\n\n{line}\n", encoding="utf-8")
-        expect("read_records gives each record of the file and skips an empty line",
-               [item.jobs for item in read_records(records)] == [planted_jobs, planted_jobs])
+        expect(
+            "read_records gives each record of the file and skips an empty line",
+            [item.jobs for item in read_records(records)] == [planted_jobs, planted_jobs],
+        )
         for name, text in (("a line that is not JSON", "{\n"), ("a line that is not an object", "[1]\n")):
             records.write_text(text, encoding="utf-8")
             try:
@@ -1114,14 +1303,19 @@ def main(argv: list[str]) -> int:
         return gauge_cold.main(argv[1:])
     if argv == ["--self-test"]:
         return self_test()
-    parser = argparse.ArgumentParser(prog="loop gauge",
-                                     description="Measure the build and the tests after one edit of a base header.")
+    parser = argparse.ArgumentParser(
+        prog="loop gauge", description="Measure the build and the tests after one edit of a base header."
+    )
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS)
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
     parser.add_argument("--preset", default="default")
     parser.add_argument("--work-dir", type=Path, default=None)
-    parser.add_argument("--reuse", type=Path, default=None,
-                        help="measure in the work directory of an earlier run with --keep, with no warm step")
+    parser.add_argument(
+        "--reuse",
+        type=Path,
+        default=None,
+        help="measure in the work directory of an earlier run with --keep, with no warm step",
+    )
     parser.add_argument("--keep", action="store_true", help="keep the work directory after the measurement")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_S, help="the ctest limit of one test, in s")
     parser.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB)
@@ -1133,9 +1327,11 @@ def main(argv: list[str]) -> int:
         return 2
     free = heavy.available_gb()
     if free is not None and free < options.min_free_gb:
-        print(f"edit-loop-gauge: the host has {free:.0f} GB of available memory, less than --min-free-gb "
-              f"{options.min_free_gb:g}.  Wait until other work ends, or give a smaller --jobs and --min-free-gb.",
-              file=sys.stderr)
+        print(
+            f"edit-loop-gauge: the host has {free:.0f} GB of available memory, less than --min-free-gb "
+            f"{options.min_free_gb:g}.  Wait until other work ends, or give a smaller --jobs and --min-free-gb.",
+            file=sys.stderr,
+        )
         return 2
     if options.reuse is not None:
         if options.work_dir is not None:
@@ -1143,8 +1339,11 @@ def main(argv: list[str]) -> int:
             return 2
         work = options.reuse.resolve()
         if not cmake_reader.is_configured(work / "tree" / "build") or not (work / "logs").is_dir():
-            print(f"loop gauge: {work} is not the work directory of an earlier run with --keep: it has no "
-                  f"configured build tree/build or no logs directory.", file=sys.stderr)
+            print(
+                f"loop gauge: {work} is not the work directory of an earlier run with --keep: it has no "
+                f"configured build tree/build or no logs directory.",
+                file=sys.stderr,
+            )
             return 2
     else:
         work = (options.work_dir or default_work_dir()).resolve()
