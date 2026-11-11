@@ -38,8 +38,8 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
 
 # The registry of the planted repository: one measured rule, one counted rule that a parse configuration checks, and a
-# rule that reads the build.  It also holds the other rules that a parse configuration checks.  The counted rule
-# trait-guard is there too, and no parse configuration checks it.
+# rule that reads the build.  It also holds the other rules that a parse configuration checks.  The counted rule home
+# is there too, with its kind open-read, and no parse configuration checks it.
 REGISTRY = (
     "format 1\n"
     "rule slow-row engine=build scope=builddir ledger=max limit=20 unit=s held-by=loop-gauge doc=XV | a time | "
@@ -49,7 +49,7 @@ REGISTRY = (
     "rule quarantine engine=plugin scope=tracked ledger=count kinds=std-object doc=XXII | a finding | remove it\n"
     "rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include doc=XV | a header | remove it\n"
     "rule syscalls engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
-    "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
+    "rule home engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The module of the rule that reads the build, its test, and the module of the test launcher of the planted repository.
 BUILD_RULE_MODULE = "utils/assay/guard/engines/meta/plan_check.py"
@@ -66,17 +66,17 @@ OTHER_BUILDS = {
 DOOR_LEDGER = "format 1\nrule door-unit\n"
 DOOR_PATH = "utils/ledgers/door-unit.txt"
 COUNTED_DOORS = f"{DOOR_LEDGER}src/door.cpp | header-door | 2 | door.h | -\n"
-# The ledger of the rule trait-guard.
-TRAIT_LEDGER = "utils/ledgers/trait-guard.txt"
+# The ledger of the rule home.
+HOME_LEDGER = "utils/ledgers/home.txt"
 # The registry of the counted rules.  It holds two count ledgers with a row, an admit ledger, a count rule with no
 # ledger file and a count rule of a different engine.
 COUNTED_REGISTRY = (
     "format 1\n"
     "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
     "rule erased-brand engine=tsast scope=tracked ledger=count doc=XXII | a brand | name the brand\n"
-    "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint doc=XXI | a mint | shape the mint\n"
+    "rule home engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
+    "rule mint engine=plugin scope=include/ ledger=admit kinds=mint doc=XXI | a mint | shape the mint\n"
     "rule padded-list engine=plugin scope=include/ ledger=count kinds=padded-member doc=XV.7 | a list | add a member\n"
-    "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
 # build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
@@ -124,7 +124,7 @@ statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
 if mode == "moves":
-    ledger = pathlib.Path("utils/ledgers/trait-guard.txt").read_text()
+    ledger = pathlib.Path("utils/ledgers/home.txt").read_text()
     statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
 cases = "".join(f'<testcase name="{name}" status="{status}"/>' for name, status in statuses.items())
 cases += '<testcase name="test_skips" status="notrun"><skipped message="SKIP_RETURN_CODE=77"/></testcase>'
@@ -191,8 +191,8 @@ if "--show-only=json-v1" in words:
 names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
 report = pathlib.Path(words[words.index("--output-junit") + 1])
 red = {"test_broken"}
-traits = pathlib.Path("utils/ledgers/trait-guard.txt")
-red |= {"test_ledger"} if traits.is_file() and "include/old.h" in traits.read_text() else set()
+reads = pathlib.Path("utils/ledgers/home.txt")
+red |= {"test_ledger"} if reads.is_file() and "include/old.h" in reads.read_text() else set()
 cases ="".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
 report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</testsuite>')
 """
@@ -641,8 +641,8 @@ def partial_cases(expect: testing.Expect) -> None:
             f"runs {verdict.configurations} and folds {verdict.ledgers}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
-        traits = "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n"
-        moved = commit_change(root, TRAIT_LEDGER, traits, "Count two open reads")
+        reads = "format 1\nrule home\ninclude/old.h | open-read | 2 | a::trait_v | -\n"
+        moved = commit_change(root, HOME_LEDGER, reads, "Count two open reads")
         divided = commit_change(root, "notes.txt", "a change that divides include/old.h\n", "Divide a header")
         planted = every_gate(work, root, tree, {"build": "moves"})
         verdict, printed = testing.captured(
@@ -668,10 +668,8 @@ def counted_cases(expect: testing.Expect) -> None:
         files = {
             rule_registry.REGISTRY_PATH: COUNTED_REGISTRY,
             DOOR_PATH: COUNTED_DOORS,
-            TRAIT_LEDGER: "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n",
-            "utils/ledgers/mint-pattern.txt": (
-                "format 1\nrule mint-pattern\ninclude/a.h | mint | admit | a::mint_a | a hatch\n"
-            ),
+            HOME_LEDGER: "format 1\nrule home\ninclude/old.h | open-read | 2 | a::trait_v | -\n",
+            "utils/ledgers/mint.txt": "format 1\nrule mint\ninclude/a.h | mint | admit | a::mint_a | a hatch\n",
             "utils/ledgers/padded-list.txt": "format 1\nrule padded-list\n",
             "utils/ledgers/erased-brand.txt": "format 1\nrule erased-brand\nc.h | - | 1 | z | -\n",
         }
@@ -682,7 +680,7 @@ def counted_cases(expect: testing.Expect) -> None:
         expect(
             f"a rule of the engine plugin or elf with the policy count or admit and a ledger with a row is counted, and "
             f"a ledger with no row and a rule of a different engine are not: {counted}",
-            counted == ("door-unit", "mint-pattern", "trait-guard"),
+            counted == ("door-unit", "home", "mint"),
         )
     tree = Path("/planted/tree")
     every = [str(gate.build_directory(tree, item)) for item in gate.CONFIGURATIONS]
@@ -692,8 +690,8 @@ def counted_cases(expect: testing.Expect) -> None:
         "of a different rule gets the build of each configuration of objects",
         gate.reduce_words(tree, "door-unit")
         == ["write", "--rule", "door-unit", *(word for build in every for word in ("--build-dir", build))]
-        and gate.reduce_words(tree, "trait-guard")
-        == ["write", "--rule", "trait-guard", *(word for build in objects for word in ("--build-dir", build))]
+        and gate.reduce_words(tree, "home")
+        == ["write", "--rule", "home", *(word for build in objects for word in ("--build-dir", build))]
         and len(objects) < len(every),
     )
     built = [gate.Outcome(item.name, (), (), 1.0, False) for item in gate.CONFIGURATIONS]
