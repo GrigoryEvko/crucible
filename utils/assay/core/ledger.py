@@ -54,8 +54,8 @@ THE POLICIES
     A row of the policy count or admit that admits a finding gives a warning
     on each run, one warning for each PATH, so each admitted item stays in
     the output of the rule.  The text of the warning tells the action of the
-    policy: a count falls when its findings go, and an admit row goes with
-    the finding that it admits.  A count row with a reason is a keep row: its
+    policy: a count falls when its findings go, and an admit row gives its
+    reason.  A count row with a reason is a keep row: its
     reason tells why its findings stay.  The text of a keep row gives that
     reason as the cause, and it does not tell the reader to remove a finding.
     The text of a count row with no reason tells the reader to remove a
@@ -805,19 +805,12 @@ def admitted_text(
     """
     admit = (
         f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
-        f"write removes a row that admits no finding.  `python3 utils/bin/guard explain {rule.id}` gives the rule"
+        f"row that admits no finding gives no error.  `python3 utils/bin/guard explain {rule.id}` gives the rule"
     )
     if rule.policy != Policy.COUNT or by_admit == total:
         return admit
     command = f"`python3 utils/bin/guard write --rule {rule.id}`"
-    admit_part = (
-        (
-            f".  Rows with the value admit admit {by_admit} of them, each with its reason, and a write removes such "
-            f"a row when it admits no finding"
-        )
-        if by_admit
-        else ""
-    )
+    admit_part = f".  Rows with the value admit admit {by_admit} of them, each with its reason" if by_admit else ""
     if by_admit + by_reason == total:
         return (
             f"{path} has {total} findings that rows of the ledger keep, each with its reason: {shown}.  The reason of "

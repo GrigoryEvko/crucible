@@ -151,8 +151,8 @@ THE ALLOWLISTS
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
 
 THE HIDDEN IMPORTS
-    The quarantine plugin writes the records of the rule library-code into
-    the section of each object (utils/tools/quarantine/body.cpp, THE
+    The quarantine plugin writes the records of the library code into the
+    section of each object (utils/tools/quarantine/body.cpp, THE
     RECORDS).  A record call, reference or symbol names a symbol that the
     code of the tree can import.  It also gives the line of its source
     (assay.readers.sections, THE SYMBOLS OF THE LIBRARY CODE).  The rule
