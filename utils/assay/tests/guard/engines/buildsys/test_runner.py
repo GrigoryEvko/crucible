@@ -64,9 +64,7 @@ def run_cases(expect: testing.Expect) -> None:
             bool(findings) and all(item.level == "error" for item in findings) and context.rule is rule,
         )
         status, said = testing.captured(lambda: meta_runner.run(rule, context, None))
-        expect(
-            "the run of the rule exits 1 with an error", status == 1 and f"{len(findings)} error(s)" in said
-        )
+        expect("the run of the rule exits 1 with an error", status == 1 and f"{len(findings)} error(s)" in said)
 
 
 def main(argv: list[str]) -> int:
