@@ -206,10 +206,8 @@ class Median:
 
 @dataclass(frozen=True, slots=True)
 class GaugeRecord:
-    """The part of a record of --record that the gauge judges: the job count, each step, and the median of each run."""
+    """The part of a record of --record that the gauge judges: the median of each step of the edit runs."""
 
-    jobs: int
-    steps: tuple[StepResult, ...]
     medians: Mapping[str, Median]
 
 
@@ -608,33 +606,6 @@ def record_number(block: Mapping[str, object], key: str, where: str) -> float:
     return value
 
 
-def record_step(item: object, where: str) -> StepResult:
-    """Return the measures of one step of a record, as measure() writes them with asdict().
-
-    Raises:
-        GaugeError: If the step does not have that shape
-    """
-    if not isinstance(item, dict) or not isinstance(item.get("name"), str):
-        raise GaugeError(f"{where} is not a step with a name")
-    status = item.get("status")
-    path = item.get("critical_path", [])
-    if not isinstance(status, int) or isinstance(status, bool) or not isinstance(path, (list, tuple)):
-        raise GaugeError(f"{where} has no whole status or no list critical_path")
-    return StepResult(
-        str(item["name"]),
-        status,
-        record_number(item, "wall_s", where),
-        record_number(item, "cpu_s", where),
-        record_number(item, "system_s", where),
-        loop_history.number(item, "others_pct"),
-        loop_history.number(item, "instructions_g"),
-        loop_history.number(item, "peak_memory_gb"),
-        loop_history.number(item, "critical_path_s"),
-        tuple(str(part) for part in path),
-        loop_history.number(item, "plugin_build_s"),
-    )
-
-
 def record_median(item: object, where: str) -> Median:
     """Return the median of one step of a record, as measure() writes it with asdict().
 
@@ -659,22 +630,13 @@ def parsed_record(value: object, where: str) -> GaugeRecord:
     """
     if not isinstance(value, dict):
         raise GaugeError(f"{where} is not a JSON object")
-    jobs, steps, medians = value.get("jobs"), value.get("steps"), value.get("medians")
-    if (
-        not isinstance(jobs, int)
-        or isinstance(jobs, bool)
-        or not isinstance(steps, list)
-        or not isinstance(medians, dict)
-    ):
-        raise GaugeError(f"{where} has no whole jobs, no list steps or no object medians")
+    medians = value.get("medians")
+    if not isinstance(medians, dict):
+        raise GaugeError(f"{where} has no object medians")
     missing = sorted(set(EDIT_STEPS) - set(medians))
     if missing:
         raise GaugeError(f"{where} has no median of the step {', '.join(missing)}")
-    return GaugeRecord(
-        jobs,
-        tuple(record_step(item, f"the step {index} of {where}") for index, item in enumerate(steps)),
-        {name: record_median(medians[name], f"the median {name} of {where}") for name in EDIT_STEPS},
-    )
+    return GaugeRecord({name: record_median(medians[name], f"the median {name} of {where}") for name in EDIT_STEPS})
 
 
 def judged_record(
@@ -909,7 +871,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         "medians": {name: asdict(median) for name, median in medians.items()},
     }
     budgets = check_report.read_budgets()
-    findings, notes = judged_record(GaugeRecord(options.jobs, tuple(results), medians), budgets, str(EDIT_HEADER))
+    findings, notes = judged_record(GaugeRecord(medians), budgets, str(EDIT_HEADER))
     for note in notes:
         print(f"edit-loop-gauge: {note}")
     status = 0
@@ -1238,15 +1200,18 @@ def self_test() -> int:
         "judged_record judges the median of the build of a record that went through JSON",
         [f.check for f in found] == [BUILD_RULE] and not notes,
     )
-    direct, _ = judged_record(GaugeRecord(planted_jobs, tuple(steps), quiet), budgets, "h")
+    direct, _ = judged_record(GaugeRecord(quiet), budgets, "h")
     expect(
         "a record that went through JSON gives the findings of the record of the run",
         [item.text() for item in found] == [item.text() for item in direct],
     )
     for name, broken in (
         ("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
-        ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
-        ("a jobs that is no whole number", {**record, "jobs": "many"}),
+        (
+            "a median with no wall time",
+            {**record, "medians": {"build": {"cpu_s": 1.0}, "tests": asdict(quiet["tests"])}},
+        ),
+        ("no object medians", {**record, "medians": [1]}),
     ):
         try:
             parsed_record(broken, "the record")
@@ -1259,7 +1224,7 @@ def self_test() -> int:
         records.write_text(f"{line}\n\n{line}\n", encoding="utf-8")
         expect(
             "read_records gives each record of the file and skips an empty line",
-            [item.jobs for item in read_records(records)] == [planted_jobs, planted_jobs],
+            [item.medians for item in read_records(records)] == [parsed.medians, parsed.medians],
         )
         for name, text in (("a line that is not JSON", "{\n"), ("a line that is not an object", "[1]\n")):
             records.write_text(text, encoding="utf-8")
