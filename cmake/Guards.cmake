@@ -47,11 +47,11 @@ endfunction()
 # crucible_meta_rule_tests(<warnings-dir> [TREES <rule>...])
 #
 # Register two tests for each rule of the engine meta: guard_ID runs the rule on the tree, and
-# guard_ID_witness runs it on each plant and control of utils/plants/ID/.  The rule test-registration
+# guard_ID_witness runs it on each plant and control of utils/plants/ID/.  The rule registry
 # reads the tests of this build directory, so each rule gets --build-dir.  A rule that does not apply
 # to the tree exits 77, and ctest shows a skip.  The guard_ID of
 # each rule of TREES reads the parse trees of the tree, so it requires the fixture tsast_trees.  The rule
-# test-registration refuses a rule that reads the trees and is not in TREES.
+# registry refuses a rule that reads the trees and is not in TREES.
 function(crucible_meta_rule_tests warnings_dir)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=meta[ \t]" rows)
@@ -91,7 +91,7 @@ endfunction()
 # guard_ID_witness builds each plant and control of utils/plants/ID/ with the compiler of this build
 # (assay.guard.engines.elf.runner, THE PLANTS).  A rule of the engine can read the parse trees, as the
 # census of the rule codegen-shapes does.  The guard_ID of each rule of TREES requires the fixture
-# tsast_trees, and no other test waits for the fill.  The rule test-registration refuses a rule that reads
+# tsast_trees, and no other test waits for the fill.  The rule registry refuses a rule that reads
 # the trees and is not in TREES, and a rule of TREES that reads no tree.  Exit 77 is a skip: the rule does
 # not apply, for example on a host of another architecture.
 function(crucible_elf_rule_tests warnings_dir)

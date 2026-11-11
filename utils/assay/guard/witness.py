@@ -5,7 +5,7 @@ usage: guard witness [--rule ID]... [--engine E]... [--cxx PATH] [--plugin PATH]
 A plant is a tree in utils/plants/RULE/ that the rule must refuse, and a
 control is a tree that it must accept (assay.guard.engines.meta.runner, THE
 WITNESS).  The command runs the witness of each rule that the call names and
-that has a module of its own.  The rule rule-witness holds that each rule has a
+that has a module of its own.  The rule registry holds that each rule has a
 minimum of one plant and one control.
 
 The witness of the engine plugin compiles each plant and each control with the

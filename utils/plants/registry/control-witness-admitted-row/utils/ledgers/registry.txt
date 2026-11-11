@@ -1,0 +1,5 @@
+# A planted ledger of the rule registry.  Its row admits the rule with no plant, because the kind no-plant is not
+# a refused kind.
+format 1
+rule registry
+utils/registry.txt | no-plant | admit | stray-rule | A planted rule that has no plant yet

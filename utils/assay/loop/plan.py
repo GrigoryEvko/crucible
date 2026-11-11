@@ -27,7 +27,7 @@ THE COVERS
         program after the launcher
       * A rule gets the tier of the build of each test that runs `guard check
         --rule ID`, or `guard check --engine E` for a rule of E with a module
-        (assay.guard.engines.meta.test_registration).  A rule with a holder
+        (assay.guard.engines.meta.registry_tests).  A rule with a holder
         gets the cover of the row of its holder in HOLDERS.  A rule that a
         rule of the registry holds gets the covers of that rule, with no row.
         A rule that a step names gets the tier of the step
@@ -125,8 +125,8 @@ from assay.core import cli, meter, paths
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
+from assay.guard.engines.meta import registry_tests
 from assay.guard.engines.meta import runner as meta_runner
-from assay.guard.engines.meta import test_registration
 from assay.loop import bench, fuzz, tiers
 from assay.loop import teststep as test_launcher
 from assay.loop.evidence import targets as evidence_targets
@@ -429,8 +429,8 @@ def preset_items(presets: tiers.Tiers) -> list[Item]:
 
 def is_fixture(test: ctest_reader.TestEntry, root: Path) -> bool:
     """Tell if a test runs the driver of a negative fixture, `loop fixture`."""
-    run = test_registration.master_of(test, root)
-    return run is not None and (run[0], run[1][:1]) == (test_registration.FIXTURE[0], [test_registration.FIXTURE[1]])
+    run = registry_tests.master_of(test, root)
+    return run is not None and (run[0], run[1][:1]) == (registry_tests.FIXTURE[0], [registry_tests.FIXTURE[1]])
 
 
 def bench_target_of(test: ctest_reader.TestEntry, programs: Mapping[str, str]) -> str | None:
@@ -455,7 +455,7 @@ def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
     for build in builds:
         programs = dict(build.bench_programs)
         for test in build.tests:
-            path, line = test_registration.place_of(test, root)
+            path, line = registry_tests.place_of(test, root)
             first.setdefault(test.name, (Kind.FIXTURE if is_fixture(test, root) else Kind.TEST, path, line))
             listed = covers.setdefault(test.name, [])
             if build.preset.tier is not None and DISABLED not in test.properties:
@@ -481,14 +481,14 @@ def test_covers(builds: Sequence[Build], registry: rule_registry.Registry, root:
         if build.preset.tier is None:
             continue
         for test in build.tests:
-            run = test_registration.master_of(test, root)
+            run = registry_tests.master_of(test, root)
             if run is None or DISABLED in test.properties:
                 continue
             master, words = run
             if master != "guard" or words[:1] != ["check"] or "--self-test" in words:
                 continue
-            rule_ids = [*test_registration.rule_words(words)]
-            rule_ids += [rule.id for rule in test_registration.engine_rules(words, registry)]
+            rule_ids = [*registry_tests.rule_words(words)]
+            rule_ids += [rule.id for rule in registry_tests.engine_rules(words, registry)]
             for rule_id in rule_ids:
                 text = f"the test {test.name} of {build.name}"
                 covers.setdefault(rule_id, []).append(Cover(build.preset.tier, text))
@@ -561,7 +561,7 @@ def derive_items(
     by_id = {item.name: item for item in rules}
     modules: dict[str, tuple[str, frozenset[str]]] = {}
     for rule in sorted(registry.rules.values(), key=lambda rule: rule.id):
-        module = test_registration.implementing_module(rule, root)
+        module = registry_tests.implementing_module(rule, root)
         if module is not None:
             modules[rule.id] = (module, frozenset(module_imports(root, module)))
     found: list[Item] = []

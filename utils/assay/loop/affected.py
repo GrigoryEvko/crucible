@@ -112,7 +112,7 @@ THE TESTS OF THE MASTER GUARD
     of each program and each file of the build tree that the command or the
     environment names.  A change of one plant then runs the tests of its
     rule.  It also runs the tests of the rules that read each plant:
-    prose-bans and rule-witness.  A rule test that reads a build, and a test
+    prose-bans and registry.  A rule test that reads a build, and a test
     of the master with other words, run on each call.
 
     ctest gets the option `--fixture-exclude-setup tsast_trees`.  A test

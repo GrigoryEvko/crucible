@@ -86,8 +86,8 @@ THE ENVIRONMENT
     `loop test` puts the same environment into the key of each test behind
     the launcher (assay.loop.affected).  A variable that the launcher drops
     then changes no result and no key.  A variable that a test gets from its
-    property ENVIRONMENT goes through the same rules.  The rule
-    test-registration refuses such a variable when the launcher drops it.
+    property ENVIRONMENT goes through the same rules.  The rule registry
+    refuses such a variable when the launcher drops it.
 
 CORE DUMPS
     A death test forks a child that aborts, and the parent waits for the

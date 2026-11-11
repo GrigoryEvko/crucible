@@ -670,7 +670,7 @@ def end_like(exit_code: int) -> None:
 def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, dict[str, float]]:
     """Read the limits of some measured rules of the registry.
 
-    The rule registry-shape holds the schema of each row, so this reader
+    The rule registry holds the schema of each row, so this reader
     reads only the field limit of the named rules.  A rule with one limit
     has the kind "" (limits() of assay.core.rows).
 

@@ -60,7 +60,7 @@ def load_registry() -> rule_registry.Registry | None:
     try:
         return rule_registry.load()
     except (rows_grammar.RowsError, OSError) as problem:
-        print(f"guard: the registry cannot be read: {problem}.  `guard check --rule registry-shape` gives each "
+        print(f"guard: the registry cannot be read: {problem}.  `guard check --rule registry` gives each "
               f"problem", file=sys.stderr)
         return None
 

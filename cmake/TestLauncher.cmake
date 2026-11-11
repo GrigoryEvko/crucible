@@ -14,9 +14,8 @@
 # CMake puts CMAKE_TEST_LAUNCHER in front of a test whose command names an
 # executable target.  It gives no launcher to a script test.  Each script test
 # of the tree comes from crucible_script_test(), which puts the launcher in
-# front of its command.  The rule test-registration (`guard check --rule
-# test-registration`) refuses a test that the launcher and the fixture driver
-# do not run.
+# front of its command.  The rule registry (`guard check --rule registry`)
+# refuses a test that the launcher and the fixture driver do not run.
 #
 # A target reads CMAKE_TEST_LAUNCHER when it is created, and a test reads the
 # launcher when crucible_script_test() registers it.  This file must come

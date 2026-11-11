@@ -108,7 +108,8 @@ PLANTED_SUFFIX = ".planted"
 APPEND_SUFFIX = ".append"
 PREPEND_SUFFIX = ".prepend"
 SKIPPED = 77
-# The guide of the tree.  Only the root of the repository holds a file with this name (the rule layout).
+# The guide of the tree.  Only the root of the repository holds a file with this name (the part layout of the rule
+# registry).
 GUIDE = "CLAUDE.md"
 # The directory of the modules of the engines, relative to the root, and the table of a family module (THE FAMILIES).
 ENGINES = "utils/assay/guard/engines"
@@ -171,7 +172,7 @@ class MetaContext:
 
     @property
     def registry(self) -> rule_registry.Registry:
-        """The rows of the registry that read.  The rule registry-shape gives the problems of the others."""
+        """The rows of the registry that read.  The rule registry gives the problems of the others."""
         self._examine()
         assert self._registry is not None
         return self._registry

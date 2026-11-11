@@ -48,16 +48,16 @@ THE ROWS
 
     A rule has at most one of legacy and held-by.  A rule with neither has a
     module of its own in assay/guard/engines/ENGINE/, which the rule
-    rule-implementations holds.  A rule with held-by has the field holder
-    too, and the rule rule-implementations holds that field.  Only a rule
-    with held-by has the field holder.
+    registry holds.  A rule with held-by has the field holder too, and the
+    rule registry holds that field.  Only a rule with held-by has the field
+    holder.
 
     A path row gives a glob of tracked paths and what those files are.  The
-    rule layout reads the path rows.
+    rule registry reads the path rows.
 
 LOAD AND EXAMINE
     load() reads the registry and refuses the first problem.  examine() reads
-    each row and returns each problem, for the rule registry-shape.
+    each row and returns each problem, for the rule registry.
 
 `guard selftest tests.core.test_registry` does a test of the module.
 """

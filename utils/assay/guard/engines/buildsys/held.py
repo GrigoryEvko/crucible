@@ -21,7 +21,7 @@ THE HOLDERS
     each test, with the limits of the kind test and the ledgers of the copy.
     fixture_findings() is the judge of the holder loop-fixture.
     The field holder of a held rule names the function of its holder that
-    judges it.  The rule rule-implementations makes sure that the judge of the
+    judges it.  The rule registry makes sure that the judge of the
     holder in HOLDERS calls that function.  For a holder that is a rule ID,
     the function must be in the module of that rule.
 

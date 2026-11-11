@@ -1,35 +1,38 @@
-"""test-registration — each test that runs a master carries the label ci_guard, and each rule has its test with its input.
+"""The part tests of the rule registry: each test that runs a master has the label ci_guard, and each rule has its test.
 
 `ctest -L ci_guard` is the local gate.  A guard that is registered without the
 label is invisible to that command, so the gate reports a pass and never runs
 the guard.  On 2026-05 twelve of 42 script tests had no label.
 
 THE INPUT
-    The rule reads the registered tests of a configured build directory
+    The part reads the registered tests of a configured build directory
     through the reader assay.readers.ctest.  CMake has evaluated each
     function, loop, subdirectory and property call, so the command and the
     properties of each test are the values that ctest uses.  The backtrace of
-    a test gives the CMake file and the line of its add_test.
+    a test gives the CMake file and the line of its add_test.  The part does
+    not apply with no build directory, with a build directory that ctest
+    cannot read, or with a build that registers no test of a master
+    (registered_tests()).
 
-THE RULE
+THE PART
     A test is a script test when one argument of its command is a master of
     ROOT/utils/bin/ (guard, loop or setup), or a path under
     ROOT/utils/scripts/.  The test launcher `loop test-step` and its options
-    come in front of a command, and the rule reads the first master after
-    them.  The rule refuses:
+    come in front of a command, and the part reads the first master after
+    them.  The part refuses:
       label         a script test with no label ci_guard.  The launcher in front of an executable alone, and the
                     driver `loop fixture` of a negative fixture, are not script tests
       unknown-rule  a test that runs `guard check --rule ID` or `guard witness --rule ID` for an ID that the registry
                     does not hold
       no-test       a rule of the registry that no test with the label ci_guard runs with `guard check --rule ID`, or
                     with `guard check --engine E` for a rule of the engine E with a module of its own.  A measured
-                    rule with a holder has no run of its own, and the rule does not read it.  The ledger admits each
+                    rule with a holder has no run of its own, and the part does not read it.  The ledger admits each
                     rule that a CI step or a person runs
       fixture       a test that runs `guard check --rule ID`, with no --self-test, for a rule whose module reads the
                     parse trees, and that does not require the fixture tsast_trees.  The module reads the parse
                     trees when its import closure in the package holds assay.readers.tsast.  With no fixture, the test
                     can read a cold tree cache under load.  A test that sets up the fixture fills the cache, and the
-                    rule does not read it
+                    part does not read it
       unread-fixture  a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree: a test of `guard
                     check` with no rule that has a module that reads the parse trees, or a test of `guard witness`.
                     A witness copies each plant to a scratch repository and reads only the plant.  Such a test waits
@@ -53,13 +56,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from assay.core import proc
-from assay.core import report as check_report
 from assay.core import registry as rule_registry
+from assay.core import report as check_report
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_file, module_name_of
 from assay.loop import teststep as test_launcher
 from assay.readers import ctest as ctest_reader
 
-RULE = "test-registration"
+PART = "tests"
 LABEL = "ci_guard"
 MASTERS = ("guard", "loop", "setup")
 # The master and the subcommand of the test launcher, which comes in front of a command.
@@ -89,9 +92,9 @@ def master_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]]
         if not path.is_absolute():
             continue
         resolved = path.resolve()
-        words = command[index + 1:]
-        if resolved.parent == bin_dir and path.name in MASTERS and (path.name, words[:1]) != (LAUNCHER[0],
-                                                                                              [LAUNCHER[1]]):
+        words = command[index + 1 :]
+        is_launcher = (path.name, words[:1]) == (LAUNCHER[0], [LAUNCHER[1]])
+        if resolved.parent == bin_dir and path.name in MASTERS and not is_launcher:
             return path.name, words
         if resolved.is_relative_to(scripts_dir):
             return resolved.relative_to(root).as_posix(), words
@@ -183,17 +186,18 @@ def implementing_module(rule: rule_registry.Rule, root: Path) -> str | None:
 
 
 def unread_fixture(test: ctest_reader.TestEntry, path: str, line: int, why: str) -> check_report.Finding:
-    """Return the error of a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree (THE RULE)."""
-    return check_report.Finding(
-        "error", path, line, RULE, f"the test {test.name} requires the fixture {TREE_FIXTURE}, and {why}.  It waits "
-        f"for the fill of the tree cache with no use.  Remove FIXTURES_REQUIRED {TREE_FIXTURE}", "unread-fixture",
-        test.name)
+    """Return the error of a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree (THE PART)."""
+    message = (
+        f"the test {test.name} requires the fixture {TREE_FIXTURE}, and {why}.  It waits for the fill of the tree "
+        f"cache with no use.  Remove FIXTURES_REQUIRED {TREE_FIXTURE}"
+    )
+    return check_report.Finding("error", path, line, PART, message, "unread-fixture", test.name)
 
 
 def environment_findings(test: ctest_reader.TestEntry, root: Path) -> list[check_report.Finding]:
     """Return an error for each variable that a property gives a test behind the launcher and the launcher drops.
 
-    THE RULE gives the kind environment.  Complexity: linear in the items of the two properties.
+    THE PART gives the kind environment.  Complexity: linear in the items of the two properties.
     """
     command = list(test.command)
     if test_launcher.launched(command) == command:
@@ -213,62 +217,94 @@ def environment_findings(test: ctest_reader.TestEntry, root: Path) -> list[check
 
 def dropped_variable(test: ctest_reader.TestEntry, path: str, line: int, prop: str, name: str) -> check_report.Finding:
     """Return the error of a variable that a property gives a test behind the launcher and the launcher drops."""
-    return check_report.Finding(
-        "error", path, line, RULE, f"the test {test.name} runs behind the test launcher, and its property {prop} "
-        f"gives it the variable {name}.  The launcher drops that variable (assay.loop.teststep, THE ENVIRONMENT), so "
-        f"the test does not get it.  Give the variable a name that the launcher keeps, such as CRUCIBLE_{name}",
-        "environment", f"{test.name}: {name}")
+    message = (
+        f"the test {test.name} runs behind the test launcher, and its property {prop} gives it the variable {name}.  "
+        f"The launcher drops that variable (assay.loop.teststep, THE ENVIRONMENT), so the test does not get it.  Give "
+        f"the variable a name that the launcher keeps, such as CRUCIBLE_{name}"
+    )
+    return check_report.Finding("error", path, line, PART, message, "environment", f"{test.name}: {name}")
 
 
-def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each test with a master and no label, each unknown rule, each rule with no test, each missing or unread
-    fixture, each variable that the launcher drops, and each test with no judge."""
+def script_run(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
+    """Return the master and the words of a script test (THE PART), or None for each other test.
+
+    The driver of a negative fixture is not a script test.
+    """
+    run = master_of(test, root)
+    if run is None or (run[0], run[1][0] if run[1] else "") == FIXTURE:
+        return None
+    return run
+
+
+def registered_tests(context: MetaContext) -> tuple[ctest_reader.TestEntry, ...]:
+    """Return the tests that ctest registers in the build of a context (THE INPUT).
+
+    Raises:
+        NotApplicable: If the context gives no build directory, ctest cannot read the build, or no test of the build
+            runs a master of ROOT/utils/bin
+    """
     if context.build_dir is None:
-        raise NotApplicable("the rule reads the tests of a build directory.  Give --build-dir DIR")
+        raise NotApplicable("the part reads the tests of a build directory.  Give --build-dir DIR")
     try:
         tests = ctest_reader.tests(context.build_dir)
     except ctest_reader.CtestError as problem:
         raise NotApplicable(str(problem)) from None
+    root = context.root.resolve()
+    if not any(script_run(test, root) is not None for test in tests):
+        raise NotApplicable(
+            f"{context.build_dir} registers no test that runs a master of {root}/utils/bin.  The build directory or "
+            f"the root is wrong"
+        )
+    return tests
+
+
+def tests_findings(context: MetaContext) -> list[check_report.Finding]:
+    """Give each test with a master and no label, each unknown rule, each rule with no test, each missing or unread
+    fixture, each variable that the launcher drops, and each test with no judge.
+
+    Raises:
+        NotApplicable: If the part does not apply to the build (registered_tests())
+    """
+    tests = registered_tests(context)
     registry = context.registry
     root = context.root.resolve()
     found: list[check_report.Finding] = []
     covered: set[str] = set()
     tree_cache: dict[str, bool] = {}
     module_imports: dict[str, frozenset[str]] = {}
-    masters = 0
     for test in tests:
         found += environment_findings(test, root)
         if not is_judged(test.command):
             path, line = place_of(test, root)
             # ctest gives no command for a test whose program it does not find.
             shown = f"`{' '.join(test.command[:3])}`" if test.command else "a program that ctest does not find"
-            found.append(check_report.Finding(
-                "error", path, line, RULE, f"the test {test.name} runs {shown} with no test launcher and no fixture "
-                f"driver, so it gets no record, no judge of its cost and no clean environment.  Register it with "
-                f"crucible_script_test() of cmake/TestLauncher.cmake", "unjudged", test.name))
-        run = master_of(test, root)
+            message = (
+                f"the test {test.name} runs {shown} with no test launcher and no fixture driver, so it gets no "
+                f"record, no judge of its cost and no clean environment.  Register it with crucible_script_test() of "
+                f"cmake/TestLauncher.cmake"
+            )
+            found.append(check_report.Finding("error", path, line, PART, message, "unjudged", test.name))
+        run = script_run(test, root)
         if run is None:
             continue
         master, words = run
-        if (master, words[0] if words else "") == FIXTURE:
-            continue
-        masters += 1
         name = test.name
         path, line = place_of(test, root)
         labels = test.words_of("LABELS")
         if LABEL not in labels:
-            found.append(check_report.Finding(
-                "error", path, line, RULE, f"the test {name} runs `{' '.join([master, *words[:3]])}` and has no label "
-                f"{LABEL}, so `ctest -L {LABEL}` does not run it.  Add the label beside its registration", "label", name))
+            message = (
+                f"the test {name} runs `{' '.join([master, *words[:3]])}` and has no label {LABEL}, so `ctest -L "
+                f"{LABEL}` does not run it.  Add the label beside its registration"
+            )
+            found.append(check_report.Finding("error", path, line, PART, message, "label", name))
         if master != "guard" or not words or words[0] not in ("check", "witness"):
             continue
         run_rules: list[rule_registry.Rule] = []
         for rule_id in rule_words(words):
             rule = registry.rules.get(rule_id)
             if rule is None:
-                found.append(check_report.Finding(
-                    "error", path, line, RULE, f"the test {name} runs the rule {rule_id}, and the registry has no "
-                    f"such rule", "unknown-rule", name))
+                message = f"the test {name} runs the rule {rule_id}, and the registry has no such rule"
+                found.append(check_report.Finding("error", path, line, PART, message, "unknown-rule", name))
                 continue
             run_rules.append(rule)
         requires_trees = TREE_FIXTURE in test.words_of("FIXTURES_REQUIRED")
@@ -285,20 +321,19 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
             reads = module is not None and reads_trees(root, module, tree_cache, module_imports)
             reads_any = reads_any or reads
             if reads and not requires_trees and TREE_FIXTURE not in test.words_of("FIXTURES_SETUP"):
-                found.append(check_report.Finding(
-                    "error", path, line, RULE, f"the test {name} runs the rule {rule_id}, whose module {module} reads "
-                    f"the parse trees, and it does not require the fixture {TREE_FIXTURE}.  Give it "
-                    f"FIXTURES_REQUIRED {TREE_FIXTURE}", "fixture", name))
+                message = (
+                    f"the test {name} runs the rule {rule_id}, whose module {module} reads the parse trees, and it "
+                    f"does not require the fixture {TREE_FIXTURE}.  Give it FIXTURES_REQUIRED {TREE_FIXTURE}"
+                )
+                found.append(check_report.Finding("error", path, line, PART, message, "fixture", name))
         if requires_trees and not reads_any:
             found.append(unread_fixture(test, path, line, "no module of its rules reads the parse trees"))
-    if masters == 0:
-        raise NotApplicable(f"{context.build_dir} registers no test that runs a master of {root}/utils/bin.  The build "
-                            f"directory or the root is wrong")
     for rule in registry.rules.values():
         if rule.held_by is None and rule.id not in covered:
-            found.append(check_report.Finding(
-                "error", rule_registry.REGISTRY_PATH, rule.line, RULE, f"no test with the label {LABEL} runs "
-                f"`guard check --rule {rule.id}`.  Register its test", "no-test", rule.id))
+            message = f"no test with the label {LABEL} runs `guard check --rule {rule.id}`.  Register its test"
+            found.append(
+                check_report.Finding("error", rule_registry.REGISTRY_PATH, rule.line, PART, message, "no-test", rule.id)
+            )
     return found
 
 

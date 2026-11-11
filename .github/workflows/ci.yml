@@ -80,8 +80,8 @@ jobs:
   # ---------------------------------------------------------------------------
   # Toolchain-FREE discipline guards. Stock ubuntu-latest, no compiler, and no
   # configure of the tree.  The rules read the source tree and the plants.
-  # The plants of the rule test-registration configure a scratch project with
-  # the pinned CMake.
+  # The plants of the part tests of the rule registry configure a scratch
+  # project with the pinned CMake.
   # ---------------------------------------------------------------------------
   guards:
     name: discipline guards (toolchain-free)
@@ -138,7 +138,7 @@ jobs:
           python3 utils/bin/setup install clang-format
           python3 utils/bin/guard selftest tests.guard.engines.meta.test_clang_format
 
-      # The plants of the rule test-registration configure a scratch project.
+      # The plants of the part tests of the rule registry configure a scratch project.
       - name: Install the pinned CMake and ctest
         uses: ./.github/actions/pinned-cmake
 
@@ -156,8 +156,8 @@ jobs:
       # the modules of the package and the prose.  The witness
       # runs each rule on its plants of utils/plants/.  The rules types and
       # python-lint run the pinned mypy and ruff, that the steps above install.
-      # The rule test-registration reads the tests of a configured build, so its
-      # scan runs in the build legs through ctest, and here it does not apply.
+      # The parts tests and kinds of the rule registry read a configured build, so
+      # they run in the build legs through ctest, and here the rule does not do them.
       # The rule clang-format runs the pinned clang-format that the step above
       # installs.  The rule derived-files compares the mint inventory only with
       # the mint records of a build, so here it writes one plain line for the
@@ -166,8 +166,8 @@ jobs:
       # build legs runs it.
       - name: the rules of the engine meta (witness + scan)
         run: |
-          for rule in layout registry-shape rule-implementations rule-witness \
-                      test-registration determinism no-shell python-lint types prose-bans admitted-audit \
+          for rule in registry \
+                      determinism no-shell python-lint types prose-bans admitted-audit \
                       decide-cite-ratio derived-files clang-format; do
             python3 utils/bin/guard witness --rule "$rule"
           done

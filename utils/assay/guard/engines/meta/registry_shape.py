@@ -1,6 +1,6 @@
-"""registry-shape — each row of the registry obeys its schema, and each doc field names a section of the guide.
+"""The part shape of the rule registry: each row of the registry obeys its schema, and each doc field names a section.
 
-THE RULE
+THE PART
     assay.core.registry.examine() reads each row of utils/registry.txt and
     gives each problem:
       - A line that does not obey the rows grammar
@@ -11,15 +11,18 @@ THE RULE
       - A limit that is not a decimal number, and an unknown unit
       - A rule with no two cells
       - A second row with the same key.
-    This rule also refuses these rows:
-      - A doc field that names no section of the guide
-        (assay.core.registry.doc_section)
-      - A holder that names no rule of the registry and no holding command.
+    The part gives each problem with the kind row.  It also refuses these
+    rows:
+      doc     a doc field that names no section of the guide
+              (assay.core.registry.doc_section)
+      holder  a holder that names no rule of the registry and no holding
+              command
+    No ledger row admits a finding of the three kinds (KINDS).
 
 THE GUIDE
     The guide is the file that the context names: CLAUDE.md at the root of the
     tree.  Only the root of the repository holds a file with the name
-    CLAUDE.md (the rule layout).  A plant holds its guide in the file guide.md
+    CLAUDE.md (the part layout).  A plant holds its guide in the file guide.md
     for that reason, and plant_context() gives the context of a plant that
     path.
 
@@ -32,8 +35,13 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.meta.runner import MetaContext, copy_tree
 
-RULE = "registry-shape"
+PART = "shape"
 PLANT_GUIDE = "guide.md"
+ROW = "row"
+DOC = "doc"
+HOLDER = "holder"
+# The kinds of the part.  No ledger row admits them.
+KINDS = frozenset({ROW, DOC, HOLDER})
 
 
 def doc_findings(registry: rule_registry.Registry, guide: str, guide_name: str) -> list[check_report.Finding]:
@@ -42,22 +50,33 @@ def doc_findings(registry: rule_registry.Registry, guide: str, guide_name: str) 
     found: list[check_report.Finding] = []
     for rule in registry.rules.values():
         if rule_registry.doc_section(guide, rule.doc) is None:
-            found.append(check_report.Finding(
-                "error", shown, rule.line, RULE, f"the doc {rule.doc} of the rule {rule.id} names no section of "
-                f"{guide_name}.  Give the section that states the rule, such as XV, XV.4 or XXII.R11", "doc", rule.id))
-        if (rule.held_by is not None and rule.held_by not in rule_registry.HOLDING_COMMANDS
-                and rule.held_by not in registry.rules):
-            found.append(check_report.Finding(
-                "error", shown, rule.line, RULE, f"the holder {rule.held_by} of the rule {rule.id} is not a rule of "
-                f"the registry.  Name the rule or the command that reads its limit", "holder", rule.id))
+            message = (
+                f"the doc {rule.doc} of the rule {rule.id} names no section of {guide_name}.  Give the section that "
+                f"states the rule, such as XV, XV.4 or XXII.R11"
+            )
+            found.append(check_report.Finding("error", shown, rule.line, PART, message, DOC, rule.id))
+        if (
+            rule.held_by is not None
+            and rule.held_by not in rule_registry.HOLDING_COMMANDS
+            and rule.held_by not in registry.rules
+        ):
+            message = (
+                f"the holder {rule.held_by} of the rule {rule.id} is not a rule of the registry.  Name the rule or "
+                f"the command that reads its limit"
+            )
+            found.append(check_report.Finding("error", shown, rule.line, PART, message, HOLDER, rule.id))
     return found
 
 
-def findings(context: MetaContext) -> list[check_report.Finding]:
+def shape_findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each problem of the rows of the registry of the tree, and each doc field that the guide does not hold."""
     shown = rule_registry.REGISTRY_PATH
-    found = [check_report.Finding("error", shown, problem.line, RULE, str(problem).split(": ", 1)[-1], "row",
-                                  str(problem.line)) for problem in context.problems]
+    found = [
+        check_report.Finding(
+            "error", shown, problem.line, PART, str(problem).split(": ", 1)[-1], ROW, str(problem.line)
+        )
+        for problem in context.problems
+    ]
     guide_path = context.root / context.guide
     guide = guide_path.read_text(encoding="utf-8") if guide_path.is_file() else ""
     return found + doc_findings(context.registry, guide, context.guide)

@@ -33,7 +33,7 @@ def context_cases(expect: testing.Expect) -> None:
     expect("census() with no build directory is not applicable", raises_not_applicable(empty.census))
     expect(
         "budget() of an ID with no measured rule is not applicable",
-        raises_not_applicable(lambda: empty.budget("registry-shape")),
+        raises_not_applicable(lambda: empty.budget("registry")),
     )
     expect("budget() of a measured rule gives its limit", empty.budget("header-constexpr-ops").limit == 1e6)
     expect(

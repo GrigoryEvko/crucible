@@ -1,0 +1,5 @@
+# A planted ledger of the rule registry.  Its row has the key of the finding of the doc field, and the part shape
+# still gives the error, because no row admits a finding of a refused kind.
+format 1
+rule registry
+utils/registry.txt | doc | admit | stray-rule | A planted row that tries to admit a finding of a refused kind

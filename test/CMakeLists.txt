@@ -4694,8 +4694,8 @@ set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test
 # except a negative fixture, and it holds the kind test of the rules
 # step-memory and step-cost of utils/registry.txt while the test runs.  The fixture
-# driver holds them for a fixture.  The rule test-registration (test
-# guard_test_registration) refuses a test that the two do not run.
+# driver holds them for a fixture.  The rule registry (test guard_registry)
+# refuses a test that the two do not run.
 crucible_script_test(NAME test_launcher_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
 set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")
@@ -4887,7 +4887,7 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 # adds the setup tests to a run that selects one such test.  A guard test with
 # no label ast reads no parse tree, and it does not wait for the fill.  This
 # block reads the tests of the directory, so it stays after the last guard
-# test that reads the trees.  The rule test-registration refuses a test that
+# test that reads the trees.  The rule registry refuses a test that
 # runs a rule whose module reads the parse trees, when the test does not
 # require the fixture.  It also refuses a guard test that requires the fixture
 # and reads no tree of the tree, such as a witness, which reads only its
@@ -4940,8 +4940,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # judge of the max rules, the runner and the planted
 # build of the engine build, the base configuration of instruction-total, the reader
 # of the compile database, the Python reader, the reader of the reports of
-# mypy and ruff, the package scope, the import closure of the
-# rule test-registration, the counted rules of the
+# mypy and ruff, the package scope, the parts of the rule registry and the
+# import closure of its part tests, the counted rules of the
 # engine plugin, the writer of the walk list, the writer of the header
 # costs, the writer of the row-hash golden and the driver of a parse build
 # plant their input in throwaway trees.  The tests of the read set of a test
@@ -4985,7 +4985,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_tool_reports readers.test_bench
         readers.test_sections readers.test_prose
         guard.engines.meta.test_package guard.engines.meta.test_witness
-        guard.engines.meta.test_test_registration
+        guard.engines.meta.test_registry
         guard.engines.meta.test_types
         guard.engines.plugin.test_counted
         loop.derive.test_walk_units loop.derive.test_header_lists

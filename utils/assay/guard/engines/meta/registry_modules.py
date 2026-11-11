@@ -1,28 +1,28 @@
-"""rule-implementations — each rule of the registry has one function, and each function has one rule.
+"""The part modules of the rule registry: each rule of the registry has one function, and each function has one rule.
 
-THE RULE
+THE PART
     A rule with no legacy module and no holder has the module
     assay/guard/engines/DIRECTORY/ID.py with the function findings.  In the
     name of the file, an underscore replaces each hyphen of the ID.  DIRECTORY
     is the directory of the engine of the rule
     (assay.core.registry.Engine.directory).  A family module holds a table
     RULES.  Each key of the table is the ID of a rule that the module gives
-    findings for.  The rule refuses:
+    findings for.  The part refuses:
       no-function     a rule with no such module and no family table that names it
-      orphan          a module that has findings or RULES for an ID that is not a rule of the registry
+      orphan-module   a module that has findings or RULES for an ID that is not a rule of the registry
       engine          a module in the directory of an engine that is not the engine of its rule
       legacy          a rule that has only a legacy module.  During the migration of the utils system, the
                       ledger admits each one.  The change that replaces the legacy module removes its row
       missing-legacy  a legacy module that the tree does not hold
-    The rule reads each module with the Python ast module, and it imports
+    The part reads each module with the Python ast module, and it imports
     none.  A module with no function findings and no table RULES is a helper,
-    such as the runner of an engine.
+    such as the runner of an engine or a part of the rule registry.
 
 THE HOLDERS
     A rule with held-by has no module of its own.  Its holder judges it, and
     its field holder names the function of the holder that judges it
     (assay.core.registry).  The witness of the rule runs that function
-    (assay.guard.engines.buildsys.held).  The rule refuses:
+    (assay.guard.engines.buildsys.held).  The part refuses:
       no-holder       a rule with held-by and no field holder
       missing-holder  a field holder that names a module that the tree does
                       not hold, or a module that does not parse.  The kind
@@ -34,7 +34,7 @@ THE HOLDERS
     gives the name of each callee (assay.readers.python).  When held-by names
     a rule, the function must be in the module that holds that rule, because
     the witness runs that module.  No ledger row admits a finding of these
-    three kinds (REFUSED_KINDS).
+    three kinds (HOLDER_KINDS).
 
 Complexity: linear in the bytes of the modules of assay/guard/engines/, and one parse of each module that a field
 holder names.
@@ -48,7 +48,7 @@ from assay.core import report as check_report
 from assay.guard.engines.meta.runner import ENGINES, FAMILY_TABLE, MetaContext, declared_rules, module_file
 from assay.readers import python as python_reader
 
-RULE = "rule-implementations"
+PART = "modules"
 # The module of the witness of a held rule, relative to the directory of the engines, and its table of judges.
 HELD_MODULE = "buildsys/held.py"
 HOLDERS_TABLE = "HOLDERS"
@@ -56,7 +56,7 @@ HOLDERS_TABLE = "HOLDERS"
 NO_HOLDER = "no-holder"
 MISSING_HOLDER = "missing-holder"
 UNRUN_HOLDER = "unrun-holder"
-REFUSED_KINDS = frozenset({NO_HOLDER, MISSING_HOLDER, UNRUN_HOLDER})
+HOLDER_KINDS = frozenset({NO_HOLDER, MISSING_HOLDER, UNRUN_HOLDER})
 
 type FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
 
@@ -184,7 +184,7 @@ class Holders:
         )
 
 
-def findings(context: MetaContext) -> list[check_report.Finding]:
+def module_findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each rule of the registry with no function, and each function with no rule."""
     registry = context.registry
     shown = rule_registry.REGISTRY_PATH
@@ -206,10 +206,10 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                         "error",
                         relative,
                         0,
-                        RULE,
+                        PART,
                         f"the module gives findings for {rule_id}, and the registry has no "
                         f"rule {rule_id}.  Add its row, or remove the function",
-                        "orphan",
+                        "orphan-module",
                         rule_id,
                     )
                 )
@@ -219,7 +219,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                         "error",
                         relative,
                         0,
-                        RULE,
+                        PART,
                         f"the module is in the directory {engine}, and the rule {rule_id} has "
                         f"the engine {rule.engine.value} with the directory {rule.engine.directory}.  Move the module",
                         "engine",
@@ -238,7 +238,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                         "error",
                         shown,
                         rule.line,
-                        RULE,
+                        PART,
                         f"the legacy module assay.{rule.legacy.module} of the rule "
                         f"{rule.id} does not exist.  Correct the field legacy",
                         "missing-legacy",
@@ -251,7 +251,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
                         "error",
                         shown,
                         rule.line,
-                        RULE,
+                        PART,
                         f"the rule {rule.id} has only the legacy module "
                         f"assay.{rule.legacy.module}.  Write its module in {ENGINES}/{rule.engine.directory}/",
                         "legacy",
@@ -261,14 +261,14 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         elif rule.held_by is not None:
             problem = holders.problem(rule)
             if problem is not None:
-                found.append(check_report.Finding("error", shown, rule.line, RULE, problem[1], problem[0], rule.id))
+                found.append(check_report.Finding("error", shown, rule.line, PART, problem[1], problem[0], rule.id))
         elif rule.id not in implemented:
             found.append(
                 check_report.Finding(
                     "error",
                     shown,
                     rule.line,
-                    RULE,
+                    PART,
                     f"the rule {rule.id} has no function.  Write "
                     f"{ENGINES}/{rule.engine.directory}/{rule.id.replace('-', '_')}.py with the function findings, or "
                     f"name the rule in the table {FAMILY_TABLE} of a family module there",

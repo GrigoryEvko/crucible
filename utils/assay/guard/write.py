@@ -20,6 +20,12 @@ The module of a rule can name kinds in REFUSED_KINDS, and no row admits a
 finding of such a kind (assay.guard.engines.meta.runner, THE REFUSED KINDS).
 The command refuses each such finding in each mode.
 
+A module of a rule with more than one part can give the function
+unread_parts(context): the parts of the rule that do not apply to the
+context, such as a part that reads a build in a call with no --build-dir.
+The command then refuses the write, because the write would remove the rows
+of those parts (assay.guard.engines.meta.registry, THE BUILD).
+
 --path names paths of the rows of the ledger.  The command then writes only
 the rows of those paths, and it keeps each other row.  It applies to a rule
 of the engine build, meta or tsast with the policy count or admit.  With --reason and no mode, each row of those paths
@@ -187,6 +193,15 @@ def main(argv: list[str]) -> int:
         elif rule.policy in JUDGED_POLICIES:
             written = runner.rule_module(rule).written(context, ledger, options.reason)
         else:
+            unread_parts = getattr(runner.rule_module(rule), "unread_parts", None)
+            unread = list(unread_parts(context)) if unread_parts is not None else []
+            if unread:
+                check_report.write_line(
+                    f"guard write: the ledger of {rule.id} is not written: the parts {', '.join(unread)} do not "
+                    f"apply, and the write would remove their rows",
+                    is_error=True,
+                )
+                return 2
             found = context.findings_of(rule)
             refused = runner.refused_kinds(rule)
             unread = [item for item in found if item.level == "error" and item.kind in refused]

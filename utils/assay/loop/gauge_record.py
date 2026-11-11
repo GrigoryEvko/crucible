@@ -15,7 +15,7 @@ THE MEASURED RULE
     with the same function (assay.guard.engines.buildsys.held).
 
     This module reads no parse tree, so a rule that judges a record does not
-    wait for the trees (assay.guard.engines.meta.test_registration).
+    wait for the trees (assay.guard.engines.meta.registry_tests).
 
 `guard selftest loop.gauge` does a test of the module.
 

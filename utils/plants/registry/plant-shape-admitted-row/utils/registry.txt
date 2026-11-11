@@ -1,0 +1,4 @@
+# a planted registry: the doc field names a section that the guide does not have, and a ledger row admits it
+format 1
+rule stray-rule engine=meta scope=tracked ledger=none doc=XL | a planted refusal | fix the planted file
+path utils/registry.txt | the planted registry
