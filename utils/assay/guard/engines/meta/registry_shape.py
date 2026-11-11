@@ -15,10 +15,7 @@ THE RULE
     This rule also refuses these rows:
       - A doc field that names no section of the guide
         (assay.core.registry.doc_section)
-      - A holder that names no rule of the registry and no holding command
-      - A term row with a word that the table of the STE dictionary
-        (assay.guard.engines.meta.ste_dictionary) does not hold.  The
-        dictionary gives that word as an approved word.
+      - A holder that names no rule of the registry and no holding command.
 
 THE GUIDE
     The guide is the file that the context names: CLAUDE.md at the root of the
@@ -34,7 +31,6 @@ from pathlib import Path
 
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.meta import ste_dictionary
 from assay.guard.engines.meta.runner import MetaContext, copy_tree
 
 RULE = "registry-shape"
@@ -42,7 +38,7 @@ PLANT_GUIDE = "guide.md"
 
 
 def doc_findings(registry: rule_registry.Registry, guide: str, guide_name: str) -> list[check_report.Finding]:
-    """Give each doc field that names no section of the text of a guide, each holder of no rule, and each bad term."""
+    """Give each doc field that names no section of the text of a guide, and each holder of no rule."""
     shown = rule_registry.REGISTRY_PATH
     found: list[check_report.Finding] = []
     for rule in registry.rules.values():
@@ -55,10 +51,6 @@ def doc_findings(registry: rule_registry.Registry, guide: str, guide_name: str) 
             found.append(check_report.Finding(
                 "error", shown, rule.line, RULE, f"the holder {rule.held_by} of the rule {rule.id} is not a rule of "
                 f"the registry.  Name the rule or the command that reads its thresholds", "holder", rule.id))
-    found += [check_report.Finding(
-        "error", shown, term.line, RULE, f"the term {term.word} names a word that the STE dictionary approves, and the "
-        f"glossary holds only refused words.  Remove the row", "term", term.word)
-        for term in registry.terms if term.word not in ste_dictionary.REFUSED]
     return found
 
 

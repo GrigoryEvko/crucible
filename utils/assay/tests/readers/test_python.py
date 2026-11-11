@@ -1,5 +1,4 @@
-"""The test of the reader of Python source (assay.readers.python): the parse, the comments, the docstrings, the scopes
-and the imports.
+"""The test of the reader of Python source (assay.readers.python): the parse, the scopes and the imports.
 
 `guard selftest tests.readers.test_python` runs the test.  Each case writes
 one line.  Exit 0 when each case holds, else 1.
@@ -87,39 +86,6 @@ def source_cases(expect: testing.Expect) -> None:
         expect("read() reads and parses a file", python_reader.read(path, SHOWN).text == SOURCE)
 
 
-def comment_cases(expect: testing.Expect) -> None:
-    """Check the comments: their lines, their columns and their text with no mark."""
-    found = python_reader.comments(parsed())
-    expect(
-        "comments() gives each comment with its line and its column, and no text of a string",
-        [(item.line, item.column) for item in found] == [(10, 0), (16, 19)],
-    )
-    expect(
-        "the text of a comment has no '#'",
-        [item.body for item in found] == [" A comment of the module.", " A comment at the end of a line."],
-    )
-    error = refuses(lambda: python_reader.comments(python_reader.Source(SHOWN, "x = (\n", ast.Module([], []))))
-    expect("a text with no end of its tokens gives PythonError", error is not None)
-
-
-def docstring_cases(expect: testing.Expect) -> None:
-    """Check the docstrings: the module first, then each class and function, the outer first."""
-    found = python_reader.docstrings(parsed())
-    expect(
-        "docstrings() gives the module, the class and the method, with the line and the holder",
-        [(item.line, item.holder, item.body) for item in found]
-        == [
-            (1, "<module>", "The module docstring."),
-            (12, "Holder", "The class docstring."),
-            (15, "Holder.method", "The method docstring."),
-        ],
-    )
-    expect(
-        "a function with no docstring gives no docstring",
-        not any(item.holder in ("function", "Holder.method.inner") for item in found),
-    )
-
-
 def scope_cases(expect: testing.Expect) -> None:
     """Check the scopes: the full names and the holder of each line."""
     source = parsed()
@@ -202,6 +168,4 @@ def import_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(
-        __name__.removeprefix("assay."), argv, (source_cases, comment_cases, docstring_cases, scope_cases, import_cases)
-    )
+    return testing.run(__name__.removeprefix("assay."), argv, (source_cases, scope_cases, import_cases))

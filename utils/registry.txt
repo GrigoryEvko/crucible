@@ -10,7 +10,7 @@
 #
 # An owner of a job is a module of the package, such as assay.core.proc, or a master, such as bin.guard.  A term row
 # gives a word that the STE dictionary refuses, and its category: a technical-noun category noun-N of rule 1.5, or a
-# technical-verb category verb-N of rule 1.12.  The rule ste-prose then refuses no shape of the word.
+# technical-verb category verb-N of rule 1.12.
 #
 # A measured rule has warn, error and unit.  A value over the warning threshold gives a warning, which does not
 # fail.  A value over the error threshold gives an error, which fails.  A value equal to a threshold does not
@@ -135,7 +135,6 @@ rule rule-implementations engine=meta scope=package,utils/registry.txt ledger=ad
 rule rule-witness engine=meta scope=utils/plants/,utils/registry.txt ledger=admit doc=XV | a rule with no plant or no control in utils/plants/RULE/, and a plants directory of no rule | write a plant that the rule refuses and a control that it accepts
 rule session-oracle engine=build scope=include/fixy/session/,test/session_oracle/ ledger=none doc=XIII | a test of test/session_oracle/ that is not the test that its golden file emits, a golden file that cannot be read, and a shrink-only class of the oracle with more rows than its bound | write the tests again with `loop derive session-oracle emit`, or the golden file from the oracles with `loop derive session-oracle regenerate`
 rule splits-orphan engine=plugin scope=tracked ledger=count kinds=away-from-arguments,at-home doc=IX | a specialization of a split trait outside the file that defines each of its tags and outside the paths of its home row, and a path of a home row that admits no site | specialize the trait beside its tags
-rule ste-prose engine=meta scope=package,utils/registry.txt ledger=count doc=XV | in a docstring or a comment of the package: a word that the STE dictionary refuses and no term row holds, a semicolon, a contraction, the word thus, and a sentence of more than 25 words.  Also the module of a rule, and a function of a reader that lists files, with no Complexity: line | write the sentence again in STE, or give the word a term row when the project uses it as a technical noun or verb
 rule start-lifetime engine=plugin scope=tracked ledger=none kinds=lifetime-start doc=II | a use of std::start_lifetime_as or std::start_lifetime_as_array in a file that a build compiles, outside foundation/Lifetime.h | use the doors of foundation/Lifetime.h
 rule static-tls engine=elf scope=builddir ledger=max warn=64 error=256 unit=bytes doc=XXII.R19 | the bytes of the base thread-local variables of one member of a static library of the root | keep the storage out of static TLS, for example on the stack of the call, or add a ledger row with a reason
 rule stress-passes engine=build scope=builddir ledger=none warn=10 error=50 unit=passes held-by=loop-evidence holder=assay.loop.evidence.status:judged doc=XV | less passes than the target, for each test of the build of a test preset with the field repeat, at the key of the test.  The warning threshold is the target of the nightly entry, and the error threshold is the target of the release entry.  A failure at a key stays until the key changes | run `loop evidence run repetition`, or repair the race of the failure that it keeps

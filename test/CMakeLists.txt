@@ -4945,7 +4945,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # judge of the max rules, the runner and the planted
 # build of the engine build, the configurations of the census totals, the reader
 # of the compile database, the Python reader, the reader of the reports of
-# mypy and ruff, the package scope, the STE table, the import closure of the
+# mypy and ruff, the package scope, the import closure of the
 # rule test-registration, the counted rules of the
 # engine plugin, the writer of the walk list, the writer of the header
 # costs, the writer of the row-hash golden and the driver of a parse build
@@ -4988,7 +4988,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         readers.test_compdb readers.test_python
         readers.test_tool_reports readers.test_bench
         readers.test_sections readers.test_prose
-        guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
+        guard.engines.meta.test_package guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_types
         guard.engines.plugin.test_counted guard.engines.plugin.test_quarantine_lines

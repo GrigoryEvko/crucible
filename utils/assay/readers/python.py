@@ -1,4 +1,4 @@
-"""The reader of Python source: the syntax tree, the comments, the docstrings, the scopes and the imports of one file.
+"""The reader of Python source: the syntax tree, the scopes and the imports of one file.
 
 The table of the readers of the utils system names this module as the one
 reader of Python source.  A module of the package reads a Python file through
@@ -7,16 +7,6 @@ this module, and reads no Python file as text.
 THE SOURCE
     read() reads one file and parses it one time.  parse() parses a text.  A
     text that does not parse gives PythonError with the path and the line.
-
-THE COMMENTS
-    comments() gives each comment of a source with its line and its column,
-    from the tokens of the tokenize module.  The body of a comment is its
-    text with no "#".
-
-THE DOCSTRINGS
-    docstrings() gives each docstring of a module, of its classes and of its
-    functions.  A docstring has the line of its first character, its holder
-    and its body, the text of the docstring.
 
 THE SCOPES
     The full name of a function or a class holds the names of the classes and
@@ -46,14 +36,12 @@ THE REFERENCES
 """
 
 import ast
-import io
-import tokenize
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 MODULE_SCOPE = "<module>"
-# The nodes that hold a docstring and a scope of their own.
+# The nodes that hold a scope of their own.
 type ScopeNode = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
 
@@ -84,24 +72,6 @@ class Source:
     tree: ast.Module
 
 
-@dataclass(frozen=True, slots=True)
-class Comment:
-    """One comment: its line, its column and its body, the text with no "#"."""
-
-    line: int
-    column: int
-    body: str
-
-
-@dataclass(frozen=True, slots=True)
-class Docstring:
-    """One docstring: the line of its first character, the full name of its holder and its body."""
-
-    line: int
-    holder: str
-    body: str
-
-
 def parse(text: str, shown: str) -> Source:
     """Parse the text of a Python file.
 
@@ -125,24 +95,6 @@ def read(path: Path, shown: str) -> Source:
     return parse(path.read_text(encoding="utf-8"), shown)
 
 
-def comments(source: Source) -> tuple[Comment, ...]:
-    """Return each comment of a source, in the sequence of the text.
-
-    Complexity: linear in the length of the text.
-
-    Raises:
-        PythonError: If the text does not give its tokens
-    """
-    found: list[Comment] = []
-    try:
-        for token in tokenize.generate_tokens(io.StringIO(source.text).readline):
-            if token.type == tokenize.COMMENT:
-                found.append(Comment(token.start[0], token.start[1], token.string[1:]))
-    except (tokenize.TokenError, SyntaxError) as problem:
-        raise PythonError(source.path, 0, f"the tokens of the file cannot be read: {problem}") from None
-    return tuple(found)
-
-
 def scope_nodes(node: ast.AST, prefix: str = "") -> Iterator[tuple[str, ScopeNode]]:
     """Give each function and each class in a node with its full name, in the sequence of the text.
 
@@ -156,30 +108,6 @@ def scope_nodes(node: ast.AST, prefix: str = "") -> Iterator[tuple[str, ScopeNod
             yield from scope_nodes(child, name)
         else:
             yield from scope_nodes(child, prefix)
-
-
-def docstring_of(node: ast.Module | ScopeNode) -> ast.Constant | None:
-    """Return the constant of the docstring of a module, a class or a function, or None."""
-    first = node.body[0] if node.body else None
-    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
-        return first.value
-    return None
-
-
-def docstrings(source: Source) -> tuple[Docstring, ...]:
-    """Return each docstring of a source: of the module, then of each class and function, the outer first.
-
-    Complexity: linear in the number of the nodes of the tree.
-    """
-    found: list[Docstring] = []
-    module_doc = docstring_of(source.tree)
-    if module_doc is not None:
-        found.append(Docstring(module_doc.lineno, MODULE_SCOPE, str(module_doc.value)))
-    for name, node in scope_nodes(source.tree):
-        constant = docstring_of(node)
-        if constant is not None:
-            found.append(Docstring(constant.lineno, name, str(constant.value)))
-    return tuple(found)
 
 
 def holders(source: Source) -> tuple[str, ...]:

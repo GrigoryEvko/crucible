@@ -64,9 +64,7 @@ THE ROWS
     dictionary refuses the word, and this project uses it as a technical noun
     or a technical verb.  CATEGORY is noun-N for the technical-noun category N of
     rule 1.5 (1 to 22), or verb-N for the technical-verb category N of rule
-    1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4).  The rule ste-prose refuses no
-    shape of a word of a term row.  The rule registry-shape refuses a term row
-    with a word that the dictionary does not refuse.
+    1.12 (1a to 1f, 2a to 2c, 3a to 3f, or 4).
 
 LOAD AND EXAMINE
     load() reads the registry and refuses the first problem.  examine() reads
