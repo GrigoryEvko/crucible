@@ -48,8 +48,8 @@ def verdict_cases(expect: testing.Expect) -> None:
         (5.6, 5.0): cost_budget.RISEN,
         (3.0, 3.0): cost_budget.ADMITTED,
         (3.5, 3.0): cost_budget.RISEN,
-        (2.0, 3.0): cost_budget.UNNEEDED,
-        (1.0, 5.0): cost_budget.UNNEEDED,
+        (2.0, 3.0): cost_budget.NO_FINDING,
+        (1.0, 5.0): cost_budget.NO_FINDING,
         (1.9, 5.0): cost_budget.NO_FINDING,
     }
     for (value, kept), wanted in cases.items():
@@ -62,9 +62,10 @@ def verdict_cases(expect: testing.Expect) -> None:
         cost_budget.verdict(4.4, 2.0, 4.0, 4.0, 0.1) == cost_budget.ADMITTED,
     )
     expect(
-        "a row of a time keeps a test near the warning threshold with no finding, and goes when the time halves",
+        "a row of a time gives no finding for a test at or below the warning threshold, also when the time halves, "
+        "because a ledger fails only on a growth",
         cost_budget.verdict(4.0, 5.0, 30.0, 6.0, 1.0) == cost_budget.NO_FINDING
-        and cost_budget.verdict(2.5, 5.0, 30.0, 6.0, 1.0) == cost_budget.UNNEEDED,
+        and cost_budget.verdict(2.5, 5.0, 30.0, 6.0, 1.0) == cost_budget.NO_FINDING,
     )
     expect(
         "the level of a RISEN verdict is the level of a value with no row",
@@ -163,8 +164,8 @@ def judge_cases(expect: testing.Expect) -> None:
             "compile-memory", BUDGET, cost_budget.Measure("unit.o", "@build/unit.o", 1.5, "s"), rows_of({"unit.o": 5.2})
         )
         expect(
-            "a row of an item at or under the warning threshold gives an error at the row",
-            spare is not None and spare.level == "error" and spare.line == 3 and "Remove the row" in spare.message,
+            "a row of an item at or under the warning threshold gives no finding, because a ledger fails only on a growth",
+            spare is None,
         )
         kept = cost_budget.judge(
             "compile-memory", BUDGET, cost_budget.Measure("unit.o", "@build/unit.o", 3.0, "s"), rows_of({"unit.o": 3.0})

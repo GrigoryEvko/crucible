@@ -47,8 +47,8 @@ THE VERDICT
     * A count more than its row is an error: a base file adds more code of a
       library.  A file that the ledger does not hold and that has a record is
       an error too.
-    * A count less than its row is an error, until the commit writes the
-      ledger again.
+    * A count less than its row gives no finding (THE POLICIES of
+      assay.core.ledger).  The landing gate writes the lower count.
     * Each directory of the base with rows gives one warning
       (assay.guard.engines.plugin.quarantine.directory_of).
     * Each problem of the census of the runner is an error.
@@ -146,21 +146,17 @@ def evaluate(
     ledger.
     """
     shown = rule_ledger.shown_path(RULE)
-    command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
     expected = ledger.expected(name)
     held = {key.path for key in expected}
-    is_bound = name == rule_ledger.MAXIMUM
     errors: list[check_report.Finding] = []
     failed: set[str] = set()
     for key in sorted(set(counts) | set(expected)):
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
-        if measured == admitted or (is_bound and measured < admitted):
+        if measured <= admitted:
             continue
         failed.add(quarantine.directory_of(key.path, rows))
         listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {key.path} --kind {key.kind}`"
-        if measured < admitted:
-            said = f"the ledger holds {admitted}.  Write the ledger again in the same commit: `{command}`"
-        elif key.path not in held:
+        if key.path not in held:
             said = (
                 f"the ledger holds no row of the file.  A new base file adds no code of a library.  List the "
                 f"records with {listing}, and use a type of fixy or foundation"
@@ -183,7 +179,7 @@ def evaluate(
     kept_keys: dict[str, list[Key]] = {}
     for key, admitted in expected.items():
         directory = quarantine.directory_of(key.path, rows)
-        count = min(admitted, counts.get(key, 0)) if is_bound else admitted
+        count = min(admitted, counts.get(key, 0))
         if count and directory not in failed:
             kept.setdefault(directory, Counter())[key.kind] += count
             kept_keys.setdefault(directory, []).append(key)

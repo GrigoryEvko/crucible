@@ -33,13 +33,17 @@ THE HEAD COMMENT
     (assay.guard.engines.buildsys.cost_totals).
 
 THE POLICIES
+    A ledger fails only on a growth.  A value above its row is an error, and a
+    value below its row passes.  write() lowers such a row, and the landing
+    gate writes each counted ledger at each landing (THE FALLS of
+    assay.loop.gate).
     count     VALUE is a positive count.  A key with more findings than its
               row, or a file with a finding and no row, is an error.  A key
-              with fewer findings than its row is an error too, until write()
-              writes the ledger again, so the ledger keeps no slack.  REASON
-              is optional.
+              with fewer findings than its row gives no finding.  REASON is
+              optional.
     admit     VALUE is the word admit.  A finding with no row is an error.  A
-              row that admits no finding is an error.  REASON is necessary.
+              row that admits no finding gives no finding.  REASON is
+              necessary.
     max       VALUE is a number in the unit of the rule.  The rule judges
               each value against its row, so compare() does not read this
               policy.  REASON is necessary.
@@ -92,17 +96,16 @@ THE MAXIMUM
     MAXIMUM names the rows that judge a build of a configuration that the
     ledger does not hold (assay.core.configuration, THE POLICY).  The count of
     a key in those rows is its largest count over the configurations of the
-    ledger.  A count of the build above it is an error.  A count below it is
-    no error, because the build can compile fewer arms.  An arm that a
-    different configuration counts then gives no error, and a new finding
-    gives an error.
+    ledger.  A count of the build above it is an error, and a count below it
+    is no error (THE POLICIES).  An arm that a different configuration counts
+    then gives no error, and a new finding gives an error.
 
 THE PART OF NO CONFIGURATION
     A base row of a count ledger can have the value admit.  Such a row
     belongs to no configuration, and no difference row names its key.  It
     admits the findings of its key in each configuration, as a row of the
     policy admit does, and its REASON is necessary.  A row that admits no
-    finding of the build is an error.  A write removes such a row, keeps
+    finding of the build gives no finding.  A write removes such a row, keeps
     each other row with the value admit, and adds no such row.
 
 THE WRITE
@@ -125,8 +128,8 @@ THE WRITE
     configuration stays the same, other than a move (THE LEDGER BEFORE THE
     CHANGE).  A change that lowers a count in each configuration then
     writes the rows of each configuration.  Until then, the run of a
-    configuration that the write did not cover gives the error of a count
-    below its row.  Its own write in the mode lower records the fall.
+    configuration that the write did not cover passes with a count below its
+    row.  Its own write in the mode lower records the fall.
 
 THE MOVE
     A change can move lines from one file to a different file, for example
@@ -803,16 +806,15 @@ def admitted_text(
     """
     admit = (
         f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
-        f"row goes in the change that removes its finding.  `python3 utils/bin/guard explain {rule.id}` gives the "
-        f"rule"
+        f"write removes a row that admits no finding.  `python3 utils/bin/guard explain {rule.id}` gives the rule"
     )
     if rule.policy != Policy.COUNT or by_admit == total:
         return admit
     command = f"`python3 utils/bin/guard write --rule {rule.id}`"
     admit_part = (
         (
-            f".  Rows with the value admit admit {by_admit} of them, each with its reason, and such a row goes in "
-            f"the change that removes its finding"
+            f".  Rows with the value admit admit {by_admit} of them, each with its reason, and a write removes such "
+            f"a row when it admits no finding"
         )
         if by_admit
         else ""
@@ -820,12 +822,12 @@ def admitted_text(
     if by_admit + by_reason == total:
         return (
             f"{path} has {total} findings that rows of the ledger keep, each with its reason: {shown}.  The reason of "
-            f"each row tells why its findings stay.  A count decreases only in the change that removes one of its "
-            f"findings, and that change writes the ledger with {command}{admit_part}{prefix_text(prefix)}"
+            f"each row tells why its findings stay.  A count decreases when a change removes one of its findings, "
+            f"and {command} writes the lower count{admit_part}{prefix_text(prefix)}"
         )
     counted = (
-        f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and lower its count "
-        f"in the same change with {command}"
+        f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and {command} lowers "
+        f"its count"
     )
     if by_reason:
         counted += (
@@ -879,8 +881,8 @@ def compare(
 
     The errors of the rule are its violations.  A warning of the rule passes
     with no change.  `configuration` names the rows that judge the findings.
-    With MAXIMUM, a count below its row is no error (THE MAXIMUM).
-    Complexity: O(f log f + r) for f findings and r rows.
+    A count below its row and a row that admits no finding give no finding
+    (THE POLICIES).  Complexity: O(f log f + r) for f findings and r rows.
 
     Raises:
         LedgerError: If the policy of the rule is max or baseline, which the rule judges itself
@@ -891,8 +893,6 @@ def compare(
     result = [finding for finding in findings if finding.level != "error"]
     if rule.policy == Policy.NONE:
         return result + errors
-    shown = shown_path(rule.id)
-    command = f"`python3 utils/bin/guard write --rule {rule.id}`"
     by_key: dict[Key, list[check_report.Finding]] = {}
     for finding in errors:
         by_key.setdefault(key_of(finding), []).append(finding)
@@ -907,9 +907,8 @@ def compare(
         held = {key.path for key in expected} | {key.path for key in admits}
         for key in sorted(set(by_key) | set(expected) | set(admits)):
             measured, allowed = len(by_key.get(key, [])), expected.get(key, 0)
-            line = ledger.line_of(key, configuration)
             if key in admits:
-                result += admit_verdict(rule, key, admits[key], measured, admitted, lines)
+                admit_verdict(key, admits[key], measured, admitted, lines)
                 by_admit[key.path] += measured
             elif measured > allowed:
                 said = (
@@ -924,22 +923,9 @@ def compare(
                     )
                     for finding in by_key[key]
                 ]
-            elif measured < allowed and configuration != MAXIMUM:
-                result.append(
-                    check_report.Finding(
-                        "error",
-                        shown,
-                        line,
-                        rule.id,
-                        f"{key.path} has {measured} findings of {described(key)}, and the ledger holds {allowed}.  Write "
-                        f"the ledger again in the same commit: {command}",
-                        key.kind,
-                        key.entity,
-                    )
-                )
             elif measured > 0:
                 admitted.setdefault(key.path, Counter())[key.kind] += measured
-                lines.setdefault(key.path, line)
+                lines.setdefault(key.path, ledger.line_of(key, configuration))
                 if ledger.kept_reason(key, configuration):
                     by_reason[key.path] += measured
                 prefix = None if ledger.reason_of(key, configuration) else ledger.prefix_reason(key.path)
@@ -950,33 +936,22 @@ def compare(
             if key not in ledger.base:
                 result += items
         for key, entry in sorted(ledger.base.items()):
-            result += admit_verdict(rule, key, entry, len(by_key.get(key, [])), admitted, lines)
+            admit_verdict(key, entry, len(by_key.get(key, [])), admitted, lines)
     return result + admitted_warnings(rule, admitted, lines, by_admit, by_reason, prefixes)
 
 
 def admit_verdict(
-    rule: Rule, key: Key, entry: Entry, measured: int, admitted: dict[str, Counter[str]], lines: dict[str, int]
-) -> list[check_report.Finding]:
-    """Judge the findings of the key of one row with the value admit, and return the error of a row with none.
+    key: Key, entry: Entry, measured: int, admitted: dict[str, Counter[str]], lines: dict[str, int]
+) -> None:
+    """Add the findings of the key of one row with the value admit to `admitted`, and its line to `lines`.
 
-    A row that admits findings adds them to `admitted` and its line to `lines`, for the warning of its path.
+    The warning of its path reads the two.  A row that admits no finding gives nothing, and a write removes it (THE
+    POLICIES).
     """
     if measured == 0:
-        return [
-            check_report.Finding(
-                "error",
-                shown_path(rule.id),
-                entry.line,
-                rule.id,
-                f"the row of {key.path} ({described(key)}) admits no finding.  Remove it with "
-                f"`python3 utils/bin/guard write --rule {rule.id}`",
-                key.kind,
-                key.entity,
-            )
-        ]
+        return
     admitted.setdefault(key.path, Counter())[key.kind] += measured
     lines.setdefault(key.path, entry.line)
-    return []
 
 
 def moved_counts(expected: Mapping[Key, int], moved: Mapping[str, str]) -> dict[Key, int]:

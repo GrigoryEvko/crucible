@@ -210,7 +210,7 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     expect(
         "the warning of a count row with no reason tells the reader to remove a finding and to lower its count",
         "Remove a finding" in judged[0].message
-        and "lower its count" in judged[0].message
+        and "lowers its count" in judged[0].message
         and "guard write --rule count-rule" in judged[0].message,
     )
     keep_cases(expect, count)
@@ -218,9 +218,11 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     expect("a count above its row is an error at each finding", len(errors(judged)) == 3)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")])
     expect(
-        "a count below its row is an error at the ledger, which asks for a write",
-        len(errors(judged)) == 1 and errors(judged)[0].path == rule_ledger.shown_path("count-rule"),
+        "a count below its row gives no error, and the warning of its path counts the findings of the build",
+        not errors(judged) and len(judged) == 1 and "keeps 1 findings" in judged[0].message,
     )
+    judged = rule_ledger.compare(count, ledger, [])
+    expect("a count row with no finding of the build gives no finding", judged == [])
     judged = rule_ledger.compare(count, ledger, [*([finding("a.py")] * 2), finding("new.py")])
     expect(
         "a finding in a file that the ledger does not hold is an error",
@@ -245,9 +247,7 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         and "lower" not in judged[0].message,
     )
     judged = rule_ledger.compare(admit, ledger, [])
-    expect(
-        "a row that admits no finding is an error", any("admits no finding" in item.message for item in errors(judged))
-    )
+    expect("a row that admits no finding gives no finding", judged == [])
     judged = rule_ledger.compare(admit, ledger, [finding("b.py", rule_id="admit-rule")])
     expect("a finding with no row is an error", any(item.path == "b.py" for item in errors(judged)))
     expect(
@@ -542,8 +542,8 @@ def no_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule])
     expect("a row with the value admit admits each finding of its key in another configuration", not errors(judged))
     judged = rule_ledger.compare(count, ledger, [finding("a.py")], "base")
     expect(
-        "a row with the value admit that admits no finding of the build is an error",
-        [item.message.split(" (")[0] for item in errors(judged)] == ["the row of b.py"],
+        "a row with the value admit that admits no finding of the build gives no finding",
+        not errors(judged) and all("b.py" not in item.message for item in judged),
     )
     written = rule_ledger.write(count, ledger, [finding("a.py")], "base")
     expect(

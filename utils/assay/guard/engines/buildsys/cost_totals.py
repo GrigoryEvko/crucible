@@ -90,15 +90,14 @@ THE RULE parse-total
       growth         a total more than the baseline by more than the warning
                      threshold gives a warning, and by more than the error
                      threshold an error
-      fall           a total less than the baseline by more than the warning
-                     threshold gives an error.  Write the baseline again in
-                     the same commit, and the baseline does not stay more
-                     than the total
       zero-baseline  a baseline of 0 gives an error, because no change has a
                      measure against it
-    The entity is the name of the configuration.  A finding of growth or fall
-    names the files with the largest change of their bytes times readers.  A
-    file with no row counts as zero in the baseline.  `guard write --rule
+    A total less than the baseline gives no finding (THE POLICIES of
+    assay.core.ledger).  The baseline then stays more than the total until a
+    write lowers it.  Until then, a growth to the baseline gives no finding.
+    The entity is the name of the configuration.  A finding of growth names
+    the files with the largest growth of their bytes times readers.  A file
+    with no row counts as zero in the baseline.  `guard write --rule
     parse-total --build-dir DIR` writes the configuration rows and the rows of
     the configuration of the build again, and it keeps the rows of the other
     configurations.  It removes each row of a file of the tree that the tree
@@ -156,9 +155,10 @@ THE RULE instruction-total
         - | KIND | INSTRUCTIONS | objects | REASON
         - | KIND | INSTRUCTIONS | fixtures | REASON
 
-    The rule gives the kinds growth, fall and zero-baseline of the rule
-    parse-total, for the instruction total.  The entity is the name of the
-    configuration.  A finding of growth names the largest compiles.  The rule
+    The rule gives the kinds growth and zero-baseline of the rule
+    parse-total, for the instruction total.  A total less than the baseline
+    gives no finding, as in the rule parse-total.  The entity is the name of
+    the configuration.  A finding of growth names the largest compiles.  The rule
     does not apply when no unit has an instruction count and a compile ran
     with no count.  The host then gives no counter.  Each other unit with no
     count is an error of the kind no-count.  Such a unit is a hit, and the
@@ -239,8 +239,9 @@ PARSE_LEDGER_COMMENT = (
     "#   0.05 % of the total.  The rows tell which files a change of the total comes from.\n"
     "#\n"
     "# A growth over the baseline gives a warning, and over the error threshold of the measured rule\n"
-    "# parse-total of utils/registry.txt an error.  A fall of more than the warning threshold is an error\n"
-    "# too.  To accept a growth, raise the baseline in the same commit with a reason:\n"
+    "# parse-total of utils/registry.txt an error.  A total less than the baseline gives no finding, and a\n"
+    "# write with no reason lowers the baseline.  To accept a growth, raise the baseline in the same commit\n"
+    "# with a reason:\n"
     "#   python3 utils/bin/guard write --rule parse-total --build-dir build --reason TEXT\n"
 )
 FANOUT_LEDGER_COMMENT = (
@@ -278,10 +279,10 @@ INSTRUCTION_LEDGER_COMMENT = (
     "#   ccache miss give the same count (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).\n"
     "#\n"
     "# A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives\n"
-    "# a warning, and over its error threshold an error.  A fall of more than the warning threshold is an error\n"
-    "# too.  The count covers the template instantiation and the constant evaluation that the bytes of\n"
-    "# utils/ledgers/parse-total.txt do not see.  To accept a growth, raise the baseline in the same commit\n"
-    "# with a reason:\n"
+    "# a warning, and over its error threshold an error.  A total less than the baseline gives no finding, and\n"
+    "# a write with no reason lowers the baseline.  The count covers the template instantiation and the\n"
+    "# constant evaluation that the bytes of utils/ledgers/parse-total.txt do not see.  To accept a growth,\n"
+    "# raise the baseline in the same commit with a reason:\n"
     "#   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT\n"
 )
 
@@ -662,11 +663,11 @@ def census_judged(
     value: int,
     said: str,
     shown_value: Callable[[int], str],
-    named: Callable[[bool], str],
+    named: Callable[[], str],
 ) -> list[check_report.Finding]:
-    """Compare a total of the build with the total row that judges it (the kinds growth, fall and zero-baseline).
+    """Compare a total of the build with the total row that judges it (the kinds growth and zero-baseline).
 
-    A build of a configuration that the ledger does not hold gives no fall (THE CONFIGURATION).
+    A total less than its row gives no finding (THE POLICIES of assay.core.ledger), and a write lowers the row.
 
     Args:
         frame: The rule, the configuration and the thresholds
@@ -674,8 +675,7 @@ def census_judged(
         value: The total of the build
         said: The words that tell the total of the build
         shown_value: The text of a total in its unit
-        named: The words that name the largest changes, for a growth when the argument is True, else for a fall.  An
-            empty text names nothing
+        named: The words that name the largest changes of a growth.  An empty text names nothing
     """
     rule_id, write = frame.rule.id, frame.write_command()
     if total.value <= 0:
@@ -693,32 +693,22 @@ def census_judged(
         ]
     change = (value - total.value) / total.value * 100.0
     level = check_report.classify(change, frame.budget)
-    if level is not None:
-        limit = frame.budget.error if level == "error" else frame.budget.warn
-        advice = (
-            f"Remove the cost, or write the rows of the configuration of the build: {write}"
-            if frame.is_bound
-            else f"Remove the cost, or raise the baseline in the same commit with a reason: {write} --reason TEXT"
-        )
-        message = (
-            f"{said}, {change:.2f}% more than the baseline of {shown_value(total.value)}, over the {level} threshold "
-            f"{limit:g}%.  {advice}"
-        )
-        kind, is_growth = "growth", True
-    elif -change > frame.budget.warn and not frame.is_bound:
-        level = "error"
-        kind, is_growth = "fall", False
-        message = (
-            f"{said}, {-change:.2f}% less than the baseline of {shown_value(total.value)}, more than the "
-            f"{frame.budget.warn:g}% that the baseline can hold.  Lower the baseline in the same commit, so that it "
-            f"does not stay above the total: {write}"
-        )
-    else:
+    if level is None:
         return []
-    extra = named(is_growth)
+    limit = frame.budget.error if level == "error" else frame.budget.warn
+    advice = (
+        f"Remove the cost, or write the rows of the configuration of the build: {write}"
+        if frame.is_bound
+        else f"Remove the cost, or raise the baseline in the same commit with a reason: {write} --reason TEXT"
+    )
+    message = (
+        f"{said}, {change:.2f}% more than the baseline of {shown_value(total.value)}, over the {level} threshold "
+        f"{limit:g}%.  {advice}"
+    )
+    extra = named()
     return [
         check_report.Finding(
-            level, frame.shown, total.line, rule_id, f"{message}.  {extra}" if extra else message, kind, frame.name
+            level, frame.shown, total.line, rule_id, f"{message}.  {extra}" if extra else message, "growth", frame.name
         )
     ]
 
@@ -818,31 +808,28 @@ def parse_measure(census: build_census.Census, root: Path) -> ParseMeasure:
     )
 
 
-def parse_changes(
-    now: Mapping[str, tuple[int, int]], before: Mapping[str, tuple[int, int]], is_growth: bool, floor: int
-) -> str:
-    """Return the files with the largest change of bytes times readers, in the direction of the change of the total.
+def parse_changes(now: Mapping[str, tuple[int, int]], before: Mapping[str, tuple[int, int]], floor: int) -> str:
+    """Return the files with the largest growth of bytes times readers, for a finding of growth.
 
-    Complexity: O(f log f) for f files.
+    A file of the baseline that the build does not read has no growth, and the function does not name it.
+    Complexity: O(f log f) for f files of the build.
     """
-    moved: list[tuple[int, str]] = []
-    for name in set(now) | set(before):
-        size, readers = now.get(name, (0, 0))
+    grown: list[tuple[int, str]] = []
+    for name, (size, readers) in now.items():
         old_size, old_readers = before.get(name, (0, 0))
-        delta = size * readers - old_size * old_readers
-        if delta != 0 and (delta > 0) == is_growth:
-            moved.append((-abs(delta), name))
+        growth = size * readers - old_size * old_readers
+        if growth > 0:
+            grown.append((-growth, name))
     parts: list[str] = []
-    for negative, name in sorted(moved)[:CENSUS_NAMED]:
-        size, readers = now.get(name, (0, 0))
+    for negative, name in sorted(grown)[:CENSUS_NAMED]:
+        size, readers = now[name]
         if name in before:
             was = f"was {census_bytes_text(before[name][0])} x {before[name][1]}"
         else:
             was = f"under the floor of {census_bytes_text(floor)} at the last write"
-        sign = "+" if is_growth else "-"
         parts.append(
             f"{name} {census_bytes_text(size)} x {readers} readers = {census_bytes_text(size * readers)} "
-            f"({sign}{census_bytes_text(-negative)}, {was})"
+            f"(+{census_bytes_text(-negative)}, {was})"
         )
     return f"The largest changes: {'; '.join(parts) if parts else 'no file row changed'}"
 
@@ -865,7 +852,7 @@ def parse_findings(context: BuildContext) -> list[check_report.Finding]:
         measure.value,
         measure.said(),
         census_bytes_text,
-        lambda is_growth: parse_changes(measure.files, before, is_growth, floor),
+        lambda: parse_changes(measure.files, before, floor),
     )
     check_report.write_line(
         f"{PARSE_RULE}: {measure.value} bytes ({census_bytes_text(measure.value)}) in {measure.object_units} objects "
@@ -880,8 +867,8 @@ def held_rows[Row](root: Path, rows: Mapping[str, Row]) -> dict[str, Row]:
 
     The rows have the names of build_census.file_key.  A file of the build directory, a system header and a different
     external file keep their rows (census_is_tree_name()).  A change that divides a file can remove the file
-    from the tree.  A row of such a file names nothing that a build can read again.  The rule ledger-owners refuses
-    such a row in each configuration.  Complexity: one check of a file for each row of a file of the tree.
+    from the tree.  A row of such a file names nothing that a build can read again, and the write removes it in each
+    configuration.  Complexity: one check of a file for each row of a file of the tree.
     """
     return {name: row for name, row in rows.items() if not census_is_tree_name(name) or (root / name).is_file()}
 
@@ -1246,7 +1233,7 @@ def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
         objects + fixtures,
         said,
         instruction_text,
-        lambda is_growth: instruction_largest(census) if is_growth else "",
+        lambda: instruction_largest(census),
     )
     check_report.write_line(
         f"{INSTRUCTION_RULE}: {instruction_text(objects + fixtures)} user instructions in "

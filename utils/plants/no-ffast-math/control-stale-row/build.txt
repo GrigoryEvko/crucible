@@ -1,0 +1,4 @@
+# A row of the ledger admits -fno-rounding-math on the compile of src/none.cpp, and no compile has that flag.  The row
+# admits no finding.  A ledger fails only on a growth, so the rule gives no finding, and a write removes the row.
+format 1
+compile a.o src/a.cpp | g++ -c src/a.cpp

@@ -66,8 +66,6 @@ THE JUDGE
                          a warning that gives the row and its reason
       risen              a value over the kept value of its row with the noise
                          of its unit: the level of a value with no row
-      `row-not-needed`   a row of an item at or below the warning threshold:
-                         an error at the row
       `row-unused`       a row of the name of the configuration of the build
                          with an item that the build does not hold: a warning
                          at the row
@@ -76,7 +74,9 @@ THE JUDGE
       input              an input that the rule cannot read
     The entity of a finding is the item: the output relative to the build
     directory, or the header relative to the source root.  It is empty for
-    not-wired and for an input of the full build.
+    not-wired and for an input of the full build.  A row of an item at or
+    below the warning threshold gives no finding, because a ledger fails
+    only on a growth.  A write removes such a row (THE LEDGERS).
 
 THE LEDGERS
     utils/ledgers/RULE.txt holds one row for each item and each build kind or
@@ -822,11 +822,11 @@ def judged_values(
 
 
 def finding_kind(value: cost_budget.Measure, budget: check_report.Budget, row: cost_budget.Admission | None) -> str:
-    """Return the kind of the finding of one judged value (THE JUDGE)."""
+    """Return the kind of the finding of one judged value with a finding (THE JUDGE)."""
     if row is None:
         return "over-threshold"
     found = cost_budget.verdict(value.value, budget.warn, budget.error, row.value, cost_budget.noise_of(budget.unit))
-    return {cost_budget.ADMITTED: "admitted", cost_budget.RISEN: "risen"}.get(found, "row-not-needed")
+    return "admitted" if found == cost_budget.ADMITTED else "risen"
 
 
 def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Finding]:

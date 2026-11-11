@@ -20,7 +20,7 @@ THE LEDGER
     A row of utils/ledgers/witness-roster.txt admits one class:
     `PATH | unrostered-witness | admit | ENTITY | REASON`.  The entity is the
     full name of the class, with its namespaces and no template arguments.
-    A row that admits no finding fails the rule.
+    A row that admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule witness-roster --build-dir DIR [--warnings-dir DIR]

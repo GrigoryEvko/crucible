@@ -24,7 +24,7 @@ THE LEDGER
     `PATH | KIND | admit | ENTITY | REASON`.  The entity is the full name of
     the function, with the types of its parameters and its qualifiers.  Each
     hatch has its own row, and a reviewer then reads each new hatch.  A row that
-    admits no finding fails the rule.
+    admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule escape-doors --build-dir DIR [--warnings-dir DIR]

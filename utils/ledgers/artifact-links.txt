@@ -12,8 +12,8 @@
 #   the target gives the group: vessel, benches, tests, or tools.
 # A difference row of another kind:  @KIND | @build/GROUP | KIND | +1 | ENTITY | -
 #
-# A new fact fails the test.  A row whose fact goes fails too, until the same commit writes the rows of the kind
-# again:
+# A new fact fails the test.  A row whose fact goes passes.  The landing gate writes the rows of the kind again,
+# and the write removes the row:
 #   python3 utils/bin/guard write --rule artifact-links --build-dir build
 # The write refuses a new fact without --raise.  The head comment of the rule gives the reasons for --raise.
 format 1
@@ -798,7 +798,6 @@ configuration x86_64-release tier native-x86_64
 @x86_64-debug-ubsan-strict | @build/tools | version | +1 | libm.so.6 GLIBC_2.2.5 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/tools | version | +1 | libstdc++.so.6 CXXABI_1.3.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/tools | version | +1 | libstdc++.so.6 GLIBCXX_3.4.22 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@x86_64-debug-ubsan-strict | @build/vessel | import | +1 | _ZNKSt9basic_iosIcSt11char_traitsIcEE4failEv@GLIBCXX_3.4 | a new toolchain: each link runs the pinned mold 3.0.0
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | _ZNKSt9basic_iosIcSt11char_traitsIcEEntEv@GLIBCXX_3.4 | a new toolchain: each link runs the pinned mold 3.0.0
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | _ZNSiC2Ev@GLIBCXX_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @x86_64-debug-ubsan-strict | @build/vessel | import | +1 | _ZNSiD2Ev@GLIBCXX_3.4 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

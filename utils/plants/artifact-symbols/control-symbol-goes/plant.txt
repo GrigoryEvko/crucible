@@ -1,0 +1,4 @@
+# The ledger holds a symbol of the library crucible that the build no longer uses.  The row passes.
+library planted_tree externs.cpp
+library foundation base.cpp
+library crucible base.cpp

@@ -1,4 +1,4 @@
-"""test-time — each registered test runs behind the judge of its time and its memory, and each ledger row names a test.
+"""test-time — each registered test runs behind the judge of its time and its memory.
 
 THE JUDGE
     The test launcher `loop test-step` (assay.loop.teststep) and the fixture
@@ -19,23 +19,23 @@ THE JUDGE
     does not hold assay.core.report (assay.core.budget, THE STEP METERS).
 
 THE RULE
-    A test cannot see a test that runs with no judge, or a ledger row that
-    names a test of no build.  The rule reads the tests that the build
-    registers and the records of their last runs (assay.readers.ctest).  It
-    also reads the rows of the ledgers of test-time, test-memory and
-    test-instructions that judge the build (assay.core.budget, THE ROWS).  It
-    refuses:
+    A test cannot see a test that runs with no judge.  The rule reads the
+    tests that the build registers and the records of their last runs
+    (assay.readers.ctest).  It also reads the rows of the ledgers of
+    test-time, test-memory and test-instructions that judge the build
+    (assay.core.budget, THE ROWS).  It refuses:
       unjudged  a test with no test launcher and no fixture driver in its
                 command.  Its time and its memory have no judge.  CMake gives
                 the launcher to a test of an executable target, and
                 crucible_script_test() of cmake/TestLauncher.cmake gives it to
                 a script test
-      unknown   a row of the name of the configuration of the build that names
-                a test that the build does not register
       input     the build has no kind or no name of its configuration, an
                 input does not read, or a ledger row does not have its shape
-    The entity of a finding is the name of the test.  The judge refuses a row
-    of a test that runs at or below the warning threshold of its rule.  The
+    The entity of a finding is the name of the test.  A ledger fails only
+    on a growth (THE POLICIES of assay.core.ledger).  A row of a test that
+    the build does not register gives no finding.  A row of a test at or
+    below the warning threshold of its rule gives no finding too.  THE WRITE
+    removes the two rows.  The
     rule judges no measure itself.  Its findings go to test-time.txt of the
     warnings directory, apart from the files of the tests.
 
@@ -126,22 +126,21 @@ def names_of(context: BuildContext) -> tuple[str, str] | check_report.Finding:
     return kind, name
 
 
-def ledger_rows(
-    context: BuildContext, kind: str, name: str
-) -> tuple[dict[str, cost_budget.Rows], list[check_report.Finding]]:
-    """Return the ledger rows that judge the build for each rule of LEDGER_RULES, and an error for each bad row."""
-    found: dict[str, cost_budget.Rows] = {}
+def row_problems(context: BuildContext, kind: str, name: str) -> list[check_report.Finding]:
+    """Return an error for each ledger row of a rule of LEDGER_RULES that does not have its shape.
+
+    Complexity: linear in the rows of the three ledgers.
+    """
     problems: list[check_report.Finding] = []
     for rule_id in LEDGER_RULES:
         path = rule_ledger.ledger_path(rule_id, context.root)
         rows = cost_budget.read_rows(rule_id, cost_meter.ITEM_NAME, path, kind, name)
-        found[rule_id] = rows.replaced(shown=context.shown(path))
         problems += [replace(problem, path=context.shown(path), check=RULE, kind="input") for problem in rows.problems]
-    return found, problems
+    return problems
 
 
 def findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give each registered test with no judge, and each ledger row of a test that the build does not register."""
+    """Give each registered test with no judge, and each ledger row that does not have its shape."""
     build = context.require_build()
     names_found = names_of(context)
     if isinstance(names_found, check_report.Finding):
@@ -152,7 +151,7 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
         ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
         return [input_error(context, problem)]
-    rows, found = ledger_rows(context, kind, name)
+    found = row_problems(context, kind, name)
     for test in tests:
         if is_judged(test.command):
             continue
@@ -168,23 +167,6 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
                 test.name,
             )
         )
-    registered = {test.name for test in tests}
-    for rule_id in LEDGER_RULES:
-        table = rows[rule_id]
-        for test_name, row in sorted(table.admitted.items(), key=lambda pair: pair[1].line):
-            if test_name not in registered and test_name in table.own:
-                found.append(
-                    check_report.Finding(
-                        "error",
-                        table.shown,
-                        row.line,
-                        RULE,
-                        f"the ledger of {rule_id} names the test {test_name} for {name}, and the build does not "
-                        f"register it.  Remove the row",
-                        "unknown",
-                        test_name,
-                    )
-                )
     return found
 
 

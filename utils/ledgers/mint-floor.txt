@@ -16,8 +16,8 @@
 #
 # Each row is a task: write the fixtures, and remove the row.  A stale row
 # names a mint that meets the floor at this time, or that has a new name, new
-# parameters or a new file.  A stale row fails the rule, so the file drains
-# with the debt.  A reviewer writes each row by hand.
+# parameters or a new file.  A stale row passes, and a write removes it.  The
+# file then drains with the debt.  A reviewer writes each row by hand.
 format 1
 rule mint-floor
 include/crucible/cntp/Backpressure.h | - | admit | crucible::cntp::mint_admission_decision(crucible::cntp::AdmissionDecision) | A deficit of the past: the mint has fewer than two negative-compile fixtures in the fixture directories of its layer.  Write the fixtures, and remove the row

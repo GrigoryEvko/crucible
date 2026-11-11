@@ -11,8 +11,9 @@
 # NAME" for a use that a macro body spells, or namespace-scope.  A file here
 # does not give its caller a reflection of a member that a walk found.  The
 # rule refuses a function that returns one, and the reviewer of each row
-# examines the other ways to publish one.  A row that admits no use fails the
-# rule, so the list only shrinks.  A reviewer writes each reason.
+# examines the other ways to publish one.  A row that admits no use passes,
+# and a write removes it.  The list then only shrinks.  A reviewer writes
+# each reason.
 #
 # The rows have three classes:
 #   * A closed roster: a walk of the members of a namespace or of a registry

@@ -5,8 +5,8 @@
 # holds the use, with the types of its parameters, "macro NAME" for a use that a macro body spells, or
 # namespace-scope.  Only a file under test/ and outside test/fuzz/ can have a row, also a file that the
 # build writes under test/ of the build directory, and each row gives a reason.  A count above its row
-# fails, and a row that admits more uses than the code has is stale, so the ledger only becomes
-# shorter.  A test that can get the same fact through the public door of the base must use the door,
+# fails.  A row that admits more uses than the code has passes, and a write lowers it.  The ledger then
+# only becomes shorter.  A test that can get the same fact through the public door of the base must use the door,
 # and its row goes.
 # A reviewer writes each reason.  `python3 utils/bin/guard explain detail-namespace` tells the rule.
 format 1

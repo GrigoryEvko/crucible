@@ -1,7 +1,7 @@
 # The ledger of the rule fullness-guard: the reviewed `==` fullness tests against a capacity bound.
 # A row PATH | equal-bound | admit | FUNCTION: COUNTER == BOUND | REASON admits each test of that shape in that function
-# of the file PATH.  The key has no line, so an edit above the site does not move it.  A row that admits no test fails
-# the rule.  `python3 utils/bin/guard explain fullness-guard` tells the rule, and
+# of the file PATH.  The key has no line, so an edit above the site does not move it.  A row that admits no test passes,
+# and a write removes it.  `python3 utils/bin/guard explain fullness-guard` tells the rule, and
 # `python3 utils/bin/guard write --rule fullness-guard` writes this file.
 #
 # Each row is a not-found sentinel.  It compares an index with a container bound to find a failed lookup, not a full

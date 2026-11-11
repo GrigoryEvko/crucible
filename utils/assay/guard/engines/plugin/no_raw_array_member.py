@@ -18,7 +18,7 @@ THE LEDGER
     A row of utils/ledgers/no-raw-array-member.txt admits one member or one
     alias: `PATH | KIND | admit | ENTITY | REASON`.  The entity is the full
     name of the member or of the alias, with its namespaces and classes.  A
-    row that admits no finding fails the rule.
+    row that admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule no-raw-array-member --build-dir DIR [--warnings-dir DIR]

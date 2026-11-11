@@ -39,8 +39,9 @@ THE SCOPE
     The rule reads the prose of each file that git holds, and of each new
     file that .gitignore does not match (assay.readers.prose).  It does not
     read the dated notes of misc/, this module and its plants, because they
-    name references on purpose.  The rule ledger-owners holds the path of
-    each ledger row, and this rule gives no finding for it.
+    name references on purpose.  It gives no finding for the path of a
+    ledger row, because a row of a file that went passes (THE POLICIES of
+    assay.core.ledger).
 
 THE CACHE
     The references and the axis numbers of one file come only from its path

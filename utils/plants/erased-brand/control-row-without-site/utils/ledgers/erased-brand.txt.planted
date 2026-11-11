@@ -1,0 +1,4 @@
+# The ledger of the control: a row of a file with no site, which passes.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 1 | Permission | -

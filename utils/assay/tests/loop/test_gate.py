@@ -125,9 +125,6 @@ if mode == "build":
 statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
-if mode == "falls":
-    ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
-    statuses["test_ledger"] = "fail" if "| 2 |" in ledger else "run"
 if mode == "keep":
     ledger = pathlib.Path("utils/ledgers/slow-row.txt").read_text()
     statuses["guard_slow_row"] = "fail" if "| 10 |" in ledger else "run"
@@ -196,7 +193,8 @@ with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
     handle.write(" ".join(words[words.index("--build") + 2 :]) + "\\n")
 """
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
-# unless it is test_broken, or test_ledger or guard_slow_row before the write of its ledger.
+# unless it is test_broken, or test_ledger or guard_slow_row before the write of its ledger.  A fall of door-unit makes
+# no test red, because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).
 CTEST = """import pathlib
 import sys
 
@@ -206,8 +204,7 @@ if "--show-only=json-v1" in words:
     sys.exit(0)
 names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
 report = pathlib.Path(words[words.index("--output-junit") + 1])
-ledger = pathlib.Path("utils/ledgers/door-unit.txt").read_text()
-red = {"test_broken"} | ({"test_ledger"} if "| 2 |" in ledger else set())
+red = {"test_broken"}
 traits = pathlib.Path("utils/ledgers/trait-guard.txt")
 red |= {"test_ledger"} if traits.is_file() and "include/old.h" in traits.read_text() else set()
 slow = pathlib.Path("utils/ledgers/slow-row.txt")
@@ -588,10 +585,10 @@ def falls_cases(expect: testing.Expect) -> None:
         candidate = gate.Candidate(head, commit, ("notes.txt",))
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "falls")
+        planted = planted_gate(work, root, tree, "clean")
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
         expect(
-            "the gate accepts a commit whose suite is red only on a fall of a counted ledger",
+            "the gate accepts a commit whose suite is green with a fall of a counted ledger, and it writes the fall",
             verdict.is_accepted and verdict.configurations == ("default", "default"),
         )
         expect(
@@ -693,7 +690,7 @@ def falls_parse_cases(expect: testing.Expect) -> None:
         names = tuple(item.name for item in gate.CONFIGURATIONS if item.is_parse)
         parses = {item.build: "clean" for item in gate.CONFIGURATIONS if item.is_parse}
         parses[gate.BY_NAME[names[0]].build] = "parse-falls"
-        planted = planted_gate(work, root, tree, "falls", parses)
+        planted = planted_gate(work, root, tree, "clean", parses)
         verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
         holds = (
             not verdict.is_accepted

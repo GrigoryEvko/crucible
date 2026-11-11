@@ -110,8 +110,8 @@ THE SELECTION
     and src/.  The bench targets also compile the arms of CRUCIBLE_BENCH in
     them.  An arm in include/crucible/BackgroundThread.h is an example.  An
     arm that only one configuration compiles then gets its verdict in the
-    landing of the change.  This applies to a count above its row and to a
-    count below it.
+    landing of the change.  A count above its row fails there, and the
+    landing writes a count below its row (THE FALLS).
 
     A change that no unit of a configuration reads makes its build do
     nothing.  A parse build then keeps the report of each unit (THE KEPT
@@ -151,16 +151,16 @@ THE RUN OF A CONFIGURATION
          `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
-         assay.guard.engines.buildsys.parse_builds, at the same time.  A
-         check that fails gets THE FALLS, and then each check runs again.
+         assay.guard.engines.buildsys.parse_builds, at the same time.  Then
+         THE FALLS, and after a failure each check runs again.
       3. A configuration of objects: `loop test BUILD` with the words of its
          mode, which builds the target all and runs the tests of the mode
          (assay.loop.affected, THE SELECTION).  A retry after a move of HEAD
          and each subsequent run of a batch run `loop test BUILD` in a
          configuration of the full suite.  That command runs only the tests
          with an input that changed, and each test of a rule that reads a
-         build.  The file of --only is in the directory of the logs.  A red
-         test gets THE FALLS first.
+         build.  The file of --only is in the directory of the logs.  After
+         the tests, THE FALLS write the counted ledgers.
          Then each test that is red runs one more time, alone, one test at
          a time.  A test that is red alone too rejects the commit.
          An exit other than 0 with no red test rejects the commit too.  Then
@@ -249,11 +249,14 @@ THE LOCKS OF THE LEDGERS
     ledger.
 
 THE FALLS
-    A count that falls makes the check of its counted rule fail with a count
-    below its row.  A row of the policy admit that admits no finding makes
-    the check fail too.  The gate then runs `guard write --rule RULE
-    --build-dir BUILD` of each counted rule with a ledger that holds the
-    configuration, in the mode lower.  These writes run at the same time,
+    A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
+    count below its row, and a row of the policy admit that admits no
+    finding, then make no check fail.  The gate then lowers the rows at each
+    landing.  After the checks or the tests of each configuration of the
+    first round, it runs `guard write --rule RULE --build-dir BUILD` of each
+    counted rule with a ledger that holds the configuration, in the mode
+    lower.  Each mode of THE SELECTION builds the target all first, and a
+    write then reads the full build.  These writes run at the same time,
     each with the lock of its rule (THE LOCKS OF THE LEDGERS).  A write
     refuses each count above its row and each new row, other than an
     increase that a move pays (THE MOVE of assay.core.ledger).  The write
@@ -1174,9 +1177,13 @@ class Step:
     def checked_falls(
         self, configuration: Configuration, rules: Sequence[str], counted: Mapping[str, Sequence[str]]
     ) -> list[str]:
-        """Run the checks of some rules on a build, and after a failure THE FALLS and the checks again."""
+        """Run the checks of some rules on a build, then THE FALLS, and after a failure the checks again.
+
+        A write can pay an increase with a fall along a move (THE MOVE of assay.core.ledger).  The checks of a failure
+        then run again after the writes.
+        """
         problems = self.checked(configuration, rules, self.environment)
-        if problems and self.write_falls(configuration, counted):
+        if self.write_falls(configuration, counted) and problems:
             problems = self.checked(configuration, rules, self.environment)
         return problems
 
@@ -1303,9 +1310,9 @@ class Step:
     ) -> tuple[list[str], tuple[str, ...]]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
-        `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold, and
-        a run with no counted rule, give a red test no write (THE FALLS).  A red test of a rule of `--keep` gets the
-        write of THE KEPT ROWS.  The run of ALWAYS first builds the target build.ninja when the other configurations
+        `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  After the tests, THE FALLS
+        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger.  A red
+        test of a rule of `--keep` gets the write of THE KEPT ROWS.  The run of ALWAYS first builds the target build.ninja when the other configurations
         wait for it (THE THREADS).  The second result holds the tests that are red alone too.
         """
         counted: Mapping[str, Sequence[str]] = {} if is_again else self.counted
@@ -1339,8 +1346,8 @@ class Step:
         skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
         if skipped:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
+        self.write_falls(configuration, counted)
         if red:
-            self.write_falls(configuration, counted)
             raised = self.write_keeps(configuration, keeps, red)
             with self._locks_guard:
                 self.kept += raised

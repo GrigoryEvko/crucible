@@ -1,6 +1,6 @@
 # The ledger of the rule no-ffast-math: the build flags that the rule admits.  A row
 # PATH | - | admit | FLAG | REASON admits the banned flag FLAG on the compile of the source file PATH.
-# A row that matches no compile is stale.
+# A row that matches no compile passes, and a write removes it.
 # `python3 utils/bin/guard explain no-ffast-math` tells the rule, and
 # `python3 utils/bin/guard write --rule no-ffast-math --build-dir BUILD --admit --reason TEXT` writes a row.
 format 1

@@ -1,0 +1,6 @@
+# The last cold compile of one negative fixture took 1 s of user time and no exact instruction count, below the
+# warning threshold 5 s of fixture-cpu.  The planted ledger keeps the fixture up to 16 s.  A row that keeps nothing
+# passes, and the fixture driver gives no finding.
+format 1
+kind x86_64-debug-asan
+fixture neg_slow test/neg/slow.cpp user=1 system=0

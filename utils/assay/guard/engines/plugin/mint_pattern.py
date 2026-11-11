@@ -28,7 +28,7 @@ THE LEDGER
     reason says why the mint keeps its shape.  An example: the mint
     allocates, calls the kernel or reads runtime state, and
     -Winvalid-constexpr refuses constexpr on such a function.  A row that
-    admits no finding fails the rule.
+    admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule mint-pattern --build-dir DIR [--warnings-dir DIR]

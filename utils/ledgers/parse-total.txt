@@ -24,8 +24,9 @@
 #   0.05 % of the total.  The rows tell which files a change of the total comes from.
 #
 # A growth over the baseline gives a warning, and over the error threshold of the measured rule
-# parse-total of utils/registry.txt an error.  A fall of more than the warning threshold is an error
-# too.  To accept a growth, raise the baseline in the same commit with a reason:
+# parse-total of utils/registry.txt an error.  A total less than the baseline gives no finding, and a
+# write with no reason lowers the baseline.  To accept a growth, raise the baseline in the same commit
+# with a reason:
 #   python3 utils/bin/guard write --rule parse-total --build-dir build --reason TEXT
 format 1
 rule parse-total

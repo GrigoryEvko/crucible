@@ -3,8 +3,8 @@
 #
 # One row is `PATH | KIND | admit | ENTITY | REASON`.  The kind is
 # array-member or array-alias, and the entity is the full name of the member
-# or of the alias.  A row that admits no finding fails the rule, so the file
-# only shrinks.
+# or of the alias.  A row that admits no finding passes, and a write removes
+# it.  The file then only shrinks.
 format 1
 rule no-raw-array-member
 include/fixy/session/Watch.h | array-member | admit | fixy::session::watch::detail::wait_chain::links | wait_chain::links of include/fixy/session/Watch.h is a C array, because the base has no fixed array, and src/fixy/session/Watch.cpp reads each link of a cycle. The fixed array FixedArray of the Region family (section 11.4 of the plan) replaces it

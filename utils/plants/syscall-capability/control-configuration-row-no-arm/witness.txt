@@ -1,0 +1,9 @@
+# A row of the configuration x86_64-debug-tsan admits the call of an arm, and
+# a build of that configuration does not compile the arm.  The rule judges
+# the row in that build.  The row admits no finding, and it gives no error,
+# because a ledger fails only on a growth.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw
+configuration x86_64-debug-tsan

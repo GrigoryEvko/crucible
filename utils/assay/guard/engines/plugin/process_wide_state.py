@@ -36,7 +36,7 @@ THE LEDGER
     the full name of the variable, with its namespaces and classes, and
     FUNCTION()::NAME for a static local.  The reason tells why one copy in
     each library is correct.  A row
-    that admits no finding fails the rule.
+    that admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule process-wide-state --build-dir DIR [--warnings-dir DIR]

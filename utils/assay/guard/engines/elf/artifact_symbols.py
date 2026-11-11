@@ -230,15 +230,19 @@ THE LEDGER
     refuses a row of a different kind, and no row can admit a downcast.
 
 THE VERDICT
-    assay.core.ledger judges the findings.  A finding with no row is an
-    error, and a row of an import that goes is an error too.  A hidden
-    import and an import with no provider are errors that no row admits.  A row throw or
-    vtable that admits nothing of the build is an error.  The exception is a
-    row throw that names a function or an object of its archive
-    (quiet_rows).  The inlining of one configuration can remove a throw that
-    a different configuration keeps.  Such a row gives no error, and a write
-    keeps it.  Each library with rows gives one warning.  These archives are
-    errors, because the rule read nothing there:
+    assay.core.ledger judges the findings.  A ledger fails only when a count
+    is more than its row (THE POLICIES of assay.core.ledger).  A finding with
+    no row is an error.  A row of an import that goes gives no finding, and a
+    write removes the row.  A hidden import and an import with no provider
+    are errors that no row admits.  Each library with rows gives one warning.
+
+    A row throw or vtable that admits nothing of the build gives no finding,
+    and a write removes it.  The exception is a row throw that names a
+    function or an object of its archive (quiet_rows).  A write keeps such a
+    row, because the inlining of one configuration can remove a throw that a
+    different configuration keeps.
+
+    These archives are errors, because the rule read nothing there:
       * An archive that the ELF reader cannot read
       * An archive with no symbol
       * An archive of IMPORTING_LIBRARIES with no undefined reference.
@@ -282,7 +286,7 @@ Complexity: linear in the symbols and the relocations of the libraries and of th
 
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import configuration as build_config
@@ -1110,9 +1114,9 @@ def quiet_rows(
 ) -> set[rule_ledger.Key]:
     """Return the rows throw that admit no finding of the build and name a function or an object of their archive.
 
-    The site of such a row stays in the archive, and the inlining of the build removed its throw (THE VERDICT).
-    `found` holds the keys of the findings of the build.  Complexity: linear in the rows times the symbols that the
-    archives hold.
+    The site of such a row stays in the archive, and the inlining of the build removed its throw.  A write keeps such
+    a row (THE VERDICT).  `found` holds the keys of the findings of the build.  Complexity: linear in the rows times
+    the symbols that the archives hold.
     """
     quiet: set[rule_ledger.Key] = set()
     for key in admits:
@@ -1345,8 +1349,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     helpers = helper_findings(artifacts, base_archives, names)
     symbols = [*imports, *helpers]
     quiet = quiet_rows(admits, artifacts, names, {rule_ledger.key_of(item) for item in classes})
-    view = replace(ledger, base={key: entry for key, entry in ledger.base.items() if key not in quiet})
-    verdict = rule_ledger.compare(rule, view, [*classes, *symbols], judged.name)
+    verdict = rule_ledger.compare(rule, ledger, [*classes, *symbols], judged.name)
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
         f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "

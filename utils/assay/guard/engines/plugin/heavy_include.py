@@ -41,8 +41,8 @@ THE LEDGER
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
       header.
-    * A count less than its ledger count is an error, until the commit writes
-      the ledger again.
+    * A count less than its ledger count gives no finding (THE POLICIES of
+      assay.core.ledger).  The landing gate writes the lower count.
     * An include of an unmeasured header is an error in each case: measure the
       header.  The plugin then gives `heavy-include` or no finding.
     * Each row with no reason of its own or of a prefix that the build holds
@@ -169,17 +169,6 @@ def evaluate(
                     f"alone than <meta> times the threshold of the rule {RULE}, and each translation unit that includes "
                     f"{key.path} pays it.  {ADVICE}.  A header that owns {header} on purpose gets a row with its reason: "
                     f"`{command} --admit --reason TEXT`",
-                )
-            )
-        elif measured < admitted and name != rule_ledger.MAXIMUM:
-            found.append(
-                check_report.Finding(
-                    "error",
-                    shown,
-                    line,
-                    RULE,
-                    f"the ledger admits {admitted} includes of {header} in {key.path}, and the build has {measured}.  Write "
-                    f"the ledger again in the same commit: `{command}`",
                 )
             )
         elif measured > 0 and not ledger.kept_reason(key, name):

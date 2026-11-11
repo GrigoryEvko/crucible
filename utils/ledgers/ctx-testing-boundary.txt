@@ -5,8 +5,8 @@
 # its parameters, "macro NAME" for a use that a macro body spells, or namespace-scope.
 # The door mints a context with no key, and each ctx-bound mint checks for a context.  So a use in code
 # that ships gives authority that no mint gave.  A header can use the door in its own self-test.
-# A new use is more than its count, and it fails.  A count above the uses of its row is stale, and it
-# fails too, so the ledger becomes shorter when the self-tests leave the headers.
+# A new use is more than its count, and it fails.  A count above the uses of its row passes, and a write
+# lowers it.  The ledger then becomes shorter when the self-tests leave the headers.
 # The rule does not read test/ and bench/, because they use the test path on purpose.
 # A reviewer writes each reason.  `python3 utils/bin/guard explain ctx-testing-boundary` tells the rule.
 format 1

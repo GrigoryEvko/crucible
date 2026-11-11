@@ -724,9 +724,10 @@ class StoreTest:
         plant_ledger(ledger, "fixture-cpu", "- | - | 1 | neg_convert | a planted reason\n")
         budget(1000, 2000)
         stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
-        line = finding(stale[1], "error")
-        self.expect(stale[0] == 1 and line is not None and f"Remove its row from {ledger}" in line,
-                    f"a ledger row of a fixture at or below the warning threshold fails: {stale[0]} {line}")
+        self.expect(stale[0] == 0 and finding(stale[1], "error") is None and finding(stale[1], "warning") is None
+                    and not (warnings / "fixture-cpu.neg_convert.txt").exists(),
+                    f"a ledger row of a fixture at or below the warning threshold gives no finding: {stale[0]} "
+                    f"{stale[1]}")
         plant_ledger(ledger, "fixture-cpu", "neg_convert | - | 1 | - | a planted reason\n")
         malformed = self.run("neg_convert", *CONVERT, **env)
         line = finding(malformed[1], "error")
@@ -811,9 +812,10 @@ class StoreTest:
                     f"a count above the kept value of its row with the noise fails again: {risen[0]} {line}")
         budget((1000, 2000), (1000, 2000))
         stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
-        line = finding(stale[1], "error", "fixture-instructions")
-        self.expect(stale[0] == 1 and line is not None and f"Remove its row from {ledger}" in line,
-                    f"a ledger row of a fixture at or below the warning threshold fails: {stale[0]} {line}")
+        self.expect(stale[0] == 0 and finding(stale[1], "error", "fixture-instructions") is None
+                    and finding(stale[1], "warning", "fixture-instructions") is None and not own_file.exists(),
+                    f"a ledger row of a fixture at or below the warning threshold gives no finding: {stale[0]} "
+                    f"{stale[1]}")
         ledger.unlink()
         table.write_text(planted_registry(("fixture-cpu", 1000, 2000, "s")))
         missing = self.run("neg_convert", *CONVERT, **env)
@@ -1073,6 +1075,9 @@ class StoreTest:
 
         The two ledgers do not exist, as in the tree when no fixture has a row.
         The memo keeps the budget all the same, and a new ledger replaces it.
+        A row below the warning threshold gives no finding.  The new ledger
+        then holds a row that does not name a fixture, and its error shows the
+        read.
         """
         table = self.root / "registry.txt"
         cpu_ledger = self.root / "fixture-cpu.txt"
@@ -1095,9 +1100,9 @@ class StoreTest:
         memos = sorted((self.store / "memo").glob("budget-*.json"))
         self.expect(quiet[0] == 0 and warning(quiet[1]) is None and len(memos) == 1,
                     f"a run under the budget gives no warning and keeps the settled budget: {quiet[0]} {memos}")
-        plant_ledger(cpu_ledger, "fixture-cpu", "- | - | 1 | neg_convert | a planted reason\n")
+        plant_ledger(cpu_ledger, "fixture-cpu", "neg_convert | - | 1 | - | a planted reason\n")
         listed = self.run("neg_convert", *CONVERT, **env)
-        self.expect(listed[0] == 1 and f"Remove its row from {cpu_ledger}" in listed[1],
+        self.expect(listed[0] == 1 and f"{cpu_ledger}:4: a row is `- | - | VALUE | FIXTURE" in listed[1],
                     f"a new ledger replaces the kept budget: {listed[0]} {listed[3]}")
         cpu_ledger.unlink()
         budget(0)
@@ -1243,7 +1248,7 @@ class StoreTest:
 
         neg_two_reasons fails for two reasons: the static assertion that SIZE
         matches, and a name that is not declared.  A listed fixture warns, and a
-        listed fixture with no such error fails, so that its row goes.
+        listed fixture with no such error gives no finding.
         """
         # The planted ledger does not exist until a case writes it, so it has no row.
         ledger = self.root / "fixture-own-reason.txt"
@@ -1274,9 +1279,10 @@ class StoreTest:
                     and own_file.is_file() and own_file.read_text().strip() == line,
                     f"a listed fixture warns in the file of its fixture: {listed[0]} {line}")
         stale = self.run("neg_two_reasons", *SIZE, *PROBE, warnings_dir=warnings, **env)
-        line = finding(stale[1], "error")
-        self.expect(stale[0] == 1 and line is not None and f"Remove its row from {ledger}" in line
-                    and not own_file.exists(), f"a listed fixture with no such error fails: {stale[0]} {line}")
+        self.expect(stale[0] == 0 and finding(stale[1], "error") is None and finding(stale[1], "warning") is None
+                    and not own_file.exists(),
+                    f"a listed fixture with no such error gives no finding, and its warnings file goes: {stale[0]} "
+                    f"{stale[1]}")
         plant_ledger(ledger, "fixture-own-reason", "neg_two_reasons\n")
         malformed = self.run("neg_size", *SIZE, **env)
         line = finding(malformed[1], "error")

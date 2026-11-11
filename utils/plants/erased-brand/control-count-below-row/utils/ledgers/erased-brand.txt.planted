@@ -1,0 +1,4 @@
+# The ledger of the control: one site more than the file holds.  A count below its row passes.
+format 1
+rule erased-brand
+include/fixy/Planted.h | erased-brand | 2 | Permission | -

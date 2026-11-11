@@ -169,9 +169,10 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
         len(errors_of(static_tls.judge(planted_rule(), scratch.planted()))) == 1,
     )
     scratch.ledger(f"@build/libfoundation.a(counter.cpp.o) | {KIND} | 512 | - | a row that admits nothing\n")
+    found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a row of a member under the error threshold is an error",
-        any("Remove the row" in message for message in errors_of(static_tls.judge(planted_rule(), scratch.planted()))),
+        "a row of a member under the error threshold gives no finding, because a ledger fails only on a growth",
+        not any("counter.cpp.o" in message for message in (*errors_of(found), *warnings_of(found))),
     )
     scratch.ledger("")
     scratch.archive("crucible", ["cache", "plain", "plain"])

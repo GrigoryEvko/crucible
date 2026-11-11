@@ -14,7 +14,7 @@ THE LEDGER
     fixtures: `PATH | - | admit | ENTITY | REASON`.  The entity is the full
     name of the mint with its namespaces and the types of its parameters.
     The ledger of the rule mint-pattern has the same entities.  A row that admits no finding
-    fails the rule, and the ledger only drains.
+    gives no finding, and a write removes it.  The ledger then only drains.
 
 THE PLANTS
     A plant compiles a header with mints, and its tree holds the fixture

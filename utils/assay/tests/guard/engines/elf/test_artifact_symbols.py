@@ -552,10 +552,7 @@ def artifact_cases(expect: testing.Expect) -> None:
             stale,
             [*found("admitted", stale_rows), *found("polymorphic", stale_rows), *found("clean", stale_rows)],
         )
-        expect(
-            "a row that admits nothing is an error",
-            [message.split(" (")[0] for message in errors_of(judged)] == ["the row of @build/libclean.a"],
-        )
+        expect("a row that admits nothing gives no finding", errors_of(judged) == [])
         other = found("throws", stale_rows)
         expect(
             "a row of one archive does not admit a throw in a different archive",
@@ -786,8 +783,8 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.archive("foundation", ["base"])
     status, found, _ = scratch.run()
     expect(
-        "a symbol that goes fails until a write",
-        status == 1 and any("hardware" in message and "guard write" in message for message in errors_of(found)),
+        "a symbol that goes passes, and its row stays until a write",
+        status == 0 and errors_of(found) == [] and "hardware_concurrency" in scratch.ledger_text(),
     )
     status, _ = scratch.write()
     expect(
@@ -824,15 +821,19 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
         encoding="utf-8",
     )
     status, found, _ = scratch.run()
+    guard_errors = [message for message in errors_of(found) if "__cxa_guard_acquire" in message]
     expect(
-        "a row with an incorrect mark is an error",
-        status == 1 and any("ratchet" in message and "__cxa_guard_acquire" in message for message in errors_of(found)),
+        "a row with an incorrect mark admits nothing, and the import with its own mark is an error",
+        status == 1
+        and guard_errors != []
+        and all("allowlist" in message and "findings of allow" in message for message in guard_errors),
     )
     scratch.ledger.write_text(good + "@build/libgone.a | ratchet | 1 | _ZSt9terminatev | -\n", encoding="utf-8")
     status, found, _ = scratch.run()
+    written, _ = scratch.write()
     expect(
-        "a row of a library that the build does not make is an error",
-        status == 1 and any("libgone.a" in message for message in errors_of(found)),
+        "a row of a library that the build does not make passes, and a write removes it",
+        status == 0 and errors_of(found) == [] and written == 0 and "libgone.a" not in scratch.ledger_text(),
     )
     tier = scratch.tier(KIND)
     scratch.ledger.write_text(
@@ -919,6 +920,23 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "a write of the other kind writes its differences and keeps the symbols of the base",
         status == 0 and status_base == 0 and errors_of(found) == [],
     )
+
+    def guard_rows(kind: str) -> set[str]:
+        """Return the guard imports of libfixy.a that the configuration of a kind counts."""
+        held = keys_of(scratch.rows(), kind).get("@build/libfixy.a", {})
+        return {entity for entity, count in held.items() if count > 0 and "__cxa_guard" in entity}
+
+    build_of(OTHER, ["base"])
+    status, found, _ = scratch.run()
+    expect(
+        "a kind other than the base passes when an import of its rows goes, and its rows stay until a write",
+        status == 0 and errors_of(found) == [] and guard_rows(OTHER) != set(),
+    )
+    status, _ = scratch.write()
+    expect(
+        "a write of the other kind removes the rows of the imports that went, and keeps the rows of the base",
+        status == 0 and guard_rows(OTHER) == set() and guard_rows(KIND) != set(),
+    )
     build_of(KIND, ["base", "guard"])
     scratch.write()
     build_of(OTHER, ["base", "guard", "threads"])
@@ -996,10 +1014,8 @@ def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.ledger.write_text(scratch.ledger_text() + admitted + stale, encoding="utf-8")
     status, found, _ = scratch.run()
     expect(
-        "a row throw admits its throw, and a row throw that admits nothing is an error",
-        status == 1
-        and [message.split(" (")[0] for message in errors_of(found)] == ["the row of @build/libfixy.a"]
-        and any("no_such_function" in message for message in errors_of(found)),
+        "a row throw admits its throw, and a row throw that admits nothing gives no finding",
+        status == 0 and errors_of(found) == [],
     )
     status, _ = scratch.write()
     written = scratch.ledger_text()
@@ -1009,9 +1025,10 @@ def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     scratch.archive("fixy", ["base", "guard"])
     status, found, _ = scratch.run()
+    written_status, _ = scratch.write()
     expect(
-        "a row throw of a throw that goes is an error in each build",
-        status == 1 and any("thrower_entry" in message for message in errors_of(found)),
+        "a row throw of a throw that goes passes, and a write removes it",
+        status == 0 and errors_of(found) == [] and written_status == 0 and "thrower_entry" not in scratch.ledger_text(),
     )
     scratch.ledger.write_text(good, encoding="utf-8")
 

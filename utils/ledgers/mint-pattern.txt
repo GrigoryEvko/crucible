@@ -12,8 +12,8 @@
 # from a mint that allocates, and from a mint that reads runtime state, such
 # as an atomic, a thread identity or a system call.  -Winvalid-constexpr
 # refuses constexpr on a function that can never be constant evaluated.  A row
-# that admits no finding fails the rule, and the file only shrinks while the
-# tree stays the same.
+# that admits no finding passes, and a write removes it.  The file then only
+# shrinks while the tree stays the same.
 format 1
 rule mint-pattern
 include/crucible/CKernel.h | mint-not-constexpr | admit | crucible::CKernelTable::mint_mutable_view(const crucible::VigilFgCtx&) const | The mutable view mint of the registration table reads the atomic seal word of the table.  No constant evaluation can read an atomic, and -Winvalid-constexpr refuses a constexpr function that always calls a function that is not constexpr

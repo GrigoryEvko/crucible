@@ -1,6 +1,6 @@
 # The ledger of the rule contract-form: the files whose subject is the P2900 contract specifier itself.
-# A row PATH | specifier | admit | - | REASON admits each specifier in the file PATH.  Each admitted file holds a
-# specifier, so a row for a file that holds no specifier is an error, and the ledger only shrinks.  The
+# A row PATH | specifier | admit | - | REASON admits each specifier in the file PATH.  A row for a file that holds no
+# specifier passes, and a write removes it, so the ledger only shrinks.  The
 # rows do not admit an assumption about the values of a contract.  `python3 utils/bin/guard explain
 # contract-form` tells the rule, and `python3 utils/bin/guard write --rule contract-form` writes this file.
 format 1

@@ -81,8 +81,8 @@ THE VERDICT
       stay when a different finding goes.
     * A fixture source with a finding and no row in the ledger is an error: a
       new fixture has no finding (CLAUDE.md section XXII).
-    * A count below its row is an error too, until the same commit writes
-      the ledger again.
+    * A count below its row gives no finding (THE POLICIES of
+      assay.core.ledger).  A write of the rule lowers the row.
     * Each directory of fixture sources with a kept count gives one warning.
 
 WRITE THE LEDGER
@@ -585,29 +585,22 @@ def evaluate(
     held = {key.path for key in expected}
     failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
-    command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
-    is_bound = name == rule_ledger.MAXIMUM
     for key in sorted(set(counts) | set(expected)):
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
-        if measured == admitted or (is_bound and measured < admitted):
+        if measured <= admitted:
             continue
         failed.add(directory_of(key.path))
         what = counted.described(key.kind, key.entity)
-        if measured > admitted and key.path not in held:
+        if key.path not in held:
             message = (
                 f"the fixture {key.path} has {measured} findings of {what}, and the ledger holds no row of the "
                 f"fixture.  A new fixture has no finding (CLAUDE.md section XXII): use a type of the base"
             )
-        elif measured > admitted:
+        else:
             message = (
                 f"the fixture {key.path} has {measured} findings of {what}, and the ledger admits {admitted}.  A "
                 f"change can only lower a count, also when a finding of a different entity goes: use a type of the "
                 f"base"
-            )
-        else:
-            message = (
-                f"the fixture {key.path} has {measured} findings of {what}, and the ledger holds {admitted}.  Write "
-                f"the ledger again in the same commit: `{command}`"
             )
         found.append(check_report.Finding("error", shown, ledger.line_of(key, name), RULE, message))
     kept: dict[str, Counter[str]] = {}
@@ -615,7 +608,7 @@ def evaluate(
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
         directory = directory_of(key.path)
-        kept_count = min(admitted, counts.get(key, 0)) if is_bound else admitted
+        kept_count = min(admitted, counts.get(key, 0))
         if directory in failed or kept_count == 0:
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count

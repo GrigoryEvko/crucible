@@ -35,7 +35,7 @@ THE LEDGER
     No row admits a finding of the kinds open-static-member and walked-return
     (REFUSED_KINDS).  Make the member const or constexpr, or move it into the
     object.  Give the caller no reflection of a private member.  A row that
-    admits no finding is stale and fails.
+    admits no finding gives no finding, and a write removes it.
 
 REVIEW RULE FOR THE ADMITTED FILES
     An admitted file does not publish a reflection of a nonstatic data member

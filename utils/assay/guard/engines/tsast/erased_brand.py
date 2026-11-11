@@ -81,9 +81,9 @@ THE LEDGER
     utils/ledgers/erased-brand.txt counts the sites of each file and each
     branded template (assay.core.ledger, the policy count).  A file with more
     sites than its row is an error: write the brand, or a generic brand
-    parameter.  A file with fewer sites than its row is an error too, until
-    `guard write --rule erased-brand` writes the ledger again in the same
-    commit.  The write refuses a count that rose, and `--raise` writes it,
+    parameter.  A file with fewer sites than its row passes, and `guard
+    write --rule erased-brand` writes the lower count (THE POLICIES of
+    assay.core.ledger).  The write refuses a count that rose, and `--raise` writes it,
     for a change of the rule that reads more sites.  A ledger with no row
     refuses each site, and that is the end state.
 

@@ -9,6 +9,7 @@ case holds one configuration of a native build on two planted hosts.
 Exit 0 when each case holds, else 1.
 """
 
+import dataclasses
 import sys
 import tempfile
 from pathlib import Path
@@ -261,6 +262,16 @@ def import_cases(expect: testing.Expect) -> None:
     """Hold the rows that a run prints for an import, and the import of a log."""
     rule = rule_ledger.rule_of(RULE)
     ledger = planted_ledger()
+    expect(
+        "has_fall() tells a count below its row in the configuration of the build, and no fall at or above it, of a "
+        "configuration that the ledger does not hold, or of a ledger of a different policy",
+        build_config.has_fall(ledger, OTHER, {CLOSE: 1, DUP: 1})
+        and build_config.has_fall(ledger, OTHER, {CLOSE: 2})
+        and not build_config.has_fall(ledger, OTHER, {CLOSE: 2, DUP: 1})
+        and not build_config.has_fall(ledger, OTHER, {CLOSE: 3, DUP: 2})
+        and not build_config.has_fall(ledger, THIRD, {})
+        and not build_config.has_fall(dataclasses.replace(ledger, policy=rule_registry.Policy.ADMIT), OTHER, {}),
+    )
     with tempfile.TemporaryDirectory(prefix="test-configuration-") as work:
         root = Path(work)
         path = rule_ledger.ledger_path(RULE, root)

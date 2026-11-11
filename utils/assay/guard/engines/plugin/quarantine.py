@@ -101,9 +101,9 @@ THE VERDICT
       different file goes.
     * A file that the ledger does not hold and that has a finding is an error:
       a new file has no finding (CLAUDE.md section XXII).
-    * A count less than its ledger count is an error too.  The commit that
-      removes a finding writes the ledger again, and no row keeps a count
-      that is too high.
+    * A count less than its ledger count gives no finding, because a ledger
+      fails only on a growth (THE POLICIES of assay.core.ledger).  The landing
+      gate writes the lower count (THE FALLS of assay.loop.gate).
     * An opted-out finding of a file with no region line is an error, because
       the rule cannot give it its region.
     * Each directory gives one warning, and the findings and the regions that
@@ -139,7 +139,8 @@ WRITE THE LEDGER
       in each configuration, because no build compiles it.  A file of the
       build directory keeps its rows, because a build of a different
       configuration can write it.  The run of that build compares those rows
-      as it compares each other row.
+      as it compares each other row, and a row that counts more than the
+      build passes.
     * --add-configuration writes the configuration of the build with its
       name.  Without it, a write from a build of a configuration that the
       ledger does not hold writes nothing and fails (THE POLICY of
@@ -227,7 +228,7 @@ LEDGER_COMMENT = (
     "# A count above its row fails the rule, because a change can only lower a count (rule R11 of\n"
     "# misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map\n"
     "# to it fails.  A file that the ledger does not hold and that has a finding fails too: a new file has\n"
-    "# no finding.  A count below its row also fails, until the same commit writes the rows again:\n"
+    "# no finding.  A count below its row passes, and this command writes the lower count:\n"
     "#     python3 utils/bin/guard write --rule quarantine --build-dir build\n"
     "# On a merge conflict in this file, take the version of main, build, and write the rows again.\n"
     "#\n"
@@ -271,7 +272,7 @@ LEDGER_COMMENT = (
     "#   here holds that request.  The tier names no processor of the host.  So a host with a different\n"
     "#   processor of one architecture has the same configuration.  Its native compiles can select other\n"
     "#   preprocessor arms, for example the AVX-512 arm of include/crucible/SwissTable.h.  The rows of its\n"
-    "#   name judge it, so such an arm gives a count above or below its row.\n"
+    "#   name judge it, so such an arm gives a count above its row, which fails, or below its row.\n"
     "#\n"
     "# THE CONFIGURATIONS\n"
     "#   x86_64-debug-asan              The default preset, in the build directory build.  The base.\n"
@@ -304,11 +305,11 @@ LEDGER_COMMENT = (
     "#   utils/assay/core/ledger.py).  This command builds the build directory of each configuration\n"
     "#   of this ledger that the host builds, and it writes each configuration, the base first:\n"
     "#       python3 utils/bin/guard write --all-configurations --rule quarantine\n"
-    "#   It refuses a count above its row.  The gate of `python3 utils/bin/loop land` writes each count\n"
-    "#   that falls in a configuration that it builds, and it folds the ledger into the commit (THE\n"
-    "#   FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this file again:\n"
-    "#   remove the rows, and write each configuration with --add-configuration in its build directory,\n"
-    "#   the base first.\n"
+    "#   It refuses a count above its row.  At each landing, the gate of `python3 utils/bin/loop land`\n"
+    "#   writes each count that falls in a configuration that it builds, and it folds the ledger into the\n"
+    "#   commit (THE FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this\n"
+    "#   file again: remove the rows, and write each configuration with --add-configuration in its build\n"
+    "#   directory, the base first.\n"
     "#   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration sets\n"
     "#   TORCH_DIR, so the ledger does not count those units.  The rows of its name judge a build with\n"
     "#   TORCH_DIR, so the findings of those units fail it.\n"
@@ -492,24 +493,23 @@ def evaluate(
     failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
     command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
-    is_bound = name == rule_ledger.MAXIMUM
     for key in sorted(set(counts) | set(expected)):
         file, kind, entity = key.path, key.kind, key.entity
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
-        if measured == admitted or (is_bound and measured < admitted):
+        if measured <= admitted:
             continue
         failed.add(directory_of(file, rows))
         line = ledger.line_of(key, name)
         listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {file} --kind {kind}`"
         what = counted.described(kind, entity)
-        if measured > admitted and kind == OPTED_OUT:
+        if kind == OPTED_OUT:
             message = (
                 f"{file} has {measured} findings of {what}, and the ledger admits {admitted}.  The region "
                 f"covers more, and a region can only shrink.  List them with {listing}, and move the code out "
                 f"of the region.  If the reason class of the region (CLAUDE.md section XXII) makes the code "
                 f"necessary, write the ledger with `{command} --admit` and give the reason in the commit"
             )
-        elif measured > admitted and kind == REGION:
+        elif kind == REGION:
             message = (
                 f"{file} has {measured} opt-out regions with the reason {entity!r}, and the ledger admits "
                 f"{admitted}.  The number of regions can only fall: use a type of fixy or foundation, and "
@@ -517,23 +517,18 @@ def evaluate(
                 f"region necessary, write the ledger with `{command} --admit` and give the reason in the "
                 f"commit"
             )
-        elif measured > admitted and file not in held:
+        elif file not in held:
             message = (
                 f"{file} has {measured} findings of {what}, and the ledger holds no row of the file.  A new "
                 f"file has no finding (CLAUDE.md section XXII).  List them with {listing}, and use a type of "
                 f"fixy or foundation.  If the change moves the file, stage the move with `git mv` and write "
                 f"the ledger again"
             )
-        elif measured > admitted:
+        else:
             message = (
                 f"{file} has {measured} findings of {what}, and the ledger admits {admitted}.  The change adds "
                 f"{measured - admitted}, and a change can only lower a count, also when a finding of a "
                 f"different entity goes.  List them with {listing}, and use a type of fixy or foundation"
-            )
-        else:
-            message = (
-                f"{file} has {measured} findings of {what}, and the ledger holds {admitted}.  Write the ledger "
-                f"again in the same commit: `{command}`"
             )
         findings_found.append(check_report.Finding("error", shown, line, RULE, message))
     kept: dict[str, Counter[str]] = {}
@@ -541,7 +536,7 @@ def evaluate(
     first_line: dict[str, int] = {}
     for key, admitted in sorted(expected.items()):
         directory = directory_of(key.path, rows)
-        kept_count = min(admitted, counts.get(key, 0)) if is_bound else admitted
+        kept_count = min(admitted, counts.get(key, 0))
         if directory in failed or kept_count == 0:
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count

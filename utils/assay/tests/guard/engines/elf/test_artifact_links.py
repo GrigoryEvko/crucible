@@ -139,6 +139,10 @@ def fact_cases(expect: testing.Expect) -> None:
         ledger.write_text(f"{head}configuration planted tier planted\n{rows}", encoding="utf-8")
         judged = artifact_links.examine(rule, context).findings
         expect("a ledger with each fact gives no error", [item for item in judged if item.level == "error"] == [])
+        gone = "@build/tools | needed | 1 | libplanted_gone.so | -\n"
+        ledger.write_text(f"{head}configuration planted tier planted\n{rows}{gone}", encoding="utf-8")
+        judged = artifact_links.examine(rule, context).findings
+        expect("a row of a fact that goes gives no error", [item for item in judged if item.level == "error"] == [])
         program = next(item.path for item in context.linked_artifacts() if item.directory == "examples")
         program.with_name(program.name + artifact_links.MAP_SUFFIX).unlink()
         try:

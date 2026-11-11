@@ -23,7 +23,8 @@ THE RULE
     build then counts one time (home.cpp, THE SCOPE).
 
     The ledger utils/ledgers/no-combine-ids-duplicate.txt admits a body with
-    its reason (the policy admit).  A row that admits no finding is an error.
+    its reason (the policy admit).  A row that admits no finding gives no
+    finding, and a write removes it.
     Each path of the home row that admits no site is an error too
     (assay.guard.engines.plugin.home, THE PATHS OF A HOME ROW).
 

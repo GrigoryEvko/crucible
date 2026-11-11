@@ -4,8 +4,8 @@
 # the file PATH.  ROUTE is union, pointer-cast, allocator, function-specialization,
 # member-pointer-specialization, friend-template-specialization, explicit-instantiation or
 # raw-allocation, and ENTITY is ROUTE: KEY with the key that the quarantine plugin prints.  REASON tells why the site builds no proof type, and each row
-# gives one.  A row above the count of sites in the tree is stale, and the rule refuses it, so the
-# ledger only becomes shorter.
+# gives one.  A row above the count of sites in the tree passes, and a write lowers it.  The ledger
+# then only becomes shorter.
 # A reviewer writes each row.  `python3 utils/bin/guard explain proof-routes` tells the rule.
 format 1
 rule proof-routes

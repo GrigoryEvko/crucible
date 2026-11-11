@@ -1,0 +1,5 @@
+# A ledger row keeps a function of 50 KB, which is not more than the warning threshold 64 KB.  The rule gives no
+# finding, because a ledger fails only on a growth, and a write removes the row.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/big.cpp.o src/big.cpp functions=_Z3bigv:51200

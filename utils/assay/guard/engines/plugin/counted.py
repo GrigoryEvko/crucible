@@ -39,10 +39,11 @@ THE RUN
     A run reads the ledger and the inputs of the rule first.  A ledger or an
     input that cannot be read gives one error.  The run judges the counts of
     the build against the rows of THE POLICY of assay.core.configuration, and
-    its summary line names those rows.  The run writes the rows of a
-    configuration other than the base for an import (THE ROWS FOR AN IMPORT
-    of the same module).  Then --import or --add-configuration can put the
-    configuration into the ledger.
+    its summary line names those rows.  A count below its row passes (THE
+    POLICIES of assay.core.ledger).  After a failure or such a fall, the run
+    writes the rows of a configuration other than the base.  An import reads
+    them (THE ROWS FOR AN IMPORT of the same module).  Then --import or
+    --add-configuration can put the configuration into the ledger.
 
 THE WRITE
     `guard write --rule RULE --build-dir DIR` writes the rows of the
@@ -101,7 +102,7 @@ class CountedRule[Inputs]:
     a verb.  `admitted_kinds` are the kinds of a count that --admit can write above its row.  `refusal` is the advice
     of a write that refuses a count above its row.  The name that `evaluate` takes is the configuration of the rows
     that judge the build, assay.core.ledger.MAXIMUM, or None for the base rows (THE POLICY of
-    assay.core.configuration).  With MAXIMUM, a count below its row is no error.  `context_of` makes the context of
+    assay.core.configuration).  A count below its row is no error, with each name.  `context_of` makes the context of
     a write from the root and the build directory (THE CONTEXT).  `comment` is the head comment that each write gives
     the ledger (assay.core.ledger, THE HEAD COMMENT).  An empty text keeps the head of the file.
     """
@@ -226,7 +227,11 @@ def run[Inputs](
     check_report.write_line(
         f"{spec.summary(counts, configuration, census.objects, 'counted')}, judged against {judged.words}"
     )
-    if status != 0 or not build_config.is_held(ledger, configuration):
+    if (
+        status != 0
+        or not build_config.is_held(ledger, configuration)
+        or build_config.has_fall(ledger, configuration, counts)
+    ):
         build_config.print_rows(spec.rule_id, ledger, configuration, counts, bool(problems))
     return status
 
@@ -239,7 +244,7 @@ def drop_gone_files(ledger: rule_ledger.Ledger, root: Path, counts: Mapping[Key,
     go.  A file of the build directory (ruletable.BUILD_PREFIX) is in no source tree.  A
     write of the base cannot know if a build of a different configuration writes the file.  The rows of the file
     stay, and the run of that configuration compares them as it compares each other row.  When a build of the
-    configuration does not write the file, its run fails on the row until its own write removes the row.
+    configuration does not write the file, its run passes with the row, and its own write removes the row.
     Complexity: linear in the difference rows.
     """
     deltas = {

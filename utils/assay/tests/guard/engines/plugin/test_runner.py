@@ -621,8 +621,8 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect("--admit writes no rise of a different kind", status == 1 and scratch.base() == grown)
     scratch.add("a", lines_a)
     expect(
-        "a region that covers less fails until the ledger is written again",
-        any("opted-out" in error and "holds 1" in error for error in scratch.errors()),
+        "a region that covers less passes, because a ledger fails only on a growth",
+        scratch.errors() == [],
     )
     status, _ = scratch.write()
     expect("the write writes the shrink of a region", status == 0 and scratch.errors() == [])
@@ -637,18 +637,11 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     other = "ABI: a planted boundary"
     scratch.add("a", [*lines_a[:3], f"quarantine region test/fixy/test_a.cpp:8:1 {other}", lines_a[4]])
     expect(
-        "a region of a different reason fails: each row holds the reason of its region",
+        "a region of a different reason fails: each row holds the reason of its region, and the rows of the earlier "
+        "reason pass",
         scratch.errors()
         == sorted(
             [
-                (
-                    f"test/fixy/test_a.cpp has 0 findings of the kind opted-out and the entity {PROBE_REASON} | "
-                    f"raw-pointer-object, and the ledger holds 1"
-                ),
-                (
-                    f"test/fixy/test_a.cpp has 0 findings of the kind region and the entity {PROBE_REASON}, and the "
-                    f"ledger holds 1"
-                ),
                 (
                     f"test/fixy/test_a.cpp has 1 findings of the kind opted-out and the entity {other} | "
                     f"raw-pointer-object, and the ledger admits 0"
@@ -681,14 +674,8 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     scratch.add("a", lines_a)
     expect(
-        "a row that admits more regions than the file has is an error",
-        scratch.errors()
-        == [
-            (
-                f"test/fixy/test_a.cpp has 1 findings of the kind region and the entity "
-                f"{PROBE_REASON}, and the ledger holds 2"
-            )
-        ],
+        "a row that admits more regions than the file has gives no error",
+        scratch.errors() == [],
     )
     status, _ = scratch.write()
     expect(
@@ -721,16 +708,12 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
         directory_totals(planted, rows) == directory_totals(before, rows),
     )
     expect(
-        "the swap fails the count for each file: test_a rises and test_b falls",
+        "the swap fails the count for each file: test_a rises, and the fall of test_b passes",
         scratch.errors()
         == [
             (
                 "test/fixy/test_a.cpp has 1 findings of the kind std-object and the entity "
                 "std::array, and the ledger admits 0"
-            ),
-            (
-                "test/fixy/test_b.cpp has 0 findings of the kind std-object and the entity "
-                "std::span, and the ledger holds 1"
             ),
         ],
     )
@@ -743,13 +726,9 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
         file_totals(planted) == file_totals(before),
     )
     expect(
-        "the entity swap fails: std::map rises and std::span falls",
+        "the entity swap fails: std::map rises, and the fall of std::span passes",
         scratch.errors()
         == [
-            (
-                "test/fixy/test_b.cpp has 0 findings of the kind std-object and the entity "
-                "std::span, and the ledger holds 1"
-            ),
             (
                 "test/fixy/test_b.cpp has 1 findings of the kind std-object and the entity "
                 "std::map, and the ledger admits 0"
@@ -807,8 +786,8 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add("c", [])
     status, found, _ = scratch.run()
     expect(
-        "the removal of a finding fails until the ledger is written again",
-        status == 1 and any(item.level == "error" and "guard write" in item.message for item in found),
+        "the removal of a finding passes, because a ledger fails only on a growth",
+        status == 0 and not any(item.level == "error" for item in found),
     )
     scratch.write()
     status, _, _ = scratch.run()
@@ -825,7 +804,7 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect("the list gives the findings of a file", status == 0 and "test_b.cpp:6:5" in text and "1 findings" in text)
     scratch.git("mv", "test/fixy/test_b.cpp", "test/fixy/test_c.cpp")
     scratch.add("a", [line.replace("test_b.cpp", "test_c.cpp") for line in scratch.objects["a"][0]])
-    expect("a moved file fails until the ledger is written again", len(scratch.errors()) == 2)
+    expect("a moved file fails at its new path until the ledger is written again", len(scratch.errors()) == 1)
     status, _ = scratch.write()
     expect(
         "the write moves the rows of a file that git reports as moved",
@@ -852,7 +831,8 @@ def layer_move_cases(expect: testing.Expect) -> None:
         scratch.git("mv", old, new)
         scratch.add("e", [f"quarantine layer-header {new}:5:1 <tuple> in the layer X4_concurrent"])
         expect(
-            "a header moved to a different layer fails until the ledger is written again", len(scratch.errors()) == 2
+            "a header moved to a different layer fails at its new path until the ledger is written again",
+            len(scratch.errors()) == 1,
         )
         status, _ = scratch.write()
         expect(
@@ -971,10 +951,10 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     scratch.add("e", lines_e)
-    fallen = f"{memcpy[0]} has 0 findings of the kind c-library-call and the entity memcpy, and the ledger holds 1"
+    status, _, text = scratch.run()
     expect(
-        "a count that fell in the second configuration too is an error there, until its own write",
-        scratch.errors() == [fallen],
+        "a count that fell in the second configuration too passes there, and the run writes its rows for an import",
+        status == 0 and scratch.errors() == [] and rule_ledger.ROW_MARK in text,
     )
     status, _ = scratch.write()
     expect(
@@ -990,8 +970,8 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.drop("g")
     scratch.add("e", lines_e[:2])
     expect(
-        "a build of the configuration that does not write the generated file fails on its row",
-        scratch.errors() == [f"{generated[0]} has 0 findings of the kind c-array-object, and the ledger holds 1"],
+        "a build of the configuration that does not write the generated file passes with its row",
+        scratch.errors() == [],
     )
     status, _ = scratch.write()
     expect(
@@ -1073,11 +1053,11 @@ def bench_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _, text = scratch.run()
     expect(
         "the rows of its name judge a host with a different processor, and the arm that its bench compile does not "
-        "select is a count below its row",
-        status == 1
+        "select is a count below its row, which passes",
+        status == 0
         and f"judged against the rows of the configuration {bench_name}" in text
         and "holds no rows" not in text
-        and "has 0 findings of the kind compiler-builtin" in text,
+        and "has 0 findings of the kind compiler-builtin" not in text,
     )
     status, written_text = scratch.write()
     holds = (

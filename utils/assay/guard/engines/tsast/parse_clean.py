@@ -6,9 +6,9 @@ THE RULE
     those rules at the same time, so this rule refuses each such file:
       unparseable  a C++ file whose parse gives an error
     The ledger admits the files of tsast.UNPARSEABLE, each with its reason.  A
-    row that admits no finding is an error.  So a file of that roster that
-    parses clean, or that the tree does not hold, fails the rule.  The scope
-    of the rule is each C++ file of the tree, also the files of the roster.
+    row that admits no finding gives no finding (THE POLICIES of
+    assay.core.ledger), and a write of the rule removes it.  The scope of the
+    rule is each C++ file of the tree, also the files of the roster.
 
 THE FILL
     The rule first gives the files of its part to tsast.fill_trees(), which

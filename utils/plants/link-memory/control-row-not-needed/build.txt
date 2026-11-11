@@ -1,0 +1,5 @@
+# A ledger row keeps a link of 0.3 GB of peak memory, which is not more than the warning threshold 0.5 GB.  The rule
+# gives no finding, because a ledger fails only on a growth, and a write removes the row.
+format 1
+kind x86_64-debug-asan
+link test/slow_test cpu=3 peak=0.3

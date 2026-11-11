@@ -572,7 +572,7 @@ include/foundation/contracts/Decide.h | inlined | 1 | __gnu_cxx::__normal_iterat
 include/foundation/contracts/Decide.h | inlined | 1 | __gnu_cxx::operator== | -
 include/foundation/contracts/Decide.h | inlined | 1 | std::span::begin | -
 include/foundation/contracts/Decide.h | inlined | 1 | std::span::end | -
-include/foundation/contracts/Decide.h | inlined | 10 | std::span::operator[] | -
+include/foundation/contracts/Decide.h | inlined | 8 | std::span::operator[] | -
 include/foundation/core/Ref.h | call | 1 | operator delete | -
 include/foundation/core/Ref.h | call | 1 | operator new | -
 include/foundation/core/Ref.h | reference | 2 | std::nothrow | -
@@ -924,7 +924,7 @@ src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::line | -
 @x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
 @x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::operator== | -
 @x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
-@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -9 | std::span::operator[] | -
+@x86_64-debug-tsan | include/foundation/contracts/Decide.h | inlined | -8 | std::span::operator[] | -
 @x86_64-debug-tsan | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
 @x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::basic_string_view | -
 @x86_64-debug-tsan | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -
@@ -1339,7 +1339,7 @@ src/foundation/DiagRuntime.cpp | inlined | 1 | std::source_location::line | -
 @x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::__normal_iterator::operator++ | -
 @x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | __gnu_cxx::operator== | -
 @x86_64-release | include/foundation/contracts/Decide.h | inlined | -1 | std::span::begin | -
-@x86_64-release | include/foundation/contracts/Decide.h | inlined | -10 | std::span::operator[] | -
+@x86_64-release | include/foundation/contracts/Decide.h | inlined | -8 | std::span::operator[] | -
 @x86_64-release | include/foundation/core/Ref.h | reference | -1 | std::nothrow | -
 @x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::basic_string_view | -
 @x86_64-release | include/foundation/diag/JsonEmitter.h | inlined | -1 | std::basic_string_view::begin | -

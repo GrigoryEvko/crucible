@@ -17,8 +17,8 @@ THE RUN
     It also writes the note of a configuration with facts that the build does
     not share.  It prints the rows of the configuration of the build for
     `guard write --import LOG` (assay.core.configuration, THE ROWS FOR AN
-    IMPORT).  It prints them after a failure, and each time when the ledger
-    does not hold the configuration.
+    IMPORT).  It prints them after a failure, after a count below its row,
+    and each time when the ledger does not hold the configuration.
 
 THE WRITE
     write_inspection() writes the configuration and the count rows of the
@@ -164,7 +164,11 @@ def run_inspection(
         check_report.write_line(judged.note)
     check_report.write_line(inspection.summary)
     ledger = inspection.ledger
-    if prints_rows and (not build_config.is_held(ledger, configuration) or status != 0):
+    if prints_rows and (
+        not build_config.is_held(ledger, configuration)
+        or status != 0
+        or build_config.has_fall(ledger, configuration, inspection.counts)
+    ):
         build_config.print_rows(rule_id, ledger, configuration, inspection.counts, False)
     return status
 

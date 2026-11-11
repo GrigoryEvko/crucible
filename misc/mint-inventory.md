@@ -14,9 +14,9 @@ python3 utils/bin/guard check --rule mint-floor --build-dir build        # a row
 ```
 
 The rule mint-floor reads `utils/ledgers/mint-floor.txt`, which admits the
-mints under the floor today.  A new mint with too few fixtures fails the rule,
-and a row of the ledger that admits nothing fails it too, so the file only
-drains.
+mints under the floor today.  A new mint with too few fixtures fails the rule.
+A row of the ledger that admits nothing passes, and a write removes it, so the
+file only drains.
 
 The scope is all of `include/`.  One row is one function: an overload is a row
 of its own, and a declaration folds into its definition.  A section is a layer

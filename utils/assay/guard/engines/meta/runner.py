@@ -431,8 +431,8 @@ def judged(
     of the rule stay errors.  A rule of the policy max or baseline judges its
     ledger itself, so its findings stay as they are.  An error of a refused
     kind of the rule stays an error, and the ledger does not see it (THE
-    REFUSED KINDS).  A row of such a kind then admits no finding, and the
-    ledger gives its error.
+    REFUSED KINDS).  A row of such a kind then admits no finding, and a
+    write of the rule removes it.
 
     Args:
         rule: The rule

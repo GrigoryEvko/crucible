@@ -7,8 +7,8 @@
 # run holds the findings of the plugin in the source of the fixture.  The rule counts each finding of a kind of the
 # rule quarantine one time, and each finding of the kinds detail-use, lifetime-start, unchecked-use and door-use
 # (THE SCOPE of the module).  A count above its row fails the rule, and a fixture that the ledger does not hold and
-# that has a finding fails too: a new fixture has no finding.  A count below its row also fails, until the same
-# commit writes the rows again, after a run of each fixture:
+# that has a finding fails too: a new fixture has no finding.  A count below its row passes.  After a run of each
+# fixture, this command writes the lower count:
 #     python3 utils/bin/guard write --rule fixture-quarantine --build-dir build
 # On a merge conflict in this file, take the version of main, run the fixtures, and write the rows again.
 #

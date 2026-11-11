@@ -2,9 +2,9 @@
 # A row PATH | KIND | admit | HOLDER: SITE | REASON admits each site of that shape of the kind KIND in that holder of
 # the file PATH.  KIND is vector-reserve (a reserve call on a std container), file-stream (a C++ file stream in a
 # runtime directory) or process-start (a raw process start).  The key has no line, so an edit above the site does not
-# move it.  A row that admits no site fails the rule, so the ledger shrinks with each migration.  `python3
-# utils/bin/guard explain banned-calls` tells the rule, and `python3 utils/bin/guard write --rule banned-calls`
-# writes this file.
+# move it.  A row that admits no site passes, and a write removes it.  The ledger then shrinks with each migration.
+# `python3 utils/bin/guard explain banned-calls` tells the rule, and `python3 utils/bin/guard write --rule
+# banned-calls` writes this file.
 #
 # The two reserve rows are std::vector calls in the setup of one bench, outside the measured region.  The quarantine
 # plugin also reports each call, and the quarantine ledger holds it.

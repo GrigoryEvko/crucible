@@ -107,8 +107,8 @@ def verdict_cases(expect: testing.Expect) -> None:
         expect("a new include of a heavy header is an error", status == 1 and "c.h includes <chrono> 1 times" in text)
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found[1:], BASE), None))
         expect(
-            "a count less than its row is an error that asks for a write",
-            status == 1 and "the ledger admits 1 includes of <chrono> in a.h" in text,
+            "a count less than its row passes, because a ledger fails only on a growth",
+            status == 0 and "a.h includes" not in text,
         )
         unmeasured = [*base_found, finding("d.h", 5, heavy_include.UNMEASURED, "<cstdio>")]
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, unmeasured, BASE), None))
@@ -124,6 +124,12 @@ def verdict_cases(expect: testing.Expect) -> None:
         status, _text = testing.captured(lambda: heavy_include.run(rule, context_of(root, other, OTHER), None))
         expect("a configuration other than the base adds its difference to the base count", status == 0)
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found, OTHER), None))
+        expect(
+            "a fall of a configuration other than the base passes and writes its rows for --import",
+            status == 0 and rule_ledger.ROW_MARK in text,
+        )
+        failed = [*base_found, finding("c.h", 4, KIND, "<chrono>")]
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, failed, OTHER), None))
         expect(
             "a failure of a configuration other than the base writes its rows for --import",
             status == 1 and rule_ledger.ROW_MARK in text,

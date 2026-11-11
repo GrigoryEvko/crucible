@@ -1,0 +1,4 @@
+# A throw row admits a function that the library crucible does not hold.  The row admits nothing, and it passes.
+library planted_tree externs.cpp
+library foundation base.cpp
+library crucible base.cpp

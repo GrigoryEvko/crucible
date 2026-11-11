@@ -5,7 +5,8 @@
 # One row is `PATH | KIND | admit | ENTITY | REASON`.  The kind is bare-door
 # or hatch, and the entity is the full name of the function with the types of
 # its parameters and its qualifiers.  Each hatch has its own row, and a new
-# hatch is then a reviewed act.  A row that admits no finding fails the rule.
+# hatch is then a reviewed act.  A row that admits no finding passes, and a
+# write removes it.
 format 1
 rule escape-doors
 include/fixy/CyclicBuffer.h | bare-door | admit | fixy::CyclicBuffer::claim() | A reference to a slot of the storage of the ring: its provenance is the buffer, and it stays valid until N more claims wrap back onto the slot

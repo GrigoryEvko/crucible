@@ -43,18 +43,19 @@ THE VERDICT
                    threshold give a warning, and by more than the error
                    threshold an error.  A row of 0 bytes and an archive with
                    library bytes give an error
-      fall         library bytes less than the row by more than the warning
-                   threshold give an error.  The baseline then does not stay
-                   more than the measure
       new-archive  an archive with no row
-      no-archive   a row of an archive that the build does not make
       no-file      a body with no declaring file that the compiler does not
                    make
       ledger-row   a row or a configuration that does not have the shape of
                    THE LEDGER
+    Library bytes less than the row, and a row of an archive that the build
+    does not make, give no finding (THE POLICIES of assay.core.ledger).  The
+    row then stays more than its measure until a write lowers or removes it.
+    Until then, a growth to the row gives no finding.
+
     A build of a configuration that the ledger does not hold gets the largest
-    row of each archive.  It then gives no fall and no no-archive.  A finding
-    of growth or fall names the largest library bodies of the archive.
+    row of each archive.  A finding of growth names the largest library
+    bodies of the archive.
 
 THE WRITE
     `guard write --rule library-bytes --build-dir DIR` writes the
@@ -101,16 +102,9 @@ LIBRARY_CLASSES = (LIBSTDCXX, COMPILER, SYSTEM)
 # The directory of the headers of libstdc++ in the toolchain.
 LIBSTDCXX_PART = "/include/c++/"
 DEFAULT_REASON = "the measure at the last write of the ledger"
-# The number of library bodies that a finding of growth or fall names.
+# The number of library bodies that a finding of growth names.
 NAMED = 6
-GROWTH, FALL, NEW_ARCHIVE, NO_ARCHIVE, NO_FILE, LEDGER_ROW = (
-    "growth",
-    "fall",
-    "new-archive",
-    "no-archive",
-    "no-file",
-    "ledger-row",
-)
+GROWTH, NEW_ARCHIVE, NO_FILE, LEDGER_ROW = ("growth", "new-archive", "no-file", "ledger-row")
 ROW_SHAPE = (
     "a row is '@build/ARCHIVE | KIND | BYTES | - | REASON', with the name of a configuration of the ledger, a whole "
     "number and a reason"
@@ -309,9 +303,11 @@ def named_bodies(measure: Measure) -> str:
 
 
 def change_finding(
-    measure: Measure, row: tuple[int, int, str], budget: check_report.Budget, is_bound: bool, command: str
+    measure: Measure, row: tuple[int, int, str], budget: check_report.Budget, command: str
 ) -> check_report.Finding | None:
-    """Return the finding of growth or fall of one archive against its row, or None (THE VERDICT).
+    """Return the finding of growth of one archive against its row, or None (THE VERDICT).
+
+    Library bytes less than the row give no finding.
 
     Raises:
         runner.BuildError: If c++filt does not demangle the names of a finding
@@ -326,23 +322,15 @@ def change_finding(
         return check_report.Finding("error", path, line, RULE, message, GROWTH, measure.archive)
     change = (value - baseline) / baseline * 100.0
     level = check_report.classify(change, budget)
-    if level is not None:
-        limit = budget.error if level == "error" else budget.warn
-        message = (
-            f"{said}, {change:.2f}% more than its row of {baseline}, over the {level} threshold {limit:g}%.  Remove "
-            f"the library code, or raise the row in the same commit with a reason: {command} --reason TEXT"
-        )
-        kind = GROWTH
-    elif -change > budget.warn and not is_bound:
-        level = "error"
-        message = (
-            f"{said}, {-change:.2f}% less than its row of {baseline}, more than the {budget.warn:g}% that a row can "
-            f"hold.  Lower the row in the same commit: {command}"
-        )
-        kind = FALL
-    else:
+    if level is None:
         return None
-    return check_report.Finding(level, path, line, RULE, f"{message}.  {named_bodies(measure)}", kind, measure.archive)
+    limit = budget.error if level == "error" else budget.warn
+    message = (
+        f"{said}, {change:.2f}% more than its row of {baseline}, over the {level} threshold {limit:g}%.  Remove the "
+        f"library code, or raise the row in the same commit with a reason: {command} --reason TEXT"
+    )
+    text = f"{message}.  {named_bodies(measure)}"
+    return check_report.Finding(level, path, line, RULE, text, GROWTH, measure.archive)
 
 
 def verdict(
@@ -354,11 +342,12 @@ def verdict(
 ) -> list[check_report.Finding]:
     """Return the findings of the measures against the rows that judge the build (THE VERDICT).
 
+    A row of an archive that the build does not make gives no finding.
+
     Raises:
         runner.BuildError: If c++filt does not demangle the names of a finding
     """
     path = rule_ledger.shown_path(RULE)
-    is_bound = judged.name == rule_ledger.MAXIMUM
     rows = judging_rows(judged, baselines(ledger)).rows
     found: list[check_report.Finding] = []
     for measure in measures:
@@ -375,17 +364,9 @@ def verdict(
             )
             found.append(check_report.Finding("error", path, 0, RULE, message, NEW_ARCHIVE, measure.archive))
             continue
-        change = change_finding(measure, row, budget, is_bound, command)
+        change = change_finding(measure, row, budget, command)
         if change is not None:
             found.append(change)
-    made = {measure.archive for measure in measures}
-    if not is_bound:
-        for archive, (_, line, _) in sorted(rows.items()):
-            if archive not in made:
-                message = f"the build makes no archive {archive}, and the ledger has its row.  Write the rows again"
-                found.append(
-                    check_report.Finding("error", path, line, RULE, f"{message}: {command}", NO_ARCHIVE, archive)
-                )
     return found
 
 

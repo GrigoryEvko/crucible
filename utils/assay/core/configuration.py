@@ -14,8 +14,8 @@ THE CONFIGURATION
     native compiles of the two hosts can select other preprocessor arms,
     such as the AVX-512 arm of include/crucible/SwissTable.h on a host with
     AVX512BW.  The rows of the configuration judge each of the two builds.
-    Such an arm then gives a count above or below its row on one of the
-    hosts.
+    Such an arm then gives a count above its row on one of the hosts, which
+    fails, or a count below its row, which passes.
 
     The name of a configuration is its build kind, for example
     x86_64-debug-asan.  The name adds -bench when CRUCIBLE_BENCH is on, -fuzz
@@ -42,7 +42,8 @@ THE POLICY
         MAXIMUM).  An arm that a different configuration counts then gives
         no error.  An example is an aarch64 arm of a build of aarch64
         objects, which the parse build of aarch64 counts.  A count below its
-        row is no error, because the build can compile fewer arms
+        row is no error, as in each other set of rows (THE POLICIES of
+        assay.core.ledger)
       * the base rows, for a ledger with no configuration.
     The summary line of a run names the rows.  A build of a new kind then
     fails on each new finding of an arm that only it compiles.  No finding
@@ -66,10 +67,12 @@ THE ROWS FOR AN IMPORT
     A rule that counts in each configuration writes the rows of the
     configuration of a build other than the base, each with the prefix
     "ledger-row: " (print_rows(), assay.core.ledger.rows_of_counts).  It
-    writes them after a failure, and each time when the ledger does not hold
-    the configuration.  `guard write --rule RULE --import LOG` then puts the
-    rows of the log into the ledger (import_rows()).  Only CI builds aarch64.
-    The rows of its configuration then come from the log of its leg.
+    writes them after a failure, after a count below its row (has_fall()),
+    and each time when the ledger does not hold the configuration.  A fall
+    gives no failure, because a ledger fails only on a growth.  `guard write
+    --rule RULE --import LOG` then puts the rows of the log into the ledger
+    (import_rows()).  Only CI builds aarch64.  The rows of its configuration
+    then come from the log of its leg.
 
 `guard selftest tests.core.test_configuration` does a test of the module.
 """
@@ -343,6 +346,19 @@ def write_target(
 
 
 # ── The rows for an import ─────────────────────────────────────────
+
+
+def has_fall(
+    ledger: rule_ledger.Ledger, configuration: BuildConfiguration, counts: Mapping[rule_ledger.Key, int]
+) -> bool:
+    """Return True when a count of the build is below its row in the configuration of the build (THE ROWS FOR AN IMPORT).
+
+    Only a count ledger that holds the configuration of the build has such a fall.  Complexity: linear in the rows
+    of the configuration.
+    """
+    if ledger.policy != rule_registry.Policy.COUNT or facts_of(ledger, configuration.name) is None:
+        return False
+    return any(counts.get(key, 0) < count for key, count in ledger.expected(configuration.name).items())
 
 
 def print_rows(

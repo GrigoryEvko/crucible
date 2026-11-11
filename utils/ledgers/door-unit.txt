@@ -4,8 +4,8 @@
 # A door is one source file, so no other unit gets its system declarations.  A door file includes the
 # headers of one family, because some declarations of the two families conflict.  Each reason names the
 # slice of misc/01_10_2026_quarantine.md that moves the door into a source file of src/fixy/os/.
-# A new finding is more than its count, and it fails.  A count above the findings of its row is stale,
-# and it fails too.  A reviewer writes each reason.  `python3 utils/bin/guard explain door-unit` tells
+# A new finding is more than its count, and it fails.  A count above the findings of its row passes,
+# and a write lowers it.  A reviewer writes each reason.  `python3 utils/bin/guard explain door-unit` tells
 # the rule, and `python3 utils/bin/guard write --rule door-unit` writes this file.
 format 1
 rule door-unit

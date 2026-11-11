@@ -561,8 +561,9 @@ class Planted:
         self.budget((1000, 2000), (1000, 2000))
         status, said = self.launch(program)
         expect(
-            "a ledger row whose test stays at or under the warning threshold fails the test",
-            status == 1 and "Remove its row" in said,
+            "a ledger row whose test stays at or under the warning threshold passes the test with no finding, because "
+            "a ledger fails only on a growth",
+            status == 0 and "test-memory" not in said,
         )
         status, said = self.launch(self.root / "no-such-test")
         expect("a test that cannot start gives status 127", status == 127 and "cannot start" in said)
@@ -629,8 +630,8 @@ class Planted:
             )
 
 
-def unmeasured_cases(expect: testing.Expect) -> None:
-    """Check that a run below the warning threshold refuses its row only when the run does the work that the row keeps."""
+def fallen_row_cases(expect: testing.Expect) -> None:
+    """Check that a run below the warning threshold gives no finding for the row that keeps the test."""
     budget = {"test-memory": (0.5, 1.5)}
     run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 50 * 1024, 1.0, 0.0, None)
     kind = "x86_64-debug-asan"
@@ -639,12 +640,11 @@ def unmeasured_cases(expect: testing.Expect) -> None:
             f"format 1\nrule test-memory\n- | {kind} | 0.6 | test_planted | a planted row\n", encoding="utf-8"
         )
         measured = test_launcher.judge("test_planted", run, budget, kind, directory)
-        stored = test_launcher.judge("test_planted", run, budget, kind, directory, is_measured=False)
     expect(
-        "a run under the warning threshold refuses the row that keeps the test",
-        [(level, row) for level, row, _ in measured] == [("error", "test-memory")],
+        "a run under the warning threshold gives no finding for the row that keeps the test, because a ledger fails "
+        "only on a growth",
+        measured == [],
     )
-    expect("a run that does not do the work of the row, such as a stored fixture, keeps the row", stored == [])
 
 
 def window_cases(expect: testing.Expect) -> None:
@@ -961,7 +961,7 @@ def main(argv: list[str]) -> int:
             planted_group(Planted.version_cases),
             planted_group(Planted.emulator_cases),
             planted_group(Planted.environment_cases),
-            unmeasured_cases,
+            fallen_row_cases,
             window_cases,
             version_unit_cases,
             launched_cases,

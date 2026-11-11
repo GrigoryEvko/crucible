@@ -15,17 +15,14 @@ THE VERDICT
                 value with the noise of its unit.  The judge gives the level
                 of a value with no row: an error over the error threshold,
                 else a warning.  A row then cannot hide a drift
-      UNNEEDED  a row keeps the item, and the value with the noise of its
-                unit is at or below the warning threshold.  The row keeps
-                nothing, and the judge gives an error that tells to remove the
-                row
-    NO_FINDING is the verdict of each other value.  A row gives no finding
-    when its item is at or below the warning threshold and the item with its
-    noise is above it.  The noise of a time then does not give a kept test an
-    error in one run and no error in the next.  A value that is equal to a threshold
-    or to the kept value with its noise is not more than it.  Each judge of a
-    measured value calls verdict(): judge() of this module,
-    check_report.classify(), and the judges of the step meters.
+    NO_FINDING is the verdict of each other value.  A value at or below the
+    warning threshold gives no finding, also when a row keeps its item.  A
+    ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
+    row above its value passes, and a write of the rule lowers the row or
+    removes it.  A value that is equal to a threshold or to the kept value
+    with its noise is not more than it.  Each judge of a measured value
+    calls verdict(): judge() of this module, check_report.classify(), and
+    the judges of the step meters.
 
 THE NOISE
     The kept value of a row is the value of the item at the last write of the
@@ -95,7 +92,6 @@ WARNING = "warning"
 ERROR = "error"
 ADMITTED = "admitted"
 RISEN = "risen"
-UNNEEDED = "unneeded"
 # The noise of each unit of a measured rule, as a part of the kept value of a row (THE NOISE).
 NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02}
 # The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
@@ -194,14 +190,10 @@ def verdict(value: float, warning: float, error: float, kept: float | None, nois
         kept: The kept value of the row that keeps the item for the build, or None for no row
         noise: The noise of the unit of the rule (noise_of())
     """
-    if kept is None:
-        if value > error:
-            return ERROR
-        return WARNING if value > warning else NO_FINDING
-    if value * (1.0 + noise) <= warning:
-        return UNNEEDED
     if value <= warning:
         return NO_FINDING
+    if kept is None:
+        return ERROR if value > error else WARNING
     return ADMITTED if value <= kept * (1.0 + noise) else RISEN
 
 
@@ -333,24 +325,14 @@ def judge(rule_id: str, budget: check_report.Budget, measure: Measure, rows: Row
             f"{measure.said}, over the {over} threshold{of_rule} {limit:g} {budget.unit}.  The row {rows.shown}:"
             f"{row.line} keeps it up to {kept}: {row.reason}",
         )
-    if found == RISEN:
-        return check_report.judged(
-            risen_level(measure.value, budget.error),
-            measure.path,
-            0,
-            rule_id,
-            f"{measure.said}, over the {over} threshold{of_rule} {limit:g} {budget.unit}, and more than the row "
-            f"{rows.shown}:{row.line} keeps: {kept}.  Make the item smaller.  When the growth is wanted, measure it "
-            f"again and write the row with `python3 utils/bin/guard write --rule {rule_id}`",
-        )
     return check_report.judged(
-        "error",
-        rows.shown,
-        row.line,
+        risen_level(measure.value, budget.error),
+        measure.path,
+        0,
         rule_id,
-        f"the row keeps {measure.item} in {rows.kind}, and it is at {measure.value:.2f} {budget.unit}.  With the "
-        f"noise {noise:.0%} of the unit, it stays at or under the warning threshold{of_rule} {budget.warn:g} "
-        f"{budget.unit}.  Remove the row",
+        f"{measure.said}, over the {over} threshold{of_rule} {limit:g} {budget.unit}, and more than the row "
+        f"{rows.shown}:{row.line} keeps: {kept}.  Make the item smaller.  When the growth is wanted, measure it "
+        f"again and write the row with `python3 utils/bin/guard write --rule {rule_id}`",
     )
 
 

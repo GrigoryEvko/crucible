@@ -72,7 +72,8 @@ and the driver holds it (held-by=loop-fixture).  A ledger that does not
 exist has no row, and the driver then imports no ledger module.  A listed
 fixture gives a warning in the format of utils/assay/core/report.py, and the
 driver writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A
-listed fixture with no such error fails, so that its row goes.
+listed fixture with no such error gives no finding, because a row that
+admits nothing passes (THE POLICIES of assay.core.ledger).
 CRUCIBLE_NEG_REASON_LEDGER names a different ledger in the same format, for
 the tests of the driver.
 
@@ -373,10 +374,11 @@ measure of the compile when the row was written, in the unit of the rule.  A
 row applies to each build.  A kept fixture gives a warning up to VALUE with the
 noise of the unit (assay.core.budget, THE NOISE).  A measure above that gives
 the level of a fixture with no row.  A kept fixture at or below the
-warning threshold fails, so that its row goes.  A ledger that does not exist
-has no row.  On a GitHub runner, each error of the
-CPU time is a warning that says that it was demoted (utils/assay/core/meter.py,
-A CI RUNNER), and an error of the instruction count stays an error.  A
+warning threshold gives no finding, because a value below its row passes
+(THE POLICIES of assay.core.ledger).  A ledger that does not exist has no
+row.  On a GitHub runner, each error of the CPU time is a warning that says
+that it was demoted (utils/assay/core/meter.py, A CI RUNNER), and an error of
+the instruction count stays an error.  A
 registry that cannot be read stays an error.  CRUCIBLE_NEG_REGISTRY,
 CRUCIBLE_NEG_CPU_LEDGER and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different
 registry and different ledgers in the same format, for the tests of the
@@ -423,8 +425,8 @@ test-instructions, with the
 thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
 ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over an
 error threshold that no ledger row keeps.  A run that takes its result from
-the store does not measure a compile.  Its judge then refuses no row of the
-fixture.  The driver writes the record
+the store does not measure a compile.  The window of the test then does not
+take its wall time.  The driver writes the record
 BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
 launcher.  The version of a compiled run is a digest of the compile command
 and of each file that the compile read (assay.loop.teststep, THE VERSION).
@@ -2839,11 +2841,6 @@ def _row_verdict(row: BudgetRow, fixture_name: str, value: float, holds_error: b
 def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: str, place: str, text: str,
                unit: str, value: float) -> list[object]:
     """Return the finding of one measure of a fixture compile, for the verdict of `_row_verdict`."""
-    if verdict == cost_budget.UNNEEDED:
-        return [report.judged("error", place, 0, row.check,
-                              f"{text}, and with the noise {cost_budget.noise_of(unit):.0%} of the unit it stays at "
-                              f"or under the warning threshold {row.warn:g} {unit}.  Remove its row from "
-                              f"{row.ledger_shown}.")]
     if verdict in (cost_budget.ADMITTED, cost_budget.RISEN):
         kept, reason = row.ledger[fixture_name]
         noise = cost_budget.noise_of(unit)
@@ -3132,10 +3129,10 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
 
     `unmatched` comes from `evaluate`.  An error with no regex fails the test,
     unless the ledger names the fixture: a listed fixture gives one warning.
-    A listed fixture with no such error fails, so that its row goes (the
-    module text, The reason of the failure).  A run with no finding, whose
-    fixture has no row and no warnings file, reads no report module.  The
-    driver reads the ledger on each run, when it exists.
+    A listed fixture with no such error gives no finding (the module text,
+    The reason of the failure).  A run with no finding removes the warnings
+    file of its fixture.  A run with no finding and no such file reads no
+    report module.  The driver reads the ledger on each run, when it exists.
     """
     variable, default = _REASON_LEDGER
     path = Path(os.environ.get(variable) or default)
@@ -3150,8 +3147,10 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
                         path: Path) -> list[object]:
     """Return the findings of each error of the compile that no regex matches, against the ledger at `path`.
 
-    A run with no such error gives no finding when the ledger has no row of
-    the fixture.  Then the call does not import the report module.
+    A run with no such error gives no finding, also when the ledger has a row
+    of the fixture.  A row that admits nothing passes (THE POLICIES of
+    assay.core.ledger).  Then the call does not import the report module.  A
+    ledger that cannot be read gives an error on each run.
     report_own_reason() reports the findings.  The witness of the rule judges
     the planted log of a fixture with this function
     (assay.guard.engines.buildsys.held).
@@ -3160,9 +3159,9 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
         ledger, problem = _read_fixture_ledger(path, _REASON_CHECK)
     except OSError as error:
         ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
-    is_listed = fixture_name in ledger
-    if not problem and not unmatched and not is_listed:
+    if not problem and not unmatched:
         return []
+    is_listed = fixture_name in ledger
     report = _report_module()
     try:
         place = str(source.relative_to(_REPO_ROOT))
@@ -3184,11 +3183,6 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
             f"{measured} of the fixture {fixture_name} gave an error that no regex matches: {_shown_line(line)}.  A "
             f"fixture must fail only for its own reason: give the error a regex, or remove its cause.")
             for line in unmatched)
-    elif is_listed:
-        findings.append(report.Finding(
-            "error", place, 0, _REASON_CHECK,
-            f"{measured} of the fixture {fixture_name} gave no error that no regex matches.  Remove its row from "
-            f"{_shown(path)}."))
     return findings
 
 
@@ -3411,7 +3405,7 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
         budget: The cost budget, which holds the thresholds of the rules of the launcher, or None
         warnings_dir: The warnings directory, or None
         is_stored: True when the result of the fixture comes from the store.  The run then measures no compile, and
-            the judge refuses no row (The test record)
+            the window of the test does not take the run (The test record)
         version: The version of the compile (The test record), or the empty text
 
     Returns:

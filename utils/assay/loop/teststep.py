@@ -163,9 +163,9 @@ THE MEASURED RULES
         warning that names the row, up to VALUE with the noise of the unit
         (assay.core.budget, THE NOISE).  A test over that value gives the
         level of a test with no row.  A row whose test stays at or below the
-        warning threshold is an error, so that the row goes.  A ledger that
-        does not exist has no row, and the subcommand then imports no ledger
-        module.
+        warning threshold gives no finding.  A ledger fails only on a growth
+        (THE POLICIES of assay.core.ledger).  A ledger that does not
+        exist has no row, and the subcommand then imports no ledger module.
     Memory and the instruction count are almost the same on each run, so
     their error thresholds sit above the largest measure.  Wall time depends
     on the load of the host, so its error threshold sits above the noise that
@@ -430,7 +430,7 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
           kind: str | None, ledgers: str | None = None,
-          configuration: str | None = None, is_measured: bool = True,
+          configuration: str | None = None,
           walls: tuple[float, ...] = ()) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
@@ -445,8 +445,6 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         kind: The kind of the build, or None
         ledgers: The directory of the ledgers (ledger_row()), or None
         configuration: The name of the configuration of the build, or None for the build kind
-        is_measured: False when the run does not do the work that a row keeps, such as a fixture with a result from
-            the store.  The judge then refuses no row
         walls: The window of the test, the newest run first, with this run.  The warnings of test-time read its
             smallest wall time.  An empty window judges the run alone
 
@@ -487,12 +485,7 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
             said += f", and at least {value:.2f} s in each of the last {len(walls)} runs of its window"
             found = cost_budget.verdict(value, warn, error, kept, noise)
         over = f"over the {'error' if value > error else 'warning'} threshold of {error if value > error else warn:g}"
-        if admitted is not None and found == cost_budget.UNNEEDED:
-            if not is_measured:
-                continue
-            add("error", row, f"{said}, and with the noise {noise:.0%} of the unit it stays at or under the warning "
-                              f"threshold of {warn:g} {unit}.  Remove its row {admitted[0]}")
-        elif admitted is not None and found == cost_budget.ADMITTED:
+        if admitted is not None and found == cost_budget.ADMITTED:
             add("warning", row, f"{said}, {over} {unit}, and the row {admitted[0]} keeps it up to {admitted[2]:g} "
                                 f"{unit} with the noise {noise:.0%}: {admitted[1]}")
         elif admitted is not None and found == cost_budget.RISEN:
@@ -770,7 +763,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         run: The measurement of the test, with its status
         warnings_dir: The warnings directory, or None
         budget: The thresholds of the rules, or None to read them from the registry (read_budget())
-        is_measured: False when the run does not do the work that a row keeps (judge())
+        is_measured: False when the run does not do the work that a row keeps, such as a fixture with a result from
+            the store.  The window then does not take the run
         version: The version of the test (version_of()), or the empty text when it is not known
 
     Returns:
@@ -790,8 +784,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     is_counted = is_measured and status == 0
     walls = (run.wall_s, *earlier)[:RECENT_RUNS] if is_counted else ()
     no_findings: list[tuple[str, str, str]] = []
-    findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration,
-                                    is_measured=is_measured, walls=walls), no_findings)
+    findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration, walls=walls),
+                      no_findings)
     if status == 0 and any(level == "error" for level, _, _ in findings):
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)

@@ -80,11 +80,11 @@ THE LEDGER
         @build/GROUP | KIND | 1 | ENTITY | -
         @CONFIGURATION | @build/GROUP | KIND | +1 | ENTITY | -
     The first configuration is the base, and a row of a different
-    configuration gives its difference.  A new fact is an error.  A row of a
-    fact that goes is an error too, until the same commit writes the ledger
-    again.  The write gives no row to a new fact without --raise
-    (RAISE_REASONS).  THE POLICY of assay.core.configuration judges each
-    build, as in the rule artifact-symbols.
+    configuration gives its difference.  A new fact is an error, and a row of
+    a fact that goes gives no finding (THE POLICIES of assay.core.ledger).  A
+    write removes such a row, and it gives no row to a new fact without
+    --raise (RAISE_REASONS).  THE POLICY of assay.core.configuration judges
+    each build, as in the rule artifact-symbols.
 
 THE PLANTS
     A row `facts KIND...` of plant.txt limits the facts of a plant to these

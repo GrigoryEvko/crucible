@@ -9,7 +9,7 @@
 # A count above its row fails the rule, because a change can only lower a count (rule R11 of
 # misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map
 # to it fails.  A file that the ledger does not hold and that has a finding fails too: a new file has
-# no finding.  A count below its row also fails, until the same commit writes the rows again:
+# no finding.  A count below its row passes, and this command writes the lower count:
 #     python3 utils/bin/guard write --rule quarantine --build-dir build
 # On a merge conflict in this file, take the version of main, build, and write the rows again.
 #
@@ -53,7 +53,7 @@
 #   here holds that request.  The tier names no processor of the host.  So a host with a different
 #   processor of one architecture has the same configuration.  Its native compiles can select other
 #   preprocessor arms, for example the AVX-512 arm of include/crucible/SwissTable.h.  The rows of its
-#   name judge it, so such an arm gives a count above or below its row.
+#   name judge it, so such an arm gives a count above its row, which fails, or below its row.
 #
 # THE CONFIGURATIONS
 #   x86_64-debug-asan              The default preset, in the build directory build.  The base.
@@ -86,11 +86,11 @@
 #   utils/assay/core/ledger.py).  This command builds the build directory of each configuration
 #   of this ledger that the host builds, and it writes each configuration, the base first:
 #       python3 utils/bin/guard write --all-configurations --rule quarantine
-#   It refuses a count above its row.  The gate of `python3 utils/bin/loop land` writes each count
-#   that falls in a configuration that it builds, and it folds the ledger into the commit (THE
-#   FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this file again:
-#   remove the rows, and write each configuration with --add-configuration in its build directory,
-#   the base first.
+#   It refuses a count above its row.  At each landing, the gate of `python3 utils/bin/loop land`
+#   writes each count that falls in a configuration that it builds, and it folds the ledger into the
+#   commit (THE FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this
+#   file again: remove the rows, and write each configuration with --add-configuration in its build
+#   directory, the base first.
 #   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration sets
 #   TORCH_DIR, so the ledger does not count those units.  The rows of its name judge a build with
 #   TORCH_DIR, so the findings of those units fail it.
@@ -3086,7 +3086,7 @@ include/foundation/contracts/ArmedRoster.h | base-std-object | 4 | std::vector |
 include/foundation/contracts/ArmedRoster.h | replace-pending:<span> | 1 | <span> | -
 include/foundation/contracts/ArmedRoster.h | replace-pending:<string_view> | 1 | <string_view> | -
 include/foundation/contracts/ArmedRoster.h | replace-pending:<vector> | 1 | <vector> | -
-include/foundation/contracts/Decide.h | base-std-object | 2 | std::span | -
+include/foundation/contracts/Decide.h | base-std-object | 1 | std::span | -
 include/foundation/contracts/Decide.h | replace-pending:<span> | 1 | <span> | -
 include/foundation/core/Ref.h | replace-pending:std::nothrow | 1 | std::nothrow | -
 include/foundation/diag/Catalog.h | base-std-entity | 1 | std::operator== | -
@@ -3462,7 +3462,7 @@ src/BackgroundThread.cpp | std-object | 3 | std::optional | -
 src/BackgroundThread.cpp | std-object | 4 | std::pair | -
 src/BackgroundThread.cpp | std-object | 1 | std::stop_token | -
 src/BackgroundThread.cpp | std-object | 10 | std::unique_ptr | -
-src/Cipher.cpp | c-array-object | 15 | - | -
+src/Cipher.cpp | c-array-object | 14 | - | -
 src/Cipher.cpp | c-library-call | 8 | __errno_location | -
 src/Cipher.cpp | c-library-call | 3 | abort | -
 src/Cipher.cpp | c-library-call | 1 | close | -
@@ -3532,7 +3532,7 @@ src/Cipher.cpp | std-entity | 3 | std::ios_base::end | -
 src/Cipher.cpp | std-entity | 1 | std::nullopt | -
 src/Cipher.cpp | std-entity | 3 | std::operator+ | -
 src/Cipher.cpp | std-entity | 4 | std::optional::operator-> | -
-src/Cipher.cpp | std-entity | 14 | std::span | -
+src/Cipher.cpp | std-entity | 13 | std::span | -
 src/Cipher.cpp | std-entity | 1 | std::span::back | -
 src/Cipher.cpp | std-entity | 2 | std::span::begin | -
 src/Cipher.cpp | std-entity | 5 | std::span::data | -
@@ -6041,12 +6041,11 @@ test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_li
 test/foundation/decide_oracle.h | replace-pending:<limits> | 1 | std::numeric_limits::min | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::popcount | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::sort | -
-test/foundation/decide_oracle.h | std-entity | 1 | std::span::size | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::vector::begin | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::vector::end | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::vector::push_back | -
 test/foundation/decide_oracle.h | std-entity | 1 | std::vector::size | -
-test/foundation/decide_oracle.h | std-object | 2 | std::span | -
+test/foundation/decide_oracle.h | std-object | 1 | std::span | -
 test/foundation/decide_oracle.h | std-object | 1 | std::vector | -
 test/foundation/producer_claim_libraries.h | raw-pointer-object | 2 | - | -
 test/foundation/producer_claim_owner.cpp | raw-new-delete | 1 | delete | -
@@ -6131,36 +6130,34 @@ test/foundation/test_counter_clock_attacks.cpp | std-entity | 1 | std::size | -
 test/foundation/test_counter_clock_attacks.cpp | std-object | 10 | std::array | -
 test/foundation/test_counter_clock_attacks.cpp | std-object | 4 | std::basic_string_view | -
 test/foundation/test_counter_clock_attacks.cpp | std-object | 7 | std::expected | -
-test/foundation/test_decide.cpp | c-array-object | 44 | - | -
-test/foundation/test_decide.cpp | c-library-call | 59 | fprintf | -
-test/foundation/test_decide.cpp | c-library-call | 59 | stderr | -
+test/foundation/test_decide.cpp | c-array-object | 25 | - | -
+test/foundation/test_decide.cpp | c-library-call | 55 | fprintf | -
+test/foundation/test_decide.cpp | c-library-call | 55 | stderr | -
 test/foundation/test_decide.cpp | raw-pointer-object | 4 | - | -
-test/foundation/test_decide.cpp | replace-pending:<limits> | 30 | std::numeric_limits::max | -
+test/foundation/test_decide.cpp | replace-pending:<limits> | 28 | std::numeric_limits::max | -
 test/foundation/test_decide.cpp | replace-pending:<limits> | 15 | std::numeric_limits::min | -
-test/foundation/test_decide.cpp | std-entity | 26 | std::span | -
-test/foundation/test_decide.cpp | std-entity | 1 | std::span::back | -
-test/foundation/test_decide.cpp | std-entity | 1 | std::span::empty | -
-test/foundation/test_decide.cpp | std-object | 3 | std::span | -
-test/foundation/test_decide_fuzz.cpp | c-array-object | 4 | - | -
+test/foundation/test_decide.cpp | std-entity | 23 | std::span | -
+test/foundation/test_decide.cpp | std-object | 2 | std::span | -
+test/foundation/test_decide_fuzz.cpp | c-array-object | 3 | - | -
 test/foundation/test_decide_fuzz.cpp | c-library-call | 1 | exit | -
-test/foundation/test_decide_fuzz.cpp | c-library-call | 9 | fprintf | -
+test/foundation/test_decide_fuzz.cpp | c-library-call | 8 | fprintf | -
 test/foundation/test_decide_fuzz.cpp | c-library-call | 1 | snprintf | -
-test/foundation/test_decide_fuzz.cpp | c-library-call | 9 | stderr | -
+test/foundation/test_decide_fuzz.cpp | c-library-call | 8 | stderr | -
 test/foundation/test_decide_fuzz.cpp | raw-pointer-object | 3 | - | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 2 | std::array | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::array::begin | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::array::end | -
-test/foundation/test_decide_fuzz.cpp | std-entity | 27 | std::array::operator[] | -
+test/foundation/test_decide_fuzz.cpp | std-entity | 22 | std::array::operator[] | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::array::value_type | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::philox_engine::operator() | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::philox_engine::set_counter | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 2 | std::span | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 2 | std::swap | -
 test/foundation/test_decide_fuzz.cpp | std-entity | 1 | std::tuple | -
-test/foundation/test_decide_fuzz.cpp | std-object | 8 | std::array | -
+test/foundation/test_decide_fuzz.cpp | std-object | 6 | std::array | -
 test/foundation/test_decide_fuzz.cpp | std-object | 1 | std::philox_engine | -
 test/foundation/test_decide_fuzz.cpp | std-object | 1 | std::seed_seq | -
-test/foundation/test_decide_fuzz.cpp | std-object | 2 | std::span | -
+test/foundation/test_decide_fuzz.cpp | std-object | 1 | std::span | -
 test/foundation/test_diag.cpp | c-array-object | 3 | - | -
 test/foundation/test_diag.cpp | c-library-call | 2 | fprintf | -
 test/foundation/test_diag.cpp | c-library-call | 1 | memcpy | -
@@ -9679,11 +9676,11 @@ vessel/torch/vessel_api_typed.h | std-object | 1 | std::optional | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | c-array-object | +1 | - | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | c-library-call | +1 | printf | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | c-library-call | +5 | stdout | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +3 | std::array | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +2 | std::array::data | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +2 | std::array | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +1 | std::array::data | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +3 | std::array::operator[] | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +3 | std::array::size | -
-@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +2 | std::span | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +2 | std::array::size | -
+@x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-entity | +1 | std::span | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_decide_compile_time.cpp | std-object | +2 | std::array | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_diag_emission.cpp | c-library-call | +2 | stdout | -
 @x86_64-debug-asan-bench-fuzz | bench/bench_dispatch.cpp | c-array-object | +12 | - | -

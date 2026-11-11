@@ -32,7 +32,7 @@ from assay.guard.engines.buildsys.runner import BuildContext
 
 KIND = "x86_64-debug-asan"
 RULES = ("parse-total", "instruction-total", "header-fanout")
-# The two census rules with totals, which give an error for a growth.
+# The two census rules with totals, which give an error for a growth and no finding for a fall.
 TOTAL_RULES = ("parse-total", "instruction-total")
 # A build of two objects and two fixtures, as the control control-unchanged of parse-total plants it.
 BUILD_ROWS = f"""\
@@ -182,11 +182,13 @@ def policy_cases(expect: testing.Expect) -> None:
                 f"{rule_id}: a build of a name that the ledger does not hold gives no fall",
                 [item for item in found if item.kind in ("fall", "no-sentinel")] == [],
             )
-            found, _ = judged_of(root, FALLEN_ROWS, rule_id, planted_configuration())
-            expect(
-                f"{rule_id}: a build of a held configuration gives the fall of its rows",
-                any(item.kind in ("fall", "no-sentinel") for item in found),
-            )
+            if rule_id not in TOTAL_RULES:
+                found, _ = judged_of(root, FALLEN_ROWS, rule_id, planted_configuration())
+                expect(
+                    f"{rule_id}: a build of a held configuration gives the fall warnings of its rows",
+                    any(item.kind in ("fall", "no-sentinel") for item in found)
+                    and all(item.level == "warning" for item in found),
+                )
     for rule_id in TOTAL_RULES:
         with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
             found, _ = judged_of(Path(scratch), GROWN_ROWS, rule_id, bench)
@@ -262,6 +264,32 @@ def write_cases(expect: testing.Expect) -> None:
                 f"--add-configuration, which tells how to make the ledger again",
                 "--add-configuration" in refused_write(rule_id, root, changed)
                 and "base configuration" in add_refused(rule_id, root, changed),
+            )
+
+
+def total_of(rule_id: str, root: Path) -> int:
+    """Return the sum of the two total rows of the configuration KIND in the ledger of a rule of a tree."""
+    base = rule_ledger.read(rule_of(rule_id), root).base
+    return sum(int(base[rule_ledger.Key("", KIND, part)].value) for part in cost_totals.CENSUS_PARTS)
+
+
+def fall_cases(expect: testing.Expect) -> None:
+    """A total less than its row gives no finding, and a write with no reason lowers the row (THE RULE parse-total)."""
+    for rule_id in TOTAL_RULES:
+        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+            root = Path(scratch)
+            found, text = judged_of(root, FALLEN_ROWS, rule_id, planted_configuration())
+            before = total_of(rule_id, root)
+            written_text(rule_id, root, planted_configuration())
+            after = total_of(rule_id, root)
+            expect(
+                f"{rule_id}: a total less than the rows of a held configuration gives no finding, and the summary "
+                f"line gives the fall",
+                found == [] and f"{cost_totals.census_change_text(after, before)}:" in text,
+            )
+            expect(
+                f"{rule_id}: a write with no reason lowers the baseline to the total of the build after a fall",
+                after < before,
             )
 
 
@@ -365,5 +393,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (policy_cases, write_cases, head_cases, real_cases, held_cases, held_write_cases),
+        (policy_cases, fall_cases, write_cases, head_cases, real_cases, held_cases, held_write_cases),
     )

@@ -101,13 +101,11 @@ def verdict_cases(expect: testing.Expect) -> None:
         "a growth over the error threshold is an error",
         kinds_of([measure("liba.a", 110)], rows) == [("error", "growth")],
     )
+    expect("a fall over the warning threshold gives no finding", kinds_of([measure("liba.a", 50)], rows) == [])
     expect(
-        "a fall over the warning threshold is an error", kinds_of([measure("liba.a", 97)], rows) == [("error", "fall")]
-    )
-    expect(
-        "an archive with no row is new, and a row with no archive is an error",
+        "an archive with no row is new and an error, and a row with no archive gives no finding",
         kinds_of([measure("liba.a", 100), measure("libnew.a", 4)], rows + "@build/libgone.a | k | 3 | - | a row\n")
-        == [("error", "new-archive"), ("error", "no-archive")],
+        == [("error", "new-archive")],
     )
     zero = f"{CONFIGURATIONS}@build/liba.a | k | 0 | - | a row\n"
     expect(
@@ -116,7 +114,7 @@ def verdict_cases(expect: testing.Expect) -> None:
         and kinds_of([measure("liba.a", 5)], zero) == [("error", "growth")],
     )
     expect(
-        "a build of a configuration that the ledger does not hold gets the largest row, and gives no fall",
+        "a build of a configuration that the ledger does not hold gets the largest row",
         kinds_of([measure("liba.a", 400)], rows, "new") == []
         and kinds_of([measure("liba.a", 600)], rows, "new") == [("error", "growth")],
     )
@@ -138,6 +136,7 @@ def write_cases(expect: testing.Expect) -> None:
     rule = rule_ledger.rule_of(RULE)
     ledger = parsed(
         f"{CONFIGURATIONS}@build/liba.a | k | 100 | - | the old reason\n@build/liba.a | other | 7 | - | kept\n"
+        "@build/libgone.a | k | 3 | - | an archive that the build does not make\n"
     )
     judged = build_config.judging(RULE, ledger, CONFIGURATION)
     grown = library_bytes.Reading([measure("liba.a", 110), measure("libb.a", 9)], CONFIGURATION, ledger, judged)
@@ -153,7 +152,8 @@ def write_cases(expect: testing.Expect) -> None:
         else {}
     )
     expect(
-        "a write with a reason writes each archive of the build, and keeps the rows of the other configurations",
+        "a write with a reason writes each archive of the build, removes the row of an archive that the build does not "
+        "make, and keeps the rows of the other configurations",
         rows
         == {
             ("@build/liba.a", "k"): (110, "why"),
@@ -172,6 +172,17 @@ def write_cases(expect: testing.Expect) -> None:
         "a row keeps its reason, and a new row gets the default reason",
         reasons.get(("@build/liba.a", "k")) == "the old reason"
         and reasons.get(("@build/libb.a", "k")) == library_bytes.DEFAULT_REASON,
+    )
+    fallen = library_bytes.Reading([measure("liba.a", 50)], CONFIGURATION, ledger, judged)
+    lowered = library_bytes.written_ledger(rule, request, fallen)
+    values = (
+        {(key.path, key.kind): entry.value for key, entry in lowered.base.items()}
+        if isinstance(lowered, rule_ledger.Ledger)
+        else {}
+    )
+    expect(
+        "a write with no reason lowers the row of a fall",
+        values.get(("@build/liba.a", "k")) == 50 and ("@build/libgone.a", "k") not in values,
     )
     other = build_config.BuildConfiguration("new", (("kind", "new"), ("tier", "t")))
     unheld = library_bytes.Reading([measure("liba.a", 1)], other, ledger, build_config.judging(RULE, ledger, other))
