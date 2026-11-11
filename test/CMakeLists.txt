@@ -4661,8 +4661,7 @@ endif()
 #                         lives in the check file of its header under
 #                         test/layer/checks, each such walk is lazy, and
 #                         utils/ledgers/header-checks.txt holds the items
-#                         that remain.  Each header with rows in the ledger
-#                         gives a warning, and the counts can only decrease.
+#                         that remain, and the counts can only decrease.
 #   guard_derived_files — test/layer/walk-checks.txt lists each check file
 #                         whose checks can call members_of on the reflection
 #                         of a namespace that a header opens, and no other
