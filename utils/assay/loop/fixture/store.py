@@ -412,19 +412,12 @@ instructions of this process from the start of main() and of each process
 that it started.  A host with no accurate count gives no count
 (assay.core.meter, THE OWN RUN).
 
-The judge holds the measured rules test-time, test-memory and
-test-instructions, with the
-thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
-ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over an
-error threshold that no ledger row keeps.  A run that takes its result from
-the store does not measure a compile.  The window of the test then does not
-take its wall time.  The driver writes the record
+The judge holds the measured rules test-memory and test-instructions, with
+the thresholds of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and
+its ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails over
+an error threshold that no ledger row keeps.  The driver writes the record
 BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
-launcher.  The version of a compiled run is a digest of the compile command
-and of each file that the compile read (assay.loop.teststep, THE VERSION).
-A run with a different version then drops the wall times of the earlier
-runs.  A run that does not know the files of its compile has no version, and
-the judge reads its wall time alone.  In a run of the test launcher, the environment holds
+launcher.  In a run of the test launcher, the environment holds
 CRUCIBLE_TEST_LAUNCHED.  The driver then gives the judge and the record to
 the launcher.
 
@@ -3291,8 +3284,8 @@ def main(argv: list[str]) -> int:
         print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_', '.' and '-' that starts with "
               f"a letter, a digit or '_'", file=sys.stderr)
         return 2
-    status, budget, is_stored, version = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
-    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir, is_stored, version)
+    status, budget = run_fixture(build_dir, source, fixture_name, expected_regexes, warnings_dir)
+    return judge_test(fixture_name, build_dir, source, status, start, budget, warnings_dir)
 
 
 def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
@@ -3312,19 +3305,17 @@ def fixture_arguments(argv: list[str]) -> tuple[Path | None, list[str]] | None:
 
 
 def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regexes: list[str],
-                warnings_dir: Path | None) -> tuple[int, CostBudget | None, bool, str]:
-    """Compile the fixture or take its stored result.  Return the status of its test, the budget, the source and the version.
+                warnings_dir: Path | None) -> tuple[int, CostBudget | None]:
+    """Compile the fixture or take its stored result.  Return the status of its test and the budget.
 
-    The source is True when the result comes from the store.  The budget is None, and the source is False, when the
-    driver stops before it reads the budget.  The version is the version of a compile with known inputs (The test
-    record), else the empty text.
+    The budget is None when the driver stops before it reads the budget.
     """
     scratch = build_dir / cost_record.FIXTURE_DIRECTORY / fixture_name
     scratch.mkdir(parents=True, exist_ok=True)
     found = find_compile_command(build_dir, source)
     if found is None:
         _report_module().write_line(f"no compile command for {source}", is_error=True)
-        return 2, None, False, ""
+        return 2, None
     command, directory, roots = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
@@ -3342,16 +3333,11 @@ def run_fixture(build_dir: Path, source: Path, fixture_name: str, expected_regex
     if unmatched is not None:
         own_reason = report_own_reason(fixture_name, source, unmatched, is_stored, warnings_dir)
     over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)
-    version = ""
-    if not is_stored and result.inputs is not None:
-        from assay.loop import teststep as test_launcher
-
-        version = test_launcher.version_of(command, result.inputs)
-    return verdict or own_reason or over_budget, budget, is_stored, version
+    return verdict or own_reason or over_budget, budget
 
 
 def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, start: OwnStart,
-               budget: CostBudget | None, warnings_dir: Path | None, is_stored: bool = False, version: str = "") -> int:
+               budget: CostBudget | None, warnings_dir: Path | None) -> int:
     """Judge the run of the fixture as a test, and write its record, as the test launcher does (The test record).
 
     In a run of the test launcher, the launcher judges and records the test, and the function gives the status.
@@ -3364,9 +3350,6 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
         start: The start of the measure at the start of main() (assay.core.meter, start_self())
         budget: The cost budget, which holds the thresholds of the rules of the launcher, or None
         warnings_dir: The warnings directory, or None
-        is_stored: True when the result of the fixture comes from the store.  The run then measures no compile, and
-            the window of the test does not take the run (The test record)
-        version: The version of the compile (The test record), or the empty text
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -3379,5 +3362,4 @@ def judge_test(fixture_name: str, build_dir: Path, source: Path, status: int, st
     sys.stdout.flush()
     return test_launcher.judge_and_record(fixture_name, sys.executable, _shown(source), str(build_dir), run,
                                           None if warnings_dir is None else str(warnings_dir),
-                                          None if budget is None else budget.test_rows, is_measured=not is_stored,
-                                          version=version)
+                                          None if budget is None else budget.test_rows)

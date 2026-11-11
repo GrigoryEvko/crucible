@@ -818,15 +818,15 @@ class StoreTest:
     def check_test_record(self) -> None:
         """The driver judges a fixture as the test launcher judges a test, and writes the same record.
 
-        A planted registry of the launcher with the error threshold 0 s of
-        test-time makes each judge refuse the test.  The check runs the fixture
-        through the driver, and then through the launcher, which gives the
-        driver the variable of the launcher.  The two records must hold the
-        same keys and the same values, apart from the cost.  The two runs must
-        give the same status, with one error line of the judge.
+        A planted registry of the launcher with the error threshold 0 GB of
+        test-memory makes each judge refuse the test.  The check runs the
+        fixture through the driver, and then through the launcher, which gives
+        the driver the variable of the launcher.  The two records must hold
+        the same keys and the same values, apart from the cost.  The two runs
+        must give the same status, with one error line of the judge.
         """
         table = self.root / "test-registry.txt"
-        table.write_text(planted_registry(("test-time", 0, 0, "s"), ("test-memory", 1000, 2000, "GB")))
+        table.write_text(planted_registry(("test-memory", 0, 0, "GB")))
         ledgers = self.root / "test-ledgers"
         ledgers.mkdir()
         record_path = Path(cost_record.test_record_file(self.build, "neg_size"))
@@ -851,8 +851,8 @@ class StoreTest:
 
         status, said = run_driver("")
         driver = record()
-        self.expect(status == 1 and said.count("error: [test-time] the test neg_size took") == 1,
-                    f"the driver refuses a fixture over the error threshold of test-time: {status} {said[-400:]}")
+        self.expect(status == 1 and said.count("error: [test-memory] the test neg_size took") == 1,
+                    f"the driver refuses a fixture over the error threshold of test-memory: {status} {said[-400:]}")
         source = str(self.root / "neg" / "neg_size.cpp")
         # The launcher gives the driver the variable of the launcher.  The run has no store and no GITHUB_ACTIONS.
         # Its verdict is then the same on a CI runner.
@@ -864,28 +864,19 @@ class StoreTest:
              sys.executable, *DRIVER, str(self.build), source, "neg_size", *SIZE],
             timeout_s=proc.TOOL_S, env=environment))
         launcher = record()
-        self.expect(launched.exit == status and launched.err.count("error: [test-time] the test neg_size took") == 1,
+        self.expect(launched.exit == status and launched.err.count("error: [test-memory] the test neg_size took") == 1,
                     f"the launcher refuses the same fixture, and the driver under it does not judge again: "
                     f"{launched.exit} {launched.err[-400:]}")
-        # The cost block and the window hold the times of each run, which are not equal.  The version of the driver
-        # names the compile, and the version of the launcher names the command of the test (assay.loop.teststep, THE
-        # VERSION).
-        timed = ("cost", "walls", "version")
-        same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key not in timed} == {
-            key: launcher[key] for key in launcher if key not in timed}
-        same_windows = [
-            len(walls) if isinstance(walls := found.get("walls"), list) else 0 for found in (driver, launcher)
-        ] == [1, 1]
-        same_windows = same_windows and all(
-            isinstance(version := found.get("version"), str) and len(version) == 16 for found in (driver, launcher))
+        # The cost block holds the times of each run, which are not equal.
+        same_fields = set(driver) == set(launcher) and {key: driver[key] for key in driver if key != "cost"} == {
+            key: launcher[key] for key in launcher if key != "cost"}
         driver_cost, launcher_cost = driver.get("cost"), launcher.get("cost")
         same_costs = isinstance(driver_cost, dict) and isinstance(launcher_cost, dict) and set(driver_cost) == set(
             launcher_cost)
-        self.expect(same_fields and same_costs and same_windows and driver.get("result") == "rejected"
-                    and driver.get("step") == "test",
+        self.expect(same_fields and same_costs and driver.get("result") == "rejected" and driver.get("step") == "test",
                     f"the record of the driver and the record of the launcher hold the same fields and the same "
                     f"verdict: {driver} {launcher}")
-        table.write_text(planted_registry(("test-time", 1000, 2000, "s"), ("test-memory", 1000, 2000, "GB")))
+        table.write_text(planted_registry(("test-memory", 1000, 2000, "GB")))
         status, said = run_driver("")
         self.expect(status == 0 and "[test-" not in said and record().get("result") == "passed",
                     f"a fixture under the thresholds passes with no finding, and its record says passed: {status}")

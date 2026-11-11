@@ -3,8 +3,8 @@
 THE PARTS
     test/CMakeLists.txt gives the group oracle of `guard selftest`
     SESSION_ORACLE_SELF_TEST_PARTS parts, and each part is one test.  Each
-    part holds one kind of work.  A part then takes less than the warning
-    threshold of test-time, with or without the results of the unit store:
+    part holds one kind of work.  A part then takes a short time, with or
+    without the results of the unit store:
       CHECK_PART   the checks of test_runner that compile nothing: the type
                    grammar of the emitter and the drift of the committed files.
                    It also removes the expired sources of the unit store

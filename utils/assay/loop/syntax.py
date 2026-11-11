@@ -69,10 +69,10 @@ THE CHECK
 
     The parse of the 1019 units of the tree is a build.  On 2026-10-11 it
     took 62.0 s of wall time and 964 s of CPU time with 16 jobs.  The parse
-    of the 954 units of the aarch64 parse build took 64.1 s and 995 s.  The
-    test of a rule has an error threshold of 30 s (the rule test-time).  For
-    that reason, `loop test` runs the parse after its build, and the test of
-    the rule only reads the reports.
+    of the 954 units of the aarch64 parse build took 64.1 s and 995 s.  That
+    time is too long for the test of a rule.  For that reason, `loop test`
+    runs the parse after its build, and the test of the rule only reads the
+    reports.
 
 THE KEPT REPORTS
     The key of a parse is the hash of the words of the parse and of the

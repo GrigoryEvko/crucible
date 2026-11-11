@@ -56,20 +56,12 @@ class Planted:
         path.chmod(0o755)
         return path
 
-    def budget(
-        self,
-        time_rule: tuple[float, float],
-        memory_rule: tuple[float, float],
-        instruction_rule: tuple[float, float] | None = None,
-    ) -> None:
+    def budget(self, memory_rule: tuple[float, float], instruction_rule: tuple[float, float] | None = None) -> None:
         """Write the planted registry with the warning and the error thresholds of the rules.
 
-        With no `instruction_rule`, the registry has no rule test-instructions, and a count holds no error level.
+        With no `instruction_rule`, the registry has no rule test-instructions, and no rule judges a count.
         """
-        rules = [
-            rule_registry.measured_rule("test-time", *time_rule, "s", "the wall time"),
-            rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory"),
-        ]
+        rules = [rule_registry.measured_rule("test-memory", *memory_rule, "GB", "the peak memory")]
         if instruction_rule is not None:
             rules.append(rule_registry.measured_rule("test-instructions", *instruction_rule, "G", "the instructions"))
         self.table.write_text(rule_registry.planted(rules))
@@ -149,9 +141,8 @@ class Planted:
 
     def status_cases(self, expect: testing.Expect) -> None:
         """Check that the status and the signal of a test go through, and the record of the test."""
-        self.ledger("test-time", "")
         self.ledger("test-memory", "")
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         for code in ("0", "1", "3"):
             status, said = self.launch(self.program, code)
             expect(
@@ -184,7 +175,7 @@ class Planted:
 
     def script_cases(self, expect: testing.Expect) -> None:
         """Check a script test, the usage errors, and the characters of a test name."""
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         launched = test_launcher.LAUNCHED_ENV
         status, said = self.launch_script("planted_script", "sh", "-c", f'test "${launched}" = planted_script')
         record = self._record_of("planted_script")
@@ -216,7 +207,7 @@ class Planted:
             expect(f"a usage error gives status 2: {label}", done.exit == 2 and "usage:" in done.err)
         status, said = self.launch_script("planted/script", "sh", "-c", "exit 0")
         expect("a test name that is not a writer key gives status 2", status == 2 and "is not a word" in said)
-        self.budget((0, 2000), (1000, 2000))
+        self.budget((0, 2000))
         dotted = self.plant_test("test_planted.sh", "#!/bin/sh\nexit 0\n")
         status, said = self.launch(dotted)
         record = self._record_of("test_planted.sh")
@@ -225,7 +216,7 @@ class Planted:
             status == 0
             and record.get("test") == "test_planted.sh"
             and record.get("result") == "passed"
-            and (self.warnings / "test-time.test_planted.sh.txt").is_file(),
+            and (self.warnings / "test-memory.test_planted.sh.txt").is_file(),
         )
         writer_keys = ("a", "Z_9", "neg_x-y", "_a", "a.b", "run.sh")
         refused_keys = ("", "-a", ".a", "a/b", "a b")
@@ -267,7 +258,7 @@ class Planted:
 
     def emulator_cases(self, expect: testing.Expect) -> None:
         """Check that two tests behind one emulator get two records, each named after its program (THE EMULATOR)."""
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         first = self.plant_test("test_emulated_first", '#!/bin/sh\nexit "${1:-0}"\n')
         second = self.plant_test("test_emulated_second", '#!/bin/sh\nexit "${1:-0}"\n')
         first_status, _ = self.launch_emulated("3", first)
@@ -290,7 +281,7 @@ class Planted:
 
     def environment_cases(self, expect: testing.Expect) -> None:
         """Check that a test runs in the clean environment of the launcher (THE ENVIRONMENT)."""
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         search = test_launcher.search_path(os.environ.get("PATH", ""))
         check = (
             'test -z "${LD_LIBRARY_PATH+set}" && test -z "${PLANTED_HOST+set}" && test "$CRUCIBLE_PLANTED" = kept '
@@ -327,113 +318,45 @@ class Planted:
             status == 0,
         )
 
-    def _walls_of(self, name: str) -> list[object]:
-        """Return the window of the record of one test, or no wall time when the record has no window."""
-        walls = self._record_of(name).get(cost_record.WALLS_FIELD)
-        return walls if isinstance(walls, list) else []
-
-    def version_cases(self, expect: testing.Expect) -> None:
-        """Check that a change of a test drops its window.
-
-        A test that becomes slower then gives a warning on its first run after the change.
-        """
-        self.ledger("test-time", "")
-        self.ledger("test-memory", "")
-        self.budget((0.2, 2000), (1000, 2000))
-        warned = ": warning: [test-time] "
-        changed = self.plant_test("test_changed", "#!/bin/sh\nexit 0\n")
-        said = [self.launch(changed)[1] for _ in range(test_launcher.RECENT_RUNS - 1)]
-        expect(
-            "the runs of one version of a test go into one window",
-            not any(warned in text for text in said)
-            and len(self._walls_of("test_changed")) == test_launcher.RECENT_RUNS - 1,
-        )
-        self.plant_test("test_changed", "#!/bin/sh\nsleep 0.25\n")
-        status, text = self.launch(changed)
-        expect(
-            "a change of the program of a test drops its window, so the test that becomes slower warns on its first "
-            "run after the change",
-            status == 0 and warned in text and len(self._walls_of("test_changed")) == 1,
-        )
-        script = self.root / "planted_changed.sh"
-        script.write_text("exit 0\n")
-        for _ in range(2):
-            self.launch_script("planted_changed_script", "sh", str(script))
-        script.write_text("sleep 0.25\n")
-        status, text = self.launch_script("planted_changed_script", "sh", str(script))
-        expect(
-            "a change of a file that a word of a script test names drops its window",
-            status == 0 and warned in text and len(self._walls_of("planted_changed_script")) == 1,
-        )
-
     def threshold_cases(self, expect: testing.Expect) -> None:
-        """Check the warning and the error thresholds of the two rules, on a CI runner and in a tsan build too."""
+        """Check the warning and the error thresholds of test-memory, also on a CI runner."""
         program, warnings = self.program, self.warnings
-        self.budget((0, 2000), (0, 2000))
+        self.budget((0, 2000))
         status, said = self.launch(program)
-        own = warnings / "test-time.test_planted.txt"
+        own = warnings / "test-memory.test_planted.txt"
         expect(
-            "a test over the warning thresholds passes, with a warning for each row",
-            status == 0
-            and said.count(": warning: [test-") == 2
-            and own.is_file()
-            and (warnings / "test-memory.test_planted.txt").is_file(),
+            "a test over the warning threshold passes, with a warning in the warnings file of its row",
+            status == 0 and said.count(": warning: [test-") == 1 and own.is_file(),
         )
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         status, said = self.launch(program)
-        expect(
-            "a test under the thresholds removes its warnings files",
-            status == 0 and not own.exists() and not (warnings / "test-memory.test_planted.txt").exists(),
-        )
+        expect("a test under the thresholds removes its warnings file", status == 0 and not own.exists())
 
-        self.budget((0, 0), (1000, 2000))
+        self.budget((0, 0))
         status, said = self.launch(program)
         expect(
-            "a passed test over the time error threshold fails, with an error line that names its program",
-            status == 1 and f"{program}:0: error: [test-time] " in said and "no row of" in said,
+            "a passed test over the memory error threshold fails, with an error line that names its program",
+            status == 1 and f"{program}:0: error: [test-memory] " in said and "no row of" in said,
         )
         record = self._record_of("test_planted")
         expect("the record of the failed test says rejected", record["result"] == "rejected")
         status, said = self.launch_script("planted_script", "sh", "-c", "exit 0")
         expect(
-            "a passed script test over the time error threshold fails, with an error line that names its record",
+            "a passed script test over the memory error threshold fails, with an error line that names its record",
             status == 1
-            and f"{cost_record.test_record_file(self.build, 'planted_script')}:0: error: [test-time] " in said
+            and f"{cost_record.test_record_file(self.build, 'planted_script')}:0: error: [test-memory] " in said
             and self._record_of("planted_script")["result"] == "rejected",
         )
         status, said = self.launch(program, "3")
         expect(
             "a test that failed keeps its status over the error threshold",
-            status == 3 and ": error: [test-time] " in said,
+            status == 3 and ": error: [test-memory] " in said,
         )
-        status, said = self.launch(program, GITHUB_ACTIONS="true")
-        record = self._record_of("test_planted")
-        expect(
-            "on a CI runner, a passed test over the time error threshold passes, with a warning that says that "
-            "the error was demoted",
-            status == 0
-            and ": warning: [test-time] " in said
-            and "demoted" in said
-            and ": error: " not in said
-            and record["result"] == "passed",
-        )
-        self.budget((1000, 2000), (0, 0))
         status, said = self.launch(program, GITHUB_ACTIONS="true")
         expect(
             "on a CI runner, a passed test over the memory error threshold still fails",
             status == 1 and ": error: [test-memory] " in said,
         )
-        self.budget((0, 0), (1000, 2000))
-        (self.build / cost_meter.KIND_FILE).write_text("x86_64-debug-tsan\n")
-        status, said = self.launch(program)
-        expect(
-            "a build of a tsan kind warns on a time over the error threshold, and the test passes",
-            status == 0 and ": warning: [test-time] " in said and "budgets no wall time" in said,
-        )
-        (self.build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
-        self.budget((1000, 2000), (0, 0))
-        status, said = self.launch(program)
-        expect("a passed test over the memory error threshold fails", status == 1 and ": error: [test-memory] " in said)
 
     def _count_of(self, name: str) -> object:
         """Return the instruction count of the record of one test, or None when the record holds no count."""
@@ -441,55 +364,37 @@ class Planted:
         return cost.get(cost_record.TEST_COUNT_KEY) if isinstance(cost, dict) else None
 
     def count_cases(self, expect: testing.Expect) -> None:
-        """Check test-instructions, and the warning of test-time for a run with an accurate count (THE MEASURED RULES).
+        """Check test-instructions (THE MEASURED RULES).
 
-        A planted test that sleeps over the time error threshold gives a warning, because its count holds the error
-        level.  A planted test that does more work than its row keeps fails.  A host with no accurate counter gives no
-        count, and test-time then keeps its error.
+        A planted test that does more work than the error threshold, or than its row keeps, fails.  A run with no
+        count, as on a host with no accurate counter, has no judge of its instructions.
         """
-        self.ledger("test-time", "")
         self.ledger("test-memory", "")
         self.ledger("test-instructions", "")
         host_counts = cost_meter.host_gives_counter()
         on_host = f"(this host: {'a counter' if host_counts else 'no counter'})"
-        sleeper = self.plant_test("test_sleeping", "#!/bin/sh\nsleep 0.12\n")
-        self.budget((0.05, 0.1), (1000, 2000), (1000, 2000))
-        status, said = self.launch(sleeper)
-        count = self._count_of("test_sleeping")
-        if host_counts:
-            expect(
-                f"a test that sleeps over the time error threshold with a small count passes, with a warning of "
-                f"test-time that names test-instructions, and its record keeps the count {on_host}",
-                status == 0
-                and ": warning: [test-time] " in said
-                and "test-instructions holds the error level" in said
-                and ": error: " not in said
-                and isinstance(count, int)
-                and count > 0,
-            )
-        else:
-            expect(
-                f"with no count, a test that sleeps over the time error threshold fails {on_host}",
-                status == 1 and ": error: [test-time] " in said and count is None,
-            )
-        status, said = self.launch(sleeper, **{cost_meter.INSTRUCTIONS_ENV: "0"})
-        expect(
-            f"a run with {cost_meter.INSTRUCTIONS_ENV}=0 has no count, and test-time keeps its error",
-            status == 1 and ": error: [test-time] " in said and self._count_of("test_sleeping") is None,
+        worker = self.plant_test(
+            "test_working", f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n"
         )
-        self.budget((0.05, 0.1), (1000, 2000))
-        status, said = self.launch(sleeper)
+        self.budget((1000, 2000), (0.0001, 0.0002))
+        status, said = self.launch(worker, **{cost_meter.INSTRUCTIONS_ENV: "0"})
         expect(
-            "a registry with no rule test-instructions gives a count no error level, and test-time keeps its error",
-            status == 1 and ": error: [test-time] " in said,
+            f"a run with {cost_meter.INSTRUCTIONS_ENV}=0 has no count and no judge of its instructions, and it passes",
+            status == 0 and "[test-instructions]" not in said and self._count_of("test_working") is None,
+        )
+        self.budget((1000, 2000))
+        status, said = self.launch(worker)
+        count = self._count_of("test_working")
+        expect(
+            f"a registry with no rule test-instructions judges no count, and the record keeps the count {on_host}",
+            status == 0
+            and "[test-instructions]" not in said
+            and ((isinstance(count, int) and count > 0) if host_counts else count is None),
         )
         if not host_counts:
             expect(f"skip the cases of test-instructions {on_host}", True)
             return
-        worker = self.plant_test(
-            "test_working", f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n"
-        )
-        self.budget((1000, 2000), (1000, 2000), (0.0001, 0.0002))
+        self.budget((1000, 2000), (0.0001, 0.0002))
         status, said = self.launch(worker)
         measured = self._count_of("test_working")
         expect(
@@ -517,7 +422,7 @@ class Planted:
     def ledger_cases(self, expect: testing.Expect) -> None:
         """Check the rows of a ledger, and a test that cannot start."""
         program = self.program
-        self.budget((1000, 2000), (0, 0))
+        self.budget((0, 0))
         self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
@@ -536,14 +441,14 @@ class Planted:
             "a test over the kept value of its row with the noise of the unit fails again",
             status == 1 and ": error: [test-memory] " in said and "more than the row" in said,
         )
-        self.budget((1000, 2000), (0, 1000))
+        self.budget((0, 1000))
         self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
             "a ledger row keeps a test over the warning threshold only, with a warning that names its kept value",
             status == 0 and ": warning: [test-memory] " in said and "keeps it up to 0.05 GB" in said,
         )
-        self.budget((1000, 2000), (0, 0))
+        self.budget((0, 0))
         (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
         self.ledger("test-memory", "- | x86_64-debug-asan-bench | 0.05 | test_planted | a row of the bench build\n")
         status, said = self.launch(program)
@@ -558,7 +463,7 @@ class Planted:
             status == 0 and "a row of the build kind" in said,
         )
         (self.build / cost_meter.CONFIGURATION_FILE).unlink()
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         status, said = self.launch(program)
         expect(
             "a ledger row whose test stays at or under the warning threshold passes the test with no finding, because "
@@ -574,7 +479,7 @@ class Planted:
         # from the environment.  A core dump that the launcher does not stop goes to the handler of
         # kernel.core_pattern, which ignores a limit of 0.  At a hard limit of 0, no process can set 1 byte, and the
         # cases then check only the limit that the environment gives.
-        self.budget((1000, 2000), (1000, 2000))
+        self.budget((1000, 2000))
         cores_env, cores_keep = test_launcher.CORES_ENV, test_launcher.CORES_KEEP
         _, hard_core = resource.getrlimit(resource.RLIMIT_CORE)
         resource.setrlimit(resource.RLIMIT_CORE, (0, hard_core))
@@ -645,111 +550,6 @@ def fallen_row_cases(expect: testing.Expect) -> None:
         "only on a growth",
         measured == [],
     )
-
-
-def window_cases(expect: testing.Expect) -> None:
-    """Check that the warning of test-time reads the smallest wall time of the window, and its error each run."""
-    budget = {"test-time": (5.0, 30.0)}
-    counted_budget = {"test-time": (5.0, 30.0), "test-instructions": (1000.0, 2000.0)}
-    with tempfile.TemporaryDirectory(prefix="test-step-window-") as directory:
-        build = Path(directory) / "build"
-        build.mkdir()
-        (build / cost_meter.KIND_FILE).write_text("x86_64-debug-asan\n")
-        warnings = build / "check-warnings"
-
-        def run(
-            name: str,
-            wall: float,
-            exit_code: int = 0,
-            is_measured: bool = True,
-            version: str = "0123456789abcdef",
-            instructions: int | None = None,
-        ) -> tuple[int, bool]:
-            """Judge and record one planted run of a test.  Return its status, and True when it gives a warning."""
-            measured = cost_meter.Measurement(exit_code, 0.1, 0.0, wall, 1024, 1.0, 0.0, None, instructions)
-            status = test_launcher.judge_and_record(
-                name,
-                "/b/test",
-                "/b/test",
-                str(build),
-                measured,
-                str(warnings),
-                budget if instructions is None else counted_budget,
-                is_measured,
-                version,
-            )
-            return status, (warnings / f"test-time.{name}.txt").is_file()
-
-        def window(name: str) -> tuple[float, ...]:
-            """Return the window of the record of a test."""
-            return cost_record.read_test(Path(cost_record.test_record_file(build, name))).walls
-
-        run("test_loaded", 4.2)
-        run("test_loaded", 4.4)
-        status, warns = run("test_loaded", 6.0)
-        expect(
-            "a run over the warning threshold of test-time gives no warning when a faster run of its window is under "
-            "the threshold, because the load of the host only makes a run slower",
-            status == 0 and not warns and window("test_loaded") == (6.0, 4.4, 4.2),
-        )
-        verdicts = [run("test_blocked", 6.0) for _ in range(test_launcher.RECENT_RUNS + 1)]
-        expect(
-            "a test that waits for 6 s on each run warns on each run",
-            verdicts == [(0, True)] * (test_launcher.RECENT_RUNS + 1)
-            and window("test_blocked") == (6.0,) * test_launcher.RECENT_RUNS,
-        )
-        run("test_slower", 4.0)
-        verdicts = [run("test_slower", 6.0) for _ in range(test_launcher.RECENT_RUNS)]
-        expect(
-            "a test that becomes slower warns when each run of its window is slower",
-            verdicts == [(0, False)] * (test_launcher.RECENT_RUNS - 1) + [(0, True)],
-        )
-        run("test_stalled", 4.0)
-        status, _ = run("test_stalled", 31.0)
-        expect("one run over the error threshold of test-time fails at once, also after a faster run", status == 1)
-        run("test_reclaimed", 4.0, instructions=10**9)
-        status, warns = run("test_reclaimed", 91.0, instructions=10**9)
-        expect(
-            "a run with an instruction count over the error threshold of test-time, after a faster run, passes with no "
-            "finding, because test-instructions holds the error level and the window reads the faster run",
-            status == 0 and not warns,
-        )
-        status, warns = run("test_reclaimed_alone", 91.0, instructions=10**9)
-        expect(
-            "the first run with an instruction count over the error threshold of test-time passes with a warning",
-            status == 0 and warns,
-        )
-        run("test_failing", 6.0)
-        status, warns = run("test_failing", 1.0, exit_code=1)
-        expect(
-            "a run that failed is judged alone, and it stays out of the window",
-            status == 1 and not warns and window("test_failing") == (6.0,),
-        )
-        status, warns = run("test_failing", 6.0)
-        expect("the next passed run reads the window with no failed run", status == 0 and warns)
-        run("neg_stored", 6.0)
-        status, warns = run("neg_stored", 0.1, is_measured=False, version="fedcba9876543210")
-        expect(
-            "a run that does not do the measured work, such as a stored fixture, stays out of the window, and the "
-            "record keeps the version of the window",
-            status == 0
-            and not warns
-            and window("neg_stored") == (6.0,)
-            and cost_record.read_test(Path(cost_record.test_record_file(build, "neg_stored"))).version
-            == "0123456789abcdef",
-        )
-        run("test_versions", 4.0, version="")
-        status, warns = run("test_versions", 6.0, version="")
-        expect(
-            "a run with no version is judged alone, and its window holds only that run",
-            status == 0 and warns and window("test_versions") == (6.0,),
-        )
-        run("test_versions", 4.0, version="aaaaaaaaaaaaaaaa")
-        status, warns = run("test_versions", 6.0, version="bbbbbbbbbbbbbbbb")
-        expect(
-            "a run of a different version drops the window, and it warns on its first run",
-            status == 0 and warns and window("test_versions") == (6.0,),
-        )
 
 
 def version_unit_cases(expect: testing.Expect) -> None:
@@ -958,11 +758,9 @@ def main(argv: list[str]) -> int:
             planted_group(Planted.count_cases),
             planted_group(Planted.ledger_cases),
             planted_group(Planted.core_cases),
-            planted_group(Planted.version_cases),
             planted_group(Planted.emulator_cases),
             planted_group(Planted.environment_cases),
             fallen_row_cases,
-            window_cases,
             version_unit_cases,
             launched_cases,
             environment_unit_cases,

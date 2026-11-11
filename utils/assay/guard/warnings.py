@@ -69,7 +69,7 @@ USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
 # The prefix of each line that the command writes about the warnings files and the totals.
 PREFIX = "guard warnings:"
 # The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
-TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "test-instructions", "fixture-instructions"})
+TEST_KEYED_CHECKS = frozenset({"test-memory", "test-instructions", "fixture-instructions"})
 
 
 def test_keyed_files(warnings_dir: Path) -> list[tuple[str, str]]:
@@ -304,8 +304,8 @@ def gone_test_cases(expect: testing.Expect) -> None:
             ("test-memory", "kept_test"),
             ("test-memory", "gone_test"),
             ("python-lint", "gone_test"),
-            ("test-time", "kept.sh"),
-            ("test-time", "gone.sh"),
+            ("test-instructions", "kept.sh"),
+            ("test-instructions", "gone.sh"),
         ):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
@@ -330,11 +330,11 @@ def gone_test_cases(expect: testing.Expect) -> None:
             and "test-memory gone_test" not in text
             and "test-memory kept_test" in text
             and "python-lint gone_test" in text
-            and test_keyed_files(warnings_dir) == [("test-memory", "kept_test"), ("test-time", "kept.sh")],
+            and test_keyed_files(warnings_dir) == [("test-instructions", "kept.sh"), ("test-memory", "kept_test")],
         )
         expect(
             "the file of a test whose name holds a dot goes when the build does not register the test",
-            "because the build registers no test gone.sh" in text and "test-time kept.sh" in text,
+            "because the build registers no test gone.sh" in text and "test-instructions kept.sh" in text,
         )
 
 

@@ -3,8 +3,8 @@
 # `loop test-step` (utils/assay/loop/teststep.py) runs in front of each test of
 # the tree, except a negative fixture.  It runs the test, writes its wall time,
 # CPU time, peak memory and user instructions to
-# BUILD/test-records/NAME.test.cost, holds the measured rules test-time,
-# test-memory and test-instructions of utils/registry.txt, and exits with the
+# BUILD/test-records/NAME.test.cost, holds the measured rules test-memory
+# and test-instructions of utils/registry.txt, and exits with the
 # status of the test (the docstring of the launcher gives the rules).  It
 # gives each test a soft core limit of 1 byte.  A child that aborts then writes
 # no core dump, unless CRUCIBLE_TEST_CORES=keep keeps the cores (CORE DUMPS in
@@ -14,8 +14,9 @@
 # CMake puts CMAKE_TEST_LAUNCHER in front of a test whose command names an
 # executable target.  It gives no launcher to a script test.  Each script test
 # of the tree comes from crucible_script_test(), which puts the launcher in
-# front of its command.  The rule test-time (`guard check --rule test-time`)
-# refuses a test that the launcher and the fixture driver do not run.
+# front of its command.  The rule test-registration (`guard check --rule
+# test-registration`) refuses a test that the launcher and the fixture driver
+# do not run.
 #
 # A target reads CMAKE_TEST_LAUNCHER when it is created, and a test reads the
 # launcher when crucible_script_test() registers it.  This file must come

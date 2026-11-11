@@ -111,42 +111,27 @@ CORE DUMPS
         itself has no use.
 
 THE MEASURED RULES
-    The launcher judges three measured rules of utils/registry.txt.
-    test-time is the wall time of the test, and test-memory is the peak
-    resident memory of its largest process.  test-instructions is the user
-    instructions of the test and of each process that it starts.
-      * The wall time increases with the load of the host.  When the host is
-        short of memory, or when each core is in use, a run takes more time
-        and more system time.  The user instructions do not change with the
-        load (utils/assay/core/meter.py, THE INSTRUCTION COUNT).
-        ccache_wrapper_self_test ran 43.4 s of user time in 7.4 s of wall
-        time on a quiet host.  On 2026-10-12, the same test took 56 s to 166 s
-        of wall time, when the host was short of memory.
-      * When the run holds an accurate count, test-instructions holds the
-        error level of the test, and test-time gives a warning only.  The
-        record keeps the count (key test_instructions, assay.core.record).  A
-        run with no count keeps the error level of test-time.  A host with no
-        accurate counter gives no count.  test-instructions reads the run
-        alone, because its count is almost the same on each run.
+    The launcher judges two measured rules of utils/registry.txt.
+    test-memory is the peak resident memory of the largest process of the
+    test.  test-instructions is the user instructions of the test and of each
+    process that it starts.
+      * The two measures are almost the same on each run of a test, so each
+        rule reads the run alone.  The user instructions do not change with
+        the load of the host (utils/assay/core/meter.py, THE INSTRUCTION
+        COUNT).  The record keeps the count (key test_instructions,
+        assay.core.record).  A host with no accurate counter gives no count,
+        and the run then has no judge of its instructions.
       * A test that waits for a different thread in a loop runs more
         instructions when the host is in use.  On 2026-10-12, with two tests
         for each CPU, the counts of such tests increased up to 21 times, to
         at most 12.1 G.  That count is less than the warning threshold of
         test-instructions, and such a test has no row.
-      * The load of the host only makes a run slower.  The warnings of
-        test-time then read the smallest wall time of the window of the test.
-        The window is the last RECENT_RUNS runs with the status 0 that did the
-        measured work, this run with them.  Each run of a window has one
-        version of the test (THE VERSION).  The record keeps the window and
-        its version (keys walls and version, assay.core.record).  A test that
-        waits for the same time on each run has that time in each run of its
-        window, and it gives a warning.  A run with a different status, or a
-        run that did not do the measured work, is judged alone.  Such a run
-        does not go into the window.
-      * The errors of test-time read the run alone.  An error then comes from
-        the first run with no count over the error threshold.  test-memory
-        reads the run alone, because the memory is almost the same on each
-        run.
+      * The record keeps the wall time of the run as a plain fact, and no
+        rule judges it.  The wall time increases with the load of the host.
+        ccache_wrapper_self_test ran 43.4 s of user time in 7.4 s of wall
+        time on a quiet host.  On 2026-10-12, the same test took 56 s to 166 s
+        of wall time, when the host was short of memory.  The timeout of the
+        test preset is the hard stop of a test.
       * Over the warning threshold of a rule, the subcommand prints a warning
         line in the format of utils/assay/core/report.py and writes it to
         DIR/RULE.NAME.txt, so the tests that run at the same time do not write
@@ -167,37 +152,24 @@ THE MEASURED RULES
         (THE POLICIES of assay.core.ledger).  A ledger that does not
         exist has no row, and the subcommand then imports no ledger module.
     Memory and the instruction count are almost the same on each run, so
-    their error thresholds sit above the largest measure.  Wall time depends
-    on the load of the host, so its error threshold sits above the noise that
-    the commit of the threshold states, and the timeout of the test preset is
-    the hard stop.  In a build of a
-    kind with tsan, a wall time over the error threshold gives a warning
-    only: ThreadSanitizer serializes the threads of a test, and one test took
-    15 s in one run and 91 s in the next on the shared host.  On a GitHub
-    runner, each time error is a warning that says that it was demoted
-    (utils/assay/core/meter.py, A CI RUNNER), and a memory error stays an
-    error.
+    their error thresholds sit above the largest measure.  An error of the
+    two rules is an error also on a GitHub runner.
     A test that failed keeps its status, so a failure, a skip code and a
     WILL_FAIL test keep the meaning that ctest gives them.  A WILL_FAIL test
     over its budget therefore does not fail.  No test of the tree has
     WILL_FAIL at this time.
 
 THE VERSION
-    The window holds the runs of one version of a test.  A run of a different
-    version drops the runs of the window.  After a change that makes a test
-    longer, the test then gives its warning on its first run.  The version is
-    a digest of the words of the command and of the files of the test
-    (version_of()).  For each file, the digest holds its length in bytes, its
+    The version of a test is a digest of the words of its command and of the
+    files of the test (version_of()).  The trace of the read set uses it
+    (THE READ SET).  For each file, the digest holds its length in bytes, its
     change time and its inode.  The files of a command are these files:
       * each word of the command that names a file, and the VALUE of each word
         NAME=VALUE that names a file
       * for a word that names a master of utils/bin/, each module of the
         package assay, because the master runs them.
-    The fixture driver gives the version of its compile: the command of the
-    compile and each file that the compile read.  A run with no version is
-    judged alone, and the record keeps it alone.  The version holds no other
-    input of a test, such as a data file that the test opens.  The read set
-    holds such a file (THE READ SET).
+    The version holds no other input of a test, such as a data file that the
+    test opens.  The read set holds such a file (THE READ SET).
 
 THE READ SET
     The launcher can trace the system calls of each test with a build
@@ -253,13 +225,9 @@ if TYPE_CHECKING:
 
     from assay.loop.readset import Plan
 
-ROWS = ("test-time", "test-memory", "test-instructions")
-# The rule that holds the error level of a run with an accurate instruction count, and the instructions in one G.
-COUNT_ROW = "test-instructions"
+ROWS = ("test-memory", "test-instructions")
+# The instructions in one G.
 GIGA = 1e9
-# The number of runs in the window of a test.  The warnings of test-time read the smallest wall time of the window
-# (THE MEASURED RULES).
-RECENT_RUNS = 5
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
 CORES_ENV = "CRUCIBLE_TEST_CORES"
@@ -430,8 +398,7 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
 
 def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
           kind: str | None, ledgers: str | None = None,
-          configuration: str | None = None,
-          walls: tuple[float, ...] = ()) -> list[tuple[str, str, str]]:
+          configuration: str | None = None) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
     The witness of test-memory judges the planted record of a test with this
@@ -445,26 +412,15 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         kind: The kind of the build, or None
         ledgers: The directory of the ledgers (ledger_row()), or None
         configuration: The name of the configuration of the build, or None for the build kind
-        walls: The window of the test, the newest run first, with this run.  The warnings of test-time read its
-            smallest wall time.  An empty window judges the run alone
 
     Returns:
-        One (level, rule, message) for each rule with a finding.  On a GitHub runner, a time error is a warning
+        One (level, rule, message) for each rule with a finding
     """
-    findings = []
-
-    def add(level: str, row: str, message: str) -> None:
-        shown_level, shown_message = cost_meter.ci_verdict(level, row, message)
-        findings.append((shown_level, row, shown_message))
-
-    measures = [("test-time", run.wall_s, "s", f"took {run.wall_s:.2f} s of wall time"),
-                ("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
+    findings: list[tuple[str, str, str]] = []
+    measures = [("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
     if run.instructions is not None:
         giga = run.instructions / GIGA
-        measures.append((COUNT_ROW, giga, "G", f"ran {giga:.2f} G user instructions"))
-    # With an accurate count, test-instructions holds the error level, and the wall time gives a warning only.
-    count_note = (f"The run holds an instruction count, so the measured rule {COUNT_ROW} holds the error level of the "
-                  f"test, and the wall time, which rises with the load of the host, gives a warning only")
+        measures.append(("test-instructions", giga, "G", f"ran {giga:.2f} G user instructions"))
     for row, measure, unit, text in measures:
         if row not in budget:
             continue
@@ -474,37 +430,27 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         said = f"the test {name} {text}"
         noise = cost_budget.noise_of(unit)
         found = cost_budget.verdict(measure, warn, error, kept, noise)
-        is_time = row == "test-time"
-        is_count_held = is_time and run.instructions is not None and COUNT_ROW in budget
-        is_tsan_time = is_time and kind is not None and "-tsan" in kind
-        is_run_error = not is_count_held and (found == cost_budget.ERROR
-                                              or (found == cost_budget.RISEN and measure > error))
-        value = measure
-        if is_time and len(walls) > 1 and not is_run_error:
-            value = min(walls)
-            said += f", and at least {value:.2f} s in each of the last {len(walls)} runs of its window"
-            found = cost_budget.verdict(value, warn, error, kept, noise)
-        over = f"over the {'error' if value > error else 'warning'} threshold of {error if value > error else warn:g}"
+        over = (f"over the {'error' if measure > error else 'warning'} threshold of "
+                f"{error if measure > error else warn:g}")
         if admitted is not None and found == cost_budget.ADMITTED:
-            add("warning", row, f"{said}, {over} {unit}, and the row {admitted[0]} keeps it up to {admitted[2]:g} "
-                                f"{unit} with the noise {noise:.0%}: {admitted[1]}")
+            level = "warning"
+            message = (f"{said}, {over} {unit}, and the row {admitted[0]} keeps it up to {admitted[2]:g} {unit} with "
+                       f"the noise {noise:.0%}: {admitted[1]}")
         elif admitted is not None and found == cost_budget.RISEN:
-            level = "warning" if is_tsan_time or is_count_held else cost_budget.risen_level(value, error)
-            note = f".  {count_note}" if is_count_held and value > error else ""
-            add(level, row, f"{said}, {over} {unit}, and more than the row {admitted[0]} keeps: {admitted[2]:g} "
-                            f"{unit} with the noise {noise:.0%}.  Make the test smaller.  When the growth is "
-                            f"wanted, write the measured value into the row{note}")
-        elif found == cost_budget.ERROR and is_count_held:
-            add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  {count_note}")
-        elif found == cost_budget.ERROR and is_tsan_time:
-            add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  The build kind {kind} "
-                                f"budgets no wall time, so the timeout of the test preset is the hard stop")
+            level = cost_budget.risen_level(measure, error)
+            message = (f"{said}, {over} {unit}, and more than the row {admitted[0]} keeps: {admitted[2]:g} {unit} with "
+                       f"the noise {noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured "
+                       f"value into the row")
         elif found == cost_budget.ERROR:
-            add("error", row, f"{said}, over the error threshold of {error:g} {unit}, and no row of "
-                              f"utils/ledgers/{row}.txt keeps it for {configuration or kind}.  Make the test smaller, "
-                              f"or split it into tests over disjoint cases")
+            level = "error"
+            message = (f"{said}, over the error threshold of {error:g} {unit}, and no row of utils/ledgers/{row}.txt "
+                       f"keeps it for {configuration or kind}.  Make the test smaller, or split it into tests over "
+                       f"disjoint cases")
         elif found == cost_budget.WARNING:
-            add("warning", row, f"{said}, over the warning threshold of {warn:g} {unit}")
+            level, message = "warning", f"{said}, over the warning threshold of {warn:g} {unit}"
+        else:
+            continue
+        findings.append((level, row, message))
     return findings
 
 
@@ -744,16 +690,12 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
 
 def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
                      run: cost_meter.Measurement, warnings_dir: str | None,
-                     budget: dict[str, tuple[float, float]] | None = None, is_measured: bool = True,
-                     version: str = "") -> int:
+                     budget: dict[str, tuple[float, float]] | None = None) -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
     `loop test-step` and `loop fixture` call this function.  The two then
     give the same record and the same verdict.  A failure to read the
     registry, to report or to write the record does not change the status.
-    The function reads the window of the test from its earlier record.  The
-    new record keeps the window with this run when the two runs have one
-    version, else this run alone (THE MEASURED RULES, THE VERSION).
 
     Args:
         name: The name of the test
@@ -763,9 +705,6 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         run: The measurement of the test, with its status
         warnings_dir: The warnings directory, or None
         budget: The thresholds of the rules, or None to read them from the registry (read_budget())
-        is_measured: False when the run does not do the work that a row keeps, such as a fixture with a result from
-            the store.  The window then does not take the run
-        version: The version of the test (version_of()), or the empty text when it is not known
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -775,25 +714,15 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     thresholds = read_budget() if budget is None else budget
     kind = cost_meter.read_kind(build_dir) if build_dir else None
     configuration = cost_meter.read_configuration(build_dir) if build_dir else None
-    record_path = cost_record.test_record_file(build_dir, name) if build_dir is not None else None
-    earlier_version, earlier_walls = cost_record.recent_window(record_path) if record_path is not None else ("", ())
-    # The runs of a different version, or of no version, are not runs of this test (THE VERSION).
-    earlier = earlier_walls if version and version == earlier_version else ()
-    # A run with a status other than 0, or a run that did not do the measured work, is judged alone.  It stays out of
-    # the window, and the record keeps the window of the earlier record.
-    is_counted = is_measured and status == 0
-    walls = (run.wall_s, *earlier)[:RECENT_RUNS] if is_counted else ()
     no_findings: list[tuple[str, str, str]] = []
-    findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration, walls=walls),
-                      no_findings)
+    findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration), no_findings)
     if status == 0 and any(level == "error" for level, _, _ in findings):
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
-    if record_path is not None:
+    if build_dir is not None:
+        record_path = cost_record.test_record_file(build_dir, name)
         counts = () if run.instructions is None else ((cost_record.TEST_COUNT_KEY, run.instructions),)
-        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run, counts),
-                                        walls if is_counted else earlier_walls,
-                                        version if is_counted else earlier_version)
+        record = cost_record.TestRecord(name, result, program, run.exit_code, cost_record.measured(run, counts))
         safely(lambda: cost_record.write(record_path, record), None)
     return status
 
@@ -882,7 +811,7 @@ def main(argv: list[str]) -> int:
         sys.exit(127)
     if plan is not None:
         safely(lambda: plan.save(run.exit_code), None)
-    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget, version=version)
+    status = judge_and_record(name, program, place, build_dir, run, options.warnings_dir, budget)
     stop_core_dumps()
     cost_meter.end_like(status)
     return status

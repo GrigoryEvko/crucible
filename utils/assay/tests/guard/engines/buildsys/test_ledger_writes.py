@@ -16,7 +16,7 @@ from assay.core import registry as rule_registry
 from assay.core import testing
 from assay.core.paths import REPO_ROOT
 from assay.guard import write as guard_write
-from assay.guard.engines.buildsys import header_constexpr, held, planted, test_time
+from assay.guard.engines.buildsys import header_constexpr, held, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.tests.guard.engines.buildsys.test_planted import context_of
 
@@ -71,7 +71,7 @@ def raised(action: object) -> str:
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Write the ledgers of the launcher rules from the records of a planted build (THE WRITE of test_time)."""
+    """Write the ledgers of the launcher rules from the records of a planted build (THE WRITE of held)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), RECORD_ROWS)
         ledgers = rule_ledger.ledger_path("test-memory", context.root).parent
@@ -89,13 +89,6 @@ def record_cases(expect: testing.Expect) -> None:
             },
         )
         expect("the write tells the ledger that it writes", "test-memory.txt holds 2 rows" in said)
-        status, _ = run_write(context, "test-time", "a planted reason")
-        expect(
-            "guard write writes the ledger of test-time with the wall time of each registered test over the error "
-            "threshold, and no row of a test that the build does not register, or of a test whose record holds an "
-            "instruction count",
-            status == 0 and ledger_values(context, "test-time") == {(KIND, "slow_test"): (40.0, "a planted reason")},
-        )
         status, said = run_write(context, "test-instructions", "a planted reason")
         expect(
             "guard write writes the ledger of the held rule test-instructions: a row with the count in G of each "
@@ -112,8 +105,8 @@ def record_cases(expect: testing.Expect) -> None:
         registry = rule_registry.load()
         other = rule_ledger.empty(registry.rules["compile-memory"])
         expect(
-            "written() of test_time refuses the ledger of a rule other than the rules of the test launcher",
-            "is not a ledger of" in raised(lambda: test_time.written(context, other, None)),
+            "test_written() of held refuses the ledger of a rule other than the rules of the test launcher",
+            "is not a ledger of" in raised(lambda: held.test_written(context, other, None)),
         )
         fixture_rule = registry.rules["fixture-instructions"]
         writer = held.WRITERS.pop(fixture_rule.id)

@@ -529,12 +529,13 @@ def self_test() -> int:
     earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
     with github_actions(False):
         expect("off a CI runner, a time error stays an error",
-               judged("error", "t.cpp", 0, "test-time", "slow") == Finding("error", "t.cpp", 0, "test-time", "slow"))
+               judged("error", "t.cpp", 0, "configure-time", "slow")
+               == Finding("error", "t.cpp", 0, "configure-time", "slow"))
         os.environ[cost_meter.GITHUB_ACTIONS_ENV] = "false"
         expect("GITHUB_ACTIONS=false is not a CI runner",
                judged("error", "t.cpp", 0, "configure-time", "m").level == "error")
     with github_actions(True):
-        demoted = judged("error", "t.cpp", 0, "test-time", "slow")
+        demoted = judged("error", "t.cpp", 0, "configure-time", "slow")
         expect("on a CI runner, a time error is a warning that says that it was demoted",
                demoted.level == "warning" and demoted.message == f"slow.  {cost_meter.CI_DEMOTION}.")
         expect("on a CI runner, a memory error stays an error",
@@ -545,9 +546,9 @@ def self_test() -> int:
                judged("warning", "t.cpp", 0, "configure-time", "w")
                == Finding("warning", "t.cpp", 0, "configure-time", "w"))
         with contextlib.redirect_stdout(io.StringIO()) as printed:
-            status = emit([demoted], "test-time", None)
+            status = emit([demoted], "configure-time", None)
         expect("on a CI runner, a demoted time error gives status 0 and an annotation",
-               status == 0 and "::warning file=t.cpp,title=test-time::" in printed.getvalue())
+               status == 0 and "::warning file=t.cpp,title=configure-time::" in printed.getvalue())
     expect("github_actions() puts the earlier value back", os.environ.get(cost_meter.GITHUB_ACTIONS_ENV) == earlier)
 
     if failures:
