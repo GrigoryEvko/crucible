@@ -9,5 +9,3 @@ set_tests_properties(guard_stray_rule PROPERTIES LABELS "ci_guard"
 add_test(NAME planted_launched COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop test-step
          --build-dir ${CMAKE_BINARY_DIR} ${CMAKE_BINARY_DIR}/planted_launched)
 set_tests_properties(planted_launched PROPERTIES ENVIRONMENT_MODIFICATION "GLIBC_TUNABLES=unset:")
-add_test(NAME planted_alone COMMAND ${CMAKE_BINARY_DIR}/planted_alone)
-set_tests_properties(planted_alone PROPERTIES ENVIRONMENT "PLANTED_TOOL=/opt/tool")

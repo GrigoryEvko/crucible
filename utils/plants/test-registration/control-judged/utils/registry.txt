@@ -1,0 +1,3 @@
+# a planted registry: each test runs behind the test launcher or the fixture driver, also a launcher of a different tree
+format 1
+rule stray-rule engine=meta scope=tracked ledger=none doc=XV | a planted refusal | fix the planted file

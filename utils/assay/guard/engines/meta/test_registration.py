@@ -38,11 +38,17 @@ THE RULE
                     launcher drops (assay.loop.teststep, THE ENVIRONMENT).  The test does not get the variable.
                     An item of ENVIRONMENT_MODIFICATION with such a variable is an error too, unless its operation
                     is `unset` or `reset`
+      unjudged      a test with no test launcher and no fixture driver in its command: no word of the command is
+                    the master loop with the subcommand test-step or fixture.  The test then gets no record, no
+                    judge of its memory and its instructions, and no clean environment.  CMake gives the launcher
+                    to a test of an executable target, and crucible_script_test() of cmake/TestLauncher.cmake
+                    gives it to a script test
 
 Complexity: O(t * a) for t tests of a arguments, and linear in the size of the modules of the package.
 """
 
 import ast
+import itertools
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -90,6 +96,15 @@ def master_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]]
         if resolved.is_relative_to(scripts_dir):
             return resolved.relative_to(root).as_posix(), words
     return None
+
+
+def is_judged(command: Sequence[str]) -> bool:
+    """Return True when a command starts the test launcher or the fixture driver: the master loop and its subcommand.
+
+    The master is the file name of a word, so a command of the master of a different tree counts too.  Complexity:
+    linear in the words of the command.
+    """
+    return any((Path(word).name, following) in (LAUNCHER, FIXTURE) for word, following in itertools.pairwise(command))
 
 
 def place_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, int]:
@@ -206,8 +221,8 @@ def dropped_variable(test: ctest_reader.TestEntry, path: str, line: int, prop: s
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each test with a master and no label, each unknown rule, each rule with no test, and each missing or unread
-    fixture."""
+    """Give each test with a master and no label, each unknown rule, each rule with no test, each missing or unread
+    fixture, each variable that the launcher drops, and each test with no judge."""
     if context.build_dir is None:
         raise NotApplicable("the rule reads the tests of a build directory.  Give --build-dir DIR")
     try:
@@ -223,6 +238,14 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     masters = 0
     for test in tests:
         found += environment_findings(test, root)
+        if not is_judged(test.command):
+            path, line = place_of(test, root)
+            # ctest gives no command for a test whose program it does not find.
+            shown = f"`{' '.join(test.command[:3])}`" if test.command else "a program that ctest does not find"
+            found.append(check_report.Finding(
+                "error", path, line, RULE, f"the test {test.name} runs {shown} with no test launcher and no fixture "
+                f"driver, so it gets no record, no judge of its cost and no clean environment.  Register it with "
+                f"crucible_script_test() of cmake/TestLauncher.cmake", "unjudged", test.name))
         run = master_of(test, root)
         if run is None:
             continue
