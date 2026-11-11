@@ -223,20 +223,15 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
     key = rule_ledger.Key
     expect(
-        "a reason row gives the reason of a count row under its prefix, and the longer prefix decides",
-        ledger.kept_reason(key("src/a.py", "kind", "")) == "the step of a planted plan removes them"
-        and ledger.kept_reason(key("src/deep/b.py", "kind", "")) == "a longer prefix gives this reason"
-        and ledger.kept_reason(key("c.py", "kind", "")) == "one file"
-        and ledger.kept_reason(key("other.py", "kind", "")) == "",
-    )
-    expect(
-        "the reason of a row of its own comes before the reason of a prefix, and reason_of() reads no prefix",
-        ledger.kept_reason(key("src/c.py", "kind", "")) == "an own reason"
+        "reason_of() gives the reason of a row of its own and reads no prefix",
+        ledger.reason_of(key("src/c.py", "kind", "")) == "an own reason"
         and ledger.reason_of(key("src/a.py", "kind", "")) == "",
     )
     expect(
-        "a prefix with no final slash holds only the equal path",
-        ledger.prefix_reason("c.py.old") is None and ledger.prefix_reason("srcx/a.py") is None,
+        "a prefix with a final slash holds each path under it, and a prefix with no final slash only the equal path",
+        any(item.holds("src/deep/b.py") for item in ledger.reasons)
+        and any(item.holds("c.py") for item in ledger.reasons)
+        and not any(item.holds("c.py.old") or item.holds("srcx/a.py") for item in ledger.reasons),
     )
     again = rule_ledger.parse(rule_ledger.render(ledger), "again", "count-rule", rule_registry.Policy.COUNT)
     expect(

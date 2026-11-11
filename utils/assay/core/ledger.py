@@ -58,7 +58,7 @@ THE REASON OF A PREFIX
     "/" as its last character holds each path that starts with it.  Each
     other PREFIX holds only the path that is equal to it.  When two rows hold
     a path, the longer PREFIX gives the reason.  The reason of a row of its
-    own comes before the reason of a prefix (kept_reason()).
+    own comes before the reason of a prefix.
 
     A count row that a reason row holds is a keep row, and the policy count
     applies to its counts.  The REASON names the step of the plan that
@@ -212,22 +212,6 @@ class Ledger:
         """Return the reason of the row of a key, or "" for a key with no row and for a row with no reason."""
         entry = self.base.get(key)
         return entry.reason if entry is not None else ""
-
-    def prefix_reason(self, path: str) -> PrefixReason | None:
-        """Return the reason row with the longest prefix that holds a path, or None (THE REASON OF A PREFIX).
-
-        Complexity: linear in the reason rows.
-        """
-        holding = [item for item in self.reasons if item.holds(path)]
-        return max(holding, key=lambda item: len(item.prefix)) if holding else None
-
-    def kept_reason(self, key: Key) -> str:
-        """Return the reason that keeps the findings of a key: of its own row (reason_of()), else of a prefix."""
-        own = self.reason_of(key)
-        if own:
-            return own
-        found = self.prefix_reason(key.path)
-        return found.reason if found is not None else ""
 
     def count_keys(self) -> set[Key]:
         """Return the key of each count row: each row with a count of a count ledger."""
