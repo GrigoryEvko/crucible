@@ -1,5 +1,5 @@
 # The mint has no fixture, and a row of the ledger of the tree admits it, so
-# the rule gives a warning and no error.
+# the rule gives no finding.
 compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
 exit sentinel pass
 judge sentinel
