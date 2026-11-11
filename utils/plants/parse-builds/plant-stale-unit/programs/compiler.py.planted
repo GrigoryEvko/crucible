@@ -1,0 +1,9 @@
+import pathlib
+import sys
+
+prefix = "-fplugin-arg-crucible_quarantine-out="
+out = pathlib.Path(next(word.removeprefix(prefix) for word in sys.argv if word.startswith(prefix)))
+out.mkdir(parents=True, exist_ok=True)
+(out / "a.cpp.0000000000000000.quarantine").write_text("# unit a.cpp\n", encoding="utf-8")
+source = next(word for word in sys.argv if word.endswith(".cpp"))
+pathlib.Path(sys.argv[sys.argv.index("-MF") + 1]).write_text(f"a.o: {source} {source}.gone.h\n", encoding="utf-8")

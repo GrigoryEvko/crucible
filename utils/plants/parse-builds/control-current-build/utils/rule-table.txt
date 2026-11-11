@@ -1,0 +1,4 @@
+# A planted rule table with the two light rows that the rule heavy-include needs: <meta> gives its base cost.
+# The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
+light <any> | 0.198 G, 3480 lines
+light <meta> | 1.957 G, 34799 lines

@@ -1,0 +1,4 @@
+# A planted parse build whose CMake cache names no cmake.  The build of its input targets then fails.
+format 1
+kind debug-asan
+cache CRUCIBLE_SYNTAX_ONLY type=BOOL | ON

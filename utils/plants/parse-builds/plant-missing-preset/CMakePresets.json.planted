@@ -1,0 +1,3 @@
+{"version": 6, "configurePresets": [
+  {"name": "syntax-x86-64-v3", "binaryDir": "${sourceDir}/build-syntax-x86-64-v3"}
+]}

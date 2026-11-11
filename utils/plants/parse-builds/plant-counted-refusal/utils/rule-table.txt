@@ -1,0 +1,3 @@
+# A planted rule table with no row of <meta>.  The rule heavy-include then has no base cost, and it refuses the build.
+# The heavy and the light rows.  `python3 utils/bin/loop derive header-costs --measure BUILD_DIR` writes each line after this one.
+light <any> | 0.198 G, 3480 lines

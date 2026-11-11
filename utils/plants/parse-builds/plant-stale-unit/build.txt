@@ -1,0 +1,6 @@
+# A planted parse build of one unit.  Its compiler names a dependency that does not exist, so the report is not current.
+format 1
+kind debug-asan
+cache CRUCIBLE_SYNTAX_ONLY type=BOOL | ON
+cache CMAKE_COMMAND type=FILEPATH | {root}/programs/cmake
+compile t.dir/a.cpp.o a.cpp all=yes record=no | {root}/programs/compiler -fplugin-arg-crucible_quarantine-stamp=s1 -c {root}/a.cpp -o {build}/t.dir/a.cpp.o

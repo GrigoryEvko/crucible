@@ -63,9 +63,9 @@ THE JOBSERVER
 THE CHECK
     plan_of() does step 1 of THE RUN, and it finds the units that keep their
     reports (THE KEPT REPORTS).  It parses nothing.  locked_plan() calls it
-    with the lock of the build.  The rules parse-x86-64-v3 and parse-aarch64
-    call it, and they refuse a parse build with a unit that has no current
-    report (assay.guard.engines.buildsys.parse_builds).
+    with the lock of the build.  The rule parse-builds calls it, and it
+    refuses a parse build with a unit that has no current report
+    (assay.guard.engines.buildsys.parse_builds).
 
     The parse of the 1019 units of the tree is a build.  On 2026-10-11 it
     took 62.0 s of wall time and 964 s of CPU time with 16 jobs.  The parse
@@ -106,12 +106,16 @@ THE CHANGE OF AN ARM
 
     A change of an arm makes each parse build of PARSE_PRESETS necessary,
     because the arms of one conditional go to the builds of different
-    targets.  `loop test` runs the parse builds of such a change after its
-    build (assay.loop.affected), and the rules parse-x86-64-v3 and
-    parse-aarch64 judge their reports (THE CHECK).
+    targets.  The change selects work and advice, and it gives no verdict.
     `loop syntax --changed` prints each preset that the change of ROOT makes
-    necessary, one on each line.  build_directory() gives the build
-    directory of a preset from the presets files of a tree.
+    necessary, one on each line, and the gate of `loop land` runs those
+    parse configurations (assay.loop.gate).  For such a change, `loop test`
+    prints the command that configures each parse build that is not
+    configured (assay.loop.affected).  `loop test` runs `loop syntax` on each
+    configured parse build after its build, also for a change with no arm,
+    and the rule parse-builds judges its reports (THE CHECK).
+    build_directory() gives the build directory of a preset from the presets
+    files of a tree.
 
 Exit status: 0 when each unit parses, 1 when a unit does not parse or a step
 fails, 2 on a usage error.  `guard selftest tests.loop.test_syntax` does a test
@@ -165,7 +169,7 @@ SHOWN_ERROR_LINES = 12
 JOBS = proc.DEFAULT_JOBS
 # The lock of the runs and the checks of one parse build, below the build directory (THE RUN).
 LOCK_FILE = Path("quarantine") / "syntax.lock"
-# The presets of the parse builds that a change of an arm makes necessary (THE CHANGE OF AN ARM).
+# The presets of the parse builds, which a change of an arm makes necessary (THE CHANGE OF AN ARM).
 PARSE_PRESETS = ("syntax-x86-64-v3", "syntax-aarch64")
 # The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
 ARCHITECTURES = frozenset(

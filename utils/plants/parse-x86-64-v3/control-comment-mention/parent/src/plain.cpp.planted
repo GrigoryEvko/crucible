@@ -1,2 +1,0 @@
-// A unit with no preprocessor arm.
-int one() { return 1; }

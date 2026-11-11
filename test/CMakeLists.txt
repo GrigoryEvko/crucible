@@ -4901,10 +4901,10 @@ endforeach()
 # The rules of the engine build read this build directory: the compile
 # database, the replies of the CMake file API, build.ninja and the logs of
 # Ninja, the records of the build launcher and of the tests, and the census
-# (cmake/Guards.cmake).  The rules parse-x86-64-v3 and parse-aarch64 read the
-# parse trees of the changed files, so their tests require the fixture
-# tsast_trees.  When the change holds an arm, each one judges the reports of
-# a parse build.  `loop test` parses that build before the tests.
+# (cmake/Guards.cmake).  The rule parse-builds judges the reports of each
+# configured parse build of the presets.  `loop test` parses each such build
+# before the tests.  The counted rule door-unit of a parse build reads parse
+# trees, so the test of parse-builds requires the fixture tsast_trees.
 # The rule reconfigure-noop configures a build again and builds it, and a
 # ctest test cannot do that to the build that runs it.  So it gets only its
 # witness, and a step of the CI build job runs the check.  The test of
@@ -4914,7 +4914,7 @@ endforeach()
 # CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top directory makes
 # these tests DEPEND on each fixture.
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop)
-set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees)
+set_tests_properties(guard_parse_builds PROPERTIES FIXTURES_REQUIRED tsast_trees)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)

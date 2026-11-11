@@ -181,13 +181,16 @@ THE TESTS THAT ALWAYS RUN
 
 THE PARSE BUILDS
     After the build, the script runs `loop syntax` on each configured parse
-    build that the change of the tree makes necessary (assay.loop.syntax, THE
-    CHANGE OF AN ARM).  The parse of a parse build is a build, and its time
-    goes into the build time of THE LOOP HISTORY.  The tests
-    guard_parse_x86_64_v3 and guard_parse_aarch64 then only judge the
-    reports.  A unit that does not parse stops the call before the tests, as
-    a build with an error does.  For a parse build that is not configured, the script
-    prints the command that configures it.
+    build of PARSE_PRESETS of assay.loop.syntax.  The parse keeps the report
+    of each unit that the tree did not change (THE KEPT REPORTS of
+    assay.loop.syntax), so it parses only what changed.  The parse of a
+    parse build is a build, and its time goes into the build time of THE
+    LOOP HISTORY.  The test guard_parse_builds then only judges the reports.
+    A unit that does not parse stops the call before the tests, as a build
+    with an error does.  The change of the tree selects only one line: for
+    a change of an arm, the script prints the command that configures each
+    parse build that is not configured (THE CHANGE OF AN ARM of
+    assay.loop.syntax).
 
 THE LAYERS
     ctest runs a test after each test that its property DEPENDS names.  In a
@@ -1656,11 +1659,26 @@ def build(build_dir: Path, jobs: int) -> int:
     return _run_inherited(words, environment)
 
 
-def parse_arms(source_root: Path, jobs: int) -> int:
-    """Run `loop syntax` on each configured parse build that the change of the tree makes necessary (THE PARSE BUILDS).
+def has_arm(source_root: Path) -> bool:
+    """Tell if the change of the tree holds an arm (THE CHANGE OF AN ARM of assay.loop.syntax).
 
-    Complexity: one read of the change, and one run of `loop syntax` for each configured parse build of a change of
-    an arm.
+    A change that the script cannot read holds no arm for this choice, because the choice selects only one line of
+    advice (THE PARSE BUILDS).
+    """
+    from assay.loop import syntax
+
+    try:
+        return bool(syntax.arm_files(source_root))
+    except syntax.ParseError as problem:
+        check_report.write_line(f"loop test: {problem}")
+        return False
+
+
+def parse_configured(source_root: Path, jobs: int) -> int:
+    """Run `loop syntax` on each configured parse build of the tree (THE PARSE BUILDS).
+
+    Complexity: one run of `loop syntax` for each configured parse build, and one read of the change when a parse
+    build is not configured.
 
     Returns:
         0 when each parse build that runs parses each unit, else 1
@@ -1668,25 +1686,23 @@ def parse_arms(source_root: Path, jobs: int) -> int:
     from assay.core import configuration as build_config
     from assay.loop import syntax
 
-    try:
-        arms = syntax.arm_files(source_root)
-    except syntax.ParseError as problem:
-        check_report.write_line(f"loop test: {problem}.  The script runs no parse build")
-        return 0
     status = 0
-    for preset in syntax.PARSE_PRESETS if arms else ():
+    advised: bool | None = None
+    for preset in syntax.PARSE_PRESETS:
         try:
             parse_build = syntax.build_directory(source_root, preset)
         except syntax.ParseError as problem:
             check_report.write_line(f"loop test: {problem}")
             continue
         if not build_config.is_parse_build(parse_build):
-            check_report.write_line(
-                f"loop test: the change holds an arm, and the parse build {parse_build} is not configured.  Configure "
-                f"it with `cmake --preset {preset}`"
-            )
+            advised = has_arm(source_root) if advised is None else advised
+            if advised:
+                check_report.write_line(
+                    f"loop test: the change holds an arm, and the parse build {parse_build} is not configured.  "
+                    f"Configure it with `cmake --preset {preset}`"
+                )
             continue
-        check_report.write_line(f"loop test: the change holds an arm, so the script parses {parse_build}")
+        check_report.write_line(f"loop test: the script parses the parse build {parse_build}")
         if syntax.run(parse_build, source_root, jobs) != 0:
             status = 1
     return status
@@ -1781,7 +1797,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if should_build and not plan_only:
             with recorder.start_build():
                 status = build(build_dir, jobs)
-                parse_status = parse_arms(Path(trees.source_root), jobs) if status == 0 else 0
+                parse_status = parse_configured(Path(trees.source_root), jobs) if status == 0 else 0
             recorder.finish_build(status or parse_status)
             if status != 0:
                 print(f"loop test: the build failed with exit code {status}.  No test ran.")
@@ -2278,7 +2294,14 @@ ARM_UNIT = "int lanes() {\n#if defined(__AVX2__)\n    return 16;\n#else\n    ret
 
 
 def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check parse_arms (THE PARSE BUILDS) on a fake git work tree with no configured parse build."""
+    """Check parse_configured (THE PARSE BUILDS) on a fake git work tree, first with no configured parse build.
+
+    The last case configures one parse build with no cmake in its cache.  The script then parses that build with no
+    change of the tree, and the parse fails.
+    """
+    from assay.core import configuration as build_config
+    from assay.readers import cmake as cmake_reader
+
     with tempfile.TemporaryDirectory(prefix="affected-parse-") as directory:
         source_root = Path(directory)
         (source_root / "CMakePresets.json").write_text(PARSE_PRESETS_TEXT)
@@ -2294,14 +2317,30 @@ def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
             unit.write_text(text)
             captured = io.StringIO()
             with contextlib.redirect_stdout(captured):
-                status = parse_arms(source_root, 4)
+                status = parse_configured(source_root, 4)
             output = captured.getvalue()
             names = all(f"cmake --preset {preset}" in output for preset in ("syntax-x86-64-v3", "syntax-aarch64"))
             expect(
-                f"parse_arms parses nothing for {label}, and names each parse build only for an arm",
+                f"parse_configured parses nothing for {label}, and names each parse build only for an arm",
                 status == 0 and names == should_name,
                 output,
             )
+        unit.write_text(PLAIN_UNIT)
+        parse_build = source_root / "build-syntax-x86-64-v3"
+        parse_build.mkdir()
+        cmake_reader.plant(parse_build, cache={build_config.SYNTAX_OPTION: ("BOOL", "ON")})
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            status = parse_configured(source_root, 4)
+        output = captured.getvalue()
+        expect(
+            "parse_configured parses a configured parse build also for a tree with no change, and a parse that fails "
+            "gives 1",
+            status == 1
+            and f"the script parses the parse build {parse_build}" in output
+            and "cmake --preset syntax-aarch64" not in output,
+            output,
+        )
 
 
 def planted_entry(name: str, *depends: str) -> ctest_reader.TestEntry:

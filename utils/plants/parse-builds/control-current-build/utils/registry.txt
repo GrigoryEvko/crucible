@@ -1,0 +1,6 @@
+# A planted registry: the counted rules of a parse build, with the limit of the rule heavy-include.
+format 1
+rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door,mixed-headers doc=XXII.R4 | the planted door rule | the planted remedy
+rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include,unmeasured-header limit=1.25 unit=x doc=XV.4 | the planted include rule | the planted remedy
+rule quarantine engine=plugin scope=base,quarantined ledger=count kinds=std-entity,opted-out,region doc=XXII.R11 | the planted quarantine rule | the planted remedy
+rule syscall-capability engine=plugin scope=tracked ledger=count kinds=raw-syscall,outside-door,denied-syscall doc=XXII.R4 | the planted system call rule | the planted remedy

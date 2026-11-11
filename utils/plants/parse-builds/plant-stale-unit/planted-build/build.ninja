@@ -1,0 +1,3 @@
+rule phony_rule
+  command = true
+build cmake_object_order_depends_target_t: phony_rule

@@ -305,10 +305,9 @@ jobs:
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-main-
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-
 
-      # Full history: the tests guard_parse_x86_64_v3 and guard_parse_aarch64
-      # read the change of the commit against its parent (THE CHANGE OF AN ARM
-      # of assay.loop.syntax).  A shallow clone has no parent, and the two rules
-      # then see no change.
+      # Full history: a guard that reads the change of the commit against its
+      # parent (THE CHANGE of assay.core.git) needs the parent, and a shallow
+      # clone has no parent.
       - name: Checkout
         uses: actions/checkout@v5
         with:
