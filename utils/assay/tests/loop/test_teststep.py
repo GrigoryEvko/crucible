@@ -516,12 +516,39 @@ def fallen_row_cases(expect: testing.Expect) -> None:
         Path(cost_meter.ledger_file("test-memory", directory)).write_text(
             f"format 1\nrule test-memory\n- | {kind} | 0.6 | test_planted | a planted row\n", encoding="utf-8"
         )
-        measured = test_launcher.judge("test_planted", run, budget, kind, directory)
+        measured = test_launcher.judge("test_planted", "test/test_planted", run, budget, kind, directory)
     expect(
         "a run under the limit gives no finding for the row that keeps the test, because a ledger fails only on a "
         "growth",
         measured == [],
     )
+
+
+def bench_scope_cases(expect: testing.Expect) -> None:
+    """Check that a test of the directory bench of the build has no judge, and that each other test has one."""
+    budget = {"test-memory": 1.5}
+    run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 2 * 1024 * 1024, 1.0, 0.0, None)
+    with tempfile.TemporaryDirectory(prefix="test-step-scope-") as directory:
+        build = str(Path(directory) / "build")
+        bench = test_launcher.program_item(f"{build}/bench/bench_heavy", build)
+        expect(
+            "program_item() gives the program relative to the build directory, and a program of PATH as it is",
+            bench == "bench/bench_heavy" and test_launcher.program_item("python3", build) == "python3",
+        )
+        expect(
+            "a test of the directory bench above the limit has no finding",
+            test_launcher.judge("bench_heavy", bench, run, budget, "x86_64-debug-asan", directory) == [],
+        )
+        judged = test_launcher.judge("test_heavy", "test/test_heavy", run, budget, "x86_64-debug-asan", directory)
+        expect(
+            "a test of a different directory above the limit has an error",
+            [row for _, row, _ in judged] == ["test-memory"],
+        )
+        outside = test_launcher.judge("test_away", "/elsewhere/bench/x", run, budget, "x86_64-debug-asan", directory)
+        expect(
+            "a program outside the build directory is judged, also in a directory with the name bench",
+            [row for _, row, _ in outside] == ["test-memory"],
+        )
 
 
 def version_unit_cases(expect: testing.Expect) -> None:
@@ -733,6 +760,7 @@ def main(argv: list[str]) -> int:
             planted_group(Planted.emulator_cases),
             planted_group(Planted.environment_cases),
             fallen_row_cases,
+            bench_scope_cases,
             version_unit_cases,
             launched_cases,
             environment_unit_cases,

@@ -272,8 +272,25 @@ def memo_cases(expect: testing.Expect) -> None:
             expect("with the caches off, no entry", cost_meter.rows_memo(rule, form, ledger) is None)
 
 
+def scope_cases(expect: testing.Expect) -> None:
+    """Tell which outputs of a build the measured rules judge (THE SCOPE)."""
+    cases = {
+        "bench/CMakeFiles/bench_x.dir/bench_x.cpp.o": False,
+        "bench/bench_x": False,
+        "test/CMakeFiles/test_x.dir/test_x.cpp.o": True,
+        "benchmarks/x.o": True,
+        "test/bench/x.o": True,
+        "/elsewhere/bench/x.o": True,
+        "../bench/x.o": True,
+    }
+    for output, wanted in cases.items():
+        expect(f"is_judged({output!r}) is {wanted}", cost_budget.is_judged(output) is wanted)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (verdict_cases, row_cases, judge_cases, rows_cases, memo_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (verdict_cases, row_cases, judge_cases, rows_cases, memo_cases, scope_cases),
     )

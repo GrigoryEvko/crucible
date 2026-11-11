@@ -1,0 +1,7 @@
+# A compile of the directory bench of the build ran 120 G user instructions, more than the limit 110 G.  No measured
+# rule judges an output of bench (THE SCOPE of utils/assay/core/budget.py), and the other compile is light, so the
+# rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile bench/CMakeFiles/bench_heavy.dir/bench_heavy.cpp.o bench/bench_heavy.cpp cpu=5 instructions=120
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=2

@@ -53,7 +53,9 @@ THE MEASURED RULES
         build, with a reason: '@build/OUTPUT | KIND | GB | - | REASON', with
         OUTPUT relative to the build directory (meter.py, THE REGISTRY AND THE
         LEDGERS).  The subcommand reads that ledger only for a step above the
-        limit.  A step that a row admits prints no line.
+        limit.  A step that a row admits prints no line.  The subcommand does
+        not judge the memory of an output in the directory bench of the build
+        (assay.core.budget, THE SCOPE).
     The subcommand prints at most one line, after the output of the command,
     in the format of utils/assay/core/report.py.  A GB is 2^30 bytes.
 
@@ -154,6 +156,16 @@ def step_paths(step: str, command: list[str]) -> tuple[str, str | None] | None:
     return os.path.abspath(output), None if source is None else os.path.abspath(source)
 
 
+def build_item(output: str) -> str:
+    """Return an output relative to the build directory that holds it, or the output when no build directory holds it.
+
+    Args:
+        output: The absolute output path
+    """
+    build_dir = cost_meter.build_dir_of(output)
+    return output if build_dir is None else os.path.relpath(output, build_dir)
+
+
 def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
     """Look for the ledger row that keeps an output above the limit of its memory row.
 
@@ -227,7 +239,8 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
                               f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
                               f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
         return "failed", None
-    if memory_row in budget and cost_budget.verdict(run.peak_gb, budget[memory_row], None) == cost_budget.ERROR:
+    is_over = memory_row in budget and cost_budget.verdict(run.peak_gb, budget[memory_row], None) == cost_budget.ERROR
+    if is_over and cost_budget.is_judged(build_item(output)):
         is_admitted, words = admission(memory_row, output, run.peak_gb)
         if is_admitted:
             return "built", None

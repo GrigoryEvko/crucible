@@ -1,0 +1,7 @@
+# An object of the directory bench of the build has 800 KB of machine code, more than the limit 768 KB.  No measured
+# rule judges an output of bench (THE SCOPE of utils/assay/core/budget.py), and the other object is small, so the rule
+# gives no finding.
+format 1
+kind x86_64-debug-asan
+compile bench/CMakeFiles/bench_wide.dir/bench_wide.cpp.o bench/bench_wide.cpp functions=_Z1cv:102400 text=716800
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp functions=_Z1av:1024

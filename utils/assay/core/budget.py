@@ -41,6 +41,16 @@ THE JUDGE
     judge() gives the finding of one verdict for a check of the engines: an
     error for ERROR and RISEN, and no finding for each other verdict.
 
+THE SCOPE
+    The measured rules of a compile, a link, an object and a test do not
+    judge the outputs of the directory bench of a build: its objects, its
+    links and its tests.  A bench measures a hot path on purpose, so its
+    cost follows from what it measures, and only a bench build makes it.
+    is_judged() reads an output relative to the build directory, and each
+    judge of such a rule calls it: the rules of cost_budgets, `loop step`
+    and `loop test-step`.  An output that is not in the build directory is
+    judged.
+
 THE ROWS
     The ledger of a rule of the policy max holds one row for each item and
     each build kind or configuration.  THE REGISTRY AND THE LEDGERS of
@@ -83,6 +93,21 @@ RISEN = "risen"
 NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02}
 # The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
 UNIT_TEXTS = {"G": "G instructions"}
+# The directory of a build whose outputs no measured rule judges (THE SCOPE).
+BENCH_DIRECTORY = "bench"
+
+
+def is_judged(output: str) -> bool:
+    """Tell if the measured rules judge an output, from its path relative to the build directory (THE SCOPE).
+
+    Args:
+        output: The output relative to the build directory, with '/' between its parts.  An absolute path or a path
+            that starts with '..' names an output outside the build directory
+
+    Returns:
+        False for an output in the directory bench of the build, else True
+    """
+    return output.split("/", 1)[0] != BENCH_DIRECTORY
 
 
 class Measure(Value):

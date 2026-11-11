@@ -534,6 +534,13 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
     expect("a link above the memory limit fails with a link-memory error",
            result.exit == 1 and not linked.exists() and found_line is not None
            and found_line.check == "link-memory")
+    benched = bench.root / "bench" / "bench_program"
+    benched.parent.mkdir()
+    result = bench.launch(bench.tool, link=True, output=benched)
+    expect("a link into the directory bench of the build above the memory limit is built with no line, because no "
+           "measured rule judges it",
+           result.exit == 0 and benched.exists() and last_finding(result.stderr) is None
+           and bench.record(benched).get("result") == "built")
 
 
 def run_interrupt(bench: Bench, verdicts: Verdicts) -> None:

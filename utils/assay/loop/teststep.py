@@ -136,7 +136,9 @@ THE MEASURED RULES
         format of utils/assay/core/report.py, and a test that passed fails
         with status 1.  The line names the program when the program is a
         file of the build directory, and the record of the test for a script
-        test.  At or below the limit, it prints no line.
+        test.  At or below the limit, it prints no line.  A test whose program
+        is in the directory bench of the build has no judge (assay.core.budget,
+        THE SCOPE).
       * A row of the ledger utils/ledgers/RULE.txt keeps a test above the
         limit: '- | KIND | VALUE | TEST | REASON'.  KIND is the name of the
         configuration of the build or its build kind, and VALUE is the
@@ -392,17 +394,31 @@ def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None
     return None if found is None else (f"{shown}:{found.line}", found.reason, found.value)
 
 
-def judge(name: str, run: cost_meter.Measurement, budget: dict[str, float],
+def program_item(program: str, build_dir: str | None) -> str:
+    """Return the program of a test relative to its build directory, or the program when the build does not hold it.
+
+    Args:
+        program: The program of the test: an absolute path, or a name that PATH resolves
+        build_dir: The absolute build directory, or None
+    """
+    if build_dir is None or not program.startswith(build_dir + os.sep):
+        return program
+    return os.path.relpath(program, build_dir)
+
+
+def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float],
           kind: str | None, ledgers: str | None = None,
           configuration: str | None = None) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
     The witness of test-memory judges the planted record of a test with this
     function, and with the ledgers of the copy of a plant
-    (assay.guard.engines.buildsys.held).
+    (assay.guard.engines.buildsys.held).  A test of the directory bench of
+    the build has no judge (assay.core.budget, THE SCOPE).
 
     Args:
         name: The name of the test
+        program: The program of the test relative to the build directory (program_item())
         run: The measurement of the command, with its accurate instruction count or None
         budget: The limit of each measured rule that the registry gives
         kind: The kind of the build, or None
@@ -413,6 +429,8 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, float],
         One (level, rule, message) for each rule with a finding
     """
     findings: list[tuple[str, str, str]] = []
+    if not cost_budget.is_judged(program):
+        return findings
     measures = [("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
     if run.instructions is not None:
         giga = run.instructions / GIGA
@@ -700,7 +718,8 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     kind = cost_meter.read_kind(build_dir) if build_dir else None
     configuration = cost_meter.read_configuration(build_dir) if build_dir else None
     no_findings: list[tuple[str, str, str]] = []
-    findings = safely(lambda: judge(name, run, thresholds, kind, configuration=configuration), no_findings)
+    item = program_item(program, build_dir)
+    findings = safely(lambda: judge(name, item, run, thresholds, kind, configuration=configuration), no_findings)
     if status == 0 and any(level == "error" for level, _, _ in findings):
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)

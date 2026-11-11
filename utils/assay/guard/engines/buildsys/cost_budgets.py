@@ -4,7 +4,8 @@ THE INPUTS
     The compile database of the build names each compile job and its object.
     The code model of the CMake file API names each linked output: an
     executable, a shared library or a module.  A rule reads only the outputs
-    that are there.  A target that the build does not make, such as a
+    that are there, and no output of the directory bench of the build
+    (assay.core.budget, THE SCOPE).  A target that the build does not make, such as a
     negative fixture, has no output to read.  The kind of the build and the
     name of its configuration give the ledger rows that apply
     (assay.core.meter).  The kind is the one line of BUILD_DIR/build-kind.txt,
@@ -627,6 +628,8 @@ def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
 def measured_of(context: BuildContext, rule_id: str) -> Measured:
     """Measure each item of a rule, and give the errors of its inputs.
 
+    The rule measures no output of the directory bench of the build (assay.core.budget, THE SCOPE).
+
     Raises:
         NotApplicable: If the rule does not apply to the build
     """
@@ -634,6 +637,8 @@ def measured_of(context: BuildContext, rule_id: str) -> Measured:
         outputs, problems = link_outputs(context, rule_id)
     else:
         outputs, problems = compile_outputs(context, rule_id)
+    build = context.require_build()
+    outputs = [output for output in outputs if cost_budget.is_judged(build_census.shown(output.path, build))]
     if not outputs:
         return Measured(problems=tuple(problems))
     if rule_id in STEP_RULES:
