@@ -4,13 +4,12 @@ THE RULE
     assay.core.registry.examine() reads each row of utils/registry.txt and
     gives each problem:
       - A line that does not obey the rows grammar
-      - A row kind that is not format, rule, job, path or term
+      - A row kind that is not format, rule, job or path
       - A missing field, an unknown field, and a second field with the same key
       - An engine or a policy that is not one of its words
       - A measured rule with only some of the fields `warn`, `error` and `unit`
       - A warning threshold above the error threshold, and an unknown unit
       - A rule with no two cells
-      - A term with no category of rule 1.5 or rule 1.12
       - A second row with the same key.
     This rule also refuses these rows:
       - A doc field that names no section of the guide

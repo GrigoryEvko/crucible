@@ -6,11 +6,8 @@
 #   rule ID engine=ENGINE scope=SCOPE ledger=POLICY [FIELD=VALUE]... doc=REF | WHAT THE RULE REFUSES | THE ACTION
 #   job ENTITY module=OWNER[,OWNER...] | WHY THE JOB HAS ONE OWNER
 #   path GLOB | WHAT THE FILES ARE
-#   term WORD category=CATEGORY | ITS MEANING IN THIS PROJECT
 #
-# An owner of a job is a module of the package, such as assay.core.proc, or a master, such as bin.guard.  A term row
-# gives a word that the STE dictionary refuses, and its category: a technical-noun category noun-N of rule 1.5, or a
-# technical-verb category verb-N of rule 1.12.
+# An owner of a job is a module of the package, such as assay.core.proc, or a master, such as bin.guard.
 #
 # A measured rule has warn, error and unit.  A value over the warning threshold gives a warning, which does not
 # fail.  A value over the error threshold gives an error, which fails.  A value equal to a threshold does not
@@ -168,42 +165,6 @@ job repository-root module=assay.core.paths | one module finds the root of the t
 job row-bar module=assay.core.rows | one reader divides a row at its bars, and each data file has one grammar
 job subprocess module=assay.core.proc | each process start has a time limit, a known environment and no shell, and the process group of a command stops at its limit
 job sys.path module=bin.guard,bin.loop,bin.setup | a master changes the module path before it imports the package, and no module changes it
-
-term acceptance category=noun-15 | the tests of a gate, as in the rule vessel-acceptance and the acceptance tests of a stage of the plan
-term admit category=verb-2b | a row of a ledger of the policy admit admits a finding: the rule then gives a warning, and no error, for that finding
-term annotation category=noun-19 | a type annotation of Python: the type of a parameter, of a return value or of a field
-term block category=noun-19 | a block of source code: the statements that a with, a try, an if or an except holds
-term bump category=noun-19 | a bump pointer and a bump arena: an allocator that moves one pointer forward for each allocation
-term capability category=noun-19 | a value of a type of the effect system that gives the right to one effect, such as the capability Alloc
-term cross category=noun-19 | a cross compiler and a cross package: a compiler that operates on one architecture and writes the machine code of a different architecture, and a package that such a compiler uses
-term escape category=verb-2b | to write a backslash before a character of a text: a reader then reads the character, and not a mark of the grammar
-term evaluate category=verb-3a | to calculate the value of an expression, as the compiler does in a constant evaluation
-term evaluation category=noun-19 | a constant evaluation of C++: the calculation of an expression at compile time
-term event category=noun-19 | an event of the kernel or of a counter of the processor, such as a perf event
-term evidence category=noun-19 | the evidence of a sampled check at a key: the passes, the CPU seconds of a search, the valid measurements or the runs that the store of `loop evidence` keeps for the key
-term extent category=noun-19 | the number of the items of a view or of an array of C++, as in std::extent and a fixed extent
-term finding category=noun-19 | one record of a rule of the utils system: a place, a level, a kind, an entity and a message
-term harden category=verb-2c | to give a program or a library the properties that make an attack more difficult: a load address that changes on each start, relocations that are read-only after the start, a stack that is not executable and the control-flow protection of the processor
-term hook category=noun-19 | a point of the compiler where a GCC plugin gets control, such as PLUGIN_FINISH_UNIT
-term independent category=noun-19 | a part of the terms position-independent code and position-independent executable (PIE): machine code that operates at each address at which the loader puts it
-term kind category=noun-19 | the part of a rule that a finding belongs to, such as std-object of the rule quarantine
-term main category=noun-19 | the name of the primary branch of the repository, and the function main of a module
-term match category=verb-2b | to agree with a pattern: a glob matches a path, and a regular expression matches a text
-term option category=noun-19 | an option of a command line, such as --write, or an option of the compiler
-term pack category=noun-19 | a parameter pack of C++: the list of the types or the values of a variadic template
-term pass category=noun-19 | a run of a test with the status 0, and the unit passes of a measured rule that counts such runs
-term program category=noun-19 | a program that a computer starts: an executable file or a script
-term raise category=verb-2c | to raise an exception in Python.  The heading Raises: of a docstring gives the exceptions of a function
-term reason category=noun-19 | the reason cell of a ledger row, and the reason text of an opt-out region
-term reflect category=verb-2c | to give the reflection of a declaration of C++, as the operator ^^ does
-term round category=noun-19 | one run of each selected test in the runner of the kind repetition of `loop evidence`
-term settle category=noun-7 | the settle period of a result store: a file that changed in that period before a build makes the store keep no result of the build
-term stage category=noun-19 | a stage of a pipeline of threads, and a stage of the plan of the migration
-term state category=noun-19 | the values that a program or an object holds at one time, as in a state machine
-term swap category=noun-19 | the swap space of a host, and an atomic swap of a pointer
-term transition category=noun-19 | a transition of a state machine from one state to the next state
-term unpack category=verb-2c | to write the files of an archive into a directory, as tar and the installer of a pinned tool do
-term usage category=noun-19 | the usage text of a command: the words of its command line
 
 path test/harness/check_output.py | a test of three C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/admitted-audit.txt | the audit table of the admitted list: one row for each admit row of the rule table and for each candidate of the plan
