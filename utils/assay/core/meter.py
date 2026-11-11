@@ -749,10 +749,13 @@ def item_cells(item: str, form: str) -> tuple[str, str]:
     return "", item
 
 
-def rows_memo(rule_id: str, form: str, path: str) -> tuple[str, bool] | None:
+def rows_memo(rule_id: str, form: str, path: str, settle_ns: int = ROWS_SETTLE_NS) -> tuple[str, bool] | None:
     """Return the entry of the rows of a ledger in the cache, and True when each input settled (THE MEMO OF THE ROWS).
 
-    The result is None with no cache, or when an input cannot be read.
+    The result is None with no cache, or when an input cannot be read.  An
+    input settled when it did not change in `settle_ns` before the call.  A
+    test gives a long period, so that its result does not change with the
+    load of the host.
     """
     from assay.core import cache_root
 
@@ -771,7 +774,7 @@ def rows_memo(rule_id: str, form: str, path: str) -> tuple[str, bool] | None:
     fields = [[item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns] for item in statuses]
     material = json.dumps([ROWS_FORMAT, rule_id, form, os.path.realpath(path), fields])
     digest = hashlib.sha256(material.encode("utf-8", "surrogateescape")).hexdigest()[:32]
-    is_settled = has_settled(max(item.st_ctime_ns for item in statuses), ROWS_SETTLE_NS)
+    is_settled = has_settled(max(item.st_ctime_ns for item in statuses), settle_ns)
     return os.path.join(base, ROWS_CACHE, digest[:2], f"{digest}.json"), is_settled
 
 
@@ -816,8 +819,9 @@ def write_rows_memo(entry: str, rows: dict[tuple[str, str], tuple[int, float, st
             pass
 
 
-def read_kind_rows(rule_id: str, form: str, path: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]],
-                                                                list[tuple[int, str]], str]:
+def read_kind_rows(rule_id: str, form: str, path: str,
+                   settle_ns: int = ROWS_SETTLE_NS) -> tuple[dict[tuple[str, str], tuple[int, float, str]],
+                                                             list[tuple[int, str]], str]:
     """Read the ledger of a measured rule of the policy max: each row by its build kind and its item.
 
     THE REGISTRY AND THE LEDGERS gives the rows.  A ledger that does not exist
@@ -828,6 +832,7 @@ def read_kind_rows(rule_id: str, form: str, path: str) -> tuple[dict[tuple[str, 
         rule_id: The ID of the measured rule
         form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
         path: The ledger, from ledger_file()
+        settle_ns: The settle period of the entry of the cache (rows_memo())
 
     Returns:
         Each row by its kind and its item, with its line, its value and its reason; each problem with its line, or
@@ -839,7 +844,7 @@ def read_kind_rows(rule_id: str, form: str, path: str) -> tuple[dict[tuple[str, 
     shown = shown_ledger(path)
     if not os.path.isfile(path):
         return {}, [], shown
-    memo = rows_memo(rule_id, form, path)
+    memo = rows_memo(rule_id, form, path, settle_ns)
     held = read_rows_memo(memo[0]) if memo is not None else None
     if held is not None:
         return held[0], held[1], shown

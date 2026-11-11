@@ -16,6 +16,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 
 BUDGET = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
+UNSETTLED_NS = 3_600_000_000_000
 
 
 def rows_of(admitted: dict[str, float]) -> cost_budget.Rows:
@@ -273,10 +274,11 @@ def memo_cases(expect: testing.Expect) -> None:
         ledger = str(Path(scratch) / "compile-memory.txt")
         cost_meter.write_kind_rows(rule, form, ledger, {("k", "unit.o"): (5.0, "a planted reason")}, "# planted\n")
         with cache.scratch_root():
-            memo = cost_meter.rows_memo(rule, form, ledger)
-            first, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
+            memo = cost_meter.rows_memo(rule, form, ledger, UNSETTLED_NS)
+            first, _, _ = cost_meter.read_kind_rows(rule, form, ledger, UNSETTLED_NS)
             expect(
-                "a ledger that changed in the settle period gives its rows, and no entry",
+                "a ledger that changed in the settle period gives its rows, and no entry.  The case gives a settle "
+                "period of an hour, so that the load of the host cannot settle the ledger before the read",
                 memo is not None
                 and not memo[1]
                 and first == {("k", "unit.o"): (4, 5.0, "a planted reason")}
