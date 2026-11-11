@@ -124,10 +124,6 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     ]
 
 
-def no_inputs(_root: Path) -> None:
-    """Read no input: the verdict reads only the counts and the ledger."""
-
-
 def evaluate(
     counts: Mapping[Key, int], ledger: rule_ledger.Ledger, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
@@ -186,7 +182,7 @@ def evaluate(
 # The line that tells the includes, the rows and the files of one run or one write.
 summary = counted.summary_of(RULE, "includes of a heavy or an unmeasured header", "files", "objects")
 
-SPEC = counted.CountedRule(RULE, findings, no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL)
+SPEC = counted.CountedRule(RULE, findings, counted.no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL)
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:

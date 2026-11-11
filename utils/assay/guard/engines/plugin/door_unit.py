@@ -47,11 +47,14 @@ from pathlib import Path
 
 from assay.core import report as check_report
 from assay.core import ruletable
-from assay.guard.engines.plugin import declarations, names, quarantine, runner
+from assay.core.paths import REPO_ROOT
+from assay.guard.engines.plugin import declarations, names, runner
 from assay.readers import sections as plugin_sections
 from assay.readers import tsast
 
 RULE = "door-unit"
+# The rule table of a tree, relative to its root.
+TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 ACTIONS = {
     "header-door": "has a header as its door, so each unit that includes the header gets the system declarations of "
     "the door.  Move the door into a source file of src/fixy/os/ or src/foundation/os/, and keep only declarations "
@@ -94,7 +97,7 @@ def stale_rows(root: Path) -> list[check_report.Finding]:
     Raises:
         BuildError: If the rule table or an owner cannot be read
     """
-    path = root / quarantine.TABLE
+    path = root / TABLE
     if not path.is_file():
         return []
     try:
@@ -116,7 +119,7 @@ def stale_rows(root: Path) -> list[check_report.Finding]:
         found.append(
             check_report.Finding(
                 "error",
-                str(quarantine.TABLE),
+                str(TABLE),
                 line,
                 RULE,
                 f"{text}.  The row is stale: remove it, or include the header in its owner",

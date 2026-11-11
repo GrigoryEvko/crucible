@@ -48,15 +48,9 @@ THE POLICIES
               digits reads as an int, which is accurate to 10^18.  A number
               with a decimal point reads as a float.  The rule judges its sum
               against the row, so compare() does not read this policy.
-    A row of the policy count or admit that admits a finding gives a warning
-    on each run, one warning for each PATH, so each admitted item stays in
-    the output of the rule.  The text of the warning tells the action of the
-    policy: a count falls when its findings go, and an admit row gives its
-    reason.  A count row with a reason is a keep row: its
-    reason tells why its findings stay.  The text of a keep row gives that
-    reason as the cause, and it does not tell the reader to remove a finding.
-    The text of a count row with no reason tells the reader to remove a
-    finding and to lower its count.
+    A finding that a row of the policy count or admit admits gives no
+    output.  `guard list --path FILE` prints the rows of a file.  A count row
+    with a reason is a keep row: its reason tells why its findings stay.
 
 THE REASON OF A PREFIX
     A row `reason PREFIX | REASON` gives the reason of each count row of a
@@ -499,120 +493,13 @@ def described(key: Key) -> str:
     return " ".join(parts) if parts else "the finding"
 
 
-def prefix_text(prefix: PrefixReason | None) -> str:
-    """Return the words that name the reason row of a prefix for a warning, or an empty text for no row."""
-    if prefix is None:
-        return ""
-    return f".  The row `{REASON_WORD} {prefix.prefix}` at line {prefix.line} gives the reason: {prefix.reason}"
-
-
-def kept_words(ledger: Ledger, keys: Iterable[Key]) -> tuple[str, str]:
-    """Return the words of a warning of a group of kept counts: their reason state and the reason rows of a prefix.
-
-    A rule that gives one warning for each directory, such as the rule
-    quarantine, uses the two texts.  The first text comes after its count, and
-    the second text comes at the end of its message.  The first text is
-    ", each with its reason" when each key has a reason.  The reason can be
-    that of the row of the key or that of a prefix.  The second text names the
-    reason rows that give the reason of a key with no reason of its own.
-    Complexity: linear in the keys times the reason rows.
-    """
-    listed = list(keys)
-    if not listed or any(not ledger.kept_reason(key) for key in listed):
-        return "", ""
-    used = {ledger.prefix_reason(key.path) for key in listed if not ledger.reason_of(key)}
-    rows = sorted((item for item in used if item is not None), key=lambda item: item.line)
-    if len(rows) > 1:
-        lines = ", ".join(str(item.line) for item in rows)
-        return (", each with its reason", f".  The reason rows at the lines {lines} give the reasons")
-    return ", each with its reason", prefix_text(rows[0] if rows else None)
-
-
-def admitted_text(
-    rule: Rule,
-    path: str,
-    total: int,
-    shown: str,
-    by_admit: int = 0,
-    by_reason: int = 0,
-    prefix: PrefixReason | None = None,
-) -> str:
-    """Return the message of the warning of one path with admitted findings, with the action of the policy.
-
-    `by_admit` is the number of the findings that a row with the value admit admits (AN ADMIT ROW OF A COUNT
-    LEDGER).  `by_reason` is the number of the findings that keep rows count (THE POLICIES).  A keep row has a reason
-    of its own or of a prefix.  `prefix` is the reason row of the path (THE REASON OF A PREFIX).
-    """
-    admit = (
-        f"{path} has {total} findings that rows of the ledger admit: {shown}.  Each row gives its reason, and a "
-        f"row that admits no finding gives no error.  `python3 utils/bin/guard explain {rule.id}` gives the rule"
-    )
-    if rule.policy != Policy.COUNT or by_admit == total:
-        return admit
-    command = f"`python3 utils/bin/guard write --rule {rule.id}`"
-    admit_part = f".  Rows with the value admit admit {by_admit} of them, each with its reason" if by_admit else ""
-    if by_admit + by_reason == total:
-        return (
-            f"{path} has {total} findings that rows of the ledger keep, each with its reason: {shown}.  The reason of "
-            f"each row tells why its findings stay.  A count decreases when a change removes one of its findings, "
-            f"and {command} writes the lower count{admit_part}{prefix_text(prefix)}"
-        )
-    counted = (
-        f"{path} keeps {total} findings that the ledger counts: {shown}.  Remove a finding, and {command} lowers "
-        f"its count"
-    )
-    if by_reason:
-        counted += (
-            f".  Keep rows count {by_reason} of them, and the reason of each such row tells why its findings stay"
-        )
-    return counted + admit_part + prefix_text(prefix)
-
-
-def admitted_warnings(
-    rule: Rule,
-    admitted: Mapping[str, Counter[str]],
-    lines: Mapping[str, int],
-    by_admit: Mapping[str, int] | None = None,
-    by_reason: Mapping[str, int] | None = None,
-    prefixes: Mapping[str, PrefixReason] | None = None,
-) -> list[check_report.Finding]:
-    """Return one warning for each path with admitted findings: the number of findings of each kind.
-
-    `by_admit` gives the number of the findings of each path that a row with the value admit admits, `by_reason` the
-    number that keep rows count, and `prefixes` the reason row of a prefix that gives the reason of a path.
-    """
-    findings: list[check_report.Finding] = []
-    for path, kinds in sorted(admitted.items()):
-        shown = ", ".join(f"{kind or 'no kind'} {count}" for kind, count in sorted(kinds.items()))
-        findings.append(
-            check_report.Finding(
-                "warning",
-                shown_path(rule.id),
-                lines.get(path, 0),
-                rule.id,
-                admitted_text(
-                    rule,
-                    path,
-                    sum(kinds.values()),
-                    shown,
-                    (by_admit or {}).get(path, 0),
-                    (by_reason or {}).get(path, 0),
-                    (prefixes or {}).get(path),
-                ),
-                "admitted",
-                path,
-            )
-        )
-    return findings
-
-
 def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]) -> list[check_report.Finding]:
     """Judge the findings of a rule against its ledger (THE POLICIES).
 
     The errors of the rule are its violations.  A warning of the rule passes
-    with no change.  A count below its row and a row that admits no finding
-    give no finding (THE POLICIES).  Complexity: O(f log f + r) for f
-    findings and r rows.
+    with no change.  A finding that a row admits, a count below its row and a
+    row that admits no finding give no finding (THE POLICIES).  Complexity:
+    O(f log f + r) for f findings and r rows.
 
     Raises:
         LedgerError: If the policy of the rule is max or baseline, which the rule judges itself
@@ -626,62 +513,27 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
     by_key: dict[Key, list[check_report.Finding]] = {}
     for finding in errors:
         by_key.setdefault(key_of(finding), []).append(finding)
-    admitted: dict[str, Counter[str]] = {}
-    lines: dict[str, int] = {}
-    by_admit: Counter[str] = Counter()
-    by_reason: Counter[str] = Counter()
-    prefixes: dict[str, PrefixReason] = {}
-    if rule.policy == Policy.COUNT:
-        expected = ledger.expected()
-        admits = ledger.admits()
-        held = {key.path for key in expected} | {key.path for key in admits}
-        for key in sorted(set(by_key) | set(expected) | set(admits)):
-            measured, allowed = len(by_key.get(key, [])), expected.get(key, 0)
-            if key in admits:
-                admit_verdict(key, admits[key], measured, admitted, lines)
-                by_admit[key.path] += measured
-            elif measured > allowed:
-                said = (
-                    "and the ledger holds no row of the file.  A new file has no finding"
-                    if key.path not in held
-                    else f"and the ledger admits {allowed}.  A change can only lower a count"
-                )
-                result += [
-                    replace(
-                        finding,
-                        message=f"{finding.message}.  The file has {measured} findings of {described(key)}, {said}",
-                    )
-                    for finding in by_key[key]
-                ]
-            elif measured > 0:
-                admitted.setdefault(key.path, Counter())[key.kind] += measured
-                lines.setdefault(key.path, ledger.line_of(key))
-                if ledger.kept_reason(key):
-                    by_reason[key.path] += measured
-                prefix = None if ledger.reason_of(key) else ledger.prefix_reason(key.path)
-                if prefix is not None:
-                    prefixes[key.path] = prefix
-    else:
-        for key, items in sorted(by_key.items()):
-            if key not in ledger.base:
-                result += items
-        for key, entry in sorted(ledger.base.items()):
-            admit_verdict(key, entry, len(by_key.get(key, [])), admitted, lines)
-    return result + admitted_warnings(rule, admitted, lines, by_admit, by_reason, prefixes)
-
-
-def admit_verdict(
-    key: Key, entry: Entry, measured: int, admitted: dict[str, Counter[str]], lines: dict[str, int]
-) -> None:
-    """Add the findings of the key of one row with the value admit to `admitted`, and its line to `lines`.
-
-    The warning of its path reads the two.  A row that admits no finding gives nothing, and a complete write removes
-    it (THE POLICIES).
-    """
-    if measured == 0:
-        return
-    admitted.setdefault(key.path, Counter())[key.kind] += measured
-    lines.setdefault(key.path, entry.line)
+    if rule.policy != Policy.COUNT:
+        return result + [item for key, items in sorted(by_key.items()) if key not in ledger.base for item in items]
+    expected = ledger.expected()
+    admits = ledger.admits()
+    held = {key.path for key in expected} | {key.path for key in admits}
+    for key, items in sorted(by_key.items()):
+        allowed = expected.get(key, 0)
+        if key in admits or len(items) <= allowed:
+            continue
+        said = (
+            "and the ledger holds no row of the path.  A new path has no finding"
+            if key.path not in held
+            else f"and the ledger admits {allowed}.  A change can only lower a count"
+        )
+        result += [
+            replace(
+                finding, message=f"{finding.message}.  The path has {len(items)} findings of {described(key)}, {said}"
+            )
+            for finding in items
+        ]
+    return result
 
 
 def largest_counts(builds: Iterable[Mapping[Key, int]]) -> dict[Key, int]:

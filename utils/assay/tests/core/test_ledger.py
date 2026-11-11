@@ -148,33 +148,34 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         count, rule_ledger.empty(count), [finding("a.py"), finding("a.py")], mode=rule_ledger.WriteMode.RAISE
     )
     judged = rule_ledger.compare(count, ledger, [finding("a.py"), finding("a.py")])
-    expect(
-        "findings at their count give one warning for each path, and no error",
-        not errors(judged) and len(judged) == 1 and "keeps 2 findings" in judged[0].message,
+    expect("findings at their count give no finding: an admitted row gives no warning", judged == [])
+    kept = rule_ledger.write(
+        count,
+        rule_ledger.empty(count),
+        [finding("a.py"), finding("a.py")],
+        mode=rule_ledger.WriteMode.ADMIT,
+        reason="a planted reason",
     )
     expect(
-        "the warning of a count row with no reason tells the reader to remove a finding and to lower its count",
-        "Remove a finding" in judged[0].message
-        and "lowers its count" in judged[0].message
-        and "guard write --rule count-rule" in judged[0].message,
+        "a keep row, a count row with a reason, gives no finding either",
+        rule_ledger.compare(count, kept, [finding("a.py"), finding("a.py")]) == [],
     )
-    keep_cases(expect, count)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")] * 3)
     expect("a count above its row is an error at each finding", len(errors(judged)) == 3)
     judged = rule_ledger.compare(count, ledger, [finding("a.py")])
-    expect(
-        "a count below its row gives no error, and the warning of its path counts the findings of the build",
-        not errors(judged) and len(judged) == 1 and "keeps 1 findings" in judged[0].message,
-    )
+    expect("a count below its row gives no finding", judged == [])
     judged = rule_ledger.compare(count, ledger, [])
     expect("a count row with no finding of the build gives no finding", judged == [])
     judged = rule_ledger.compare(count, ledger, [*([finding("a.py")] * 2), finding("new.py")])
     expect(
-        "a finding in a file that the ledger does not hold is an error",
-        any(item.path == "new.py" and "A new file has no finding" in item.message for item in errors(judged)),
+        "a finding in a path that the ledger does not hold is an error",
+        any(item.path == "new.py" and "A new path has no finding" in item.message for item in errors(judged)),
     )
     judged = rule_ledger.compare(count, ledger, [*([finding("a.py")] * 2), finding("a.py", level="warning")])
-    expect("a warning of the rule passes with no change", sum(item.level == "warning" for item in judged) == 2)
+    expect(
+        "a warning of the rule passes with no change, and it is the one finding",
+        [item.level for item in judged] == ["warning"],
+    )
     admit = table["admit-rule"]
     ledger = rule_ledger.write(
         admit,
@@ -184,13 +185,7 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         reason="a planted reason",
     )
     judged = rule_ledger.compare(admit, ledger, [finding("a.py", rule_id="admit-rule")])
-    expect("an admitted finding gives a warning", not errors(judged) and len(judged) == 1)
-    expect(
-        "the warning of the policy admit tells that each row gives its reason, and asks for no removal",
-        "Each row gives its reason" in judged[0].message
-        and "Remove" not in judged[0].message
-        and "lower" not in judged[0].message,
-    )
+    expect("an admitted finding gives no finding", judged == [])
     judged = rule_ledger.compare(admit, ledger, [])
     expect("a row that admits no finding gives no finding", judged == [])
     judged = rule_ledger.compare(admit, ledger, [finding("b.py", rule_id="admit-rule")])
@@ -215,38 +210,8 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     )
 
 
-def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
-    """Check the warning of a keep row: a count row with a reason, which tells why its findings stay."""
-    kept = rule_ledger.write(
-        count,
-        rule_ledger.empty(count),
-        [finding("a.py"), finding("a.py")],
-        mode=rule_ledger.WriteMode.ADMIT,
-        reason="a planted reason",
-    )
-    judged = rule_ledger.compare(count, kept, [finding("a.py"), finding("a.py")])
-    message = judged[0].message if len(judged) == 1 else ""
-    expect(
-        "the warning of a keep row gives its reason as the cause, and it asks for no removal",
-        not errors(judged)
-        and "each with its reason" in message
-        and "tells why its findings stay" in message
-        and "Remove" not in message
-        and "guard write --rule count-rule" in message,
-    )
-    mixed = rule_ledger.write(
-        count, kept, [finding("a.py"), finding("a.py"), finding("a.py", kind="other")], mode=rule_ledger.WriteMode.RAISE
-    )
-    judged = rule_ledger.compare(count, mixed, [finding("a.py"), finding("a.py"), finding("a.py", kind="other")])
-    message = judged[0].message if len(judged) == 1 else ""
-    expect(
-        "a path with a keep row and a count row with no reason asks for a removal, and names the keep rows",
-        not errors(judged) and "Remove a finding" in message and "Keep rows count 2 of them" in message,
-    )
-
-
 def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the reason rows of a prefix: the reader, the longest prefix, the warning and the write."""
+    """Check the reason rows of a prefix: the reader, the longest prefix, the verdict and the write."""
     count = table["count-rule"]
     head = "format 1\nrule count-rule\n"
     text = (
@@ -286,23 +251,7 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         [finding("src/a.py"), finding("src/a.py")]
         + [finding(path) for path in ("src/deep/b.py", "src/c.py", "c.py", "other.py")],
     )
-    by_path = {item.entity: item.message for item in judged if item.level == "warning"}
-    expect(
-        "the warning of a path that a reason row holds names that row and its reason, as a keep row",
-        not errors(judged)
-        and "each with its reason" in by_path.get("src/a.py", "")
-        and "`reason src/` at line 3 gives the reason: the step of a planted plan removes them" in by_path["src/a.py"]
-        and "Remove a finding" in by_path.get("other.py", ""),
-    )
-    state, tail = rule_ledger.kept_words(ledger, [key("src/a.py", "kind", ""), key("src/deep/b.py", "kind", "")])
-    expect(
-        "kept_words() tells that each key has a reason, and the lines of two reason rows",
-        state == ", each with its reason" and "lines 3, 4" in tail,
-    )
-    expect(
-        "kept_words() gives no words for a group with a key that has no reason",
-        rule_ledger.kept_words(ledger, [key("other.py", "kind", ""), key("src/a.py", "kind", "")]) == ("", ""),
-    )
+    expect("a reason row changes no verdict: the counts at their rows give no finding", judged == [])
     for name, bad in (
         ("a reason row that holds no count row", f"{head}reason lib/ | idle\nsrc/a.py | kind | 1 | - | -\n"),
         ("a reason row after an entry row", f"{head}src/a.py | kind | 1 | - | -\nreason src/ | late\n"),

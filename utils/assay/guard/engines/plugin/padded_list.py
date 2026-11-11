@@ -45,8 +45,8 @@ THE LEDGER
     and entity (assay.core.ledger, the policy count).  A row with no reason
     is a padded list that the tree holds at this time.  A row with a reason
     keeps an element type with padding on purpose, such as a record that
-    fills a cache line.  Each run gives a warning for each file with rows.  A
-    new padded list is an error.  A row that names no padded list is an error
+    fills a cache line.  A row gives no output.  A new padded list is an
+    error.  A row that names no padded list is an error
     too, until `guard write --rule padded-list --build-dir DIR` writes the
     ledger again in the same commit.
 

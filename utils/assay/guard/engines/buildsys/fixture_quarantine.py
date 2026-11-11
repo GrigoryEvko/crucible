@@ -81,7 +81,8 @@ THE VERDICT
       new fixture has no finding (CLAUDE.md section XXII).
     * A count below its row gives no finding (THE POLICIES of
       assay.core.ledger).  A complete write lowers the row.
-    * Each directory of fixture sources with a kept count gives one warning.
+    * A count at its row gives no finding either.  `guard list --path FILE`
+      prints the rows of a fixture source.
 
 WRITE THE LEDGER
     `guard write --rule fixture-quarantine --build-dir DIR` writes the counts
@@ -123,7 +124,6 @@ for k rows of the ledger and counts of the build.
 
 import dataclasses
 import os
-from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
@@ -516,10 +516,6 @@ def findings(context: FixtureContext) -> list[check_report.Finding]:
 # ── The verdict ────────────────────────────────────────────────────
 
 
-def load_inputs(root: Path) -> None:
-    """Read no input: the verdict reads only the counts and the ledger."""
-
-
 def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
     """Give one error for each row of a kind of PROBE_KINDS with no reason (THE SCOPE).
 
@@ -540,31 +536,24 @@ def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
     ]
 
 
-def directory_of(path: str) -> str:
-    """Return the directory of a fixture source, for the warning of its directory."""
-    return path.rsplit("/", 1)[0] if "/" in path else "."
-
-
 def evaluate(
     counts: Mapping[rule_ledger.Key, int],
     ledger: rule_ledger.Ledger,
     inputs: None,
     build_shown: str,
 ) -> list[check_report.Finding]:
-    """Compare each count of the build with its ledger count, and give one warning for each directory (THE VERDICT).
+    """Compare each count of the build with its ledger count (THE VERDICT).
 
     Complexity: O(k log k) for k counts of the build and rows of the ledger.
     """
     found = reason_problems(ledger)
     expected = ledger.expected()
     held = {key.path for key in expected}
-    failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
     for key in sorted(set(counts) | set(expected)):
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
         if measured <= admitted:
             continue
-        failed.add(directory_of(key.path))
         what = counted.described(key.kind, key.entity)
         if key.path not in held:
             message = (
@@ -578,36 +567,13 @@ def evaluate(
                 f"base"
             )
         found.append(check_report.Finding("error", shown, ledger.line_of(key), RULE, message))
-    kept: dict[str, Counter[str]] = {}
-    kept_keys: dict[str, list[rule_ledger.Key]] = {}
-    first_line: dict[str, int] = {}
-    for key, admitted in sorted(expected.items()):
-        directory = directory_of(key.path)
-        kept_count = min(admitted, counts.get(key, 0))
-        if directory in failed or kept_count == 0:
-            continue
-        kept.setdefault(directory, Counter())[key.kind] += kept_count
-        kept_keys.setdefault(directory, []).append(key)
-        first_line.setdefault(directory, ledger.line_of(key))
-    for directory, kinds in sorted(kept.items()):
-        listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
-        state, tail = quarantine.kept_state(ledger, kept_keys[directory])
-        found.append(
-            check_report.Finding(
-                "warning",
-                shown,
-                first_line[directory],
-                RULE,
-                f"the fixtures of {directory} keep {sum(kinds.values())} quarantine findings{state}: {listed}{tail}",
-            )
-        )
     return found
 
 
 # The line that tells the findings, the rows and the fixtures of one run or one write.
 summary = counted.summary_of(RULE, "findings", "fixtures", "fixtures with a census")
 
-SPEC = counted.CountedRule(RULE, findings, load_inputs, evaluate, summary, frozenset(), REFUSAL, FixtureContext)
+SPEC = counted.CountedRule(RULE, findings, counted.no_inputs, evaluate, summary, frozenset(), REFUSAL, FixtureContext)
 
 
 # ── The run, the judge and the write ───────────────────────────────

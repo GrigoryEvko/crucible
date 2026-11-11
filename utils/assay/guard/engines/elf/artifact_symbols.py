@@ -229,7 +229,7 @@ THE VERDICT
     no row is an error.  A row of an import that goes gives no finding, and a
     row throw or vtable that admits nothing gives no finding too.  A hidden
     import and an import with no provider are errors that no row admits.
-    Each library with rows gives one warning.
+    A row gives no output.
 
     These archives are errors, because the rule read nothing there:
       * An archive that the ELF reader cannot read

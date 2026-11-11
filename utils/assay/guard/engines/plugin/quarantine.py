@@ -99,12 +99,8 @@ THE VERDICT
       gate writes the lower count (THE REDUCE of assay.loop.gate).
     * An opted-out finding of a file with no region line is an error, because
       the rule cannot give it its region.
-    * Each directory gives one warning, and the findings and the regions that
-      stay in the quarantine are then in the output of each run.  The
-      directory of a file starts with the longest path of the rule table that
-      holds the file.  That path is the path of a layer row or a quarantine
-      row, and it ends with '/'.  The directory is that path and the first
-      directory after it.
+    * A count at its row gives no output.  `guard list --build-dir DIR --path
+      DIRECTORY` prints the findings and the regions that stay.
     * Each problem of the census of the runner is an error.
 
 WRITE THE LEDGER
@@ -142,15 +138,12 @@ Complexity: linear in the finding lines of the build, and O(k log k) for k rows 
 """
 
 import bisect
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core import ruletable
-from assay.core.paths import REPO_ROOT
 from assay.guard.engines.plugin import counted, runner
 from assay.readers import sections as quarantine_sections
 
@@ -163,8 +156,6 @@ ADMITTED_KINDS = frozenset((OPTED_OUT, REGION))
 DECLARATION_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
 # The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
 REASON_SEPARATOR = " | "
-# The rule table of a tree, relative to its root.
-TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 # The highest character, which sorts after each reason of a region.
 LAST_CHARACTER = chr(0x10FFFF)
 # The advice of a write that refuses a count above its row.
@@ -272,22 +263,6 @@ def opted_out_key(reason: str, entity: str) -> str:
     return joined(f"{reason}{REASON_SEPARATOR}{parsed.kind}", row_entity(parsed.kind, parsed.inner))
 
 
-def directory_rows(table: ruletable.RuleTable) -> list[str]:
-    """Return the paths of the layer rows and quarantine rows that end with '/', the longest first."""
-    rows = {path for layer in table.layers for path in layer.paths if path.endswith("/")}
-    rows |= {path for path in table.quarantines if path.endswith("/")}
-    return sorted(rows, key=lambda path: (-len(path), path))
-
-
-def directory_of(rel: str, rows: list[str]) -> str:
-    """Return the directory of a file: the longest directory row that holds it, and the first directory after it."""
-    for row in rows:
-        if rel.startswith(row):
-            rest = rel[len(row) :].split("/")
-            return row.rstrip("/") + (f"/{rest[0]}" if len(rest) > 1 else "")
-    return rel.rsplit("/", 1)[0] if "/" in rel else "."
-
-
 # ── The findings ───────────────────────────────────────────────────
 
 
@@ -372,37 +347,16 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 # ── The verdict ────────────────────────────────────────────────────
 
 
-def load_table(root: Path) -> ruletable.RuleTable:
-    """Read the rule table of the tree of the root.
-
-    Raises:
-        ruletable.TableError: If the table does not obey its grammar
-        OSError: If the table cannot be read
-    """
-    return ruletable.load(root / TABLE)
-
-
-def load_rows(root: Path) -> list[str]:
-    """Return the directory rows of the rule table of the tree of the root (directory_rows).
-
-    Raises:
-        ruletable.TableError: If the table does not obey its grammar
-        OSError: If the table cannot be read
-    """
-    return directory_rows(load_table(root))
-
-
 def evaluate(
-    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, rows: list[str], build_shown: str
+    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
-    """Compare each count of the build with its ledger count, and give one warning for each directory with no error.
+    """Compare each count of the build with its ledger count, and give an error for each count above its row.
 
-    `rows` are the directory rows of load_rows.  Complexity: O(k log k) for k counts of the build and the ledger.
+    Complexity: O(k log k) for k counts of the build and the ledger.
     """
     findings_found: list[check_report.Finding] = []
     expected = ledger.expected()
     held = {key.path for key in expected}
-    failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
     command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
     for key in sorted(set(counts) | set(expected)):
@@ -410,7 +364,6 @@ def evaluate(
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
         if measured <= admitted:
             continue
-        failed.add(directory_of(file, rows))
         line = ledger.line_of(key)
         listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {file} --kind {kind}`"
         what = counted.described(kind, entity)
@@ -443,41 +396,7 @@ def evaluate(
                 f"different entity goes.  List them with {listing}, and use a type of fixy or foundation"
             )
         findings_found.append(check_report.Finding("error", shown, line, RULE, message))
-    kept: dict[str, Counter[str]] = {}
-    kept_keys: dict[str, list[Key]] = {}
-    first_line: dict[str, int] = {}
-    for key, admitted in sorted(expected.items()):
-        directory = directory_of(key.path, rows)
-        kept_count = min(admitted, counts.get(key, 0))
-        if directory in failed or kept_count == 0:
-            continue
-        kept.setdefault(directory, Counter())[key.kind] += kept_count
-        kept_keys.setdefault(directory, []).append(key)
-        first_line.setdefault(directory, ledger.line_of(key))
-    for directory, kinds in sorted(kept.items()):
-        listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
-        state, tail = kept_state(ledger, kept_keys[directory])
-        findings_found.append(
-            check_report.Finding(
-                "warning",
-                shown,
-                first_line[directory],
-                RULE,
-                f"{directory} keeps {sum(kinds.values())} quarantine findings and regions{state}: {listed}{tail}",
-            )
-        )
     return findings_found
-
-
-def kept_state(ledger: rule_ledger.Ledger, keys: Sequence[Key]) -> tuple[str, str]:
-    """Return the words of the warning of the kept counts of one directory (assay.core.ledger, kept_words()).
-
-    The entity of a count of the kind region or opted-out holds the reason of
-    its region.  Such a count then has its reason in the source.  Each other
-    count must have a reason of its row or of a prefix.
-    """
-    reasoned = [key for key in keys if key.kind not in (REGION, OPTED_OUT)]
-    return rule_ledger.kept_words(ledger, reasoned) if reasoned else (", each with its reason", "")
 
 
 def summary(counts: Mapping[Key, int], objects: int, verb: str) -> str:
@@ -494,7 +413,7 @@ def summary(counts: Mapping[Key, int], objects: int, verb: str) -> str:
 
 
 SPEC = counted.CountedRule(
-    RULE, findings, load_rows, evaluate, summary, ADMITTED_KINDS, REFUSAL, comment=LEDGER_COMMENT
+    RULE, findings, counted.no_inputs, evaluate, summary, ADMITTED_KINDS, REFUSAL, comment=LEDGER_COMMENT
 )
 
 

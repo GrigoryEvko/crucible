@@ -17,7 +17,7 @@ THE CASES
       * A file that git moves, which needs --raise, and a file that the tree
         does not hold
       * A base header that git moves to a different layer
-      * The directory warnings and the problems of the objects
+      * An equal build with no warning, and the problems of the objects
       * Each mode of the write, the write of one build and the complete write.
     The cases of the rule contract-specifier hold its errors and the problems
     of the census.
@@ -52,10 +52,6 @@ from pathlib import Path
 build = Path(sys.argv[sys.argv.index("-C") + 1])
 sys.stdout.write((build / "inputs.txt").read_text())
 """
-RULES_TEXT = (
-    "layer base 0 include/fixy/ include/fixy/session/\n"
-    "quarantine include/crucible/\nquarantine src/\nquarantine test/\nquarantine @build/\n"
-)
 HEAD = "# a planted ledger\n"
 EMPTY_LEDGER = f"{HEAD}format 1\nrule {RULE}\n"
 STAMP_VALUE = "0123abcd"
@@ -104,9 +100,6 @@ class Scratch:
         self.ledger = rule_ledger.ledger_path(RULE, root)
         self.ledger.parent.mkdir(parents=True)
         self.ledger.write_text(EMPTY_LEDGER, encoding="utf-8")
-        table = root / quarantine.TABLE
-        table.parent.mkdir(parents=True, exist_ok=True)
-        table.write_text(RULES_TEXT, encoding="utf-8")
         self.ninja = root / "ninja.py"
         self.ninja.write_text(f"#!{sys.executable}\n{FAKE_NINJA}", encoding="utf-8")
         self.ninja.chmod(0o755)
@@ -240,11 +233,11 @@ def as_tuples(counts: Mapping[rule_ledger.Key, int]) -> dict[Row, int]:
     return {(key.path, key.kind, key.entity): count for key, count in counts.items()}
 
 
-def directory_totals(counts: Mapping[Row, int], rows: list[str]) -> Counter[tuple[str, str]]:
-    """Return the count of each directory and kind: the rule of the ratchet before it counted files."""
+def directory_totals(counts: Mapping[Row, int]) -> Counter[tuple[str, str]]:
+    """Return the count of each directory and kind: the key of a coarser ratchet."""
     totals: Counter[tuple[str, str]] = Counter()
     for (file, kind, _entity), count in counts.items():
-        totals[(quarantine.directory_of(file, rows), kind)] += count
+        totals[(file.rsplit("/", 1)[0], kind)] += count
     return totals
 
 
@@ -260,19 +253,7 @@ def file_totals(counts: Mapping[Row, int]) -> Counter[tuple[str, str]]:
 
 
 def unit_cases(expect: testing.Expect) -> None:
-    """Hold the directory of a file, the entity of each kind and the stamp."""
-    rows = quarantine.directory_rows(ruletable.parse(RULES_TEXT))
-    for rel, wanted in (
-        ("test/fixy/test_a.cpp", "test/fixy"),
-        ("test/test_arena.cpp", "test"),
-        ("src/canopy/Lifeguard.cpp", "src/canopy"),
-        ("include/crucible/Vigil.h", "include/crucible"),
-        ("include/crucible/ledger/probes/A.h", "include/crucible/ledger"),
-        ("include/fixy/session/Handle.h", "include/fixy/session"),
-        ("include/fixy/os/Time.h", "include/fixy/os"),
-        ("include/fixy/Refined.h", "include/fixy"),
-    ):
-        expect(f"the directory of {rel} is {wanted}", quarantine.directory_of(rel, rows) == wanted)
+    """Hold the entity of each kind and the stamp."""
     keyed = rule_ledger.parse(
         f"{EMPTY_LEDGER}"
         "x.cpp | raw-pointer-object | 2 | - | -\n"
@@ -522,10 +503,7 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         written.comment == quarantine.LEDGER_COMMENT != HEAD,
     )
     status, found, text = scratch.run()
-    expect(
-        "an equal build gives no error, and one warning for each directory",
-        status == 0 and all(item.level == "warning" for item in found) and len(found) == 5,
-    )
+    expect("an equal build gives no finding: a row gives no warning", status == 0 and found == [])
     expect(
         "a header finding of two objects counts one time, and the region counts apart",
         "7 findings and 1 regions in 8 rows of 6 files" in text,
@@ -647,7 +625,6 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold the two holes of a count for each directory and for each file, and the rows that stay after a move."""
-    rows = quarantine.directory_rows(ruletable.parse(RULES_TEXT))
     before = scratch.base()
     lines_a = scratch.objects["a"][0]
     scratch.add(
@@ -658,7 +635,7 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
     planted = scratch.counts()
     expect(
         "the swap keeps each count of a directory and kind, so a count for each directory lets it go",
-        directory_totals(planted, rows) == directory_totals(before, rows),
+        directory_totals(planted) == directory_totals(before),
     )
     expect(
         "the swap fails the count for each file: test_a rises, and the fall of test_b passes",

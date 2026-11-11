@@ -707,11 +707,7 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     status, found, _ = scratch.run()
     expect(
-        "an equal build passes, with one warning for each library that keeps symbols",
-        status == 0
-        and errors_of(found) == []
-        and sorted(item.message.split(" keeps")[0] for item in found)
-        == ["@build/libcrucible.a", "@build/libfoundation.a"],
+        "an equal build passes with no finding: a row that keeps symbols gives no warning", status == 0 and found == []
     )
     scratch.archive("foundation", ["base", "threads", "text"])
     status, found, _ = scratch.run()

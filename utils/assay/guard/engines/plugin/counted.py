@@ -92,6 +92,10 @@ class CountedRule[Inputs]:
     comment: str = ""
 
 
+def no_inputs(_root: Path) -> None:
+    """Read no input: the verdict of the rule reads only the counts and the ledger."""
+
+
 def described(kind: str, entity: str) -> str:
     """Return the kind and the entity of a row as words for a message."""
     return f"the kind {kind} and the entity {entity}" if entity else f"the kind {kind}"
