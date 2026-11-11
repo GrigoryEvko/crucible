@@ -1,4 +1,4 @@
-"""The test of the ledgers (assay.core.ledger): the reader, the policies, the writes, the configurations and the history.
+"""The test of the ledgers (assay.core.ledger): the reader, the policies, the writes and the configurations.
 
 `guard selftest tests.core.test_ledger` runs the test.  Each case prints one
 line.  Exit 0 when each case holds, else 1.
@@ -115,42 +115,6 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         rule_ledger.Key("", "kind", "name") in nameless.base
         and rule_ledger.Key("", "kind", "name") in nameless.deltas["arm"]
         and "\n- | kind | 1 | name | -\n" in rule_ledger.render(nameless),
-    )
-    expect(
-        "count_rows() counts the entry rows of format 1 and each line of an earlier format",
-        rule_ledger.count_rows(text) == 3
-        and rule_ledger.count_rows("# head\na | b\nc | d\n") == 2
-        and rule_ledger.count_rows(None) is None,
-    )
-    expect(
-        "format_row() gives the format row, an empty text for an earlier format, and None for no row",
-        rule_ledger.format_row(text) == "format 1"
-        and rule_ledger.format_row("# head\na | b\n") == ""
-        and rule_ledger.format_row("# head only\n") is None
-        and rule_ledger.format_row(None) is None,
-    )
-    expect(
-        "version_keys() gives the key of each base row and difference row of format 1, and each line of an earlier "
-        "format",
-        rule_ledger.version_keys(text) == {("a.py", "kind", ""), ("b.py", "kind", "name"), ("@arm", "a.py", "kind", "")}
-        and rule_ledger.version_keys("# head\na | b\n") == {("a | b",)}
-        and rule_ledger.version_keys(None) == frozenset(),
-    )
-    reasoned = text + "lib/a.a | throw | admit | helper | a reason row\n"
-    admits_only = "format 1\nrule admit-rule\nc.py | kind | admit | name | a reason\n"
-    expect(
-        "counted_keys() gives the keys of the rows with a count, and each key of a version with no such row",
-        rule_ledger.counted_keys(reasoned) == rule_ledger.version_keys(text)
-        and ("lib/a.a", "throw", "helper") in rule_ledger.version_keys(reasoned)
-        and rule_ledger.counted_keys(admits_only) == {("c.py", "kind", "name")}
-        and rule_ledger.counted_keys(None) == frozenset(),
-    )
-    expect(
-        "key_path() gives the PATH of a base row and of a difference row, and '' for no file and an earlier line",
-        [rule_ledger.key_path(key) for key in sorted(rule_ledger.version_keys(text))] == ["a.py", "a.py", "b.py"]
-        and rule_ledger.key_path(("-", "kind", "name")) == ""
-        and rule_ledger.key_path(("@arm", "-", "kind", "name")) == ""
-        and rule_ledger.key_path(("a | b",)) == "",
     )
     with tempfile.TemporaryDirectory(prefix="test-ledger-") as scratch:
         root = Path(scratch)
@@ -334,7 +298,7 @@ def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
 
 
 def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the reason rows of a prefix: the reader, the longest prefix, the warning, the write and the row count."""
+    """Check the reason rows of a prefix: the reader, the longest prefix, the warning and the write."""
     count = table["count-rule"]
     head = "format 1\nrule count-rule\n"
     text = (
@@ -367,10 +331,6 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         [(item.prefix, item.reason) for item in again.reasons]
         == sorted((item.prefix, item.reason) for item in ledger.reasons)
         and again.base.keys() == ledger.base.keys(),
-    )
-    expect(
-        "count_rows() does not count a reason row",
-        rule_ledger.count_rows(text) == 5,
     )
     judged = rule_ledger.compare(
         count,
