@@ -1,2 +1,0 @@
-# A planted list of the targets with a long compile, with no target.
-kind x86_64-debug-asan

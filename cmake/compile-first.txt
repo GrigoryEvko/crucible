@@ -1,12 +1,10 @@
 # cmake/compile-first.txt — the targets with a long compile, one name on each line.
 #
 # cmake/CompileFirst.cmake gives each target of this list one more edge in the Ninja graph, so
-# Ninja starts its compiles before the compiles of the other tests.  The rule compile-first
-# (utils/assay/guard/engines/buildsys/cost_budgets.py, the test guard_compile_first) holds the list equal to the
-# records of the build launcher in a build of the kind of the row `kind`, with the thresholds of the measured rule
-# compile-first in utils/registry.txt.  Write the list again from such a build:
-#   python3 utils/bin/guard write --rule compile-first --build-dir build
-kind x86_64-debug-asan
+# Ninja starts its compiles before the compiles of the other tests.  The list changes only the
+# sequence of the compiles of a build, and no rule judges it.  The record OBJECT.cost of the build
+# launcher gives the user instructions of each compile.  Add a target with a long compile, and
+# remove a target when its compiles become short.
 bench_arena
 bench_cipher
 bench_ckernel

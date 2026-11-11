@@ -332,8 +332,9 @@ class Member:
     from the context, the ledger and the reason of the call, and it is None
     for each other rule.  `refresh` writes the data file of a rule of the
     policy none again from the context, and it returns the line that tells
-    the result.  The list cmake/compile-first.txt of the rule compile-first is
-    such a file.  `refresh` is None for each other rule.  `configured` is
+    the result.  The list test/layer/header-constexpr-ops.txt of the rule
+    header-constexpr-ops is such a file.  `refresh` is None for each other
+    rule.  `configured` is
     True for a rule with the rows of each configuration of a build
     (assay.core.configuration, THE POLICY).  `guard write
     --add-configuration` applies only to such a member.

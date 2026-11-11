@@ -19,9 +19,6 @@
 # input of a second stamp command, and the first stamp command has that
 # second command as an order-only input.  Its objects then also have a chain
 # of three edges.
-# The rule compile-first (utils/assay/guard/engines/buildsys/cost_budgets.py) holds the list
-# equal to the records of the build launcher, and holds each object of a
-# listed target to a chain of three edges or more.
 #
 # The stamp command runs one time, in a clean build.  An order-only input
 # does not make the stamp out of date, so an edit of a listed target does not
@@ -31,10 +28,6 @@
 # A listed name that is not a target of this build, a target outside `all`
 # and a target with no compile are ignored, because a preset can leave out a
 # target, and the stamp must not add a target to `all`.
-#
-# The file ${CMAKE_BINARY_DIR}/compile-first-targets.txt lists each target
-# of `all` that compiles a source, one name on each line.  The test
-# compile_first judges only those targets.
 
 set(CRUCIBLE_COMPILE_FIRST_LIST "${CMAKE_CURRENT_LIST_DIR}/compile-first.txt")
 set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CRUCIBLE_COMPILE_FIRST_LIST}")
@@ -64,16 +57,13 @@ function(crucible_compile_first)
       list(APPEND candidates "${target}")
     endforeach()
   endwhile()
-  list(SORT candidates)
-  list(JOIN candidates "\n" candidate_lines)
-  file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/compile-first-targets.txt" CONTENT "${candidate_lines}\n" @ONLY)
 
   file(STRINGS "${CRUCIBLE_COMPILE_FIRST_LIST}" rows ENCODING UTF-8)
   set(listed "")
   set(listed_objects "")
   foreach(row IN LISTS rows)
     string(STRIP "${row}" row)
-    if(row STREQUAL "" OR row MATCHES "^#" OR row MATCHES "^kind ")
+    if(row STREQUAL "" OR row MATCHES "^#")
       continue()
     endif()
     if(NOT row IN_LIST candidates)

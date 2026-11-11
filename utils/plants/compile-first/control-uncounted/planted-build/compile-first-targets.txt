@@ -1,3 +1,0 @@
-failed_long
-hit_no_count
-no_record

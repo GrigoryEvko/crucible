@@ -1,2 +1,0 @@
-# A planted list with no kind row.
-a_target

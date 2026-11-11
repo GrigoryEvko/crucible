@@ -37,7 +37,8 @@ that the write keeps gets the reason.  A row that must stay then tells why.
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
 file again, and the command prints the line that the function returns.  The
-list cmake/compile-first.txt of the rule compile-first is such a file.
+list test/layer/header-constexpr-ops.txt of the rule header-constexpr-ops is
+such a file.
 
 A rule of the engine plugin writes through assay.guard.engines.plugin.runner,
 which reads the build of --build-dir.  A module that writes its ledger itself

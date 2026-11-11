@@ -21,8 +21,8 @@ THE RULE header-constexpr-ops
         <layer>/<path>.h | limit | reason
 
     That list holds the admitted items of the rule, because CMake reads it.
-    The rule has the policy none, as compile-first has, and no file of
-    utils/ledgers/ holds its items (THE WRITE).  A header of
+    The rule has the policy none, and no file of utils/ledgers/ holds its
+    items (THE WRITE).  A header of
     test/layer/crucible-not-standalone.txt has no one-line unit.  The rule
     compiles each listed header two times: at the threshold and at the limit
     of its row.  It reads the diagnostics of each compile from its SARIF log
