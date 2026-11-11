@@ -1,0 +1,8 @@
+# The mint has no fixture and no noexcept.  A row of the kind "-" of the ledger
+# of the tree admits the mint under the floor.  The key of a row holds the
+# kind, so the row does not admit the axis, and the rule refuses the mint.
+compile sentinel src/mints.cpp sentinel=include/fixy/Mints.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel mint mint include/fixy/Mints.h:8:31 | plant::mint_loud(plant::Thing) \| name=mint_loud static=0 shape=token template=0 nodiscard=1 constexpr=1 noexcept=0 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
+finding sentinel mint mint-not-noexcept include/fixy/Mints.h:8:31 | plant::mint_loud(plant::Thing)

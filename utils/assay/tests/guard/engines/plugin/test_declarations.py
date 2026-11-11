@@ -1,4 +1,4 @@
-"""The test of the family declaration property of the engine plugin and of its rule mint-pattern, on planted lines.
+"""The test of the family declaration property of the engine plugin and of its rule mint, on planted lines.
 
 THE CASES
     A case gives planted finding lines to a context of the runner with a
@@ -9,8 +9,8 @@ THE CASES
       * The position and the facts of a mint, and each record that does not read
       * The aliases of each class, from the records of the kind mint-alias
       * The record with the body of a mint, before the first position
-      * The findings of the rule mint-pattern at the position of the chosen record
-      * A row of the ledger that admits a finding.
+      * The findings of the axes of the rule mint at the position of the chosen record
+      * A row of the ledger that admits a finding of the axes or of the floor, and no finding of the other part.
 """
 
 import contextlib
@@ -21,13 +21,13 @@ from pathlib import Path
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import ruletable, testing
-from assay.guard.engines.plugin import declarations, mint_pattern, runner
+from assay.guard.engines.plugin import declarations, mint, runner
 from assay.readers import sections as plugin_sections
 
-RULE = mint_pattern.RULE
+RULE = mint.RULE
 REGISTRY_ROWS = (
     (
-        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-not-noexcept doc=XXI | a "
+        "rule mint engine=plugin scope=include/ ledger=admit kinds=mint,mint-not-noexcept doc=XXI | a "
         "planted mint rule | give the mint its shape"
     ),
     "rule process-wide-state engine=plugin scope=tracked ledger=admit doc=XV | a planted rule of each file | mark it",
@@ -61,7 +61,7 @@ def alias_record(alias: str, owner: str, entity: str | None = None) -> plugin_se
 
 
 def finding(file: str, line: int, kind: str = "mint-not-noexcept") -> plugin_sections.Finding:
-    """Return a planted finding of the rule mint-pattern at a position."""
+    """Return a planted finding of the axes of the rule mint at a position."""
     return plugin_sections.Finding(file, line, 1, RULE, kind, ENTITY)
 
 
@@ -185,8 +185,21 @@ def chosen_cases(expect: testing.Expect) -> None:
     expect("with no body, the record at the first place wins", chosen[ENTITY].path == "include/fixy/Borrowed.h")
 
 
+def judged_errors(root: Path, context: runner.PluginContext, keys: list[rule_ledger.Key]) -> list[tuple[str, str, str]]:
+    """Return the path, the kind and the entity of each error of the rule mint after a judge against a planted ledger.
+
+    The planted ledger of the tree has one admit row for each key.
+    """
+    rule = declarations.rule_of(context, RULE)
+    base = {key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, "a planted reason") for key in keys}
+    rule_ledger.store(rule_ledger.Ledger(RULE, rule.policy, "# planted\n", base=base), root)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        judged = runner.judged(rule, context)
+    return [(item.path, item.kind, item.entity) for item in judged if item.level == "error"]
+
+
 def rule_cases(expect: testing.Expect) -> None:
-    """Hold the findings of the rule mint-pattern, their scope and position, and a ledger row that admits one."""
+    """Hold the findings of the two parts of the rule mint, their scope and position, and the rows of each part."""
     with tempfile.TemporaryDirectory(prefix="plugin-declarations-") as scratch_text:
         root = Path(scratch_text)
         scratch_tree(root)
@@ -199,7 +212,7 @@ def rule_cases(expect: testing.Expect) -> None:
             finding("test/test_a.cpp", 3),
         ]
         context = context_of(root, lines)
-        found = mint_pattern.findings(context)
+        found = mint.axis_findings(context)
         expect(
             "a mint record and an alias record are no finding, and a line outside the scope is none",
             [(item.path, item.line, item.kind) for item in found]
@@ -209,20 +222,28 @@ def rule_cases(expect: testing.Expect) -> None:
             "the finding names its entity and the action",
             bool(found) and found[0].entity == ENTITY and "is not noexcept" in found[0].message,
         )
-        rule = declarations.rule_of(context, RULE)
-        key = rule_ledger.Key("include/fixy/OwnedRegion.h", "mint-not-noexcept", ENTITY)
-        ledger = rule_ledger.Ledger(
-            RULE,
-            rule.policy,
-            "# planted\n",
-            base={key: rule_ledger.Entry(key, rule_ledger.ADMIT_VALUE, "a planted reason")},
+        floor = mint.floor_findings(context)
+        expect(
+            "a mint with no fixture is one finding of the floor, with no kind, at the position of the chosen record",
+            [(item.path, item.line, item.kind, item.entity) for item in floor]
+            == [("include/fixy/OwnedRegion.h", 452, "", ENTITY)],
         )
-        rule_ledger.store(ledger, root)
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            judged = runner.judged(rule, context)
-        expect("a ledger row admits the finding", not [item for item in judged if item.level == "error"])
+        axis_key = rule_ledger.Key("include/fixy/OwnedRegion.h", "mint-not-noexcept", ENTITY)
+        floor_key = rule_ledger.Key("include/fixy/OwnedRegion.h", "", ENTITY)
+        expect(
+            "a row of the axis and a row of the floor admit the two findings",
+            judged_errors(root, context, [axis_key, floor_key]) == [],
+        )
+        expect(
+            "a row of the axis admits no finding of the floor",
+            judged_errors(root, context, [axis_key]) == [("include/fixy/OwnedRegion.h", "", ENTITY)],
+        )
+        expect(
+            "a row of the floor admits no finding of the axis",
+            judged_errors(root, context, [floor_key]) == [("include/fixy/OwnedRegion.h", "mint-not-noexcept", ENTITY)],
+        )
         broken = context_of(root, [record("include/fixy/A.h", 4, 2)])
-        refused = mint_pattern.findings(broken)
+        refused = mint.findings(broken)
         expect("a record that does not read is one error", len(refused) == 1 and "mint record" in refused[0].message)
 
 

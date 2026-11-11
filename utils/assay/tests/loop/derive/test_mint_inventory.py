@@ -1,8 +1,8 @@
 """The test of the mint inventory (assay.loop.derive.mint_inventory), on planted mint records and fixtures.
 
 `guard selftest tests.loop.derive.test_mint_inventory` runs the test.  A
-case writes a planted registry, a rule table, a ledger of the rule
-mint-pattern and the fixture directories into a scratch tree.  It gives
+case writes a planted registry, a rule table, a ledger of the rule mint and
+the fixture directories into a scratch tree.  It gives
 planted mint records to a context of the engine plugin with a planted
 census.  The fixtures parse with the pinned tree-sitter kit.  The cases hold:
   * The layer and the section of a header path
@@ -29,15 +29,15 @@ from assay.readers import sections as plugin_sections
 RULE = declarations.MINT_RULE
 REGISTRY_ROWS = (
     (
-        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-alias,mint-unconstrained "
+        "rule mint engine=plugin scope=include/ ledger=admit kinds=mint,mint-alias,mint-unconstrained "
         "doc=XXI | a planted mint rule | give the mint its shape"
     ),
 )
 TABLE_TEXT = "layer base 0 include/fixy/\nquarantine include/crucible/\nquarantine test/\n"
 FACTS = "static=0 nodiscard=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1"
-# The ledger of mint-pattern of the tree: one row that admits a template mint with no constraint.
+# The ledger of the rule mint of the tree: one row that admits a template mint with no constraint.
 LEDGER = (
-    "format 1\nrule mint-pattern\n"
+    "format 1\nrule mint\n"
     "include/fixy/A.h | mint-unconstrained | admit | fixy::mint_cell(int) | the gate is on values that no concept "
     "can see\n"
 )
@@ -86,11 +86,11 @@ RECORDS = (
 
 
 def scratch_tree(root: Path) -> None:
-    """Write the planted registry, rule table, ledger of mint-pattern and fixtures into a scratch tree."""
+    """Write the planted registry, rule table, ledger of the rule mint and fixtures into a scratch tree."""
     (root / "utils" / "ledgers").mkdir(parents=True)
     (root / rule_registry.REGISTRY_PATH).write_text(rule_registry.planted(REGISTRY_ROWS), encoding="utf-8")
     (root / declarations.TABLE).write_text(TABLE_TEXT, encoding="utf-8")
-    (root / "utils" / "ledgers" / "mint-pattern.txt").write_text(LEDGER, encoding="utf-8")
+    (root / "utils" / "ledgers" / f"{RULE}.txt").write_text(LEDGER, encoding="utf-8")
     for path, text in FIXTURES:
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text, encoding="utf-8")
@@ -177,7 +177,7 @@ def row_cases(expect: testing.Expect) -> None:
         )
         cell_cells = inventory.cells(rows["fixy::mint_cell(int)"])
         expect(
-            "a row of the kind mint-unconstrained of the ledger of mint-pattern carves the rq cell",
+            "a row of the kind mint-unconstrained of the ledger of the rule mint carves the rq cell",
             rows["fixy::mint_cell(int)"].is_rq_carved and cell_cells[5] == "- (pre)",
         )
         expect("a mint that is not constexpr has - in the cx cell, with no carve-out", cell_cells[3] == "-")

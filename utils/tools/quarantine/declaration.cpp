@@ -53,7 +53,7 @@
 //     One declaration then gives one finding line in each unit.
 //     record_library_object and record_raw_object give each such entity.
 //
-// THE RULE mint-pattern (CLAUDE.md section XXI)
+// THE RULE mint (CLAUDE.md section XXI)
 //     A mint is a function whose name starts with mint_ and does not end with
 //     an underscore, which is not deleted.  A function that only a friend
 //     declaration declares is no mint: its definition is the mint.  Each mint
@@ -78,8 +78,9 @@
 //       ALIAS | alias=NAME owner=CLASS
 //
 //     A fixture can name a member mint through such an alias.  The inventory
-//     of the mints and the rule mint-floor count the fixtures of the mints of
-//     include/ only, so an alias of a different file gets no record.  The axes:
+//     of the mints and the module of the rule count the fixtures of the mints
+//     of include/ only, so an alias of a different file gets no record.  The
+//     axes:
 //       nodiscard     the attribute [[nodiscard]] on a declaration
 //       noexcept      a noexcept specification that is not noexcept(false)
 //       constraint    a mint that is a template has a constraint: a concept
@@ -1079,7 +1080,7 @@ bool is_borrow_projection(tree body) {
     return scan.returns == 1 && scan.calls_view_of_this;
 }
 
-// ── The rule mint-pattern ───────────────────────────────────────────────
+// ── The rule mint ───────────────────────────────────────────────────────
 
 constexpr const char* kExecCtxConcept = "IsExecCtx";
 
@@ -1179,7 +1180,7 @@ bool is_named(tree type, const char* name) {
 }
 
 // The context type of a mint whose first parameter is a reference to a const
-// context, or NULL (THE RULE mint-pattern).  The type of the function gives the
+// context, or NULL (THE RULE mint).  The type of the function gives the
 // parameter, and each declaration of the function shares that type.
 tree context_type(tree function, tree parameters) {
     tree first = FUNCTION_FIRST_USER_PARMTYPE(function);
@@ -1265,7 +1266,7 @@ bool is_context_gated(tree function, tree parameters, tree context) {
     return false;
 }
 
-// The record and the findings of the mint FUNCTION (THE RULE mint-pattern).
+// The record and the findings of the mint FUNCTION (THE RULE mint).
 // IS_PATTERN is true for the pattern of a template, whose body the unit
 // keeps.
 void check_mint(tree function, bool is_pattern) {
@@ -1319,7 +1320,7 @@ void check_mint(tree function, bool is_pattern) {
 }
 
 // The class that the alias or the typedef DECL names, when a member function
-// of the class is a mint, or NULL (THE RULE mint-pattern).  The class of a
+// of the class is a mint, or NULL (THE RULE mint).  The class of a
 // specialization of a class template is the class of the template, which
 // holds the member declarations.  MINT_CLASSES keeps the answer of each class.
 tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes) {
@@ -1348,14 +1349,14 @@ tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes)
     return entry->second ? main_type : NULL_TREE;
 }
 
-// The directories of the aliases of the rule mint-pattern.  The inventory of
-// the mints and the rule mint-floor count the fixtures of the mints of
-// include/, the scope of the row of mint-pattern in utils/registry.txt, and an
-// alias in a different file names no mint that they count.
+// The directories of the aliases of the rule mint.  The inventory of the mints
+// and the module of the rule count the fixtures of the mints of include/, the
+// scope of the row of mint in utils/registry.txt, and an alias in a different
+// file names no mint that they count.
 constexpr const char* kMintAliasDirectories[] = {"include/"};
 
 // The record of the alias or the typedef DECL of a class with a member mint,
-// in a file of kMintAliasDirectories (THE RULE mint-pattern).  A fixture can
+// in a file of kMintAliasDirectories (THE RULE mint).  A fixture can
 // name the mint through the alias.
 void check_mint_alias(tree decl, std::unordered_map<tree, bool>& mint_classes) {
     tree owner = aliased_mint_class(decl, mint_classes);

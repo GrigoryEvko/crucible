@@ -8,7 +8,7 @@ has the section, no section, or two sections of the name.  An object also
 has the extended numbering, or a name that only ends with the name of the
 section.  The cases of the entities plant the entity of each kind of THE
 ENTITIES OF THE RECORDS, with more spaces than the plugin writes.  They
-also plant each entity of padded-list and mint-pattern that does not read.
+also plant each entity of padded-list and mint that does not read.
 """
 
 import contextlib
@@ -261,7 +261,7 @@ def mint_text(facts: str = MINT_FACTS, defined: int = 1, owner: str = "fixy::Cel
 
 
 def mint_cases(expect: testing.Expect) -> None:
-    """Check mint_record() and mint_alias() on the records of the rule mint-pattern, and each record that does not read."""
+    """Check mint_record() and mint_alias() on the records of the rule mint, and each record that does not read."""
     mint = sections.mint_record(mint_text(), "planted")
     expect(
         "a record gives the signature, the parameters, the name, the shape, the class and the owner",

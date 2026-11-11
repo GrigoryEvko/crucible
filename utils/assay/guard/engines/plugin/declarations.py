@@ -24,14 +24,14 @@ THE POSITION OF AN ENTITY
 
 THE MINTS
     A record of the kind mint holds the facts of one mint (declaration.cpp,
-    THE RULE mint-pattern).  The reader gives these facts
+    THE RULE mint).  The reader gives these facts
     (assay.readers.sections, THE ENTITIES OF THE RECORDS).  mints() gives one
     mint for each entity:
     the record with the body of the mint, and else the record at the first
     position.  A record of the kind mint-alias names an alias of a class
     with a member mint.  aliases() gives the names of the aliases of each
-    class.  The rule mint-pattern, the rule mint-floor and the inventory of
-    the mints read the same records.
+    class.  The rule mint and the inventory of the mints read the same
+    records.
 
 `guard selftest tests.guard.engines.plugin.test_declarations` does a test of the module.
 """
@@ -46,10 +46,10 @@ from assay.core.paths import REPO_ROOT
 from assay.guard.engines.plugin import runner
 from assay.readers import sections as plugin_sections
 
-MINT_RULE = "mint-pattern"
+MINT_RULE = "mint"
 MINT_RECORD = "mint"
 ALIAS_RECORD = "mint-alias"
-# The kinds of the lines of the rule mint-pattern that are records and no findings.
+# The kinds of the lines of the rule mint that are records and no findings.
 RECORD_KINDS = frozenset({MINT_RECORD, ALIAS_RECORD})
 SCOPE_TRACKED = "tracked"
 # The scope words that a class of the rule table gives (ruletable.RuleTable.class_of).

@@ -484,7 +484,7 @@ endforeach()
 # The mint inventory reads the mint records of the quarantine plugin in the
 # objects of this build.  The rule derived-files (the test guard_derived_files)
 # fails when misc/mint-inventory.md is not what `loop derive mint-inventory
-# --write` writes, and the rule mint-floor of the engine plugin (the test
+# --write` writes, and the rule mint of the engine plugin (the test
 # guard_plugin) holds the HS14 floor.  The test of the module,
 # assay_loop_derive_test_mint_inventory, plants a census and a fixture
 # directory.  The same rule compares utils/tools/row_hash_golden.txt, the
@@ -4742,7 +4742,7 @@ crucible_script_test(NAME plugin_witness_self_test
 # plugin_declarations_self_test — the family declaration property of the
 # engine plugin (utils/assay/guard/engines/plugin/declarations.py): the scope of
 # a rule, one position for each entity, and the mint records that the rule
-# mint-pattern reads.
+# mint reads, with the two parts of that rule.
 crucible_script_test(NAME plugin_declarations_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_declarations)
 # plugin_home_self_test — the family home of the engine plugin

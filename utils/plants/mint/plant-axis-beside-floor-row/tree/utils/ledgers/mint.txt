@@ -1,0 +1,5 @@
+# The ledger of the plant: a row of the kind "-" that admits the mint under the
+# floor.
+format 1
+rule mint
+include/fixy/Mints.h | - | admit | plant::mint_loud(plant::Thing) | the fixtures of the mint are a task of a subsequent change

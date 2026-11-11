@@ -1,0 +1,10 @@
+#pragma once
+
+namespace plant {
+
+struct Thing {};
+
+// No fixture names this mint, and it is not noexcept.
+[[nodiscard]] constexpr Thing mint_loud(Thing) { return {}; }
+
+}  // namespace plant

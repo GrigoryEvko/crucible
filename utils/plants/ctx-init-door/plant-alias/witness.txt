@@ -6,5 +6,5 @@ compile entry src/entry.cpp stage=c
 exit entry pass
 judge entry
 finding entry ctx-init-door door-use include/crucible/Door.h:8:43 | namespace-scope: foundation::effects::host::InitOwner
-finding entry mint-pattern mint-alias include/crucible/Door.h:8:7 | planted::Door \| alias=Door owner=foundation::effects::host::InitOwner
+finding entry mint mint-alias include/crucible/Door.h:8:7 | planted::Door \| alias=Door owner=foundation::effects::host::InitOwner
 finding entry ctx-init-door door-use src/entry.cpp:7:22 | planted::start(): foundation::effects::host::InitOwner

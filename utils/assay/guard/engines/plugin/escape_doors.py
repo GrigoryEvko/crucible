@@ -9,7 +9,7 @@ THE RULE
     escape-doors):
       * An accessor is no finding: an operator other than a conversion, and a
         getter with a name of the list kAccessors of the plugin
-      * A mint is a door of the rule mint-pattern, and no finding
+      * A mint is a door of the rule mint, and no finding
       * A hatch, such as from_raw, into_raw, release or declassify, is the
         kind hatch: an explicit and discouraged door
       * Each other door is the kind bare-door, a conversion too.

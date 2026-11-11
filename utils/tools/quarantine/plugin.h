@@ -184,9 +184,9 @@
 //     such a rule is an error only in the mode error, no opt-out region covers
 //     it, and the module of its rule judges it against the ledger of the rule
 //     (is_family_kind).  A record is no finding (is_record_kind).
-//     The rule mint-pattern:
+//     The rule mint:
 //     mint                  no finding: one record of each mint, with its facts,
-//                           for the inventory of the mints
+//                           for the HS14 floor and the inventory of the mints
 //     mint-alias            no finding: one record of each alias of a class
 //                           with a member mint in a file of include/, for the
 //                           count of the fixtures of the mint
@@ -654,7 +654,7 @@ enum class Rule : std::uint8_t {
     door_unit,
     contract_semantic,
     fast_math_override,
-    mint_pattern,
+    mint,
     permission_storage,
     escape_doors,
     stub_discipline,
@@ -856,8 +856,8 @@ inline const char* rule_name(Rule rule) {
             return "contract-semantic";
         case Rule::fast_math_override:
             return "fast-math-override";
-        case Rule::mint_pattern:
-            return "mint-pattern";
+        case Rule::mint:
+            return "mint";
         case Rule::permission_storage:
             return "permission-storage";
         case Rule::escape_doors:
@@ -1143,7 +1143,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::mint_not_noexcept:
         case Kind::mint_unconstrained:
         case Kind::mint_unfit_context:
-            return Rule::mint_pattern;
+            return Rule::mint;
         case Kind::permission_member:
         case Kind::static_permission:
             return Rule::permission_storage;
@@ -1247,7 +1247,7 @@ inline bool is_each_mode_kind(Kind kind) {
 inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
         case Rule::door_unit:
-        case Rule::mint_pattern:
+        case Rule::mint:
         case Rule::permission_storage:
         case Rule::escape_doors:
         case Rule::stub_discipline:
@@ -1350,12 +1350,12 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"door-unit", "mixed-headers"},
     {"contract-semantic", "contract-semantic"},
     {"fast-math-override", "fast-math-override"},
-    {"mint-pattern", "mint"},
-    {"mint-pattern", "mint-alias"},
-    {"mint-pattern", "mint-not-nodiscard"},
-    {"mint-pattern", "mint-not-noexcept"},
-    {"mint-pattern", "mint-unconstrained"},
-    {"mint-pattern", "mint-unfit-context"},
+    {"mint", "mint"},
+    {"mint", "mint-alias"},
+    {"mint", "mint-not-nodiscard"},
+    {"mint", "mint-not-noexcept"},
+    {"mint", "mint-unconstrained"},
+    {"mint", "mint-unfit-context"},
     {"permission-storage", "permission-member"},
     {"permission-storage", "static-permission"},
     {"escape-doors", "bare-door"},

@@ -46,7 +46,7 @@ THE ENTITIES OF THE RECORDS
       padded-list    The writer is record_padded_lists() of declaration.cpp.
                      DECLARATION: ELEMENT | count=N holes=H.  padded_list()
                      gives a PaddedList
-      mint-pattern   The writers are check_mint() and check_mint_alias() of
+      mint           The writers are check_mint() and check_mint_alias() of
                      declaration.cpp.  mint: SIGNATURE | name=NAME static=F
                      shape=SHAPE template=F nodiscard=F constexpr=F
                      noexcept=F constrained=F gated=F projection=F defined=F
@@ -58,7 +58,7 @@ THE ENTITIES OF THE RECORDS
       the family home  The writer is record_site() of home.cpp.  A name with
                      the names of its scopes, such as a::b::c.
                      `qualified_name()` gives a `QualifiedName`.
-    Each fact of a record of padded-list or mint-pattern is necessary to its
+    Each fact of a record of padded-list or mint is necessary to its
     rule.  When such a record does not have its grammar, its function raises
     EntityError.
 
@@ -119,7 +119,7 @@ UPWARD_INCLUDE = "upward-include"
 HEADER_END = "> in "
 TARGET_LAYER_START = " ("
 TARGET_LAYER_END = ") from the layer "
-# The texts that divide the parts of a record of padded-list and of mint-pattern, and their facts.
+# The texts that divide the parts of a record of padded-list and of mint, and their facts.
 FACTS_SEPARATOR = " | "
 ELEMENT_SEPARATOR = ": "
 PADDED_FACTS = ("count", "holes")
@@ -389,7 +389,7 @@ class PaddedList:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MintRecord:
-    """The entity of a record mint of the rule mint-pattern.
+    """The entity of a record mint of the rule mint.
 
     `entity` is the signature of the mint: its full name with its namespaces, and the types of its parameters.
     `parameters` is the part of the signature after the name, from its opening parenthesis.  `class_name` is the name
@@ -421,7 +421,7 @@ class MintRecord:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MintAlias:
-    """The entity `ALIAS | alias=NAME owner=CLASS` of a record mint-alias of the rule mint-pattern.
+    """The entity `ALIAS | alias=NAME owner=CLASS` of a record mint-alias of the rule mint.
 
     `entity` is the full name of the alias, `name` is its name with no namespace, and `owner` is the full name of the
     class that it names.
@@ -530,7 +530,7 @@ def padded_list(text: str, where: str) -> PaddedList:
 
 
 def mint_record(text: str, where: str) -> MintRecord:
-    """Return the record of the entity of a record mint of the rule mint-pattern (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a record mint of the rule mint (THE ENTITIES OF THE RECORDS).
 
     `where` names the line in a message.
 
@@ -564,7 +564,7 @@ def mint_record(text: str, where: str) -> MintRecord:
 
 
 def mint_alias(text: str, where: str) -> MintAlias:
-    """Return the record of the entity of a record mint-alias of the rule mint-pattern (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a record mint-alias of the rule mint (THE ENTITIES OF THE RECORDS).
 
     `where` names the line in a message.
 
