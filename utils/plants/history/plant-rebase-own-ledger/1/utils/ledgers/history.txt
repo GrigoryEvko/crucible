@@ -1,3 +1,0 @@
-# a planted ledger
-format 1
-rule history

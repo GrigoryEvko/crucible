@@ -135,10 +135,9 @@ THE RUN OF A CONFIGURATION
     tree is then the commit on its first parent (assay.core.git, THE
     CHANGE).  The suite does not get the variable CRUCIBLE_CHANGE_BASE,
     because a self-test plants repositories of its own, and the variable
-    names no commit of them.  A batch of more than one request, or a request
-    with a row of the kind `grow`, has more than one commit
-    (assay.loop.land).  The rule quarantine-lines of the suite then judges
-    only the last commit.  For such a landing, the gate runs `guard check
+    names no commit of them.  A batch of more than one request has more than
+    one commit (assay.loop.land).  The rule quarantine-lines of the suite
+    then judges only the last commit.  For such a landing, the gate runs `guard check
     --rule quarantine-lines --build-dir BUILD` again, with the variable set
     to the commit that the composition started from.  `loop
     syntax --changed` gets the variable too.  Each check of the gate runs in
@@ -266,17 +265,7 @@ THE FALLS
     new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
     ledgers.  A landing of more than one commit gets the ledgers in its last
-    commit.  A row of THE GROWTH of assay.loop.land then names its first
-    commit as before.
-
-    Before the fold, when a write changed a ledger, the gate runs `guard
-    write --rule history --root TREE` in the mode lower.  That write removes
-    each row of the ledger of the rule history that admits nothing
-    (assay.guard.engines.meta.history).  A fall can make a row of the kind
-    `grow` or `rebase` admit nothing.  The fall removes the rows of the
-    growth that such a row admits.  The ledger of the rule history then goes
-    into the new commit with the other ledgers.  A tree with no rule history
-    in its registry gets no such write.
+    commit.
 
     The warm tree moves to the new commit.  Each configuration of the run
     then runs again, at the same time, in the same heavy step.  A parse
@@ -309,8 +298,7 @@ THE KEPT ROWS
     such an item.  That error then stays, and the test stays red.  Each row
     with a value that rose gets REASON as its reason.  The ledger goes into
     the commit of THE FALLS, and the field kept of the verdict gives each
-    raised row.  The write adds no row to the ledger, and the rule history
-    then sees no growth.
+    raised row.  The write adds no row to the ledger.
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
@@ -368,7 +356,6 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys.parse_builds import COUNTED_RULES
-from assay.guard.engines.meta import runner as meta_runner
 from assay.loop import affected, heavy, tiers
 from assay.loop import inputs as guard_inputs
 from assay.readers import ctest as ctest_reader
@@ -817,44 +804,6 @@ class Gate:
             raise GateError(f"`loop syntax --changed` gives an error: {completed.err.strip()}")
         return completed.out.split()
 
-    def history_problems(self, commit: str, first: str, grown: Sequence[str]) -> tuple[str, ...]:
-        """Give the warm tree a commit, and return each error of the rule history there, with no build.
-
-        The function runs findings() of the rule, judged against the ledger of the rule, as `guard check --rule
-        history` does.  For each rule of `grown`, growth_kinds() of the rule at the commit `first` must hold a grow
-        row (assay.loop.land, THE CHECKS BEFORE THE BUILDS).  A tree with no rule history, and a rule that does not
-        apply to the tree, give no error.  Complexity: one read of the history of the warm tree for the rule, and
-        one more read for each rule of `grown`.
-
-        Raises:
-            GateError: If the warm tree is in the work tree of the repository
-            git.GitError: If a git command fails
-        """
-        from assay.guard.engines.meta import history
-
-        move_tree(self.root, self.tree, commit)
-        context = meta_runner.MetaContext(self.tree)
-        rule = context.registry.rules.get(history.RULE)
-        if rule is None:
-            return ()
-        problems: list[str] = []
-        try:
-            for rule_id in grown:
-                kinds = history.growth_kinds(self.tree, context.registry, rule_id, first)
-                if history.GROW_KIND in kinds:
-                    continue
-                problems.append(
-                    f"--grow {rule_id}: no grow row admits a growth of {rule_ledger.shown_path(rule_id)} at the commit "
-                    f"{first[: history.SHORT_HASH]}, and the rows of that growth are of the kinds "
-                    f"{' and '.join(kinds) or 'none'}.  Land the change with no --grow {rule_id}, and then admit its "
-                    f"rows with `guard write --rule history --growth {rule_id} COMMIT --reason TEXT`"
-                )
-            found = meta_runner.judged(rule, self.tree, history.findings(context))
-        except meta_runner.NotApplicable as reason:
-            check_report.write_line(f"loop land: the rule history does not apply before the builds: {reason}")
-            return tuple(problems)
-        return (*problems, *(item.text() for item in found if item.level == "error"))
-
     def loop_words(self, run: Run, is_plain: bool) -> list[str]:
         """Return the words of the mode of a run after `loop test BUILD` (THE SELECTION).
 
@@ -1231,44 +1180,19 @@ class Step:
             problems = self.checked(configuration, rules, self.environment)
         return problems
 
-    def write_history(self) -> None:
-        """Write the ledger of the rule history of the warm tree in the mode lower (THE FALLS).
-
-        The write removes each row that admits nothing.  A write that refuses a finding exits 1 and writes nothing, and
-        the test of the rule then keeps that finding as its error.  A tree with no rule history in its registry gets no
-        write.
-
-        Raises:
-            GateError: If the registry of the warm tree does not read
-        """
-        from assay.guard.engines.meta import history
-
-        tree = self.gate.tree
-        try:
-            registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
-        except (OSError, ValueError) as problem:
-            raise GateError(f"the registry of {tree} does not read: {problem}") from None
-        if history.RULE not in registry.rules:
-            return
-        command = [*self.gate.master("guard"), "write", "--rule", history.RULE, "--root", str(tree)]
-        status = self.run_logged(command, f"write-{history.RULE}.log", self.environment, proc.TOOL_S)
-        self.say(f"loop land: the write of {history.RULE} exits {status}")
-
     def fold(self) -> tuple[str, tuple[str, ...]]:
         """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
 
-        A change of a ledger first gets the write of the ledger of the rule history (write_history()).  The warm tree
-        moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
+        The warm tree moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
 
         Raises:
-            GateError: If the registry of the warm tree does not read
+            GateError: If the warm tree is in the work tree of the repository
             git.GitError: If a git command fails
         """
         tree = self.gate.tree
-        if not git.work_changes(tree, "HEAD", [LEDGER_PREFIX]):
-            return self.candidate.commit, ()
-        self.write_history()
         ledgers = tuple(sorted(git.work_changes(tree, "HEAD", [LEDGER_PREFIX])))
+        if not ledgers:
+            return self.candidate.commit, ()
         files = {name: (tree / name).read_bytes() if (tree / name).is_file() else None for name in ledgers}
         final = git.replaced_commit(self.gate.root, self.candidate.commit, files)
         move_tree(self.gate.root, tree, final)

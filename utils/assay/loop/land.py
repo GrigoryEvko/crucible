@@ -7,7 +7,6 @@ THE REQUEST
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
-      `--grow` RULE REASON      The change adds rows to the ledger of RULE, and REASON tells why (THE GROWTH)
       `--keep` RULE REASON      The gate writes the measured value of each row of RULE that grew, with REASON (THE KEPT ROWS)
       --jobs N                  The jobs of each build and each test run of the gate, else DEFAULT_JOBS
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
@@ -51,17 +50,6 @@ THE COMPOSITION
     writes is then in the repository.  The scratch repository reads the own
     paths from the work tree of the request through --work-tree.
 
-THE GROWTH
-    A row `utils/ledgers/RULE.txt | grow | admit | COMMIT | REASON` of the
-    ledger of the rule history names the commit that added rows to the
-    ledger of RULE (assay.guard.engines.meta.history, THE GROWTH).  A commit
-    cannot hold its own name.  The row then goes into a second commit on the
-    first.  With `--grow`, the first commit holds the change.  The second
-    commit adds one such row for each RULE, with COMMIT the first commit in
-    9 characters.  The change must change the ledger of each RULE.  The two
-    commits are the commits of the request in its batch.  The branch then
-    does not hold the added rows with no such row.
-
 THE KEPT ROWS
     A measured rule of the policy max keeps an item over its warning
     threshold with a row, up to the value of the row.  A change can make
@@ -93,8 +81,8 @@ THE QUEUE
 
     The process holds that exclusive lock of flock(2) while it waits.  Then
     it writes a copy of each patch and the file NUMBER.request.  That file
-    holds the message, the edits, the own paths, the rows of THE GROWTH and
-    of THE KEPT ROWS, and the options.  It also holds the work tree, its
+    holds the message, the edits, the own paths, the rows of THE KEPT ROWS
+    and the options.  It also holds the work tree, its
     branch, the commit of its HEAD, its shared git directory and a random
     token.  The verdict of the request
     holds the same token, and the process reads no verdict with a different
@@ -145,7 +133,7 @@ THE HOLDER
     verdict of that error, other than a request that landed.
 
 THE BATCH
-    The batch composes each request as its own commits on the commits of the
+    The batch composes each request as its own commit on the commit of the
     request before it.  A request that does not compose on them gets a
     refusal for that reason only.  An example is an own path with a file that
     an earlier request of the batch changes (THE TREE).  The first
@@ -221,28 +209,6 @@ THE RUN OF THE BASE
     runs the gate one time.  On a red branch, it runs the gate 2 times.  One
     red request alone runs the gate 2 times.
 
-THE CHECKS BEFORE THE BUILDS
-    Before the first run of the gate, the batch runs the rule history on the
-    warm tree (Gate.history_problems() of assay.loop.gate).  It runs the rule
-    at the commit of the batch and at the last commit of each request.  It
-    runs the function findings() of the rule and judges it against the
-    ledger of the rule, as `guard check --rule history` does.  A request with
-    `--grow` also gets growth_kinds() of the rule for its first commit, and
-    the kinds must hold a `grow` row.
-
-    The first request with an error that the commit before it does not have
-    gets the refusal in seconds, with no build.  Examples are a `grow` row
-    that admits nothing, and a `grow` row that a change makes stale.  The
-    other requests then compose again, and the check continues at the
-    position of the refused request.  The batch does no such check when the
-    rule history is red at the commit of the batch.  It also does no such
-    check when a request changes PACKAGE_PREFIX, because the module of the
-    rule can then be different.
-
-    The scope of the rule is the registry, the ledgers, the rule table and
-    the plugin.  A request with no row of THE GROWTH and no change in that
-    scope gets no run of the rule.
-
 THE GATE
     The gate builds and tests a commit in the warm tree of each configuration
     that the change selects (assay.loop.gate).  The gate has no base side.  A
@@ -298,16 +264,15 @@ THE INDEX AND THE WORKING TREE
     update after it reads its verdict, and it writes the warnings.  An update
     that the work tree holds changes nothing.  The update also comes after a
     holder that ended after its swap (THE JOURNAL).  The verdict gives the
-    update: the commit and the paths of the index, the two commits of a
-    growth, and the falls.  Each update holds a lock of flock(2) on the file
+    update: the commit and the paths of the index, and the falls.  Each
+    update holds a lock of flock(2) on the file
     UPDATE_LOCK of the git directory of its work tree.  Two updates of one
     work tree then do not write its index at one time.
 
     The index gets the entry of the landed commit for each changed path, and
     the working tree does not change.  Then each patch goes to the working
-    tree with git apply, unless the working tree holds it.  The rows of THE
-    GROWTH go there in the same way.  The ledgers of THE FALLS go to each
-    work tree of the batch one time.  Each edit goes to the working-tree
+    tree with git apply, unless the working tree holds it.  The ledgers of
+    THE FALLS go to each work tree of the batch one time.  Each edit goes to the working-tree
     copy of its file, unless the copy holds it.
 
     When a hunk does not apply, the process writes a warning.  The owner of
@@ -350,7 +315,7 @@ THE DRIVER
 
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
-              [`--grow` RULE REASON]... [`--keep` RULE REASON]... [--jobs N] [--all-configurations]
+              [`--keep` RULE REASON]... [--jobs N] [--all-configurations]
               [--check [--here] | --dry-run | --tree] -- [PATH]...
 
     Exit 0 when the request landed, when the gate accepts the commit of
@@ -376,7 +341,6 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from assay.core import cache, git, paths, proc
-from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
@@ -392,7 +356,7 @@ PAUSE_RANGE_S = (0.1, 0.9)
 INSERT = "insert"
 REPLACE = "replace"
 # The count of the values of each option, for the division of the words (split_words()).
-VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--grow": 2, "--keep": 2, "--jobs": 1}
+VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--keep": 2, "--jobs": 1}
 FLAG_DRY_RUN = "--dry-run"
 FLAG_TREE = "--tree"
 FLAG_CHECK = "--check"
@@ -404,13 +368,11 @@ HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--grow RULE REASON]... [--keep RULE REASON]... [--jobs N] [--all-configurations]\n"
+    "                 [--keep RULE REASON]... [--jobs N] [--all-configurations]\n"
     "                 [--check [--here] | --dry-run | --tree] -- [PATH]..."
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
-# The ledger of the rule history, which holds the rows of THE GROWTH.
-HISTORY_LEDGER = rule_ledger.shown_path("history")
 # The length of a commit in a line of the landing.
 SHORT_HASH = 9
 # The work directory of the gate, in the work root, and the file of the records in it (THE RECORD).
@@ -430,7 +392,7 @@ REQUEST_SUFFIX = ".request"
 VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 PATCH_MARK = ".patch-"
-REQUEST_FORMAT = 1
+REQUEST_FORMAT = 2
 # The bytes of the random token of a request (THE QUEUE).
 TOKEN_BYTES = 8
 # The interval of the wait for a verdict or for the lock, in seconds (THE WAIT).  The wait for the request file of a
@@ -447,9 +409,6 @@ MODULE_PATH = Path("utils/assay/loop/land.py")
 MASTER_PATH = Path("utils/bin/loop")
 # The limit of a landing that the driver runs from the main work tree, in seconds.
 DRIVER_S = 8 * proc.BUILD_S
-# The directory of the package of the rule history.  A batch that changes it gets no check before the builds (THE
-# CHECKS BEFORE THE BUILDS).
-PACKAGE_PREFIX = "utils/assay/"
 # The results of a request in one run of the gate (THE RECORD).
 LANDED = "landed"
 REFUSED = "refused"
@@ -476,16 +435,8 @@ class Edit:
 
 
 @dataclass(frozen=True, slots=True)
-class Grow:
-    """One row of THE GROWTH in a request: the rule of the ledger that the change adds rows to, and the reason."""
-
-    rule: str
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
 class Request:
-    """The message, the patches, the edits, the own paths and the rows of THE GROWTH of one landing (THE REQUEST).
+    """The message, the patches, the edits and the own paths of one landing (THE REQUEST).
 
     `keeps` holds the rows of `--keep` (THE KEPT ROWS).
     """
@@ -494,7 +445,6 @@ class Request:
     patches: tuple[Path, ...]
     edits: tuple[Edit, ...]
     paths: tuple[str, ...]
-    grows: tuple[Grow, ...] = ()
     keeps: tuple[gate.Keep, ...] = ()
 
     @property
@@ -561,14 +511,10 @@ class Queued:
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    """One request composed on the commit before it: the request, that commit, its first and last commit, and its paths.
-
-    The last commit is the second commit of a growth (THE GROWTH), else the first commit.
-    """
+    """One request composed on the commit before it: the request, that commit, its own commit, and its paths."""
 
     queued: Queued
     parent: str
-    first: str
     commit: str
     changed: tuple[str, ...]
 
@@ -585,14 +531,12 @@ class Line:
 class Update:
     """The update of the work tree of a landed request (THE INDEX AND THE WORKING TREE).
 
-    The index gets the entry of the commit `index_commit` for each path of `index_paths`.  `grown` holds the first and
-    the second commit of a growth, or nothing.  `falls` holds the commit that the gate tested and the commit that
-    landed, or nothing, and `ledgers` holds the ledgers of THE FALLS.
+    The index gets the entry of the commit `index_commit` for each path of `index_paths`.  `falls` holds the commit
+    that the gate tested and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE FALLS.
     """
 
     index_commit: str
     index_paths: tuple[str, ...]
-    grown: tuple[str, ...] = ()
     falls: tuple[str, ...] = ()
     ledgers: tuple[str, ...] = ()
 
@@ -643,9 +587,6 @@ class RunRecord:
 
 # The check of the gate: the candidate and the retry flag give the verdict (THE GATE).
 type Check = Callable[[gate.Candidate, bool], gate.Verdict]
-# The check of the rule history before the builds (THE CHECKS BEFORE THE BUILDS).  It takes the commit, the first
-# commit of its request and the rules of the rows of THE GROWTH of that request.  It gives the errors.
-type Early = Callable[[str, str, tuple[str, ...]], tuple[str, ...]]
 # The function that receives the verdict of each request (THE HOLDER).
 type Decide = Callable[[Queued, Decision], None]
 # The check that tells if the process of a request holds its lock (THE COMPARE-AND-SWAP).
@@ -707,8 +648,6 @@ def checked_options(flags: dict[str, bool], jobs_values: list[list[str]], reques
         raise LandError("give the message of the commit with -m")
     if request.is_empty and not flags[FLAG_CHECK]:
         raise LandError("the request holds nothing to commit")
-    if request.is_empty and request.grows:
-        raise LandError("--grow takes a change of the ledger of its rule")
     jobs = int(jobs_text) if jobs_text is not None else proc.DEFAULT_JOBS
     return Options(flags[FLAG_DRY_RUN], flags[FLAG_TREE], flags[FLAG_CHECK], flags[FLAG_HERE], flags[FLAG_EVERY], jobs)
 
@@ -747,19 +686,15 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
         for kind, option in ((INSERT, "--block"), (REPLACE, "--replace"))
         for path, first, second in values[option]
     ]
-    grows = tuple(Grow(rule, reason) for rule, reason in values["--grow"])
     keeps = tuple(gate.Keep(rule, reason) for rule, reason in values["--keep"])
-    for option, rule_id, reason in [("--grow", item.rule, item.reason) for item in grows] + [
-        ("--keep", item.rule, item.reason) for item in keeps
-    ]:
-        if not rule_registry.is_rule_id(rule_id) or not reason.strip():
-            raise LandError(f"{option} takes the ID of a rule and a reason, not {rule_id!r} and {reason!r}")
+    for keep in keeps:
+        if not rule_registry.is_rule_id(keep.rule) or not keep.reason.strip():
+            raise LandError(f"--keep takes the ID of a rule and a reason, not {keep.rule!r} and {keep.reason!r}")
     request = Request(
         tuple(item[0] for item in values["-m"]),
         tuple((current / item[0]).resolve() for item in values["--patch"]),
         tuple(edits),
         tuple(own),
-        grows,
         keeps,
     )
     return request, checked_options(flags, values["--jobs"], request)
@@ -906,49 +841,13 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
     return Composed(head, tree, changed, diff)
 
 
-def grow_commit(root: Path, first: str, grows: Sequence[Grow], changed: Sequence[str]) -> str:
-    """Write the second commit of a growth on the first commit, and return its full name (THE GROWTH).
-
-    Raises:
-        LandError: If the change does not change the ledger of a rule, or the ledger of the rule history does not read
-        git.GitError: If a git command fails
-    """
-    from assay.guard.engines.meta import history
-
-    for grow in grows:
-        if rule_ledger.shown_path(grow.rule) not in changed:
-            raise LandError(f"--grow {grow.rule}: the change does not change the ledger of the rule {grow.rule}")
-    text = git.show(root, first, HISTORY_LEDGER)
-    if text is None:
-        raise LandError(f"the commit holds no {HISTORY_LEDGER}, and --grow writes its rows there")
-    try:
-        ledger = rule_ledger.parse(text.decode("utf-8"), HISTORY_LEDGER, history.RULE, rule_registry.Policy.ADMIT)
-    except ValueError as problem:
-        raise LandError(f"{HISTORY_LEDGER} does not read: {problem}") from None
-    reasons = {(grow.rule, history.GROW_KIND): grow.reason for grow in grows}
-    rendered = rule_ledger.render(history.with_admissions(ledger, first, reasons))
-    blob = git.hash_object(root, rendered.encode("utf-8"))
-    entry = git.tree_entry(root, first, HISTORY_LEDGER)
-    if entry is None:
-        raise LandError(
-            f"the commit {first[: history.SHORT_HASH]} holds no {HISTORY_LEDGER}, and --grow writes its rows there"
-        )
-    with git.borrowing_repository(root) as scratch:
-        git.run(scratch, "read-tree", first)
-        git.set_index_entry(scratch, replace(entry, name=blob), HISTORY_LEDGER)
-        tree = git.write_tree(scratch)
-    rules = ", ".join(grow.rule for grow in grows)
-    message = f"Admit the rows that the commit {first[: history.SHORT_HASH]} adds to the ledgers of {rules}\n"
-    return git.commit_tree(root, tree, [first], message)
-
-
 def commit_tree(root: Path, composed: Composed, message: str) -> str:
     """Write the commit of a composed tree on its commit, with the message, and return its full name."""
     return git.commit_tree(root, composed.tree, [composed.head], message)
 
 
 def compose_link(queued: Queued, parent: str, since: str) -> Link:
-    """Compose the commits of a request on a commit, and return the link (THE BATCH).
+    """Compose the commit of a request on a commit, and return the link (THE BATCH).
 
     `since` is the commit that the own paths compare with (THE TREE).
 
@@ -960,11 +859,7 @@ def compose_link(queued: Queued, parent: str, since: str) -> Link:
     composed = compose(queued.root, request, parent, since=since)
     if not composed.changed:
         raise LandError("the commit would change nothing")
-    first = commit_tree(queued.root, composed, request.message)
-    if not request.grows:
-        return Link(queued, parent, first, first, composed.changed)
-    second = grow_commit(queued.root, first, request.grows, composed.changed)
-    return Link(queued, parent, first, second, tuple(sorted({*composed.changed, HISTORY_LEDGER})))
+    return Link(queued, parent, commit_tree(queued.root, composed, request.message), composed.changed)
 
 
 # ── The index and the working tree ─────────────────────────────────────────
@@ -1013,19 +908,15 @@ def apply_patch(root: Path, patch: bytes, shown: str) -> list[str]:
 
 
 def update_working_tree(
-    root: Path,
-    request: Request,
-    grown: tuple[str, str] | None,
-    folded: tuple[str, str, tuple[str, ...]] | None = None,
+    root: Path, request: Request, folded: tuple[str, str, tuple[str, ...]] | None = None
 ) -> list[str]:
-    """Give the working tree each patch, each edit, the rows of THE GROWTH and the ledgers of THE FALLS.
+    """Give the working tree each patch, each edit and the ledgers of THE FALLS.
 
     The working tree gets only what it does not hold.
 
     Args:
         root: The top of the work tree of the request
         request: The request
-        grown: The first and the second commit of a growth, or None (THE GROWTH)
         folded: The commit that the gate tested, the commit that landed, and the ledgers of THE FALLS of
             assay.loop.gate.  None when the gate wrote no ledger
 
@@ -1035,8 +926,6 @@ def update_working_tree(
     warnings: list[str] = []
     for patch in request.patches:
         warnings += apply_patch(root, patch.read_bytes(), str(patch))
-    if grown is not None:
-        warnings += apply_patch(root, git.patch(root, grown, [HISTORY_LEDGER]), HISTORY_LEDGER)
     if folded is not None:
         before, after, ledgers = folded
         warnings += apply_patch(root, git.patch(root, (before, after), ledgers), " ".join(ledgers))
@@ -1088,9 +977,8 @@ def updated_tree(root: Path, branch: str, request: Request, update: Update) -> l
             return [elsewhere]
         with update_lock(root):
             warnings = sync_index(root, update.index_commit, update.index_paths)
-            grown = (update.grown[0], update.grown[1]) if update.grown else None
             folded = (update.falls[0], update.falls[1], update.ledgers) if update.falls else None
-            warnings += update_working_tree(root, request, grown, folded)
+            warnings += update_working_tree(root, request, folded)
     except (git.GitError, LandError, OSError, ValueError) as problem:
         stopped = (
             f"loop land: WARNING, the update of the work tree {root} stops: {problem}.  The commit is on the branch.  "
@@ -1187,8 +1075,6 @@ class BatchLanding:
         "decide",
         "deferred",
         "dropped",
-        "early",
-        "early_from",
         "is_alive",
         "is_check",
         "is_cut",
@@ -1207,23 +1093,19 @@ class BatchLanding:
         check: Check,
         decide: Decide,
         pause: heavy.Pause,
-        early: Early | None = None,
         is_alive: IsAlive | None = None,
         journal: Journal | None = None,
     ) -> None:
-        """Keep the gate, the receiver of the verdicts, the pause, the checks before the builds, and the journal.
+        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, and the journal.
 
-        The first request gives the shared git directory and the branch (THE HOLDER).  With no checks before the
-        builds, the batch goes to the gate immediately.  With no check of the processes, each request stays in the
-        batch.
+        The first request gives the shared git directory and the branch (THE HOLDER).  With no check of the processes,
+        each request stays in the batch.
         """
         self.repository = repository_of(batch[0])
         self.branch = batch[0].branch or branch_of(batch[0].root)
         self.check = check
         self.decide = decide
         self.pause = pause
-        self.early = early
-        self.early_from = -1
         self.is_alive: IsAlive = is_alive if is_alive is not None else (lambda _queued: True)
         self.journal = journal
         self.is_check = batch[0].options.is_check
@@ -1248,39 +1130,6 @@ class BatchLanding:
         if commit is None:
             raise LandError(f"the branch {self.branch} holds no commit")
         return commit
-
-    def early_problems(self, links: Sequence[Link]) -> tuple[int, tuple[str, ...]] | None:
-        """Return the index of the first link that the rule history refuses, with its errors (THE CHECKS BEFORE THE BUILDS).
-
-        The check starts at the link of the index `early_from`, because the rule accepts the links before it.  The
-        index -1 tells that the commit of the batch has no check at this time.  When no link is red, the function
-        gives None, and it does not run again.  It also gives None when the commit of the batch is red.  It gives
-        None when a link changes the package of the rule, too.  Complexity: one run of the rule for the commit of
-        the batch.  Each link with a change in the scope of the rule adds one run.
-        """
-        from assay.guard.engines.meta import history
-
-        scope = (*history.TABLES, f"{history.LEDGER_DIRECTORY}/", *history.QUARANTINE_MACHINERY)
-        early = self.early
-        self.early = None
-        if early is None or any(path.startswith(PACKAGE_PREFIX) for link in links for path in link.changed):
-            return None
-        if self.early_from < 0:
-            if early(self.base, self.base, ()):
-                check_report.write_line("loop land: the rule history is red on HEAD, and the batch goes to the gate")
-                return None
-            self.early_from = 0
-        for index in range(self.early_from, len(links)):
-            link = links[index]
-            grown = tuple(grow.rule for grow in link.queued.request.grows)
-            if not grown and not any(path.startswith(scope) for path in link.changed):
-                continue
-            problems = early(link.commit, link.first, grown)
-            if problems:
-                self.early = early
-                self.early_from = index
-                return index, problems
-        return None
 
     def gate_run(self, chain: Sequence[Link]) -> gate.Verdict:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
@@ -1428,12 +1277,6 @@ class BatchLanding:
                 continue
             pending, links = self.cut(pending, links)
             take = min(take, len(links))
-            found = self.early_problems(links) if not self.runs and not accepted and red_size is None else None
-            if found is not None:
-                index, problems = found
-                early_line = (f"loop land: REJECTED before the builds, {problem}" for problem in problems)
-                self.decide(pending.pop(index), refused(ExitCode.FINDINGS, *early_line))
-                continue
             verdict = self.gate_run([*accepted, *links])
             if verdict.is_accepted:
                 accepted += links
@@ -1487,7 +1330,6 @@ class BatchLanding:
             update = Update(
                 final,
                 tuple(sorted({*changed, *(ledgers if has_falls else ())})),
-                (link.first, link.commit) if link.queued.request.grows else (),
                 (accepted[-1].commit, final) if has_falls else (),
                 ledgers if has_falls else (),
             )
@@ -1670,7 +1512,6 @@ def encoded_request(queued: Queued, patch_names: Sequence[str]) -> bytes:
         "patches": list(patch_names),
         "edits": [asdict(edit) for edit in request.edits],
         "paths": list(request.paths),
-        "grows": [asdict(grow) for grow in request.grows],
         "keeps": [asdict(keep) for keep in request.keeps],
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
@@ -1723,7 +1564,6 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     if record.get("format") != REQUEST_FORMAT:
         raise ValueError(f"the request is not of the format {REQUEST_FORMAT}")
     edits = tuple(Edit(*item) for item in records_of(record.get("edits"), "edits", ("path", "kind", "first", "second")))
-    grows = tuple(Grow(*item) for item in records_of(record.get("grows"), "grows", ("rule", "reason")))
     keeps = tuple(gate.Keep(*item) for item in records_of(record.get("keeps"), "keeps", ("rule", "reason")))
     keys = ("root", "branch", "common", "token", "head")
     root, branch, common, token, head = text_list([record.get(key) for key in keys], "root")
@@ -1737,7 +1577,6 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         tuple(queue / name for name in text_list(record.get("patches"), "patches")),
         edits,
         text_list(record.get("paths"), "paths"),
-        grows,
         keeps,
     )
     options = Options(False, False, is_every=every, jobs=jobs)
@@ -1812,7 +1651,7 @@ def decoded_update(value: object) -> Update | None:
     index_commit = value.get("index_commit")
     if not isinstance(index_commit, str):
         raise TypeError("the field index_commit of the update is not a text")
-    fields = [text_list(value.get(key), key) for key in ("index_paths", "grown", "falls", "ledgers")]
+    fields = [text_list(value.get(key), key) for key in ("index_paths", "falls", "ledgers")]
     return Update(index_commit, *fields)
 
 
@@ -2013,7 +1852,6 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
             write_decision(queue, queued, decision)
 
     gated = check
-    early: Early | None = None
     session: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if gated is None:
         jobs = min(item.options.jobs for item in batch)
@@ -2026,16 +1864,13 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
             return replace(planned, run=gate.next_run(work)).check(candidate, is_retry)
 
         gated = run_check
-        early = planned.history_problems
         session = heavy.gate_session(repository)
     shown = " ".join(item.name for item in batch)
     check_report.write_line(f"loop land: the holder of the tree lands the batch {shown}")
     landing: BatchLanding | None = None
     try:
         with session:
-            landing = BatchLanding(
-                batch, gated, decide, pause, early, functools.partial(is_alive, queue), Journal(queue)
-            )
+            landing = BatchLanding(batch, gated, decide, pause, functools.partial(is_alive, queue), Journal(queue))
             landing.land(batch)
     except (LandError, gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError) as problem:
         status = ExitCode.USAGE if isinstance(problem, LandError) else ExitCode.TOOL_FAILED
@@ -2160,13 +1995,7 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
                     Decision(ExitCode.OK, head, (Line(f"loop land: the gate accepts HEAD {head[:SHORT_HASH]}"),))
                 )
             return written(refused(ExitCode.FINDINGS, *(f"loop land: REJECTED, {item}" for item in verdict.problems)))
-        landing = BatchLanding(
-            [queued],
-            run_check,
-            lambda _queued, decision: decisions.append(decision),
-            time.sleep,
-            session.history_problems,
-        )
+        landing = BatchLanding([queued], run_check, lambda _queued, decision: decisions.append(decision), time.sleep)
         try:
             landing.land([queued])
         finally:

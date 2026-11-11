@@ -51,7 +51,7 @@ endfunction()
 # Register two tests for each rule of the engine meta: guard_ID runs the rule on the tree, and
 # guard_ID_witness runs it on each plant and control of utils/plants/ID/.  The rule test-registration
 # reads the tests of this build directory, so each rule gets --build-dir.  A rule that does not apply
-# to the tree, such as history on a shallow clone, exits 77, and ctest shows a skip.  The guard_ID of
+# to the tree exits 77, and ctest shows a skip.  The guard_ID of
 # each rule of TREES reads the parse trees of the tree, so it requires the fixture tsast_trees.  The rule
 # test-registration refuses a rule that reads the trees and is not in TREES.
 function(crucible_meta_rule_tests warnings_dir)

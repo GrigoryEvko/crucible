@@ -13,7 +13,6 @@ utils/assay/core/target.py | print | 3 | self_test | A use of today.  The change
 utils/assay/core/target.py | print | 1 | self_test.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/check.py | print | 1 | load_registry | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/check.py | print | 1 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/guard/engines/meta/history.py | row-bar | 1 | old_table_rows | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/engines/meta/runner.py | print | 2 | run | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/engines/meta/runner.py | print | 4 | witness | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/guard/explain.py | print | 14 | main | A use of today.  The change that calls the owner of the job lowers the count
@@ -118,8 +117,6 @@ utils/assay/tests/core/test_registry.py | print | 3 | main | A use of today.  Th
 utils/assay/tests/core/test_registry.py | print | 1 | main.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/core/test_rows.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/core/test_rows.py | print | 1 | main.expect | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/tests/guard/test_history.py | print | 3 | main | A use of today.  The change that calls the owner of the job lowers the count
-utils/assay/tests/guard/test_history.py | print | 1 | main.expect | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_fixture.py | cache-root | 1 | StoreTest.run | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_fixture.py | print | 8 | main | A use of today.  The change that calls the owner of the job lowers the count
 utils/assay/tests/loop/test_step.py | argparse | 1 | <module> | A use of today.  The change that calls the owner of the job lowers the count

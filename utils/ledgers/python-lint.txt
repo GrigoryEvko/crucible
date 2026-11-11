@@ -148,10 +148,6 @@ utils/assay/setup/listing.py | format | 1 | main | An issue of ruff of today.  T
 utils/assay/setup/oracle.py | format | 1 | _unpack | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/setup/pins.py | format | 1 | read_pin | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/core/test_pins.py | F541 | 1 | row_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/guard/test_history.py | ISC004 | 1 | move_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/guard/test_history.py | ISC004 | 1 | quarantine_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/guard/test_history.py | ISC004 | 2 | threshold_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/tests/guard/test_history.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/loop/test_fixture.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/loop/test_step.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/tests/readers/test_compdb.py | format | 1 | read_cases | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

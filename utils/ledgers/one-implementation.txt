@@ -38,7 +38,6 @@ utils/assay/tests/core/test_pins.py | copy | 1 | main.expect | A copy of today. 
 utils/assay/tests/core/test_proc.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_registry.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/core/test_rows.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
-utils/assay/tests/guard/test_history.py | copy | 1 | main.expect | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/loop/test_fixture.py | copy | 1 | StoreTest.check_cpu_budget.finding | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/loop/test_fixture.py | copy | 1 | StoreTest.check_parent_name | A copy of today.  The change that keeps one body and calls it lowers the count
 utils/assay/tests/loop/test_fixture.py | copy | 1 | StoreTest.check_quote_directory | A copy of today.  The change that keeps one body and calls it lowers the count

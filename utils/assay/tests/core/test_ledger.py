@@ -180,7 +180,7 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         )
     expect(
         "rule_of() gives a rule of the registry and refuses an unknown rule",
-        rule_ledger.rule_of("history").id == "history"
+        rule_ledger.rule_of("quarantine").id == "quarantine"
         and refuses(lambda: rule_ledger.rule_of("no-such-rule"), rule_ledger.LedgerError),
     )
 

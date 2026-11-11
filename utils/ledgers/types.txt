@@ -15,7 +15,6 @@ utils/assay/core/meter.py | arg-type | 1 | open_instruction_counter.Library | An
 utils/assay/core/meter.py | type-arg | 1 | open_instruction_counter.CLong | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/rows.py | no-redef | 1 | split_row | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/core/ruletable.py | call-overload | 1 | parse_admit | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/guard/engines/meta/history.py | arg-type | 1 | ledger_rises | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/affected.py | var-annotated | 1 | run | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/derive/__init__.py | no-any-return | 1 | main | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/loop/derive/aten_ops.py | import-untyped | 2 | load_schema_model | An error of mypy of today.  The change that gives the code its types lowers the count
@@ -108,7 +107,6 @@ utils/assay/tests/core/test_ledger.py | misc | 1 | reader_cases | An error of my
 utils/assay/tests/core/test_pins.py | misc | 1 | tree_cases | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/core/test_proc.py | assignment | 1 | pidfd_failure_cases | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/core/test_rows.py | misc | 2 | value_cases | An error of mypy of today.  The change that gives the code its types lowers the count
-utils/assay/tests/guard/test_history.py | arg-type | 1 | threshold_cases | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 3 | StoreTest.check_budget_memo | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 4 | StoreTest.check_cpu_budget | An error of mypy of today.  The change that gives the code its types lowers the count
 utils/assay/tests/loop/test_fixture.py | arg-type | 3 | StoreTest.check_driver_answers | An error of mypy of today.  The change that gives the code its types lowers the count

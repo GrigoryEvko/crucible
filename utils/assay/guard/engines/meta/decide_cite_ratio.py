@@ -32,7 +32,7 @@ from assay.readers import tsast
 
 RULE = "decide-cite-ratio"
 MIN_CITES = 2
-CATALOG = decide_catalog.DECIDE_HEADERS[0]
+CATALOG = decide_catalog.DECIDE_HEADER
 
 
 def error(kind: str, entity: str, message: str) -> check_report.Finding:

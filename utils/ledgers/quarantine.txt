@@ -43,8 +43,7 @@
 #   more, and a new region, fail the rule until
 #       python3 utils/bin/guard write --rule quarantine --build-dir build --admit
 #   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section
-#   XXII, and give the reason in the commit.  The rule history gives a warning for each such
-#   count on each run.  Only a region that a build compiles has a row.
+#   XXII, and give the reason in the commit.  Only a region that a build compiles has a row.
 #
 # THE TIER
 #   The tier names the target of the build flags.  When a compile of the objects of all has its own

@@ -38,13 +38,6 @@ def command_cases(expect: Callable[[str, bool], None]) -> None:
         expect("run raises GitError when git cannot start", problem is not None and "cannot run" in str(problem))
         completed = git.run_any_exit(root, "diff", "--quiet", "--no-index", "a.txt", "sub/b.txt")
         expect("run_any_exit gives the result for an exit that is not 0", completed.exit == 1)
-        number = git.version(root)
-        expect(
-            "version gives the number of the version of git, with no words before it",
-            number[:1].isdigit() and "." in number and " " not in number,
-        )
-        problem = refuses(lambda: git.version(root.parent / "no-such-directory"), git.GitError)
-        expect("version raises GitError when git cannot run in the tree", problem is not None)
 
 
 def answer_cases(expect: Callable[[str, bool], None]) -> None:
@@ -60,14 +53,9 @@ def answer_cases(expect: Callable[[str, bool], None]) -> None:
         expect("is_clean reads only the pathspec", git.is_clean(root, ("a.txt",)) and not git.is_clean(root, ("sub",)))
         expect("show gives a file at a revision", git.show(root, "HEAD", "sub/b.txt") == b"two\n")
         expect("show gives None for a file that the revision does not hold", git.show(root, "HEAD", "none.txt") is None)
-        dated = git.commit_all(root, "A dated commit", date="2025-01-02T12:00:00")
+        git.commit_all(root, "A dated commit", date="2025-01-02T12:00:00")
         dates = git.run(root, "log", "-1", "--format=%ad %cd", "--date=short").decode().split()
         expect("commit_all gives a date to the author and to the committer", dates == ["2025-01-02", "2025-01-02"])
-        expect(
-            "changed_paths gives each path of a commit against its parent, and each path of a root commit",
-            git.changed_paths(root, dated) == {"sub/b.txt"}
-            and git.changed_paths(root, commit) == {"a.txt", "sub/b.txt"},
-        )
 
 
 def object_cases(expect: Callable[[str, bool], None]) -> None:
@@ -78,13 +66,7 @@ def object_cases(expect: Callable[[str, bool], None]) -> None:
         second = git.commit_all(root, "The second commit", date="2025-01-03T12:00:00")
         expect("parent gives the first parent of a commit", git.parent(root, second) == first)
         expect("short_name gives a prefix of the full hash", second.startswith(git.short_name(root, second)))
-        expect("author_date gives the author date", git.author_date(root, first).isoformat() == "2025-01-02")
         expect("commit_subject gives the subject", git.commit_subject(root, second) == "The second commit")
-        expect(
-            "dated_commits gives each commit of a path with its date, oldest first",
-            [(entry.sha, entry.date.isoformat()) for entry in git.dated_commits(root, ["a.txt"])]
-            == [(first, "2025-01-02"), (second, "2025-01-03")],
-        )
         entry = git.tree_entry(root, second, "sub/b.txt")
         expect(
             "tree_entry gives the mode, the type and the object of a path, and None for a missing path",
@@ -185,10 +167,6 @@ def move_cases(expect: Callable[[str, bool], None]) -> None:
             git.diff_moves(root, "HEAD").renamed == {},
         )
         rewrite = git.commit_all(root, "Rewrite the file under a new name")
-        expect(
-            "changes gives the rule history no move for that rewrite",
-            git.changes(root, ["rewritten.cpp"])[rewrite][1] == {},
-        )
         (root / "rewritten.cpp").unlink()
         (root / "renamed.cpp").write_bytes(numbered_lines(20, frozenset(range(9))))
         git.run(root, "add", "-A", "--", ".")

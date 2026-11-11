@@ -46,19 +46,11 @@ THE ISOLATION
     directory of -C, also when this process holds such a variable.  init()
     makes a repository and stops unless git resolves the directory itself.
 
-THE HISTORY
-    path_history() reads the commits that changed some paths, with one `git
-    log` and one `git cat-file --batch`: the content of each path at each such
-    commit, at its first parent, at HEAD and in the working tree.  A merge is
-    not one of the commits, because a merge brings a change that a commit of
-    the other side made.
-
 THE MOVES
     A move is a file that git finds as renamed with a similarity of
     MOVE_SIMILARITY percent or more.  change_moves() gives the ledger writers
     the previous path of each moved file, and the file takes the rows of that
-    path.  changes() gives the rule history the same moves.  The default of
-    git is 50 %.  With that default, a file that keeps half of its lines takes
+    path.  The default of git is 50 %.  With that default, a file that keeps half of its lines takes
     each row of its previous path.  Its new half can then hold new findings of
     the same entities.  A rewrite below the threshold is a removed file and a
     new file.
@@ -76,8 +68,8 @@ THE MOVED LINES
     first.  Else it takes a removed line of a different file, the first in
     the sorted sequence of the paths.  moves_of() gives the moved lines of
     each file, and each pair of files (A, B) where the change moved a line
-    from A to B.  The rule quarantine-lines, the ledger writers and the rule
-    history read them (THE MOVE of assay.core.ledger).  Moves.base is the
+    from A to B.  The rule quarantine-lines and the ledger writers read them
+    (THE MOVE of assay.core.ledger).  Moves.base is the
     commit of the base of the diff.  base_file() reads a file at that
     commit, such as a ledger before the change (THE LEDGER BEFORE THE
     CHANGE of assay.core.ledger).
@@ -122,7 +114,6 @@ THE BORROWED INDEX
 """
 
 import contextlib
-import datetime
 import os
 import shutil
 import tempfile
@@ -133,9 +124,6 @@ from pathlib import Path
 
 from assay.core import proc
 
-# The separators of the fields and the records of `git log`, which no subject or body holds.
-FIELD = "\x1f"
-RECORD = "\x1e"
 # The identity of a commit of a throwaway repository.
 SCRATCH_IDENTITY = {"GIT_AUTHOR_NAME": "crucible-scratch", "GIT_AUTHOR_EMAIL": "crucible-scratch@invalid",
                     "GIT_COMMITTER_NAME": "crucible-scratch", "GIT_COMMITTER_EMAIL": "crucible-scratch@invalid"}
@@ -174,11 +162,10 @@ INITIAL_COMMIT = "(initial)"
 NULL_OBJECT = "0" * 40
 # The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
 READS_HISTORY = frozenset({
-    "archive", "author_date", "base_file", "blobs", "change_base", "change_moves", "changed_files", "changed_paths", "changes",
-    "commit_subject", "commits", "dated_commits", "diff_moves", "file_diffs", "has_no_change", "head",
-    "index_changes", "index_patch", "is_ancestor", "is_clean", "is_index_clean", "is_shallow", "message_of",
-    "parent", "patch", "path_history", "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head",
-    "tree_changes", "tree_entry", "work_changes",
+    "archive", "base_file", "blobs", "change_base", "change_moves", "changed_files", "commit_subject", "diff_moves",
+    "file_diffs", "has_no_change", "head", "index_changes", "index_patch", "is_ancestor", "is_clean", "is_index_clean",
+    "message_of", "parent", "patch", "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status",
+    "symbolic_head", "tree_changes", "tree_entry", "work_changes",
 })
 READS_NAMES = frozenset({
     "change_base", "change_moves", "changed_files", "diff_moves", "file_diffs", "has_no_change", "listed_files",
@@ -188,7 +175,7 @@ READS_NEITHER = frozenset({
     "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files",
     "hash_object", "holds_patch", "hunk_of", "index_object", "init", "moves_of", "new_file_diff", "null_separated",
     "read_diff", "run", "run_any_exit", "scratch_repository", "set_index_entries", "set_index_entry", "side_path",
-    "swap_ref", "toplevel", "version", "write_tree",
+    "swap_ref", "toplevel", "write_tree",
 })
 
 
@@ -198,33 +185,6 @@ class NotIsolated(Exception):
 
 class GitError(Exception):
     """A git command cannot run, or it exits with a status that is not 0."""
-
-
-@dataclass(frozen=True, slots=True)
-class Commit:
-    """One commit that changed a watched path: its hash, its subject, its body and the watched paths it changed."""
-
-    sha: str
-    subject: str
-    body: str
-    paths: tuple[str, ...]
-
-    @property
-    def short(self) -> str:
-        """The hash in 9 characters."""
-        return self.sha[:9]
-
-
-@dataclass(frozen=True, slots=True)
-class PathHistory:
-    """The states of some paths: at each commit that changed one of them (newest first), at its parent, at HEAD and in
-    the working tree.  A missing file is None."""
-
-    commits: tuple[Commit, ...]
-    at: Mapping[tuple[str, str], bytes | None] = field(default_factory=dict)
-    before: Mapping[tuple[str, str], bytes | None] = field(default_factory=dict)
-    head: Mapping[str, bytes | None] = field(default_factory=dict)
-    working: Mapping[str, bytes | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,14 +202,6 @@ class Hunk:
     def adds(self, line: int) -> bool:
         """Tell if the block adds the line LINE of the new file."""
         return self.new_start <= line < self.new_start + self.new_count
-
-
-@dataclass(frozen=True, slots=True)
-class DatedCommit:
-    """One commit: its hash and its author date."""
-
-    sha: str
-    date: datetime.date
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,18 +298,6 @@ def init(root: Path) -> None:
                           f"writes to a repository that is not its own")
 
 
-def version(root: Path) -> str:
-    """Return the number of the version of the git program that runs in a tree, such as "2.53.0".
-
-    Raises:
-        GitError: If git cannot start, or its first line is not `git version NUMBER`
-    """
-    words = run(root, "--version").decode("utf-8", "replace").split()
-    if len(words) < 3 or words[:2] != ["git", "version"]:
-        raise GitError(f"`git --version` in {root} gives no version line: {' '.join(words[:4])!r}")
-    return words[2]
-
-
 def toplevel(root: Path) -> Path:
     """Return the top of the work tree that holds root.
 
@@ -429,15 +369,6 @@ def show(root: Path, revision: str, path: str) -> bytes | None:
     return blobs(root, [f"{revision}:{path}"])[0]
 
 
-def is_shallow(root: Path) -> bool:
-    """Whether the history of the repository of root is shallow.
-
-    Raises:
-        GitError: If root is not in a git work tree
-    """
-    return run(root, "rev-parse", "--is-shallow-repository").decode().strip() == "true"
-
-
 def tracked_files(root: Path, pathspec: Sequence[str] = (), with_new: bool = False) -> tuple[str, ...]:
     """Return each tracked file of a tree, sorted.  With with_new, also each new file that .gitignore does not match.
 
@@ -486,96 +417,6 @@ def blobs(root: Path, names: Sequence[str]) -> list[bytes | None]:
         else:
             contents.append(None)
     return contents
-
-
-def commits(root: Path, paths: Sequence[str]) -> tuple[Commit, ...]:
-    """Return each commit that is not a merge and that changed one of the paths, newest first.
-
-    Raises:
-        GitError: If git fails
-    """
-    log = run(root, "log", "--no-merges", "--full-history", "--topo-order", f"--format={RECORD}%H{FIELD}%s{FIELD}%b{FIELD}",
-              "--name-only", "--", *paths).decode("utf-8", "replace")
-    watched = set(paths)
-    found: list[Commit] = []
-    for record in log.split(RECORD)[1:]:
-        sha, subject, body, names = record.split(FIELD, 3)
-        changed = tuple(name for name in names.split("\n") if name in watched)
-        found.append(Commit(sha, subject.strip(), body.strip(), changed))
-    return tuple(found)
-
-
-def changes(root: Path, paths: Sequence[str]) -> dict[str, tuple[frozenset[str], dict[str, str]]]:
-    """Return each path that each commit of the paths changed, and the old path of each file that it moved.
-
-    The commits are those that changed one of `paths`, newest first, and the
-    result holds each path of the commit (`--full-diff`).
-
-    Raises:
-        GitError: If git fails
-
-    Complexity: linear in the size of the log.
-    """
-    log = run(root, "log", "--no-merges", "--full-history", "--topo-order", "--full-diff", FIND_MOVES,
-              "--name-status", f"--format={RECORD}%H", "--", *paths).decode("utf-8", "replace")
-    found: dict[str, tuple[frozenset[str], dict[str, str]]] = {}
-    for record in log.split(RECORD)[1:]:
-        lines = record.split("\n")
-        changed: set[str] = set()
-        moved: dict[str, str] = {}
-        for line in lines[1:]:
-            cells = line.split("\t")
-            if len(cells) == 3 and cells[0].startswith("R"):
-                moved[cells[2]] = cells[1]
-                changed.update(cells[1:])
-            elif len(cells) >= 2:
-                changed.update(cells[1:])
-        found[lines[0].strip()] = (frozenset(changed), moved)
-    return found
-
-
-def changed_paths(root: Path, revision: str) -> frozenset[str]:
-    """Return each path that one commit changed against its first parent, or each of its paths for a root commit.
-
-    Raises:
-        GitError: If git fails
-
-    Complexity: linear in the number of the paths of the commit.
-    """
-    names = run(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", revision).decode("utf-8", "replace")
-    return frozenset(name for name in names.split("\n") if name)
-
-
-def path_history(root: Path, paths: Sequence[str], groups: Sequence[Sequence[str]] = ()) -> PathHistory:
-    """Read each commit that changed one of the paths, and each path at each such commit, its parent, HEAD and the
-    working tree.
-
-    A commit that changed one path of a group also reads each other path of
-    the group, so the state of the group is whole at the commit and at its
-    parent.  A group holds paths of `paths`.
-
-    Raises:
-        GitError: If git fails
-    """
-    found = commits(root, paths)
-    requests: list[tuple[str, str]] = []
-    for commit in found:
-        wanted = list(commit.paths)
-        for group in groups:
-            if any(path in commit.paths for path in group):
-                wanted += [path for path in group if path not in wanted]
-        requests += [(commit.sha, path) for path in wanted]
-    names = ([f"{sha}:{path}" for sha, path in requests] + [f"{sha}^1:{path}" for sha, path in requests]
-             + [f"HEAD:{path}" for path in paths])
-    contents = blobs(root, names)
-    count = len(requests)
-    working: dict[str, bytes | None] = {}
-    for path in paths:
-        file = root / path
-        working[path] = file.read_bytes() if file.is_file() else None
-    return PathHistory(found, {request: contents[index] for index, request in enumerate(requests)},
-                       {request: contents[count + index] for index, request in enumerate(requests)},
-                       {path: contents[2 * count + index] for index, path in enumerate(paths)}, working)
 
 
 def new_files(root: Path) -> tuple[str, ...]:
@@ -886,16 +727,6 @@ def short_name(root: Path, revision: str) -> str:
     return run(root, "rev-parse", "--short", revision).decode().strip()
 
 
-def author_date(root: Path, revision: str) -> datetime.date:
-    """Return the author date of the commit of a revision.
-
-    Raises:
-        GitError: If the revision names no commit, or git fails
-    """
-    shown = run(root, "log", "-1", "--format=%ad", "--date=short", revision).decode().strip()
-    return datetime.date.fromisoformat(shown)
-
-
 def commit_subject(root: Path, revision: str) -> str:
     """Return the subject of the commit of a revision.
 
@@ -903,23 +734,6 @@ def commit_subject(root: Path, revision: str) -> str:
         GitError: If the revision names no commit, or git fails
     """
     return run(root, "log", "-1", "--format=%s", revision).decode("utf-8", "replace").strip()
-
-
-def dated_commits(root: Path, paths: Sequence[str]) -> tuple[DatedCommit, ...]:
-    """Return each commit that changed one of the paths, oldest first, with its author date.
-
-    Complexity: linear in the length of the log.
-
-    Raises:
-        GitError: If git fails
-    """
-    log = run(root, "log", "--reverse", f"--format=%H{FIELD}%ad", "--date=short", "--", *paths).decode()
-    found: list[DatedCommit] = []
-    for line in log.splitlines():
-        if line:
-            sha, shown = line.split(FIELD, 1)
-            found.append(DatedCommit(sha, datetime.date.fromisoformat(shown)))
-    return tuple(found)
 
 
 def status(root: Path) -> Status:

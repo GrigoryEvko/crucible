@@ -157,7 +157,7 @@ def counts_of(context: TsastContext) -> Counts:
     missing = [top for top in SCOPE if not (context.root / top).is_dir()]
     if missing:
         raise AuditError(f"the tree has no {' or '.join(missing)} directory, so the count would be a false zero")
-    catalog = decide_catalog.DECIDE_HEADERS[0]
+    catalog = decide_catalog.DECIDE_HEADER
     procedures: list[str] = []
     for tree in context.trees([catalog] if catalog in context.listed() else [], with_broken=True):
         procedures = decide_catalog.procedures(parsed(tree))

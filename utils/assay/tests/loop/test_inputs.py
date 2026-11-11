@@ -79,7 +79,7 @@ READ_FILES = {
         "    return git.tracked_files(root)\n"
     ),
     "utils/assay/guard/engines/meta/historian.py": (
-        "from assay.core import git\ndef findings(context):\n    return git.path_history(context.root, [])\n"
+        "from assay.core import git\ndef findings(context):\n    return git.head(context.root)\n"
     ),
     "utils/assay/guard/engines/meta/zzz_after.py": "VALUE = 1\n",
 }

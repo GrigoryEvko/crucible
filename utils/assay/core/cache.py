@@ -170,9 +170,6 @@ LIMITS: dict[str, int] = {
     # ledger test-memory of 78 rows holds 9 KB.  Each change of a ledger or of a module of the parse adds one entry
     # for each rule.
     "ledger-rows": 16 << 20,
-    # The results of the rule history (THE CACHE of assay.guard.engines.meta.history).  On 2026-10-17, a cold run of
-    # the tree wrote 15 MB in 302 files.  Each run at a new commit adds one state of the walk of 1 MB.
-    "history": 256 << 20,
     # The imports and the shapes of the modules of the package (THE PARSE CACHE of assay.loop.inputs).  Each module has
     # one file of one 4 KB block.  On 2026-10-17, the entries of one tree held 1.6 MB.  Each change of a module adds one
     # entry.

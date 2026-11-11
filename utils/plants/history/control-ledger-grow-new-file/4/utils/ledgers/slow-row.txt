@@ -1,5 +1,0 @@
-# a planted ledger
-format 1
-rule slow-row
-test/b | time | 22 | - | r
-test/c | time | 22 | - | r

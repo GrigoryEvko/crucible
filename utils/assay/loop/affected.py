@@ -198,8 +198,8 @@ THE LAYERS
     sequence, and it sorts the tests by their cost only in a level.
 
     The DEPENDS of each of the four census tests names each negative fixture
-    (test/CMakeLists.txt).  A long test with no DEPENDS, such as
-    guard_history, then started only after ctest started each fixture.  On
+    (test/CMakeLists.txt).  A long test with no DEPENDS then started only
+    after ctest started each fixture.  On
     2026-10-17, the test phase of the gate used about 100 cores for 20 s, and
     then about 7 cores for 40 s.
 
@@ -2044,7 +2044,7 @@ GUARD_FILES = {
     ),
     "utils/assay/guard/engines/meta/gamma.py": "VALUE = 1\n",
     "utils/assay/guard/engines/meta/delta.py": (
-        "from assay.core import git\ndef changed(root):\n    return git.path_history(root, [])\n"
+        "from assay.core import git\ndef changed(root):\n    return git.head(root)\n"
     ),
     "utils/assay/fake/shared.py": "VALUE = 1\n",
     "utils/assay/fake/helper.py": "VALUE = 1\n",
@@ -2514,7 +2514,7 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         expect("a new ledger of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)
         status, output = fake.call()
-        (fake.source_dir / "utils" / "ledgers" / "history.txt").write_text("# a ledger of a different rule\n")
+        (fake.source_dir / "utils" / "ledgers" / "python-lint.txt").write_text("# a ledger of a different rule\n")
         status, output = fake.call()
         expect("a ledger of a rule that the test launcher does not read leaves a launched test skipped",
                "exe_launched" in fake.skipped(), output)

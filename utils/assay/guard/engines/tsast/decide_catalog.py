@@ -10,13 +10,8 @@ from __future__ import annotations
 
 from assay.readers import tsast
 
-# The live catalog header first, then the paths that it had in earlier
-# commits.  The history walk of the cite-ratio audit reads all three.
-DECIDE_HEADERS = (
-    "include/foundation/contracts/Decide.h",
-    "include/crucible/safety/_Decide.h",
-    "include/crucible/safety/Decide.h",
-)
+# The catalog header.
+DECIDE_HEADER = "include/foundation/contracts/Decide.h"
 
 # The declarator shapes that stand between a function definition and the
 # function_declarator that holds its name.

@@ -128,10 +128,7 @@ WRITE THE LEDGER
       no other count.  Use it only for a region of a reason class of CLAUDE.md
       section XXII.  Such a region must cover more, or it is a new region.
       Give the reason of the region, with its class, in the message of the
-      commit.  The rule history refuses the commit when its message does not
-      hold that reason (THE ADMITTED COUNTS of
-      assay.guard.engines.meta.history).  It also gives a warning for each
-      such count on each run.
+      commit.
     * --reason TEXT gives the reason cell of each new row.
     * A file that git reports as moved takes the rows of its earlier path in
       each configuration.  Git reports a move after `git mv` or `git add`,
@@ -264,8 +261,7 @@ LEDGER_COMMENT = (
     "#   more, and a new region, fail the rule until\n"
     "#       python3 utils/bin/guard write --rule quarantine --build-dir build --admit\n"
     "#   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section\n"
-    "#   XXII, and give the reason in the commit.  The rule history gives a warning for each such\n"
-    "#   count on each run.  Only a region that a build compiles has a row.\n"
+    "#   XXII, and give the reason in the commit.  Only a region that a build compiles has a row.\n"
     "#\n"
     "# THE TIER\n"
     "#   The tier names the target of the build flags.  When a compile of the objects of all has its own\n"
@@ -344,16 +340,6 @@ def row_entity(kind: str, parsed: quarantine_sections.FindingEntity) -> str:
     if isinstance(parsed, quarantine_sections.UpwardInclude):
         return parsed.target
     return parsed.text
-
-
-def include_key(kind: str, entity: str) -> str:
-    """Return the entity of the row of an include: the header or the target with no layer.  Each other kind keeps it.
-
-    The function keeps an entity that holds no layer.  A row that it wrote then reads back as the same key.  The rule
-    history reads each earlier version of the ledger through it.
-    """
-    parsed = quarantine_sections.quarantine_entity(kind, entity)
-    return entity if isinstance(parsed, quarantine_sections.Words) else row_entity(kind, parsed)
 
 
 def entity_key(kind: str, entity: str) -> str:

@@ -4935,13 +4935,10 @@ endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # The rules of the engine meta read the registry, the ledgers, the plants, the
-# modules of the package, the prose and the git history (cmake/Guards.cmake).
+# modules of the package and the prose (cmake/Guards.cmake).
 # The rules of TREES also read the parse trees, so their tests require the
-# fixture tsast_trees.  guard_history reads
-# the git history of utils/registry.txt and of each ledger: a threshold that
-# rose with no measurement in its commit is an error, and a threshold or a
-# ledger above its lowest committed value gives a warning.  The test modules
-# of the rows grammar, the registry, the ledgers, the rule history, the
+# fixture tsast_trees.  The test modules
+# of the rows grammar, the registry, the ledgers, the
 # process module, the git module, the paths, the configuration of a build and
 # its policy, the run of the cases, the reader
 # and writer of the cost records, the record class of the step meters, the
@@ -4991,7 +4988,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
         readers.test_compdb readers.test_python
         readers.test_tool_reports readers.test_bench
-        readers.test_sections readers.test_prose guard.test_history guard.test_import_closure
+        readers.test_sections readers.test_prose guard.test_import_closure
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_types

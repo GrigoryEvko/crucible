@@ -3,9 +3,9 @@
 `guard selftest tests.loop.test_land` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
 
-The cases plant a git repository with a shared file, an own file, a ledger
-and the ledger of the rule history.  The repository also holds a file of the
-index that .gitignore matches.  The working tree then holds an edit of a
+The cases plant a git repository with a shared file, an own file and a
+ledger.  The repository also holds a file of the index that .gitignore
+matches.  The working tree then holds an edit of a
 different writer in the shared file.  The cases compose a tree with an edit
 of the shared file and the working-tree copy of the own file.  They land
 batches of requests by compare-and-swap through a gate that each case plants.
@@ -15,8 +15,8 @@ that does not compose.  It can also have a red interaction of two requests,
 or a branch that is red with no request.  It can have a request that repairs
 a red branch, or a branch that moves.  The cases count the runs of the gate
 of each batch.  They cut a batch at a second change of a C++ file.  They drop
-a request when its process goes from the queue.  They land added rows of a
-ledger as two commits, and the falls of the gate.
+a request when its process goes from the queue.  They land the falls of the
+gate.
 
 An own path can hold a file that an earlier request changes.  Such a request
 must not compose, in a batch and after a swap.  The holder must give each
@@ -61,7 +61,6 @@ PLANTED = {
     "kept.txt": "in the index, and .gitignore matches it\n",
     "lib.cpp": "one\ntwo\n",
     "utils/ledgers/demo.txt": "format 1\nrule demo\n",
-    "utils/ledgers/history.txt": "# The ledger of the rule history.\nformat 1\nrule history\n",
 }
 # The edit of a different writer that is not committed, and the working-tree copy of the own file.
 WRITER_SHARED = "alpha\nbeta\nanother writer\n"
@@ -137,11 +136,10 @@ def request_of(
     edits: tuple[land.Edit, ...] = (),
     own: tuple[str, ...] = (),
     patches: tuple[Path, ...] = (),
-    grows: tuple[land.Grow, ...] = (),
     keeps: tuple[gate.Keep, ...] = (),
 ) -> land.Request:
     """Return a request of the planted repository."""
-    return land.Request(messages, patches, edits, own, grows, keeps)
+    return land.Request(messages, patches, edits, own, keeps)
 
 
 def options(is_dry_run: bool = False, is_tree_only: bool = False, is_check: bool = False) -> land.Options:
@@ -181,7 +179,6 @@ def batch_landing(
     requests: Sequence[land.Request],
     check: land.Check,
     is_check: bool = False,
-    early: land.Early | None = None,
     is_alive: land.IsAlive | None = None,
 ) -> tuple[dict[int, land.Decision], land.BatchLanding]:
     """Land a batch of requests numbered from 1 through a planted gate, and return each verdict and the landing.
@@ -196,7 +193,7 @@ def batch_landing(
     def decide(queued: land.Queued, decision: land.Decision) -> None:
         decisions[queued.number] = decision
 
-    batched = land.BatchLanding(batch, check, decide, no_pause, early, is_alive)
+    batched = land.BatchLanding(batch, check, decide, no_pause, is_alive)
     batched.land(batch)
     for queued in batch:
         decision = decisions.get(queued.number)
@@ -231,10 +228,9 @@ def landed(
     requests: Sequence[land.Request],
     check: land.Check,
     is_check: bool = False,
-    early: land.Early | None = None,
 ) -> tuple[dict[int, land.Decision], list[land.RunRecord]]:
     """Land a batch of requests numbered from 1 through a planted gate, and return each verdict and the runs."""
-    decisions, batched = batch_landing(root, requests, check, is_check, early)
+    decisions, batched = batch_landing(root, requests, check, is_check)
     return decisions, batched.records()
 
 
@@ -280,7 +276,7 @@ def word_cases(expect: testing.Expect) -> None:
         scratch = Path(scratch_text)
         (scratch / "old").write_text("beta\n", encoding="utf-8")
         (scratch / "new").write_text("gamma\n", encoding="utf-8")
-        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch", "--grow", "demo", "-- is a reason"]
+        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch", "--keep", "demo", "-- is a reason"]
         request, parsed = land.parse(
             [*words, "--jobs", "3", "--all-configurations", "--replace", "shared.txt", "old", "new", "--", "own.txt"],
             scratch,
@@ -292,7 +288,7 @@ def word_cases(expect: testing.Expect) -> None:
             and request.edits == (land.Edit("shared.txt", land.REPLACE, "beta\n", "gamma\n"),)
             and request.patches == ((scratch / "change.patch").resolve(),)
             and request.paths == ("own.txt",)
-            and request.grows == (land.Grow("demo", "-- is a reason"),)
+            and request.keeps == (gate.Keep("demo", "-- is a reason"),)
             and request.message == "-x is a subject\n\nbody\n"
             and parsed == land.Options(False, False, False, False, True, 3),
         )
@@ -311,8 +307,6 @@ def word_cases(expect: testing.Expect) -> None:
             ("--check with --dry-run", ["--check", "--dry-run", "-m", "s", "--patch", "p", "--"]),
             ("a word that is no option", ["--force", "-m", "s", "--patch", "p", "--"]),
             ("--jobs that is no number above 0", ["--jobs", "0", "-m", "s", "--patch", "p", "--"]),
-            ("--grow with no rule ID", ["--grow", "Not A Rule", "why", "-m", "s", "--patch", "p", "--"]),
-            ("--grow with no change", ["--check", "--grow", "demo", "why", "--"]),
         ):
             try:
                 land.parse(words, scratch)
@@ -712,70 +706,6 @@ def revert_cases(expect: testing.Expect) -> None:
         )
 
 
-def early_cases(expect: testing.Expect) -> None:
-    """Hold the checks before the builds: a refusal with no run of the gate, a red HEAD, and a change of the package."""
-    with tempfile.TemporaryDirectory(prefix="land-early-") as work_text:
-        root = Path(work_text) / "repo"
-        head = planted_repository(root)
-        names = ("utils/ledgers/e1.txt", "utils/ledgers/e2.txt", "utils/ledgers/e3.txt")
-        for name, text in zip(names, ("one\n", "stale\n", "three\n"), strict=True):
-            (root / name).write_text(text, encoding="utf-8")
-        requests = [request_of((f"Add {name}",), own=(name,)) for name in names]
-        called: list[str] = []
-
-        def early(commit: str, first: str, grown: tuple[str, ...]) -> tuple[str, ...]:
-            """Refuse a commit that holds the stale file, and keep each call."""
-            called.append(commit)
-            is_stale = git.show(root, commit, names[1]) == b"stale\n"
-            return ("utils/ledgers/history.txt:3: error: [history] a stale row",) if is_stale else ()
-
-        seen: list[tuple[gate.Candidate, bool]] = []
-        decisions, _ = landed(root, requests, passing(seen), early=early)
-        expect(
-            "the request that turns the rule history red gets the refusal before any run of the gate, and the other "
-            "two land in one run",
-            decisions[2].status == ExitCode.FINDINGS
-            and any("before the builds" in line.content for line in decisions[2].lines)
-            and decisions[1].status == 0
-            and decisions[3].status == 0
-            and len(seen) == 1
-            and called[0] == head
-            and len(called) == 4,
-        )
-
-        def red_everywhere(commit: str, first: str, grown: tuple[str, ...]) -> tuple[str, ...]:
-            """Refuse each commit, also the commit of the batch."""
-            called.append(commit)
-            return ("utils/ledgers/history.txt:3: error: [history] red on HEAD",)
-
-        root = Path(work_text) / "repo-red"
-        planted_repository(root)
-        (root / names[0]).write_text("one\n", encoding="utf-8")
-        called.clear()
-        (decisions, _), printed = testing.captured(
-            lambda: landed(root, [request_of(("Add e1",), own=(names[0],))], passing([]), early=red_everywhere)
-        )
-        expect(
-            "with the rule history red at the commit of the batch, the batch goes to the gate with no refusal",
-            decisions[1].status == 0 and len(called) == 1 and "red on HEAD" in printed,
-        )
-        root = Path(work_text) / "repo-package"
-        planted_repository(root)
-        (root / "utils/assay").mkdir(parents=True)
-        (root / "utils/assay/module.py").write_text("VALUE = 1\n", encoding="utf-8")
-        called.clear()
-        decisions, _ = landed(
-            root,
-            [request_of(("Change the package",), own=("utils/assay/module.py",))],
-            passing([]),
-            early=red_everywhere,
-        )
-        expect(
-            "a batch that changes the package of the rule gets no check before the builds",
-            decisions[1].status == 0 and not called,
-        )
-
-
 def landing_cases(expect: testing.Expect) -> None:
     """Hold a landing through the gate, the index and the working tree, a moved branch, a rejected commit and --check."""
     with tempfile.TemporaryDirectory(prefix="land-landing-") as work_text:
@@ -930,65 +860,6 @@ def update_cases(expect: testing.Expect, work: Path, root: Path) -> None:
     )
 
 
-def grow_cases(expect: testing.Expect) -> None:
-    """Hold the rows that a change adds to a ledger: two commits with one swap, and a ledger that does not change."""
-    with tempfile.TemporaryDirectory(prefix="land-grow-") as work_text:
-        root = Path(work_text) / "repo"
-        head = planted_repository(root)
-        (root / "utils/ledgers/demo.txt").write_text("format 1\nrule demo\nsome/path | kind | 1 | entity | why\n")
-        grows = (land.Grow("demo", "A row that must stay"),)
-        request = request_of(("Add a row to the demo ledger",), own=("utils/ledgers/demo.txt",), grows=grows)
-        seen: list[tuple[gate.Candidate, bool]] = []
-        decisions, _ = landed(root, [request], passing(seen))
-        first = git.parent(root, "HEAD")
-        history = (git.show(root, "HEAD", land.HISTORY_LEDGER) or b"").decode()
-        expect(
-            "a growth lands as the change on HEAD and a second commit with the grow row that names the change",
-            decisions[1].status == 0
-            and git.parent(root, first) == head
-            and f"utils/ledgers/demo.txt | grow | admit | {first[:9]} | A row that must stay" in history
-            and history.startswith("# The ledger of the rule history.")
-            and seen[0][0].changed == ("utils/ledgers/demo.txt", land.HISTORY_LEDGER),
-        )
-        expect(
-            "after a growth, the index and the working tree hold the grow row",
-            git.is_index_clean(root, "HEAD") and (root / land.HISTORY_LEDGER).read_text(encoding="utf-8") == history,
-        )
-        (root / "own.txt").write_text("a change with no ledger\n", encoding="utf-8")
-        wrong = request_of(("No growth",), own=("own.txt",), grows=(land.Grow("demo", "reason"),))
-        decisions, _ = landed(root, [wrong], passing([]))
-        expect(
-            "a grow row of a ledger that the change does not change is refused",
-            decisions[1].status == ExitCode.USAGE and any("--grow demo" in line.content for line in decisions[1].lines),
-        )
-        root = Path(work_text) / "repo-batch"
-        head = planted_repository(root)
-        (root / "r1.txt").write_text("before the growth\n", encoding="utf-8")
-        (root / "utils/ledgers/demo.txt").write_text("format 1\nrule demo\nother/path | kind | 1 | entity | why\n")
-        (root / "r3.txt").write_text("after the growth\n", encoding="utf-8")
-        requests = [
-            request_of(("Add r1",), own=("r1.txt",)),
-            request_of(("Grow the demo ledger",), own=("utils/ledgers/demo.txt",), grows=grows),
-            request_of(("Add r3",), own=("r3.txt",)),
-        ]
-        seen = []
-        decisions, _ = landed(root, requests, passing(seen))
-        subjects = subjects_since(root, head)
-        growth = git.parent(root, git.parent(root, "HEAD"))
-        history = (git.show(root, "HEAD", land.HISTORY_LEDGER) or b"").decode()
-        expect(
-            "a growth in a batch of three lands its two commits between the commits of the other two, with one run, "
-            "and its grow row names its first commit",
-            all(decisions[number].status == 0 for number in (1, 2, 3))
-            and len(seen) == 1
-            and len(subjects) == 4
-            and subjects[:2] == ["Add r1", "Grow the demo ledger"]
-            and subjects[3] == "Add r3"
-            and git.commit_subject(root, growth) == "Grow the demo ledger"
-            and f"| {growth[:9]} | A row that must stay" in history,
-        )
-
-
 def falls_cases(expect: testing.Expect) -> None:
     """Hold a verdict with the falls of the gate: the branch moves to the commit of the gate, with the ledger."""
     with tempfile.TemporaryDirectory(prefix="land-falls-") as work_text:
@@ -1089,7 +960,7 @@ def queue_cases(expect: testing.Expect) -> None:
         patch.write_bytes(git.patch(root, ["HEAD"], ["shared.txt"]))
         (root / "shared.txt").write_text(PLANTED["shared.txt"], encoding="utf-8")
         edit = land.Edit("shared.txt", land.INSERT, "alpha\n", "inserted\n")
-        full = request_of(("A subject", "A body"), (edit,), ("own.txt",), (patch,), (land.Grow("demo", "why"),))
+        full = request_of(("A subject", "A body"), (edit,), ("own.txt",), (patch,), (gate.Keep("demo", "why"),))
         expect(
             "the queue of a repository is a directory of its own, keyed by its shared git directory",
             queue.parent == work / land.QUEUE and len(queue.name) == land.KEY_LENGTH,
@@ -1103,15 +974,15 @@ def queue_cases(expect: testing.Expect) -> None:
             stored = found[0].request
             expect(
                 "two waiting requests get the numbers 1 and 2, each holds its lock, and the holder reads them in "
-                "their sequence with the message, the copy of the patch, the edit, the own path, the growth and the "
-                "token",
+                "their sequence with the message, the copy of the patch, the edit, the own path, the kept row and "
+                "the token",
                 (first.number, second.number) == (1, 2)
                 and heavy.is_held(lock)
                 and [item.number for item in found] == [1, 2]
                 and stored.messages == full.messages
                 and stored.edits == full.edits
                 and stored.paths == full.paths
-                and stored.grows == full.grows
+                and stored.keeps == full.keeps
                 and [path.read_bytes() for path in stored.patches] == [patch.read_bytes()]
                 and found[0].branch == land.branch_of(root)
                 and found[0].root == root
@@ -1292,13 +1163,7 @@ def journal_cases(expect: testing.Expect) -> None:
                 raise OSError("the disk is full")
 
             batched = land.BatchLanding(
-                batch,
-                passing([]),
-                failing,
-                no_pause,
-                None,
-                functools.partial(land.is_alive, queue),
-                land.Journal(queue),
+                batch, passing([]), failing, no_pause, functools.partial(land.is_alive, queue), land.Journal(queue)
             )
             try:
                 batched.land(batch)
@@ -1379,14 +1244,14 @@ def keep_cases(expect: testing.Expect) -> None:
                 expect(f"the parse refuses {name}", True)
         root = work / "repo"
         planted_repository(root)
-        history_row = (
-            "rule history engine=meta scope=utils/registry.txt ledger=admit doc=XV | a planted history rule | give "
-            "the measurement"
+        meta_row = (
+            "rule planted-meta engine=meta scope=utils/registry.txt ledger=admit doc=XV | a planted meta rule | change "
+            "nothing"
         )
-        rows = sorted([rule_registry.measured_rule("slow-row", 10, 20, "KB", "a size"), history_row])
+        rows = sorted([rule_registry.measured_rule("slow-row", 10, 20, "KB", "a size"), meta_row])
         (root / rule_registry.REGISTRY_PATH).write_text(rule_registry.planted(rows), encoding="utf-8")
         refusals = []
-        for rule_id in ("history", "no-such-rule"):
+        for rule_id in ("planted-meta", "no-such-rule"):
             try:
                 land.checked_keeps(root, request_of(("s",), keeps=(gate.Keep(rule_id, "why"),)))
                 refusals.append(False)
@@ -1680,9 +1545,7 @@ def main(argv: list[str]) -> int:
             red_base_cases,
             focus_cases,
             revert_cases,
-            early_cases,
             landing_cases,
-            grow_cases,
             falls_cases,
             drop_cases,
             queue_cases,

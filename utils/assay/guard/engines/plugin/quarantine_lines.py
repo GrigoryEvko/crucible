@@ -71,10 +71,9 @@ THE KEYS
     The key of a finding is its kind and the entity of its row in the ledger
     of the rule quarantine (entity_key of assay.guard.engines.plugin.quarantine).
     The rule reads each kind of the rule quarantine other than opted-out and
-    region.  Only `guard write --admit` adds to a region, and the rule history
-    holds that (THE ADMITTED COUNTS of assay.guard.engines.meta.history).  A
-    file of the build directory (@build/) has no history, and the rule
-    quarantine holds it alone.  Each line of a new file that is not in the
+    region.  Only `guard write --admit` adds to a region.  A file of the build
+    directory (@build/) has no history, and the rule quarantine holds it
+    alone.  Each line of a new file that is not in the
     index is an added line.
 
 NOT APPLICABLE

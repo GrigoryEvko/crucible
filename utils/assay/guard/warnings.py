@@ -152,13 +152,13 @@ def print_cases(expect: testing.Expect) -> None:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
         warnings_dir.mkdir()
-        (warnings_dir / "history.txt").write_text(
-            check_report.Finding("warning", "a.h", 1, "history", "m").text() + "\n", encoding="utf-8"
+        (warnings_dir / "python-lint.txt").write_text(
+            check_report.Finding("warning", "a.h", 1, "python-lint", "m").text() + "\n", encoding="utf-8"
         )
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
             "a build with no census prints the warnings and tells why it has no totals",
-            status == 0 and "a.h:1: warning: [history] m" in text and "no time totals" in text,
+            status == 0 and "a.h:1: warning: [python-lint] m" in text and "no time totals" in text,
         )
         expect(
             "each line about the totals and the summary starts with the name of the command",
@@ -166,7 +166,7 @@ def print_cases(expect: testing.Expect) -> None:
             and "guard warnings: 1 warning(s)" in text
             and "report-check-warnings" not in text,
         )
-        (warnings_dir / "history.txt").write_text("not a finding\n", encoding="utf-8")
+        (warnings_dir / "python-lint.txt").write_text("not a finding\n", encoding="utf-8")
         status, _ = testing.captured(lambda: main([str(build)]))
         expect("a warnings file with a line of a different shape gives status 1", status == 1)
     status, _ = testing.captured(lambda: main([]))
@@ -181,7 +181,7 @@ def gone_test_cases(expect: testing.Expect) -> None:
         for check, key in (
             ("test-memory", "kept_test"),
             ("test-memory", "gone_test"),
-            ("history", "gone_test"),
+            ("python-lint", "gone_test"),
             ("test-time", "kept.sh"),
             ("test-time", "gone.sh"),
         ):
@@ -207,7 +207,7 @@ def gone_test_cases(expect: testing.Expect) -> None:
             and "because the build registers no test gone_test" in text
             and "test-memory gone_test" not in text
             and "test-memory kept_test" in text
-            and "history gone_test" in text
+            and "python-lint gone_test" in text
             and test_keyed_files(warnings_dir) == [("test-memory", "kept_test"), ("test-time", "kept.sh")],
         )
         expect(
@@ -221,7 +221,7 @@ def gone_rule_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
-        for check, key in (("history", None), ("gone-rule", None), ("gone-rule", "part1")):
+        for check, key in (("python-lint", None), ("gone-rule", None), ("gone-rule", "part1")):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
         broken = build / "registry.txt"
@@ -238,8 +238,8 @@ def gone_rule_cases(expect: testing.Expect) -> None:
             and "because the registry names no rule gone-rule" in text
             and "gone-rule None" not in text
             and "gone-rule part1" not in text
-            and "history None" in text
-            and [path.name for path in sorted(warnings_dir.glob("*.txt"))] == ["history.txt"],
+            and "python-lint None" in text
+            and [path.name for path in sorted(warnings_dir.glob("*.txt"))] == ["python-lint.txt"],
         )
 
 

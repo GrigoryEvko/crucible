@@ -14,8 +14,8 @@
 #
 # A measured rule has warn, error and unit.  A value over the warning threshold gives a warning, which does not
 # fail.  A value over the error threshold gives an error, which fails.  A value equal to a threshold does not
-# exceed it.  Change a threshold only with a measurement, and give the numbers in the commit: the rule history
-# holds it.  The unit G is 10^9 instructions.
+# exceed it.  Change a threshold only with a measurement, and give the numbers in the commit.  The unit G is 10^9
+# instructions.
 #
 # A rule with legacy=MODULE has its module under assay at this time, and legacy-args gives the words of its
 # mode.  A rule with held-by has no module of its own: the rule or the command that it names reads its
@@ -84,7 +84,6 @@ rule header-fanout engine=build scope=builddir ledger=baseline warn=10 error=10 
 rule header-lists engine=tsast scope=test/layer/walk-headers.cmake,test/permission-row-headers.cmake ledger=none inputs=include/ doc=XV.1 | a CMake fragment of a header list that does not hold the headers that the parse trees of include/ give: the crucible headers of the walk units, and the headers of the roster of the permission tags | write the fragments again with `loop derive header-lists --write`
 rule header-standalone engine=build scope=builddir ledger=none doc=XV | a crucible header of test/layer/crucible-not-standalone.txt that compiles alone, with the compile command of the crucible sentinels | remove the row of the header from the list, so that its sentinel compiles it again
 rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include,unmeasured-header warn=1.25 error=1.25 unit=x doc=XV.4 | an include of a heavy header outside the source root in a file under include/, and an include of such a header that no heavy row and no light row of utils/rule-table.txt gives.  A header is heavy when the user instructions of a unit that includes only it are more than those of <meta> alone times this factor | use a builtin, include the header in a source file, or measure it with loop derive header-costs
-rule history engine=meta scope=utils/registry.txt,utils/ledgers/,utils/rule-table.txt ledger=admit doc=XV | a threshold that rose with no measurement in its commit, a count of the quarantine ledger that rose with no change of the plugin or the rule table, a count of opted-out or region that rose with no reason of its region in its commit, and a rebase row at a commit that neither changed the key or the format of its ledger nor made the scope of the rule larger.  A threshold above its lowest committed value and a ledger above its lowest committed count, or its lowest count after its rebase rows, give a warning | give the measurement in the commit, or add a row with the measurement as its reason
 rule host-owners engine=plugin scope=tracked ledger=none kinds=outside-home,at-home doc=XVI | a class of a namespace named host with no home row of its own, a definition or a specialization of an owner outside the path of its home row, and a path of a home row that admits no site | define the owner in the file of its home row
 rule hw-axis-rows engine=tsast scope=include/,src/,test/test_hardware_axis_pins.cpp ledger=none doc=XVI | a hardware-axis block with no pin row, or a pin row with no live block | give each block a row of test_hardware_axis_pins.cpp, outside each preprocessor conditional
 rule import-closure engine=meta scope=package ledger=count doc=XV | an import of argparse, concurrent.futures, multiprocessing or logging at module level in a module that is not the owner of the job of that import | import the module in the function that uses it

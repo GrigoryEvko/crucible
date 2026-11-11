@@ -1,5 +1,0 @@
-# A rebase row names a commit that adds a test and the row of that test, keeps the other key and changes the rule
-# table.  The new row is of a file that the commit changes, so it can come from new code.  The commit changed neither
-# the key nor the format, and it did not make the scope of the rule larger.
-commit 1 | Admit one slow test | The test takes 21 s.
-commit 2 | Add a second slow test | The test takes 22 s.

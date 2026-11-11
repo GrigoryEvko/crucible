@@ -29,7 +29,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from assay.core import git, jobserver, paths, proc, testing
+from assay.core import git, jobserver, paths, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.loop import gate, syntax
@@ -144,13 +144,10 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  `write` lowers the count 2 of the planted ledger to 1, as the
-# write of a fall does, and writes its rule.  It also removes the row of gone.h, as the write of a fall to 0 does.  The
-# write of slow-row raises the value 10 of its ledger to 12, as the write of a kept row does.  The write of trait-guard
-# moves the row of include/old.h to include/new.h, as the write of a divided header does (THE MOVE of
-# assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for SLOW_S seconds.  It then writes its
-# rule and the times of its start and its end to intervals.txt.  The write of the rule history runs the guard of this
-# tree (GUARD_MARK).
-GUARD_MARK = "@GUARD@"
+# write of a fall does, and writes its rule.  The write of slow-row raises the value 10 of its ledger to 12, as the
+# write of a kept row does.  The write of trait-guard moves the row of include/old.h to include/new.h, as the write of
+# a divided header does (THE MOVE of assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for
+# SLOW_S seconds.  It then writes its rule and the times of its start and its end to intervals.txt.
 UTILS_MARK = "@UTILS@"
 SLOW_MARK = "@SLOW_S@"
 SLOW_S = 1.0
@@ -170,8 +167,6 @@ if words[0] == "check":
         shown = ["git", "show", "HEAD:utils/ledgers/door-unit.txt"]
         if "| 1 |" in subprocess.run(shown, capture_output=True, text=True, check=False).stdout:
             sys.exit(1)
-if words[:3] == ["write", "--rule", "history"]:
-    sys.exit(subprocess.run([sys.executable, "@GUARD@", *words], check=False).returncode)
 if words[0] == "write":
     build = pathlib.Path(words[4])
     began = time.time()
@@ -182,8 +177,7 @@ if words[0] == "write":
         "trait-guard": ("trait-guard", "include/old.h", "include/new.h"),
     }.get(words[2], ("door-unit", "| 2 |", "| 1 |"))
     ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
-    lines = ledger.read_text().replace(old, new).splitlines(keepends=True)
-    ledger.write_text("".join(line for line in lines if "gone.h" not in line))
+    ledger.write_text(ledger.read_text().replace(old, new))
     with open(build / "writes.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]}\\n")
     if (build / "slow-writes.txt").is_file():
@@ -234,29 +228,23 @@ PLANTED = {
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 3.0
 SMALL_MEMORY_JOBS = 2
-# The row of the rule history and the ledgers of the repository of the checks before the builds.  Its registry also
-# holds a measured rule with a ledger.
-HISTORY_RULE = (
-    "rule history engine=meta scope=utils/registry.txt ledger=admit doc=XV | a planted history rule | give the "
-    "measurement"
-)
+# The ledger of the measured rule of the planted registry, and the head of a planted ledger.
 SLOW_LEDGER = "utils/ledgers/slow-row.txt"
-HISTORY_LEDGER = "utils/ledgers/history.txt"
 LEDGER_HEAD = "# a planted ledger\nformat 1\nrule {rule}\n"
 
 
 def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
     """Plant the repository in root with one commit, and return the commit.
 
-    `files` replaces or adds some files of PLANTED.  The guard master runs the guard of this tree for the rule history.
+    `files` replaces or adds some files of PLANTED.
     """
     root.mkdir(parents=True, exist_ok=True)
     git.init(root)
     for name, text in {**PLANTED, **(files or {})}.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        marked = text.replace(GUARD_MARK, str(paths.GUARD)).replace(SLOW_MARK, str(SLOW_S))
-        path.write_text(marked.replace(UTILS_MARK, str(paths.REPO_ROOT / "utils")), encoding="utf-8")
+        marked = text.replace(SLOW_MARK, str(SLOW_S)).replace(UTILS_MARK, str(paths.REPO_ROOT / "utils"))
+        path.write_text(marked, encoding="utf-8")
     return git.commit_all(root, "Add the planted tree")
 
 
@@ -266,12 +254,6 @@ def commit_change(root: Path, path: str, text: str, message: str = "Change a fil
     file.parent.mkdir(parents=True, exist_ok=True)
     file.write_text(text, encoding="utf-8")
     return git.commit_all(root, message)
-
-
-def history_status(root: Path) -> int:
-    """Run the rule history of this tree on a planted tree, and return its exit."""
-    command = [sys.executable, str(paths.GUARD), "check", "--rule", "history", "--root", str(root)]
-    return proc.run(proc.Command(command, timeout_s=proc.TOOL_S)).exit
 
 
 def names_of(configurations: tuple[gate.Configuration, ...]) -> list[str]:
@@ -430,74 +412,11 @@ def tree_cases(expect: testing.Expect) -> None:
             and (tree / "notes.txt").read_text(encoding="utf-8") == "notes of the second commit\n"
             and (tree / "utils/registry.txt").stat().st_mtime_ns == before,
         )
-        verdicts = {"base": history_status(tree)}
-        raised = REGISTRY.replace("error=20 unit=s", "error=30 unit=s")
-        bodies = (("unmeasured", "The tests are slower."), ("measured", "The slowest job of slow-row took 26 s."))
-        for case, body in bodies:
-            case_root = work / case
-            planted_repository(case_root)
-            commit = commit_change(case_root, "utils/registry.txt", raised, f"Raise the slow row\n\n{body}\n")
-            case_tree = work / f"warm-{case}"
-            gate.move_tree(case_root, case_tree, commit)
-            verdicts[case] = history_status(case_tree)
-        expect(
-            f"the rule history reads the history of the warm tree: 0 at the base, 1 on a raise with no measurement "
-            f"and 0 on a measured raise, and it gives {verdicts}",
-            verdicts == {"base": 0, "unmeasured": 1, "measured": 0},
-        )
         try:
             gate.move_tree(root, root / "inner", head)
             expect("the gate refuses a warm tree in the work tree of the repository", False)
         except gate.GateError:
             expect("the gate refuses a warm tree in the work tree of the repository", True)
-
-
-def history_cases(expect: testing.Expect) -> None:
-    """Hold the checks before the builds: the rule history on the warm tree, and the kinds of a growth."""
-    with tempfile.TemporaryDirectory(prefix="gate-history-") as work_text:
-        work = Path(work_text)
-        root = work / "repo"
-        root.mkdir()
-        git.init(root)
-        rows = sorted([rule_registry.measured_rule("slow-row", 10, 20, "s", "a time"), HISTORY_RULE])
-        files = {
-            rule_registry.REGISTRY_PATH: rule_registry.planted(rows),
-            SLOW_LEDGER: LEDGER_HEAD.format(rule="slow-row"),
-            HISTORY_LEDGER: LEDGER_HEAD.format(rule="history"),
-        }
-        for name, text in files.items():
-            (root / name).parent.mkdir(parents=True, exist_ok=True)
-            (root / name).write_text(text, encoding="utf-8")
-        base = git.commit_all(root, "Add the planted registry", "The first registry.")
-        planted = gate.Gate(root, work / "land", 1, False)
-        slow_rows = "".join(f"test/{name} | time | 21 | - | a slow test\n" for name in ("a", "b"))
-        grown = commit_change(root, SLOW_LEDGER, files[SLOW_LEDGER] + slow_rows, "Admit two slow tests")
-        grow_row = f"{SLOW_LEDGER} | grow | admit | {grown[:9]} | the two slow tests must stay\n"
-        admitted = commit_change(root, HISTORY_LEDGER, files[HISTORY_LEDGER] + grow_row, "Admit the growth")
-        expect(
-            "a commit with no growth, and a grow row that admits the growth of its commit, give no error",
-            planted.history_problems(base, base, ()) == ()
-            and planted.history_problems(admitted, admitted, ()) == ()
-            and git.head(planted.tree) == admitted,
-        )
-        rewritten_rows = slow_rows.replace("test/a | time | 21", "test/a | time | 25")
-        rewritten = commit_change(root, SLOW_LEDGER, files[SLOW_LEDGER] + rewritten_rows, "Write a kept value again")
-        expect(
-            "a write of the measured value of a kept row adds no row, and the rule history gives no error",
-            planted.history_problems(rewritten, rewritten, ()) == (),
-        )
-        stale = commit_change(root, SLOW_LEDGER, files[SLOW_LEDGER], "Make each slow test fast")
-        problems = planted.history_problems(stale, stale, ())
-        expect(
-            "a change that makes a grow row stale gives the error of the rule history at the row",
-            any(HISTORY_LEDGER in item and "admits no finding" in item for item in problems),
-        )
-        noted = commit_change(root, SLOW_LEDGER, files[SLOW_LEDGER] + "# a note\n", "Note the slow ledger")
-        problems = planted.history_problems(noted, noted, ("slow-row",))
-        expect(
-            "a growth of a commit that adds no row gives the refusal of --grow, with the kinds of its rows",
-            any(item.startswith("--grow slow-row: no grow row admits") and "kinds none" in item for item in problems),
-        )
 
 
 def change_cases(expect: testing.Expect) -> None:
@@ -755,50 +674,6 @@ def counted_cases(expect: testing.Expect) -> None:
         and gate.holding(named, gate.BY_NAME["release"]) == ["door-unit", "trait-guard"]
         and gate.holding(named, parse) == ["door-unit", "quarantine"],
     )
-
-
-def falls_history_cases(expect: testing.Expect) -> None:
-    """Hold THE FALLS with the rule history: a fall that makes a row of the kind `grow` admit nothing removes it."""
-    with tempfile.TemporaryDirectory(prefix="gate-falls-history-") as work_text:
-        work = Path(work_text)
-        root = work / "repo"
-        ledger = "utils/ledgers/door-unit.txt"
-        doors = (
-            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
-            "src/door.cpp | header-door | 2 | door.h | -\n"
-        )
-        planted_repository(root, {ledger: doors, rule_registry.REGISTRY_PATH: f"{REGISTRY}{HISTORY_RULE}\n"})
-        gone = "src/gone.cpp | header-door | 1 | gone.h | -\n"
-        grown = commit_change(root, ledger, doors + gone, "Count the door of gone.h")
-        grow_row = f"{ledger} | grow | admit | {grown[:9]} | the door of gone.h must stay\n"
-        rows = LEDGER_HEAD.format(rule="history") + grow_row
-        head = commit_change(root, HISTORY_LEDGER, rows, "Admit the door of gone.h")
-        commit = commit_change(root, "notes.txt", "a change that removes gone.h\n", "Remove gone.h\n\nThe body.")
-        tree = work / "land" / gate.TREE
-        gate.move_tree(root, tree, commit)
-        at_head = history_status(tree)
-        (tree / ledger).write_text(doors.replace("| 2 |", "| 1 |"), encoding="utf-8")
-        with_fall = history_status(tree)
-        gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "falls")
-        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
-        folded = (git.show(root, verdict.final, HISTORY_LEDGER) or b"").decode()
-        at_final = history_status(tree)
-        holds = (
-            at_head == 0
-            and with_fall == 1
-            and verdict.is_accepted
-            and verdict.ledgers == (ledger, HISTORY_LEDGER)
-            and "| grow |" not in folded
-            and at_final == 0
-        )
-        label = (
-            f"a fall that makes a grow row admit nothing makes the gate write the ledger of the rule history, and the "
-            f"commit of the falls holds no such row: the rule history gives {at_head} at the commit, {with_fall} "
-            f"with the fall and the row, and {at_final} at the commit of the falls, and the gate folds "
-            f"{verdict.ledgers}"
-        )
-        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
 def falls_parse_cases(expect: testing.Expect) -> None:
@@ -1262,13 +1137,11 @@ def main(argv: list[str]) -> int:
             select_cases,
             table_cases,
             tree_cases,
-            history_cases,
             change_cases,
             run_cases,
             falls_cases,
             falls_move_cases,
             counted_cases,
-            falls_history_cases,
             falls_parse_cases,
             keep_cases,
             changed_tests_cases,

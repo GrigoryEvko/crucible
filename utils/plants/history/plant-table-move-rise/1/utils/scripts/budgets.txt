@@ -1,2 +1,0 @@
-# a planted table
-slow-row | 10 | 20 | s | a planted time

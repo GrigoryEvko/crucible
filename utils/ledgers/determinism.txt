@@ -12,7 +12,6 @@ utils/assay/core/cache.py | wall-clock | 1 | remove_stale | A finding of today. 
 utils/assay/core/cache.py | wall-clock | 6 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/core/cache.py | wall-clock | 1 | victims | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/core/report.py | listing | 1 | self_test | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
-utils/assay/guard/engines/meta/history.py | listing | 1 | replace_tree | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/guard/engines/meta/rule_witness.py | listing | 1 | findings | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/affected.py | listing | 1 | shared_libraries | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count
 utils/assay/loop/fixture/store.py | listing | 1 | ResultStore.evict | A finding of today.  The change that sorts the listing, or that moves the read of the wall clock to its owner, lowers the count

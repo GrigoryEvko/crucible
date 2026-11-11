@@ -2,7 +2,7 @@
 
 THE CONTEXT
     A meta rule reads a tree: the registry, the ledgers, the modules of the
-    package, the plants, the tracked files and the git history.  MetaContext
+    package, the plants and the tracked files.  MetaContext
     gives the root of the tree, the build directory when the call gives one,
     and the registry, which it reads one time.  A rule is the function
     findings(context) of its module, assay/guard/engines/meta/ID.py with
@@ -58,7 +58,7 @@ THE WITNESS
     against the ledger of the copy (judged()).  A plant can then hold a ledger
     of the rule.  A copy with no ledger has the empty ledger.  A module can
     give plant_context(plant, scratch) when a plant needs more than a copy,
-    for example a git history or a configured CMake project.  A rule that
+    for example a configured CMake project.  A rule that
     runs a tool of the host gives applies(), which raises NotApplicable when
     the host has no such tool.  The witness then exits with SKIPPED and runs
     no plant.  An engine gives the copy of its own context to witness(), and
@@ -70,7 +70,7 @@ THE WITNESS
 THE STATUS
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
     SKIP_RETURN_CODE of its ctest test) when the rule does not apply to the
-    tree, for example a history that is shallow.
+    tree, for example on a host with no tool of the rule.
 """
 
 import contextlib
