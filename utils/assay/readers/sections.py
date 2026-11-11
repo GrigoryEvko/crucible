@@ -9,9 +9,11 @@ THE SECTION
         RULE KIND FILE:LINE:COLUMN ENTITY
 
     RULE is a rule of the engine plugin of utils/registry.txt, and KIND is a
-    kind of that rule.  FILE is relative to the source root.  A report file of
-    the plugin argument out= holds the same finding lines, after a comment
-    line.
+    kind of that rule.  A record of the library code has the tag
+    LIBRARY_RECORDS in the place of RULE, and no rule of the registry (THE
+    SYMBOLS OF THE LIBRARY CODE).  FILE is relative to the source root.  A
+    report file of the plugin argument out= holds the same finding lines,
+    after a comment line.
 
 THE OBJECT
     read() maps an object with assay.readers.elf, and it reads the bytes of
@@ -24,10 +26,10 @@ THE ENTITIES OF THE RECORDS
     the writer of each kind gives the grammar.  A function of this module
     reads such an entity into a typed record, and a rule reads the fields of
     the record.  No other module reads the entity of a finding as text.  In a
-    record of library-code, quarantine and the family home, a field that
+    record of the library code, quarantine and the family home, a field that
     holds words has one space between each two words.  The plugin can write
     more spaces:
-      library-code   The writer is utils/tools/quarantine/body.cpp (THE
+      library code   The writer is utils/tools/quarantine/body.cpp (THE
                      RECORDS).  inlined: NAME.  call and reference: SYMBOL
                      NAME.  symbol: SYMBOL.  SYMBOL is an assembler name with
                      no space, and NAME can hold a space, as in operator new.
@@ -61,7 +63,7 @@ THE ENTITIES OF THE RECORDS
     EntityError.
 
 THE SYMBOLS OF THE LIBRARY CODE
-    The rule library-code has four kinds of records.  The entity of a record
+    The records of the library code have four kinds.  The entity of a record
     call, reference or symbol starts with the assembler name of a symbol that
     an instruction of the unit names.  Section.symbols() gives these names
     with the first record of each.  The rule artifact-symbols explains the
@@ -106,9 +108,9 @@ SYNTAX_DIRECTORY = Path("quarantine") / "syntax"
 STAMP_FILE = "stamp"
 # The suffix of a report file of the plugin argument out=.
 REPORT_SUFFIX = ".quarantine"
-# The rule of the records of the library code, and the kinds of its records that name a symbol first (THE SYMBOLS OF
+# The tag of the records of the library code, and the kinds of its records that name a symbol first (THE SYMBOLS OF
 # THE LIBRARY CODE).
-LIBRARY_RULE = "library-code"
+LIBRARY_RECORDS = "library-records"
 SYMBOL_RECORDS = frozenset({"call", "reference", "symbol"})
 # The two kinds of the rule quarantine with an include grammar, and the texts that divide their parts (THE ENTITIES OF
 # THE RECORDS).
@@ -175,13 +177,13 @@ class Section:
     findings: tuple[Finding, ...]
 
     def symbols(self) -> dict[str, Finding]:
-        """Return the first record call, reference or symbol of the rule library-code of each symbol that one names.
+        """Return the first record call, reference or symbol of the library code of each symbol that one names.
 
         THE SYMBOLS OF THE LIBRARY CODE gives the records.  Complexity: linear in the findings.
         """
         found: dict[str, Finding] = {}
         for item in self.findings:
-            if item.rule != LIBRARY_RULE or item.kind not in SYMBOL_RECORDS:
+            if item.rule != LIBRARY_RECORDS or item.kind not in SYMBOL_RECORDS:
                 continue
             symbol = library_record(item.kind, item.entity).symbol
             if symbol:
@@ -310,7 +312,7 @@ def read_report_file(path: Path) -> tuple[Finding, ...]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class LibraryRecord:
-    """The entity of a record of the rule library-code (THE ENTITIES OF THE RECORDS).
+    """The entity of a record of the library code (THE ENTITIES OF THE RECORDS).
 
     `symbol` is the assembler name of a record call, reference or symbol, and empty for a record inlined.  `name` is
     the name of the library function or variable, and empty for a record symbol.
@@ -447,7 +449,7 @@ def words_of(text: str) -> str:
 
 
 def library_record(kind: str, text: str) -> LibraryRecord:
-    """Return the record of the entity of a line of the rule library-code (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a line of the library code (THE ENTITIES OF THE RECORDS).
 
     A record of a kind of SYMBOL_RECORDS gives its first word as the symbol and its other words as the name.  Each
     other kind gives its words as the name.

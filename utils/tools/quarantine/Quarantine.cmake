@@ -358,7 +358,7 @@ set(_crucible_quarantine_flags
   "${_crucible_quarantine_argument}-mode=${_crucible_quarantine_mode}"
   "${_crucible_quarantine_argument}-stamp=${_crucible_quarantine_stamp}"
   "${_crucible_quarantine_argument}-padded-list-limit=${_crucible_quarantine_padded_limit}"
-  "${_crucible_quarantine_argument}-library-code=on")
+  "${_crucible_quarantine_argument}-library-records=on")
 if(DEFINED CRUCIBLE_NOT_STANDALONE_LIST)
   list(APPEND _crucible_quarantine_flags "${_crucible_quarantine_argument}-not-standalone=${CRUCIBLE_NOT_STANDALONE_LIST}")
 endif()

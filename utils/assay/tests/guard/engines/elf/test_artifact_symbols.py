@@ -575,7 +575,7 @@ def hidden_cases(expect: testing.Expect) -> None:
         scratch = Path(scratch_text)
         for unit, (symbols, source) in HIDDEN_FIXTURES.items():
             records = "".join(
-                f'    ".ascii \\"library-code symbol {unit}.cpp:1:1 {name}\\\\n\\"\\n"\n' for name in symbols
+                f'    ".ascii \\"library-records symbol {unit}.cpp:1:1 {name}\\\\n\\"\\n"\n' for name in symbols
             )
             (scratch / f"{unit}.cpp").write_text(f"{SECTION_HEAD}{records}{SECTION_END}{source}", encoding="utf-8")
             compiled(compiler, scratch / f"{unit}.cpp", scratch / f"{unit}.o")

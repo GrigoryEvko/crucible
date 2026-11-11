@@ -324,10 +324,11 @@
 //                           member of a class of include/
 //     walked-return         a function that uses unchecked and returns a member
 //                           of a class that a walk found
-//     The rule library-code (body.cpp, THE RECORDS) reads the instructions of
-//     each function that the unit compiles.  Each of its lines is a record and
-//     no finding (is_record_kind), and the module of the rule counts the
-//     records of the base files against its ledger.
+//     The records of the library code (body.cpp, THE RECORDS) come from the
+//     instructions of each function that the unit compiles.  They have no
+//     rule of the registry.  The tag library-records stands in the place of
+//     the rule of each line.  Each line is a record and no finding
+//     (is_record_kind), and kRuleKinds does not hold the kinds of the records.
 //     inlined               a body of a library function that the code of the
 //                           tree inlines, at the call site
 //     call                  a call of a library function by the code of the
@@ -380,8 +381,8 @@
 //     file that a door row names as its owner, a use of a declaration that
 //     came into the file through the include of its own door header gives no
 //     finding of the kinds c-library-call and c-library-object, or of their
-//     base kinds.  A call of such a function is a record symbol of the rule
-//     library-code and not a record call, and its inlined body gives no
+//     base kinds.  A call of such a function is a record symbol of the
+//     library code and not a record call, and its inlined body gives no
 //     record (body.cpp, THE SYMBOLS).  The rule artifact-symbols still reads
 //     the symbol.  The include closure of the door header counts, because
 //     the C library declares a type of a header in a header of bits/, such as
@@ -681,7 +682,9 @@ enum class Rule : std::uint8_t {
     ctx_testing_boundary,
     detail_namespace,
     no_unchecked_access,
-    library_code,
+    // No rule of the registry: the tag of the records of the library code
+    // (THE RULES AND THE KINDS).
+    library_records,
 };
 
 // One home row or home-args row of the family home (home.cpp, THE ROWS).  The
@@ -908,8 +911,8 @@ inline const char* rule_name(Rule rule) {
             return "detail-namespace";
         case Rule::no_unchecked_access:
             return "no-unchecked-access";
-        case Rule::library_code:
-            return "library-code";
+        case Rule::library_records:
+            return "library-records";
     }
     return "unknown";
 }
@@ -1244,7 +1247,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::library_call:
         case Kind::library_reference:
         case Kind::library_symbol:
-            return Rule::library_code;
+            return Rule::library_records;
         default:
             return Rule::quarantine;
     }
@@ -1288,7 +1291,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::ctx_testing_boundary:
         case Rule::detail_namespace:
         case Rule::no_unchecked_access:
-        case Rule::library_code:
+        case Rule::library_records:
             return true;
         default:
             return false;
@@ -1298,8 +1301,8 @@ inline bool is_family_kind(Kind kind) {
 // True when a line of a family kind is a record: a fact for a reader of the
 // records, and no finding of its rule.  The record of a mint, the record of an
 // alias of a class with a member mint, the line of a grant set that the unit
-// compared, a site that a home row admits (at-home), and each line of the rule
-// library-code.
+// compared, a site that a home row admits (at-home), and each record of the
+// library code.
 inline bool is_record_kind(Kind kind) {
     switch (kind) {
         case Kind::mint_record:
@@ -1334,6 +1337,8 @@ struct RuleKind {
 
 // Each kind that the plugin can give, with its rule.  A finding of the kind
 // replace-pending has the entry of its admit row after the kind and a colon.
+// The records of the library code have no rule, and the table does not hold
+// their kinds (THE RULES AND THE KINDS).
 inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "std-entity"},
     {"quarantine", "std-object"},
@@ -1433,10 +1438,6 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"no-unchecked-access", "member-splice"},
     {"no-unchecked-access", "open-static-member"},
     {"no-unchecked-access", "walked-return"},
-    {"library-code", "inlined"},
-    {"library-code", "call"},
-    {"library-code", "reference"},
-    {"library-code", "symbol"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such

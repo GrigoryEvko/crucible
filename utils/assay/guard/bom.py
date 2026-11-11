@@ -337,8 +337,8 @@ def source_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> 
         found = [sections.read(path) for path in sorted(context.objects_of(artifact.name))]
     items = [finding for section in found if section is not None for finding in section.findings]
     regions = sum(1 for item in items if item.kind == sections.REGION)
-    records = Counter(item.kind for item in items if item.rule == sections.LIBRARY_RULE)
-    real = [item for item in items if item.kind not in sections.NOT_FINDINGS and item.rule != sections.LIBRARY_RULE]
+    records = Counter(item.kind for item in items if item.rule == sections.LIBRARY_RECORDS)
+    real = [item for item in items if item.kind not in sections.NOT_FINDINGS and item.rule != sections.LIBRARY_RECORDS]
     kinds = Counter(f"{item.rule} {item.kind}" for item in real)
     entities = Counter(f"{item.rule} {item.kind} {item.entity or '-'}" for item in real)
     lines = [f"5. source facts: {len(real)} findings of the plugin in {len(found)} objects, {regions} opt-out regions"]

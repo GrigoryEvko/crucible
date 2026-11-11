@@ -1,7 +1,7 @@
 // The section of the quarantine plugin holds a record of getrandom.  The call of memcpy has no record.
 asm(".pushsection .crucible.quarantine,\"e\",%progbits\n"
     ".ascii \"# crucible-guard 2 stamp=planted\\n\"\n"
-    ".ascii \"library-code call random.cpp:9:62 getrandom getrandom\\n\"\n"
+    ".ascii \"library-records call random.cpp:9:62 getrandom getrandom\\n\"\n"
     ".popsection\n");
 
 #include <sys/random.h>

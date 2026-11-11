@@ -1,6 +1,5 @@
-// The family library code (the rule library-code): the code of a library in
-// each function that the unit compiles, and each symbol that the code of the
-// tree names.
+// The family library code: the code of a library in each function that the
+// unit compiles, and each symbol that the code of the tree names.
 //
 // THE PASS
 //     An RTL pass after the pass shorten reads each instruction of each
@@ -10,7 +9,7 @@
 //     PLUGIN_FINISH_UNIT, after the last function (THE SECTION of plugin.cpp).
 //     A parse compiles no function, so a parse build has no record of the
 //     family.  The plugin registers the pass only for the argument
-//     library-code=on (THE ARGUMENTS of plugin.cpp).
+//     library-records=on (THE ARGUMENTS of plugin.cpp).
 //
 // THE FRAMES
 //     The location block of an instruction and its outer blocks give the
@@ -22,7 +21,7 @@
 //     frame is code of the tree.  The innermost frame owns the instruction.
 //
 // THE RECORDS
-//     Each record is a line of the rule library-code and no finding
+//     Each record is a line with the tag library-records and no finding
 //     (is_record_kind of plugin.h).  Its place is in a base or a quarantined
 //     file:
 //       inlined    a frame of library code whose caller frame is code of the
@@ -36,11 +35,11 @@
 //                  The entity is the symbol and the name
 //       symbol     each other symbol that the code of the tree can import
 //                  (THE SYMBOLS).  The entity is the symbol.
-//     The rule library-code counts the records inlined, call and reference of
-//     the base files.  The rule artifact-symbols reads the symbols of the
-//     records in the section of each member of a static library, and it
-//     explains each import of the member with them (THE HIDDEN IMPORTS of
-//     utils/assay/guard/engines/elf/artifact_symbols.py).
+//     The rule artifact-symbols reads the symbols of the records in the
+//     section of each member of a static library, and it explains each import
+//     of the member with them (THE HIDDEN IMPORTS of
+//     utils/assay/guard/engines/elf/artifact_symbols.py).  `guard bom` prints
+//     the records (utils/assay/guard/bom.py).
 //
 // THE SYMBOLS
 //     A symbol is a SYMBOL_REF of an instruction, with its assembler name.  The

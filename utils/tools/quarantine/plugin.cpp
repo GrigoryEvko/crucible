@@ -92,7 +92,7 @@
 //                    gives a line (declaration.cpp, THE RULE padded-list).
 //                    Quarantine.cmake gives the error threshold of the row
 //                    padded-list of utils/registry.txt
-//     library-code=on
+//     library-records=on
 //                    run the pass of the family library code, which records
 //                    the library code of each function (body.cpp).
 //                    Quarantine.cmake gives it to each compile of the tree.
@@ -593,17 +593,17 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             has_padded_limit = true;
-        } else if (key == "library-code") {
+        } else if (key == "library-records") {
             if (value != "on") {
-                error("quarantine: library-code is %qs; give library-code=on to record the library code of each "
-                      "function, or no such argument",
+                error("quarantine: library-records is %qs; give library-records=on to record the library code of "
+                      "each function, or no such argument",
                       value.c_str());
                 return 1;
             }
             records_library_code = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel, not-standalone, padded-list-limit and library-code",
+                  "kinds, sentinel, not-standalone, padded-list-limit and library-records",
                   key.c_str());
             return 1;
         }

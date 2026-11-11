@@ -99,11 +99,11 @@ def parse_cases(expect: testing.Expect) -> None:
     )
     records = sections.parse_section(
         b"# crucible-guard 2 stamp=x\n"
-        b"library-code call a.h:3:5 _Znwm operator new\n"
-        b"library-code reference a.h:4:1 stderr stderr\n"
-        b"library-code symbol a.h:5:2 memcpy\n"
-        b"library-code symbol a.h:9:2 _Znwm\n"
-        b"library-code inlined a.h:6:3 std::exchange\n"
+        b"library-records call a.h:3:5 _Znwm operator new\n"
+        b"library-records reference a.h:4:1 stderr stderr\n"
+        b"library-records symbol a.h:5:2 memcpy\n"
+        b"library-records symbol a.h:9:2 _Znwm\n"
+        b"library-records inlined a.h:6:3 std::exchange\n"
         b"quarantine std-entity a.h:7:1 memset\n",
         "a.o",
     )
@@ -112,7 +112,7 @@ def parse_cases(expect: testing.Expect) -> None:
         {name: (item.line, item.kind) for name, item in records.symbols().items()}
         == {"_Znwm": (3, "call"), "stderr": (4, "reference"), "memcpy": (5, "symbol")},
     )
-    blank = sections.parse_section(b"# crucible-guard 2 stamp=x\nlibrary-code symbol a.h:5:2 \n", "a.o")
+    blank = sections.parse_section(b"# crucible-guard 2 stamp=x\nlibrary-records symbol a.h:5:2 \n", "a.o")
     expect("a record symbol with no entity names no symbol", blank.symbols() == {})
 
 
@@ -126,7 +126,7 @@ def refuses_entity(read: Callable[[str, str], object], text: str) -> bool:
 
 
 def library_cases(expect: testing.Expect) -> None:
-    """Check library_record() on each kind of a record of the rule library-code."""
+    """Check library_record() on each kind of a record of the library code."""
     expect(
         "a record call gives its symbol and its name, with one space between the words of the name",
         sections.library_record("call", "_Znwm operator  new") == sections.LibraryRecord("_Znwm", "operator new"),

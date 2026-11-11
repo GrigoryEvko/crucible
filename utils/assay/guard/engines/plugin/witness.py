@@ -51,11 +51,11 @@ THE KEYS OF A COMPILE
                     default is the error threshold of the row padded-list
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
-      library-code=on
+      library-records=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
-                    the manifest.  Only a compile with library-code=on has
-                    the records of the rule library-code
+                    the manifest.  Only a compile with library-records=on has
+                    the records of the library code
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -234,7 +234,7 @@ PLUGIN_KEYS = (
     "sentinel",
     "padded-list-limit",
     "not-standalone",
-    "library-code",
+    "library-records",
 )
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
