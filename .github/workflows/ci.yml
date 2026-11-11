@@ -408,23 +408,18 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
-      # The ledger of the rule quarantine holds rows for each configuration of
-      # a build: its build kind, its target tier (utils/assay/core/target.py)
-      # and its cache variables.  It counts the findings of each file, kind and
-      # entity.  The rows of the configuration of the build judge it.  For a
-      # configuration that the ledger does not hold, the largest count of each
-      # key over the configurations judges the build (THE POLICY of
-      # utils/assay/core/configuration.py), for example on a runner of a
-      # different native tier.  The rule prints the rows of a build of a
-      # configuration that the ledger does not hold, and it prints them after a
-      # failure too.  Only CI builds aarch64.  `guard write --rule quarantine
-      # --import LOG` puts the rows of an aarch64 leg into the ledger.  The
-      # rule artifact-symbols holds the imports of each static library in one
-      # set of rows for each build.  A rule that does not apply to the build
-      # exits 77.  ctest shows no output of a test that passes or that it
-      # skips.  This step runs the two rules again, also after a failed test
-      # step.  The step "Check warnings" annotates the warnings of the two
-      # tests, and this step prints its findings as plain lines.
+      # The ledger of the rule quarantine counts the findings of each file,
+      # kind and entity, and the rule artifact-symbols holds the imports of
+      # each static library.  Each of the two ledgers holds one set of rows.
+      # A row holds the largest count of its key over the builds of the
+      # landing gate (THE REDUCE of utils/assay/loop/gate.py), and the set
+      # judges each build, also an aarch64 leg and a runner of a different
+      # processor.  A count above its row fails, and a count below its row
+      # passes.  A rule that does not apply to the build exits 77.  ctest
+      # shows no output of a test that passes or that it skips.  This step
+      # runs the two rules again, also after a failed test step.  The step
+      # "Check warnings" annotates the warnings of the two tests, and this
+      # step prints its findings as plain lines.
       - name: Ledgers of the build kind
         if: ${{ !cancelled() && (matrix.preset == 'default' || matrix.preset == 'release') }}
         env:
@@ -698,7 +693,7 @@ jobs:
   # Fuzz smoke. Property fuzzers are plain GCC + ASan/UBSan with Philox-seeded
   # input (deterministic, not flaky). Build + run the short --iters=1000 smoke.
   # x86_64 only.  The build also holds the benches, and it is the
-  # configuration x86_64-debug-asan-bench-fuzz of the quarantine ledger.  valgrind gives the
+  # configuration x86_64-debug-asan-bench-fuzz of the landing gate.  valgrind gives the
   # headers that the default leg has, so the configurations agree.
   # ---------------------------------------------------------------------------
   fuzz:
@@ -766,7 +761,7 @@ jobs:
         run: ccache -s
       - name: Run property-fuzz smoke
         run: ctest --preset default -j 3 -L fuzz_property
-      # The configuration x86_64-debug-asan-bench-fuzz of the quarantine ledger
+      # The one set of rows of the quarantine ledger judges this build too
       # (see the step "Ledgers of the build kind" of the build job).
       - name: Quarantine ratchet
         if: ${{ !cancelled() }}
