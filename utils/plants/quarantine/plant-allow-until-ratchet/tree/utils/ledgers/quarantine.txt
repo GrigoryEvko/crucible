@@ -1,3 +1,4 @@
-# The ledger of the plant.  No row counts an include of the base file include/fixy/Uses.cpp.
+# The ledger of the plant.  No row counts an include of the directory include/fixy/ of the base file
+# include/fixy/Uses.cpp.
 format 1
 rule quarantine

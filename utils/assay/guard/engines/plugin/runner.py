@@ -513,11 +513,16 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
 
 
 def print_findings(root: Path, build_dir: Path, place: str | None, kind: str | None) -> int:
-    """Write each finding line and each region line of a build, of a file or a directory, and of one kind.
+    """Write each finding line and each region line of a build, of a place, and of one kind.
+
+    A place is a file, or a directory and each directory under it.  A place with '/' at its end selects the files of
+    that one directory, the key of a row of the rule quarantine (THE KEY of assay.guard.engines.plugin.quarantine).
 
     Returns:
         0, or SKIPPED when the build does not apply, or 1 when the build cannot be read
     """
+    from assay.guard.engines.plugin import quarantine
+
     context = PluginContext(root, build_dir)
     try:
         census = context.census()
@@ -536,12 +541,16 @@ def print_findings(root: Path, build_dir: Path, place: str | None, kind: str | N
         ),
     ]
     prefix = (place or "").rstrip("/")
-    selected = sorted(
-        item
-        for item in lines
-        if (not prefix or item.file == prefix or item.file.startswith(f"{prefix}/"))
-        and (kind is None or item.kind == kind)
-    )
+
+    def is_in_place(file: str) -> bool:
+        """Say if a file is in the place of the call."""
+        if not place:
+            return True
+        if place.endswith("/"):
+            return quarantine.directory_of(file) == place
+        return file == prefix or file.startswith(f"{prefix}/")
+
+    selected = sorted(item for item in lines if is_in_place(item.file) and (kind is None or item.kind == kind))
     for item in selected:
         check_report.write_line(item.text())
     check_report.write_line(f"guard list: {len(selected)} findings")

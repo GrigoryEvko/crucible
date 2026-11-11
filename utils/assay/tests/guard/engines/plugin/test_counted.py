@@ -63,7 +63,7 @@ def key_cases(expect: testing.Expect) -> None:
     ]
     counts = counted.counts_of(found)
     expect(
-        "counts_of counts each file, kind and entity, with no problem",
+        "counts_of counts each path, kind and entity, with no problem",
         counts == {rule_ledger.Key("a.h", KIND, "<chrono>"): 2},
     )
     expect(

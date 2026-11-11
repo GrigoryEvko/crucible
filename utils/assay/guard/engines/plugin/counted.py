@@ -1,16 +1,19 @@
-"""counted — the verdict and the write of a plugin rule with a ledger that counts the findings of each file, kind and entity.
+"""counted — the verdict and the write of a plugin rule with a ledger that counts the findings of each key.
 
 THE COUNTED RULES
-    The rule quarantine and the rule heavy-include count the findings of each
-    file, kind and entity in the rows of assay.core.ledger (the policy count).
-    The arms of a preprocessor conditional change with the configuration of
-    a build (assay.core.configuration, THE CONFIGURATION).  One set of rows
-    judges each build, and the count of a key is its largest count over the
-    configurations of the landing gate (THE REDUCE of assay.core.ledger):
+    The rules quarantine, heavy-include and fixture-quarantine count the
+    findings of each key in the rows of assay.core.ledger (the policy count).
+    A key is the path, the kind and the entity of a finding.  The rule
+    quarantine gives the directory of a file as the path, and the other rules
+    give the file.  The arms of a preprocessor conditional change with the
+    configuration of a build (assay.core.configuration, THE CONFIGURATION).
+    One set of rows judges each build, and the count of a key is its largest
+    count over the configurations of the landing gate (THE REDUCE of
+    assay.core.ledger):
 
         format 1
         rule RULE
-        FILE | KIND | COUNT | ENTITY | REASON
+        PATH | KIND | COUNT | ENTITY | REASON
 
     A CountedRule gives the findings, the inputs, the verdict and the summary
     of one rule.  This module gives the run and the write that the rules
@@ -59,7 +62,7 @@ from assay.core import rows as rows_grammar
 from assay.core import ruletable
 from assay.guard.engines.plugin import runner
 
-# The file, the kind and the entity of one count: the key of a row of the ledger.
+# The path, the kind and the entity of one count: the key of a row of the ledger.
 Key = rule_ledger.Key
 # The errors of a ledger or an input that cannot be read.
 INPUT_ERRORS = (OSError, rows_grammar.RowsError, ruletable.TableError)
@@ -67,7 +70,7 @@ INPUT_ERRORS = (OSError, rows_grammar.RowsError, ruletable.TableError)
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class CountedRule[Inputs]:
-    """One rule with a ledger that counts the findings of each file, kind and entity (THE COUNTED RULES).
+    """One rule with a ledger that counts the findings of each key: a path, a kind and an entity (THE COUNTED RULES).
 
     `findings` gives the findings of the build: each finding has a kind, and a problem has no kind.  `inputs` reads
     the inputs of the verdict from the root of the tree, and it can raise an error of INPUT_ERRORS.  `evaluate`
@@ -125,7 +128,7 @@ def summary_of(
 
 
 def counts_of(found: Iterable[check_report.Finding]) -> Counter[Key]:
-    """Return the number of findings of each file, kind and entity, with no problem.  Complexity: linear."""
+    """Return the number of findings of each path, kind and entity, with no problem.  Complexity: linear."""
     return Counter(Key(item.path, item.kind, item.entity) for item in found if item.kind)
 
 

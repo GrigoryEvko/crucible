@@ -1,4 +1,4 @@
-# The ledger of the control.  The one row counts the one call of close of the arm.
+# The ledger of the control.  The one row counts the one call of close of the arm in the directory src/.
 format 1
 rule quarantine
-src/raw.cpp | c-library-call | 1 | close | -
+src/ | c-library-call | 1 | - | -

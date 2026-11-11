@@ -3,19 +3,22 @@
 THE PLANTED BUILD
     Scratch makes a throwaway git repository.  It holds each source file of
     the findings, a fake ninja and a CMake cache.  It also holds a compile
-    database, objects with sections, a rule table and a ledger.  A case
-    changes the finding lines of an object.  Then it runs the rule, writes the
-    ledger or lists the findings, as `guard check`, `guard write` and `guard
-    list` do.  A complete write gives the write the planted build two times,
-    as a reduce of the landing gate gives it a build of each configuration.
+    database, objects with sections and a ledger.  A case changes the finding
+    lines of an object.  Then it runs the rule, writes the ledger or lists the
+    findings, as `guard check`, `guard write` and `guard list` do.  A complete
+    write gives the write the planted build two times, as a reduce of the
+    landing gate gives it a build of each configuration.
 
 THE CASES
     The cases hold each behavior of the ledger of the rule quarantine:
-      * The entity of each kind
-      * The opted-out findings and the regions
+      * The key of a directory and a kind, and the entity of each kind of the
+        rule fixture-quarantine
+      * The opted-out findings and the regions, with the reason in the key
+      * A replaced finding of the same kind in one directory, which passes,
+        and a count above the row of its directory, which fails
       * One set of rows for the builds of two kinds, and an arm of one build
-      * A file that git moves, which needs --raise, and a file that the tree
-        does not hold
+      * A new directory, a file that git moves in its directory, and a file
+        that git moves to a different directory, which needs --raise
       * A base header that git moves to a different layer
       * An equal build with no warning, and the problems of the objects
       * Each mode of the write, the write of one build and the complete write.
@@ -27,7 +30,6 @@ import contextlib
 import io
 import sys
 import tempfile
-from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -36,6 +38,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import ruletable, testing
+from assay.guard.engines.buildsys import fixture_quarantine
 from assay.guard.engines.plugin import counted, quarantine, runner
 from assay.readers import cmake, compdb, elf
 from assay.readers import sections as quarantine_sections
@@ -216,7 +219,7 @@ class Scratch:
         return sorted(item.message.split(".  ")[0] for item in found if item.level == "error")
 
     def counts(self) -> dict[Row, int]:
-        """Return the count of each file, kind and entity of the planted objects."""
+        """Return the count of each key of the planted objects: the directory, the kind and the reason of a region."""
         return as_tuples(counted.counts_of(quarantine.findings(runner.PluginContext(self.root, self.build))))
 
     def ledger_rows(self) -> rule_ledger.Ledger:
@@ -229,55 +232,47 @@ class Scratch:
 
 
 def as_tuples(counts: Mapping[rule_ledger.Key, int]) -> dict[Row, int]:
-    """Return the counts with each key as the tuple (file, kind, entity)."""
+    """Return the counts with each key as the tuple (path, kind, entity)."""
     return {(key.path, key.kind, key.entity): count for key, count in counts.items()}
-
-
-def directory_totals(counts: Mapping[Row, int]) -> Counter[tuple[str, str]]:
-    """Return the count of each directory and kind: the key of a coarser ratchet."""
-    totals: Counter[tuple[str, str]] = Counter()
-    for (file, kind, _entity), count in counts.items():
-        totals[(file.rsplit("/", 1)[0], kind)] += count
-    return totals
-
-
-def file_totals(counts: Mapping[Row, int]) -> Counter[tuple[str, str]]:
-    """Return the count of each file and kind: the rule of the ratchet before it counted entities."""
-    totals: Counter[tuple[str, str]] = Counter()
-    for (file, kind, _entity), count in counts.items():
-        totals[(file, kind)] += count
-    return totals
 
 
 # ── The functions ──────────────────────────────────────────────────
 
 
 def unit_cases(expect: testing.Expect) -> None:
-    """Hold the entity of each kind and the stamp."""
+    """Hold the directory of a file, the rows of a directory, the entity of each kind and the stamp."""
+    for rel, wanted in (
+        ("test/fixy/test_a.cpp", "test/fixy/"),
+        ("include/fixy/os/Time.h", "include/fixy/os/"),
+        ("@build/table.c", "@build/"),
+        ("@build/test/fuzz/generated/g.h", "@build/test/fuzz/generated/"),
+        ("a.cpp", quarantine.ROOT_DIRECTORY),
+    ):
+        expect(f"the directory of {rel} is {wanted}", quarantine.directory_of(rel) == wanted)
     keyed = rule_ledger.parse(
-        f"{EMPTY_LEDGER}"
-        "x.cpp | raw-pointer-object | 2 | - | -\n"
-        "x.cpp | layer-header | 1 | <vector> in the layer X1 | -\n"
-        "x.cpp | opted-out | 1 | PROBE: a region \\| c-library-call memcpy | -\n"
-        "x.cpp | region | 1 | PROBE: a region | -\n",
+        f"{HEAD}format 1\nrule {RULE}\nreason test/ | a planted step of the plan\n"
+        "test/fixy/ | raw-pointer-object | 2 | - | -\n"
+        "test/fixy/ | opted-out | 1 | PROBE: a region | -\n"
+        "test/fixy/ | region | 1 | PROBE: a region | -\n",
         "planted",
         RULE,
         RULES[RULE].policy,
     )
     expect(
-        "a row keeps the spaces and the bar of its entity, and a kind with no entity has the empty cell",
+        "a row of a directory reads, a kind with no entity has the empty cell, and a reason row of a prefix holds it",
         as_tuples({key: int(entry.value) for key, entry in keyed.base.items()})
         == {
-            ("x.cpp", "raw-pointer-object", ""): 2,
-            ("x.cpp", "layer-header", "<vector> in the layer X1"): 1,
-            ("x.cpp", "opted-out", "PROBE: a region | c-library-call memcpy"): 1,
-            ("x.cpp", "region", "PROBE: a region"): 1,
-        },
+            ("test/fixy/", "raw-pointer-object", ""): 2,
+            ("test/fixy/", "opted-out", "PROBE: a region"): 1,
+            ("test/fixy/", "region", "PROBE: a region"): 1,
+        }
+        and keyed.idle_reasons() == [],
     )
     expect(
-        "the entity of a row names what the plugin refuses, and a declaration of a raw object keys no name",
+        "the entity of a row of the rule fixture-quarantine names what the plugin refuses, and a declaration of a "
+        "raw object keys no name",
         [
-            quarantine.entity_key(kind, entity)
+            fixture_quarantine.entity_key(kind, entity)
             for kind, entity in (
                 ("std-object", "std::span"),
                 ("c-library-object", "_IO_FILE"),
@@ -330,14 +325,14 @@ def unit_cases(expect: testing.Expect) -> None:
     )
     expect(
         "an include in an opt-out region keys its inner entity with no layer too",
-        quarantine.opted_out_key("C-HEADER: a struct", "layer-header <vector> in the layer X3_os")
+        fixture_quarantine.opted_out_key("C-HEADER: a struct", "layer-header <vector> in the layer X3_os")
         == "C-HEADER: a struct | layer-header <vector>",
     )
     expect(
-        "the entity of an opted-out row holds the reason of its region, and the inner kind and entity",
-        quarantine.opted_out_key("PROBE: a region", "std-object  std::vector")
+        "the entity of an opted-out row of a fixture holds the reason of its region, and the inner kind and entity",
+        fixture_quarantine.opted_out_key("PROBE: a region", "std-object  std::vector")
         == "PROBE: a region | std-object std::vector"
-        and quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
+        and fixture_quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )
     doors = ruletable.parse(
         "layer os 0 src/foundation/\ndoor <sys/socket.h> src/foundation/os/A.cpp\n\ndoor <linux/types.h> "
@@ -419,12 +414,13 @@ def census_cases(expect: testing.Expect) -> None:
     context = runner.PluginContext(Path("/planted"), None, census)
     counts = as_tuples(counted.counts_of(quarantine.findings(context)))
     expect(
-        "a planted census gives the counts of the rule quarantine, with a region row and an opted-out row",
+        "a planted census gives the counts of the rule quarantine for each directory and kind, and the reason of a "
+        "region in the key of a region row and of an opted-out row",
         counts
         == {
-            ("a.cpp", "std-entity", "std::swap"): 1,
-            ("a.cpp", "region", "PROBE: a region"): 1,
-            ("a.cpp", "opted-out", "PROBE: a region | std-entity std::swap"): 1,
+            (quarantine.ROOT_DIRECTORY, "std-entity", ""): 1,
+            (quarantine.ROOT_DIRECTORY, "region", "PROBE: a region"): 1,
+            (quarantine.ROOT_DIRECTORY, "opted-out", "PROBE: a region"): 1,
         },
     )
     no_build = runner.PluginContext(Path("/planted"))
@@ -484,18 +480,19 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     written = scratch.ledger_rows()
     expect(
-        "--raise writes one row for each file, kind and entity of the build, and one for each region",
+        "--raise writes one row for each directory and kind of the build, and the regions of a reason have the "
+        "reason in their key",
         status == 0
         and scratch.base()
         == {
-            ("include/crucible/Vigil.h", "std-object", "std::vector"): 1,
-            ("include/fixy/session/Handle.h", "upward-include", "include/crucible/X.h"): 1,
-            ("src/canopy/Lifeguard.cpp", "raw-pointer-object", ""): 1,
-            ("test/fixy/test_a.cpp", "c-library-call", "memcpy"): 1,
-            ("test/fixy/test_a.cpp", "opted-out", f"{PROBE_REASON} | raw-pointer-object"): 1,
-            ("test/fixy/test_a.cpp", "region", PROBE_REASON): 1,
-            ("test/fixy/test_b.cpp", "std-object", "std::span"): 1,
-            ("test/test_arena.cpp", "std-entity", "std::swap"): 1,
+            ("include/crucible/", "std-object", ""): 1,
+            ("include/fixy/session/", "upward-include", ""): 1,
+            ("src/canopy/", "raw-pointer-object", ""): 1,
+            ("test/fixy/", "c-library-call", ""): 1,
+            ("test/fixy/", "opted-out", PROBE_REASON): 1,
+            ("test/fixy/", "region", PROBE_REASON): 1,
+            ("test/fixy/", "std-object", ""): 1,
+            ("test/", "std-entity", ""): 1,
         },
     )
     expect(
@@ -506,7 +503,7 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect("an equal build gives no finding: a row gives no warning", status == 0 and found == [])
     expect(
         "a header finding of two objects counts one time, and the region counts apart",
-        "7 findings and 1 regions in 8 rows of 6 files" in text,
+        "7 findings and 1 regions in 8 rows of 5 directories" in text,
     )
     first_text = scratch.ledger.read_text(encoding="utf-8")
     status, _ = scratch.write()
@@ -520,15 +517,12 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     lines_a = scratch.objects["a"][0]
     region_rows = {key: count for key, count in scratch.base().items() if key[1] in quarantine.ADMITTED_KINDS}
     scratch.add("a", [*lines_a, "quarantine opted-out test/fixy/test_a.cpp:10:1 c-library-call memset"])
-    memset_row = ("test/fixy/test_a.cpp", "opted-out", f"{PROBE_REASON} | c-library-call memset")
+    opted_row = ("test/fixy/", "opted-out", PROBE_REASON)
     expect(
-        "a region that covers one more finding fails, with the reason of the region in the row",
+        "a region that covers one more finding fails, with the reason of the region in the key",
         scratch.errors()
         == [
-            (
-                f"test/fixy/test_a.cpp has 1 findings of the kind opted-out and the entity "
-                f"{memset_row[2]}, and the ledger admits 0"
-            )
+            (f"test/fixy/ has 2 findings in opt-out regions with the reason {PROBE_REASON!r}, and the ledger admits 1")
         ],
     )
     status, text = scratch.write()
@@ -537,7 +531,7 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     grown = scratch.base()
     expect(
         "--admit writes the growth of a region, and the rule then gives no error",
-        status == 0 and grown.get(memset_row) == 1 and scratch.errors() == [],
+        status == 0 and grown.get(opted_row) == 2 and scratch.errors() == [],
     )
     scratch.add("a", [*lines_a, "quarantine c-library-call test/fixy/test_a.cpp:4:9 memset"])
     status, _ = scratch.write(rule_ledger.WriteMode.ADMIT)
@@ -555,7 +549,7 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _ = scratch.write(is_complete=True)
     expect(
         "a complete write writes the shrink of a region",
-        status == 0 and memset_row not in scratch.base() and scratch.errors() == [],
+        status == 0 and scratch.base().get(opted_row) == 1 and scratch.errors() == [],
     )
     scratch.add(
         "a",
@@ -573,11 +567,8 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
         scratch.errors()
         == sorted(
             [
-                (
-                    f"test/fixy/test_a.cpp has 1 findings of the kind opted-out and the entity {other} | "
-                    f"raw-pointer-object, and the ledger admits 0"
-                ),
-                f"test/fixy/test_a.cpp has 1 opt-out regions with the reason {other!r}, and the ledger admits 0",
+                f"test/fixy/ has 1 findings in opt-out regions with the reason {other!r}, and the ledger admits 0",
+                f"test/fixy/ has 1 opt-out regions with the reason {other!r}, and the ledger admits 0",
             ]
         ),
     )
@@ -594,14 +585,14 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect(
         "a second region of a reason is a new region, which the rule refuses",
         scratch.errors()
-        == [(f"test/fixy/test_a.cpp has 2 opt-out regions with the reason {PROBE_REASON!r}, and the ledger admits 1")],
+        == [(f"test/fixy/ has 2 opt-out regions with the reason {PROBE_REASON!r}, and the ledger admits 1")],
     )
     status, text = scratch.write()
     expect("the write refuses a new region", status == 1 and "--admit" in text)
     status, _ = scratch.write(rule_ledger.WriteMode.ADMIT, reason="PROBE: a planted reason")
     expect(
         "--admit writes a new region",
-        status == 0 and scratch.base().get(("test/fixy/test_a.cpp", "region", PROBE_REASON)) == 2,
+        status == 0 and scratch.base().get(("test/fixy/", "region", PROBE_REASON)) == 2,
     )
     scratch.add("a", lines_a)
     expect(
@@ -614,17 +605,17 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 0
         and {key: count for key, count in scratch.base().items() if key[1] in quarantine.ADMITTED_KINDS} == region_rows,
     )
-    status, listed = scratch.listed("test/fixy", quarantine.REGION)
+    status, listed = scratch.listed("test/fixy/", quarantine.REGION)
     expect(
-        "the list gives the region lines of a directory",
+        "the list gives the region lines of the files of one directory",
         status == 0
         and f"quarantine region test/fixy/test_a.cpp:8:1 {PROBE_REASON}" in listed
         and "1 findings" in listed,
     )
 
 
-def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the two holes of a count for each directory and for each file, and the rows that stay after a move."""
+def directory_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold the key of a directory and kind: the loss that the owner accepts, a rise, and a finding of a new kind."""
     before = scratch.base()
     lines_a = scratch.objects["a"][0]
     scratch.add(
@@ -632,48 +623,37 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
         [line for line in lines_a if "test_b.cpp" not in line]
         + ["quarantine std-object test/fixy/test_a.cpp:12:5 std::array"],
     )
-    planted = scratch.counts()
     expect(
-        "the swap keeps each count of a directory and kind, so a count for each directory lets it go",
-        directory_totals(planted) == directory_totals(before),
+        "a finding that replaces a finding of the same kind in a different file of the directory passes: the key "
+        "holds no file",
+        scratch.counts() == scratch.base() == before and scratch.errors() == [],
     )
-    expect(
-        "the swap fails the count for each file: test_a rises, and the fall of test_b passes",
-        scratch.errors()
-        == [
-            (
-                "test/fixy/test_a.cpp has 1 findings of the kind std-object and the entity "
-                "std::array, and the ledger admits 0"
-            ),
-        ],
-    )
-    status, _ = scratch.write()
-    expect("the write refuses the rise", status == 1 and scratch.base() == before)
     scratch.add("a", [line.replace("test_b.cpp:6:5 std::span", "test_b.cpp:6:5 std::map") for line in lines_a])
-    planted = scratch.counts()
     expect(
-        "the entity swap keeps each count of a file and kind, so a count for each file lets it go",
-        file_totals(planted) == file_totals(before),
+        "a finding that replaces a finding of the same kind and a different entity passes: the key holds no entity",
+        scratch.errors() == [],
     )
+    scratch.add("a", [*lines_a, "quarantine std-object test/fixy/test_a.cpp:12:5 std::array"])
     expect(
-        "the entity swap fails: std::map rises, and the fall of std::span passes",
-        scratch.errors()
-        == [
-            (
-                "test/fixy/test_b.cpp has 1 findings of the kind std-object and the entity "
-                "std::map, and the ledger admits 0"
-            ),
-        ],
+        "one more finding of a kind in a directory fails, and its error names the directory",
+        scratch.errors() == ["test/fixy/ has 2 findings of the kind std-object, and the ledger admits 1"],
     )
-    first_row = scratch.ledger_rows().line_of(rule_ledger.Key("test/fixy/test_b.cpp", "std-object", "std::span"))
+    row_line = scratch.ledger_rows().line_of(rule_ledger.Key("test/fixy/", "std-object", ""))
     expect(
-        "the error of a new entity points at the first row of its file",
-        any(item.line == first_row and "std::map" in item.message for item in scratch.run()[1]),
+        "the error of a rise points at the row of its directory and kind",
+        any(item.line == row_line and "std-object" in item.message for item in scratch.run()[1]),
     )
     status, text = scratch.write()
+    expect("the write refuses the rise", status == 1 and scratch.base() == before and "rises from 1" in text)
+    scratch.add(
+        "a",
+        [line for line in lines_a if "memcpy" not in line]
+        + ["quarantine std-object test/fixy/test_a.cpp:4:3 std::array"],
+    )
     expect(
-        "the write refuses the entity swap",
-        status == 1 and scratch.base() == before and "std::map, rises from 0" in text,
+        "a finding of a different kind does not replace a finding that goes: the fall of c-library-call pays no "
+        "std-object",
+        scratch.errors() == ["test/fixy/ has 2 findings of the kind std-object, and the ledger admits 1"],
     )
     scratch.add(
         "a",
@@ -696,20 +676,15 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a new file, a finding that goes, the list of the findings and a file that git moves."""
-    scratch.add("d", ["quarantine std-object test/fixy/test_d.cpp:5:5 std::array"])
+    """Hold a new directory, a finding that goes, the list of the findings and the files that git moves."""
+    scratch.add("d", ["quarantine std-object test/other/test_d.cpp:5:5 std::array"])
     expect(
-        "a new file with one finding fails as a file that the ledger does not hold",
+        "a finding in a new directory fails as a directory that the ledger does not hold",
         scratch.errors()
-        == [
-            (
-                "test/fixy/test_d.cpp has 1 findings of the kind std-object and the entity "
-                "std::array, and the ledger holds no row of the file"
-            )
-        ],
+        == ["test/other/ has 1 findings of the kind std-object, and the ledger holds no row of the directory"],
     )
     status, text = scratch.write()
-    expect("the write refuses a new file with a finding", status == 1 and "does not hold" in text)
+    expect("the write refuses a new directory with a finding", status == 1 and "does not hold" in text)
     scratch.drop("d")
     scratch.add("c", [])
     status, found, _ = scratch.run()
@@ -720,38 +695,67 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.write()
     expect(
         "the write of one build keeps the row of the finding that goes",
-        ("test/test_arena.cpp", "std-entity", "std::swap") in scratch.base(),
+        ("test/", "std-entity", "") in scratch.base(),
     )
     scratch.write(is_complete=True)
     status, _, _ = scratch.run()
     expect(
         "after a complete write the build gives no error again, and the row of the finding that goes is gone",
-        status == 0 and ("test/test_arena.cpp", "std-entity", "std::swap") not in scratch.base(),
+        status == 0 and ("test/", "std-entity", "") not in scratch.base(),
     )
     status, text = scratch.listed("test/fixy", "c-library-call")
     expect(
-        "the list gives the findings of a directory and kind",
+        "the list gives the findings of a directory and kind, with the file, the line and the entity",
         status == 0 and "quarantine c-library-call test/fixy/test_a.cpp:4:3 memcpy" in text and "1 findings" in text,
     )
     status, text = scratch.listed("test/fixy/test_b.cpp")
     expect("the list gives the findings of a file", status == 0 and "test_b.cpp:6:5" in text and "1 findings" in text)
+    status, outer = scratch.listed("test")
+    status_one, one = scratch.listed("test/")
+    expect(
+        "a place with no final slash lists the directories under it too, and a place with a final slash lists only "
+        "the files of that one directory",
+        status == status_one == 0
+        and "test/fixy/test_a.cpp" in outer
+        and "test/fixy/" not in one
+        and "0 findings" in one,
+    )
     scratch.git("mv", "test/fixy/test_b.cpp", "test/fixy/test_c.cpp")
     scratch.add("a", [line.replace("test_b.cpp", "test_c.cpp") for line in scratch.objects["a"][0]])
-    expect("a moved file fails at its new path until the ledger is written again", len(scratch.errors()) == 1)
     status, _ = scratch.write()
-    expect("the write reads no git move, and it refuses the new path with no --raise", status == 1)
+    expect(
+        "a file that git moves in its directory keeps the row of the directory, and the write needs no --raise",
+        scratch.errors() == [] and status == 0,
+    )
+    (scratch.root / "test" / "moved").mkdir()
+    scratch.git("mv", "test/fixy/test_c.cpp", "test/moved/test_c.cpp")
+    scratch.add(
+        "a", [line.replace("test/fixy/test_c.cpp", "test/moved/test_c.cpp") for line in scratch.objects["a"][0]]
+    )
+    expect(
+        "a file that git moves to a different directory fails there, because the write reads no git move",
+        scratch.errors()
+        == ["test/moved/ has 1 findings of the kind std-object, and the ledger holds no row of the directory"],
+    )
+    status, _ = scratch.write()
+    expect("the write refuses the new directory with no --raise", status == 1)
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     expect(
-        "--raise writes the row of the new path, and the build then gives no error",
-        status == 0 and ("test/fixy/test_c.cpp", "std-object", "std::span") in scratch.base() and scratch.run()[0] == 0,
+        "--raise writes the row of the new directory, the build then gives no error, and the write of one build "
+        "keeps the row of the directory that the finding left",
+        status == 0
+        and scratch.base().get(("test/moved/", "std-object", "")) == 1
+        and scratch.base().get(("test/fixy/", "std-object", "")) == 1
+        and scratch.run()[0] == 0,
     )
 
 
 def layer_move_cases(expect: testing.Expect) -> None:
-    """Move a base header to a different layer: its include keeps its row, and a new include increases a count."""
+    """Move a base header to a different layer: its include keeps no row, and a new include increases a count."""
     with tempfile.TemporaryDirectory(prefix="plugin-layer-move-") as scratch_text:
         scratch = Scratch(Path(scratch_text) / "tree")
         old, new = "include/fixy/os/Spawn.h", "include/fixy/concurrent/Spawn.h"
+        old_row, new_row = ("include/fixy/os/", "layer-header", ""), ("include/fixy/concurrent/", "layer-header", "")
         (scratch.root / old).parent.mkdir(parents=True)
         (scratch.root / old).write_text(f"// {old}\n", encoding="utf-8")
         scratch.git("add", "--", old)
@@ -759,23 +763,23 @@ def layer_move_cases(expect: testing.Expect) -> None:
         scratch.add("e", [f"quarantine layer-header {old}:5:1 <tuple> in the layer X3_os"])
         status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
         expect(
-            "the row of an include holds the header and no layer",
-            status == 0 and scratch.base().get((old, "layer-header", "<tuple>")) == 1,
+            "the row of an include holds its directory and kind, and no header and no layer",
+            status == 0 and scratch.base().get(old_row) == 1,
         )
         (scratch.root / new).parent.mkdir(parents=True)
         scratch.git("mv", old, new)
         scratch.add("e", [f"quarantine layer-header {new}:5:1 <tuple> in the layer X4_concurrent"])
         expect(
-            "a header moved to a different layer fails at its new path until the ledger is written again",
+            "a header moved to a different directory fails at its new directory until the ledger is written again",
             len(scratch.errors()) == 1,
         )
         status, _ = scratch.write(rule_ledger.WriteMode.RAISE, is_complete=True)
         expect(
-            "a complete write with --raise gives the moved header the row of its include, and the build then gives "
+            "a complete write with --raise gives the new directory the row of the include, and the build then gives "
             "no error",
             status == 0
-            and scratch.base().get((new, "layer-header", "<tuple>")) == 1
-            and (old, "layer-header", "<tuple>") not in scratch.base()
+            and scratch.base().get(new_row) == 1
+            and old_row not in scratch.base()
             and scratch.run()[0] == 0,
         )
         scratch.add(
@@ -788,7 +792,7 @@ def layer_move_cases(expect: testing.Expect) -> None:
         status, text = scratch.write()
         expect(
             "a new include of the moved header increases a count: the run fails and the write refuses it",
-            len(scratch.errors()) == 1 and status == 1 and "rises from 0" in text,
+            len(scratch.errors()) == 1 and status == 1 and "rises from 1" in text,
         )
 
 
@@ -797,14 +801,11 @@ def build_kind_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     status, _, text = scratch.run()
     expect("the one set of rows judges a build of a different kind", status == 0 and "holds no rows" not in text)
-    swap = ("include/crucible/Vigil.h", "std-entity", "std::swap")
-    scratch.add("g", [f"quarantine std-entity {swap[0]}:31:7 std::swap"])
+    swap = ("include/crucible/", "std-entity", "")
+    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
     before_write = scratch.ledger.read_text(encoding="utf-8")
     status, written_text = scratch.write()
-    swap_error = (
-        "include/crucible/Vigil.h has 1 findings of the kind std-entity and the entity std::swap, and the ledger "
-        "admits 0"
-    )
+    swap_error = "include/crucible/ has 1 findings of the kind std-entity, and the ledger admits 0"
     expect(
         "a finding of an arm that only that build compiles fails it, and the write refuses it with no --raise",
         scratch.errors() == [swap_error]
@@ -813,8 +814,8 @@ def build_kind_cases(expect: testing.Expect, scratch: Scratch) -> None:
         and scratch.ledger.read_text(encoding="utf-8") == before_write,
     )
     # Only the release build writes the file of the build directory.
-    generated = (f"{ruletable.BUILD_PREFIX}gen/table.c", "c-array-object", "")
-    scratch.add("e", [f"quarantine c-array-object {generated[0]}:3:1 int [4]"])
+    generated = (f"{ruletable.BUILD_PREFIX}gen/", "c-array-object", "")
+    scratch.add("e", [f"quarantine c-array-object {ruletable.BUILD_PREFIX}gen/table.c:3:1 int [4]"])
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     expect(
         "--raise adds the arm and the file of the build to the one set, and the build then gives no error",
@@ -896,7 +897,7 @@ def ledger_problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
         and len(found) == len(text.splitlines()) - 1,
     )
     good = scratch.ledger.read_text(encoding="utf-8")
-    malformed = good.replace("test/fixy/test_c.cpp | std-object | 1 |", "test/fixy/test_c.cpp | std-object | x |")
+    malformed = good.replace("test/fixy/ | c-library-call | 1 |", "test/fixy/ | c-library-call | x |")
     scratch.ledger.write_text(malformed, encoding="utf-8")
     bad_line = next((number for number, line in enumerate(malformed.splitlines(), start=1) if "| x |" in line), -1)
     status, found, _ = scratch.run()
@@ -929,7 +930,7 @@ def ledger_cases(expect: testing.Expect) -> None:
         scratch = Scratch(Path(scratch_text) / "tree")
         first_write_cases(expect, scratch)
         region_cases(expect, scratch)
-        hole_cases(expect, scratch)
+        directory_cases(expect, scratch)
         file_cases(expect, scratch)
         build_kind_cases(expect, scratch)
         problem_cases(expect, scratch)
@@ -971,7 +972,7 @@ def contract_cases(expect: testing.Expect) -> None:
         counts = scratch.counts()
         expect(
             "the rule quarantine counts a specifier in an opt-out region, and no other specifier",
-            counts.get(("test/fixy/test_a.cpp", "opted-out", f"{PROBE_REASON} | contract-specifier pre")) == 1
+            counts.get(("test/fixy/", "opted-out", PROBE_REASON)) == 2
             and not any(key[1] == CONTRACT for key in counts),
         )
         scratch.write(rule_ledger.WriteMode.RAISE)

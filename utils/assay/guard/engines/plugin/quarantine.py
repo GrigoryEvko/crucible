@@ -1,4 +1,4 @@
-"""quarantine — the count of quarantine findings and opt-out regions in each file, kind and entity can only fall.
+"""quarantine — the count of quarantine findings and opt-out regions in each directory and kind can only fall.
 
 THE FINDINGS
     The rule reads the finding lines of the rule quarantine in the sections
@@ -7,79 +7,53 @@ THE FINDINGS
     two objects counts one time, for example a finding of a header that two
     units include.
 
+THE KEY
+    The ledger counts the findings of each directory and kind.  The directory
+    of a file is its parent directory with '/' at its end, as the ledger names
+    files (directory_of()).  include/fixy/os/Time.h has the directory
+    include/fixy/os/, and a file of the build directory has @build/ or a
+    directory under it.  A file at the root has the directory ./.  A row
+    holds no entity and no line, so a change that only moves code in a
+    directory keeps each row.  A kind such as replace-pending:std::bit_cast
+    holds a name, and that name is part of the key.
+
+    The rule cannot see a change that replaces a finding with a different
+    finding of the same kind in one directory.  The owner accepts that loss.
+    `guard list --build-dir DIR --path DIRECTORY/` prints each finding of a
+    directory with its file, its line and its entity, for a person who
+    removes the findings of a directory.
+
 THE OPT-OUT REGIONS
     A finding in an opt-out region has the kind opted-out (CLAUDE.md section
-    XXII, R7).  Its row holds the reason of its region, and the ledger then
-    holds what each region covers.  A line of the kind region gives the
-    file, the first line and the reason of each region of a unit.  The plugin
-    refuses a region that opens in a different region, and a region that a
-    different file closes.  The region of an opted-out finding is then the
-    region of its file with the last first line at or before its line.
+    XXII, R7).  A line of the kind region gives the file, the first line and
+    the reason of each region of a unit.  The plugin refuses a region that
+    opens in a different region, and a region that a different file closes.
+    The region of an opted-out finding is then the region of its file with
+    the last first line at or before its line.
 
-    The ledger also counts the regions of each file and reason, with the kind
-    region and the reason as the entity.  A region that covers more
-    increases a count of opted-out, and a new region increases a count of
-    region.  The rule refuses each one until `guard write --admit` writes it.
-    The rule counts only the regions that a build compiles.  A region in a
-    file or a preprocessor arm that no build of the landing gate compiles has
-    no row.
-
-THE ENTITY
-    The ledger counts the findings of each file, kind and entity.  The entity
-    of a row is the part of the entity of a finding that names what the
-    plugin refuses (entity_key).  The reader gives the parts of each entity
-    (assay.readers.sections, THE ENTITIES OF THE RECORDS), and each part has
-    one space between each two words:
-      * raw-pointer-object, raw-function-pointer and c-array-object: no
-        entity.  The plugin gives the name of the declaration, and the row
-        counts the findings of the file and the kind
-      * `layer-header`: the header that the include names, for example
-        <vector>, without the layer of the file
-      * `upward-include`: the file that the include names, without the two
-        layers
-      * opted-out: "REASON | KIND ENTITY", the reason of the region, and the
-        kind and the entity of the finding in it
-      * region: the reason of the region
-      * each other kind: the full text, for example std::span,
-        std::span::operator[], memcpy, new, or the header of a `door-header`
-        include
-    The entity holds no line, and a change that only moves code keeps each
-    row.  A change that removes std::vector from a file and adds std::map to
-    it increases the count of std::map, and the rule refuses that change.
-    The layer of a file is a fact of its path, and the row keys by the path.
-    A row of an include then holds no layer.  A file that git moves to a
-    different layer keeps the rows of its includes.  The message of each
-    finding keeps the full text, with the layers.
-
-    The rule counts each finding line of the build one time.  One
-    declaration must then give one line in each unit.  Because of this, the
-    entity of an object finding holds no printed type.  GCC prints a type with
-    the template arguments and the parameter names of the first
-    specialization that the unit made with the same arguments.  One
-    declaration of a header then gave std::span<unsigned char> in one unit and
-    std::span<unsigned char, 18446744073709551615> in a different unit, and
-    the count of the file changed with the other units of the build.  The
-    plugin writes these entities (utils/tools/quarantine/declaration.cpp, THE
-    ENTITY OF AN OBJECT):
-      * std-object and c-library-object: the library class with no template
-        argument, for example std::span
-      * raw-pointer-object, raw-function-pointer and c-array-object: the name
-        of the declaration
-      * raw-new-delete: the operator, for example new or placement new.
+    Each region is a reviewed exception, so its rows keep its reason as the
+    entity of the key.  A row of the kind region counts the regions of a
+    directory with one reason.  A row of the kind opted-out counts the
+    findings that those regions cover.  A region that covers more increases a
+    count of opted-out, and a new region increases a count of region.  The
+    rule refuses each one until `guard write --admit` writes it.  The rule
+    counts only the regions that a build compiles.  A region in a file or a
+    preprocessor arm that no build of the landing gate compiles has no row.
 
 THE LEDGER
-    utils/ledgers/quarantine.txt holds the count of each file, kind and
-    entity, in the rows of assay.core.ledger (the policy count).  `guard
-    write` writes each row through assay.core.ledger.  The rows are sorted
-    and each row holds one fact.  The resolution of a merge conflict is then
-    a new write.  The rows after the head comment:
+    utils/ledgers/quarantine.txt holds the count of each directory and kind,
+    in the rows of assay.core.ledger (the policy count).  `guard write`
+    writes each row through assay.core.ledger.  The rows are sorted and each
+    row holds one fact.  The resolution of a merge conflict is then a new
+    write.  The rows after the head comment:
 
         format 1
         rule quarantine
         reason PREFIX | REASON                 The reason of each count row of
-                                               a file under PREFIX
-        FILE | KIND | COUNT | ENTITY | -       The count of the key.  A kind
-                                               with no entity has the cell "-"
+                                               a directory under PREFIX
+        DIRECTORY | KIND | COUNT | - | -       The count of the key
+        DIRECTORY | KIND | COUNT | REASON | -  The count of a key of the kind
+                                               region or opted-out
 
     One set of rows judges each build.  The count of a key is its largest
     count over the configurations of the landing gate (THE REDUCE of
@@ -90,17 +64,17 @@ THE LEDGER
 THE VERDICT
     * A count more than its ledger count is an error.  A change can only
       lower a count, as rule R11 of misc/01_10_2026_quarantine.md says.  A new
-      finding cannot stay when a finding of a different entity or of a
-      different file goes.
-    * A file that the ledger does not hold and that has a finding is an error:
-      a new file has no finding (CLAUDE.md section XXII).
+      finding cannot stay when a finding of a different kind or of a
+      different directory goes.
+    * A directory that the ledger does not hold and that has a finding is an
+      error: a new directory has no finding (CLAUDE.md section XXII).
     * A count less than its ledger count gives no finding, because a ledger
       fails only on a growth (THE POLICIES of assay.core.ledger).  The landing
       gate writes the lower count (THE REDUCE of assay.loop.gate).
     * An opted-out finding of a file with no region line is an error, because
       the rule cannot give it its region.
     * A count at its row gives no output.  `guard list --build-dir DIR --path
-      DIRECTORY` prints the findings and the regions that stay.
+      DIRECTORY/` prints the findings and the regions that stay.
     * Each problem of the census of the runner is an error.
 
 WRITE THE LEDGER
@@ -111,8 +85,8 @@ WRITE THE LEDGER
     ledger its head comment.  It refuses a count more than its row: remove
     the new finding.
     * --raise writes such a count too.  Use it only when the plugin or the
-      rule table changed what the plugin reports.  Give the reason in the
-      commit.
+      rule table changed what the plugin reports, or when a change moves a
+      finding to a different directory.  Give the reason in the commit.
     * --admit writes a count of opted-out or of region more than its row, and
       no other count.  Use it only for a region of a reason class of CLAUDE.md
       section XXII.  Such a region must cover more, or it is a new region.
@@ -120,9 +94,9 @@ WRITE THE LEDGER
       commit.
     * --reason TEXT gives the reason cell of each new row.
     * The write reads no git history.  A change that moves a finding to a
-      file with no row raises the count of that file: write it with --raise,
-      and give the reason in the commit.  The landing gate then lowers the row
-      of the file that the finding left.
+      different directory raises the count of that directory: write it with
+      --raise.  The landing gate then lowers the row of the directory that the
+      finding left.
 
 NOT APPLICABLE
     The rule exits 77 when the runner does not apply to the build (THE STATUS
@@ -132,7 +106,7 @@ Usage
     guard check --rule quarantine --build-dir DIR [--warnings-dir DIR]
     guard check --engine plugin --build-dir DIR [--warnings-dir DIR]
     guard write --rule quarantine --build-dir DIR [--raise | --admit] [--reason TEXT]
-    guard list --build-dir DIR [--path FILE|DIRECTORY] [--kind KIND]
+    guard list --build-dir DIR [--path FILE|DIRECTORY|DIRECTORY/] [--kind KIND]
 
 Complexity: linear in the finding lines of the build, and O(k log k) for k rows of the ledger and counts of the build.
 """
@@ -152,21 +126,20 @@ OPTED_OUT = quarantine_sections.OPTED_OUT
 REGION = quarantine_sections.REGION
 # The kinds that --admit writes with a count more than their rows: a region that covers more, and a new region.
 ADMITTED_KINDS = frozenset((OPTED_OUT, REGION))
-# The kinds with the name of a declaration as the entity: a row has no entity (THE ENTITY).
-DECLARATION_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
-# The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
-REASON_SEPARATOR = " | "
+# The directory of a file at the root of the tree (THE KEY).
+ROOT_DIRECTORY = "./"
 # The highest character, which sorts after each reason of a region.
 LAST_CHARACTER = chr(0x10FFFF)
 # The advice of a write that refuses a count above its row.
 REFUSAL = (
     "Remove the new findings.  Give --admit only for a region that must cover more or a new region, and --raise only "
-    "when the plugin or the rule table changed what it reports"
+    "when the plugin or the rule table changed what it reports, or when the change moves a finding to a different "
+    "directory"
 )
 # The head comment that each write gives the ledger (assay.core.ledger, THE HEAD COMMENT).
 LEDGER_COMMENT = (
     "# utils/ledgers/quarantine.txt — the findings of the quarantine plugin and the opt-out regions in each\n"
-    "# file, kind and entity.\n"
+    "# directory and kind.\n"
     "#\n"
     "# The rule quarantine reads this ledger (`python3 utils/bin/guard explain quarantine`).  Its module\n"
     "# utils/assay/guard/engines/plugin/quarantine.py writes each count row and this head through\n"
@@ -174,31 +147,34 @@ LEDGER_COMMENT = (
     "# .crucible.quarantine of each object of the target all, and it counts each finding line one time.\n"
     "#\n"
     "# A count above its row fails the rule, because a change can only lower a count (rule R11 of\n"
-    "# misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map\n"
-    "# to it fails.  A file that the ledger does not hold and that has a finding fails too: a new file has\n"
-    "# no finding.  A count below its row passes.\n"
+    "# misc/01_10_2026_quarantine.md).  A directory that the ledger does not hold and that has a finding\n"
+    "# fails too: a new directory has no finding.  A count below its row passes.  A row holds no entity,\n"
+    "# so a change that replaces a finding with a different finding of the same kind in one directory\n"
+    "# passes.  A move of code to a different directory needs `guard write --raise` with the reason in\n"
+    "# the commit.\n"
+    "#     python3 utils/bin/guard list --build-dir build --path DIRECTORY/\n"
+    "# prints each finding of a directory with its file, its line and its entity.\n"
     "# On a merge conflict in this file, take the version of main, and write each raise of the change again.\n"
     "#\n"
     "# THE ROWS (the rows grammar of utils/assay/core/rows.py)\n"
-    "#   reason PREFIX | REASON         The reason of each count row of a file under PREFIX: the step of\n"
-    "#                                  the plan that removes its findings.  A person writes these rows,\n"
-    "#                                  and a write removes a row that holds no count row (THE REASON OF\n"
-    "#                                  A PREFIX of utils/assay/core/ledger.py).\n"
-    "#   FILE | KIND | COUNT | ENTITY | -\n"
-    "#                                  The number of findings of the kind KIND and the entity ENTITY in\n"
-    "#                                  the file.  A file of the build directory has the prefix @build/.\n"
+    "#   reason PREFIX | REASON         The reason of each count row of a directory under PREFIX: the\n"
+    "#                                  step of the plan that removes its findings.  A person writes these\n"
+    "#                                  rows, and a write removes a row that holds no count row (THE\n"
+    "#                                  REASON OF A PREFIX of utils/assay/core/ledger.py).\n"
+    "#   DIRECTORY | KIND | COUNT | - | -\n"
+    "#                                  The number of findings of the kind KIND in the files of the\n"
+    "#                                  directory, with no file of a directory under it.  A directory has\n"
+    "#                                  '/' at its end, and the build directory has the prefix @build/.\n"
     "#                                  The head comment of utils/tools/quarantine/plugin.h gives the\n"
-    "#                                  kinds, and THE ENTITY of\n"
-    "#                                  utils/assay/guard/engines/plugin/quarantine.py gives the entity of\n"
-    "#                                  each kind.  The entity holds no line, so a move of code keeps each\n"
-    '#                                  row.  A kind with no entity has the cell "-".\n'
+    "#                                  kinds.\n"
     "#\n"
     "# THE OPT-OUT REGIONS\n"
-    '#   A finding in an opt-out region has the kind opted-out, and its entity is "REASON | KIND\n'
-    '#   ENTITY": the reason of the region, and the kind and the entity of the finding.  A cell writes\n'
-    "#   the bar of that entity as \\|.  So these rows hold what each region covers.  A row of the kind\n"
-    "#   region counts the regions of the file with the reason of its entity.  A region that covers\n"
-    "#   more, and a new region, fail the rule until\n"
+    "#   DIRECTORY | region | COUNT | REASON | -\n"
+    "#   DIRECTORY | opted-out | COUNT | REASON | -\n"
+    "#   Each region is a reviewed exception, so its rows keep its reason.  A row of the kind region\n"
+    "#   counts the regions of the directory with the reason REASON.  A row of the kind opted-out counts\n"
+    "#   the findings that those regions cover.  A region that covers more, and a new region, fail the\n"
+    "#   rule until\n"
     "#       python3 utils/bin/guard write --rule quarantine --build-dir build --admit\n"
     "#   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section\n"
     "#   XXII, and give the reason in the commit.  Only a region that a build compiles has a row.\n"
@@ -223,44 +199,20 @@ LEDGER_COMMENT = (
     "#   a preset outside the gate compiles, such as the verify preset or a PGO preset, fails its build.\n"
 )
 
-# The file, the kind and the entity of one count: the key of a row of the ledger.
+# The directory, the kind and the entity of one count: the key of a row of the ledger (THE KEY).
 Key = rule_ledger.Key
 
 
 # ── The keys ───────────────────────────────────────────────────────
 
 
-def joined(*fields: str) -> str:
-    """Return the fields with one space between them.  An empty field at the end gives no space."""
-    return " ".join(fields).rstrip(" ")
+def directory_of(path: str) -> str:
+    """Return the directory of a file of the ledger: its parent directory with '/' at its end (THE KEY).
 
-
-def row_entity(kind: str, parsed: quarantine_sections.FindingEntity) -> str:
-    """Return the entity of the row of one finding from the record of its entity (THE ENTITY)."""
-    if kind in DECLARATION_KINDS:
-        return ""
-    if isinstance(parsed, quarantine_sections.LayerHeader):
-        return parsed.header
-    if isinstance(parsed, quarantine_sections.UpwardInclude):
-        return parsed.target
-    return parsed.text
-
-
-def entity_key(kind: str, entity: str) -> str:
-    """Return the entity of the row of one finding: the part of its entity that names what the plugin refuses.
-
-    THE ENTITY in the head comment gives the rule for each kind.
+    A file at the root has the directory ROOT_DIRECTORY.
     """
-    return row_entity(kind, quarantine_sections.quarantine_entity(kind, entity))
-
-
-def opted_out_key(reason: str, entity: str) -> str:
-    """Return the entity of the row of an opted-out finding: the reason of its region, the inner kind and entity.
-
-    `reason` is the reason of the region as the reader gives it, with one space between each two words.
-    """
-    parsed = quarantine_sections.opted_out(entity)
-    return joined(f"{reason}{REASON_SEPARATOR}{parsed.kind}", row_entity(parsed.kind, parsed.inner))
+    parent, slash, _ = path.rpartition("/")
+    return f"{parent}/" if slash else ROOT_DIRECTORY
 
 
 # ── The findings ───────────────────────────────────────────────────
@@ -308,7 +260,9 @@ def reason_at(starts: Sequence[tuple[int, str]], line: int) -> str | None:
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     """Give one error for each finding line and each region of the build, keyed by its row, and each problem.
 
-    A problem has no kind.  An opted-out finding with no region gives a problem and no count.
+    The path of a finding is the directory of its file, and its entity is the reason of its region for the kinds
+    region and opted-out (THE KEY).  The message keeps the file, the line and the entity of the line.  A problem has
+    no kind.  An opted-out finding with no region gives a problem and no count.
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -320,26 +274,20 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     for item in census.of_rule(RULE):
         if item.kind != OPTED_OUT:
             found.append(
-                check_report.Finding(
-                    "error", item.file, item.line, RULE, item.text(), item.kind, entity_key(item.kind, item.entity)
-                )
+                check_report.Finding("error", directory_of(item.file), item.line, RULE, item.text(), item.kind)
             )
         elif item in reasons:
             found.append(
                 check_report.Finding(
-                    "error",
-                    item.file,
-                    item.line,
-                    RULE,
-                    item.text(),
-                    OPTED_OUT,
-                    opted_out_key(reasons[item], item.entity),
+                    "error", directory_of(item.file), item.line, RULE, item.text(), OPTED_OUT, reasons[item]
                 )
             )
     for file, items in sorted(census.regions.items()):
         for line, reason in items:
             found.append(
-                check_report.Finding("error", file, line, RULE, f"an opt-out region: {reason}", REGION, reason)
+                check_report.Finding(
+                    "error", directory_of(file), line, RULE, f"an opt-out region of {file}: {reason}", REGION, reason
+                )
             )
     return found
 
@@ -360,52 +308,49 @@ def evaluate(
     shown = rule_ledger.shown_path(RULE)
     command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
     for key in sorted(set(counts) | set(expected)):
-        file, kind, entity = key.path, key.kind, key.entity
+        directory, kind, reason = key.path, key.kind, key.entity
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
         if measured <= admitted:
             continue
-        line = ledger.line_of(key)
-        listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {file} --kind {kind}`"
-        what = counted.described(kind, entity)
+        listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {directory} --kind {kind}`"
         if kind == OPTED_OUT:
             message = (
-                f"{file} has {measured} findings of {what}, and the ledger admits {admitted}.  The region "
-                f"covers more, and a region can only shrink.  List them with {listing}, and move the code out "
-                f"of the region.  If the reason class of the region (CLAUDE.md section XXII) makes the code "
-                f"necessary, write the ledger with `{command} --admit` and give the reason in the commit"
+                f"{directory} has {measured} findings in opt-out regions with the reason {reason!r}, and the ledger "
+                f"admits {admitted}.  A region can only shrink.  List them with {listing}, and move the code out of "
+                f"the region.  If the reason class of the region (CLAUDE.md section XXII) makes the code necessary, "
+                f"write the ledger with `{command} --admit` and give the reason in the commit"
             )
         elif kind == REGION:
             message = (
-                f"{file} has {measured} opt-out regions with the reason {entity!r}, and the ledger admits "
-                f"{admitted}.  The number of regions can only fall: use a type of fixy or foundation, and "
-                f"remove the region.  If the reason class of the region (CLAUDE.md section XXII) makes the "
-                f"region necessary, write the ledger with `{command} --admit` and give the reason in the "
-                f"commit"
+                f"{directory} has {measured} opt-out regions with the reason {reason!r}, and the ledger admits "
+                f"{admitted}.  The number of regions can only fall: use a type of fixy or foundation, and remove the "
+                f"region.  If the reason class of the region (CLAUDE.md section XXII) makes the region necessary, "
+                f"write the ledger with `{command} --admit` and give the reason in the commit"
             )
-        elif file not in held:
+        elif directory not in held:
             message = (
-                f"{file} has {measured} findings of {what}, and the ledger holds no row of the file.  A new "
-                f"file has no finding (CLAUDE.md section XXII).  List them with {listing}, and use a type of "
-                f"fixy or foundation.  If the change moves code to this file, write the ledger with "
-                f"`{command} --raise`, and give the reason in the commit"
+                f"{directory} has {measured} findings of the kind {kind}, and the ledger holds no row of the "
+                f"directory.  A new directory has no finding (CLAUDE.md section XXII).  List them with {listing}, and "
+                f"use a type of fixy or foundation.  If the change moves code to this directory, write the ledger "
+                f"with `{command} --raise`, and give the reason in the commit"
             )
         else:
             message = (
-                f"{file} has {measured} findings of {what}, and the ledger admits {admitted}.  The change adds "
-                f"{measured - admitted}, and a change can only lower a count, also when a finding of a "
-                f"different entity goes.  List them with {listing}, and use a type of fixy or foundation"
+                f"{directory} has {measured} findings of the kind {kind}, and the ledger admits {admitted}.  The "
+                f"change adds {measured - admitted}, and a change can only lower a count.  List them with {listing}, "
+                f"and use a type of fixy or foundation"
             )
-        findings_found.append(check_report.Finding("error", shown, line, RULE, message))
+        findings_found.append(check_report.Finding("error", shown, ledger.line_of(key), RULE, message))
     return findings_found
 
 
 def summary(counts: Mapping[Key, int], objects: int, verb: str) -> str:
-    """Return the line that tells the findings, the regions, the rows and the files of one run or one write."""
+    """Return the line that tells the findings, the regions, the rows and the directories of one run or one write."""
     regions = sum(count for key, count in counts.items() if key.kind == REGION)
-    files = {key.path for key in counts}
+    directories = {key.path for key in counts}
     return (
         f"{RULE}: {verb} {sum(counts.values()) - regions} findings and {regions} regions in {len(counts)} rows "
-        f"of {len(files)} files, from {objects} objects"
+        f"of {len(directories)} directories, from {objects} objects"
     )
 
 

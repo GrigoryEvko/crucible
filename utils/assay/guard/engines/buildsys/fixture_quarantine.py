@@ -7,15 +7,47 @@ THE CENSUS
     plugin (assay.loop.fixture.store, The quarantine plugin).  The rule reads
     the fixtures of the build (assay.readers.census.fixtures_of) and the
     record of each one (assay.core.record).  It counts the findings of the
-    kinds of THE SCOPE, each finding one time.  The entity of a row is the
-    entity of the rule quarantine (THE ENTITY of
-    assay.guard.engines.plugin.quarantine).  The census holds each region of
-    the source, with its first line and its reason.  The reason has one
-    space between each two words (assay.readers.sections, THE ENTITIES OF THE
-    RECORDS).  The region of an opted-out finding is the region with the last
-    first line at or before its line.  The row of the finding holds the reason
-    of that region, as in the rule quarantine (THE OPT-OUT REGIONS of that
-    module).
+    kinds of THE SCOPE, each finding one time, by fixture source, kind and
+    entity (THE ENTITY).  The census holds each region of the source, with its
+    first line and its reason.  The reason has one space between each two
+    words (assay.readers.sections, THE ENTITIES OF THE RECORDS).  The region
+    of an opted-out finding is the region with the last first line at or
+    before its line, as in the rule quarantine (THE OPT-OUT REGIONS of
+    assay.guard.engines.plugin.quarantine).  The row of the finding holds the
+    reason of that region.
+
+THE ENTITY
+    The entity of a row is the part of the entity of a finding that names
+    what the plugin refuses (entity_key()).  The reader gives the parts of
+    each entity (assay.readers.sections, THE ENTITIES OF THE RECORDS), and
+    each part has one space between each two words:
+      * raw-pointer-object, raw-function-pointer and c-array-object: no
+        entity.  The plugin gives the name of the declaration, and the row
+        counts the findings of the fixture and the kind
+      * `layer-header`: the header that the include names, for example
+        <vector>, without the layer of the file
+      * `upward-include`: the file that the include names, without the two
+        layers
+      * opted-out: "REASON | KIND ENTITY", the reason of the region, and the
+        kind and the entity of the finding in it
+      * region: the reason of the region
+      * each other kind: the full text, for example std::span,
+        std::span::operator[], memcpy, new, or the header of a `door-header`
+        include
+    The entity holds no line, and a change that only moves code keeps each
+    row.  A change that removes std::vector from a fixture and adds std::map
+    to it increases the count of std::map, and the rule refuses that change.
+
+    The entity of an object finding holds no printed type.  GCC prints a type
+    with the template arguments and the parameter names of the first
+    specialization that the unit made with the same arguments, so one
+    declaration could give two texts.  The plugin writes these entities
+    (utils/tools/quarantine/declaration.cpp, THE ENTITY OF AN OBJECT):
+      * std-object and c-library-object: the library class with no template
+        argument, for example std::span
+      * raw-pointer-object, raw-function-pointer and c-array-object: the name
+        of the declaration
+      * raw-new-delete: the operator, for example new or placement new.
 
 THE SCOPE
     The rule counts each kind of the rule quarantine of the registry, and the
@@ -71,8 +103,8 @@ THE FILES OF THE FIXTURES
 THE LEDGER
     utils/ledgers/fixture-quarantine.txt holds the count of each fixture
     source, kind and entity in one set of rows, and these rows judge each
-    build.  The ledger of the rule quarantine has the same rows
-    (assay.guard.engines.plugin.counted).
+    build.  The run and the write are those of
+    assay.guard.engines.plugin.counted, as for the rule quarantine.
 
 THE VERDICT
     * A count above its row is an error.  A new finding of a fixture cannot
@@ -152,6 +184,10 @@ PROBE_KINDS = {
     "unchecked-use": "no-unchecked-access",
     "door-use": "ctx-init-door",
 }
+# The kinds with the name of a declaration as the entity: a row has no entity (THE ENTITY).
+DECLARATION_KINDS = frozenset(("raw-pointer-object", "raw-function-pointer", "c-array-object"))
+# The separator between the reason of a region and the finding in it, in the entity of an opted-out row.
+REASON_SEPARATOR = " | "
 # The census stamp of a planted fixture with no record (THE PLANTS).
 MISSING = "missing"
 # The name of a read row of a plant for a file that an object of the target all reads (THE PLANTS).
@@ -342,15 +378,48 @@ def read_fixtures(root: Path, build_dir: Path | None) -> tuple[FixtureFacts, ...
     return tuple(facts)
 
 
-def entity_of(kind: str, entity: str, reason: str) -> str:
-    """Return the entity of the row of one finding of a census (THE CENSUS).
+def joined(*fields: str) -> str:
+    """Return the fields with one space between them.  An empty field at the end gives no space."""
+    return " ".join(fields).rstrip(" ")
 
-    An opted-out finding gives the reason of its region, and the kind and the entity of the finding in it.  Each other
-    kind gives the entity of the rule quarantine, and `reason` has no effect.
+
+def row_entity(kind: str, parsed: plugin_sections.FindingEntity) -> str:
+    """Return the entity of the row of one finding from the record of its entity (THE ENTITY)."""
+    if kind in DECLARATION_KINDS:
+        return ""
+    if isinstance(parsed, plugin_sections.LayerHeader):
+        return parsed.header
+    if isinstance(parsed, plugin_sections.UpwardInclude):
+        return parsed.target
+    return parsed.text
+
+
+def entity_key(kind: str, entity: str) -> str:
+    """Return the entity of the row of one finding: the part of its entity that names what the plugin refuses.
+
+    THE ENTITY gives the rule for each kind.
+    """
+    return row_entity(kind, plugin_sections.quarantine_entity(kind, entity))
+
+
+def opted_out_key(reason: str, entity: str) -> str:
+    """Return the entity of the row of an opted-out finding: the reason of its region, the inner kind and entity.
+
+    `reason` is the reason of the region as the reader gives it, with one space between each two words.
+    """
+    parsed = plugin_sections.opted_out(entity)
+    return joined(f"{reason}{REASON_SEPARATOR}{parsed.kind}", row_entity(parsed.kind, parsed.inner))
+
+
+def entity_of(kind: str, entity: str, reason: str) -> str:
+    """Return the entity of the row of one finding of a census (THE ENTITY).
+
+    An opted-out finding gives the reason of its region, and the kind and the entity of the finding in it.  For each
+    other kind, `reason` has no effect.
     """
     if kind != quarantine.OPTED_OUT:
-        return quarantine.entity_key(kind, entity)
-    return quarantine.opted_out_key(reason, entity)
+        return entity_key(kind, entity)
+    return opted_out_key(reason, entity)
 
 
 def problem_of(item: FixtureFacts, build_shown: str) -> str:
