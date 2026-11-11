@@ -1,3 +1,0 @@
-# The call names a header that the export does not hold.
-format 1
-path include/planted/absent.h

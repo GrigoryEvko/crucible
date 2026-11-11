@@ -3,14 +3,15 @@
 `guard selftest tests.loop.evidence.test_status` runs the test.  Each case writes one line.  Exit 0 when each case
 holds, else 1.
 
-The cases hold the rows of planted items, the remaining work, and the judgment of each kind of row against each
-target.  They also hold the JSON output and its refusals, and the table.
+The cases hold the rows of planted items with the targets of a planted class, the remaining work, and the judgment of
+each kind of row.  They also hold the JSON output and the table.
 """
 
+import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
-from assay.core import report as check_report
 from assay.core import testing
 from assay.loop.evidence import items as evidence_items
 from assay.loop.evidence import status as evidence_status
@@ -18,7 +19,7 @@ from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets
 
 RULE = targets.STRESS.rule
-BUDGETS = {RULE: check_report.Budget(RULE, 2.0, 5.0, "passes", "the passes of a test")}
+CLASSES = (replace(targets.STRESS, nightly=2.0, release=5.0),)
 FAILURE = evidence_store.Failure("2026-10-14T12:00:00Z", "a planted failure", ("ctest", "-R", "^two$"), ())
 
 
@@ -34,9 +35,9 @@ def planted_rows(store: evidence_store.EvidenceStore) -> list[evidence_status.Ro
         evidence_items.Item(RULE, "short", "build", "key-short"),
         evidence_items.Item(RULE, "failed", "build", "key-failed"),
         evidence_items.Item(RULE, "loose", "build", "", "the test has no key: script: a planted reason"),
-        evidence_items.Item("no-such-rule", "other", "build", "key-other"),
+        evidence_items.Item("no-such-class", "other", "build", "key-other"),
     ]
-    return evidence_status.rows_of(found, store, BUDGETS)
+    return evidence_status.rows_of(found, store, CLASSES)
 
 
 def row_cases(expect: testing.Expect) -> None:
@@ -44,13 +45,12 @@ def row_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="evidence-status-") as directory:
         rows = planted_rows(evidence_store.EvidenceStore(Path(directory)))
     by_item = {row.item: row for row in rows}
+    expect("a row comes only for an item of a given class", set(by_item) == {"done", "short", "failed", "loose"})
     expect(
-        "a row comes only for an item of a rule of TARGETS with a budget",
-        set(by_item) == {"done", "short", "failed", "loose"},
-    )
-    expect(
-        "a row gives the evidence of the record at its key",
-        by_item["done"].value == 5.0 and by_item["short"].value == 1.0,
+        "a row gives the evidence of the record at its key, and the unit and the targets of its class",
+        by_item["done"].value == 5.0
+        and by_item["short"].value == 1.0
+        and (by_item["done"].unit, by_item["done"].nightly, by_item["done"].release) == ("passes", 2.0, 5.0),
     )
     expect("a row gives the wall time of one unit from its samples", by_item["done"].unit_wall_s == 0.25)
     expect(
@@ -59,17 +59,11 @@ def row_cases(expect: testing.Expect) -> None:
         and evidence_status.remaining(by_item["short"], True) == 4.0
         and evidence_status.remaining(by_item["done"], True) == 0.0,
     )
-    nightly = {(finding.entity, finding.level, finding.kind) for finding in evidence_status.judged(rows, BUDGETS, "x")}
+    found = {(finding.entity, finding.level, finding.kind) for finding in evidence_status.judged(rows, "x")}
     expect(
-        f"the nightly judgment gives an error for a failure and a warning for no key and for less evidence: {nightly}",
-        nightly == {("failed", "error", "failure"), ("loose", "warning", "no-key"), ("short", "warning", "short")},
+        f"the judgment gives an error for a kept failure, and no finding for no key or less evidence: {found}",
+        found == {("failed", "error", "failure")},
     )
-    release = {(finding.entity, finding.kind) for finding in evidence_status.judged(rows, BUDGETS, "x", True)}
-    expect(
-        "the release judgment uses the release target, and an item at the nightly target has less evidence",
-        ("short", "short") in release and ("done", "short") not in release,
-    )
-    expect("a row of a rule with no budget gives no finding", not evidence_status.judged(rows, {}, "x"))
     table = evidence_status.table(rows)
     expect(
         "the table gives each row and its state",
@@ -81,24 +75,23 @@ def row_cases(expect: testing.Expect) -> None:
 
 
 def json_cases(expect: testing.Expect) -> None:
-    """Hold the JSON object of the rows: the rows through a file and back, and the refusals (THE OUTPUT)."""
+    """Hold the JSON object of the rows: its format, a row and the problems of the builds (THE OUTPUT)."""
     with tempfile.TemporaryDirectory(prefix="evidence-status-") as directory:
-        root = Path(directory)
-        rows = planted_rows(evidence_store.EvidenceStore(root / "store"))
-        path = root / evidence_status.STATUS_FILE
-        path.write_text(evidence_status.status_json(rows), encoding="utf-8")
-        expect("the rows go through the JSON object of a file", evidence_status.read_status(path) == rows)
-        for name, text in (
-            ("a text that is not JSON", "{"),
-            ("an object of a different format", '{"format": "other", "rows": []}'),
-            ("a row with no number", f'{{"format": "{evidence_status.FORMAT}", "rows": [{{"rule": "r"}}]}}'),
-        ):
-            path.write_text(text, encoding="utf-8")
-            try:
-                evidence_status.read_status(path)
-                expect(f"read_status refuses {name}", False)
-            except evidence_status.StatusError:
-                expect(f"read_status refuses {name}", True)
+        rows = planted_rows(evidence_store.EvidenceStore(Path(directory)))
+    found = json.loads(evidence_status.status_json(rows, ("a planted problem",)))
+    by_item = {row["item"]: row for row in found["rows"]}
+    expect(
+        "the object gives its format, each row and the problems",
+        found["format"] == evidence_status.FORMAT
+        and set(by_item) == {"done", "short", "failed", "loose"}
+        and found["problems"] == ["a planted problem"],
+    )
+    expect(
+        "a row of the object gives the remaining work of the two targets and the kept failure",
+        by_item["short"]["remaining_nightly"] == 1.0
+        and by_item["short"]["remaining_release"] == 4.0
+        and by_item["failed"]["failure"]["summary"] == "a planted failure",
+    )
 
 
 def main(argv: list[str]) -> int:

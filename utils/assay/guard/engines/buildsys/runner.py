@@ -18,9 +18,9 @@ THE BUILD DIRECTORY
 
 THE PATHS
     A call can name paths with --path.  A rule that reads only the paths
-    that a call names, such as gate-mutants, reads them from `paths`.  The
-    run then judges only the ledger rows of those paths, and `guard write`
-    writes only their rows.  With no --path, `paths` is empty.
+    that a call names reads them from `paths`.  The run then judges only the
+    ledger rows of those paths, and `guard write` writes only their rows.
+    With no --path, `paths` is empty.
 
 THE KIND
     kind() gives the build kind of BUILD_DIR/build-kind.txt

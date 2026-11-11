@@ -21,9 +21,10 @@ THE ITEMS
     of the tree.  A test of the master guard, a self-test of a module of the
     package and a CMake script run no such program.  Their results come from
     their inputs only, and such a test is no item of stress-passes.
-    An item gives its rule, its name, the build directory that gives its key,
-    and its key.  An item with no key gives the reason, and no evidence
-    applies to it: no runner can add evidence that a subsequent run can find.
+    An item gives the name of its class, its name, the build directory that
+    gives its key, and its key.  An item with no key gives the reason, and no
+    evidence applies to it: no runner can add evidence that a subsequent run
+    can find.
 
 THE KEYS
     The key of a test is its key in the shared store of `loop test`: the
@@ -44,11 +45,11 @@ THE KEYS
     native tier, no bench of the build has a key.
 
 THE KEYS OF A HEADER
-    The key of a header of include/ holds each input of a run of the rule
-    gate-mutants on the header (assay.mutation.run).  These are the inputs:
+    The key of a header of include/ holds each input of a run of the gate
+    mutants of the header (assay.mutation.run).  These are the inputs:
       * the units of the build that read the header
       * the code of the mutants
-      * the rows of the ledger of gate-mutants for the header.
+      * the rows of ADMITTED_GATES for the header (THE ADMITTED GATES).
     A unit is an object of the target all or a negative fixture
     (assay.readers.census).
       * The digest of a unit holds its command, the resolved path of its
@@ -75,6 +76,16 @@ THE KEYS OF A HEADER
       * A header of a host row or of a kernel row of the rule table is no
         item.  A different compiler compiles it, and the build has no unit of
         it (assay.core.ruletable, EXEMPT_KINDS).
+
+THE ADMITTED GATES
+    The file ADMITTED_GATES of the source tree of the build admits the
+    invalid mutant of some gates, in the format of a ledger of the policy
+    admit (assay.core.ledger).  A row is HEADER | GATE KIND | admit | NAME:
+    TEXT | REASON.  NAME is the gated entity, and TEXT is the gate text with
+    its whitespace squeezed (exemption_row() of assay.mutation.run).  REASON
+    tells why no mutant of the gate can parse, or which other test holds the
+    gate.  A person writes each row.  A source tree with no such file admits
+    no gate.
 
 THE BUILDS
     With no build directory, the items of a class come from the builds that
@@ -129,11 +140,13 @@ HEADER_DIRECTORY = "include/"
 HEADER_SUFFIX = ".h"
 SOURCE_ENTRY = "CMAKE_HOME_DIRECTORY"
 UNREAD = "unread"
+# The file of the admitted gates in a source tree (THE ADMITTED GATES).
+ADMITTED_GATES = "utils/assay/loop/evidence/admitted-gates.txt"
 
 
 @dataclass(frozen=True, slots=True)
 class Item:
-    """One member of a class of sampled checks: its rule, its name, the build of its key, and its key or the reason."""
+    """One member of a class of sampled checks: the name of its class, its name, the build of its key, and its key."""
 
     rule: str
     name: str
@@ -272,7 +285,7 @@ class HeaderKeys:
     """The source tree of a build, each header of include/ in it, and the key of each header that a unit reads.
 
     `deps` gives the files of include/ that each unit reads, by the resolved path of its source, as the candidates of
-    assay.mutation.run take them.  `ledger` is the ledger of the rule of the class of coverage, or None.
+    assay.mutation.run take them.  `ledger` holds the rows of ADMITTED_GATES of the source tree, or None.
     """
 
     source: Path
@@ -340,24 +353,21 @@ def unit_commands(build_dir: Path) -> dict[tuple[str, str], tuple[str, ...]]:
 
 
 def gate_ledger(source: Path) -> rule_ledger.Ledger | None:
-    """Return the ledger of the rule of the class of coverage in a tree, or None when the tree has no such rule.
-
-    A tree with no registry has no such rule.
+    """Return the rows of ADMITTED_GATES of a source tree, or None when the tree has no such file (THE ADMITTED GATES).
 
     Raises:
-        rows_grammar.RowsError: If the registry or the ledger does not obey its schema
-        OSError: If the registry or the ledger cannot be read
+        rows_grammar.RowsError: If the file does not obey the format of a ledger of the policy admit
+        OSError: If the file cannot be read
     """
-    path = source / rule_registry.REGISTRY_PATH
+    path = source / ADMITTED_GATES
     if not path.is_file():
         return None
-    registry = rule_registry.load(path)
-    rule = registry.rules.get(targets.COVERAGE.check)
-    return None if rule is None else rule_ledger.read(rule, source)
+    text = path.read_text(encoding="utf-8")
+    return rule_ledger.parse(text, ADMITTED_GATES, targets.COVERAGE.rule, rule_registry.Policy.ADMIT)
 
 
 def gate_rows(ledger: rule_ledger.Ledger | None) -> dict[str, list[str]]:
-    """Return the text of each row of the ledger of the rule of the class of coverage, by its header."""
+    """Return the text of each row of ADMITTED_GATES, by its header (THE ADMITTED GATES)."""
     found: dict[str, list[str]] = {}
     for key, entry in sorted(() if ledger is None else ledger.base.items()):
         found.setdefault(key.path, []).append(f"{key.kind}\t{key.entity}\t{entry.value}")
@@ -396,8 +406,8 @@ def mutant_keys(build_dir: Path, package_root: Path = paths.REPO_ROOT) -> Header
         build_census.CensusError: If the census of the build cannot be read
         compdb.CompdbError: If the compile database cannot be read
         ctest_reader.CtestError: If the tests of the build cannot be read
-        rows_grammar.RowsError: If the registry or the ledger of the source tree does not obey its schema
-        OSError: If the registry or the ledger of the source tree cannot be read
+        rows_grammar.RowsError: If the file of the admitted gates of the source tree does not obey its schema
+        OSError: If the file of the admitted gates of the source tree cannot be read
         git.GitError: If git cannot list the headers of the source tree
     """
     source = source_tree(build_dir)

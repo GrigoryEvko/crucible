@@ -591,12 +591,8 @@ class Runner:
 
 def read_rows(root: Path) -> tuple[list[evidence_status.Row], list[str]]:
     """Return the rows of the evidence of a tree and the problems of its builds (assay.loop.evidence.status)."""
-    try:
-        budgets = check_report.read_budgets()
-    except (OSError, ValueError) as problem:
-        return [], [f"the registry cannot be read: {problem}"]
     found, problems = evidence_items.tree_items(root, [])
-    return evidence_status.rows_of(found, evidence_store.EvidenceStore(), budgets), list(problems)
+    return evidence_status.rows_of(found, evidence_store.EvidenceStore()), list(problems)
 
 
 def open_lines(rows: Sequence[evidence_status.Row], is_release: bool, shown: int | None) -> list[str]:

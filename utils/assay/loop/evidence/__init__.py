@@ -7,29 +7,29 @@ THE EVIDENCE
     of assay.loop.evidence.store adds the evidence of each run to the
     evidence of the previous runs.  It keeps the evidence by the key of the
     inputs that the check read (assay.loop.evidence.items, THE KEYS).  Each
-    class of sampled checks has a target in a measured rule of
-    utils/registry.txt (assay.loop.evidence.targets).  A failure is evidence
-    too, and it stays until its key changes.
+    class of sampled checks has a nightly target and a release target
+    (assay.loop.evidence.targets).  A failure is evidence too, and it stays
+    until its key changes.
 
 THE SUBCOMMANDS
     status  Give the evidence of each item against its targets, and the
             remaining work (assay.loop.evidence.status).  With --json, print
             the rows as one JSON object, which an entry reads to schedule the
             remaining work in a time budget.  Without it, print a table and
-            the findings of THE JUDGMENT of that module.
+            the errors of THE JUDGMENT of that module.
     run     Add evidence of one kind in a time budget.  The kind repetition
             runs each test of a build again (assay.loop.evidence.repetition).
             The kind search runs each property test of a build with new
             seeds (assay.loop.evidence.search).  The kind measurement runs
             each bench of a build, one at a time
             (assay.loop.evidence.measurement).  The kind coverage runs the
-            rule gate-mutants on each header of include/
+            gate mutants of each header of include/
             (assay.loop.evidence.coverage).  The builds of the kind share
             the budget, in their sequence.  After the runs, the store goes
             back to its row of LIMITS of assay.core.cache.
 
 Usage
-    loop evidence status [--build-dir DIR]... [--json] [--release]
+    loop evidence status [--build-dir DIR]... [--json]
     loop evidence run KIND --budget-s SECONDS [--build-dir DIR]... [--item NAME]... [--release] [-j N]
 
     KIND         repetition, search, measurement or coverage
@@ -55,20 +55,15 @@ PROGRAM = "loop evidence"
 RUNNERS = ("repetition", "search", "measurement", "coverage")
 
 
-def status_main(directories: list[Path], as_json: bool, is_release: bool) -> int:
+def status_main(directories: list[Path], as_json: bool) -> int:
     """Give the status of the evidence of the tree (THE SUBCOMMANDS, status)."""
     from assay.loop.evidence import items as evidence_items
     from assay.loop.evidence import status as evidence_status
     from assay.loop.evidence import store as evidence_store
     from assay.loop.evidence import targets
 
-    try:
-        budgets = check_report.read_budgets()
-    except (OSError, ValueError) as problem:
-        check_report.write_line(f"{PROGRAM}: the registry cannot be read: {problem}", is_error=True)
-        return ExitCode.MISSING_INPUT
     found, problems = evidence_items.tree_items(paths.REPO_ROOT, directories)
-    rows = evidence_status.rows_of(found, evidence_store.EvidenceStore(), budgets)
+    rows = evidence_status.rows_of(found, evidence_store.EvidenceStore())
     if as_json:
         check_report.write_line(evidence_status.status_json(rows, problems))
         return ExitCode.OK
@@ -76,7 +71,7 @@ def status_main(directories: list[Path], as_json: bool, is_release: bool) -> int
     for text in problems:
         check_report.write_line(f"{PROGRAM}: {text}")
     status = ExitCode.OK
-    findings = evidence_status.judged(rows, budgets, paths.LOOP.relative_to(paths.REPO_ROOT).as_posix(), is_release)
+    findings = evidence_status.judged(rows, paths.LOOP.relative_to(paths.REPO_ROOT).as_posix())
     for target in targets.TARGETS:
         chosen = [finding for finding in findings if finding.check == target.rule]
         if check_report.emit(chosen, target.rule, None):
@@ -98,16 +93,8 @@ def run_main(kind: str, directories: list[Path], budget_s: float, is_release: bo
         "measurement": (targets.MEASUREMENT, measurement.run),
         "coverage": (targets.COVERAGE, coverage.run),
     }[kind]
-    try:
-        budget = check_report.read_budgets().get(sampled.rule)
-    except (OSError, ValueError) as problem:
-        check_report.write_line(f"{PROGRAM}: the registry cannot be read: {problem}", is_error=True)
-        return ExitCode.MISSING_INPUT
-    if budget is None:
-        check_report.write_line(f"{PROGRAM}: the registry has no measured rule {sampled.rule}", is_error=True)
-        return ExitCode.MISSING_INPUT
     builds = directories or [build for _, build in evidence_items.class_builds(sampled, tiers.read(paths.REPO_ROOT))]
-    target = budget.error if is_release else budget.warn
+    target = sampled.release if is_release else sampled.nightly
     status = ExitCode.OK
     started = time.monotonic()
     for build in builds:
@@ -129,7 +116,6 @@ def main(argv: list[str]) -> int:
     status = commands.add_parser("status")
     status.add_argument("--build-dir", type=Path, action="append", default=[], dest="build_dirs")
     status.add_argument("--json", action="store_true")
-    status.add_argument("--release", action="store_true")
     runner = commands.add_parser("run")
     runner.add_argument("kind", choices=RUNNERS)
     runner.add_argument("--budget-s", type=float, required=True)
@@ -140,7 +126,7 @@ def main(argv: list[str]) -> int:
     options = parser.parse_args(argv)
     directories = [directory.resolve() for directory in options.build_dirs]
     if options.command == "status":
-        return status_main(directories, options.json, options.release)
+        return status_main(directories, options.json)
     from assay.core import proc
 
     if options.budget_s <= 0 or options.jobs < 0:

@@ -1,5 +1,0 @@
-set(CMAKE_C_COMPILER_FORCED TRUE)
-enable_language(C)
-file(WRITE ${CMAKE_BINARY_DIR}/bench_leaf.c "int main(void) { return 0; }\n")
-add_executable(bench_leaf ${CMAKE_BINARY_DIR}/bench_leaf.c)
-set_target_properties(bench_leaf PROPERTIES FOLDER crucible_bench)

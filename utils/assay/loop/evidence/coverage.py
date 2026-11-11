@@ -1,4 +1,4 @@
-"""coverage — run the rule gate-mutants on each header of include/ in a time budget, and keep each run at its key.
+"""coverage — run the gate mutants of each header of include/ in a time budget, and keep each run at its key.
 
 THE SELECTION
     run() reads the items of the class mutant-runs.  An item is a header of
@@ -8,10 +8,11 @@ THE SELECTION
     PENDING ITEMS of that module).
 
 THE TREE OF THE RUN
-    The rule gate-mutants writes each mutant into the source tree of its
-    build, and it puts the header back after each mutant (assay.mutation.run).
-    It refuses a build of the tree of this package.  For a build of that
-    tree, the runner uses the warm export EXPORT of the work root
+    The run of the gate mutants writes each mutant into the source tree of
+    its build, and it puts the header back after each mutant
+    (assay.mutation.run).  Thus the runner does not run the mutants in the
+    tree of this package.  For a build of that tree, the runner uses the
+    warm export EXPORT of the work root
     (assay.core.cache).  The export is one repository that holds the commit
     of HEAD of that tree, as the warm tree of the gate does (move_tree() of
     assay.loop.gate).  The runner configures the
@@ -25,17 +26,18 @@ THE TREE OF THE RUN
 
 THE RUN OF A HEADER
     run_header() of assay.mutation.run runs each mutant of one header with the
-    caps of the rule (assay.guard.engines.buildsys.gate_mutants).  The
-    candidates of the mutants come from the units of the build, one time for
-    each call.
-      * A run with no survivor and no invalid mutant that the ledger of
-        gate-mutants does not admit adds one sample of the quantity 1.  Its
-        facts are the count of the gates and of the mutants that a test
-        killed.
+    caps of THE JOBS of that module.  The candidates of the mutants come from
+    the units of the build, one time for each call.
+      * A run with no survivor and no invalid mutant that the admitted gates
+        do not admit adds one sample of the quantity 1 (THE ADMITTED GATES of
+        assay.loop.evidence.items).  Its facts are the count of the gates and
+        of the mutants that a test killed.
       * Each other run keeps the failure of the key.  The failure gives the
         count of the survivors and of the invalid mutants, the first of each,
-        and the command `guard check --rule gate-mutants --build-dir BUILD
-        --path HEADER`, which runs the rule on the header again.
+        and the command `loop evidence run coverage --build-dir BUILD --item
+        HEADER --budget-s SECONDS`, which runs the mutants of the header
+        again.  The budget is twice the time of the run, and at least twice
+        FIRST_HEADER_S, so that the header can start.
     A SIGTERM stops the run after the header gets its bytes back.
 
 THE BUDGET
@@ -62,7 +64,6 @@ from assay.core import cache, git, paths, proc
 from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
-from assay.guard.engines.buildsys import gate_mutants
 from assay.loop import gate, tiers
 from assay.loop.evidence import items as evidence_items
 from assay.loop.evidence import store as evidence_store
@@ -110,7 +111,7 @@ class Outcome:
 
 
 def admitted(ledger: rule_ledger.Ledger | None, outcome: mutation_run.Outcome) -> bool:
-    """Return True when a row of the ledger of gate-mutants admits the invalid mutant of an outcome."""
+    """Return True when a row of the admitted gates admits the invalid mutant of an outcome (THE RUN OF A HEADER)."""
     key = mutation_run.exemption_row(outcome.header, outcome.kind, outcome.entity, outcome.original)
     return ledger is not None and key in ledger.base
 
@@ -131,11 +132,16 @@ def judged(outcomes: Sequence[mutation_run.Outcome], ledger: rule_ledger.Ledger 
     return Verdict(0.0, facts, f"the header has {' and '.join(parts)}")
 
 
-def rerun_words(build_dir: Path, header: str) -> tuple[str, ...]:
-    """Return the command that runs the rule gate-mutants on a header of the build again (THE RUN OF A HEADER)."""
-    guard = paths.GUARD.relative_to(paths.REPO_ROOT).as_posix()
-    check = targets.COVERAGE.check
-    return ("python3", guard, "check", "--rule", check, "--build-dir", str(build_dir), "--path", header)
+def rerun_words(build_dir: Path, header: str, wall_s: float) -> tuple[str, ...]:
+    """Return the command that runs the mutants of a header of the build again, after a run of wall_s seconds.
+
+    The budget lets the header start (THE RUN OF A HEADER).
+    """
+    loop = paths.LOOP.relative_to(paths.REPO_ROOT).as_posix()
+    budget = f"{2 * max(FIRST_HEADER_S, wall_s):.0f}"
+    kind = str(targets.COVERAGE.kind)
+    words = ("--build-dir", str(build_dir), "--item", header, "--budget-s", budget)
+    return ("python3", loop, "evidence", "run", kind, *words)
 
 
 def header_time(record: evidence_store.Record | None) -> float:
@@ -176,7 +182,7 @@ def run_headers(
         headers += 1
         if verdict.failure:
             failure = evidence_store.Failure(
-                evidence_store.now(), verdict.failure, rerun_words(build_dir, name), verdict.facts
+                evidence_store.now(), verdict.failure, rerun_words(build_dir, name, wall_s), verdict.facts
             )
             store.keep_failure(rule, name, candidate.item.key, failure)
             failures.append(name)
@@ -247,16 +253,16 @@ def header_runner(keyed: evidence_items.HeaderKeys, build_dir: Path) -> HeaderRu
 
     def run_one(header: str) -> list[mutation_run.Outcome]:
         """Run each mutant of one header, and put the header back on a SIGTERM too."""
-        previous = signal.signal(signal.SIGTERM, gate_mutants.stop_on_term)
+        previous = signal.signal(signal.SIGTERM, mutation_run.stop_on_term)
         try:
             return mutation_run.run_header(
                 header,
                 keyed.source,
                 candidates,
-                gate_mutants.JOBS,
-                gate_mutants.NEGATIVE_CAP,
-                gate_mutants.SYNTAX_CAP,
-                run_cap=gate_mutants.RUN_CAP,
+                mutation_run.JOBS,
+                mutation_run.NEGATIVE_CAP,
+                mutation_run.SYNTAX_CAP,
+                run_cap=mutation_run.RUN_CAP,
                 ninja_program=ninja,
             )
         except mutation_run.RunError as problem:

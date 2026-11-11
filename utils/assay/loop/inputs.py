@@ -219,7 +219,7 @@ REGISTRY_MODULE = "assay.core.registry"
 MODULE_DATA = {
     "assay.core.pins": ("utils/pins.txt",),
     "assay.oracle.runner": ("test/session_oracle/",),
-    "assay.tests.mutation.test_run": ("utils/plants/gate-mutants/",),
+    "assay.loop.evidence.items": ("utils/assay/loop/evidence/admitted-gates.txt",),
 }
 # The fixture of the parse trees.  The tree cache holds a parse of the files of the tree.  A test with the fixture
 # then reads no input other than the files of its scope.

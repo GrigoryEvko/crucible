@@ -5,15 +5,15 @@ holds, else 1.
 
 The cases hold the builds of each class, the members of a class, and the items of a fake build tree of `loop test` with
 their keys.  They hold the items and the keys of the bench targets of a planted code model.  They also hold the problem
-of a build that is not configured, and the pending items.  ASSAY_TEST_CTEST names the ctest of the fake build tree,
-else the pinned ctest of PATH.
+of a build that is not configured, the pending items, and the read of the admitted gates.  ASSAY_TEST_CTEST names the
+ctest of the fake build tree, else the pinned ctest of PATH.
 """
 
 import os
 import tempfile
 from pathlib import Path
 
-from assay.core import cache, testing
+from assay.core import cache, paths, testing
 from assay.loop import affected, bench, tiers
 from assay.loop.evidence import items as evidence_items
 from assay.loop.evidence import store as evidence_store
@@ -274,7 +274,27 @@ def pending_cases(expect: testing.Expect) -> None:
     expect(f"a named item with a failure is pending, and an item with no key is not: {named}", named == ["failed"])
 
 
+def admitted_cases(expect: testing.Expect) -> None:
+    """Hold the read of the admitted gates of a source tree, and its rows by header (THE ADMITTED GATES)."""
+    row = "include/planted/Gate.h | requires | admit | Gate: (true) | a planted reason"
+    expect("the admitted gates of this tree read", evidence_items.gate_ledger(paths.REPO_ROOT) is not None)
+    with tempfile.TemporaryDirectory(prefix="evidence-admitted-") as directory:
+        source = Path(directory)
+        expect(
+            "a source tree with no file of the admitted gates admits no gate",
+            evidence_items.gate_ledger(source) is None,
+        )
+        path = source / evidence_items.ADMITTED_GATES
+        path.parent.mkdir(parents=True)
+        path.write_text(f"format 1\nrule {targets.COVERAGE.rule}\n{row}\n", encoding="utf-8")
+        rows = evidence_items.gate_rows(evidence_items.gate_ledger(source))
+    expect(
+        "a row of the file admits its gate, and gives its text to the key of its header",
+        rows == {"include/planted/Gate.h": ["requires\tGate: (true)\tadmit"]},
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
-    cases = (preset_cases, member_cases, build_cases, bench_cases, header_cases, pending_cases)
+    cases = (preset_cases, member_cases, build_cases, bench_cases, header_cases, pending_cases, admitted_cases)
     return testing.run(__name__.removeprefix("assay."), argv, cases)

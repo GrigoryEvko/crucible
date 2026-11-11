@@ -27,11 +27,9 @@ The module of a rule can name kinds in REFUSED_KINDS, and no row admits a
 finding of such a kind (assay.guard.engines.meta.runner, THE REFUSED KINDS).
 The command refuses each such finding in each mode.
 
---path names the paths that a rule of the engine build reads, such as the
-headers of gate-mutants (assay.guard.engines.buildsys.runner, THE PATHS).
-The command then writes only the rows of those paths, and it keeps each
-other row.  It applies to a rule of the engine build, meta or tsast with the
-policy count or admit.  With --reason and no mode, each row of those paths
+--path names paths of the rows of the ledger.  The command then writes only
+the rows of those paths, and it keeps each other row.  It applies to a rule
+of the engine build, meta or tsast with the policy count or admit.  With --reason and no mode, each row of those paths
 that the write keeps gets the reason.  A row that must stay then tells why.
 
 A rule of the policy none has no ledger.  Its module can write a data file

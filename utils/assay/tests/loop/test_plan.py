@@ -4,8 +4,11 @@
 line.  Exit 0 when each case holds, else 1.
 
 The cases hold the tier of an item, and the covers of the tests and of the
-rules of planted builds.  They hold each problem of the plan, the sampled
-items with no target, and the plan of this tree with a planted build.
+rules of planted builds.  They hold each problem of the plan, the covers of
+MANUAL, and the plan of this tree with a planted build.  The plan of this
+tree has no problem, and each item that the tree alone gives has a cover.
+`loop plan` holds the covers of the tests and of the rules of the builds of
+a host.
 """
 
 from pathlib import Path
@@ -15,6 +18,9 @@ from assay.core import registry as rule_registry
 from assay.loop import derive, plan, tiers
 from assay.loop.evidence import targets as evidence_targets
 from assay.readers import ctest as ctest_reader
+
+# The kinds of the items that the tree alone gives.  A planted build gives the covers of the other kinds.
+TREE_KINDS = (plan.Kind.PRESET, plan.Kind.TEST_PRESET, plan.Kind.HARNESS, plan.Kind.STEP)
 
 GATE = tiers.Tier.GATE
 NIGHTLY = tiers.Tier.NIGHTLY
@@ -165,52 +171,36 @@ def problem_cases(expect: testing.Expect) -> None:
         "a build of a different configuration than its block is a problem, on a host of the same processor only",
         [item.entity for item in plan.configuration_problems((other, host))] == ["release"],
     )
+    blocked = tiers.PresetTier(tiers.PresetKind.CONFIGURE, "blocked", None, problem="a planted problem of the block")
+    presets_file = tiers.Tiers((blocked,), (), ("a planted problem of the presets file",))
+    expect(
+        "a problem of the presets file and of the block of a preset is a problem of the kind preset-block",
+        [(item.kind, item.entity) for item in plan.preset_problems(presets_file)]
+        == [(plan.ProblemKind.PRESET_BLOCK, ""), (plan.ProblemKind.PRESET_BLOCK, "blocked")],
+    )
+    try:
+        plan.read_builds(presets, (paths.REPO_ROOT / "build-of-no-preset",))
+        expect("a build directory of no configure preset is an error", False)
+    except plan.PlanError:
+        expect("a build directory of no configure preset is an error", True)
 
 
-def sampled_cases(expect: testing.Expect) -> None:
-    """Hold the sampled items with no target: a class rule that the registry does not hold, and UNTARGETED."""
-    labels = {ctest_reader.LABELS: (evidence_targets.PROPERTY.label,)}
-    labelled = ctest_reader.TestEntry("prop_one", ("prop_one",), labels)
-    build = plan.Build(preset_tier("fuzz", GATE), paths.REPO_ROOT / "build-fuzz", (labelled,), ("bench_one",))
-    presets = tiers.Tiers(
-        (preset_tier("fuzz", GATE),),
-        (tiers.PresetTier(tiers.PresetKind.TEST, "stress", NIGHTLY, configure="fuzz", is_repeated=True),),
-        (),
-    )
-    items = [
-        plan.Item(plan.Kind.TEST_PRESET, "stress", "x"),
-        plan.Item(plan.Kind.TEST, "prop_one", "x"),
-        plan.Item(plan.Kind.TEST, "test_plain", "x"),
-        plan.Item(plan.Kind.BENCH, "bench_one", "x"),
-        plan.Item(plan.Kind.STEP, "gauge", "x"),
-        plan.Item(plan.Kind.STEP, "bench", "x"),
-        plan.Item(plan.Kind.HARNESS, "region", "x"),
-        plan.Item(plan.Kind.RULE, evidence_targets.COVERAGE.check, "x"),
-        plan.Item(plan.Kind.RULE, "tested", "x"),
-    ]
-    bare = {item.entity for item in plan.untargeted_items(items, presets, (build,), planted_registry())}
+def manual_cases(expect: testing.Expect) -> None:
+    """Hold the covers of MANUAL: the cover of the tier manual of an item, and a row that names no item."""
+    name = next(iter(plan.MANUAL))
+    items, problems = plan.manual_items([plan.Item(name[0], name[1], "x"), plan.Item(plan.Kind.RULE, "tested", "x")])
+    by_entity = {item.entity: item for item in items}
     expect(
-        f"with no class rule in the registry, each sampled item has no target: {sorted(bare)}",
-        bare
-        == {
-            "test-preset stress",
-            "test prop_one",
-            "bench bench_one",
-            "harness region",
-            f"rule {evidence_targets.COVERAGE.check}",
-        },
+        "an item of MANUAL gets the tier manual, with the reason of its row",
+        by_entity[f"{name[0]} {name[1]}"].tier is tiers.Tier.MANUAL
+        and by_entity[f"{name[0]} {name[1]}"].covers[-1].text == plan.MANUAL[name]
+        and not by_entity["rule tested"].covers
+        and not problems,
     )
-    expect("a step that gives the full evidence of its inputs in one run is not sampled", "step gauge" not in bare)
-    held = "".join(
-        f"rule {target.rule} engine=build scope=builddir ledger=none warn=1 error=2 unit=s held-by=loop-evidence "
-        f"doc=XV | a target | run it\n"
-        for target in evidence_targets.TARGETS
-    )
-    registry = rule_registry.examine(REGISTRY + held)[0]
-    targeted = {item.entity for item in plan.untargeted_items(items, presets, (build,), registry)}
+    _, stale = plan.manual_items([])
     expect(
-        f"with the class rules, only the items of UNTARGETED have no target: {sorted(targeted)}",
-        targeted == {"harness region"},
+        "a row of MANUAL that names no item of the plan is a stale row",
+        [(item.kind, item.entity) for item in stale] == [(plan.ProblemKind.STALE_ENTRY, f"{name[0]} {name[1]}")],
     )
 
 
@@ -230,23 +220,18 @@ def tree_cases(expect: testing.Expect) -> None:
     found = plan.plan(paths.REPO_ROOT, registry, presets, (build,), targets)
     expect(f"the plan of this tree has no problem: {found.problems}", not found.problems)
     items = {(item.kind, item.name): item for item in found.items}
-    expect(
-        "each preset of this tree has a tier",
-        all(item.covers for item in found.items if item.kind in (plan.Kind.PRESET, plan.Kind.TEST_PRESET)),
-    )
+    bare = [item.entity for item in found.items if item.kind in TREE_KINDS and not item.covers]
+    expect(f"each preset, test preset, harness and step of this tree has a cover: {bare}", not bare)
     expect(
         "a target of loop derive gets the covers of the rule that compares it",
         items[(plan.Kind.DERIVE, "walk-units")].tier is GATE,
     )
+    expect(
+        "each row of MANUAL names an item of this tree, which gets the tier manual",
+        all(items[name].tier is tiers.Tier.MANUAL for name in plan.MANUAL),
+    )
     expect("each boundary harness is an item of the step fuzz", items[(plan.Kind.HARNESS, "region")].tier is NIGHTLY)
-    expect(
-        "the rule of a class of coverage gets the tier of the step evidence, which runs it",
-        items[(plan.Kind.RULE, evidence_targets.COVERAGE.check)].tier is NIGHTLY,
-    )
-    expect(
-        "the rule of a class of coverage has a target",
-        all(item.entity != f"rule {evidence_targets.COVERAGE.check}" for item in found.untargeted),
-    )
+    expect("the step evidence has the tier nightly", items[(plan.Kind.STEP, "evidence")].tier is NIGHTLY)
     commands = plan.subcommands(paths.REPO_ROOT)
     expect("the subcommands of this tree hold loop plan, and hide loop step", commands["plan"] and not commands["step"])
     expect(
@@ -262,5 +247,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (tier_cases, test_cases, bench_cases, rule_cases, problem_cases, sampled_cases, tree_cases),
+        (tier_cases, test_cases, bench_cases, rule_cases, problem_cases, manual_cases, tree_cases),
     )

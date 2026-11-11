@@ -4860,15 +4860,13 @@ endif()
 crucible_script_test(NAME tsast_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest readers.tsast)
 set_tests_properties(tsast_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# The rule gate-mutants weakens one gate of a header at a time and asks if a
-# test sees it.  Its test, the group mutation of `guard selftest`, plants a
-# header with gates that a negative fixture, a syntax-only compile and a death
-# test hold, and gates that no test holds.  Each mutant must get its verdict
-# and its killer, in each tier.  The group also shows that the run takes the
-# program behind the test launcher, and that `guard write --path` writes the
-# row of an invalid mutant and keeps the rows of each other header.  Exit 77
-# (no tree-sitter kit) is a skip.  The rule runs only on the headers that a
-# call names, so the block of the engine build gives it only its witness.
+# The run of the gate mutants weakens one gate of a header at a time and asks
+# if a test sees it.  The coverage runner of `loop evidence` runs it on each
+# header.  Its test, the group mutation of `guard selftest`, plants a header
+# with gates that a negative fixture, a syntax-only compile and a death test
+# hold, and gates that no test holds.  Each mutant must get its verdict and
+# its killer, in each tier.  The group also shows that the run takes the
+# program behind the test launcher.  Exit 77 (no tree-sitter kit) is a skip.
 crucible_script_test(NAME selftest_mutation
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest mutation)
 set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77
@@ -4910,15 +4908,13 @@ endforeach()
 # a parse build.  `loop test` parses that build before the tests.
 # The rule reconfigure-noop configures a build again and builds it, and a
 # ctest test cannot do that to the build that runs it.  So it gets only its
-# witness, and a step of the CI build job runs the check.  The rule
-# gate-mutants runs only on the headers that a call names, so it gets only
-# its witness too.  The test of session-oracle has the label session_oracle
-# of the emitted tests.  The census rule instruction-total and the rule
+# witness, and a step of the CI build job runs the check.  The test of
+# session-oracle has the label session_oracle of the emitted tests.  The census rule instruction-total and the rule
 # fixture-quarantine read the record of each negative fixture.  Each fixture
 # registration appends its name to the global property
 # CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top directory makes
 # these tests DEPEND on each fixture.
-crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
+crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop)
 set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 function(crucible_order_census_checks)
@@ -4950,7 +4946,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # of the memo of the file hashes hashes
 # planted files, and the test of the run of mypy runs a planted mypy.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
-  TREES admitted-audit decide-cite-ratio derived-files plan-coverage prose-bans)
+  TREES admitted-audit decide-cite-ratio derived-files prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its configured ledgers and of its

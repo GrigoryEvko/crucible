@@ -14,9 +14,6 @@ THE HOLDERS
                       test of the build, with the ledgers of the copy
       loop-fixture    cost_findings() and own_reason_findings() of
                       assay.loop.fixture.store for each fixture of the build
-      loop-evidence   judged() of assay.loop.evidence.status for the rows of
-                      the file STATUS_FILE of that module in the build, in
-                      the shape that `loop evidence status --json` prints
       a rule ID       the findings of that rule on the plant
     The field holder of a held rule names the function of its holder that
     judges it.  The rule rule-implementations makes sure that the judge of the
@@ -118,23 +115,6 @@ def gauge_findings(rule: rule_registry.Rule, context: BuildContext) -> list[chec
         return [item for record in records for item in gauge.judged_record(record, budgets, context.shown(path))[0]]
     except gauge.GaugeError as problem:
         raise unreadable("the planted records of the gauge", problem) from None
-
-
-def evidence_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
-    """Return the findings of the planted rows of the evidence of the sampled checks, as `loop evidence status`.
-
-    Raises:
-        NotApplicable: If the plant has no build directory, or its rows do not read
-    """
-    from assay.loop.evidence import status
-
-    path = context.require_build() / status.STATUS_FILE
-    budgets = context.budgets()
-    try:
-        rows = status.read_status(path)
-    except status.StatusError as problem:
-        raise unreadable("the planted rows of the evidence", problem) from None
-    return status.judged(rows, budgets, context.shown(path))
 
 
 def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
@@ -243,7 +223,6 @@ HOLDERS: dict[str, Judge] = {
     "loop-gauge": gauge_findings,
     "loop-test-step": test_step_findings,
     "loop-fixture": fixture_findings,
-    "loop-evidence": evidence_findings,
 }
 
 

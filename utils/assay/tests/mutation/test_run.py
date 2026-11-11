@@ -1,4 +1,4 @@
-"""The test of the run of the gate mutants (assay.mutation.run) and of the write of the ledger of gate-mutants.
+"""The test of the run of the gate mutants (assay.mutation.run).
 
 THE CASES
     verdict_cases   A planted header has gates that a negative fixture, a
@@ -11,10 +11,6 @@ THE CASES
     launched_cases  A small CMake project with a test that runs behind the
                     test launcher.  The run must give the program behind the
                     launcher as a candidate.
-    write_cases     `guard write --rule gate-mutants --path HEADER --admit`
-                    writes the row of each invalid mutant of the header, and it
-                    keeps the row of a different header.  A check of the header
-                    then gives no error.
 
 THE TOOLS
     ASSAY_TEST_CXX names the compiler, ASSAY_TEST_CMAKE the cmake and
@@ -33,7 +29,7 @@ from pathlib import Path
 from assay.core import proc, testing
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
-from assay.core.paths import LOOP, REPO_ROOT
+from assay.core.paths import LOOP
 from assay.mutation import run
 from assay.readers import cmake as cmake_reader
 from assay.readers import compdb, sarif, tsast
@@ -152,10 +148,6 @@ LAUNCHED_TEST = """#include "planted.h"
 static_assert(planted::take(1) == 1);
 int main() { return planted::take(2) - 1; }
 """
-# The invalid plant of the rule and its header, and a row of a different header that a write must keep.
-INVALID_PLANT = REPO_ROOT / "utils" / "plants" / "gate-mutants" / "plant-invalid-mutant"
-INVALID_HEADER = "include/planted/holder.h"
-OTHER_ROW = "include/planted/other.h | requires | admit | Other: (true) | a planted row of another header"
 
 
 def configure(cmake: str, ninja: str, cxx: str, source: Path, build: Path) -> proc.Completed:
@@ -417,51 +409,6 @@ def unbuilt_cases(expect: testing.Expect) -> None:
         )
 
 
-def write_cases(expect: testing.Expect) -> None:
-    """Write the ledger of the invalid plant of the rule with --path, and check the rows and a check after it."""
-    from assay.guard import check, write
-    from assay.guard.engines.buildsys import gate_mutants
-    from assay.guard.engines.meta import runner as meta_runner
-
-    with tempfile.TemporaryDirectory(prefix="mutation-write-") as directory:
-        try:
-            context = gate_mutants.plant_context(INVALID_PLANT, Path(directory) / "tree")
-        except meta_runner.NotApplicable as reason:
-            expect(f"the invalid plant of the rule configures: {reason}", False)
-            return
-        if context.build_dir is None:
-            expect("the invalid plant of the rule gives a build directory", False)
-            return
-        ledger = context.root / "utils" / "ledgers" / "gate-mutants.txt"
-        ledger.parent.mkdir(parents=True, exist_ok=True)
-        ledger.write_text(f"format 1\nrule gate-mutants\n{OTHER_ROW}\n", encoding="utf-8")
-        words = [
-            "--rule",
-            "gate-mutants",
-            "--root",
-            str(context.root),
-            "--build-dir",
-            str(context.build_dir),
-            "--path",
-            INVALID_HEADER,
-        ]
-        before, _ = testing.captured(lambda: check.main(words))
-        expect("a check of the header with an invalid mutant and no row of it fails", before == ExitCode.FINDINGS)
-        status, _ = testing.captured(lambda: write.main([*words, "--admit", "--reason", "a planted reason"]))
-        rows = ledger.read_text(encoding="utf-8")
-        expect("guard write writes the ledger", status == ExitCode.OK)
-        expect(
-            "the ledger holds a row of the invalid gate of the header",
-            f"{INVALID_HEADER} | requires | admit | Holder: (sizeof(T) <= 4) | a planted reason" in rows,
-        )
-        expect("the ledger keeps the row of the other header", OTHER_ROW in rows)
-        after, _ = testing.captured(lambda: check.main(words))
-        expect(
-            "a check of the header passes after the write, and the row of the other header gives no error",
-            after == ExitCode.OK,
-        )
-
-
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each (THE CASES)."""
     try:
@@ -472,5 +419,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (verdict_cases, probe_cases, model_cases, launched_cases, unbuilt_cases, write_cases),
+        (verdict_cases, probe_cases, model_cases, launched_cases, unbuilt_cases),
     )

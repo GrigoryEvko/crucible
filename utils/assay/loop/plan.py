@@ -36,34 +36,27 @@ THE COVERS
         that imports the module of the target, or that the module of the
         target imports.  That rule compares the bytes that the target writes
         with the tree
-      * A step gets its own tier.
+      * A step gets its own tier
+      * An item of MANUAL gets a cover of the tier manual, with the reason
+        why no entry can run it and what a person runs.
     The tier of an item is the first tier of ORDER of its covers, else
     manual.  ENTRIES of assay.loop.tiers gives the command of its entry.  An
-    item with no cover runs nowhere.  A row of the ledger of the rule
-    plan-coverage then gives the reason.
+    item with no cover runs nowhere.
 
 THE SAMPLED ITEMS
     A sampled item gives only a part of its evidence in one run, and `loop
     evidence` adds the evidence of each run to its key.  Each class of
-    TARGETS of assay.loop.evidence.targets gives its items:
-      * each test preset with the field `repeat` (Builds.REPEATED)
-      * each test with the label of the class (Builds.FUZZ)
-      * each bench target (Builds.BENCH)
-      * the rule `check` of a class of coverage (Builds.MUTANTS).  The step
-        evidence names that rule, and the rule then gets the tier of the
-        step.
-    UNTARGETED gives the other sampled items: each item of a kind, or one
-    item of a kind and a name.  Such an item has no class at this time.
-    The target of an item is the rule of its class, which the registry must
-    hold with the holder HOLDER of assay.loop.evidence.targets.  Each
-    sampled item with no target is in untargeted() of the plan.  A row of
-    the ledger of plan-coverage admits such an item with the reason why it
-    has no target.
+    TARGETS of assay.loop.evidence.targets gives a nightly target and a
+    release target to its items, and the step evidence runs them.  A
+    boundary harness is a sampled item with no class.  The build host has no
+    AFL++, and utils/pins.txt has no pin of it.  Thus no runner of `loop
+    evidence` can add the CPU seconds of a campaign to the key of a harness.
+    The step fuzz runs a campaign of each harness on a host with AFL++.
 
     An item is not sampled when one run gives the full evidence for its
     inputs.  The step gauge judges the medians of the runs of one call, the
     step pgo writes a new profile, and `loop derive header-costs --measure`
-    counts instructions.  These items then have no target.
+    counts instructions.
 
 THE BUILDS
     read_builds() reads the build directories that the call names.  With no
@@ -97,8 +90,9 @@ THE COMMANDS
 THE PROBLEMS
     These are the problems of a plan (ProblemKind):
       preset-block   a problem of the presets file or of the block of a preset
-      stale-entry    a row of STEPS, HOLDERS or of a class of THE COMMANDS
-                     that names no preset, rule, step or subcommand
+      stale-entry    a row of STEPS, HOLDERS, MANUAL or of a class of THE
+                     COMMANDS that names no preset, rule, step, item or
+                     subcommand
       no-class       a holder of a rule with no row of HOLDERS, and a
                      subcommand of utils/bin/loop with no class
       configuration  a build with a configuration that is not the
@@ -111,21 +105,21 @@ Usage
     loop plan [--build-dir DIR]... [--kind KIND] [--tier TIER]
 
     The command prints each item with its tier, its kind, its name and the
-    text of each cover.  An item with no cover shows the reason of its row of
-    the ledger of plan-coverage, or "runs nowhere".  Exit 0 when the plan has
-    no problem and each item with no cover has a row, else 1.
+    text of each cover.  An item with no cover shows "runs nowhere".  Exit 0
+    when the plan has no problem and each item has a cover, else 1.  With
+    the builds of a host, the command is the check of the plan of the tests
+    and of the rules of those builds.
 
-`guard selftest tests.loop.test_plan` does a test of the module.
+`guard selftest tests.loop.test_plan` does a test of the module and of the plan of this tree with a planted build.
 """
 
 import ast
 import enum
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from assay.core import cli, meter, paths
-from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
@@ -138,8 +132,7 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import python as python_reader
 
-# The rule of the plan, the master of the subcommands of THE COMMANDS, and the property of a test that no entry runs.
-RULE = "plan-coverage"
+# The master of the subcommands of THE COMMANDS, and the property of a test that no entry runs.
 LOOP_MASTER = "utils/bin/loop"
 DERIVE_MODULE = "utils/assay/loop/derive/__init__.py"
 DISABLED = "DISABLED"
@@ -206,7 +199,7 @@ class Item:
 
     @property
     def entity(self) -> str:
-        """The entity of the finding of plan-coverage for the item: its kind and its name."""
+        """The kind and the name of the item, which `loop plan` shows."""
         return f"{self.kind} {self.name}"
 
 
@@ -278,7 +271,6 @@ class Plan:
     items: tuple[Item, ...]
     builds: tuple[Build, ...] = ()
     problems: tuple[Problem, ...] = ()
-    untargeted: tuple[Item, ...] = ()
 
     @property
     def uncovered(self) -> tuple[Item, ...]:
@@ -322,22 +314,25 @@ STEPS = (
         "evidence",
         tiers.Tier.NIGHTLY,
         ("loop", "evidence", "run"),
-        "adds evidence to the sampled checks in a time budget, and judges it against the targets of the registry",
-        rules=tuple(target.check for target in evidence_targets.TARGETS if target.check),
+        "adds evidence to the sampled checks in a time budget, against the targets of each class",
     ),
 )
 SUITE = Holding(is_suite=True)
 HOLDERS = {
     "cmake": SUITE,
     "header-alone": Holding(rule="header-alone"),
-    "loop-evidence": Holding(step="evidence"),
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),
     "loop-test-step": SUITE,
 }
-# The sampled items with no class of assay.loop.evidence.targets: a kind, and a name or "" for each item of the kind
-# (THE SAMPLED ITEMS).
-UNTARGETED = ((Kind.HARNESS, ""),)
+# The items that no entry can run, by their kind and their name.  Each one has the reason, and what a person runs
+# (THE COVERS).
+MANUAL = {
+    (Kind.DERIVE, "aten-ops"): (
+        "The target reads a PyTorch tree with the dispatch key of Crucible from TORCH_DIR, and no host of an entry has "
+        "such a tree.  A person runs it with TORCH_DIR set"
+    ),
+}
 ENTRY_COMMANDS = ("land", "nightly", "release", "syntax", "test")
 TOOL_COMMANDS = ("audit", "heavy", "history", "plan")
 ITEM_COMMANDS = ("bench", "derive")
@@ -602,47 +597,30 @@ def step_items() -> list[Item]:
     return [Item(Kind.STEP, step.name, MODULE_PATH, 0, (Cover(step.tier, step.text),)) for step in STEPS]
 
 
-def sampled_rule(item: Item, repeat_presets: frozenset[str], labels: Mapping[str, frozenset[str]]) -> str | None:
-    """Return the rule of the class of a sampled item, "" for a sampled item with no class, or None (THE SAMPLED ITEMS).
+def manual_items(items: Sequence[Item]) -> tuple[list[Item], list[Problem]]:
+    """Give each item of MANUAL its cover of the tier manual, and a problem for each row that names no item.
 
-    Args:
-        item: An item of the plan
-        repeat_presets: The names of the test presets with the field `repeat`
-        labels: The labels of each test of the builds of the plan
+    Complexity: linear in the items and in the rows of MANUAL.
     """
-    for target in evidence_targets.TARGETS:
-        if target.builds is evidence_targets.Builds.REPEATED:
-            is_member = item.kind is Kind.TEST_PRESET and item.name in repeat_presets
-        elif target.builds is evidence_targets.Builds.FUZZ:
-            is_member = item.kind is Kind.TEST and target.label in labels.get(item.name, frozenset())
-        elif target.builds is evidence_targets.Builds.MUTANTS:
-            is_member = item.kind is Kind.RULE and item.name == target.check
-        else:
-            is_member = item.kind is Kind.BENCH
-        if is_member:
-            return target.rule
-    return "" if (item.kind, item.name) in UNTARGETED or (item.kind, "") in UNTARGETED else None
-
-
-def untargeted_items(
-    items: Sequence[Item], presets: tiers.Tiers, builds: Sequence[Build], registry: rule_registry.Registry
-) -> tuple[Item, ...]:
-    """Return each sampled item with no target: no class, or a class rule with no row of HOLDER (THE SAMPLED ITEMS).
-
-    Complexity: linear in the items, the tests of the builds and the rules.
-    """
-    repeat_presets = frozenset(item.name for item in presets.tests if item.is_repeated)
-    labels: dict[str, frozenset[str]] = {}
-    for build in builds:
-        for test in build.tests:
-            labels[test.name] = labels.get(test.name, frozenset()) | frozenset(test.words_of(ctest_reader.LABELS))
-    held = {rule.id for rule in registry.rules.values() if rule.held_by == evidence_targets.HOLDER}
-    found: list[Item] = []
-    for item in items:
-        rule = sampled_rule(item, repeat_presets, labels)
-        if rule is not None and rule not in held:
-            found.append(item)
-    return tuple(found)
+    found = [
+        replace(item, covers=(*item.covers, Cover(tiers.Tier.MANUAL, MANUAL[(item.kind, item.name)])))
+        if (item.kind, item.name) in MANUAL
+        else item
+        for item in items
+    ]
+    named = {(item.kind, item.name) for item in items}
+    problems = [
+        Problem(
+            ProblemKind.STALE_ENTRY,
+            MODULE_PATH,
+            0,
+            f"{kind} {name}",
+            f"the row {kind} {name} of MANUAL names no item of the plan.  Remove the row",
+        )
+        for kind, name in MANUAL
+        if (kind, name) not in named
+    ]
+    return found, problems
 
 
 # ── The problems ───────────────────────────────────────────────────────────
@@ -785,23 +763,28 @@ def plan(
         python_reader.PythonError: If the master loop or the module of a rule does not parse
     """
     rules = rule_items(builds, registry, root)
-    items = [
-        *preset_items(presets),
-        *test_items(builds, root),
-        *rules,
-        *each_items(Kind.BENCH, (name for build in builds for name in build.benches), lambda _: "bench/CMakeLists.txt"),
-        *each_items(Kind.HARNESS, harness_names(root), harness_file),
-        *derive_items(root, registry, rules, targets),
-        *step_items(),
-    ]
+    items, stale = manual_items(
+        [
+            *preset_items(presets),
+            *test_items(builds, root),
+            *rules,
+            *each_items(
+                Kind.BENCH, (name for build in builds for name in build.benches), lambda _: "bench/CMakeLists.txt"
+            ),
+            *each_items(Kind.HARNESS, harness_names(root), harness_file),
+            *derive_items(root, registry, rules, targets),
+            *step_items(),
+        ]
+    )
     commands = subcommands(root)
     problems = [
         *preset_problems(presets),
         *step_problems(registry, presets, commands),
         *command_problems(commands),
         *configuration_problems(builds),
+        *stale,
     ]
-    return Plan(tuple(items), tuple(builds), tuple(problems), untargeted_items(items, presets, builds, registry))
+    return Plan(tuple(items), tuple(builds), tuple(problems))
 
 
 def derive_targets(root: Path) -> tuple[Target, ...]:
@@ -839,16 +822,7 @@ def tree_plan(root: Path, registry: rule_registry.Registry, directories: Sequenc
 # ── The command ────────────────────────────────────────────────────────────
 
 
-def reasons(root: Path, registry: rule_registry.Registry) -> dict[tuple[str, str], str]:
-    """Return the reason of each row of the ledger of plan-coverage, keyed by its path and its entity."""
-    rule = registry.rules.get(RULE)
-    if rule is None:
-        return {}
-    ledger = rule_ledger.read(rule, root)
-    return {(key.path, key.entity): entry.reason for key, entry in ledger.base.items()}
-
-
-def show(found: Plan, rows: Mapping[tuple[str, str], str], kind: str | None, tier: str | None) -> int:
+def show(found: Plan, kind: str | None, tier: str | None) -> int:
     """Print the items and the problems of a plan, and return the exit status of `loop plan`.
 
     Complexity: linear in the items and the problems.
@@ -858,10 +832,9 @@ def show(found: Plan, rows: Mapping[tuple[str, str], str], kind: str | None, tie
         shown_tier = str(item.tier) if item.tier is not None else "none"
         if (kind and item.kind != kind) or (tier and shown_tier != tier):
             continue
-        reason = rows.get((item.path, item.entity))
-        if not item.covers and reason is None:
+        if not item.covers:
             is_clean = False
-        texts = "; ".join(cover.text for cover in item.covers) or (f"a row: {reason}" if reason else "runs nowhere")
+        texts = "; ".join(cover.text for cover in item.covers) or "runs nowhere"
         check_report.write_line(f"{shown_tier:8} {item.kind:11} {item.name}  ({texts})")
     for problem in found.problems:
         check_report.write_line(f"{problem.path}:{problem.line}: {problem.kind}: {problem.message}")
@@ -883,4 +856,4 @@ def main(argv: list[str]) -> int:
     except (PlanError, OSError, python_reader.PythonError) as problem:
         check_report.write_line(f"loop plan: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
-    return show(found, reasons(root, registry), options.kind, options.tier)
+    return show(found, options.kind, options.tier)

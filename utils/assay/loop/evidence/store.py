@@ -8,15 +8,16 @@ THE STORE
     the rules of that store: a key holds no path of the source root or of a
     build directory (assay.loop.evidence.items, THE KEYS).
 
-    An entry is the record of one rule and one key.  NAME is the SHA-256 of
-    FORMAT, the rule and the key.  The file of the entry is NAME in the
-    directory of the first two digits of NAME.  A new key then gets a new
-    entry.  The evidence of a key does not apply to a different key.  With
-    the caches off, the store holds nothing and writes nothing.
+    An entry is the record of one class and one key.  The field "rule" of
+    the record is the name of the class (assay.loop.evidence.targets).  NAME
+    is the SHA-256 of FORMAT, that name and the key.  The file of the entry is
+    NAME in the directory of the first two digits of NAME.  A new key then
+    gets a new entry.  The evidence of a key does not apply to a different
+    key.  With the caches off, the store holds nothing and writes nothing.
 
 THE RECORD
     A record holds the evidence of one item at one key:
-      value    the evidence that the runs added, in the unit of the rule:
+      value    the evidence that the runs added, in the unit of the class:
                passes, CPU seconds, valid measurements or runs
       samples  one sample for each unit of work that added evidence: its
                time, its quantity, its wall time and its facts.  The record
@@ -66,7 +67,7 @@ UPDATE_LOCK = "update.lock"
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """One unit of work that added evidence: its time, its quantity in the unit of the rule, its wall time and its facts."""
+    """One unit of work that added evidence: its time, its quantity, its wall time and its facts (THE RECORD)."""
 
     at: str
     quantity: float

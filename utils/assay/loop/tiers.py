@@ -53,9 +53,10 @@ THE PROBLEMS
       * a configure preset with a build directory that does not resolve.
     A presets file that does not read is a problem of the file.  A plain test
     preset of a configure preset with a problem gets no tier and no problem,
-    because its configure preset gives the problem.  The rule plan-coverage
-    refuses each problem, and the gate refuses a tree with one
-    (assay.loop.gate, THE CONFIGURATIONS).
+    because its configure preset gives the problem.  `loop plan` and the
+    self-test of the plan refuse each problem (assay.loop.plan, THE
+    PROBLEMS), and the gate refuses a tree with one (assay.loop.gate, THE
+    CONFIGURATIONS).
 
 `guard selftest tests.loop.test_tiers` does a test of the module.
 """

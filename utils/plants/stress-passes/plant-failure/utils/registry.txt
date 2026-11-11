@@ -1,3 +1,0 @@
-# A planted registry: the target of the passes of a test is 2 for the nightly entry and 5 for the release entry.
-format 1
-rule stress-passes engine=build scope=builddir ledger=none warn=2 error=5 unit=passes held-by=loop-evidence holder=assay.loop.evidence.status:judged doc=XIII | the passes of a test | run the test again

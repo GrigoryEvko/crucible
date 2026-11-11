@@ -1,7 +1,0 @@
-set(CMAKE_C_COMPILER_FORCED TRUE)
-enable_language(C)
-set(CMAKE_TEST_LAUNCHER python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/loop test-step)
-file(WRITE ${CMAKE_BINARY_DIR}/leaf.c "int main(void) { return 0; }\n")
-add_executable(leaf ${CMAKE_BINARY_DIR}/leaf.c)
-add_test(NAME leaf COMMAND leaf)
-set_tests_properties(leaf PROPERTIES DISABLED ON)

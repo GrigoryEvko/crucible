@@ -5,10 +5,10 @@ THE MUTANTS
     the header and fails on the mutant kills the mutant.  A mutant that no
     test kills shows a gate with no witness.  The run writes each mutant into
     the header of the source tree of the build, and it puts the header back
-    after each mutant.  The rule gate-mutants
-    (assay.guard.engines.buildsys.gate_mutants) runs it on a configured
-    export of the tree, and not on the tree.  The run uses the cmake and the
-    ctest that the CMake cache of the build names (assay.setup.pins).
+    after each mutant.  The coverage runner of `loop evidence`
+    (assay.loop.evidence.coverage) runs it on a configured export of the
+    tree, and not on the tree.  The run uses the cmake and the ctest that the
+    CMake cache of the build names (assay.setup.pins).
 
 THE CANDIDATES
     The candidates of a header are in three tiers:
@@ -39,6 +39,13 @@ THE PROBE
     first mutant, because no probe can then tell a mutant that does not parse
     from a killed one.
 
+THE JOBS
+    A run does JOBS compiles at a time, a quarter of the processors and at
+    most the jobs of assay.core.proc.  The caps of the candidates of one gate
+    are NEGATIVE_CAP fixtures, SYNTAX_CAP compiles and RUN_CAP test
+    executables.  stop_on_term() stops a run on SIGTERM, and the run then
+    puts the header back before the process ends.
+
 Complexity: one pass over the candidates of a header with no mutant, then up
 to one pass for each mutant, in batches of `jobs` compiles that stop at the
 first kill.
@@ -48,6 +55,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import shutil
 import sys
@@ -55,6 +63,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import FrameType
 
 from assay.core import ledger as rule_ledger
 from assay.core import proc
@@ -65,7 +74,11 @@ from assay.readers import cmake, compdb, sarif, tsast
 from assay.readers import ctest as ctest_reader
 from assay.setup import pins as cmake_pin
 
-RULE = "gate-mutants"
+# The compiles at a time and the caps of the candidates of one gate (THE JOBS).
+JOBS = max(1, min(proc.DEFAULT_JOBS, (os.cpu_count() or 1) // 4))
+NEGATIVE_CAP = 80
+SYNTAX_CAP = 12
+RUN_CAP = 4
 # The text between the entity and the gate text in the entity cell of a ledger row.
 ENTITY_DIVIDER = ": "
 # A negative test runs `python3 -S SRC/utils/bin/loop fixture [--warnings-dir DIR] BUILD SOURCE NAME REGEX...`.
@@ -79,6 +92,15 @@ TIMEOUT_S = 600
 # The builder of tier 3.  A missing ninja makes every run candidate fail its
 # baseline, so the tier drops out and is never counted as a kill.
 NINJA = shutil.which("ninja") or "ninja"
+
+
+class Stopped(BaseException):
+    """A SIGTERM stops the run, after the header with a mutant gets its bytes back (THE JOBS)."""
+
+
+def stop_on_term(signum: int, _frame: FrameType | None) -> None:
+    """Stop the run on SIGTERM.  The run then puts the header back before the process ends (THE JOBS)."""
+    raise Stopped(f"the run stops on the signal {signum}")
 
 
 class RunError(Exception):

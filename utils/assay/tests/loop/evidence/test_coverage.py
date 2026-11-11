@@ -4,8 +4,9 @@
 holds, else 1.
 
 The cases hold the judgment of the run of a header.  A run with each mutant killed adds evidence, and a survivor is a
-failure.  An invalid mutant is a failure only when no row of the ledger admits it.  The cases also run three planted
-headers through the runner with a planted run of the mutants.  One gets its target, one keeps its failure, and one has no room in the budget.
+failure.  An invalid mutant is a failure only when no row of the admitted gates admits it.  The cases also run three
+planted headers through the runner with a planted run of the mutants.  One gets its target, one keeps its failure, and
+one has no room in the budget.
 """
 
 import tempfile
@@ -29,9 +30,9 @@ def outcome(status: str, line: int = 10, header: str = HEADER) -> mutation_run.O
 
 
 def ledger_of(*keys: rule_ledger.Key) -> rule_ledger.Ledger:
-    """Return a planted ledger of gate-mutants that admits the invalid mutant of each key."""
+    """Return planted admitted gates that admit the invalid mutant of each key."""
     base = {key: rule_ledger.Entry(key, "admit", "a planted reason") for key in keys}
-    return rule_ledger.Ledger(targets.COVERAGE.check, rule_registry.Policy.ADMIT, "", base=base)
+    return rule_ledger.Ledger(RULE, rule_registry.Policy.ADMIT, "", base=base)
 
 
 def judged_cases(expect: testing.Expect) -> None:
@@ -55,9 +56,10 @@ def judged_cases(expect: testing.Expect) -> None:
     bare = coverage.judged([invalid], ledger_of())
     expect("an invalid mutant that no row admits is a failure", bare.quantity == 0.0 and "invalid" in bare.failure)
     expect(
-        "the command of a failure runs the rule on the header again",
-        coverage.rerun_words(Path("/b"), HEADER)[-6:]
-        == ("--rule", "gate-mutants", "--build-dir", "/b", "--path", HEADER),
+        "the command of a failure runs the mutants of the header again, with a budget that lets the header start",
+        coverage.rerun_words(Path("/b"), HEADER, 10.0)[-9:]
+        == ("evidence", "run", "coverage", "--build-dir", "/b", "--item", HEADER, "--budget-s", "360")
+        and coverage.rerun_words(Path("/b"), HEADER, 1000.0)[-1] == "2000",
     )
 
 
@@ -90,10 +92,10 @@ def run_cases(expect: testing.Expect) -> None:
         covered is not None and covered.value == 1.0 and found.covered == 1,
     )
     expect(
-        "a header with a survivor keeps its failure with the command of the rule",
+        "a header with a survivor keeps its failure with the command that runs it again",
         survivor is not None
         and survivor.failure is not None
-        and "gate-mutants" in survivor.failure.rerun
+        and ("--item", "include/b/Survivor.h") == survivor.failure.rerun[-4:-2]
         and found.failures == ("include/b/Survivor.h",),
     )
     expect(
