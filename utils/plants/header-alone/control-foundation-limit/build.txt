@@ -1,5 +1,5 @@
-# A header of include/foundation includes 3.3 MB alone, which is not more than the limit 3.5 MB of the tighter rule
-# header-alone-foundation.  The rule gives no finding.  Its sentinel is a ccache hit that keeps the last time.
+# A header of include/foundation includes 3.3 MB alone, which is not more than the tighter limit 3.5 MB of the kind
+# foundation.  The rule gives no finding.  Its sentinel is a ccache hit that keeps the last time.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000

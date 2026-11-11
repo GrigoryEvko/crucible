@@ -131,27 +131,31 @@ THE RECORD
     each record and its one reader and writer.
 
 THE REGISTRY AND THE LEDGERS
-    budget_rows() reads the limit of some measured rules of
+    budget_rows() reads the limits of some measured rules of
     utils/registry.txt, through the rows reader of assay.core.rows, which
-    imports no module.  assay.core.registry is the full reader of the
-    registry, and its import of dataclasses costs 13 ms, so a launcher does not
-    import it.
+    imports no module.  A rule has one limit, or one limit for each kind of
+    item, such as compile, link and test.  assay.core.registry is the full
+    reader of the registry, and its import of dataclasses costs 13 ms, so a
+    launcher does not import it.
 
     read_ledger_rows() reads the ledger of a measured rule of the policy max,
     utils/ledgers/RULE.txt, through assay.core.ledger.  A row keeps one item
-    over the limit of the rule, and the rows judge each build of the tree
+    over the limit of its kind, and the rows judge each build of the tree
     (assay.core.budget, THE VERDICT and THE ROWS):
 
-        PATH | - | VALUE | ENTITY | REASON
+        PATH | KIND | VALUE | ENTITY | REASON
 
-    The KIND cell of such a row is empty.  The rule gives the form of its
-    item: an output of the build directory (PATH @build/OUTPUT, and no
-    ENTITY), a file of the source tree (PATH FILE, and no ENTITY), or a name,
-    such as the name of a test (PATH "-", and ENTITY NAME).  VALUE is the
-    kept value, in the unit of the rule.  A row that does not have the form
-    of its rule is a problem of the ledger, also a row with a KIND.  A ledger
-    that does not exist has no row, and the call then imports no module, so a
-    launcher pays the import of assay.core.ledger only when a ledger exists.
+    KIND is the kind of the item, and it is empty for a rule with one limit.
+    The judge of a kind gives the form of its item: an output of the build
+    directory (PATH @build/OUTPUT, and no ENTITY), a file of the source tree
+    (PATH FILE, and no ENTITY), or a name, such as the name of a test (PATH
+    "-", and ENTITY NAME).  Two kinds can have the same item, such as an
+    object for the kinds function and object, so the kind is a part of the
+    key of a row.  VALUE is the kept value, in the unit of the rule.  A row
+    with a kind that the rule does not have is a problem of the ledger, and
+    so is a row that does not have the form of its kind.  A ledger that does
+    not exist has no row, and the call then imports no module, so a launcher
+    pays the import of assay.core.ledger only when a ledger exists.
     write_ledger_rows() writes the rows of such a ledger again.
 
 THE MEMO OF THE ROWS
@@ -160,8 +164,9 @@ THE MEMO OF THE ROWS
     ledgers, and in the gate of a1df30f04 each of 10,890 processes paid that
     cost.  read_ledger_rows() then keeps the rows and the problems of a ledger
     in the cache ROWS_CACHE of the root of the caches
-    (assay.core.cache_root).  The key of an entry holds the rule, the shape
-    of an item, and the resolved path of the ledger.  It also holds the stat
+    (assay.core.cache_root).  The key of an entry holds the rule, the form of
+    the item of each kind that the caller judges, and the resolved path of
+    the ledger.  It also holds the stat
     fields of each input of the parse: the ledger, the registry, and the
     modules of ROWS_MODULES.  A read with an entry imports no module but
     hashlib and json.  The function writes an entry only when no input
@@ -253,17 +258,17 @@ LEDGER_DIRECTORY = os.path.join(UTILS, "ledgers")
 BUILD_PATH_PREFIX = "@build/"
 # The cache of the rows of the ledgers of the measured rules, and the format of an entry (THE MEMO OF THE ROWS).
 ROWS_CACHE = "ledger-rows"
-ROWS_FORMAT = 2
+ROWS_FORMAT = 3
 # The period in which a change of an input of the parse makes read_ledger_rows() write no entry (THE MEMO OF THE ROWS).
 ROWS_SETTLE_NS = 50_000_000
 # The modules of this directory that make the rows of a ledger from its text (THE MEMO OF THE ROWS).
 ROWS_MODULES = ("meter.py", "ledger.py", "rows.py", "registry.py", "paths.py")
-# The forms of the item of a row of a ledger of a measured rule (THE REGISTRY AND THE LEDGERS), and the row of each.
+# The forms of the item of a row of a ledger of a measured rule (THE REGISTRY AND THE LEDGERS), and the PATH cell and
+# the ENTITY cell of the row of each.
 ITEM_OUTPUT = "output"
 ITEM_FILE = "file"
 ITEM_NAME = "name"
-ITEM_ROWS = {ITEM_OUTPUT: f"{BUILD_PATH_PREFIX}OUTPUT | - | VALUE | - | REASON",
-             ITEM_FILE: "FILE | - | VALUE | - | REASON", ITEM_NAME: "- | - | VALUE | NAME | REASON"}
+ITEM_CELLS = {ITEM_OUTPUT: (f"{BUILD_PATH_PREFIX}OUTPUT", "-"), ITEM_FILE: ("FILE", "-"), ITEM_NAME: ("-", "NAME")}
 # The words of the prefix that ccache puts in front of the compiler run of a miss (A COMPILE THROUGH CCACHE).
 COMPILER_METER = (LOOP_MASTER, "meter-compiler")
 
@@ -662,22 +667,23 @@ def end_like(exit_code: int) -> None:
     os._exit(exit_code)
 
 
-def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, float]:
-    """Read the limit of some measured rules of the registry.
+def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, dict[str, float]]:
+    """Read the limits of some measured rules of the registry.
 
     The rule registry-shape holds the schema of each row, so this reader
-    reads only the field limit of the named rules.
+    reads only the field limit of the named rules.  A rule with one limit
+    has the kind "" (limits() of assay.core.rows).
 
     Args:
         path: The registry
         names: The IDs of the rules
 
     Returns:
-        The limit of each named rule that the registry gives with the field
+        The limit of each kind of item of each named rule that the registry gives with the field
 
     Raises:
         OSError: If the registry cannot be read
-        ValueError: If the registry does not obey the rows grammar, or the limit of a named rule is not a number
+        ValueError: If the registry does not obey the rows grammar, or the limit of a named rule does not read
 
     Complexity: linear in the length of the registry.
     """
@@ -689,13 +695,13 @@ def budget_rows(path: str, names: tuple[str, ...]) -> dict[str, float]:
         parsed = rows_grammar.parse(text, path)
     except rows_grammar.RowsError as problem:
         raise ValueError(str(problem)) from None
-    found: dict[str, float] = {}
+    found: dict[str, dict[str, float]] = {}
     for row in parsed:
         if row.words[0] != "rule" or len(row.words) < 2 or row.words[1] not in names:
             continue
         values = dict(word.partition("=")[::2] for word in row.words[2:])
         if "limit" in values:
-            found[row.words[1]] = rows_grammar.decimal(values["limit"], row, "limit")
+            found[row.words[1]] = dict(rows_grammar.limits(values["limit"], row, "limit"))
     return found
 
 
@@ -713,6 +719,17 @@ def shown_ledger(path: str) -> str:
     """Return the path of a ledger as a finding names it: relative to the source root when it is in the tree."""
     root = os.path.dirname(UTILS)
     return os.path.relpath(path, root) if path.startswith(root + os.sep) else path
+
+
+def item_row(form: str, kind: str) -> str:
+    """Return the shape of a ledger row of an item of the form `form` and of the kind `kind`, for a message.
+
+    Args:
+        form: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+        kind: The kind of the item, or "" for a rule with one limit
+    """
+    path, entity = ITEM_CELLS[form]
+    return f"{path} | {kind or '-'} | VALUE | {entity} | REASON"
 
 
 def item_of(path: str, entity: str, form: str) -> str | None:
@@ -740,13 +757,15 @@ def item_cells(item: str, form: str) -> tuple[str, str]:
     return "", item
 
 
-def rows_memo(rule_id: str, form: str, path: str, settle_ns: int = ROWS_SETTLE_NS) -> tuple[str, bool] | None:
+def rows_memo(rule_id: str, forms: Mapping[str, str], path: str,
+              settle_ns: int = ROWS_SETTLE_NS) -> tuple[str, bool] | None:
     """Return the entry of the rows of a ledger in the cache, and True when each input settled (THE MEMO OF THE ROWS).
 
     The result is None with no cache, or when an input cannot be read.  An
     input settled when it did not change in `settle_ns` before the call.  A
     test gives a long period, so that its result does not change with the
-    load of the host.
+    load of the host.  `forms` gives the form of the item of each kind that
+    the caller judges (read_ledger_rows()).
     """
     from assay.core import cache_root
 
@@ -763,7 +782,7 @@ def rows_memo(rule_id: str, form: str, path: str, settle_ns: int = ROWS_SETTLE_N
     import json
 
     fields = [[item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns] for item in statuses]
-    material = json.dumps([ROWS_FORMAT, rule_id, form, os.path.realpath(path), fields])
+    material = json.dumps([ROWS_FORMAT, rule_id, sorted(forms.items()), os.path.realpath(path), fields])
     digest = hashlib.sha256(material.encode("utf-8", "surrogateescape")).hexdigest()[:32]
     is_settled = has_settled(max(item.st_ctime_ns for item in statuses), settle_ns)
     return os.path.join(base, ROWS_CACHE, digest[:2], f"{digest}.json"), is_settled
@@ -774,26 +793,28 @@ def has_settled(change_ns: int, settle_ns: int) -> bool:
     return change_ns < time.time_ns() - settle_ns
 
 
-def read_rows_memo(entry: str) -> tuple[dict[str, tuple[int, float, str]], list[tuple[int, str]]] | None:
+def read_rows_memo(entry: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]], list[tuple[int, str]]] | None:
     """Return the rows and the problems of an entry of the cache, or None when it is not there or has no such shape."""
     import json
 
     try:
         with open(entry, encoding="utf-8", errors="surrogateescape") as handle:
             document = json.load(handle)
-        rows = {str(item): (int(line), float(value), str(reason)) for item, line, value, reason in document["rows"]}
+        rows = {(str(kind), str(item)): (int(line), float(value), str(reason))
+                for kind, item, line, value, reason in document["rows"]}
         problems = [(int(line), str(text)) for line, text in document["problems"]]
     except (OSError, ValueError, KeyError, TypeError):
         return None
     return (rows, problems) if document.get("format") == ROWS_FORMAT else None
 
 
-def write_rows_memo(entry: str, rows: dict[str, tuple[int, float, str]], problems: list[tuple[int, str]]) -> None:
+def write_rows_memo(entry: str, rows: dict[tuple[str, str], tuple[int, float, str]],
+                    problems: list[tuple[int, str]]) -> None:
     """Write an entry of the cache through a temporary file and a rename.  A write that fails writes nothing."""
     import json
 
     lined = sorted(rows.items(), key=lambda pair: pair[1][0])
-    document = {"format": ROWS_FORMAT, "rows": [[item, *value] for item, value in lined], "problems": problems}
+    document = {"format": ROWS_FORMAT, "rows": [[*key, *value] for key, value in lined], "problems": problems}
     temporary = f"{entry}.{os.getpid()}.tmp"
     try:
         os.makedirs(os.path.dirname(entry), exist_ok=True)
@@ -807,10 +828,10 @@ def write_rows_memo(entry: str, rows: dict[str, tuple[int, float, str]], problem
             pass
 
 
-def read_ledger_rows(rule_id: str, form: str, path: str,
-                     settle_ns: int = ROWS_SETTLE_NS) -> tuple[dict[str, tuple[int, float, str]],
+def read_ledger_rows(rule_id: str, forms: Mapping[str, str], path: str,
+                     settle_ns: int = ROWS_SETTLE_NS) -> tuple[dict[tuple[str, str], tuple[int, float, str]],
                                                                list[tuple[int, str]], str]:
-    """Read the ledger of a measured rule of the policy max: the row of each item.
+    """Read the ledger of a measured rule of the policy max: the row of each item of the kinds that the caller judges.
 
     THE REGISTRY AND THE LEDGERS gives the rows.  A ledger that does not exist
     has no row, and the call then imports no module.  An entry of the cache
@@ -818,13 +839,14 @@ def read_ledger_rows(rule_id: str, form: str, path: str,
 
     Args:
         rule_id: The ID of the measured rule
-        form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+        forms: The form of the item of each kind that the caller judges: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME.  A rule
+            with one limit has the kind ""
         path: The ledger, from ledger_file()
         settle_ns: The settle period of the entry of the cache (rows_memo())
 
     Returns:
-        The row of each item, with its line, its value and its reason; each problem with its line, or line 0 for a
-        problem of the file as a whole; and the path of the ledger from shown_ledger()
+        The row of each kind and item, with its line, its value and its reason; each problem with its line, or line
+        0 for a problem of the file as a whole; and the path of the ledger from shown_ledger()
 
     Raises:
         OSError: If the ledger exists and cannot be read, or the registry cannot be read
@@ -832,22 +854,25 @@ def read_ledger_rows(rule_id: str, form: str, path: str,
     shown = shown_ledger(path)
     if not os.path.isfile(path):
         return {}, [], shown
-    memo = rows_memo(rule_id, form, path, settle_ns)
+    memo = rows_memo(rule_id, forms, path, settle_ns)
     held = read_rows_memo(memo[0]) if memo is not None else None
     if held is not None:
         return held[0], held[1], shown
-    rows, problems = parsed_ledger_rows(rule_id, form, path)
+    rows, problems = parsed_ledger_rows(rule_id, forms, path)
     if memo is not None and memo[1]:
         write_rows_memo(memo[0], rows, problems)
     return rows, problems, shown
 
 
-def parsed_ledger_rows(rule_id: str, form: str, path: str) -> tuple[dict[str, tuple[int, float, str]],
-                                                                    list[tuple[int, str]]]:
+def parsed_ledger_rows(rule_id: str, forms: Mapping[str, str],
+                       path: str) -> tuple[dict[tuple[str, str], tuple[int, float, str]], list[tuple[int, str]]]:
     """Parse the ledger of a measured rule of the policy max, and return its rows and its problems.
 
-    read_ledger_rows() calls it.  A row with a KIND, or with a PATH and an ENTITY that do not have the form of the
-    rule, is a problem (THE REGISTRY AND THE LEDGERS).
+    read_ledger_rows() calls it.  A row whose KIND is not a kind of the rule
+    is a problem, and so is a row of a kind of `forms` whose PATH and ENTITY
+    do not have the form of that kind (THE REGISTRY AND THE LEDGERS).  The
+    call skips a row of a different kind of the rule, because a different
+    judge reads it.  Complexity: linear in the rows.
 
     Raises:
         OSError: If the ledger or the registry cannot be read
@@ -866,18 +891,33 @@ def parsed_ledger_rows(rule_id: str, form: str, path: str) -> tuple[dict[str, tu
         ledger = rule_ledger.read(rule, file=file)
     except rows_grammar.RowsError as problem:
         return {}, [(problem.line, str(problem).removeprefix(f"{problem.path}:{problem.line}: "))]
-    rows: dict[str, tuple[int, float, str]] = {}
+    kinds = rule.threshold.kinds if rule.threshold is not None else ("",)
+    rows: dict[tuple[str, str], tuple[int, float, str]] = {}
     problems: list[tuple[int, str]] = []
     for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
+        if key.kind not in kinds:
+            if kinds == ("",):
+                shape = item_row(forms.get("", ITEM_OUTPUT), "")
+                problems.append((entry.line, f"a row of the rule {rule_id} is '{shape}'"))
+            else:
+                text = (f"the row has the kind {key.kind or '-'}, and the kind of a row of the rule {rule_id} is one "
+                        f"of {', '.join(kinds)}")
+                problems.append((entry.line, text))
+            continue
+        form = forms.get(key.kind)
+        if form is None:
+            continue
         item = item_of(key.path, key.entity, form)
-        if key.kind or item is None:
-            problems.append((entry.line, f"a row of the rule {rule_id} is '{ITEM_ROWS[form]}'"))
+        if item is None:
+            of_kind = f" of the kind {key.kind}" if key.kind else ""
+            problems.append((entry.line, f"a row{of_kind} of the rule {rule_id} is '{item_row(form, key.kind)}'"))
         else:
-            rows[item] = (entry.line, float(entry.value), entry.reason)
+            rows[(key.kind, item)] = (entry.line, float(entry.value), entry.reason)
     return rows, problems
 
 
-def write_ledger_rows(rule_id: str, form: str, path: str, rows: dict[str, tuple[float, str]], comment: str) -> None:
+def write_ledger_rows(rule_id: str, forms: Mapping[str, str], path: str,
+                      rows: dict[tuple[str, str], tuple[float, str]], comment: str) -> None:
     """Write the ledger of a measured rule of the policy max with these rows, sorted by their keys.
 
     The ledger takes `comment` as its head comment on each write
@@ -885,9 +925,9 @@ def write_ledger_rows(rule_id: str, form: str, path: str, rows: dict[str, tuple[
 
     Args:
         rule_id: The ID of the measured rule
-        form: The form of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
+        forms: The form of the item of each kind: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME
         path: The ledger, from ledger_file()
-        rows: The value and the reason of each item
+        rows: The value and the reason of each kind and item
         comment: The head comment of the ledger, with its line breaks
 
     Raises:
@@ -902,9 +942,9 @@ def write_ledger_rows(rule_id: str, form: str, path: str, rows: dict[str, tuple[
     file = Path(path)
     ledger = replace(rule_ledger.read(rule_ledger.rule_of(rule_id), file=file), comment=comment)
     base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
-    for item, (value, reason) in rows.items():
-        item_path, entity = item_cells(item, form)
-        key = rule_ledger.Key(item_path, "", entity)
+    for (kind, item), (value, reason) in rows.items():
+        item_path, entity = item_cells(item, forms[kind])
+        key = rule_ledger.Key(item_path, kind, entity)
         base[key] = rule_ledger.Entry(key, value, reason)
     rule_ledger.store(replace(ledger, base=base), file=file)
 

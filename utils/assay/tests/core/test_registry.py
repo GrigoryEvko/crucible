@@ -49,12 +49,31 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
     )
     slow = registry.rules["slow-row"]
     expect(
-        "a measured rule gives its limit and its holder, and has no module",
-        slow.threshold == rule_registry.Threshold(20.0, "s")
+        "a measured rule gives its limit of the one kind '' and its holder, and has no module",
+        slow.threshold == rule_registry.Threshold((("", 20.0),), "s")
+        and slow.threshold.limit == 20.0
         and slow.held_by == "loop-gauge"
         and not slow.has_module
         and set(registry.measured()) == {"slow-row"},
     )
+    keyed_row = rule_registry.measured_rule("keyed-row", {"compile": 4, "link": 1, "test": 1.5}, "GB")
+    keyed, problems = examined(keyed_row)
+    threshold = keyed.rules["keyed-row"].threshold if "keyed-row" in keyed.rules else None
+    expect(
+        "a measured rule with one limit for each kind gives its kinds in the sequence of the row, and the limit of "
+        "each kind",
+        not problems
+        and threshold is not None
+        and threshold.kinds == ("compile", "link", "test")
+        and threshold.limit_of("test") == 1.5
+        and threshold.limit_of("fixture") is None,
+    )
+    try:
+        _ = threshold.limit if threshold is not None else None
+        has_one_limit = True
+    except ValueError:
+        has_one_limit = False
+    expect("a rule with one limit for each kind has no one limit", not has_one_limit)
     judged, problems = examined(GOOD_RULE.replace("doc=XV", "held-by=loop-fixture doc=XV"))
     expect(
         "a step meter holds a rule with no limit",
@@ -86,6 +105,11 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         "a doc that is not a section": GOOD_RULE.replace("doc=XV", "doc=section-15"),
         "a limit with no unit": GOOD_RULE.replace("doc=XV", "limit=2 doc=XV"),
         "a limit that is a word": SLOW_RULE.replace("limit=20", "limit=twenty"),
+        "a kind with no number": SLOW_RULE.replace("limit=20", "limit=compile:,link:1"),
+        "a part with no kind": SLOW_RULE.replace("limit=20", "limit=compile:4,1"),
+        "a kind with an uppercase letter": SLOW_RULE.replace("limit=20", "limit=Compile:4"),
+        "a kind that comes two times": SLOW_RULE.replace("limit=20", "limit=compile:4,compile:5"),
+        "an empty part of the limit": SLOW_RULE.replace("limit=20", "limit=compile:4,,link:1"),
         "an unknown unit": rule_registry.measured_rule("slow-row", 2, "s").replace("unit=s", "unit=hours"),
         "a holder with no limit": GOOD_RULE.replace("doc=XV", "held-by=loop-gauge doc=XV"),
         "a legacy module and a holder": rule_registry.measured_rule("slow-row", 2, "s").replace(

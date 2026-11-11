@@ -1,5 +1,5 @@
-# A header of include/fixy includes 7 MB alone, more than the limit 6.5 MB of header-alone-fixy.  The rule gives one
-# error of the kind over-limit, which names the held rule of the layer.
+# A header of include/fixy includes 7 MB alone, more than the limit 6.5 MB of the kind fixy.  The rule gives one
+# error of the kind over-limit, which names the kind of the layer.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000

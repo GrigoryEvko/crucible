@@ -1,9 +1,10 @@
 """The judge of the measured value of one item against a measured rule and the ledger row of the policy max.
 
 THE VERDICT
-    verdict() compares the value of one item with the limit of a measured
-    rule (assay.core.registry).  It also reads the kept value of the ledger
-    row of the item, when the ledger has a row that judges the build:
+    verdict() compares the value of one item with the limit of its kind in a
+    measured rule (assay.core.registry).  It also reads the kept value of the
+    ledger row of the kind and the item, when the ledger has a row that
+    judges the build:
       ERROR     the value is above the limit, and no row keeps it
       ADMITTED  a row keeps the item.  The value is above the limit, and it
                 is not more than the kept value with the noise of its unit.
@@ -53,14 +54,16 @@ THE SCOPE
 
 THE ROWS
     The ledger of a rule of the policy max holds at most one row for each
-    item, and each row judges each build of the tree.  THE REGISTRY AND THE
-    LEDGERS of assay.core.meter gives the row.  read_rows() gives the rows
-    of a ledger, and row_of() gives the row of one item, with no finding.  A
-    row whose item a build does not hold gives no finding.
+    kind and item, and each row judges each build of the tree.  THE REGISTRY
+    AND THE LEDGERS of assay.core.meter gives the row.  read_rows() gives the
+    rows of the kinds that a judge reads, and row_of() gives the row of one
+    kind and item, with no finding.  A row whose item a build does not hold
+    gives no finding.
 
 THE WRITE
     raised_ledger() gives the new ledger of `guard write` from the measures
-    of a build.  It writes a row only for an item above the limit that no
+    of a build.  The kind of the limit of a measure is the kind of its row.
+    It writes a row only for an item above the limit that no
     row keeps: a new row, or a higher kept value of a row whose item rose
     above it with its noise (THE VERDICT).  Such a row needs the reason of
     the call, and a call with no reason writes nothing.  The write removes
@@ -121,21 +124,21 @@ class Measure(Value):
 
     `item` is the item of the ledger key (assay.core.meter, item_of()).
     `path` is the position of the finding.  `said` tells the value, for example
-    "the test t took 3.10 s of wall time".  `threshold_rule` names the held
-    rule that gives the limit, when it is not the rule of the finding,
-    such as header-alone-fixy for the rule header-alone.
+    "the test t took 3.10 s of wall time".  `kind` is the kind of the item,
+    which selects its limit, such as fixy for the rule header-alone, and ""
+    for a rule with one limit.
     """
 
-    __match_args__ = ("item", "path", "value", "said", "threshold_rule")
+    __match_args__ = ("item", "path", "value", "said", "kind")
     item: str
     path: str
     value: float
     said: str
-    threshold_rule: str | None
+    kind: str
 
-    def __init__(self, item: str, path: str, value: float, said: str, threshold_rule: str | None = None) -> None:
-        """Hold the item, the position, the value, the words and the held rule of the limit."""
-        super().__init__(item, path, value, said, threshold_rule)
+    def __init__(self, item: str, path: str, value: float, said: str, kind: str = "") -> None:
+        """Hold the item, the position, the value, the words and the kind of the item."""
+        super().__init__(item, path, value, said, kind)
 
 
 class Admission(Value):
@@ -152,15 +155,18 @@ class Admission(Value):
 
 
 class Rows(Value):
-    """The ledger rows of one rule of the policy max (THE ROWS).  `admitted` holds the row of each item that a row keeps."""
+    """The ledger rows of one rule of the policy max (THE ROWS).
+
+    `admitted` holds the row of each kind and item that a row keeps.
+    """
 
     __match_args__ = ("shown", "admitted", "problems")
     shown: str
-    admitted: Mapping[str, Admission]
+    admitted: Mapping[tuple[str, str], Admission]
     problems: tuple[check_report.Finding, ...]
 
     def __init__(
-        self, shown: str, admitted: Mapping[str, Admission], problems: tuple[check_report.Finding, ...] = ()
+        self, shown: str, admitted: Mapping[tuple[str, str], Admission], problems: tuple[check_report.Finding, ...] = ()
     ) -> None:
         """Hold the shown ledger, the row of each item and the problems of the file."""
         super().__init__(shown, admitted, problems)
@@ -199,11 +205,17 @@ def verdict(value: float, limit: float, kept: float | None, noise: float = 0.0) 
     return ADMITTED if value <= kept * (1.0 + noise) else RISEN
 
 
-def row_of(rule_id: str, shape: str, ledger: str, item: str) -> tuple[Admission | None, str, str]:
-    """Return the row of one item from the ledger of a rule of the policy max (THE ROWS).
+def forms_of(shape: str | Mapping[str, str]) -> Mapping[str, str]:
+    """Return the form of the item of each kind: a mapping as it is, or the one kind "" of a rule with one limit."""
+    return {"": shape} if isinstance(shape, str) else shape
+
+
+def row_of(rule_id: str, kind: str, shape: str, ledger: str, item: str) -> tuple[Admission | None, str, str]:
+    """Return the row of one kind and item from the ledger of a rule of the policy max (THE ROWS).
 
     Args:
         rule_id: The ID of the rule
+        kind: The kind of the item, or "" for a rule with one limit
         shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
         ledger: The file of the ledger.  The file is not there when the rule has no row
         item: The item
@@ -215,55 +227,58 @@ def row_of(rule_id: str, shape: str, ledger: str, item: str) -> tuple[Admission 
     from assay.core import meter as cost_meter
 
     try:
-        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, shape, ledger)
+        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, {kind: shape}, ledger)
     except OSError as error:
         return None, cost_meter.shown_ledger(ledger), f"0: the ledger cannot be read ({error})"
-    found = rows.get(item)
+    found = rows.get((kind, item))
     problem = f"{problems[0][0]}: {problems[0][1]}" if problems else ""
     return (None if found is None else Admission(*found)), shown, problem
 
 
-def read_rows(rule_id: str, shape: str, ledger: Path) -> Rows:
-    """Read the rows of the ledger of a rule of the policy max (THE ROWS).
+def read_rows(rule_id: str, shape: str | Mapping[str, str], ledger: Path) -> Rows:
+    """Read the rows of the ledger of a rule of the policy max, for the kinds that a judge reads (THE ROWS).
 
     Complexity: linear in the rows.
 
     Args:
         rule_id: The ID of the rule
-        shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
+        shape: The shape of the item of a row of a rule with one limit: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of
+            assay.core.meter.  For a rule with one limit for each kind, the shape of the item of each kind that the
+            judge reads
         ledger: The file of the ledger.  The file is not there when the rule has no row
 
     Returns:
-        The rows.  Also an error for each row that does not have the shape of the rule, and an error for a file that
-        cannot be read
+        The rows.  Also an error for each row that does not have the shape of its kind or has a kind that the rule
+        does not have, and an error for a file that cannot be read
     """
     from assay.core import meter as cost_meter
     from assay.core import report as check_report
 
     try:
-        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, shape, str(ledger))
+        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, forms_of(shape), str(ledger))
     except OSError as problem:
         shown = cost_meter.shown_ledger(str(ledger))
         unread = check_report.Finding("error", shown, 0, rule_id, f"the ledger cannot be read ({problem})")
         return Rows(shown, {}, (unread,))
-    admitted = {item: Admission(line, value, reason) for item, (line, value, reason) in rows.items()}
+    admitted = {key: Admission(line, value, reason) for key, (line, value, reason) in rows.items()}
     errors = tuple(check_report.Finding("error", shown, line, rule_id, text) for line, text in problems)
     return Rows(shown, admitted, errors)
 
 
 def raised_ledger(
     ledger: rule_ledger.Ledger,
-    shape: str,
+    shape: str | Mapping[str, str],
     measures: Iterable[tuple[str, float, check_report.Budget]],
     reason: str | None,
 ) -> rule_ledger.Ledger:
     """Return the ledger of a rule of the policy max with a row for each measure that no row keeps (THE WRITE).
 
-    Complexity: linear in the measures and the rows.
+    The kind of the limit of a measure (check_report.Budget) is the kind of its row.  Complexity: linear in the
+    measures and the rows.
 
     Args:
         ledger: The ledger at this time
-        shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
+        shape: The shape of the item of a row, as read_rows() takes it
         measures: The item, the value and the limit of each measure of the build
         reason: The reason of each new row and each higher kept value, or None
 
@@ -275,17 +290,18 @@ def raised_ledger(
     from assay.core import ledger as rule_ledger
     from assay.core import meter as cost_meter
 
+    forms = forms_of(shape)
     base = dict(ledger.base)
     unexplained: list[str] = []
     for item, value, budget in measures:
-        path, entity = cost_meter.item_cells(item, shape)
-        key = rule_ledger.Key(path, "", entity)
+        path, entity = cost_meter.item_cells(item, forms[budget.kind])
+        key = rule_ledger.Key(path, budget.kind, entity)
         earlier = base.get(key)
         kept = None if earlier is None else float(earlier.value)
         if verdict(value, budget.limit, kept, noise_of(budget.unit)) not in (ERROR, RISEN):
             continue
         if not reason:
-            unexplained.append(item)
+            unexplained.append(f"{item} of the kind {budget.kind}" if budget.kind else item)
             continue
         base[key] = rule_ledger.Entry(key, max(kept or 0.0, kept_value(value)), reason)
     if unexplained:
@@ -301,22 +317,22 @@ def judge(rule_id: str, budget: check_report.Budget, measure: Measure, rows: Row
 
     Args:
         rule_id: The ID of the rule of the finding
-        budget: The limit: of the rule, or of the held rule that measure.threshold_rule names
+        budget: The limit of the kind of the item (measure.kind)
         measure: The value of the item
         rows: The ledger rows that judge the build
 
     Returns:
         The error of a value above the limit that no row keeps, or None
     """
-    row = rows.admitted.get(measure.item)
+    row = rows.admitted.get((measure.kind, measure.item))
     noise = noise_of(budget.unit)
     found = verdict(measure.value, budget.limit, None if row is None else row.value, noise)
     if found in (NO_FINDING, ADMITTED):
         return None
     from assay.core import report as check_report
 
-    of_rule = f" of the measured rule {measure.threshold_rule}" if measure.threshold_rule else ""
-    above = f"{measure.said}, above the limit{of_rule} {budget.limit:g} {budget.unit}"
+    of_kind = f" of the kind {measure.kind}" if measure.kind else ""
+    above = f"{measure.said}, above the limit{of_kind} {budget.limit:g} {budget.unit}"
     if row is None:
         return check_report.judged("error", measure.path, 0, rule_id, above)
     kept = f"{row.value:g} {budget.unit} with the noise {noise:.0%} of the unit {budget.unit}"

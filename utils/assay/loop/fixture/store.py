@@ -2686,7 +2686,8 @@ def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_re
     rows: dict[str, BudgetRow] = {}
     problems: dict[str, str] = {}
     try:
-        test_rows = _cost_meter_module().budget_rows(str(test_registry), test_launcher.ROWS)
+        test_limits = _cost_meter_module().budget_rows(str(test_registry), test_launcher.ROWS)
+        test_rows = {rule: kinds[""] for rule, kinds in test_limits.items() if "" in kinds}
     except (OSError, ValueError):
         test_rows = {}
     try:

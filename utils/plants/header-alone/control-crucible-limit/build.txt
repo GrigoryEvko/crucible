@@ -1,8 +1,8 @@
-# A header of include/crucible includes 7.6 MB alone, more than the limit 7.35 MB of header-alone-crucible.  The rule
-# header-alone gives one error of the held rule of the layer.
+# A header of include/crucible includes 6.8 MB alone, under the limit 7.35 MB of the kind crucible.  The size is over
+# the limit 6.5 MB of fixy.  The rule gives no finding.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000
-file include/crucible/Base.h size=7968178
+file include/crucible/Base.h size=7129317
 compile test/layer/CMakeFiles/layer_sentinel_crucible.dir/checks/crucible/Base.cpp.o test/layer/checks/crucible/Base.cpp cpu=3
 deps test/layer/CMakeFiles/layer_sentinel_crucible.dir/checks/crucible/Base.cpp.o | test/layer/checks/crucible/Base.cpp system.h include/crucible/Base.h

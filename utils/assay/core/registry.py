@@ -17,9 +17,13 @@ THE ROWS
       kinds        the finding kinds of the rule
       limit, unit  the limit and the unit of a measured rule.  A rule has the
                    two fields or none of them.  A value above the limit
-                   fails.  The unit is one word: s, G (10^9 instructions),
-                   GB, MB, KB, bytes, %, operations, elements, x (a
-                   multiple), links, jobs or threads
+                   fails.  The limit is one number, or one number for each
+                   kind of item of the rule, KIND:NUMBER,KIND:NUMBER, such as
+                   compile:4,link:1,test:1.5 (limits() of assay.core.rows).
+                   The judge of an item reads the limit of its kind.  The
+                   unit is one word: s, G (10^9 instructions), GB, MB, KB,
+                   bytes, %, operations, elements, x (a multiple), links,
+                   jobs or threads
       inputs       the paths that the rule reads and that its module does not
                    show
       doc          the section of CLAUDE.md that states the rule, such as XV,
@@ -156,10 +160,35 @@ class Policy(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Threshold:
-    """The limit and the unit of a measured rule.  A value above the limit fails."""
+    """The limits and the unit of a measured rule: one limit for each kind of item.  A value above its limit fails.
 
-    limit: float
+    A rule with one limit has the one kind "".  `limits` keeps the sequence of the field limit of the row.
+    """
+
+    limits: tuple[tuple[str, float], ...]
     unit: str
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        """The kinds of the items of the rule, in the sequence of the row: ("",) for a rule with one limit."""
+        return tuple(kind for kind, _ in self.limits)
+
+    @property
+    def limit(self) -> float:
+        """The limit of a rule with one limit.
+
+        Raises:
+            ValueError: If the rule has one limit for each kind of item
+        """
+        if self.kinds != ("",):
+            raise ValueError(
+                f"the rule has one limit for each kind of item ({', '.join(self.kinds)}), and no one limit"
+            )
+        return self.limits[0][1]
+
+    def limit_of(self, kind: str) -> float | None:
+        """Return the limit of one kind of item, or None when the rule has no such kind."""
+        return next((limit for name, limit in self.limits if name == kind), None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,10 +331,10 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
     if given and len(given) != len(THRESHOLD_FIELDS):
         raise row.error(f"the rule {rule_id} has {', '.join(given)}, and a measured rule has limit and unit")
     if given:
-        limit = rows_grammar.decimal(values["limit"], row, "limit")
+        limits = rows_grammar.limits(values["limit"], row, "limit")
         if values["unit"] not in UNITS:
             raise row.error(f"the unit {values['unit']!r} of {rule_id} is not one of {', '.join(sorted(UNITS))}")
-        threshold = Threshold(limit, values["unit"])
+        threshold = Threshold(limits, values["unit"])
     if not is_doc_reference(values["doc"]):
         raise row.error(
             f"the doc {values['doc']!r} of {rule_id} is not a section of CLAUDE.md, such as XV, XV.4, XXII.R11 or L0"
@@ -495,8 +524,16 @@ def doc_section(guide: str, reference: str) -> str | None:
     return None
 
 
-def measured_rule(rule_id: str, limit: float, unit: str, measures: str = "a planted quantity") -> str:
+def measured_rule(
+    rule_id: str, limit: float | Mapping[str, float], unit: str, measures: str = "a planted quantity"
+) -> str:
     """Return the text of one measured rule row, for a planted registry of a test.  The gauge holds the rule.
+
+    Args:
+        rule_id: The ID of the rule
+        limit: The one limit of the rule, or the limit of each kind of item
+        unit: The unit of the limit
+        measures: The first cell of the row
 
     Raises:
         ValueError: If the row cannot be written
@@ -505,6 +542,11 @@ def measured_rule(rule_id: str, limit: float, unit: str, measures: str = "a plan
     def number_text(value: float) -> str:
         return str(int(value)) if float(value).is_integer() else repr(float(value))
 
+    field_text = (
+        ",".join(f"{kind}:{number_text(value)}" for kind, value in limit.items())
+        if isinstance(limit, Mapping)
+        else number_text(limit)
+    )
     return rows_grammar.render(
         [
             "rule",
@@ -512,7 +554,7 @@ def measured_rule(rule_id: str, limit: float, unit: str, measures: str = "a plan
             "engine=build",
             "scope=builddir",
             "ledger=max",
-            f"limit={number_text(limit)}",
+            f"limit={field_text}",
             f"unit={unit}",
             "held-by=loop-gauge",
             "doc=XV",

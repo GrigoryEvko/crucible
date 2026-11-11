@@ -1,5 +1,5 @@
-# A header of 7 MB alone, above the limit 6.5 MB of header-alone-fixy, has a ledger row with the path of the header
-# that keeps it.  The rule gives no finding.
+# A header of 7 MB alone, above the limit 6.5 MB of the kind fixy, has a ledger row with the path of the header and
+# the kind fixy that keeps it.  The rule gives no finding.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000

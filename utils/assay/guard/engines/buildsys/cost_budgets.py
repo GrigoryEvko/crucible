@@ -41,19 +41,28 @@ THE RULE header-alone
     alone.  For each sentinel, the rule reads its list in the dependency log of
     Ninja (assay.readers.ninja) and adds the bytes of the files after the
     source.  The header is the first file of the list in include/, after each
-    symbolic link resolves.  The limit comes from the held rule of the
-    layer of the header: header-alone-foundation, header-alone-fixy or
-    header-alone-crucible.  These problems each give an error of the kind
-    input: a header of a different layer, a sentinel with no VALID list, and a
-    sentinel with no header of include/.  The message also gives the CPU time of the sentinel
+    symbolic link resolves.  The kind of a header is its layer, the first
+    directory under include/, and the rule has one limit for each layer:
+    foundation, fixy and crucible.  These problems each give an error of the
+    kind input: a header of a layer that the rule has no limit for, a
+    sentinel with no VALID list, and a sentinel with no header of include/.
+    The message also gives the CPU time of the sentinel
     from its record, with no threshold.  The rule does not apply to a build
     with no sentinel object, or to a build that a generator other than Ninja
     made.
 
+THE KINDS
+    A rule has one limit for each kind of item (assay.core.registry).
+    RULE_KINDS gives the kinds of each rule with a fixed set of kinds.  A
+    kind that the table gives and the registry does not, and a kind that the
+    registry gives and the table does not, each give an error of the kind
+    input, because the judge of a kind with no limit is off.  The kinds of
+    header-alone are the layers of include/, which the registry gives.
+
 THE JUDGE
-    assay.core.budget judges each value against the limit and the ledger rows
-    of the rule (assay.core.budget, THE VERDICT and THE ROWS).  Each
-    finding is an error.  The kinds of the findings:
+    assay.core.budget judges each value against the limit of its kind and
+    the ledger rows of the rule (assay.core.budget, THE VERDICT and THE
+    ROWS).  Each finding is an error.  The kinds of the findings:
       over-limit         a value above the limit, with no ledger row
       risen              a value above the limit and above the kept value of
                          its row with the noise of its unit
@@ -68,12 +77,12 @@ THE JUDGE
     build does not hold gives no finding either.
 
 THE LEDGERS
-    utils/ledgers/RULE.txt holds at most one row for each item, with the
-    reason, and each row judges each build (assay.core.meter, THE REGISTRY
-    AND THE LEDGERS):
+    utils/ledgers/RULE.txt holds at most one row for each kind and item, with
+    the reason, and each row judges each build (assay.core.meter, THE
+    REGISTRY AND THE LEDGERS).  KIND is "-" for a rule with one limit:
 
-        @build/OUTPUT | - | VALUE | - | REASON     an output of a step or an object
-        HEADER | - | VALUE | - | REASON            a header, for header-alone
+        @build/OUTPUT | KIND | VALUE | - | REASON     an output of a step or an object
+        HEADER | LAYER | VALUE | - | REASON          a header, for header-alone
 
     `guard write --rule RULE --build-dir DIR --reason TEXT` writes a row for
     each item of the build above the limit that no row keeps, through the
@@ -88,7 +97,7 @@ Complexity: one read of the compile database, the code model and the records of 
 
 import enum
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -110,20 +119,13 @@ GIGA = 1e9
 KB = 1024
 MB = 1024 * 1024
 REGISTRY_FILE = "utils/registry.txt"
-# The held rule of header-alone for the headers of each layer of include/.  The headers of a base layer go into each
-# translation unit of the tree, and their rules are tighter for this reason.
-HEADER_ALONE_LAYERS = {
-    "foundation": "header-alone-foundation",
-    "fixy": "header-alone-fixy",
-    "crucible": "header-alone-crucible",
-}
 HEADER_ALONE_SENTINEL = "/layer_sentinel_"
 HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
-# The head comment that the member function written gives each ledger.  ROW is the row of the item of the rule.
+# The head comment that the member function written gives each ledger.  ROWS tells the rows of the kinds of the rule.
 LEDGER_COMMENT = (
-    "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the limit of the rule,\n"
-    "# one row for each item, and each row judges each build.  A row is '{row}'.  VALUE is the kept value, in\n"
+    "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the limit of their kind,\n"
+    "# one row for each kind and item, and each row judges each build.  {rows}.  VALUE is the kept value, in\n"
     "# {unit}.  A row keeps its item up to VALUE with the noise of its unit (THE NOISE of utils/assay/core/budget.py).\n"
     "# `python3 utils/bin/guard explain {rule}` tells the rule, and `python3 utils/bin/guard write --rule {rule}\n"
     "# --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.\n"
@@ -152,6 +154,14 @@ STEP_RULES = {
 }
 OBJECT_RULES = frozenset({"function-size", "object-text"})
 HEADER_ALONE = "header-alone"
+# The kinds of the items of each rule with a fixed set of kinds (THE KINDS).  A rule with one limit has the kind "".
+RULE_KINDS: dict[str, tuple[str, ...]] = {
+    "compile-instructions": ("",),
+    "compile-memory": ("",),
+    "link-memory": ("",),
+    "function-size": ("",),
+    "object-text": ("",),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,22 +194,40 @@ def input_error(rule_id: str, path: str, message: str, entity: str = "", line: i
     return check_report.Finding("error", path, line, rule_id, message, "input", entity)
 
 
-def threshold_rules(rule_id: str) -> tuple[str, ...]:
-    """Return the measured rules that give the limit of a rule: the held rules of header-alone, or the rule."""
-    return tuple(HEADER_ALONE_LAYERS.values()) if rule_id == HEADER_ALONE else (rule_id,)
-
-
 def budgets_of(
     context: BuildContext, rule_id: str
 ) -> tuple[dict[str, check_report.Budget], list[check_report.Finding]]:
-    """Return the limit of each measured rule that a rule reads, and an error for each one that is missing."""
-    budgets: dict[str, check_report.Budget] = {}
-    problems: list[check_report.Finding] = []
-    for name in threshold_rules(rule_id):
-        try:
-            budgets[name] = context.budget(name)
-        except meta_runner.NotApplicable as problem:
-            problems.append(input_error(rule_id, REGISTRY_FILE, f"{problem}.  Add the measured rule"))
+    """Return the limit of each kind of a rule, by the kind, and an error for each kind that does not agree (THE KINDS).
+
+    Complexity: linear in the kinds.
+    """
+    try:
+        budgets = context.limits(rule_id)
+    except meta_runner.NotApplicable as problem:
+        return {}, [input_error(rule_id, REGISTRY_FILE, f"{problem}.  Add the measured rule")]
+    wanted = RULE_KINDS.get(rule_id)
+    if wanted is None:
+        return budgets, []
+    problems = [
+        input_error(
+            rule_id,
+            REGISTRY_FILE,
+            f"the rule {rule_id} has no limit of the kind {kind or '-'}, so no judge reads that kind.  Give the field "
+            f"limit of its row the kinds {', '.join(item or '-' for item in wanted)}",
+        )
+        for kind in wanted
+        if kind not in budgets
+    ]
+    problems += [
+        input_error(
+            rule_id,
+            REGISTRY_FILE,
+            f"the rule {rule_id} has a limit of the kind {kind or '-'}, and no judge reads that kind.  Its kinds are "
+            f"{', '.join(item or '-' for item in wanted)}",
+        )
+        for kind in budgets
+        if kind not in wanted
+    ]
     return budgets, problems
 
 
@@ -466,10 +494,11 @@ def resolved_size(name: str, build: Path, sizes: dict[str, tuple[Path, int]]) ->
     return sizes[name]
 
 
-def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) -> Measured:
+def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output], layers: Collection[str]) -> Measured:
     """Measure the bytes that each header includes alone, from the dependency list of its sentinel (THE RULE).
 
-    Complexity: linear in the files of the dependency lists, with one stat for each different file.
+    `layers` gives the layers that the rule has a limit for, the kinds of the rule.  Complexity: linear in the files
+    of the dependency lists, with one stat for each different file.
 
     Raises:
         NotApplicable: If the build holds no sentinel object, or a generator other than Ninja made it
@@ -518,13 +547,13 @@ def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
             continue
         header_shown = context.shown(header)
         layer = header.relative_to(include_root).parts[0]
-        if layer not in HEADER_ALONE_LAYERS:
+        if layer not in layers:
             problems.append(
                 input_error(
                     rule_id,
                     header_shown,
-                    f"the header is in the layer {layer}, which has no measured rule.  HEADER_ALONE_LAYERS names a "
-                    f"rule for each layer",
+                    f"the header is in the layer {layer}, and the rule {rule_id} has no limit of that kind.  Give the "
+                    f"field limit of its row a kind for each layer of include/",
                     header_shown,
                 )
             )
@@ -534,14 +563,15 @@ def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
             f"the header alone includes {total / MB:.2f} MB in {len(entries)} files, and "
             f"{sentinel_time(context, output)}"
         )
-        values.append(cost_budget.Measure(header_shown, header_shown, total / MB, said, HEADER_ALONE_LAYERS[layer]))
+        values.append(cost_budget.Measure(header_shown, header_shown, total / MB, said, layer))
     return Measured(tuple(values), problems=tuple(problems))
 
 
-def measured_of(context: BuildContext, rule_id: str) -> Measured:
+def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> Measured:
     """Measure each item of a rule, and give the errors of its inputs.
 
-    The rule measures no output of the directory bench of the build (assay.core.budget, THE SCOPE).
+    `kinds` gives the kinds of the rule (budgets_of()).  The rule measures no output of the directory bench of the
+    build (assay.core.budget, THE SCOPE).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -557,29 +587,43 @@ def measured_of(context: BuildContext, rule_id: str) -> Measured:
     if rule_id in STEP_RULES:
         found = step_values(context, rule_id, outputs)
     elif rule_id == HEADER_ALONE:
-        found = header_values(context, rule_id, outputs)
+        found = header_values(context, rule_id, outputs, kinds)
     else:
         found = object_values(context, rule_id, outputs)
     return replace(found, problems=(*problems, *found.problems))
 
 
-def ledger_shape(rule_id: str) -> str:
-    """Return the shape of the item of a ledger row of a rule (THE LEDGERS)."""
-    return cost_meter.ITEM_FILE if rule_id == HEADER_ALONE else cost_meter.ITEM_OUTPUT
+def ledger_forms(rule_id: str, kinds: Collection[str]) -> dict[str, str]:
+    """Return the form of the item of a ledger row of each kind of a rule (THE LEDGERS)."""
+    form = cost_meter.ITEM_FILE if rule_id == HEADER_ALONE else cost_meter.ITEM_OUTPUT
+    return dict.fromkeys(kinds, form)
+
+
+def rows_text(forms: Mapping[str, str]) -> str:
+    """Return the words of the head comment of a ledger that give the shape of a row of each form (LEDGER_COMMENT)."""
+    if set(forms) == {""}:
+        return f"A row is '{cost_meter.item_row(forms[''], '')}'"
+    by_form: dict[str, list[str]] = {}
+    for kind, form in forms.items():
+        by_form.setdefault(form, []).append(kind)
+    shapes = [
+        f"'{cost_meter.item_row(form, 'KIND')}' with KIND {' or '.join(kinds)}" for form, kinds in by_form.items()
+    ]
+    return f"A row is {', or '.join(shapes)}"
 
 
 def judged_values(
     rule_id: str, budgets: Mapping[str, check_report.Budget], measured: Measured, rows: cost_budget.Rows
 ) -> list[check_report.Finding]:
-    """Judge each value against its limit and the ledger rows that judge the build (THE JUDGE).
+    """Judge each value against the limit of its kind and the ledger rows that judge the build (THE JUDGE).
 
     Complexity: linear in the values.
     """
     found: list[check_report.Finding] = []
     for value in measured.values:
-        verdict = cost_budget.judge(rule_id, budgets[value.threshold_rule or rule_id], value, rows)
+        verdict = cost_budget.judge(rule_id, budgets[value.kind], value, rows)
         if verdict is not None:
-            kind = "over-limit" if value.item not in rows.admitted else "risen"
+            kind = "over-limit" if (value.kind, value.item) not in rows.admitted else "risen"
             found.append(replace(verdict, kind=kind, entity=value.item))
     return found
 
@@ -593,14 +637,15 @@ def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Fi
     budgets, missing = budgets_of(context, rule_id)
     if missing:
         return missing
-    measured = measured_of(context, rule_id)
-    rows = ledger_rows(context, rule_id)
+    measured = measured_of(context, rule_id, budgets)
+    rows = ledger_rows(context, rule_id, budgets)
     return [*measured.problems, *rows.problems, *judged_values(rule_id, budgets, measured, rows)]
 
 
-def ledger_rows(context: BuildContext, rule_id: str) -> cost_budget.Rows:
+def ledger_rows(context: BuildContext, rule_id: str, kinds: Collection[str]) -> cost_budget.Rows:
     """Return the ledger rows of a rule, with each problem of the ledger as an error of the kind input (THE LEDGERS)."""
-    rows = cost_budget.read_rows(rule_id, ledger_shape(rule_id), rule_ledger.ledger_path(rule_id, context.root))
+    path = rule_ledger.ledger_path(rule_id, context.root)
+    rows = cost_budget.read_rows(rule_id, ledger_forms(rule_id, kinds), path)
     return rows.replaced(problems=tuple(replace(problem, kind="input") for problem in rows.problems))
 
 
@@ -614,18 +659,18 @@ def budget_written(
         rule_ledger.LedgerError: If an input or the ledger cannot be read, or a new row has no reason
     """
     budgets, missing = budgets_of(context, rule_id)
-    measured = measured_of(context, rule_id) if not missing else Measured()
-    rows = ledger_rows(context, rule_id)
+    measured = measured_of(context, rule_id, budgets) if not missing else Measured()
+    rows = ledger_rows(context, rule_id, budgets)
     errors = [found for found in (*missing, *measured.problems, *rows.problems) if found.level == "error"]
     if errors:
         for found in errors:
             check_report.write_line(found.text(), is_error=True)
         raise rule_ledger.LedgerError(f"{len(errors)} input errors stop the write.  Correct them first")
-    shape = ledger_shape(rule_id)
-    measures = [(value.item, value.value, budgets[value.threshold_rule or rule_id]) for value in measured.values]
-    raised = cost_budget.raised_ledger(ledger, shape, measures, reason)
+    forms = ledger_forms(rule_id, budgets)
+    measures = [(value.item, value.value, budgets[value.kind]) for value in measured.values]
+    raised = cost_budget.raised_ledger(ledger, forms, measures, reason)
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
-    comment = LEDGER_COMMENT.format(rule=rule_id, row=cost_meter.ITEM_ROWS[shape], unit=units)
+    comment = LEDGER_COMMENT.format(rule=rule_id, rows=rows_text(forms), unit=units)
     return replace(raised, comment=comment)
 
 

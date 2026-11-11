@@ -144,8 +144,30 @@ class BuildContext:
         """Return True when the run judges the ledger row of a key: each row with no paths, else a row of a path."""
         return not self.paths or key.path in self.paths
 
-    def budget(self, rule_id: str) -> check_report.Budget:
-        """Return the limit of a measured rule of the registry of the context, for check_report.classify().
+    def budget(self, rule_id: str, kind: str = "") -> check_report.Budget:
+        """Return the limit of one kind of a measured rule of the registry of the context, for check_report.classify().
+
+        Args:
+            rule_id: The ID of the rule
+            kind: The kind of the item, or "" for a rule with one limit
+
+        Raises:
+            NotApplicable: If the registry has no measured rule with that ID, or the rule has no limit of the kind
+        """
+        registry = self.registry if self.registry is not None else rule_registry.load()
+        self.registry = registry
+        rule = registry.rules.get(rule_id)
+        if rule is None or rule.threshold is None:
+            raise meta_runner.NotApplicable(f"the registry has no measured rule {rule_id}")
+        try:
+            return check_report.budget_of(rule, kind)
+        except ValueError as problem:
+            raise meta_runner.NotApplicable(str(problem)) from None
+
+    def limits(self, rule_id: str) -> dict[str, check_report.Budget]:
+        """Return the limit of each kind of item of a measured rule of the registry of the context, by the kind.
+
+        A rule with one limit gives the kind "".
 
         Raises:
             NotApplicable: If the registry has no measured rule with that ID
@@ -155,16 +177,20 @@ class BuildContext:
         rule = registry.rules.get(rule_id)
         if rule is None or rule.threshold is None:
             raise meta_runner.NotApplicable(f"the registry has no measured rule {rule_id}")
-        return check_report.budget_of(rule)
+        return {kind: check_report.budget_of(rule, kind) for kind in rule.threshold.kinds}
 
     def budgets(self) -> dict[str, check_report.Budget]:
-        """Return the limit of each measured rule of the registry of the context, by the ID of the rule.
+        """Return the limit of each measured rule with one limit of the registry of the context, by the ID of the rule.
 
         Complexity: linear in the rules of the registry.
         """
         registry = self.registry if self.registry is not None else rule_registry.load()
         self.registry = registry
-        return {rule.id: self.budget(rule.id) for rule in registry.rules.values() if rule.threshold is not None}
+        return {
+            rule.id: self.budget(rule.id)
+            for rule in registry.rules.values()
+            if rule.threshold is not None and rule.threshold.kinds == ("",)
+        }
 
     def kind(self) -> str:
         """Return the build kind of the build directory (THE KIND).

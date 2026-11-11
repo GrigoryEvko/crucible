@@ -94,8 +94,7 @@ def main(argv: list[str]) -> int:
         if options.engine is not None and rule.engine.value != options.engine:
             continue
         listed += 1
-        threshold = (f" limit {check_report.threshold_text(rule.threshold.limit)} {rule.threshold.unit}"
-                     if rule.threshold is not None else "")
+        threshold = f" limit {check_report.limits_text(rule.threshold)}" if rule.threshold is not None else ""
         print(f"{rule.id:28} {rule.engine.value:6} {rule.policy.value:8}{threshold}; {holder(rule)}")
     selection = f" of the engine {options.engine}" if options.engine is not None else ""
     print(f"guard list: {listed} rules{selection} of the {len(registry.rules)} rules in "

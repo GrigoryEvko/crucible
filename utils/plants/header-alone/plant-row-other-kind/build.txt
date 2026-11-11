@@ -1,0 +1,9 @@
+# A header of 7 MB alone, above the limit 6.5 MB of the kind fixy, has a ledger row with the kind other.  The rule
+# has no limit of the kind other, so the row keeps nothing.  The rule gives an error at the line of the row, and the
+# error of the header.
+format 1
+kind x86_64-debug-asan
+file system.h size=1000
+file include/fixy/Huge.h size=7340032
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h include/fixy/Huge.h

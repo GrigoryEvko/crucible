@@ -30,6 +30,8 @@ THE RULES OF THE READER
     * A number is a run of decimal digits, and zeros before the first other
       digit are permitted.  number() refuses a number above the maximum of
       its type, and decimal() refuses a number that is not a finite decimal.
+      limits() reads a limit of the registry: one decimal, or one decimal for
+      each kind of item, as KIND:NUMBER,KIND:NUMBER.
     * utils/tools/quarantine/rows.h reads the same grammar for the quarantine
       plugin.  The rule rows-readers gives the same files to the two readers.
       They must give the same rows, and refuse a file at the same line.
@@ -319,6 +321,37 @@ def decimal(text: str, row: Row, what: str) -> float:
             or len(digits) > 18):
         raise row.error(f"the {what} {text!r} is not a decimal number of at most 18 digits, such as 12 or 0.5")
     return float(text)
+
+
+def is_kind(text: str) -> bool:
+    """Tell if a text is the kind of an item of a keyed limit: lowercase words of letters and digits, with a hyphen."""
+    if not text or not ("a" <= text[0] <= "z") or text.endswith("-") or "--" in text:
+        return False
+    return all("a" <= character <= "z" or "0" <= character <= "9" or character == "-" for character in text)
+
+
+def limits(text: str, row: Row, what: str) -> tuple[tuple[str, float], ...]:
+    """Read a limit: one decimal number, or one decimal number for each kind of item, as KIND:NUMBER,KIND:NUMBER.
+
+    One number alone is the limit of the kind "".  A kind obeys is_kind(), and it comes one time.  The result keeps
+    the sequence of the text.  Complexity: linear in the length of the text.
+
+    Raises:
+        RowsError: If a part is not KIND:NUMBER, a kind does not obey is_kind() or comes two times, or a number is not
+            a number of decimal()
+    """
+    if ":" not in text:
+        return (("", decimal(text, row, what)),)
+    found: list[tuple[str, float]] = []
+    for part in text.split(","):
+        kind, colon, value = part.partition(":")
+        if not colon or not is_kind(kind):
+            raise row.error(f"the part {part!r} of the {what} is not KIND:NUMBER, with a kind of lowercase letters, "
+                            f"digits and hyphens that starts with a letter")
+        if any(kind == seen for seen, _ in found):
+            raise row.error(f"the kind {kind} of the {what} comes two times")
+        found.append((kind, decimal(value, row, f"{what} of the kind {kind}")))
+    return tuple(found)
 
 
 def unique(rows: Iterable[Row], key: Callable[[Row], object]) -> dict[object, Row]:

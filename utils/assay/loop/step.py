@@ -186,7 +186,7 @@ def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
         return False, (f"no build directory holds the output (no directory above it holds {cost_meter.KIND_FILE}), so "
                        f"no row of {shown} can admit it")
     item = os.path.relpath(output, build_dir)
-    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, item)
+    row, shown, problem = cost_budget.row_of(memory_row, "", cost_meter.ITEM_OUTPUT, ledger, item)
     if row is None:
         words = f"no row of {shown} keeps {item}"
         if problem:
@@ -391,7 +391,8 @@ def main(argv: list[str]) -> int:
             sys.exit(127)
     output, source = paths
     try:
-        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (MEMORY_ROWS[step],))
+        limits = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (MEMORY_ROWS[step],))
+        budget = {rule: kinds[""] for rule, kinds in limits.items() if "" in kinds}
     except (OSError, ValueError):
         budget = {}
     environment = None

@@ -1,5 +1,5 @@
 # The build made only one target, and it holds no sentinel object of test/layer.  The rule header-alone
-# does not apply, and it gives no finding of the held rule.
+# does not apply, and it gives no finding.
 format 1
 kind x86_64-debug-asan
 file src/a.cpp size=100

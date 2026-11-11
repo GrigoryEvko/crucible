@@ -29,7 +29,8 @@ THE COVERS
         --rule ID`, or `guard check --engine E` for a rule of E with a module
         (assay.guard.engines.meta.test_registration).  A rule with a holder
         gets the cover of the row of its holder in HOLDERS.  A rule that a
-        step names gets the tier of the step
+        rule of the registry holds gets the covers of that rule, with no row.
+        A rule that a step names gets the tier of the step
       * A bench target and a harness get the tier of each step with `each`
         of their kind
       * A target of `loop derive` gets the covers of each rule with a module
@@ -93,8 +94,9 @@ THE PROBLEMS
       stale-entry    a row of STEPS, HOLDERS, MANUAL or of a class of THE
                      COMMANDS that names no preset, rule, step, item or
                      subcommand
-      no-class       a holder of a rule with no row of HOLDERS, and a
-                     subcommand of utils/bin/loop with no class
+      no-class       a holder of a rule with no row of HOLDERS that is no
+                     rule of the registry, and a subcommand of
+                     utils/bin/loop with no class
       configuration  a build with a configuration that is not the
                      configuration of the block of its preset.  The problem
                      applies only when the two names start with the same
@@ -319,7 +321,6 @@ STEPS = (
 )
 SUITE = Holding(is_suite=True)
 HOLDERS = {
-    "header-alone": Holding(rule="header-alone"),
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),
     "loop-test-step": SUITE,
@@ -495,6 +496,13 @@ def test_covers(builds: Sequence[Build], registry: rule_registry.Registry, root:
     return covers
 
 
+def holding_of(word: str, registry: rule_registry.Registry) -> Holding | None:
+    """Return the cover of the rules of a holder: its row of HOLDERS, the covers of a rule of the registry, or None."""
+    if word in HOLDERS:
+        return HOLDERS[word]
+    return Holding(rule=word) if word in registry.rules else None
+
+
 def rule_items(builds: Sequence[Build], registry: rule_registry.Registry, root: Path) -> list[Item]:
     """Return an item for each rule of the registry, with the covers of its tests, its holder and its steps.
 
@@ -507,7 +515,7 @@ def rule_items(builds: Sequence[Build], registry: rule_registry.Registry, root: 
     steps = {step.name: step for step in STEPS}
     held: dict[str, list[Cover]] = {}
     for rule in registry.rules.values():
-        holding = HOLDERS.get(rule.held_by or "")
+        holding = holding_of(rule.held_by or "", registry)
         if holding is None:
             continue
         listed = held.setdefault(rule.id, [])
@@ -692,8 +700,11 @@ def step_problems(
             message = f"the row {word} of HOLDERS names no holder of a rule, or a rule or a step that is not there"
             found.append(Problem(ProblemKind.STALE_ENTRY, MODULE_PATH, 0, f"holder {word}", message))
     for rule in sorted(registry.rules.values(), key=lambda rule: rule.line):
-        if rule.held_by is not None and rule.held_by not in HOLDERS:
-            message = f"the rule {rule.id} has the holder {rule.held_by}, and HOLDERS of {MODULE_PATH} gives it no row"
+        if rule.held_by is not None and holding_of(rule.held_by, registry) is None:
+            message = (
+                f"the rule {rule.id} has the holder {rule.held_by}, which is no rule of the registry, and "
+                f"HOLDERS of {MODULE_PATH} gives it no row"
+            )
             entity = f"holder {rule.held_by}"
             found.append(Problem(ProblemKind.NO_CLASS, rule_registry.REGISTRY_PATH, rule.line, entity, message))
     return found

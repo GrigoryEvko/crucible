@@ -384,7 +384,7 @@ def ledger_row(row: str, name: str, ledgers: str | None = None) -> tuple[str, st
     """
     directory = ledgers if ledgers is not None else os.environ.get(LEDGERS_ENV)
     ledger = cost_meter.ledger_file(row, directory)
-    found, shown, _ = cost_budget.row_of(row, cost_meter.ITEM_NAME, ledger, name)
+    found, shown, _ = cost_budget.row_of(row, "", cost_meter.ITEM_NAME, ledger, name)
     return None if found is None else (f"{shown}:{found.line}", found.reason, found.value)
 
 
@@ -651,9 +651,10 @@ def launched_program(command: list[str]) -> str | None:
 def read_budget() -> dict[str, float]:
     """Read the limit of each rule of the launcher from the registry, or give none when it cannot be read."""
     try:
-        return cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
+        limits = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
     except (OSError, ValueError):
         return {}
+    return {rule: kinds[""] for rule, kinds in limits.items() if "" in kinds}
 
 
 def safely[T](action: Callable[[], T], fallback: T) -> T:

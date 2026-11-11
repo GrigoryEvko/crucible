@@ -1,5 +1,5 @@
-# A sentinel includes a header of include/other, a layer with no held rule.  The rule gives one error of the kind
-# input at the header.
+# A sentinel includes a header of include/other, a layer that the rule has no limit for.  The rule gives one error of
+# the kind input at the header.
 format 1
 kind x86_64-debug-asan
 file system.h size=1000

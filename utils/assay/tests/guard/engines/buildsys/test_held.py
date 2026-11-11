@@ -93,7 +93,7 @@ def routing_cases(expect: testing.Expect) -> None:
     step_rule = rule_registry.planted_rules(planted_rows)["planted-step"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), BUILD_HEAD)
-        expect("a rule with no holder is refused", is_refused(tree_rule("compile-memory"), context))
+        expect("a rule with no holder is refused", is_refused(tree_rule("header-alone"), context))
         expect("a holder with no judge in the witness is refused", is_refused(step_rule, context))
 
 
@@ -108,11 +108,15 @@ def rule_holder_cases(expect: testing.Expect) -> None:
         + "deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Base.cpp.o | "
         + "test/layer/checks/fixy/Base.cpp system.h include/fixy/Base.h\n"
     )
+    planted_rows = [
+        rule_registry.measured_rule("planted-layer", 6.5, "MB").replace("held-by=loop-gauge", "held-by=header-alone")
+    ]
+    layer_rule = rule_registry.planted_rules(planted_rows)["planted-layer"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
-        found = held.held_findings(tree_rule("header-alone-fixy"), context_of(Path(scratch), rows))
+        found = held.held_findings(layer_rule, context_of(Path(scratch), rows))
         expect(
-            "a header of 6.7 MB alone gives the error of the holder header-alone for the layer fixy",
-            len(found) == 1 and found[0].check == "header-alone" and "header-alone-fixy" in found[0].message,
+            "a header of 6.7 MB alone gives the error of the holder header-alone for the kind fixy",
+            len(found) == 1 and found[0].check == "header-alone" and "of the kind fixy" in found[0].message,
         )
 
 

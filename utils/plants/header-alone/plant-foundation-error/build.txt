@@ -1,4 +1,4 @@
-# A header of include/foundation includes 3.6 MB alone, more than the limit 3.5 MB of header-alone-foundation.  The
+# A header of include/foundation includes 3.6 MB alone, more than the limit 3.5 MB of the kind foundation.  The
 # header is less than the limit of fixy, and the rule gives one error.
 format 1
 kind x86_64-debug-asan

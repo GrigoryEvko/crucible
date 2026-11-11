@@ -49,11 +49,13 @@ THE KIND AND THE ENTITY
 
 THE MEASURED RULES
     A measured rule of utils/registry.txt gives the limit and the unit of a
-    quantity (assay.core.registry).  read_budgets() reads the measured rules,
-    and classify() compares one value with one rule through verdict() of
-    assay.core.budget.  A value that is equal to the limit does not exceed
-    it.  A shell script gets the limit of one rule with `loop budget --limit
-    RULE`.
+    quantity, or one limit for each kind of item (assay.core.registry).
+    read_budgets() reads the measured rules with one limit, budget_of() gives
+    the limit of one kind, and classify() compares one value with one limit
+    through verdict() of assay.core.budget.  A value that is equal to the
+    limit does not exceed it.  A shell script gets the limit of one rule with
+    `loop budget --limit RULE`, or of one kind with `loop budget --limit
+    RULE:KIND`.
 
 `guard selftest core.report` does a test of the module.
 """
@@ -146,12 +148,16 @@ class Finding:
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """The limit of one measured rule.  The unit is its display text, such as "G instructions"."""
+    """The limit of one kind of item of a measured rule.  The unit is its display text, such as "G instructions".
+
+    `kind` is "" for a rule with one limit.
+    """
 
     check: str
     limit: float
     unit: str
     meaning: str
+    kind: str = ""
 
 
 def escape_data(text: str) -> str:
@@ -222,13 +228,15 @@ def unit_text(unit: str) -> str:
 
 
 def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
-    """Read the measured rules of the registry.
+    """Read the measured rules of the registry with one limit.
+
+    A rule with one limit for each kind of item has no entry: budget_of() gives the limit of one kind.
 
     Args:
         path: The registry
 
     Returns:
-        The limit of each measured rule, by its ID
+        The limit of each measured rule with one limit, by its ID
 
     Raises:
         ValueError: If a row of the registry does not obey its schema (the error names the line)
@@ -238,18 +246,40 @@ def read_budgets(path: Path = REGISTRY) -> dict[str, Budget]:
         registry = rule_registry.load(path, str(path))
     except rows_grammar.RowsError as problem:
         raise ValueError(str(problem)) from None
-    return {rule.id: budget_of(rule) for rule in registry.rules.values() if rule.threshold is not None}
+    return {
+        rule.id: budget_of(rule)
+        for rule in registry.rules.values()
+        if rule.threshold is not None and rule.threshold.kinds == ("",)
+    }
 
 
-def budget_of(rule: rule_registry.Rule) -> Budget:
-    """Return the limit of one measured rule, with the display text of its unit.
+def budget_of(rule: rule_registry.Rule, kind: str = "") -> Budget:
+    """Return the limit of one kind of item of a measured rule, with the display text of its unit.
+
+    Args:
+        rule: The rule
+        kind: The kind of the item, or "" for a rule with one limit
 
     Raises:
-        ValueError: If the rule has no limit
+        ValueError: If the rule has no limit, or no limit of the kind
     """
     if rule.threshold is None:
         raise ValueError(f"the rule {rule.id} has no limit and unit")
-    return Budget(rule.id, rule.threshold.limit, unit_text(rule.threshold.unit), rule.refuses)
+    limit = rule.threshold.limit_of(kind)
+    if limit is None:
+        raise ValueError(
+            f"the rule {rule.id} has no limit of the kind {kind or '-'}.  Its kinds are "
+            f"{', '.join(item or '-' for item in rule.threshold.kinds)}"
+        )
+    return Budget(rule.id, limit, unit_text(rule.threshold.unit), rule.refuses, kind)
+
+
+def limits_text(threshold: rule_registry.Threshold) -> str:
+    """Return the limits of a measured rule as words, such as "110 G" or "compile 4, link 1, test 1.5 GB"."""
+    if threshold.kinds == ("",):
+        return f"{threshold_text(threshold.limit)} {threshold.unit}"
+    shown = ", ".join(f"{kind} {threshold_text(limit)}" for kind, limit in threshold.limits)
+    return f"{shown} {threshold.unit}"
 
 
 def classify(value: float, budget: Budget) -> Level | None:
@@ -452,6 +482,16 @@ def self_test() -> int:
         expect("below the limit: none", classify(1.5, row) is None)
         expect("at the limit: none", classify(2.0, row) is None)
         expect("above the limit: error", classify(2.1, row) == "error")
+        table.write_text(rule_registry.planted([rule_registry.measured_rule("gamma", {"compile": 4, "test": 1.5},
+                                                                            "GB", "a memory")]), encoding="utf-8")
+        gamma = rule_registry.load(table, str(table)).rules["gamma"]
+        expect("read_budgets gives no entry of a rule with one limit for each kind", "gamma" not in read_budgets(table))
+        expect("budget_of gives the limit of one kind, with the kind",
+               budget_of(gamma, "test") == Budget("gamma", 1.5, "GB", "a memory", "test"))
+        refuses("budget_of refuses a kind that the rule does not have", lambda: budget_of(gamma, "link"))
+        refuses("budget_of refuses the kind '' of a rule with one limit for each kind", lambda: budget_of(gamma))
+        expect("limits_text gives each kind",
+               gamma.threshold is not None and limits_text(gamma.threshold) == "compile 4, test 1.5 GB")
         alpha = rule_registry.measured_rule("alpha", 2, "s")
         for name, row_text in (("a word limit", alpha.replace("limit=2", "limit=two")),
                                ("a missing limit", alpha.replace(" limit=2", "")),
@@ -517,9 +557,11 @@ def self_test() -> int:
            found_row == 0 and printed.getvalue().strip().isdigit())
     with contextlib.redirect_stderr(io.StringIO()):
         expect("--limit fails for a missing rule", print_limit("no-such-check") == 1)
+        expect("--limit fails for a kind that the rule does not have", print_limit("header-constexpr-ops:test") == 1)
 
     expect("no measured rule of the repository registry judges a time",
-           not any(row.unit == "s" for row in budgets.values()))
+           not any(rule.threshold.unit == "s" for rule in rule_registry.load().measured().values()
+                   if rule.threshold is not None))
     expect("a finding keeps its kind and its entity, and its text does not show them",
            Finding("error", "a.py", 3, "alpha", "m", "regex-call", "f()").text() == "a.py:3: error: [alpha] m")
     refuses("Finding refuses a kind with a space", lambda: Finding("error", "p", 1, "alpha", "m", "a b"))
@@ -554,31 +596,37 @@ def threshold_text(value: float) -> str:
 
 
 def print_limit(check: str) -> int:
-    """Print the limit of one measured rule of the registry, for a shell script.
+    """Print the limit of one measured rule of the registry, or of one kind of item of it, for a shell script.
 
     Args:
-        check: The ID of the rule
+        check: The ID of the rule, or RULE:KIND for a rule with one limit for each kind of item
 
     Returns:
-        0 when the registry has the measured rule, else 1
+        0 when the registry has the limit, else 1
     """
+    rule_id, _, kind = check.partition(":")
     try:
-        budget = read_budgets().get(check)
+        rule = rule_registry.load(REGISTRY).rules.get(rule_id)
     except (OSError, ValueError) as exc:
         print(f"loop budget: the registry cannot be read: {exc}", file=sys.stderr)
         return 1
-    if budget is None:
-        print(f"loop budget: the registry {REGISTRY} has no measured rule {check}", file=sys.stderr)
+    if rule is None or rule.threshold is None:
+        print(f"loop budget: the registry {REGISTRY} has no measured rule {rule_id}", file=sys.stderr)
+        return 1
+    try:
+        budget = budget_of(rule, kind)
+    except ValueError as problem:
+        print(f"loop budget: {problem}.  Give RULE:KIND", file=sys.stderr)
         return 1
     print(threshold_text(budget.limit))
     return 0
 
 
 def main(argv: list[str]) -> int:
-    """Run the self-test, or print one limit (`loop budget --limit RULE`).
+    """Run the self-test, or print one limit (`loop budget --limit RULE[:KIND]`).
 
     Args:
-        argv: --self-test, or --limit RULE
+        argv: --self-test, or --limit RULE, or --limit RULE:KIND
 
     Returns:
         The exit status of the mode, or 2 on a usage error
@@ -587,5 +635,5 @@ def main(argv: list[str]) -> int:
         return self_test()
     if len(argv) == 2 and argv[0] == "--limit":
         return print_limit(argv[1])
-    print("usage: loop budget --limit RULE | guard selftest core.report", file=sys.stderr)
+    print("usage: loop budget --limit RULE[:KIND] | guard selftest core.report", file=sys.stderr)
     return 2
