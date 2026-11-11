@@ -1,7 +1,7 @@
 // One shared library with an initial-exec thread-local block of
 // STATIC_TLS_BLOCK_BYTES bytes, for the run-time witness of the rule static-tls
 // in test_process_wide_across_libraries.cpp.  The build makes two libraries from
-// this file.  The block of the control holds the error threshold of the rule.
+// this file.  The block of the control holds the limit of the rule.
 // The block of the plant is larger than the static TLS that glibc keeps free.
 //
 // An initial-exec access makes the dynamic loader put the full TLS block of the

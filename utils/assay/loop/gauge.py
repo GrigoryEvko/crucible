@@ -95,8 +95,8 @@ THE MEASURED RULE
 
 THE REPORT
     The report prints each finding in the format of utils/assay/core/report.py,
-    at the path of the edited header.  With --warnings-dir, each rule writes
-    its warnings to DIR/RULE.txt.  With --record FILE, the gauge appends the
+    at the path of the edited header.  The rule gives no warning, so
+    --warnings-dir writes no file.  With --record FILE, the gauge appends the
     result as one JSON line to FILE.  The gauge judges that record with
     judged_record().  A record of a different run then gives the same
     findings.  read_records() reads the lines of such a file, and the witness

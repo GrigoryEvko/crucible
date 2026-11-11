@@ -18,7 +18,7 @@ namespace eff = ::fixy;
 namespace {
 
 // Each function holds one group of cases, so that no function of the test
-// is larger than the warning threshold of the rule function-size.
+// is larger than the limit of the rule function-size.
 void single_thread_cases() {
     auto* ring = new crucible::TraceRing();
 

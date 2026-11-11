@@ -162,7 +162,7 @@ void test_the_reader_sees_the_claim(const Library& writer, const Library& reader
 
 // The run-time witness of the rule static-tls.  The control and the plant come
 // from one source file, and only the size of their initial-exec block is
-// different.  The block of the control holds the error threshold of the rule,
+// different.  The block of the control holds the limit of the rule,
 // and it loads after the writer and the reader.  The block of the plant is
 // larger than the static TLS that glibc keeps free, and dlopen refuses it.  The
 // two sizes are the only difference, so the test does not read the text of
@@ -170,7 +170,7 @@ void test_the_reader_sees_the_claim(const Library& writer, const Library& reader
 void test_static_tls_holds_the_rule_threshold() {
     const Library control{STATIC_TLS_CONTROL_PATH, false};
     require(control.handle != nullptr,
-            "a library whose initial-exec block holds the error threshold of the rule static-tls loads after the "
+            "a library whose initial-exec block holds the limit of the rule static-tls loads after the "
             "writer and the reader");
     const Library plant{STATIC_TLS_PLANT_PATH, false};
     require(plant.handle == nullptr,

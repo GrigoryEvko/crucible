@@ -26,7 +26,7 @@ using crucible::canopy::RgaList;
 using crucible::canopy::VectorClockSnapshot;
 
 // Each function holds the cases of one replicated type, so that no function
-// of the test is larger than the warning threshold of the rule function-size.
+// of the test is larger than the limit of the rule function-size.
 void gset_cases() {
     static_assert(Crdt<GSet<int, 8>>);
     static_assert(Crdt<OrSet<int, std::uint64_t, 8>>);
