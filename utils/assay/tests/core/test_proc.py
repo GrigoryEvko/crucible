@@ -613,6 +613,14 @@ def import_cases(expect: Callable[[str, bool], None]) -> None:
     )
 
 
+def job_count_cases(expect: Callable[[str, bool], None]) -> None:
+    """Check that `loop jobs` prints DEFAULT_JOBS and refuses an argument (main(), THE JOB COUNT)."""
+    status, said = testing.captured(lambda: proc.main([]))
+    expect("main() prints DEFAULT_JOBS", status == 0 and said == f"{proc.DEFAULT_JOBS}\n")
+    status, said = testing.captured(lambda: proc.main(["extra"]))
+    expect("main() refuses an argument with the status 2", status == 2 and "usage: loop jobs" in said)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -639,6 +647,7 @@ def main(argv: list[str]) -> int:
     environment_cases(expect)
     pidfd_failure_cases(expect)
     import_cases(expect)
+    job_count_cases(expect)
     if failures:
         print(f"tests.core.test_proc: FAILED, {len(failures)} case(s) did not hold")
         return 1

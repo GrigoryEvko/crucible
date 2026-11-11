@@ -68,6 +68,7 @@ SUBCOMMANDS = {
     "fixture": ("assay.loop.fixture.store", None),
     "stamps": ("assay.loop.stamps", None),
     "budget": ("assay.core.report", None),
+    "jobs": ("assay.core.proc", None),
 }
 
 if __name__ == "__main__":

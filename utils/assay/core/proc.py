@@ -136,10 +136,11 @@ THE JOB COUNT
     DEFAULT_JOBS is the one default count of the parallel work of the package.
     That work is a build, a test run, a parse build and the compiles of a
     measure.  The count is the number of CPUs that the process can use
-    (os.process_cpu_count()), or 1 when Python cannot read it.  A build runs
-    no more compiles than the depth of the Ninja pool compile
-    (cmake/JobPools.cmake), also with a larger -j N.  A heavy step of a gate
-    or an entry decreases its jobs to the free memory (assay.loop.heavy).
+    (os.process_cpu_count()), or 1 when Python cannot read it.  `loop jobs`
+    prints the count (main()), and cmake/JobPools.cmake gives it to the Ninja
+    pool compile at each configure.  A build then runs no more compiles than
+    the count, also with a larger -j N.  A heavy step of a gate or an entry
+    decreases its jobs to the free memory (assay.loop.heavy).
 
 WHY THE MODULE IMPORTS LITTLE
     loop fixture runs for each negative fixture of each test run, and it
@@ -892,3 +893,18 @@ def child_environment(env: dict[str, str] | None) -> dict[str, str]:
     if env is None:
         return environment()
     return {name: value for name, value in env.items() if name not in REPOSITORY_VARIABLES}
+
+
+def main(argv: list[str]) -> int:
+    """Print DEFAULT_JOBS for cmake/JobPools.cmake (`loop jobs`, THE JOB COUNT).
+
+    Returns:
+        0, or 2 when the call gives an argument
+    """
+    import sys
+
+    if argv:
+        print("usage: loop jobs", file=sys.stderr)
+        return 2
+    print(DEFAULT_JOBS)
+    return 0
