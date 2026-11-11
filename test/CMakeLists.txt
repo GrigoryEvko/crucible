@@ -4986,7 +4986,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.meta.test_package guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_types
-        guard.engines.plugin.test_counted guard.engines.plugin.test_quarantine_lines
+        guard.engines.plugin.test_counted
         loop.derive.test_walk_units loop.derive.test_header_lists
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax

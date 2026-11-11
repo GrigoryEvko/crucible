@@ -65,10 +65,9 @@ THE MOVED LINES
     One removed line makes at most one added line a moved line.  The texts
     are then a multiset.  An added line takes a removed line of its own file
     first.  Else it takes a removed line of a different file, the first in
-    the sorted sequence of the paths.  moves_of() gives the moved lines of
-    each file, and each pair of files (A, B) where the change moved a line
-    from A to B.  The rule quarantine-lines and the ledger writers read them
-    (THE MOVE of assay.core.ledger).  Moves.base is the
+    the sorted sequence of the paths.  moves_of() gives each pair of files
+    (A, B) where the change moved a line from A to B.  The ledger writers
+    read these pairs (THE MOVE of assay.core.ledger).  Moves.base is the
     commit of the base of the diff.  base_file() reads a file at that
     commit, such as a ledger before the change (THE LEDGER BEFORE THE
     CHANGE of assay.core.ledger).
@@ -198,10 +197,6 @@ class Hunk:
     new_start: int
     new_count: int
 
-    def adds(self, line: int) -> bool:
-        """Tell if the block adds the line LINE of the new file."""
-        return self.new_start <= line < self.new_start + self.new_count
-
 
 @dataclass(frozen=True, slots=True)
 class Status:
@@ -238,21 +233,16 @@ class FileDiff:
 
 @dataclass(frozen=True, slots=True)
 class Moves:
-    """The moves of a change: the moved files (THE MOVES) and the moved lines (THE MOVED LINES).
+    """The moves of a change: the moved files (THE MOVES) and the files of the moved lines (THE MOVED LINES).
 
-    `renamed` gives the path at the base of each moved file, by its new path.  `lines` gives the moved lines of
-    each file by its new path.  `flows` holds each pair (A, B) where the change moved a line from the file A at the
-    base to the file B.  `base` is the commit of the base, or None with no base.
+    `renamed` gives the path at the base of each moved file, by its new path.  `flows` holds each pair (A, B) where
+    the change moved a line from the file A at the base to the file B.  `base` is the commit of the base, or None with
+    no base.
     """
 
     renamed: Mapping[str, str] = field(default_factory=dict)
-    lines: Mapping[str, frozenset[int]] = field(default_factory=dict)
     flows: frozenset[tuple[str, str]] = frozenset()
     base: str | None = None
-
-    def is_moved(self, path: str, line: int) -> bool:
-        """Tell if the change moved the line LINE of the file PATH (THE MOVED LINES)."""
-        return line in self.lines.get(path, frozenset())
 
 
 def run_any_exit(root: Path, *arguments: str, stdin: bytes = b"", extra: Mapping[str, str] | None = None,
@@ -565,7 +555,7 @@ def file_diffs(
 
 
 def moves_of(diffs: Sequence[FileDiff]) -> Moves:
-    """Return the moved files and the moved lines of the diffs of a change (THE MOVES and THE MOVED LINES).
+    """Return the moved files and the files of the moved lines of the diffs of a change (THE MOVES, THE MOVED LINES).
 
     Complexity: O(n log n) for the n removed and added lines.
     """
@@ -582,27 +572,24 @@ def moves_of(diffs: Sequence[FileDiff]) -> Moves:
             for line, text in item.added:
                 if key := text.strip():
                     added.setdefault(key, []).append((item.new_path, line, item.old_path))
-    lines: dict[str, set[int]] = {}
     flows: set[tuple[str, str]] = set()
     for key, places in added.items():
         pool = removed.get(key)
         if not pool:
             continue
-        others: list[tuple[str, int]] = []
-        for path, line, own in sorted(places, key=lambda place: (place[0], place[1])):
+        others: list[str] = []
+        for path, _, own in sorted(places, key=lambda place: (place[0], place[1])):
             if own is not None and pool[own] > 0:
                 pool[own] -= 1
-                lines.setdefault(path, set()).add(line)
                 if own != path:
                     flows.add((own, path))
             else:
-                others.append((path, line))
+                others.append(path)
         sources = iter(sorted(source for source, count in pool.items() for _ in range(count)))
-        for (path, line), source in zip(others, sources):
-            lines.setdefault(path, set()).add(line)
+        for path, source in zip(others, sources):
             if source != path:
                 flows.add((source, path))
-    return Moves(renamed, {path: frozenset(found) for path, found in lines.items()}, frozenset(flows))
+    return Moves(renamed, frozenset(flows))
 
 
 def diff_moves(root: Path, base: str, revision: str | None = None, paths: Sequence[str] = ()) -> Moves:

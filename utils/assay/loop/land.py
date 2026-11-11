@@ -141,11 +141,11 @@ THE BATCH
     an earlier request of the batch changes waits for the next batch, with
     each request after it.
 
-    The rule quarantine-lines of the gate judges the hunks of the full change
-    of the batch.  It keys a removed finding on its file (assay.guard.engines.plugin.quarantine_lines).
-    With no C++ file in two requests, the judgment of the batch is the judgment of each request alone.
-    Then a hunk of one request that removes a finding cannot admit a finding
-    of a different request.
+    The gate judges the full change of the batch.  A counted ledger, such as
+    the ledger of the rule quarantine, keys each count on its file.  With no
+    C++ file in two requests, the judgment of the batch is the judgment of
+    each request alone.  Then a fall of one request in a file cannot pay for
+    a rise of a different request in that file.
 
     The gate builds and tests the last commit one time (THE GATE).  The
     candidate of the gate is that commit, with the commit that the batch

@@ -135,12 +135,8 @@ THE RUN OF A CONFIGURATION
     tree is then the commit on its first parent (assay.core.git, THE
     CHANGE).  The suite does not get the variable CRUCIBLE_CHANGE_BASE,
     because a self-test plants repositories of its own, and the variable
-    names no commit of them.  A batch of more than one request has more than
-    one commit (assay.loop.land).  The rule quarantine-lines of the suite
-    then judges only the last commit.  For such a landing, the gate runs `guard check
-    --rule quarantine-lines --build-dir BUILD` again, with the variable set
-    to the commit that the composition started from.  `loop
-    syntax --changed` gets the variable too.  Each check of the gate runs in
+    names no commit of them.  `loop syntax --changed` gets the variable, with
+    the commit that the composition started from.  Each check of the gate runs in
     one heavy step (assay.loop.heavy), with the lock of the repository of
     the landing.  The step reads the memory one time, and the memory gives
     the jobs of the step (THE JOBSERVER).  The landing holds the session of
@@ -165,8 +161,7 @@ THE RUN OF A CONFIGURATION
          a time.  A test that is red alone too rejects the commit.
          An exit other than 0 with no red test rejects the commit too.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
-         kind, such as the tests guard_plugin (with the rule
-         quarantine-lines) and guard_artifact_symbols.
+         kind, such as the tests guard_plugin and guard_artifact_symbols.
          A second run of these checks gives no new verdict.  A test that gives
          a skip does not reject the commit, and the gate writes its name.
          A red test that runs alone writes its output to its log.
@@ -385,8 +380,6 @@ LEDGER_PREFIX = "utils/ledgers/"
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
-# The rule that judges the full change of a landing with two commits again (THE RUN OF A CONFIGURATION).
-STACKED_RULE = "quarantine-lines"
 # The engines and the policies of a counted rule (THE COUNTED RULES).
 COUNTED_ENGINES = frozenset({rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF})
 COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT})
@@ -880,7 +873,6 @@ class Gate:
         move_tree(self.root, self.tree, candidate.commit)
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
-        is_stacked = candidate.commit != candidate.head and git.parent(self.tree, candidate.commit) != candidate.head
         others: tuple[Configuration, ...] = ()
         counted: dict[str, tuple[str, ...]] = {}
         is_each = True
@@ -919,9 +911,7 @@ class Gate:
                 jobserver.connected(server.path) as client,
             ):
                 flags = {jobserver.VARIABLE: server.makeflags}
-                step = Step(
-                    self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs, counted, is_stacked
-                )
+                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs, counted)
                 if is_each:
                     step.always_ready.set()
 
@@ -972,7 +962,7 @@ class Step:
     """The work of one heavy step of a check: its commands, its threads, its stop event and the locks of its rules.
 
     `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
-    the base of the change (THE RUN OF A CONFIGURATION).  `jobs` is the job count of the heavy step and of its
+    the base of the change for the writes (THE FALLS).  `jobs` is the job count of the heavy step and of its
     jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).  `kept`
     receives each row that a rule of `--keep` raised (THE KEPT ROWS).
     """
@@ -988,7 +978,6 @@ class Step:
         "counted",
         "environment",
         "gate",
-        "is_stacked",
         "jobs",
         "kept",
         "stop",
@@ -1003,7 +992,6 @@ class Step:
         client: jobserver.Client,
         jobs: int,
         counted: Mapping[str, Sequence[str]],
-        is_stacked: bool,
     ) -> None:
         """Keep the gate, the candidate, the environments, the jobserver client, the jobs and the counted rules."""
         self.gate = gate
@@ -1013,7 +1001,6 @@ class Step:
         self.client = client
         self.jobs = jobs
         self.counted = counted
-        self.is_stacked = is_stacked
         self.stop = threading.Event()
         self.always_ready = threading.Event()
         self.kept: list[str] = []
@@ -1369,10 +1356,7 @@ class Step:
         if configuration.is_parse:
             return self.run_parse(configuration, self.counted), ()
         words = self.gate.loop_words(run, is_retry or is_again)
-        problems, red = self.run_objects(configuration, words, is_again)
-        if self.is_stacked and not problems:
-            problems = self.checked(configuration, (STACKED_RULE,), self.based)
-        return problems, red
+        return self.run_objects(configuration, words, is_again)
 
     def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:
         """Run one configuration in the thread of the caller, and give its outcome (THE THREADS, THE STOP).

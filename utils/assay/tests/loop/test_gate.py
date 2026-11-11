@@ -562,10 +562,10 @@ def run_cases(expect: testing.Expect) -> None:
 
         verdict, _ = testing.captured(run_stacked)
         expect(
-            "two commits run quarantine-lines again with the base of the change, and the suite gets no base",
+            "the suite of two commits gets no base of the change either, and no rule runs again",
             verdict.is_accepted
             and (build / "base.txt").read_text(encoding="utf-8") == "-"
-            and (build / "checks.txt").read_text(encoding="utf-8") == f"quarantine-lines {commit}\n",
+            and not (build / "checks.txt").exists(),
         )
 
 
@@ -978,7 +978,7 @@ def masked_error_cases(expect: testing.Expect) -> None:
         work = Path(work_text)
         planted = gate.Gate(work, work / "land", 2, False)
         with jobserver.connected(server.path) as client:
-            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2, {}, False)
+            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2, {})
 
             def work_of(index: int) -> int:
                 """Wait for the stop in the first item and give Stopped, and give an error in the second item."""

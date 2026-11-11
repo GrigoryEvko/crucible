@@ -1,4 +1,0 @@
-# The rule table of this plant.
-layer low 0 include/fixy/
-
-quarantine test/

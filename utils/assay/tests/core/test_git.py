@@ -208,21 +208,8 @@ def moved_line_cases(expect: Callable[[str, bool], None]) -> None:
         (root / "other.h").write_bytes(b"")
         moves = git.moves_of(git.file_diffs(root, base, with_new=True))
         expect(
-            "a line that moves to a new file with the same text, also with other white space, is a moved line",
-            moves.is_moved("part_a.h", 3) and moves.is_moved("part_a.h", 4),
-        )
-        expect(
-            "each removed copy pays for one added copy: two removed copies of a text pay for two added copies",
-            moves.is_moved("part_b.h", 3) and moves.is_moved("part_b.h", 4),
-        )
-        expect("a line with a text that no removed line has is not moved", not moves.is_moved("part_b.h", 5))
-        expect(
-            "a line whose text the first file keeps is not moved, such as the pragma of a new part",
-            not moves.is_moved("part_a.h", 1) and not moves.is_moved("part_b.h", 1),
-        )
-        expect("a blank line is no moved line", not moves.is_moved("part_a.h", 2))
-        expect(
-            "the flows give each pair of files where the change moved a line",
+            "the flows give each pair of files where the change moved a line, also with other white space, and two "
+            "removed copies of a text in two files pay for two added copies",
             moves.flows == {("split.h", "part_a.h"), ("split.h", "part_b.h"), ("other.h", "part_b.h")},
         )
         expect("a new file is not a moved file", moves.renamed == {})
@@ -230,7 +217,7 @@ def moved_line_cases(expect: Callable[[str, bool], None]) -> None:
         changed = git.moves_of(git.file_diffs(root, base, with_new=True))
         expect(
             "a line whose text the change also changed is not moved, and gives no flow",
-            not changed.is_moved("part_b.h", 3) and ("split.h", "part_b.h") not in changed.flows,
+            ("split.h", "part_b.h") not in changed.flows,
         )
 
 
@@ -370,10 +357,6 @@ def file_change_cases(expect: Callable[[str, bool], None]) -> None:
             git.hunk_of("@@ -3 +4,0 @@ int x;") == git.Hunk(3, 1, 4, 0)
             and git.hunk_of("@@@ -1 +1 @@") is None
             and git.hunk_of("+++ b/a.cpp") is None,
-        )
-        expect(
-            "Hunk.adds holds each added line",
-            git.Hunk(3, 1, 3, 2).adds(4) and not git.Hunk(3, 1, 3, 2).adds(5) and not git.Hunk(10, 0, 10, 0).adds(10),
         )
 
 

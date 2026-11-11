@@ -1,6 +1,0 @@
-# The rule table of this plant.
-layer low 0 include/fixy/
-
-allow low <vector>
-
-quarantine test/
