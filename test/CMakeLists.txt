@@ -4751,13 +4751,14 @@ crucible_script_test(NAME plugin_declarations_self_test
 # site, and the ledger of the rule with its refused kinds.
 crucible_script_test(NAME plugin_home_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_home)
-# plugin_names_self_test — the rules that read the names of the source
-# (utils/assay/guard/engines/plugin/names.py): the scope of a rule, and the
-# rows of its ledger with no reason.
-crucible_script_test(NAME plugin_names_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_names)
+# plugin_owners_self_test — the rule owners of the engine plugin
+# (utils/assay/guard/engines/plugin/owners.py), which reads the names of the
+# source through utils/assay/guard/engines/plugin/names.py: the counted lines,
+# the rows of its ledger with no reason, and the rows of a refused kind.
+crucible_script_test(NAME plugin_owners_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.guard.engines.plugin.test_owners)
 set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_test
-    plugin_declarations_self_test plugin_home_self_test plugin_names_self_test
+    plugin_declarations_self_test plugin_home_self_test plugin_owners_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
