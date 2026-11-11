@@ -20,10 +20,9 @@ heavy and light rows from a measure (assay.loop.derive.header_costs).  The
 cite rows give the rule refined-pre-subsumption, and the grant rows give the
 rule syscall-grant-coverage.  The witness rows give the rule witness-roster and
 the negative fixtures that `loop derive witness-fixtures` writes
-(assay.loop.derive.witness_fixtures).  The owner rows give the rules
-start-lifetime, syscall-capability, ctx-init-door, ctx-testing-boundary,
-detail-namespace and no-unchecked-access, and the syscall rows give the system
-calls of the rule syscall-capability.  For the same rule, the primitive rows
+(assay.loop.derive.witness_fixtures).  The owner rows give the rules owners
+and syscall-capability, and the syscall rows give the system calls of the rule
+syscall-capability.  For the same rule, the primitive rows
 give the raw system call primitive of the base.  The deny rows give the system
 calls that the base does not issue raw.
 """
@@ -111,15 +110,11 @@ CELLS_MESSAGE = (
     "a row has at most one cell: the reason of an admit row, a home row, an owner row or a syscall row, or the measure "
     "of a heavy or a light row.  Only a witness row has two cells"
 )
-# The rules of the family owner of the plugin (utils/tools/quarantine/owner.cpp) that the owner rows name.  Each rule
-# gives one kind to a use that is not at a site of its owner row.
+# The rules of the family owner of the plugin (utils/tools/quarantine/owner.cpp) that the owner rows name, and the
+# kinds of each rule that an owner row can give to a use that is not at a site of the row.
 OWNER_KINDS = {
-    "start-lifetime": "lifetime-start",
-    "syscall-capability": "outside-door",
-    "ctx-init-door": "door-use",
-    "ctx-testing-boundary": "testing-use",
-    "detail-namespace": "detail-use",
-    "no-unchecked-access": "unchecked-use",
+    "owners": ("lifetime-start", "door-use", "testing-use", "detail-use", "unchecked-use"),
+    "syscall-capability": ("outside-door",),
 }
 # The errors of an owner row and of a syscall row that do not obey the format of their words.  rule_table.cpp gives
 # the same texts.
@@ -466,10 +461,9 @@ def parse_owner(args: list[str], reason: str, number: int, where: str) -> Owner:
         raise TableError(f"{where}: {OWNER_FORMAT}")
     rule, kind, entity = args[0], args[1], args[2]
     if rule not in OWNER_KINDS:
-        raise TableError(f"{where}: the rule {rule} is no rule of the family owner; the rules are start-lifetime, "
-                         f"syscall-capability, ctx-init-door, ctx-testing-boundary, detail-namespace and "
-                         f"no-unchecked-access")
-    if kind != OWNER_KINDS[rule]:
+        raise TableError(f"{where}: the rule {rule} is no rule of the family owner; the rules are owners and "
+                         f"syscall-capability")
+    if kind not in OWNER_KINDS[rule]:
         raise TableError(f"{where}: the kind {kind} is no kind of a use outside the sites of an owner row of the rule "
                          f"{rule}")
     if not is_qualified_name(entity):

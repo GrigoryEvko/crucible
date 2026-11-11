@@ -82,7 +82,7 @@ public:
     // trivially copyable: std::bit_cast refuses to stamp a raw integer
     // with a source, and -Wclass-memaccess refuses a memcpy into one.
     // The annotation on the class refuses the checked lifetime start over
-    // bytes, and the rule start-lifetime of the quarantine plugin refuses
+    // bytes, and the rule owners of the quarantine plugin refuses
     // the raw one.
     constexpr ClockSource(const ClockSource&) = default;
     constexpr ClockSource(ClockSource&&) = default;

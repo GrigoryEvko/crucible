@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row names the call of the plant, and no row
+# can admit the kind lifetime-start.
+format 1
+rule owners
+src/start.cpp | lifetime-start | 1 | planted::view(void*): std::start_lifetime_as | a planted reason

@@ -40,7 +40,7 @@
 // does not include <memory>.  It gives the same guarantee with a builtin and
 // the barrier of libstdc++.  The comment on start_as_array tells how.
 //
-// The rule start-lifetime of the quarantine plugin refuses each use of the two
+// The rule owners of the quarantine plugin refuses each use of the two
 // library functions in a file that a build compiles, other than this header.
 // New code uses start_as_array.
 

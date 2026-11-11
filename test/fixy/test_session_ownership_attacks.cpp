@@ -462,7 +462,7 @@ static_assert(!BuiltFromBytes<BX>, "a copy of a Borrowed by bytes is a second lo
 // A token and a loan keep a trivial move constructor, so the ABI passes
 // them in a register, and that makes them and a marker that holds one
 // implicit-lifetime types.  Their annotation no_start_over_bytes refuses
-// the checked lifetime start, and the rule start-lifetime refuses
+// the checked lifetime start, and the rule owners refuses
 // std::start_lifetime_as in the tree.
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<fp::Permission<X>>);
 static_assert(!std::is_implicit_lifetime_v<fp::perm_mint_key>);

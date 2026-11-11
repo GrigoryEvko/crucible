@@ -1154,7 +1154,7 @@ foundation_neg_compile_test(neg_read_view_host_door_closed
 # share and a loan keep a trivial move constructor, so the ABI passes them
 # in a register, and a user-provided assignment refuses std::bit_cast.
 # That trivial constructor makes them implicit-lifetime: the rule
-# start-lifetime refuses std::start_lifetime_as in the tree, and their
+# owners refuses std::start_lifetime_as in the tree, and their
 # annotation no_start_over_bytes refuses the checked lifetime start.
 foundation_neg_compile_test(neg_permission_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::permissions::Permission<.*Region"

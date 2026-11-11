@@ -1,0 +1,8 @@
+// A quarantined unit that starts the lifetime of an int in a buffer.
+#include <memory>
+
+namespace planted {
+
+int* view(void* bytes) { return std::start_lifetime_as<int>(bytes); }
+
+}  // namespace planted

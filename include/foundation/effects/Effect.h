@@ -373,8 +373,8 @@ private:
 // translation unit that holds neither cannot forge a context.  The init
 // owner and the background owner each have a door.  A new entry point
 // that calls a door must have a row of the kind init or background, for
-// the door that it calls, in utils/ledgers/ctx-init-door.txt.  The rule
-// ctx-init-door reads that file.
+// the door that it calls, in utils/ledgers/owners.txt.  The rule owners
+// reads that file.
 //
 // The factory is constexpr so a friended caller can build a context
 // during constant evaluation.
@@ -425,8 +425,8 @@ namespace host {
 // door.
 //
 // The door is a static member, so the name of the owner is in each call.
-// The rule ctx-init-door of the quarantine plugin rejects a call of the door
-// outside the process entry points that utils/ledgers/ctx-init-door.txt admits.
+// The rule owners of the quarantine plugin rejects a call of the door
+// outside the process entry points that utils/ledgers/owners.txt admits.
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
         return mint_context<Init>(detail::ctx_mint::init_key{});
@@ -443,8 +443,8 @@ struct InitOwner final {
 // Bg, Alloc, IO and Block, so the foreground thread must never hold one: its
 // hot path would then claim the right to block.  The door is a static
 // member, so the name of the owner is in each call, and the rule
-// ctx-init-door of the quarantine plugin rejects a call outside the thread
-// entry points that utils/ledgers/ctx-init-door.txt admits.
+// owners of the quarantine plugin rejects a call outside the thread
+// entry points that utils/ledgers/owners.txt admits.
 struct BackgroundOwner final {
     [[nodiscard]] static constexpr Bg mint_background_context() noexcept {
         return mint_context<Bg>(detail::ctx_mint::bg_key{});

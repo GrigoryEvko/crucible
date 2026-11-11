@@ -852,7 +852,7 @@ public:
     // token drops that token with no door.
     //
     // The trivial move constructor makes the token an implicit-lifetime
-    // type.  The rule start-lifetime refuses std::start_lifetime_as in the
+    // type.  The rule owners refuses std::start_lifetime_as in the
     // tree, and the annotation no_start_over_bytes refuses the checked
     // lifetime start of foundation/Lifetime.h.
     constexpr Permission(Permission&&) noexcept = default;

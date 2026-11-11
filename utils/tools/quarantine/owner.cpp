@@ -683,7 +683,7 @@ void build_owner_index() {
     }
     owner_index.is_ready = true;
     for (const OwnerRow& row : state.table.owners) {
-        if (reads_spelled_names(row.rule)) {
+        if (reads_spelled_names(row.kind)) {
             continue;
         }
         std::size_t last = row.entity.rfind("::");
@@ -900,7 +900,7 @@ bool is_at_site(const OwnerRow& row, const Place& place, tree function) {
 void check_owner_rows(const std::string& entity, const std::string& shape, location_t location, tree function) {
     Place place;
     for (const OwnerRow& row : state.table.owners) {
-        if (row.entity != entity || reads_spelled_names(row.rule)) {
+        if (row.entity != entity || reads_spelled_names(row.kind)) {
             continue;
         }
         if (place.file == nullptr) {
@@ -1079,7 +1079,7 @@ void check_owned_call(tree call, location_t location, tree function) {
     if (tree name = unresolved_callee_name(callee); name != NULL_TREE && owner_index.last_names.count(name) != 0) {
         for (const OwnerRow& row : state.table.owners) {
             std::size_t last = row.entity.rfind("::");
-            if (!reads_spelled_names(row.rule)
+            if (!reads_spelled_names(row.kind)
                 && (last == std::string::npos ? row.entity : row.entity.substr(last + 2)) == IDENTIFIER_POINTER(name)) {
                 check_owner_rows(row.entity, row.entity, location, function);
             }
@@ -1197,7 +1197,7 @@ struct FileRange {
 // namespace is never collected, so these lists and the cache of the
 // namespaces stay valid in the unit.
 struct NameRules {
-    bool has_rows = false;  // the table has a row of a rule that reads_spelled_names
+    bool has_rows = false;  // the table has a row of a kind that reads_spelled_names
     bool is_ready = false;  // build_name_rules made the lists
     std::vector<const OwnerRow*> rows;
     // The last name of the head of each row.  The table has a few such rows,
@@ -1208,7 +1208,7 @@ struct NameRules {
     std::vector<tree> head_names;
     unsigned long long head_name_bits = ~0ULL;
     tree detail = NULL_TREE;
-    const OwnerRow* unchecked_row = nullptr;  // the row of the rule no-unchecked-access, or null
+    const OwnerRow* unchecked_row = nullptr;  // the row of the kind unchecked-use, or null
     tree unchecked_name = NULL_TREE;
     std::string access_class;  // the class of the unchecked function, such as std::meta::access_context
     tree access_class_name = NULL_TREE;  // the last name of that class
@@ -1236,7 +1236,7 @@ struct NameRules {
     std::unordered_set<unsigned> unchecked_users_without_slot;
     bool has_unchecked_users = false;
     std::vector<tree> patterns;
-    // The TYPE_UID of a class and the DECL_UID of a head of a door rule, for
+    // The TYPE_UID of a class and the DECL_UID of a head of a door kind, for
     // each name of the head that an event gave while the parser read the
     // class.  A qualified friend is such a name (check_door_friends).
     std::unordered_set<unsigned long long> class_heads;
@@ -1315,11 +1315,11 @@ void make_name_rules() {
     name_rules.is_ready = true;
     name_rules.detail = get_identifier(kDetailName);
     for (const OwnerRow& row : state.table.owners) {
-        if (!reads_spelled_names(row.rule)) {
+        if (!reads_spelled_names(row.kind)) {
             continue;
         }
         name_rules.rows.push_back(&row);
-        if (row.rule == Rule::detail_namespace) {
+        if (row.kind == Kind::detail_use) {
             name_rules.has_detail_rows = true;
             push_unique(name_rules.head_names, name_rules.detail);
             continue;
@@ -1327,7 +1327,7 @@ void make_name_rules() {
         tree name = last_name_of(row.entity);
         push_unique(name_rules.head_names, name);
         std::size_t last = row.entity.rfind("::");
-        if (row.rule == Rule::no_unchecked_access && last != std::string::npos && name_rules.unchecked_row == nullptr) {
+        if (row.kind == Kind::unchecked_use && last != std::string::npos && name_rules.unchecked_row == nullptr) {
             name_rules.unchecked_row = &row;
             name_rules.unchecked_name = name;
             name_rules.access_class = row.entity.substr(0, last);
@@ -1360,9 +1360,16 @@ inline bool is_head_name(tree name) {
         && std::find(name_rules.head_names.begin(), name_rules.head_names.end(), name) != name_rules.head_names.end();
 }
 
-// The rule of a row whose uses the class walk and the declaration walk read:
+// The kind of a row whose uses the class walk and the declaration walk read:
 // a row whose head is a class or a namespace that a type can name.
-bool is_door_rule(Rule rule) { return rule == Rule::ctx_init_door || rule == Rule::ctx_testing_boundary; }
+bool is_door_kind(Kind kind) { return kind == Kind::door_use || kind == Kind::testing_use; }
+
+// True for the kinds that the row of the unchecked function gives.  A use of
+// such a kind that a macro body spells also counts at the expansion point.
+bool is_unchecked_kind(Kind kind) {
+    return kind == Kind::unchecked_use || kind == Kind::access_alias || kind == Kind::access_reflection
+        || kind == Kind::member_splice || kind == Kind::open_static_member || kind == Kind::walked_return;
+}
 
 // The declaration that an event names: the first function of an overload set,
 // a template, a namespace, a type or a variable, or null.
@@ -1396,15 +1403,14 @@ tree aliased_decl(tree decl) {
 }
 
 // The row whose head the declaration DECL is, with no cache, or null.  The
-// head of a row of the rule detail-namespace is each namespace named detail
-// inside the top namespace of the row, and the head of each other row is its
-// entity.
+// head of a row of the kind detail-use is each namespace named detail inside
+// the top namespace of the row, and the head of each other row is its entity.
 const OwnerRow* row_headed_by_name(tree decl) {
     bool is_detail = DECL_NAME(decl) == name_rules.detail && TREE_CODE(decl) == NAMESPACE_DECL
                   && DECL_NAMESPACE_ALIAS(decl) == NULL_TREE;
     std::string name;
     for (const OwnerRow* row : name_rules.rows) {
-        if (row->rule == Rule::detail_namespace) {
+        if (row->kind == Kind::detail_use) {
             tree top = is_detail ? top_namespace(decl) : NULL_TREE;
             if (top != NULL_TREE && top != decl && qualified_name(top) == row->entity) {
                 return row;
@@ -1533,7 +1539,7 @@ tree detail_head_of(tree ns) {
         return NULL_TREE;
     }
     const Held& held = facts_of(ns).held;
-    return held.row != nullptr && held.row->rule == Rule::detail_namespace ? held.head : NULL_TREE;
+    return held.row != nullptr && held.row->kind == Kind::detail_use ? held.head : NULL_TREE;
 }
 
 // The entry of the file of LOCATION, a location that no macro expansion
@@ -1567,9 +1573,9 @@ const FileEntry* ordinary_file_at(location_t location) {
 }
 
 // The shape of a use of the entity of HELD: the outermost detail namespace
-// for a row of the rule detail-namespace, and the entity of each other row.
+// for a row of the kind detail-use, and the entity of each other row.
 std::string shape_of(const Held& held) {
-    return held.row->rule == Rule::detail_namespace ? qualified_name(held.head) : held.row->entity;
+    return held.row->kind == Kind::detail_use ? qualified_name(held.head) : held.row->entity;
 }
 
 // The pattern of the instantiation FUNCTION, or FUNCTION itself.  A function
@@ -1612,9 +1618,9 @@ std::string name_holder_text(tree function, location_t location, bool is_macro_r
 // One use of the kind KIND with SHAPE at LOCATION, in the body of FUNCTION, or
 // in an initializer when FUNCTION is null.  A use at a site of ROW is none.  A
 // base file counts in its sentinel unit, and a late event counts in each unit
-// (is_late_event).  A use that the body of a macro of the rule
-// no-unchecked-access spells also counts at the expansion point of the macro,
-// in the scope of the expansion (THE NAMES OF THE SOURCE).
+// (is_late_event).  A use of a kind of the unchecked row (is_unchecked_kind)
+// that the body of a macro spells also counts at the expansion point of the
+// macro, in the scope of the expansion (THE NAMES OF THE SOURCE).
 void record_named(Kind kind, const OwnerRow* row, const std::string& shape, location_t location, tree function,
                   bool is_late) {
     Place place = owned_place(location);
@@ -1623,7 +1629,7 @@ void record_named(Kind kind, const OwnerRow* row, const std::string& shape, loca
         return;
     }
     add_finding(kind, nullptr, place, name_holder_text(function, location, true) + ": " + shape);
-    if (rule_of(kind) != Rule::no_unchecked_access || spelling_macro_of(location).empty()) {
+    if (!is_unchecked_kind(kind) || spelling_macro_of(location).empty()) {
         return;
     }
     Place outer = owned_place(linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr));
@@ -1726,9 +1732,9 @@ bool is_object_member(tree entity) {
 }
 
 // True when a use at LOCATION, a location that no macro expansion gives, is in
-// a file at a site of ROW, a row of the rule detail-namespace: such a use
-// never counts.  A row of that rule names no function, so its sites are files
-// only.  Complexity: O(1) for a location of the last line map.
+// a file at a site of ROW, a row of the kind detail-use: such a use never
+// counts.  A row of that kind names no function, so its sites are files only.
+// Complexity: O(1) for a location of the last line map.
 bool is_at_detail_site(const OwnerRow& row, location_t location) {
     const FileEntry* entry = ordinary_file_at(location);
     if (entry == nullptr || entry->file_class != FileClass::base) {
@@ -1785,7 +1791,7 @@ bool spells_name_at(location_t location, tree name) {
     return spelled.empty() || name == NULL_TREE || spelled == IDENTIFIER_POINTER(name);
 }
 
-// The head of a door rule whose namespace holds DECL directly, when the source
+// The head of a door kind whose namespace holds DECL directly, when the source
 // spells DECL with no qualifier at LOCATION: a member of the testing door after
 // a using-directive, such as bg().  A qualified use names the head itself.
 Held unqualified_door_member(tree decl, location_t location) {
@@ -1794,7 +1800,7 @@ Held unqualified_door_member(tree decl, location_t location) {
         return Held{};
     }
     const OwnerRow* row = row_headed_by(scope);
-    if (row == nullptr || !is_door_rule(row->rule) || !spells_name_at(location, DECL_NAME(decl))
+    if (row == nullptr || !is_door_kind(row->kind) || !spells_name_at(location, DECL_NAME(decl))
         || spelled_before_at(location) == ':') {
         return Held{};
     }
@@ -1810,19 +1816,18 @@ Held named_head(tree decl) {
         // A type alias of a detail type is a public name of the layer, or a
         // declaration that named the detail namespace where it stands.
         Held held = may_be_held(aliased) ? held_by(aliased) : Held{};
-        return held.row != nullptr && held.row->rule == Rule::detail_namespace && TREE_CODE(decl) != NAMESPACE_DECL
-                 ? Held{}
-                 : held;
+        return held.row != nullptr && held.row->kind == Kind::detail_use && TREE_CODE(decl) != NAMESPACE_DECL ? Held{}
+                                                                                                              : held;
     }
     if (const OwnerRow* row = row_headed_by(decl)) {
-        return row->rule == Rule::detail_namespace ? held_by(decl) : Held{row, decl};
+        return row->kind == Kind::detail_use ? held_by(decl) : Held{row, decl};
     }
     tree scope = CP_DECL_CONTEXT(decl);
     if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || !is_head_name(DECL_NAME(scope))) {
         return Held{};
     }
     const OwnerRow* row = row_headed_by(scope);
-    return row != nullptr && is_door_rule(row->rule) ? Held{row, scope} : Held{};
+    return row != nullptr && is_door_kind(row->kind) ? Held{row, scope} : Held{};
 }
 
 // The verdict of DECL at its first event (THE FIRST TEST): kVerdictUnchecked
@@ -1875,12 +1880,12 @@ void judge_name_use(tree decl, location_t location, bool is_unchecked) {
         held = unqualified_door_member(decl, location);
     }
     if (held.row != nullptr) {
-        if (is_ordinary && held.row->rule == Rule::detail_namespace && is_at_detail_site(*held.row, location)) {
+        if (is_ordinary && held.row->kind == Kind::detail_use && is_at_detail_site(*held.row, location)) {
             return;
         }
         if (spells_name_at(location, DECL_NAME(decl))) {
             record_held(held, "", location, current_function_decl, is_late_event());
-            if (current_class_type != NULL_TREE && is_door_rule(held.row->rule)) {
+            if (current_class_type != NULL_TREE && is_door_kind(held.row->kind)) {
                 name_rules.class_heads.insert(class_head_key(current_class_type, held.head));
             }
         }
@@ -2740,7 +2745,7 @@ void on_using_form(void* gcc_data, void*) {
     for (lkp_iterator candidate(targets); candidate; ++candidate) {
         tree target = *candidate;
         if (const OwnerRow* row = row_headed_by(target)) {
-            record_held(row->rule == Rule::detail_namespace ? held_by(target) : Held{row, target}, "", data->location,
+            record_held(row->kind == Kind::detail_use ? held_by(target) : Held{row, target}, "", data->location,
                         current_function_decl, is_late);
         }
         std::string access = access_name_of(target);
@@ -2752,7 +2757,7 @@ void on_using_form(void* gcc_data, void*) {
 }
 
 // The member of a class member access: a member of a class of a head of a door
-// rule, the unchecked function through an object, and a member that a splice
+// kind, the unchecked function through an object, and a member that a splice
 // designates.  A member of a class whose name and scope are no head costs two
 // tests of the bits of the head names, and the list of the member verdicts
 // keeps that verdict for each later access.
@@ -2787,7 +2792,7 @@ void on_using_form(void* gcc_data, void*) {
         return;
     }
     Held held = held_by(member);
-    if (held.row != nullptr && is_door_rule(held.row->rule)) {
+    if (held.row != nullptr && is_door_kind(held.row->kind)) {
         record_held(held, "", location, current_function_decl, is_late_event());
     }
 }
@@ -3250,7 +3255,7 @@ void record_declared_name(Kind kind, const OwnerRow* row, const std::string& sha
                 (pattern != NULL_TREE ? holder_signature(pattern) : std::string(kNoHolder)) + ": " + shape);
 }
 
-// A friend of the class TYPE that is the head of a door rule, or that its
+// A friend of the class TYPE that is the head of a door kind, or that its
 // namespace holds: `friend struct InitOwner;` names the door with no lookup
 // that an event gives.  The front end keeps no place of a friend
 // declaration, so the finding stands at the class.  A head that an event
@@ -3265,7 +3270,7 @@ void check_door_friends(tree type) {
         }
         tree friend_decl = befriended != NULL_TREE && TYPE_P(befriended) ? TYPE_MAIN_DECL(befriended) : NULL_TREE;
         Held held = friend_decl != NULL_TREE ? held_by(friend_decl) : Held{};
-        if (held.row != nullptr && is_door_rule(held.row->rule)
+        if (held.row != nullptr && is_door_kind(held.row->kind)
             && name_rules.class_heads.count(class_head_key(type, held.head)) == 0) {
             record_declared_name(held.row->kind, held.row, kFriendPrefix + shape_of(held), DECL_SOURCE_LOCATION(decl),
                                  NULL_TREE);
@@ -3536,7 +3541,7 @@ plugin_callback_func direct_callback(Direct callback) {
 }
 
 // Registers the events of THE FOLDED NAMES, and the other events of THE NAMES
-// OF THE SOURCE when the table has a row of a rule that reads them.  A unit
+// OF THE SOURCE when the table has a row of a kind that reads them.  A unit
 // with no such row pays no other event.
 void register_owner(const char* plugin_name) {
     for (int code = 0; code < MAX_TREE_CODES; ++code) {
@@ -3552,7 +3557,7 @@ void register_owner(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type_names, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_parse_function_folded, nullptr);
     for (const OwnerRow& row : state.table.owners) {
-        name_rules.has_rows = name_rules.has_rows || reads_spelled_names(row.rule);
+        name_rules.has_rows = name_rules.has_rows || reads_spelled_names(row.kind);
     }
     if (!name_rules.has_rows) {
         return;

@@ -1,0 +1,210 @@
+# The ledger of the rule owners: the reviewed uses of a name in a file that the owner row of the
+# name does not give as a site.
+# A row PATH | KIND | N | HOLDER: SHAPE | REASON admits N uses of the kind KIND in the file PATH.
+# HOLDER is the function that holds the use, with the types of its parameters, "macro NAME" for a
+# use that a macro body spells, or namespace-scope.  SHAPE is the name or the shape of the use.
+# Each row gives a reason, and a reviewer writes it.
+#   door-use      a use in production code of host::InitOwner, the owner of the init door, or of
+#                 host::BackgroundOwner, the owner of the background door.  Only a process entry
+#                 point, or the entry function of a background thread, names the owner
+#   testing-use   a use in production code of the testing door foundation::effects::testing, which
+#                 mints a context with no key.  A header can use it in its own self-test
+#   detail-use    a use of a detail namespace of foundation or fixy in a test file.  Only a file
+#                 under test/ and outside test/fuzz/ can have such a row
+#   unchecked-use, access-alias, access-reflection and member-splice
+#                 a reviewed reflection walk under std::meta::access_context::unchecked().  A row of
+#                 a walk has the value admit, and a file here gives its caller no reflection of a
+#                 member that a walk found
+# No row admits a finding of the kinds lifetime-start, open-static-member and walked-return.  The
+# rule does not count door-use and testing-use in test/ and bench/.  A count above its row fails,
+# and a row that admits more uses than the code has passes.  The landing gate lowers it.
+# `python3 utils/bin/guard explain owners` tells the rule.
+format 1
+rule owners
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 3 | namespace-scope: fixy::channels::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brand and the context of the witness of the endpoint are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 8 | namespace-scope: fixy::channels::swmr_session::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags and the brands of the witnesses of the single-writer session are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 14 | namespace-scope: fixy::concurrent::detail | the generated roster of the witness rows names each witness type of the rule table, and the tags, the brands and the stage functions of the witnesses of the channels and the stages are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::detail | the generated roster of the witness rows names each witness type of the rule table, and the probe region of the witness of the NUMA placement is in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: fixy::session::detail | the generated roster of the witness rows names each witness type of the rule table, and the handle core of the session layer is in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: foundation::algebra::detail | the generated roster of the witness rows names each witness type of the rule table, and the lattice of the witness of the graded wrapper is in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 6 | namespace-scope: foundation::effects::detail | the generated roster of the witness rows names each witness type of the rule table, and the context keys and the context base are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: foundation::fail_closed::detail | the generated roster of the witness rows names each witness type of the rule table, and the relation cells of the fail-closed relations are in this namespace
+@build/test/fixy/armed_roster/witness_roster.h | detail-use | 1 | namespace-scope: foundation::permissions::detail | the generated roster of the witness rows names each witness type of the rule table, and the row cell of the permissions is in this namespace
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::hash_member(const T0_0&): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::pack_member(const T0_0&): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | member-splice | admit | crucible::detail_reflect::print_member(const T0_0&, FILE*): member splice | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::hash_member(const T0_0&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::member_count(): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::pack_member(const T0_0&): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Reflect.h | unchecked-use | admit | crucible::detail_reflect::print_member(const T0_0&, FILE*): std::meta::access_context::unchecked | walks every member of a type for reflect_hash and reflect_print
+include/crucible/Vigil.h | door-use | 1 | crucible::Vigil::Vigil(crucible::Vigil::Config): foundation::effects::host::InitOwner | the constructor loads the scheduler-switch program for the deadline watchdog, and that load waits in the kernel for the verifier.
+include/fixy/Atom.h | unchecked-use | admit | fixy::atom::detail::atom_refusal_of_(std::meta::info): std::meta::access_context::unchecked | walks the atom namespaces and an owner's members to derive the atom roster
+include/fixy/Atom.h | unchecked-use | admit | fixy::atom::detail::every_atom_in_is_rostered_(): std::meta::access_context::unchecked | walks the atom namespaces and an owner's members to derive the atom roster
+include/fixy/Bands.h | unchecked-use | admit | fixy::detail::every_tier_has_an_alias(): std::meta::access_context::unchecked | walks the band namespace to derive the band roster
+include/fixy/Corpus.h | unchecked-use | admit | fixy::corpus::detail::non_none_policy_count_(): std::meta::access_context::unchecked | walks the secret-policy namespace to derive the corpus of policies
+include/fixy/Predicates.h | unchecked-use | admit | fixy::detail::refined_edge_walk::every_edge_holds(): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/Predicates.h | unchecked-use | admit | fixy::refined::has_base_class(std::meta::info): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/Predicates.h | unchecked-use | admit | fixy::refined::steps_from(std::meta::info, std::meta::info): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/ScopedView.h | unchecked-use | admit | fixy::detail::sv_reaches_view_(std::meta::info): std::meta::access_context::unchecked | finds a view stored in a private member, so a class cannot hide an escape
+include/fixy/SelfContained.h | access-reflection | admit | fixy::detail::self_contained::declared_by_the_standard(std::meta::info): std | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | member-splice | admit | fixy::equal_by_members(const T0_0&, const T0_0&): member splice | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::declares_only_defaulted_equality(std::meta::info): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::first_outside_reach(std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | unchecked-use | admit | fixy::detail::self_contained::first_uncomparable(std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/SelfContained.h | unchecked-use | admit | fixy::equal_by_members(const T0_0&, const T0_0&): std::meta::access_context::unchecked | walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/atoms/Os.h | unchecked-use | admit | fixy::atom::detail::every_class_in_is_tag_(): std::meta::access_context::unchecked | walks the OS atom namespaces to derive their rosters
+include/fixy/atoms/Os.h | unchecked-use | admit | fixy::atom::detail::tag_count_in_(std::meta::info): std::meta::access_context::unchecked | walks the OS atom namespaces to derive their rosters
+include/fixy/collision/Report.h | unchecked-use | admit | fixy::collision::detail::every_live_entry_is_implemented_(): std::meta::access_context::unchecked | walks the members of rules_of<void> to derive the collision rule set
+include/fixy/collision/Report.h | unchecked-use | admit | fixy::collision::detail::every_ok_member_has_a_verdict_row_(): std::meta::access_context::unchecked | walks the members of rules_of<void> to derive the collision rule set
+include/fixy/collision/Report.h | unchecked-use | admit | fixy::collision::detail::implemented_rule_count_(): std::meta::access_context::unchecked | walks the members of rules_of<void> to derive the collision rule set
+include/fixy/session/Classification.h | unchecked-use | admit | fixy::session::detail::has_protocol_member(std::meta::info): std::meta::access_context::unchecked | walks every member of a session payload to find a delegated handle or a permission
+include/fixy/session/Classification.h | unchecked-use | admit | fixy::session::detail::push_payload_parts(fixy::session::transition::stack<fixy::session::detail::PayloadNode>&, const fixy::session::detail::PayloadNode&): std::meta::access_context::unchecked | walks every member of a session payload to find a delegated handle or a permission
+include/fixy/session/Fold.h | unchecked-use | admit | fixy::session::transition::members_agree(std::meta::info, const fixy::session::transition::node_members&): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/fixy/session/Refinement.h | unchecked-use | admit | fixy::session::transition::detail::subsorts_within(std::meta::info, std::meta::info, std::meta::info, std::size_t): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/fixy/session/Registry.h | unchecked-use | admit | fixy::session::transition::check_registry(std::meta::info): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/fixy/session/Registry.h | unchecked-use | admit | fixy::session::transition::read_combinator(std::meta::info, std::meta::info): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/fixy/session/Registry.h | unchecked-use | admit | fixy::session::transition::read_payload_rule(std::meta::info, std::meta::info): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/fixy/session/Registry.h | unchecked-use | admit | fixy::session::transition::read_seal(std::meta::info, std::meta::info): std::meta::access_context::unchecked | walks a transition registry to derive its edges
+include/foundation/Lifetime.h | unchecked-use | admit | foundation::lifetime::detail::is_implicit_lifetime_throughout_at(std::meta::info, int): std::meta::access_context::unchecked | walks every base and member to prove that a type is an implicit-lifetime type
+include/foundation/contracts/ArmedRoster.h | unchecked-use | admit | foundation::contracts::detail::collect_predicates(std::meta::info, std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks a scope to derive the armed-predicate roster
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::base_count(std::meta::info): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::base_offset_at(std::meta::info, std::size_t): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::base_type_at(std::meta::info, std::size_t): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::member_count(std::meta::info): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::member_is_bit_field_at(std::meta::info, std::size_t): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::member_offset_at(std::meta::info, std::size_t): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/core/Scalar.h | unchecked-use | admit | foundation::core::detail::member_type_at(std::meta::info, std::size_t): std::meta::access_context::unchecked | walks every base and member, a private one too, to prove that decode can make a type from bytes and to check each bool and enumeration of it
+include/foundation/diag/Catalog.h | unchecked-use | admit | foundation::diag::detail::catalog_tags(): std::meta::access_context::unchecked | walks the diagnostic namespace to derive the catalog
+include/foundation/diag/FailClosed.h | unchecked-use | admit | foundation::fail_closed::detail::read_relation_(std::meta::info): std::meta::access_context::unchecked | walks a fail-closed relation's namespace to count and seal its edges
+include/foundation/diag/FailClosed.h | unchecked-use | admit | foundation::fail_closed::detail::walk_relation(std::meta::info): std::meta::access_context::unchecked | walks a fail-closed relation's namespace to count and seal its edges
+include/foundation/diag/FailClosed.h | unchecked-use | admit | foundation::fail_closed::every_class_in_has_edge(): std::meta::access_context::unchecked | walks a fail-closed relation's namespace to count and seal its edges
+include/foundation/effects/Ctx.h | testing-use | 2 | foundation::effects::testing::foreground(): foundation::effects::testing | gives the branded door of the foreground context through ForegroundWitness.  This is the definition site.
+include/foundation/effects/Ctx.h | testing-use | 4 | namespace-scope: foundation::effects::testing | declares ForegroundWitness, and friends the witness from the key of the foreground context and from the branded source.  This is the definition site.
+include/foundation/effects/Ctx.h | unchecked-use | admit | foundation::effects::is_exec_ctx(std::meta::info): std::meta::access_context::unchecked | reads the type and access of each member of an ExecCtx specialization to refuse a forged one
+include/foundation/effects/Effect.h | door-use | 2 | namespace-scope: foundation::effects::host::BackgroundOwner | declares the owner and makes it a friend of the background key.  This is the definition site.
+include/foundation/effects/Effect.h | door-use | 2 | namespace-scope: foundation::effects::host::InitOwner | declares the owner and makes it a friend of the init key.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::bg(): foundation::effects::testing | the factory bg() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::init(): foundation::effects::testing | the factory init() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 1 | foundation::effects::testing::test(): foundation::effects::testing | the factory test() of the door mints its context through TestWitness.  This is the definition site.
+include/foundation/effects/Effect.h | testing-use | 5 | namespace-scope: foundation::effects::testing | declares TestWitness, friends it from the three keys, and defines it.  This is the definition site.
+include/foundation/reflect/Hash.h | unchecked-use | admit | foundation::reflect::detail::carries_a_union(std::meta::info): std::meta::access_context::unchecked | walks every member of a type to fold its stable hash
+include/foundation/reflect/Hash.h | unchecked-use | admit | foundation::reflect::detail::carries_unreadable_part(std::meta::info): std::meta::access_context::unchecked | walks every member of a type to fold its stable hash
+include/foundation/reflect/RawEscape.h | unchecked-use | admit | foundation::reflect::detail::first_raw_escape_on_surface(std::meta::info): std::meta::access_context::unchecked | walks every base, a private one too, to find the members that a caller can name through a type
+include/foundation/reflect/TypeComponents.h | unchecked-use | admit | foundation::reflect::holds_unreadable_state(foundation::reflect::TypeNode): std::meta::access_context::unchecked | walks every base and member to list the component types of a type
+include/foundation/reflect/TypeComponents.h | unchecked-use | admit | foundation::reflect::member_components_of(foundation::reflect::TypeNode, foundation::reflect::SpecializationRead): std::meta::access_context::unchecked | walks every base and member to list the component types of a type
+src/BackgroundThread.cpp | door-use | 1 | crucible::BackgroundThread::Pipeline::BuildTraceFn(crucible::BackgroundThread::Pipeline::BuildWorkInput&&, fixy::concurrent::PermissionedSpscChannel<crucible::BackgroundThread::BgGraphPublish*, 64, crucible::detail::bg_pipeline::GraphPublishTag, foundation::permissions::<lambda()> >::ProducerHandle&&): foundation::effects::host::BackgroundOwner | the pipeline runs the build stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate trace graphs and to wait on the arena gate.
+src/BackgroundThread.cpp | door-use | 1 | crucible::BackgroundThread::Pipeline::MakeRegionFn(crucible::BackgroundThread::Pipeline::GraphPublishInput&&, crucible::BackgroundThread::Pipeline::BgSinkProducerHandle&&): foundation::effects::host::BackgroundOwner | the pipeline runs the publish stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate regions, to wait on the arena gate and to hand to the region callback.
+src/BackgroundThread.cpp | door-use | 1 | crucible::BackgroundThread::start(crucible::TraceRing*, crucible::MetaLog*, int32_t, int32_t, uint64_t): foundation::effects::host::BackgroundOwner | the lambda that start() gives to the pipeline thread is the entry function of that thread.  It takes the context once, on that thread, and hands it to run_in_row.
+test/fixy/rejections_generated.h | detail-use | 1 | namespace-scope: fixy::atom::detail | reads the atom roster that the generated rejections cover
+test/fixy/rejections_generated.h | detail-use | 2 | namespace-scope: fixy::detail | reads the refusal tier of each generated rejection
+test/fixy/row_hash_census.h | detail-use | 4 | namespace-scope: fixy::concurrent::detail | hashes the row of the stage fakes
+test/fixy/row_hash_census.h | detail-use | 3 | namespace-scope: fixy::detail | hashes the row of the mapping and view probes
+test/fixy/session_crash_attack.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/session_global_attack.h | detail-use | 1 | test_session_global_attack::check_generated(test_session_global_attack::FamilyCounts&, std::string_view, uint64_t): fixy::session::detail | reads the projection check of each role
+test/fixy/session_recording.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_armed_roster.cpp | detail-use | 1 | namespace-scope: fixy::channels::detail | names the armed predicate of the endpoint bridge
+test/fixy/test_armed_roster.cpp | detail-use | 46 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
+test/fixy/test_armed_roster.cpp | detail-use | 26 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages and the stage fakes
+test/fixy/test_armed_roster.cpp | detail-use | 11 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
+test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail | names each armed predicate of the fixy root
+test/fixy/test_armed_roster.cpp | detail-use | 6 | namespace-scope: fixy::mach::detail | names each armed predicate of the machine transitions
+test/fixy/test_armed_roster.cpp | detail-use | 10 | namespace-scope: fixy::session::detail | names each armed predicate of the session core and the crash walk
+test/fixy/test_armed_roster.cpp | detail-use | 24 | namespace-scope: fixy::session::global::detail | names each armed predicate of the global types, the live en-route walk too
+test/fixy/test_armed_roster.cpp | detail-use | 4 | namespace-scope: foundation::effects::detail | names each armed predicate of the effects layer
+test/fixy/test_armed_roster.cpp | detail-use | 8 | namespace-scope: foundation::permissions::detail | names each armed predicate of the permissions layer
+test/fixy/test_armed_roster.cpp | unchecked-use | admit | (anonymous namespace)::collect_relations(std::meta::info, std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | compares the armed-predicate roster with its own namespace walk
+test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_axis_has_a_name(): fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_axis_is_an_enumerator(): fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_atom.cpp | detail-use | 1 | (anonymous namespace)::every_atom_constructs_at_runtime(): fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_atom.cpp | detail-use | 4 | (anonymous namespace)::every_forgery_is_refused_at_runtime(): fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_atom.cpp | detail-use | 59 | namespace-scope: fixy::atom::detail | tests the roster and lift helpers of the atoms
+test/fixy/test_cheat_probe.cpp | unchecked-use | admit | algebra_declares_a_decoupling_template(): std::meta::access_context::unchecked | walks the algebra namespace to prove that no cheat is admitted
+test/fixy/test_collision.cpp | detail-use | 15 | namespace-scope: fixy::collision::detail | tests each collision predicate on its own
+test/fixy/test_contexts.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | pins each context witness to the context it stands for
+test/fixy/test_forgeable_proofs.cpp | detail-use | 1 | main(): foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp | detail-use | 23 | namespace-scope: foundation::effects::detail | walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::audit_unions(std::meta::info, forgeable_proofs::UnionAudit&): std::meta::access_context::unchecked | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::collect_class_templates(std::meta::info, std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::collect_forgeable(std::meta::info, std::vector<std::meta::info, std::allocator<std::meta::info> >&): std::meta::access_context::unchecked | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::holds_proof_at(std::meta::info, int): std::meta::access_context::unchecked | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::is_proof_shape_at(std::meta::info, int): std::meta::access_context::unchecked | walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_fp_polynomial.cpp | detail-use | 1 | (anonymous namespace)::box_muller_pair_matches_the_pin(): fixy::fp::detail | reads the pinned Box-Muller pair of the polynomial header
+test/fixy/test_os_numa_placement.cpp | detail-use | 1 | (anonymous namespace)::policy_at(void*): fixy::detail | sizes a probe mask with the node-mask constants of the layer
+test/fixy/test_os_numa_placement.cpp | detail-use | 2 | namespace-scope: fixy::detail | sizes a probe mask with the node-mask constants of the layer
+test/fixy/test_os_sched.cpp | detail-use | 2 | (anonymous namespace)::deadline_door_reaches_the_kernel(): fixy::sched::detail | calls the deadline door, which no mint reaches without CAP_SYS_NICE, and puts back SCHED_OTHER through the policy door
+test/fixy/test_os_time.cpp | detail-use | 1 | (anonymous namespace)::ptp_reader_refuses_what_it_cannot_stamp(): fixy::time::detail | checks the PTP clock-id helper, which no door reaches without a device
+test/fixy/test_owned_mmap.cpp | detail-use | 1 | namespace-scope: fixy::atom::detail | uses the sample leak rationale as a leak atom
+test/fixy/test_payload_row.cpp | detail-use | 3 | namespace-scope: fixy::concurrent::detail | pins the list of payload families that carry a row
+test/fixy/test_refined.cpp | detail-use | 1 | namespace-scope: fixy::detail | runs the edge walk of the sealed implication relation
+test/fixy/test_refined.cpp | unchecked-use | admit | (anonymous namespace)::rule_count(): std::meta::access_context::unchecked | walks the admitted implications to check the sealed relation
+test/fixy/test_row_hash_wrappers.cpp | detail-use | 3 | (anonymous namespace)::test_every_role_is_off_the_zero_slot(): fixy::detail | counts the reflected roles
+test/fixy/test_row_hash_wrappers.cpp | detail-use | 3 | namespace-scope: fixy::corpus::detail | hashes the row of a secret carrier
+test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::count_length_policies(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster
+test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::count_policy_tags_in_namespace(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster
+test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::every_policy_declassifies(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster
+test/fixy/test_session_async_channel.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_bridges.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_crash_stop.cpp | detail-use | 5 | namespace-scope: fixy::session::detail | walks the crash projection helpers
+test/fixy/test_session_crash_stop.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_entry.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_global_crash.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::chain_link_has_no_padding_byte(): fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
+test/fixy/test_session_handle.cpp | detail-use | 2 | (anonymous namespace)::channel_claim_names_no_holder(): fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::move_token_through_session(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::polling_channel_waits_without_a_false_deadlock(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_forked_channel(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_loop_with_permission_set(): fixy::session::detail | pins the loop frames and the forms of a loop context of the session handle
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_loop_with_permission_set(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_test_channel(): foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::walk_with_session(): fixy::session::detail | pins the loop frames and the forms of a loop context of the session handle
+test/fixy/test_session_handle.cpp | detail-use | 24 | namespace-scope: fixy::session::detail | pins the loop frames and the forms of a loop context of the session handle
+test/fixy/test_session_handle_attacks.cpp | detail-use | 3 | namespace-scope: fixy::session::detail | builds the forked head type that the attack uses
+test/fixy/test_session_handle_attacks.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_node_members.cpp | detail-use | 2 | (anonymous namespace)::every_global_instance_is_claimed(): fixy::session::global::detail | walks the node reader of the global types
+test/fixy/test_session_node_members.cpp | detail-use | 1 | (anonymous namespace)::every_registered_combinator_has_an_instance(): fixy::session::detail | walks the node reader of the session layer and the combinators of its registry
+test/fixy/test_session_node_members.cpp | detail-use | 2 | (anonymous namespace)::every_session_instance_is_claimed(): fixy::session::detail | walks the node reader of the session layer and the combinators of its registry
+test/fixy/test_session_node_members.cpp | detail-use | 2 | namespace-scope: fixy::session::detail | walks the node reader of the session layer and the combinators of its registry
+test/fixy/test_session_ownership_attacks.cpp | detail-use | 2 | namespace-scope: fixy::session::detail | reads the payload refusal of the ownership check
+test/fixy/test_session_payload_seal.cpp | detail-use | 8 | namespace-scope: fixy::session::detail | specializes each gate and cache cell of the payload walk to show that no verdict changes
+test/fixy/test_session_rollback.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_subtype_reason.cpp | detail-use | 1 | namespace-scope: fixy::session::detail | pins the bound of the async subtype search
+test/fixy/test_session_wire_word.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_splice_access_attacks.cpp | member-splice | admit | splice_access_attacks::a_splice_forges_a_count(): member splice | the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_splice_access_attacks.cpp | member-splice | admit | splice_access_attacks::a_splice_forges_a_stamp(): member splice | the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_splice_access_attacks.cpp | unchecked-use | admit | splice_access_attacks::a_splice_forges_a_count(): std::meta::access_context::unchecked | the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_splice_access_attacks.cpp | unchecked-use | admit | splice_access_attacks::a_splice_forges_a_stamp(): std::meta::access_context::unchecked | the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_tagged.cpp | detail-use | 4 | namespace-scope: fixy::detail | uses the retag policy probes of the sealed retag relation
+test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::edges_in_family(std::meta::info): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
+test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::entering_source(std::meta::info): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
+test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::every_edge_moves_a_value(): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_trait_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::lattice_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_algebra_core.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | runs the fixtures of the algebra headers
+test/foundation/test_computation.cpp | detail-use | 4 | (anonymous namespace)::computation_graded_runs_at_run_time(): foundation::effects::detail | pins the graded capabilities of the computation carrier
+test/foundation/test_computation.cpp | detail-use | 1 | main(): foundation::effects::detail | pins the graded capabilities of the computation carrier
+test/foundation/test_computation.cpp | detail-use | 25 | namespace-scope: foundation::effects::detail | pins the graded capabilities of the computation carrier
+test/foundation/test_ctx.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | builds a context from a context witness
+test/foundation/test_effects_core.cpp | detail-use | 13 | namespace-scope: foundation::effects::detail | pins the mint key of each context, and builds a lookalike on the context base
+test/foundation/test_host_owner_attacks.cpp | detail-use | 4 | namespace-scope: foundation::effects::detail | pins that no mint key has a default constructor or a trivial copy
+test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::chain_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
+test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::clock_source_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
+test/foundation/test_lattices_bands.cpp | detail-use | 1 | (anonymous namespace)::product_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the chain, product and clock lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::bool_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::conf_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::fractional_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::monotone_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::qtt_semiring_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::seq_prefix_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::staleness_semiring_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_lattices_core.cpp | detail-use | 1 | (anonymous namespace)::trust_lattice_runs_at_run_time(): foundation::algebra::lattices::detail | runs the fixtures of the core lattice headers
+test/foundation/test_permissions_compile.cpp | detail-use | 1 | (anonymous namespace)::test_perm_set_compile(): foundation::permissions::detail | runs the permission-set smoke namespace
+test/foundation/test_platform.cpp | detail-use | 2 | main(): foundation::detail | asks the layer whether a debugger is attached
+test/foundation/test_row_hash.cpp | detail-use | 16 | namespace-scope: foundation::diag::detail | tests the sort helper of the row hash
+test/foundation/test_row_mismatch.cpp | detail-use | 3 | (anonymous namespace)::test_message_builder_format_shape(): foundation::diag::detail | reads the text of a row mismatch diagnostic
+test/layer/checks/fixy/Predicates.cpp | unchecked-use | admit | fixy::detail::refined_edge_walk::narrowing_edge_count(): std::meta::access_context::unchecked | walks the admitted implications to count the narrowing edges of the relation
+test/layer/checks/fixy/Secret.cpp | unchecked-use | admit | fixy::detail::secret_policy_relation::every_edge_is_a_policy_exit(): std::meta::access_context::unchecked | walks the admitted declassification policies to check that each edge is a policy exit
+test/layer/checks/foundation/permissions/Permission.cpp | unchecked-use | admit | foundation::permissions::detail::seplog_roster::every_canonical_tag_is_sound(): std::meta::access_context::unchecked | walks the permission tag namespace to check that each canonical tag is a sound token
+test/padding_bytes.h | unchecked-use | admit | crucible::test::member_type(std::meta::info, std::string_view): std::meta::access_context::unchecked | walks every base and member of a type, a private one too, to count the bits that hold a value, and gives a test the type of a private member
+test/padding_bytes.h | unchecked-use | admit | crucible::test::padding_detail::collect_value_bits(std::meta::info, std::size_t, std::vector<std::pair<long unsigned int, long unsigned int>, std::allocator<std::pair<long unsigned int, long unsigned int> > >&): std::meta::access_context::unchecked | walks every base and member of a type, a private one too, to count the bits that hold a value, and gives a test the type of a private member
+utils/tools/crucible_hwprobe.cpp | door-use | 1 | main(int, char**): foundation::effects::host::BackgroundOwner | the one-shot hardware probe runs no dispatch thread, so its main thread is its only thread, and the ledger store it drives reads and writes a file and waits on the disk.

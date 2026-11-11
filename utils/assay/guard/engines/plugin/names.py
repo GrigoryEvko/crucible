@@ -1,18 +1,19 @@
 """The rules that read the names of the source: the finding lines of one rule in its scope, and the rows of its ledger.
 
 THE NAMES OF THE SOURCE
-    The quarantine plugin reads the events of the parser for the rules
-    ctx-init-door, ctx-testing-boundary, detail-namespace and
-    no-unchecked-access (utils/tools/quarantine/owner.cpp, THE NAMES OF THE
-    SOURCE).  Each finding line of such a rule is one use, at the position of
+    The quarantine plugin reads the events of the parser for the kinds
+    door-use, testing-use, detail-use and the kinds of the unchecked row of
+    the rule owners (utils/tools/quarantine/owner.cpp, THE NAMES OF THE
+    SOURCE).  Each finding line of such a kind is one use, at the position of
     the name.  Its entity is `HOLDER: SHAPE` (THE PLACE AND THE ENTITY of
-    owner.cpp).
+    owner.cpp).  The rules owners and door-unit use this module.
 
 THE SCOPE
     `scoped_errors()` keeps the lines of a file in the scope of the rule.  The
     row of the rule in utils/registry.txt gives the scope
-    (assay.guard.engines.plugin.declarations, THE SCOPE).  Each line in the
-    scope gives one error, and the ledger of the rule judges it.  Each problem
+    (assay.guard.engines.plugin.declarations, THE SCOPE).  A rule can also
+    give a filter of the lines, such as a scope for some kinds.  Each kept
+    line gives one error, and the ledger of the rule judges it.  Each problem
     of the census of the runner is an error too.
 
 THE REASONS
@@ -56,11 +57,13 @@ def scoped_errors(
     rule: rule_registry.Rule,
     message: Callable[[plugin_sections.Finding], str],
     row_check: Callable[[rule_ledger.Ledger], list[check_report.Finding]] | None = None,
+    is_kept: Callable[[plugin_sections.Finding], bool] | None = None,
 ) -> list[check_report.Finding]:
-    """Return each problem of the census, one error for each line of the rule in its scope, and each row error.
+    """Return each problem of the census, one error for each kept line of the rule in its scope, and each row error.
 
     `row_check` gives the errors of the rows of a rule with more limits than a reason, such as a path that the rule
-    refuses.  A ledger that cannot be read gives no row error here: the judgement of the ledger reports it.
+    refuses.  `is_kept` gives the lines in the scope that the rule counts, and None keeps each one.  A ledger that
+    cannot be read gives no row error here: the judgement of the ledger reports it.
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -71,6 +74,7 @@ def scoped_errors(
     found += [
         check_report.Finding("error", item.file, item.line, rule.id, message(item), item.kind, item.entity)
         for item in declarations.lines_of(rule, context)
+        if is_kept is None or is_kept(item)
     ]
     try:
         rows = rule_ledger.read(rule, context.root)

@@ -51,8 +51,8 @@ namespace detail {
 void text_literal_has_no_terminating_zero() noexcept;
 void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 
-// The doors of the base to the parts of a text.  The detail-namespace
-// guard keeps each caller outside the base out.
+// The doors of the base to the parts of a text.  The rule owners keeps
+// each caller outside the base out.
 [[nodiscard]] constexpr char const* text_first_(TextView text) noexcept;
 [[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
 [[nodiscard]] constexpr CText c_text_over_(char const* first, std::size_t size) noexcept;

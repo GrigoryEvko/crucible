@@ -12,10 +12,8 @@
 //         library.cpp      the library entities and the admitted list
 //         owner.cpp        the family owner: each named reference of the code,
 //                          the names that the front end folds (THE FOLDED
-//                          NAMES), and the rules start-lifetime,
-//                          syscall-capability, ctx-init-door,
-//                          ctx-testing-boundary, detail-namespace and
-//                          no-unchecked-access
+//                          NAMES), and the rules owners and
+//                          syscall-capability
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
@@ -298,25 +296,15 @@
 //     THE NAMES OF THE SOURCE) read where the code uses an entity.  A finding
 //     of such a rule is an error only in the mode error, no opt-out region
 //     covers it, and the module of its rule judges it against the ledger of
-//     the rule (is_family_kind).  The rule start-lifetime:
-//     lifetime-start        a use of an entity of an owner row of the rule
+//     the rule (is_family_kind).  The rule owners:
+//     lifetime-start        a use of an entity of an owner row of the kind
 //                           outside the sites of the row
-//     The rule syscall-capability:
-//     raw-syscall           a call of a system call of a syscall row, or a call
-//                           of syscall() with the number of a macro SYS_NAME,
-//                           in a file of the claim trees
-//     outside-door          a use of an entity of an owner row of the rule
-//                           outside the sites of the row
-//     The rule ctx-init-door:
 //     door-use              a name, a friend or a declared type of the owner
 //                           of the init door or of the background door
-//     The rule ctx-testing-boundary:
 //     testing-use           a name, a friend or a declared type of the testing
 //                           door
-//     The rule detail-namespace:
 //     detail-use            a name of a detail namespace of a layer, and code
 //                           in such a namespace, outside the files of the layer
-//     The rule no-unchecked-access:
 //     unchecked-use         a use of access_context::unchecked
 //     access-alias          a using-declaration, an alias or a typedef of the
 //                           class of access_context
@@ -328,6 +316,12 @@
 //                           member of a class of include/
 //     walked-return         a function that uses unchecked and returns a member
 //                           of a class that a walk found
+//     The rule syscall-capability:
+//     raw-syscall           a call of a system call of a syscall row, or a call
+//                           of syscall() with the number of a macro SYS_NAME,
+//                           in a file of the claim trees
+//     outside-door          a use of an entity of an owner row of the rule
+//                           outside the sites of the row
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -675,12 +669,8 @@ enum class Rule : std::uint8_t {
     refined_pre_subsumption,
     syscall_grant_coverage,
     home,
-    start_lifetime,
+    owners,
     syscall_capability,
-    ctx_init_door,
-    ctx_testing_boundary,
-    detail_namespace,
-    no_unchecked_access,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -733,9 +723,10 @@ enum class Kind : std::uint8_t;
 // One owner row of the family owner (owner.cpp, THE OWNER ROWS): a use of
 // ENTITY stands only at a site of the row, and each other use is the kind KIND
 // of the rule RULE.  The entity is a qualified name, or the name of a function
-// of the global namespace.  The entity of a row of the rule detail-namespace
-// is a top namespace, and each namespace named detail inside it is the entity
-// (owner.cpp, THE NAMES OF THE SOURCE).
+// of the global namespace.  The entity of a row of the kind detail-use is a
+// top namespace, and each namespace named detail inside it is the entity
+// (owner.cpp, THE NAMES OF THE SOURCE).  The kind of the row selects what the
+// family reads, and the rule RULE gives no more selection.
 struct OwnerRow {
     Rule rule = Rule::syscall_capability;
     Kind kind{};
@@ -912,18 +903,10 @@ inline const char* rule_name(Rule rule) {
             return "syscall-grant-coverage";
         case Rule::home:
             return "home";
-        case Rule::start_lifetime:
-            return "start-lifetime";
+        case Rule::owners:
+            return "owners";
         case Rule::syscall_capability:
             return "syscall-capability";
-        case Rule::ctx_init_door:
-            return "ctx-init-door";
-        case Rule::ctx_testing_boundary:
-            return "ctx-testing-boundary";
-        case Rule::detail_namespace:
-            return "detail-namespace";
-        case Rule::no_unchecked_access:
-            return "no-unchecked-access";
         case Rule::library_records:
             return "library-records";
     }
@@ -931,15 +914,15 @@ inline const char* rule_name(Rule rule) {
 }
 
 // The rules of the family owner, in the order of the enumeration.
-inline constexpr Rule kOwnerRules[] = {Rule::start_lifetime,       Rule::syscall_capability, Rule::ctx_init_door,
-                                       Rule::ctx_testing_boundary, Rule::detail_namespace,   Rule::no_unchecked_access};
+inline constexpr Rule kOwnerRules[] = {Rule::owners, Rule::syscall_capability};
 
-// True when the rule reads the names that the source spells, from the events
-// of the parser (owner.cpp, THE NAMES OF THE SOURCE).  Each other rule of the
-// family owner reads the calls of the walk of a body (THE OWNER ROWS).
-inline bool reads_spelled_names(Rule rule) {
-    return rule == Rule::ctx_init_door || rule == Rule::ctx_testing_boundary || rule == Rule::detail_namespace
-        || rule == Rule::no_unchecked_access;
+// True when an owner row of the kind KIND reads the names that the source
+// spells, from the events of the parser (owner.cpp, THE NAMES OF THE SOURCE).
+// A row of each other kind reads the calls of the walk of a body (THE OWNER
+// ROWS).
+inline bool reads_spelled_names(Kind kind) {
+    return kind == Kind::door_use || kind == Kind::testing_use || kind == Kind::detail_use
+        || kind == Kind::unchecked_use;
 }
 
 inline const char* kind_name(Kind kind) {
@@ -1215,24 +1198,20 @@ inline Rule rule_of(Kind kind) {
         case Kind::home_at_home:
             return Rule::home;
         case Kind::lifetime_start:
-            return Rule::start_lifetime;
-        case Kind::raw_syscall:
-        case Kind::outside_door:
-        case Kind::denied_syscall:
-            return Rule::syscall_capability;
         case Kind::door_use:
-            return Rule::ctx_init_door;
         case Kind::testing_use:
-            return Rule::ctx_testing_boundary;
         case Kind::detail_use:
-            return Rule::detail_namespace;
         case Kind::unchecked_use:
         case Kind::access_alias:
         case Kind::access_reflection:
         case Kind::member_splice:
         case Kind::open_static_member:
         case Kind::walked_return:
-            return Rule::no_unchecked_access;
+            return Rule::owners;
+        case Kind::raw_syscall:
+        case Kind::outside_door:
+        case Kind::denied_syscall:
+            return Rule::syscall_capability;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1270,12 +1249,8 @@ inline bool is_family_kind(Kind kind) {
         case Rule::refined_pre_subsumption:
         case Rule::syscall_grant_coverage:
         case Rule::home:
-        case Rule::start_lifetime:
+        case Rule::owners:
         case Rule::syscall_capability:
-        case Rule::ctx_init_door:
-        case Rule::ctx_testing_boundary:
-        case Rule::detail_namespace:
-        case Rule::no_unchecked_access:
         case Rule::library_records:
             return true;
         default:
@@ -1399,19 +1374,19 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"home", "away-from-arguments"},
     {"home", "open-read"},
     {"home", "at-home"},
-    {"start-lifetime", "lifetime-start"},
+    {"owners", "lifetime-start"},
+    {"owners", "door-use"},
+    {"owners", "testing-use"},
+    {"owners", "detail-use"},
+    {"owners", "unchecked-use"},
+    {"owners", "access-alias"},
+    {"owners", "access-reflection"},
+    {"owners", "member-splice"},
+    {"owners", "open-static-member"},
+    {"owners", "walked-return"},
     {"syscall-capability", "raw-syscall"},
     {"syscall-capability", "outside-door"},
     {"syscall-capability", "denied-syscall"},
-    {"ctx-init-door", "door-use"},
-    {"ctx-testing-boundary", "testing-use"},
-    {"detail-namespace", "detail-use"},
-    {"no-unchecked-access", "unchecked-use"},
-    {"no-unchecked-access", "access-alias"},
-    {"no-unchecked-access", "access-reflection"},
-    {"no-unchecked-access", "member-splice"},
-    {"no-unchecked-access", "open-static-member"},
-    {"no-unchecked-access", "walked-return"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such

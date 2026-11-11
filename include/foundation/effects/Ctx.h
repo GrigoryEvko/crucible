@@ -553,7 +553,7 @@ void require_brand_thread(ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> const&) noex
 
 }  // namespace host
 
-// The test door of the foreground context.  The rule ctx-testing-boundary of
+// The test door of the foreground context.  The rule owners of
 // the quarantine plugin refuses a use of it in code that ships, as it does
 // for the door in Effect.h.
 namespace testing {

@@ -92,7 +92,7 @@ struct ViewCount<dynamic_extent> {
 };
 
 // The door from raw parts to a View, for the owners of the base layer.
-// The detail-namespace guard keeps each other caller out.
+// The rule owners keeps each other caller out.
 template <class T>
 [[nodiscard]] constexpr View<T> view_over_(T* first, std::size_t count) noexcept;
 

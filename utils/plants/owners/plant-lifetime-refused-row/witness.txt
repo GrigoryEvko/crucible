@@ -1,0 +1,11 @@
+# A quarantined unit calls std::start_lifetime_as outside the checked start,
+# and a ledger row of the kind lifetime-start names the call.  No row admits
+# that kind: the call stays an error, and the row is an error too.
+
+compile start src/start.cpp stage=c
+exit start pass
+judge start
+finding start quarantine raw-pointer-object src/start.cpp:6:17 | bytes
+finding start quarantine raw-pointer-object src/start.cpp:6:6 | view
+finding start quarantine std-entity src/start.cpp:6:60 | std::start_lifetime_as
+finding start owners lifetime-start src/start.cpp:6:60 | planted::view(void*): std::start_lifetime_as

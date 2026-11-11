@@ -129,10 +129,10 @@ from assay.readers import sections as plugin_sections
 RULE = "quarantine"
 # The kinds of a probe that the rule counts in the census, and the rule of the registry that gives each one (THE KINDS).
 PROBE_KINDS = {
-    "detail-use": "detail-namespace",
-    "lifetime-start": "start-lifetime",
-    "unchecked-use": "no-unchecked-access",
-    "door-use": "ctx-init-door",
+    "detail-use": "owners",
+    "lifetime-start": "owners",
+    "unchecked-use": "owners",
+    "door-use": "owners",
 }
 # The census stamp of a planted fixture with no record (THE PLANTS).
 MISSING = "missing"

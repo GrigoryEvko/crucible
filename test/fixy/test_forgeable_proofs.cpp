@@ -703,7 +703,7 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // std::start_lifetime_as_array over proofs, and std::start_lifetime_as
 // over an aggregate or a std::array that holds a proof.  Each one names
 // std::start_lifetime_as or std::start_lifetime_as_array, and the rule
-// start-lifetime of the quarantine plugin refuses the two names outside
+// owners of the quarantine plugin refuses the two names outside
 // foundation/Lifetime.h, whatever the type argument.
 // foundation::lifetime::start_as_array, which new code uses, refuses the
 // same four routes at compile time.  The assertions below pin that
