@@ -105,16 +105,17 @@ A COMPILE THROUGH CCACHE
     directly, so their counts are counts of the compiler run too.
 
 A CI RUNNER
-    The thresholds of the time rules (TIME_ROWS: link-time, test-time and
-    fixture-cpu) apply to the build host of the tree, which has
-    384 hardware threads.  A GitHub runner has 4 slower vCPUs and 16 GB, and
-    it runs two or three jobs at a time.  A time there can exceed an error
-    threshold with no defect in the tree.  When the environment sets
+    The thresholds of the time rules (TIME_ROWS: test-time and fixture-cpu)
+    and the hard stops of the steps apply to the build host of the tree,
+    which has 384 hardware threads.  A GitHub runner has 4 slower vCPUs and
+    16 GB, and it runs two or three jobs at a time.  A time there can exceed
+    an error threshold with no defect in the tree.  When the environment sets
     GITHUB_ACTIONS to "true", ci_verdict() changes an error of a time rule to
     a warning, and the message tells so.  limit_cpu() then sets no CPU limit,
-    because a step that the limit stops cannot become a warning.  An error of
-    a memory rule, of a size rule or of an input stays an error.  Each launcher
-    and each check that judges a time calls ci_verdict().
+    because a step that the limit stops cannot become a warning.  `loop step`
+    then gives a warning for a step past its hard stop.  An error of a memory
+    rule, of a size rule or of an input stays an error.  Each check that
+    judges a time rule calls ci_verdict().
 
 THE JOBSERVER OF A TEST
     ctest gives each test the variable MAKEFLAGS of the GNU make jobserver
@@ -211,7 +212,7 @@ CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
 # The measured rules of utils/registry.txt whose value is a time.  The self-test
 # of utils/assay/core/report.py holds this set equal to the rules of unit s.
-TIME_ROWS = frozenset({"link-time", "test-time", "fixture-cpu"})
+TIME_ROWS = frozenset({"test-time", "fixture-cpu"})
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")

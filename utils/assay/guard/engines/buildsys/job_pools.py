@@ -110,8 +110,8 @@ THE RULE link-threads
     linker options --threads=N and --no-fork.  N is the error threshold of the
     rule link-threads.  With its fork, mold links in a child process, and the
     parent ends before the child.  wait4 of the build launcher then measures
-    only the compiler driver.  With --no-fork, the rules link-time and
-    link-memory measure the link.  The rule reads the variables FLAGS and
+    only the compiler driver.  With --no-fork, the rule link-memory
+    measures the link.  The rule reads the variables FLAGS and
     LINK_FLAGS of each link edge of build.ninja, in the sequence of the
     command of CMake (link_setting()).  It reads a linker option from
     -Wl,A,B and from -Xlinker A.  It gives:

@@ -4701,7 +4701,7 @@ set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")
 # cmake/BuildLauncher.cmake puts `loop step` (utils/assay/loop/step.py) in front of
 # each compile and each link.  The launcher writes the cost of the step beside
 # its output, fails a step over the memory error threshold that no ledger row
-# admits, and stops a step at 30 times the time error threshold.
+# admits, and stops a compile at 600 s and a link at 150 s of CPU time.
 # build_launcher_test runs the launcher with planted tools, and with the real
 # compiler and the real ccache.
 crucible_script_test(NAME build_launcher_test

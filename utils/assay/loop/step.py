@@ -23,27 +23,23 @@ WHAT THE SUBCOMMAND DOES
 
 THE MEASURED RULES
     A compile reads the measured rule compile-memory of utils/registry.txt,
-    and a link reads the measured rules link-time and link-memory.
+    and a link reads the measured rule link-memory.
       * The CPU time.  Each process of the step gets RLIMIT_CPU.  The limit
-        of a compile is COMPILE_CPU_LIMIT_S, 600 s.  That limit is a hard
-        stop for a compile that does not end, and not a budget.  No rule
-        judges the CPU time of a compile, because it changes with the load
-        of the host.  The rule compile-instructions judges the cost of a
-        compile after the build.  The limit of a link is CPU_LIMIT_FACTOR
-        times the error threshold of link-time, 150 s.  A step that reaches
-        its limit ends on SIGKILL, and the subcommand prints an error line
-        that says so.  The line of a compile names the check loop-step,
-        because no rule holds the limit.  The limit counts the user time and
-        the system time.  When the host is short of memory, a process can
-        stay in the kernel for a long time, and that time is system time.  On
-        2026-10-12, a compile of 6.6 s of CPU time used 69.2 s of system time
-        and no user time.  Then a limit of 60 s stopped it.  A link of
-        0.4 s used 16.1 s before a limit of 15 s stopped it.  The limit is only
-        for a step that does not end, and it is far above such times.  Below
-        the limit, a link over the warning threshold of link-time gives a
-        warning line.  The error threshold of link-time is a check after the
-        build, because the CPU time of one step depends on the load of the
-        host.
+        of a compile is COMPILE_CPU_LIMIT_S, 600 s, and the limit of a link
+        is LINK_CPU_LIMIT_S, 150 s.  Each limit is a hard stop for a step
+        that does not end, and not a budget.  No rule judges the CPU time of
+        a step, because it changes with the load of the host.  The rule
+        compile-instructions judges the cost of a compile after the build.
+        A step that reaches its limit ends on SIGKILL, and the subcommand
+        prints an error line that says so.  The line names the check
+        loop-step, because no rule holds the limit.  The limit counts the
+        user time and the system time.  When the host is short of memory, a
+        process can stay in the kernel for a long time, and that time is
+        system time.  On 2026-10-12, a compile of 6.6 s of CPU time used
+        69.2 s of system time and no user time.  Then a limit of 60 s stopped
+        it.  A link of 0.4 s used 16.1 s before a limit of 15 s stopped it.
+        The limit is only for a step that does not end, and it is far above
+        such times.
         On a GitHub runner, the step gets no limit, and a step past its
         limit gives a warning line that says that the time error was demoted
         (utils/assay/core/meter.py, A CI RUNNER).
@@ -105,18 +101,16 @@ from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.readers import ccache
 
-# The time row and the memory row of each step.  A compile has no time row (THE MEASURED RULES).
-STEP_ROWS: dict[str, tuple[str | None, str]] = {
-    "compile": (None, "compile-memory"),
-    "link": ("link-time", "link-memory"),
-}
-# The CPU limit of each process of a link, as a multiple of the error threshold of its time row (THE MEASURED RULES).
-CPU_LIMIT_FACTOR = 30
+# The memory row of each step (THE MEASURED RULES).
+MEMORY_ROWS = {"compile": "compile-memory", "link": "link-memory"}
 # The CPU limit of each process of a compile, in seconds.  This limit is a hard stop for a compile that does not end,
 # and not a budget (THE MEASURED RULES).  On 2026-11-11, the compile of bench/bench_cipher.cpp took 31.5 s of CPU time
 # at 224 jobs and 17.5 s alone.
 COMPILE_CPU_LIMIT_S = 600
-# The check that the line of a compile at its CPU limit names.  The step meter gives the line, and no rule holds it.
+# The CPU limit of each process of a link, in seconds: a hard stop for a link that does not end (THE MEASURED RULES).
+LINK_CPU_LIMIT_S = 150
+CPU_LIMITS_S = {"compile": COMPILE_CPU_LIMIT_S, "link": LINK_CPU_LIMIT_S}
+# The check that the line of a step at its CPU limit names.  The step meter gives the line, and no rule holds it.
 LIMIT_CHECK = "loop-step"
 # The name of the program of a compile command that runs ccache (cmake/Ccache.cmake uses the same rule).
 CCACHE_NAME = "ccache"
@@ -196,29 +190,16 @@ def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
     return True, f"the row {shown}:{row.line} keeps it up to {row.value:g} GB with the noise {noise:.0%}: {row.reason}"
 
 
-def step_rows(step: str) -> tuple[str, ...]:
-    """Return the measured rules of one step that the launcher reads from the registry (THE MEASURED RULES)."""
-    return tuple(row for row in STEP_ROWS[step] if row is not None)
-
-
-def cpu_limit(step: str, budget: dict[str, tuple[float, float]]) -> tuple[float, str] | None:
-    """Return the CPU limit of each process of one step, and the words that tell where the limit comes from.
+def cpu_limit(step: str) -> tuple[int, str]:
+    """Return the CPU limit of each process of one step in seconds, and the words that tell the limit.
 
     Args:
         step: "compile" or "link"
-        budget: The thresholds of the measured rules of the step that the registry gives
 
     Returns:
-        COMPILE_CPU_LIMIT_S for a compile.  For a link, CPU_LIMIT_FACTOR times the error threshold of its time row,
-        or None when the registry gives no such row
+        COMPILE_CPU_LIMIT_S or LINK_CPU_LIMIT_S, the hard stop of the step (THE MEASURED RULES)
     """
-    time_row = STEP_ROWS[step][0]
-    if time_row is None:
-        return COMPILE_CPU_LIMIT_S, "the hard stop for a compile that does not end"
-    if time_row not in budget:
-        return None
-    return (CPU_LIMIT_FACTOR * budget[time_row][1],
-            f"{CPU_LIMIT_FACTOR} times the error threshold of {budget[time_row][1]:g} s")
+    return CPU_LIMITS_S[step], f"the hard stop for a {step} that does not end"
 
 
 def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, tuple[float, float]],
@@ -229,24 +210,22 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         step: "compile" or "link"
         output: The absolute output path
         run: The measurement of the command
-        budget: The thresholds of the measured rules of the step that the registry gives
+        budget: The thresholds of the memory row of the step that the registry gives
         hit: Whether ccache gave the output
 
     Returns:
         The result ("built", "failed", "rejected" or "hit"), and the level, the check and the message of the
         line, or None
     """
-    time_row, memory_row = STEP_ROWS[step]
+    memory_row = MEMORY_ROWS[step]
     if hit:
         return "hit", None
-    limit = cpu_limit(step, budget)
-    limit_check = time_row or LIMIT_CHECK
+    limit, limit_words = cpu_limit(step)
     if run.exit_code != 0:
-        if run.reached_cpu_limit and limit is not None:
-            rounded = "" if time_row is None else " (rounded up to a whole second)"
-            return "failed", ("error", limit_check,
+        if run.reached_cpu_limit:
+            return "failed", ("error", LIMIT_CHECK,
                               f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
-                              f"{run.cpu_limit_s} s, {limit[1]}{rounded}, so the operating system stopped it")
+                              f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
         return "failed", None
     if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.ERROR:
         is_admitted, words = admission(memory_row, output, run.peak_gb)
@@ -256,34 +235,19 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
             return "built", ("warning", memory_row, message)
         return "rejected", ("error", memory_row, f"{message}.  The launcher removed the output.  Make the step "
                                                  f"smaller, or add a row with a reason")
-    if limit is not None and run.cpu_limit_s is None and run.cpu_s > limit[0]:
+    if run.cpu_limit_s is None and run.cpu_s > limit:
         # On a GitHub runner, limit_cpu() of meter.py sets no limit, and the step runs to its end (A CI RUNNER).
-        message = (f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit[0]:g} s, "
-                   f"{limit[1]}, and no CPU limit stopped it")
-        if time_row is not None:
-            level, message = cost_meter.ci_verdict("error", time_row, message)
-        elif cost_meter.is_github_actions():
-            # The hard stop of a compile is no time rule of TIME_ROWS, and a runner demotes its error in the same way.
-            level, message = "warning", f"{message}.  {cost_meter.CI_DEMOTION}."
-        else:
-            level = "error"
-        if level == "error":
-            return "rejected", (level, limit_check, f"{message}.  The launcher removed the output")
-        return "built", (level, limit_check, message)
-    measures = [(memory_row, run.peak_gb, f"{run.peak_gb:.2f} GB of peak memory", "GB")]
-    if time_row is not None:
-        measures.insert(0, (time_row, run.cpu_s, f"{run.cpu_s:.1f} s CPU", "s"))
-    parts = []
-    check = None
-    for row, value, text, unit in measures:
-        found = cost_budget.verdict(value, *budget[row], None) if row in budget else cost_budget.NO_FINDING
-        if found != cost_budget.NO_FINDING:
-            check = check or row
-            threshold = budget[row][1] if found == cost_budget.ERROR else budget[row][0]
-            parts.append(f"{text}, over the {found} threshold of {threshold:g} {unit}")
-    if check is None:
-        return "built", None
-    return "built", ("warning", check, f"the {step} job took " + ", and ".join(parts))
+        message = (f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
+                   f"{limit_words}, and no CPU limit stopped it")
+        if cost_meter.is_github_actions():
+            # The hard stop is no time rule of TIME_ROWS, and a runner demotes its error as it demotes a time rule.
+            return "built", ("warning", LIMIT_CHECK, f"{message}.  {cost_meter.CI_DEMOTION}.")
+        return "rejected", ("error", LIMIT_CHECK, f"{message}.  The launcher removed the output")
+    if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.WARNING:
+        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, over the warning threshold of "
+                   f"{budget[memory_row][0]:g} GB")
+        return "built", ("warning", memory_row, message)
+    return "built", None
 
 
 def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
@@ -421,10 +385,9 @@ def main(argv: list[str]) -> int:
             sys.exit(127)
     output, source = paths
     try:
-        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, step_rows(step))
+        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (MEMORY_ROWS[step],))
     except (OSError, ValueError):
         budget = {}
-    limit = cpu_limit(step, budget)
     environment = None
     stats_path = outer_log = count_path = None
     is_ccache = step == "compile" and os.path.basename(arguments[0]) == CCACHE_NAME
@@ -448,8 +411,7 @@ def main(argv: list[str]) -> int:
         else:
             environment = metered
     try:
-        run = cost_meter.measure(arguments, environment, None if limit is None else limit[0],
-                                 count_instructions=step == "compile")
+        run = cost_meter.measure(arguments, environment, CPU_LIMITS_S[step], count_instructions=step == "compile")
     except OSError as error:
         print(f"loop step: the command {arguments[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)

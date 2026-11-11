@@ -18,8 +18,7 @@
 #   -Wl,--no-fork     mold links in its own process.  With its fork, mold links
 #                     in a child process, and the parent ends before the child.
 #                     wait4 of the build launcher then measures only the
-#                     compiler driver, and the rules link-time and link-memory
-#                     see no link
+#                     compiler driver, and the rule link-memory sees no link
 #
 # The words go before the value of the cache in the variables
 # CMAKE_EXE_LINKER_FLAGS, CMAKE_SHARED_LINKER_FLAGS and

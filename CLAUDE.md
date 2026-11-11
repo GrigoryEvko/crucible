@@ -1114,10 +1114,9 @@ A step over the memory error
 threshold of the measured rule `compile-memory` or `link-memory` in
 `utils/registry.txt` fails, unless a row of the ledger of that rule
 keeps its output with a reason, up to its kept value (§XV "The budgets of
-the tree"). `RLIMIT_CPU` stops a compile at 600 s and a link at 30 times the
-error threshold of the rule `link-time`, except on a GitHub runner (§XV
-"Compile time", rule 13). The limit of a compile is a hard stop and not a
-budget, because no rule judges the CPU time of a compile. The limit counts
+the tree"). `RLIMIT_CPU` stops a compile at 600 s and a link at 150 s,
+except on a GitHub runner (§XV "Compile time", rule 13). Each limit is a hard
+stop and not a budget, because no rule judges the CPU time of a step. The limit counts
 the user time and the system time. When the host is short of memory, a
 process can stay in the kernel for a long time. On 2026-10-12, a compile of 6.6 s of CPU time used
 69.2 s of system time and no user time. Then a limit of 60 s stopped it. The
@@ -2533,7 +2532,6 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 | `compile-instructions` | The user instructions of the compiler run of one compile job | 55 G | 110 G | The test `guard_compile_instructions` | Test run |
 | `compile-jobs` | A compile that is not in the Ninja pool compile, and a literal job count in `DEFAULT_JOBS`, in a preset or in a module of the package (rule 14) | None | Each one. Also a test preset that does not give `"jobs": ""` | The test `guard_compile_jobs` | Test run |
 | `compile-memory` | The peak memory of one compile job | 2 GB | 4 GB. The launcher fails the job | The build launcher and the test `guard_compile_memory` | Build, test run |
-| `link-time` | The user and system CPU time of one link | 2 s | 5 s. The launcher stops a link at 150 s | The build launcher and the test `guard_link_time` | Build, test run |
 | `link-jobs` | A link or an archive that is not in the Ninja pool link (rule 14) | None | Each one | The test `guard_link_jobs` | Test run |
 | `link-threads` | The threads of one link: the last `--threads` that a link edge of `build.ninja` gives mold (§V) | 4 threads | 4 threads. Also a link edge whose last `-fuse-ld` is not mold, with no `-B` directory that holds `ld.mold`, or with no `--no-fork` | The test `guard_link_threads` | Test run |
 | `link-memory` | The peak memory of one link | 0.5 GB | 1 GB. The launcher fails the link | The build launcher and the test `guard_link_memory` | Build, test run |

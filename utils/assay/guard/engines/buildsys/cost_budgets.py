@@ -15,24 +15,23 @@ THE INPUTS
     (build_names()).
 
 THE RULES OF A STEP
-    compile-instructions, compile-memory, link-time and link-memory read the
-    record OUTPUT.cost of each output (assay.core.record).  link-time reads
-    the user and system CPU time.  compile-instructions reads the user
-    instructions of the compiler run, in G (10^9).  compile-memory and
-    link-memory read the peak resident memory, in GB of 2^30 bytes.  A record
-    of a ccache hit holds no
-    time, and the rule counts the output but does not judge it.  An output
+    compile-instructions, compile-memory and link-memory read the record
+    OUTPUT.cost of each output (assay.core.record).  compile-instructions
+    reads the user instructions of the compiler run, in G (10^9).
+    compile-memory and link-memory read the peak resident memory, in GB of
+    2^30 bytes.  A record of a ccache hit holds no time, and the rule counts
+    the output but does not judge it.  An output
     with no usable record did not come through the build launcher, and it
     gives an error of the kind no-record.  A record is not usable when it has
     a different format or step, or a different number of bytes.  When no
     output has a usable record, the launcher is not wired, and the rule gives
     one error of the kind not-wired.
 
-    The CPU time of a compile increases with the load of the host, and the
+    The CPU time of a step increases with the load of the host, and the
     instruction count does not (assay.core.meter, THE INSTRUCTION COUNT).
-    No rule judges the CPU time of a compile, and compile-instructions judges
-    its cost.  compile-instructions does not apply to a build in which no
-    record holds a count.
+    No rule judges the CPU time of a step, and compile-instructions judges
+    the cost of a compile.  compile-instructions does not apply to a build in
+    which no record holds a count.
 
 THE RULES OF AN OBJECT
     function-size reads the largest STT_FUNC symbol of each object, in KB.
@@ -153,7 +152,6 @@ LEDGER_COMMENT = (
 class Quantity(enum.StrEnum):
     """The value of a record that a rule of a step reads (THE RULES OF A STEP)."""
 
-    TIME = "time"
     INSTRUCTIONS = "instructions"
     MEMORY = "memory"
 
@@ -169,7 +167,6 @@ class StepRule:
 STEP_RULES = {
     "compile-instructions": StepRule(cost_record.COMPILE, Quantity.INSTRUCTIONS),
     "compile-memory": StepRule(cost_record.COMPILE, Quantity.MEMORY),
-    "link-time": StepRule(cost_record.LINK, Quantity.TIME),
     "link-memory": StepRule(cost_record.LINK, Quantity.MEMORY),
 }
 OBJECT_RULES = frozenset({"function-size", "object-text"})
@@ -420,7 +417,7 @@ def record_problems(
 
 
 def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) -> Measured:
-    """Read the time, the instructions or the peak memory of each step from its record (THE RULES OF A STEP).
+    """Read the instructions or the peak memory of each step from its record (THE RULES OF A STEP).
 
     Complexity: one read of the record of each output.
 
@@ -457,9 +454,6 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
                 f"the {noun} of {item} ran {value:.1f} G user instructions ({cost.cpu_s:.1f} s CPU at a load of "
                 f"{cost.load:.0f})"
             )
-        elif spec.quantity == Quantity.TIME:
-            value = cost.cpu_s
-            said = f"the {noun} of {item} took {value:.1f} s CPU ({cost.wall_s:.1f} s wall)"
         else:
             value = cost.peak_rss_kb / cost_meter.KB_PER_GB
             said = f"the {noun} of {item} took {value:.2f} GB of peak memory"
@@ -785,7 +779,6 @@ def budget_member(rule_id: str) -> meta_runner.Member:
 RULES = {
     "compile-instructions": budget_member("compile-instructions"),
     "compile-memory": budget_member("compile-memory"),
-    "link-time": budget_member("link-time"),
     "link-memory": budget_member("link-memory"),
     "function-size": budget_member("function-size"),
     "object-text": budget_member("object-text"),
