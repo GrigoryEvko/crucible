@@ -236,7 +236,8 @@ THE REDUCE
     A write refuses each count above its row and each new row.  The write
     reads no git history.  The gate does not write an increase, because the
     check of each leg refuses it first.  The change writes an increase with
-    `guard write --rule RULE --build-dir BUILD --raise` before the landing.
+    `guard write --rule RULE --build-dir BUILD` before the landing, in the
+    mode --raise, or --admit with a reason for a ledger of the policy admit.
 
     After the writes, the gate folds each ledger that a write changed into a
     new commit (replaced_commit() of assay.core.git).  The new commit has

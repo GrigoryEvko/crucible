@@ -101,7 +101,8 @@ THE WRITE
 
     A write reads no git history.  A change that moves a finding to a key
     with no row, such as a different file, raises the count of that key.
-    Write it with the mode raise, and give the reason in the commit.
+    Write it with the mode raise for the policy count, or with the mode
+    admit and a reason for the policy admit.  Give the reason in the commit.
 
 THE REDUCE
     The count of a key of a ledger that a build gives is the largest count of
