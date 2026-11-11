@@ -33,8 +33,8 @@ THE MACHINE
 THE CHECK
     --check compares the golden with the output of the program of the build.
     The rule derived-files (assay.guard.engines.meta.derived_files) reads the
-    same finding (drift()).  It gives a warning for a build that does not
-    apply.
+    same finding (drift()).  For a build that does not apply, it gives no
+    finding and one plain line.
 
 Exit 0 when the mode did its work, 1 on drift and 2 on a usage error.  Exit 3
 when the build does not apply or its program cannot give the output.

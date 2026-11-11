@@ -37,9 +37,11 @@ THE BUILD
     The targets mint-inventory and row-hashes read the build of --build-dir:
     the records of its objects, and the output of its program
     dump_row_hashes.  With no build directory, or with a build that does not
-    apply, the rule gives a warning at the file of the target.  It compares
-    the other targets.  A build for a machine other than x86_64 does not
-    apply to the golden (assay.loop.derive.row_hashes, THE MACHINE).
+    apply, the run does not compare such a target, and it gives no finding
+    for it.  The run writes one plain line that names each target that it
+    did not compare, with the reason.  It compares the other targets.  A
+    build for a machine other than x86_64 does not apply to the golden
+    (assay.loop.derive.row_hashes, THE MACHINE).
 
 THE PLANTS
     The control control-agree holds a rule table with a witness row and the
@@ -121,46 +123,57 @@ def tree_part(context: MetaContext) -> list[check_report.Finding]:
     return [*walk_units.drift(trees), *header_lists.drift(trees)]
 
 
-def inventory_part(context: MetaContext) -> list[check_report.Finding]:
-    """Return the finding of the target mint-inventory, or a warning when the build does not apply (THE BUILD)."""
+# The result of a target that reads a build: its findings, or the reason why the run did not compare it (THE BUILD).
+BuildPart = tuple[list[check_report.Finding], str | None]
+
+
+def inventory_part(context: MetaContext) -> BuildPart:
+    """Return the findings of the target mint-inventory, or the reason why the build does not apply (THE BUILD)."""
     if context.build_dir is None:
-        message = "the inventory was not compared: it needs the mint records of a build.  Give --build-dir"
-        return [check_report.Finding("warning", mint_inventory.INVENTORY, 0, RULE, message)]
+        return [], "it needs the mint records of a build, and the call gives no --build-dir"
     try:
-        return mint_inventory.drift(plugin_runner.PluginContext(context.root, context.build_dir))
+        return mint_inventory.drift(plugin_runner.PluginContext(context.root, context.build_dir)), None
     except plugin_runner.NotApplicable as problem:
-        message = f"the inventory was not compared: {problem}"
-        return [check_report.Finding("warning", mint_inventory.INVENTORY, 0, RULE, message)]
+        return [], str(problem)
     except mint_inventory.InventoryError as problem:
         message = f"the inventory cannot be made: {problem}"
-        return [check_report.Finding("error", mint_inventory.INVENTORY, 0, RULE, message)]
+        return [check_report.Finding("error", mint_inventory.INVENTORY, 0, RULE, message)], None
 
 
-def golden_part(context: MetaContext) -> list[check_report.Finding]:
-    """Return the finding of the target row-hashes, or a warning when the build does not apply (THE BUILD)."""
+def golden_part(context: MetaContext) -> BuildPart:
+    """Return the findings of the target row-hashes, or the reason why the build does not apply (THE BUILD)."""
     if context.build_dir is None:
-        message = "the golden was not compared: it needs the program dump_row_hashes of a build.  Give --build-dir"
-        return [check_report.Finding("warning", row_hashes.GOLDEN, 0, RULE, message)]
+        return [], "it needs the program dump_row_hashes of a build, and the call gives no --build-dir"
     try:
-        return row_hashes.drift(context.root, context.build_dir)
+        return row_hashes.drift(context.root, context.build_dir), None
     except plugin_runner.NotApplicable as problem:
-        message = f"the golden was not compared: {problem}"
-        return [check_report.Finding("warning", row_hashes.GOLDEN, 0, RULE, message)]
+        return [], str(problem)
     except row_hashes.GoldenError as problem:
         message = f"the golden cannot be compared: {problem}"
-        return [check_report.Finding("error", row_hashes.GOLDEN, 0, RULE, message)]
+        return [check_report.Finding("error", row_hashes.GOLDEN, 0, RULE, message)], None
+
+
+def skipped_line(skipped: dict[str, str]) -> str:
+    """Return the one plain line that names each target that the run did not compare, with its reason (THE BUILD)."""
+    named = " and ".join(skipped)
+    reasons = "  ".join(f"{target}: {reason}." for target, reason in skipped.items())
+    noun = "target" if len(skipped) == 1 else "targets"
+    return f"{RULE}: the run did not compare the {noun} {named}.  {reasons}"
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give the findings of each target of THE TARGETS.
+    """Give the findings of each target of THE TARGETS, and one plain line for the targets that it did not compare.
 
     Raises:
         NotApplicable: If the pinned parse kit is not installed (THE PARSE TREES)
     """
-    return [
-        *tree_part(context),
-        *witness_part(context),
-        *header_part(context),
-        *inventory_part(context),
-        *golden_part(context),
-    ]
+    found = [*tree_part(context), *witness_part(context), *header_part(context)]
+    skipped: dict[str, str] = {}
+    for target, part in (("mint-inventory", inventory_part), ("row-hashes", golden_part)):
+        part_found, reason = part(context)
+        found += part_found
+        if reason is not None:
+            skipped[target] = reason
+    if skipped:
+        check_report.write_line(skipped_line(skipped))
+    return found

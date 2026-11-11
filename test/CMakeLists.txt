@@ -4669,7 +4669,7 @@ endif()
 #                         file.  The walk units of test/layer compile each
 #                         listed file after each header that can add to such
 #                         a namespace.  Each row holds a weight, and a row
-#                         with no measured weight gives a warning.
+#                         with no measured weight gets the mean weight.
 
 # The compile-time checks report each finding as a warning or an error, in the
 # format of utils/assay/core/report.py.  An error fails the check, and a

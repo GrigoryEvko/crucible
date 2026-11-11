@@ -72,7 +72,8 @@ THE CHECK
             does not emit it
     ledger  a class of semantics.SHRINK_ONLY has more rows than its bound
     bound   a class of semantics.SHRINK_ONLY has fewer rows than its bound,
-            so the bound can go down.  It is a warning
+            so the bound can go down.  It is no error, and the rule gives it
+            as a plain line
   The group oracle of `guard selftest` compiles the emitted tests
   (assay.tests.oracle.test_runner).  Each clean test must pass, and a copy
   with one planted wrong row for each test must fail and name its case.

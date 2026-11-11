@@ -38,9 +38,8 @@ THE DRIFT
       `free-operator`  a free operator that can walk a namespace (THE WALKS)
       `parse`          a header or a check file that the kit cannot parse.
                        The analysis cannot read the walks of such a file
-    It gives a warning:
-      `unmeasured`     a row with the weight unmeasured (THE WEIGHTS)
-    The entity of a finding is the check file of its row, the text of a
+    A row with the weight unmeasured gives no finding (THE WEIGHTS).  The
+    entity of a finding is the check file of its row, the text of a
     malformed row, or the signature of a free operator.
 
 THE ANALYSIS
@@ -165,7 +164,9 @@ THE WEIGHTS
     when a check file or a header that it reads changes.  A stale weight
     makes units that are not equal.  When a unit then costs more than the
     limit of the kind compile of the rule step-cost, the test
-    guard_step_cost fails.  Measure again then.
+    guard_step_cost fails.  Measure again then.  A row with the weight
+    unmeasured gets the mean weight of the measured rows, and it gives no
+    finding, because the rule step-cost holds the cost of each unit.
 
 WHAT THE ANALYSIS CANNOT SEE
     With no types, the analysis does not follow these paths.  A walk that
@@ -245,7 +246,6 @@ LIST = "test/layer/walk-checks.txt"
 INCLUDE = "include"
 CHECKS = "test/layer/checks"
 WRITE_COMMAND = "python3 utils/bin/loop derive walk-units --write"
-MEASURE_COMMAND = "python3 utils/bin/loop derive walk-units --measure BUILD_DIR"
 # The words of the walk unit objects in the compile database, and the directory of the walk_checks.h of each unit.
 UNIT_OUTPUT = "/layer_walks_across_headers_"
 UNIT_PARENT = "/test/layer/walk_units"
@@ -2218,7 +2218,7 @@ def free_operator_finding(entity: Entity) -> check_report.Finding:
 
 
 def drift(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each difference between the list and the tree, and a warning for each unmeasured row.
+    """Give an error for each difference between the list and the tree (THE DRIFT).
 
     Complexity: the cost of derive(), and linear in the length of the list.
 
@@ -2269,19 +2269,6 @@ def drift(context: TsastContext) -> list[check_report.Finding]:
                     f"{rel} walks no namespace that a header can add to, or it is not a "
                     f"check file, so a walk unit compiles it for nothing.  Run: {WRITE_COMMAND}",
                     "extra-row",
-                    rel,
-                )
-            )
-        elif row.weight == UNMEASURED:
-            found.append(
-                check_report.Finding(
-                    "warning",
-                    LIST,
-                    row.line,
-                    CHECK,
-                    f"the row of {rel} has no measured weight, so "
-                    f"test/layer/CMakeLists.txt gives it the mean weight of the measured rows.  Run: {MEASURE_COMMAND}",
-                    "unmeasured",
                     rel,
                 )
             )

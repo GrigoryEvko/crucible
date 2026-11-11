@@ -11,8 +11,10 @@ THE RULE
       `golden`  the golden file cannot be read.  The entity is golden.csv
       `ledger`  a shrink-only class of semantics.SHRINK_ONLY has more rows
                 than its bound.  The entity is SHRINK_ONLY
-      `bound`   a shrink-only class has fewer rows than its bound, and the
-                bound can go down.  A warning
+    Each of these kinds is an error.  A shrink-only class with fewer rows
+    than its bound passes, because a bound fails only upward.  The run then
+    writes one plain line that tells that the bound can go down, and it gives
+    no finding (the kind `bound` of assay.oracle.runner).
     The rule has no ledger.  `loop derive session-oracle emit` writes the
     tests again, and `loop derive session-oracle regenerate` writes the
     golden file again from the oracles.  The group `oracle` of `guard
@@ -51,19 +53,16 @@ TEST_DIR = Path("test") / "session_oracle"
 
 
 def findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give one finding for each problem of the emitted tests of the tree (THE RULE)."""
-    return [
-        check_report.Finding(
-            "error" if problem.is_error else "warning",
-            problem.path,
-            0,
-            RULE,
-            problem.text,
-            problem.kind,
-            problem.entity,
-        )
-        for problem in runner.problems(context.root)
-    ]
+    """Give one error for each problem of the emitted tests of the tree, and a plain line for each bound (THE RULE)."""
+    found: list[check_report.Finding] = []
+    for problem in runner.problems(context.root):
+        if problem.is_error:
+            found.append(
+                check_report.Finding("error", problem.path, 0, RULE, problem.text, problem.kind, problem.entity)
+            )
+        else:
+            check_report.write_line(f"{RULE}: {problem.path}: {problem.text}")
+    return found
 
 
 # ── The plants ─────────────────────────────────────────────────────────────
