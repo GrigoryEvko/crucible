@@ -31,7 +31,7 @@ from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import testing
-from assay.guard.engines.elf import artifacts, runner
+from assay.guard.engines.elf import artifacts, one_set, runner
 from assay.readers import elf, linkmap
 from assay.tests.guard.engines.elf.test_runner import raised
 
@@ -482,11 +482,17 @@ def build_cases(expect: testing.Expect, compiler: str, scratch: Path) -> None:
     inspection = artifacts.examine(rule, together)
     properties = {item.kind for item in inspection.findings if item.kind in artifacts.PROPERTY_KINDS}
     expect(
-        "a build with no row kinds gives its facts and its problems, and only a fact has a count, and the write "
-        "refuses each problem",
+        "a build with no row kinds gives its facts and its problems, only a fact has a count, and no row admits a "
+        "problem",
         {artifacts.NEEDED, artifacts.PIE, artifacts.BIND_NOW} <= set(errors_of(inspection.findings))
         and {key.kind for key in inspection.counts} <= set(artifacts.FACT_KINDS)
         and {item.kind for item in inspection.unadmitted} == properties,
+    )
+    request = runner.WriteRequest(together.root, Path(runner.PLANTED), rule_ledger.WriteMode.RAISE, "a planted reason")
+    status = one_set.write_inspection(rule, request, lambda _context: inspection, artifacts.WRITE_POLICY)
+    expect(
+        "a write with --raise refuses a build with a missing property, and writes no ledger",
+        status == 1 and not rule_ledger.ledger_path(artifacts.RULE, together.root).exists(),
     )
     ledger, head = ledger_head(together)
     ledger.write_text(f"{head}@build/tools | {artifacts.PIE} | 1 | examples/tool | -\n", encoding="utf-8")
