@@ -88,7 +88,7 @@ def gauge_cases(expect: testing.Expect) -> None:
 def routing_cases(expect: testing.Expect) -> None:
     """A rule with no holder, or with a holder that the witness cannot judge, is refused."""
     planted_rows = [
-        rule_registry.measured_rule("planted-step", 1, 2, "s").replace("held-by=cmake", "held-by=loop-step")
+        rule_registry.measured_rule("planted-step", 1, 2, "s").replace("held-by=loop-gauge", "held-by=loop-step")
     ]
     step_rule = rule_registry.planted_rules(planted_rows)["planted-step"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:

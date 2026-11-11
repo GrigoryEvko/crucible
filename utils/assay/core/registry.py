@@ -31,10 +31,10 @@ THE ROWS
                    divided by commas
       held-by      the rule or the command that reads the thresholds of a
                    measured rule that has no module of its own: a rule ID,
-                   or loop-gauge, loop-step, loop-test-step, loop-fixture or
-                   cmake.  A step meter (loop-step, loop-test-step or
-                   loop-fixture) can also hold a rule with no thresholds,
-                   which it judges for each step
+                   or loop-gauge, loop-step, loop-test-step or loop-fixture.
+                   A step meter (loop-step, loop-test-step or loop-fixture)
+                   can also hold a rule with no thresholds, which it judges
+                   for each step
       holder       the function of the holder that judges a rule with
                    held-by, as MODULE:FUNCTION, such as
                    assay.loop.gauge:judged_record.  MODULE is a module of the
@@ -118,7 +118,6 @@ HOLDING_COMMANDS = frozenset(
         "loop-step",
         "loop-test-step",
         "loop-fixture",
-        "cmake",
     }
 )
 # The step meters, which judge each step that they run.  Such a meter can also hold a rule with no thresholds.
@@ -505,7 +504,7 @@ def doc_section(guide: str, reference: str) -> str | None:
 
 
 def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: str = "a planted quantity") -> str:
-    """Return the text of one measured rule row, for a planted registry of a test.
+    """Return the text of one measured rule row, for a planted registry of a test.  The gauge holds the rule.
 
     Raises:
         ValueError: If the row cannot be written
@@ -524,7 +523,7 @@ def measured_rule(rule_id: str, warn: float, error: float, unit: str, measures: 
             f"warn={number_text(warn)}",
             f"error={number_text(error)}",
             f"unit={unit}",
-            "held-by=cmake",
+            "held-by=loop-gauge",
             "doc=XV",
         ],
         [measures, "lower the value"],

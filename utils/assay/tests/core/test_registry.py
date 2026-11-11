@@ -51,7 +51,7 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
     expect(
         "a measured rule gives its thresholds and its holder, and has no module",
         slow.threshold == rule_registry.Threshold(10.0, 20.0, "s")
-        and slow.held_by == "cmake"
+        and slow.held_by == "loop-gauge"
         and not slow.has_module
         and set(registry.measured()) == {"slow-row"},
     )
@@ -87,9 +87,9 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
         "only some of warn, error and unit": GOOD_RULE.replace("doc=XV", "warn=1 error=2 doc=XV"),
         "a warning threshold above the error threshold": rule_registry.measured_rule("slow-row", 20, 10, "s"),
         "an unknown unit": rule_registry.measured_rule("slow-row", 1, 2, "s").replace("unit=s", "unit=hours"),
-        "a holder with no thresholds": GOOD_RULE.replace("doc=XV", "held-by=cmake doc=XV"),
+        "a holder with no thresholds": GOOD_RULE.replace("doc=XV", "held-by=loop-gauge doc=XV"),
         "a legacy module and a holder": rule_registry.measured_rule("slow-row", 1, 2, "s").replace(
-            "held-by=cmake", "held-by=cmake legacy=guard.legacy.x"
+            "held-by=loop-gauge", "held-by=loop-gauge legacy=guard.legacy.x"
         ),
         "legacy-args with no legacy module": GOOD_RULE.replace("doc=XV", "legacy-args=--check,x doc=XV"),
         "a legacy module that is not a dotted name": GOOD_RULE.replace("doc=XV", "legacy=guard/legacy doc=XV"),

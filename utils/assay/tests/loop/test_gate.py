@@ -43,7 +43,7 @@ from assay.readers import ninja as ninja_reader
 # for a ledger with no configuration row.
 REGISTRY = (
     "format 1\n"
-    "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=cmake doc=XV | a time | "
+    "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge doc=XV | a time | "
     "lower the value\n"
     "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
     "rule plan-check engine=meta scope=builddir ledger=none doc=XIII | a planted rule of the build | change nothing\n"
