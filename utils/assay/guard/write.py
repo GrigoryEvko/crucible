@@ -35,12 +35,8 @@ THE BUILDS
     A rule of the engine plugin writes through
     assay.guard.engines.plugin.runner, and a rule of the engine elf through
     the function write(rule, request) of its module
-    (assay.guard.engines.elf.runner).  A module of the engine build that
-    judges its ledger itself gives write(rule, request), with the
-    WriteRequest of assay.guard.engines.plugin.runner
-    (assay.guard.engines.buildsys.runner, THE MODULES THAT JUDGE THEIR
-    LEDGER).  The rule fixture-quarantine writes its ledger in this way.
-    Each such write reads the builds of --build-dir.
+    (assay.guard.engines.elf.runner).  Each such write reads the builds of
+    --build-dir.
 
     One --build-dir gives the counts of one build, and the write lowers no
     row (THE WRITE of assay.core.ledger).  More than one --build-dir is a
@@ -147,10 +143,7 @@ def main(argv: list[str]) -> int:
     root = options.root.resolve()
     builds = [path.resolve() for path in options.build_dirs]
     build_dir = builds[0] if builds else None
-    own_write = None
-    if rule.engine == rule_registry.Engine.BUILD and not is_held_write:
-        own_write = getattr(runner.rule_module(rule), "write", None)
-    is_build_write = rule.engine in OWN_WRITE_ENGINES or own_write is not None
+    is_build_write = rule.engine in OWN_WRITE_ENGINES
     if is_build_write and not builds:
         check_report.write_line(
             f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir DIR", is_error=True
@@ -160,10 +153,7 @@ def main(argv: list[str]) -> int:
         refusal = (
             reduce_refusal(rule.id, root, builds)
             if is_build_write
-            else (
-                "more than one --build-dir applies only to a rule of the engine plugin or elf, or to a rule of the "
-                "engine build whose module writes its ledger"
-            )
+            else "more than one --build-dir applies only to a rule of the engine plugin or elf"
         )
         if refusal:
             check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {refusal}", is_error=True)
@@ -177,8 +167,6 @@ def main(argv: list[str]) -> int:
         from assay.guard.engines.plugin import runner as plugin_runner
 
         request = plugin_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:]))
-        if own_write is not None:
-            return int(own_write(rule, request))
         return plugin_runner.write(rule, request)
     context = check.rule_context(rule, root, build_dir, options.paths)
     try:
