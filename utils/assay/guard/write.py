@@ -3,8 +3,9 @@
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR] [--path PATH]...
        guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
                                            a rule of the engine plugin or elf, or a rule
-                                           of the engine build with configurations
-       guard write --rule ID --import LOG  a rule of the engine plugin or elf with configurations, or a
+                                           of the engine build with configurations.  A rule
+                                           of the engine elf takes no --add-configuration
+       guard write --rule ID --import LOG  a rule of the engine plugin with configurations, or a
                                            rule of the engine build with a module that writes its ledger
        guard write --rule ID [ARG]...      a rule with a legacy module
        guard write --all-configurations [--rule ID]... [--root DIR] [--jobs N] [--no-build]
@@ -50,8 +51,9 @@ not apply to the build.
 A rule of the engine elf writes through the function write(rule, request) of
 its module (assay.guard.engines.elf.runner), which reads the build of
 --build-dir.  The rules artifact-symbols and artifact-links write the rows
-of the build into one set of rows, and --add-configuration and --import LOG
-do not apply to them (assay.guard.engines.elf.one_set).
+of the build into one set of rows (assay.guard.engines.elf.one_set).
+--add-configuration and --import LOG do not apply to a rule of the engine
+elf.
 
 A module of the engine build that judges
 its ledger itself gives write(rule, request), with the WriteRequest of
@@ -166,7 +168,7 @@ def main(argv: list[str]) -> int:
             options.import_log.resolve() if options.import_log is not None else None)))
     if options.add_configuration or options.import_log is not None:
         check_report.write_line("guard write: --add-configuration and --import apply only to a rule of the engine "
-                                "plugin or elf, or to a rule of the engine build whose module writes its ledger",
+                                "plugin, or to a rule of the engine build whose module writes its ledger",
                                 is_error=True)
         return 2
     context = check.rule_context(rule, root, build_dir, options.paths)

@@ -197,9 +197,8 @@ class PlantedBuild:
 class WriteRequest:
     """What one write of the ledger of a rule of the engine does.
 
-    `mode` is the mode of assay.core.ledger, and `import_log` puts the rows of a configuration from a log into the
-    ledger, with no build.  `add_configuration` writes the configuration of the build with its name (THE POLICY of
-    assay.core.configuration).
+    `mode` is the mode of assay.core.ledger.  `import_log` and `add_configuration` hold the options --import LOG and
+    --add-configuration of `guard write`, and each rule of the engine refuses them.
     """
 
     root: Path
