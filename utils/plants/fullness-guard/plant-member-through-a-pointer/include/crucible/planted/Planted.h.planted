@@ -1,4 +1,0 @@
-#pragma once
-struct S {
-    bool c(T* hdr) { return hdr->n == MaxPeers; }
-};

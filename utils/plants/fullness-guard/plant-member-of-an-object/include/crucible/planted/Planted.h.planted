@@ -1,4 +1,0 @@
-#pragma once
-struct S {
-    bool b(T& state) { return state.count == Capacity; }
-};

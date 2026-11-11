@@ -1,2 +1,0 @@
-#pragma once
-#define CALL_IN_MACRO(s) (s.n == s.slots.size())

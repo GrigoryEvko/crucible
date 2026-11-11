@@ -36,7 +36,6 @@ utils/assay/guard/engines/meta/structured_reads.py | format | 1 | <module> | An 
 utils/assay/guard/engines/meta/test_registration.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/meta/test_registration.py | format | 1 | master_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/derived_pins.py | format | 1 | literal_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/tsast/fullness_guard.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/hw_axis_rows.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/lock_free_asserts.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/parse_clean.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

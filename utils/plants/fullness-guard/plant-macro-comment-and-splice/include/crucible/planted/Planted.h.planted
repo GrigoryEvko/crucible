@@ -1,3 +1,0 @@
-#pragma once
-#define COMMENT_IN_MACRO(s) ((s).count /* n */ == \
-    Capacity)

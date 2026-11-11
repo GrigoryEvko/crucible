@@ -1,5 +1,0 @@
-#pragma once
-struct S {
-    bool k() { return count
-        == Capacity; }
-};
