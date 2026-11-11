@@ -160,7 +160,7 @@ jobs:
       # scan runs in the build legs through ctest, and here it does not apply.
       # The rule clang-format runs the pinned clang-format that the step above
       # installs.  The rule derived-files compares the mint inventory only with
-      # the mint records of a build, so here it gives a warning for the
+      # the mint records of a build, so here it writes one plain line for the
       # inventory, and the build legs compare it through ctest.  The rule
       # mint-floor reads the same records, and the test guard_plugin of the
       # build legs runs it.
