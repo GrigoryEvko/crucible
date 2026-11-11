@@ -1,0 +1,5 @@
+# A planted ledger of the rule banned.  The row names the entity of the cast of src/planted.cpp, but no row admits
+# the kind reinterpret-cast.  The rule gives one error at the cast.
+format 1
+rule banned
+src/planted.cpp | reinterpret-cast | admit | crucible::planted::view(long const*): reinterpret_cast<char const*> | a planted row of a cast

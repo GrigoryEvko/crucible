@@ -1,6 +1,6 @@
-"""banned-calls — no reserve call on a std container, no file stream in a runtime directory, and no process start.
+"""banned — no reserve call on a std container, no file stream or process start, and no reinterpret_cast.
 
-THE THREE KINDS
+THE FOUR KINDS
     vector-reserve  CLAUDE.md section IV bans `std::vector::reserve`.  The
                     kind reads each call with a member access named `reserve`
                     as its callee: `v.reserve(n)`, `p->reserve(n)`,
@@ -32,11 +32,31 @@ THE THREE KINDS
                     different namespace or a class.  It reads include/, src/
                     and vessel/, less the kernel dump of
                     include/crucible/perf/bpf/.
-    The rule quarantine counts the same calls in a quarantined file that a
-    counted configuration compiles.  But its ledger admits each count of the
-    tree, it gives a reserve call no kind of its own, and no counted
-    configuration compiles vessel/torch.  For these three reasons, this rule
-    also reads the quarantined files of its scope.
+    reinterpret-cast
+                    CLAUDE.md section III bans `reinterpret_cast`.  Use
+                    `std::bit_cast` with the limits of section IV for a copy
+                    of the bits of a value, and `std::start_lifetime_as` for
+                    the objects of an arena.  The tree of a cast does not
+                    keep the keyword as a node, and GCC gives a warning only
+                    for a cast from one pointer type to a different pointer
+                    type.  Thus, the kind reads each identifier token spelled
+                    `reinterpret_cast`.  The word is a keyword and has no
+                    other use.  A comment, a string literal and a raw string
+                    are nodes of their own, and they give no incorrect
+                    finding.  The kind finds a cast on more than one line,
+                    and a cast with a space before its `<`.  It reads
+                    include/, src/ and vessel/.
+    The rule quarantine counts the calls of the first three kinds in a
+    quarantined file that a counted configuration compiles.  But its ledger
+    admits each count of the tree, it gives a reserve call no kind of its
+    own, and no counted configuration compiles vessel/torch.  For these three
+    reasons, this rule also reads the quarantined files of its scope.
+
+THE REFUSED KIND
+    No ledger row admits a cast.  REFUSED_KINDS names the kind
+    reinterpret-cast (assay.guard.engines.meta.runner, THE REFUSED KINDS), so
+    a row of that kind admits no finding, and a write of the rule refuses
+    each cast.  A row of each other kind admits its sites.
 
 THE MACRO BODIES
     The rule reads the parse of each macro body (`tsast.macro_bodies`) with
@@ -44,9 +64,11 @@ THE MACRO BODIES
     for process-start, because a use site completes a body such as
     `macro_name fork`.  A namespace alias of std comes from the file that
     holds the `#define`.  When a body does not parse, for example a body with
-    `#` or `##`, the rule reads its preprocessing tokens.  A banned name then
-    counts when no `.` or `->` is before it.  A name of a process start counts
-    only when no namespace other than std or an alias of std is before it.
+    `#` or `##`, the rule reads its preprocessing tokens.  A reserve then
+    counts after a `.` or `->` and before `(` or `<`.  A file stream counts
+    when no `.` or `->` is before it.  A name of a process start counts only
+    when no `.` or `->` and no namespace other than std or an alias of std is
+    before it.  Each token `reinterpret_cast` counts.
 
 THE RECEIVER TYPES
     The receiver of a reserve call is a name, a name in parentheses, or
@@ -78,13 +100,16 @@ WHAT THE RULE CANNOT SEE
     that holds a `using` directive of std.
 
 THE ENTITY
-    The entity of a finding is `HOLDER: CALLEE` for vector-reserve, and
-    `HOLDER: NAME` for file-stream and process-start, with the spelling of
-    the source (`tsast.spelled()`).  An include of `<fstream>` has the name
-    `#include <fstream>`.  HOLDER is the signature of the function that holds
-    the site (`tsast.function_signature`).  For a site in no function, HOLDER
-    is the scope of the site.  For a site in a macro body, HOLDER is
-    `#define NAME`.
+    The entity of a finding is `HOLDER: CALLEE` for vector-reserve,
+    `HOLDER: NAME` for file-stream and process-start, and
+    `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast, with the spelling
+    of the source (`tsast.spelled()`).  An include of `<fstream>` has the
+    name `#include <fstream>`.  When the tree shows no target type of a cast,
+    as in a body that does not parse, the entity has `reinterpret_cast`
+    alone.  HOLDER is the signature of the function that holds the site
+    (`tsast.function_signature`).  For a site in no function, HOLDER is the
+    scope of the site: the names of its namespaces and its classes.  For a
+    site in a macro body, HOLDER is `#define NAME`.
 
 THE SCOPE
     The files of the scope of the registry in the directories of each kind,
@@ -102,19 +127,23 @@ from pathlib import PurePosixPath
 from typing import Self
 
 from assay.core import report as check_report
-from assay.guard.engines.tsast.banned_spellings import scope_holder
 from assay.guard.engines.tsast.runner import TsastContext, has_directory
 from assay.readers import tsast
 
-RULE = "banned-calls"
+RULE = "banned"
 RESERVE_KIND = "vector-reserve"
 STREAM_KIND = "file-stream"
 START_KIND = "process-start"
+CAST_KIND = "reinterpret-cast"
+# The kinds that no ledger row admits (THE REFUSED KIND).
+REFUSED_KINDS = frozenset({CAST_KIND})
+CAST_KEYWORD = "reinterpret_cast"
 EXCLUDED_DIRECTORIES = frozenset({"test", "examples", "third_party", "external", "vendor"})
 # The directories that each kind reads, in the scope of the registry.
 RESERVE_ROOTS = ("include/", "src/", "bench/")
 START_ROOTS = ("include/", "src/", "vessel/")
 START_EXCLUDED = ("include/crucible/perf/bpf/",)
+CAST_ROOTS = ("include/", "src/", "vessel/")
 # The runtime directories that open a file only through a fixy door, with the directory of src/ of the same name.
 RUNTIME_DIRECTORIES = tuple(
     f"{top}/{name}/"
@@ -185,6 +214,8 @@ START_NAMES = frozenset(
 )
 # The node types of a class head, and of each declaration of a template parameter.
 CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier", "enum_specifier")
+# The node types of a class that is part of the HOLDER of a site in no function (THE ENTITY).
+HOLDER_CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 TEMPLATE_PARAMETERS = (
     "type_parameter_declaration",
     "optional_type_parameter_declaration",
@@ -211,6 +242,10 @@ START_MESSAGE = (
 STREAM_MESSAGE = (
     "`{entity}` uses a C++ file stream in a runtime directory, which opens a file only through a fixy "
     "door.  Use fixy::fs::mint_file or fixy::mint_owned_file"
+)
+CAST_MESSAGE = (
+    "`{entity}` spells the keyword reinterpret_cast, which CLAUDE.md section III bans.  Use std::bit_cast with "
+    "the limits of section IV, or std::start_lifetime_as for the objects of an arena.  No ledger row admits a cast"
 )
 TOKEN_RESERVE_WHY = "the macro body does not parse, so the parse tree does not show the type of the receiver"
 
@@ -753,7 +788,7 @@ def outer_qualified(node: tsast.Node) -> tsast.Node:
 
 
 def start_references(root: tsast.Node, names: frozenset[str], is_fragment: bool) -> Iterator[tuple[tsast.Node, str]]:
-    """Yield the name node and the spelling of each reference to a process start in a root (THE THREE KINDS).
+    """Yield the name node and the spelling of each reference to a process start in a root (THE FOUR KINDS).
 
     Args:
         root: The root of a file or of a macro body
@@ -808,9 +843,34 @@ def is_stream_token(tokens: Sequence[tsast.Token], index: int) -> bool:
     return tokens[index].text in FILE_STREAMS and not after_member_access(tokens, index)
 
 
+def cast_of(keyword: tsast.Node) -> str:
+    """Return `reinterpret_cast<TYPE>` of the cast that holds a keyword node, or the keyword alone."""
+    owner = keyword.parent
+    arguments = owner.child_by_field("arguments") if owner is not None and owner.type == "template_function" else None
+    return f"{CAST_KEYWORD}{tsast.spelled(arguments)}" if arguments is not None else CAST_KEYWORD
+
+
+def cast_references(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
+    """Yield the keyword node and the spelling of each cast in a root, in the sequence of the source."""
+    for node in root.descendants_named(frozenset({CAST_KEYWORD}), "identifier"):
+        yield node, cast_of(node)
+
+
 def holds(roots: tuple[str, ...], path: str, others: tuple[str, ...] = ()) -> bool:
     """Return True when a file is in one of the roots of a kind, and in none of the other directories."""
     return path.startswith(roots) and not path.startswith(others)
+
+
+def scope_holder(node: tsast.Node) -> str:
+    """Return the scope of a node in no function: the names of its namespaces and its classes, or `-`."""
+    parts = [tsast.ANONYMOUS_NAMESPACE if part == "" else part for part in tsast.namespace_path(node)]
+    classes: list[str] = []
+    holder = node.ancestor_of_type(*HOLDER_CLASSES)
+    while holder is not None:
+        name = holder.child_by_field("name")
+        classes.insert(0, (tsast.leaf_name(name) or "?") if name is not None else "?")
+        holder = holder.ancestor_of_type(*HOLDER_CLASSES)
+    return "::".join([*parts, *classes]) or "-"
 
 
 def holder_of(node: tsast.Node) -> str:
@@ -820,7 +880,12 @@ def holder_of(node: tsast.Node) -> str:
 
 def finding(kind: str, path: str, line: int, entity: str, why: str = "") -> check_report.Finding:
     """Return the error of one site of a kind (THE ENTITY)."""
-    message = {RESERVE_KIND: RESERVE_MESSAGE, STREAM_KIND: STREAM_MESSAGE, START_KIND: START_MESSAGE}[kind]
+    message = {
+        RESERVE_KIND: RESERVE_MESSAGE,
+        STREAM_KIND: STREAM_MESSAGE,
+        START_KIND: START_MESSAGE,
+        CAST_KIND: CAST_MESSAGE,
+    }[kind]
     return check_report.Finding("error", path, line, RULE, message.format(entity=entity, why=why), kind, entity)
 
 
@@ -831,12 +896,16 @@ class Kinds:
     reserve: bool
     stream: bool
     start: bool
+    cast: bool
 
     @classmethod
     def of(cls, path: str) -> Self:
         """Return the kinds with directories that hold a file."""
         return cls(
-            holds(RESERVE_ROOTS, path), holds(RUNTIME_DIRECTORIES, path), holds(START_ROOTS, path, START_EXCLUDED)
+            holds(RESERVE_ROOTS, path),
+            holds(RUNTIME_DIRECTORIES, path),
+            holds(START_ROOTS, path, START_EXCLUDED),
+            holds(CAST_ROOTS, path),
         )
 
 
@@ -852,6 +921,9 @@ def file_findings(tree: tsast.Tree, kinds: Kinds, types: TypeIndex) -> Iterator[
     if kinds.start:
         for node, spelling in start_references(tree.root, types.std_names(tree), False):
             yield finding(START_KIND, path, node.line, f"{holder_of(node)}: {spelling}")
+    if kinds.cast:
+        for node, spelling in cast_references(tree.root):
+            yield finding(CAST_KIND, path, node.line, f"{holder_of(node)}: {spelling}")
 
 
 def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iterator[check_report.Finding]:
@@ -869,6 +941,8 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
             sites += [
                 (START_KIND, node, spelling, "") for node, spelling in start_references(body.tree.root, names, True)
             ]
+        if kinds.cast:
+            sites += [(CAST_KIND, node, spelling, "") for node, spelling in cast_references(body.tree.root)]
         for kind, node, spelling, why in sites:
             yield finding(kind, path, body.origin(node)[0] + 1, f"{holder}: {spelling}", why)
         return
@@ -883,10 +957,12 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
             yield finding(STREAM_KIND, path, token.row + 1, entity)
         if kinds.start and is_start_token(tokens, index, names):
             yield finding(START_KIND, path, token.row + 1, entity)
+        if kinds.cast and tsast.lexeme(token) == CAST_KEYWORD:
+            yield finding(CAST_KIND, path, token.row + 1, entity)
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each site of each kind in the files of its directories (THE THREE KINDS)."""
+    """Give an error for each site of each kind in the files of its directories (THE FOUR KINDS)."""
     trees = list(
         context.trees([path for path in context.scope_files() if not has_directory(path, EXCLUDED_DIRECTORIES)])
     )

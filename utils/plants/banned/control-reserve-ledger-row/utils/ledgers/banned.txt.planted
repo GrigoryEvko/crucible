@@ -1,0 +1,5 @@
+# A planted ledger of the rule banned.  The row admits the reserve call of src/planted.cpp, so the rule gives no
+# error.  The plant plant-cast-ledger-row holds a row of the same form for a cast, and that row admits nothing.
+format 1
+rule banned
+src/planted.cpp | vector-reserve | admit | crucible::planted::grow(): values.reserve | a planted row of a reserve call
