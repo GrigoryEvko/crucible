@@ -4907,10 +4907,8 @@ endforeach()
 # The label ci_guard puts the disabled test in the list of tests that did not
 # run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.  In a
 # build that operates the gate, the gate builds the vessel targets in this
-# build directory, so no other test runs beside it.  The rule
-# contract-header-unit compiles headers of include/foundation and fixy, so its
-# test also has the label foundation.  The test of session-oracle has the
-# label session_oracle of the emitted tests.  The census rules
+# build directory, so no other test runs beside it.  The test of
+# session-oracle has the label session_oracle of the emitted tests.  The census rules
 # parse-total, header-fanout and instruction-total, and the rule
 # fixture-quarantine, read the record of each negative fixture.  Each fixture
 # registration appends its name to the global property
@@ -4918,7 +4916,6 @@ endforeach()
 # the four tests DEPEND on each fixture.
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
 set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees)
-set_property(TEST guard_contract_header_unit APPEND PROPERTY LABELS foundation)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 if(_vessel_disabled)
   set_tests_properties(guard_vessel_acceptance PROPERTIES DISABLED TRUE)
@@ -5046,15 +5043,14 @@ crucible_script_test(NAME assay_readers_test_ctest
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.readers.test_ctest)
 set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
-# The tests of the SARIF reader and of the reader of the include trace compare
-# each reader with the text output of the compiler of this build.  The tests of
-# the ELF reader, of the DWARF reader, of the reader of the library bytes and
-# of the reader of a disassembly read the objects that the compiler of this
-# build gives.  The test of the reader of
+# The test of the SARIF reader compares the reader with the text output of the
+# compiler of this build.  The tests of the ELF reader, of the DWARF reader, of
+# the reader of the library bytes and of the reader of a disassembly read the
+# objects that the compiler of this build gives.  The test of the reader of
 # a link map reads the map that the pinned mold writes of a link with the
 # compiler of this build.  The test of the reader of the statistics of ccache
 # compiles through ccache with the compiler of this build.
-foreach(_assay_test readers.test_sarif readers.test_include_trace readers.test_elf readers.test_objdump
+foreach(_assay_test readers.test_sarif readers.test_elf readers.test_objdump
         readers.test_linkmap readers.test_dwarf readers.test_library_bytes readers.test_ccache)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}

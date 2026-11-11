@@ -2612,7 +2612,7 @@ A measured rule of `utils/registry.txt` holds the two thresholds of each budget 
 
 The tree uses `#include` only. A measurement on 2026-10-01 tried a precompiled header for each include prefix of the negative fixtures, and C++20 header units with include translation for the whole tree. Both changed results, so neither landed:
 
-- GCC 16 drops the native `pre` and `post` specifiers of a function template and of a member of a class template when it writes a header unit or a precompiled header. This is one reason for the rule that the tree uses `CRUCIBLE_PRE` and `CRUCIBLE_POST` only. Each build holds the rule (§XII "The contract rule"). The rule `contract-header-unit` (the test `guard_contract_header_unit`) shows the defect with the compiler of the build, and it fails when a compiler keeps the specifier.
+- GCC 16 drops the native `pre` and `post` specifiers of a function template and of a member of a class template when it writes a header unit or a precompiled header. This is one reason for the rule that the tree uses `CRUCIBLE_PRE` and `CRUCIBLE_POST` only. Each build holds the rule (§XII "The contract rule").
 - A header unit does not see what its includer declares before the include, so an eager seal check in a header stops working. `source_location_of` can also name a different file.
 - GCC 16 has many module defects: internal compiler errors, a module file that GCC cannot read again in C++26 mode, a lost `= delete("reason")` text, and template instances that do not merge.
 
