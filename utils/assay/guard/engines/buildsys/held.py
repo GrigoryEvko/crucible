@@ -8,7 +8,7 @@ THE HOLDERS
     utils/plants/RULE/ (assay.guard.engines.buildsys.planted).  The judge reads
     the planted input with the reader of the holder, and the limits of the
     registry of the copy of the plant (BuildContext.budget()):
-      loop-gauge      judged_record() of assay.loop.gauge for each record of
+      loop-gauge      judged_record() of assay.loop.gauge_record for each record of
                       the file GAUGE_RECORDS of the build
       loop-fixture    cost_findings() and own_reason_findings() of
                       assay.loop.fixture.store for each fixture of the build
@@ -94,14 +94,16 @@ def gauge_findings(rule: rule_registry.Rule, context: BuildContext) -> list[chec
     Raises:
         NotApplicable: If the plant has no build directory, or its records do not read
     """
-    from assay.loop import gauge
+    from assay.loop import gauge_record
 
     path = context.require_build() / GAUGE_RECORDS
     budgets = context.budgets()
     try:
-        records = gauge.read_records(path)
-        return [item for record in records for item in gauge.judged_record(record, budgets, context.shown(path))[0]]
-    except gauge.GaugeError as problem:
+        records = gauge_record.read_records(path)
+        return [
+            item for record in records for item in gauge_record.judged_record(record, budgets, context.shown(path))[0]
+        ]
+    except gauge_record.GaugeError as problem:
         raise unreadable("the planted records of the gauge", problem) from None
 
 

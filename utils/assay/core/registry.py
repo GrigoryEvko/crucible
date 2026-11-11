@@ -40,7 +40,7 @@ THE ROWS
                    for each step
       holder       the function of the holder that judges a rule with
                    held-by, as MODULE:FUNCTION, such as
-                   assay.loop.gauge:judged_record.  MODULE is a module of the
+                   assay.loop.gauge_record:judged_record.  MODULE is a module of the
                    package.  The witness of the rule runs the function
                    (assay.guard.engines.buildsys.held)
     The first cell tells what the rule refuses, or what a measured rule
