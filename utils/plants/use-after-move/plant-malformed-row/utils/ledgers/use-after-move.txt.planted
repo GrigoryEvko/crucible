@@ -1,4 +1,0 @@
-# planted
-format 1
-rule use-after-move
-test/Planted.cpp:must_catch_use:t

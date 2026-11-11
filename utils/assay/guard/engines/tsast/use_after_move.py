@@ -15,7 +15,6 @@ THE RULE
       macro-move      a #define with a replacement list that moves or
                       forwards.  Each use of such a macro hides a move from
                       the walk
-      no-reason       a row of the ledger with no reason
       known-misses    more known misses in the plants of the rule than
                       KNOWN_MISS_BOUND (WHAT THE RULE DOES NOT SEE)
 
@@ -113,7 +112,7 @@ WHAT THE RULE DOES NOT SEE
       * A move in a function that takes T&.  The call does not say
         std::move, and the name stays live at the call site.  A call that
         gives std::move(x) to a parameter T&& spends x, although the function
-        can keep x.  A row of the ledger tells why when it does.
+        can keep x.  Give x a new value before its next use.
       * A use through a pointer to a spent object.  A use through a reference
         to an expression that is not a plain path, such as a reference that a
         call gives.
@@ -123,8 +122,8 @@ WHAT THE RULE DOES NOT SEE
         that.
     The rule does not know types.  It also refuses a use after move of a type
     with a moved-from state that the standard specifies, such as a
-    std::vector.  Give the name a new value first.  The ledger is only for a
-    test that reads a moved-from object on purpose.
+    std::vector.  Give the name a new value first.  Only a test that reads a
+    moved-from object on purpose is out of the scope (THE SCOPE).
 
 THE ENTITY
     The entity of a use after move is `FUNCTION: KEY`.  FUNCTION is the name
@@ -134,21 +133,20 @@ THE ENTITY
     its namespaces, its classes and the name of the variable that holds it.
     KEY is the key of the use as the rule writes it, such as `source`,
     `*producer`, `t.size` or `parts.shards[0]`.  The entity of a macro is
-    `#define NAME: MOVE`.  The entity of a row with no reason is
-    `PATH: ENTITY` of the row.
-
-THE LEDGER
-    utils/ledgers/use-after-move.txt has the policy count, and each of its
-    rows gives the reason that names its probe.  A row is only for a test
-    that reads or uses a moved-from object on purpose.  Correct a use after
-    move in the code.  Correct a finding that the rule reads incorrectly in
-    the rule, with a plant.
+    `#define NAME: MOVE`.
 
 THE SCOPE
     The C++ files of include/, src/, test/, vessel/ and utils/tools/.  A
     negative-compile fixture is out of the scope, because each one must fail
-    to compile.  Its directory is neg or NAME_neg.  A file that does not
-    parse gives the error of the kind parse (the runner of the engine).
+    to compile.  Its directory is neg or NAME_neg.  A test of PROBE_FILES is
+    out of the scope too.  Each one reads or uses a moved-from object on
+    purpose, to prove the state that the move gives the object, or to prove
+    that the use aborts.  A reviewer adds a file to PROBE_FILES with its
+    probe.  A use after move in each other file stays an error, also in a
+    different test.  The rule has no ledger.  Correct a use after move in
+    the code, and correct a finding that the rule reads incorrectly in the
+    rule, with a plant.  A file that does not parse gives the error of the
+    kind parse (the runner of the engine).
 
 Complexity: linear in the length of each body, times two for each loop or each label of a subsequent goto that holds the
 code.  A nest of d loops walks its inner body 2**d times.
@@ -159,10 +157,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from assay.core import git
-from assay.core import ledger as rule_ledger
 from assay.core import report as check_report
-from assay.core import rows as rows_grammar
-from assay.core.registry import Rule
 from assay.guard.engines.meta.runner import NotApplicable
 from assay.guard.engines.tsast.runner import TsastContext
 from assay.readers import tsast
@@ -170,19 +165,82 @@ from assay.readers import tsast
 RULE = "use-after-move"
 USE_KIND = "use-after-move"
 MACRO_KIND = "macro-move"
-REASON_KIND = "no-reason"
 SECOND_MOVE = "a second move"
 USE = "a use"
 COPY_CAPTURE = "a copy capture"
 LATE_READ = "a read through a capture by reference"
 ADVICE = (
     "Use the value before the move, or give it a new value first.  A test that reads a moved-from object on purpose "
-    "gets a ledger row with its reason (CLAUDE.md section XVI)"
+    "goes into PROBE_FILES of the rule, with its probe (CLAUDE.md section XVI)"
 )
 MACRO_ADVICE = (
     "Each use of the macro hides a move from the walk of use-after-move.  Move the value where the code uses the macro"
 )
-REASON_ADVICE = "Write the probe that the row makes as its reason"
+# The tests that read or use a moved-from object on purpose, each with its probe (THE SCOPE).  A reviewer adds a file
+# with its probe.
+PROBE_FILES: dict[str, str] = {
+    "test/fixy/test_channel_moved_from.cpp": (
+        "a moved-from channel handle or binding is unbound, a released holder has no channel and no bytes, and a use "
+        "of a moved-from handle aborts"
+    ),
+    "test/fixy/test_concurrent_channels.cpp": (
+        "the release door of a linear holder leaves the holder with no channel and no bytes"
+    ),
+    "test/fixy/test_os_mmap.cpp": "a moved-from or released mapping is unmapped, so the pages are unmapped one time",
+    "test/fixy/test_owned_file.cpp": (
+        "a moved-from or released file handle is closed, so the descriptor has one owner and closes one time"
+    ),
+    "test/fixy/test_owned_mmap.cpp": "a moved-from or released mapping is unmapped, so the pages are unmapped one time",
+    "test/fixy/test_owned_region.cpp": (
+        "a consumed region is empty, whether the move, the move assignment, the split, the recombine, the shared door "
+        "or the release door consumed it"
+    ),
+    "test/fixy/test_qtt_tracked.cpp": (
+        "a tracked linear or affine value aborts on a second consume, on a read after a consume, and on a consume of a "
+        "swapped-in spent state"
+    ),
+    "test/fixy/test_session_crash_attack_cells.cpp": (
+        "a crash writer that a move emptied names no cell, and the crash mint that takes it aborts"
+    ),
+    "test/fixy/test_session_delegation.cpp": "a DelegatedSession that a move emptied holds no endpoint",
+    "test/fixy/test_session_delegation_aborts.cpp": (
+        "an accept of an emptied DelegatedSession and a delegation with a consumed hold abort"
+    ),
+    "test/fixy/test_session_endpoint_transfer.cpp": (
+        "a session handle whose endpoint left it is dead, and a use of it aborts"
+    ),
+    "test/fixy/test_session_handle.cpp": "a session handle whose endpoint left it is dead, and a use of it aborts",
+    "test/fixy/test_session_handle_attacks.cpp": (
+        "a session handle whose endpoint left it is dead, and a use of it aborts"
+    ),
+    "test/fixy/test_session_hold_consumed_aborts.cpp": "a second take of a consumed session hold aborts",
+    "test/fixy/test_shared_region.cpp": "a region that the shared door consumed is empty",
+    "test/fixy/test_versioned_budgeted_attacks.cpp": (
+        "a moved-from versioned or budgeted value drops its claim to genesis or to unbounded, and a budget stamp "
+        "moved into a second value claims nothing"
+    ),
+    "test/foundation/test_aligned_buffer.cpp": (
+        "a moved-from buffer is empty and owns no storage, and a move assignment hands the storage on"
+    ),
+    "test/foundation/test_core_box.cpp": "consume() and a borrow of a moved-from Box abort",
+    "test/foundation/test_core_choice.cpp": (
+        "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "
+        "empty"
+    ),
+    "test/foundation/test_read_view_lend_needs_a_share.cpp": (
+        "a share guard moved out of an optional holds no share, and with_read_view aborts when it is lent"
+    ),
+    "test/foundation/test_swiss_table_buffer.cpp": (
+        "a moved-from buffer is empty and owns no storage, and a move assignment hands the storage on"
+    ),
+    "test/layer/checks/foundation/core/Choice.cpp": (
+        "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "
+        "empty"
+    ),
+    "test/test_metalog_session.cpp": "a use of a moved-from channel handle aborts",
+    "test/test_perf_senses_smoke.cpp": "a moved-from Senses reports no attachments after a move and a move assignment",
+    "test/test_warden_policy.cpp": "a moved-from warden guard is disarmed and reports each observer as not applied",
+}
 # The plants of the rule, the prefix of the controls of its known misses, and the maximum number of known misses
 # (WHAT THE RULE DOES NOT SEE).
 PLANTS = "utils/plants/use-after-move/"
@@ -612,9 +670,15 @@ def site_scope(node: tsast.Node, name: str) -> str:
     return "::".join([*scopes, *classes, name])
 
 
-def is_negative_fixture(path: str) -> bool:
-    """Return True when a file is in a directory of negative-compile fixtures, neg or NAME_neg (THE SCOPE)."""
-    return any(part == NEGATIVE_DIRECTORY or part.endswith(NEGATIVE_SUFFIX) for part in PurePosixPath(path).parts[:-1])
+def is_out_of_scope(path: str) -> bool:
+    """Return True for a negative-compile fixture, in a directory neg or NAME_neg, and for a file of PROBE_FILES.
+
+    THE SCOPE tells why each one is out of the scope.
+    """
+    is_fixture = any(
+        part == NEGATIVE_DIRECTORY or part.endswith(NEGATIVE_SUFFIX) for part in PurePosixPath(path).parts[:-1]
+    )
+    return is_fixture or path in PROBE_FILES
 
 
 class Walk:
@@ -1846,32 +1910,6 @@ class Walk:
         return state
 
 
-def reason_findings(rule: Rule, context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each row of the ledger with no reason (THE LEDGER).
-
-    A ledger that does not obey its schema gives no finding here, because the
-    run of the rule gives the error of the schema.
-    """
-    try:
-        ledger = rule_ledger.read(rule, context.root)
-    except rows_grammar.RowsError, OSError:
-        return []
-    shown = rule_ledger.shown_path(rule.id)
-    return [
-        check_report.Finding(
-            "error",
-            shown,
-            entry.line,
-            RULE,
-            f"the row of {key.path} ({key.entity}) gives no reason.  {REASON_ADVICE}",
-            REASON_KIND,
-            f"{key.path}: {key.entity}",
-        )
-        for key, entry in sorted(ledger.base.items())
-        if not entry.reason
-    ]
-
-
 def bound_findings(context: TsastContext) -> list[check_report.Finding]:
     """Give an error when the plants hold more known misses than KNOWN_MISS_BOUND (WHAT THE RULE DOES NOT SEE).
 
@@ -1909,10 +1947,8 @@ def bound_findings(context: TsastContext) -> list[check_report.Finding]:
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give each use after move, each macro that moves, each row of the ledger with no reason, and a known miss too many."""
-    paths = [path for path in context.scope_files() if not is_negative_fixture(path)]
+    """Give each use after move and each macro that moves in the scope (THE SCOPE), and a known miss too many."""
+    paths = [path for path in context.scope_files() if not is_out_of_scope(path)]
     found = [finding for tree in context.trees(paths) for finding in Walk(tree).run()]
-    if context.rule is not None:
-        found += reason_findings(context.rule, context)
     found += bound_findings(context)
     return found

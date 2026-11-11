@@ -1,5 +1,4 @@
-// A plant of use-after-move: three reads of t after one move.  A control with a ledger row of one finding holds the
-// count of the findings at one.
+// A plant of use-after-move: three reads of t after one move.
 #include <utility>
 struct Token { Token() = default; Token(Token&&) {} };
 void take(Token&&);

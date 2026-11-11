@@ -1,4 +1,5 @@
-// A plant of use-after-move: the row of the ledger that admits the read of t gives no reason.
+// A plant of use-after-move: a test beside a file of PROBE_FILES, with a path that the list does not hold, reads a
+// moved-from object.  The rule reads the file.
 #include <utility>
 struct Token { Token() = default; Token(Token&&) {} };
 void take(Token&&);
