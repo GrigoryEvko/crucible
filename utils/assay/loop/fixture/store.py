@@ -3095,19 +3095,19 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
 
     A run with no such error gives no finding, also when the ledger has a row
     of the fixture.  A row that admits nothing passes (THE POLICIES of
-    assay.core.ledger).  Then the call does not import the report module.  A
-    ledger that cannot be read gives an error on each run.
-    report_own_reason() reports the findings.  The witness of the rule judges
-    the planted log of a fixture with this function
+    assay.core.ledger).  A row of the fixture admits each such error, and the
+    run then gives no finding.  In these two cases the call does not import
+    the report module.  A ledger that cannot be read gives an error on each
+    run.  report_own_reason() reports the findings.  The witness of the rule
+    judges the planted log of a fixture with this function
     (assay.guard.engines.buildsys.held).
     """
     try:
         ledger, problem = _read_fixture_ledger(path, _REASON_CHECK)
     except OSError as error:
         ledger, problem = {}, f"the ledger {path} cannot be read: {error}"
-    if not problem and not unmatched:
+    if not problem and (not unmatched or fixture_name in ledger):
         return []
-    is_listed = fixture_name in ledger
     report = _report_module()
     try:
         place = str(source.relative_to(_REPO_ROOT))
@@ -3117,7 +3117,7 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
     findings: list[object] = []
     if problem:
         findings.append(report.Finding("error", place, 0, _REASON_CHECK, f"{problem}."))
-    elif unmatched and not is_listed:
+    else:
         findings.extend(report.Finding(
             "error", place, 0, _REASON_CHECK,
             f"{measured} of the fixture {fixture_name} gave an error that no regex matches: {_shown_line(line)}.  A "
