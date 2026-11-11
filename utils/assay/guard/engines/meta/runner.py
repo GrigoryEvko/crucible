@@ -414,7 +414,6 @@ def judged(
     root: Path,
     raw: Sequence[check_report.Finding],
     kept: Callable[[rule_ledger.Key], bool] | None = None,
-    configuration: str | None = None,
 ) -> list[check_report.Finding]:
     """Judge the findings of a rule against its ledger in a tree.
 
@@ -431,8 +430,6 @@ def judged(
         raw: The findings of the rule
         kept: The rows of the ledger that the run judges, when the run reads only a part of the tree.  None
             keeps each row
-        configuration: The configuration of the ledger with the rows that judge the findings (assay.core.ledger,
-            THE CONFIGURATIONS).  None judges them against the base rows
     """
     if rule.policy in (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE):
         return list(raw)
@@ -453,14 +450,8 @@ def judged(
             ),
         ]
     if kept is not None:
-        ledger = replace(
-            ledger,
-            base={key: entry for key, entry in ledger.base.items() if kept(key)},
-            deltas={
-                name: {key: entry for key, entry in table.items() if kept(key)} for name, table in ledger.deltas.items()
-            },
-        )
-    return [*rule_ledger.compare(rule, ledger, counted, configuration), *fixed]
+        ledger = replace(ledger, base={key: entry for key, entry in ledger.base.items() if kept(key)})
+    return [*rule_ledger.compare(rule, ledger, counted), *fixed]
 
 
 def refused_kinds(rule: rule_registry.Rule) -> frozenset[str]:

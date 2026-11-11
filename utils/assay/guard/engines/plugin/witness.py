@@ -33,9 +33,7 @@ THE MANIFEST
       procedure WORD                         one procedure of THE PROCEDURES
       judge NAME                             the module of the rule judges the finding lines of NAME
                                              (THE KINDS OF A PLANT)
-      configuration NAME                     the judged lines are the lines of a build of the
-                                             configuration NAME (THE KINDS OF A PLANT)
-      link PATH TARGET                      the path PATH of the tree is a symbolic link to the path
+      link PATH TARGET                     the path PATH of the tree is a symbolic link to the path
                                              TARGET of the tree (THE LINKS)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
     diagnostic with no file.  The cell "-" of a finding row is an empty
@@ -155,11 +153,7 @@ THE KINDS OF A PLANT
     and runner.PluginContext).  The module uses the ledger of the tree of
     the plant, which is empty when the plant holds none.  The judged
     compiles of a plant give a minimum of one error, and the judged compiles
-    of a control give none.  A configuration row gives the context the
-    configuration NAME of a build (THE CONFIGURATION of assay.core.configuration), with
-    NAME as its build kind.  The function judge of the module of the rule
-    then judges the lines.  A manifest has at most one configuration row,
-    and only with a judge row.
+    of a control give none.
 
 THE ENVIRONMENT
     The witness runs the plants of a rule at one time, in the threads of one
@@ -331,7 +325,6 @@ class Manifest:
     reads: tuple[str, ...] = ()
     procedures: tuple[str, ...] = ()
     judged: tuple[str, ...] = ()
-    configuration: str = ""
     links: tuple[tuple[str, str], ...] = ()
 
     @property
@@ -486,8 +479,6 @@ def parse_manifest(text: str, path: str) -> Manifest:
     reads: list[str] = []
     procedures: list[str] = []
     judged: list[str] = []
-    configuration = ""
-    configuration_row: rows_grammar.Row | None = None
     links: dict[str, str] = {}
     named: list[rows_grammar.Row] = []
     for row in rows_grammar.parse(text, path):
@@ -565,11 +556,6 @@ def parse_manifest(text: str, path: str) -> Manifest:
                 raise row.error("a judge row is 'judge NAME', one for each compile")
             judged.append(row.words[1])
             named.append(row)
-        elif kind == "configuration":
-            shape(row, 2, 0)
-            if configuration_row is not None:
-                raise row.error("a manifest has at most one configuration row")
-            configuration, configuration_row = row.words[1], row
         elif kind == "link":
             shape(row, 3, 0)
             link_path, link_target = tree_path(row.words[1], row), tree_path(row.words[2], row)
@@ -579,10 +565,8 @@ def parse_manifest(text: str, path: str) -> Manifest:
         else:
             raise row.error(
                 f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, note, text, "
-                f"missing, table-unit, table, white-space, reads, procedure, judge, configuration and link"
+                f"missing, table-unit, table, white-space, reads, procedure, judge and link"
             )
-    if configuration_row is not None and not judged:
-        raise configuration_row.error("a configuration row names the build of the judged compiles, and no judge row")
     for row in named:
         if row.words[1] not in compiles:
             raise row.error(f"the row names the compile {row.words[1]}, and no compile row gives it")
@@ -654,7 +638,6 @@ def parse_manifest(text: str, path: str) -> Manifest:
         tuple(reads),
         tuple(procedures),
         tuple(judged),
-        configuration,
         tuple(sorted(links.items())),
     )
 
@@ -1572,28 +1555,19 @@ def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
     return outcome.section.findings if outcome.section is not None else ()
 
 
-def module_errors(
-    rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding], configuration: str = ""
-) -> list[str]:
+def module_errors(rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding]) -> list[str]:
     """Return the errors that the module of a rule gives on the finding lines of a plant (THE KINDS OF A PLANT).
 
-    The module judges the lines against the ledger of the tree of the plant.  A configuration gives the lines the
-    configuration of a build, and the judge of the module judges them.  Complexity: linear in the lines.
+    The module judges the lines against the ledger of the tree of the plant.  Complexity: linear in the lines.
     """
-    from assay.core import configuration as build_config
     from assay.core import registry as rule_registry
     from assay.guard.engines.plugin import runner as plugin_runner
 
     rule = rule_registry.load().rules[rule_id]
     section = plugin_sections.Section("", tuple(lines))
     census = plugin_runner.census_of([plugin_runner.ObjectSection("plant", "", section)])
-    if configuration:
-        build = build_config.BuildConfiguration(configuration, ((build_config.KIND_KEY, configuration),))
-        context = plugin_runner.PluginContext(tree, census=census, configuration=build)
-        findings = meta_runner.module_judged(rule, context)
-    else:
-        context = plugin_runner.PluginContext(tree, census=census)
-        findings = meta_runner.judged(rule, tree, context.findings_of(rule))
+    context = plugin_runner.PluginContext(tree, census=census)
+    findings = meta_runner.judged(rule, tree, context.findings_of(rule))
     return [item.text() for item in findings if item.level == "error"]
 
 
@@ -1649,7 +1623,7 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
             except (ruletable.TableError, OSError) as problem:
                 failures.append(f"ruletable.py does not read {path}: {problem}")
         if manifest.judged:
-            errors = module_errors(rule_id, work / TREE, lines, manifest.configuration)
+            errors = module_errors(rule_id, work / TREE, lines)
             if is_plant and not errors:
                 failures.append(f"the module of {rule_id} gives no error on the finding lines of the judged compiles")
             if not is_plant and errors:

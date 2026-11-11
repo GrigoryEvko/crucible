@@ -48,56 +48,29 @@ THE LEDGER
     kind `denied-syscall`, and a row of such a kind is an error too.  Each
     problem of the census of the runner is an error.
 
-THE CONFIGURATIONS
     A raw call in a preprocessor arm that only one build kind compiles is a
     finding only in that build kind.  An example is a call in
     src/foundation/os/Intercepted.cpp, which only a build with
-    ThreadSanitizer compiles.  The ledger holds the rows of each such build
-    kind as a configuration, as the ledger of the rule quarantine does
-    (assay.core.ledger, THE CONFIGURATIONS):
-        configuration NAME kind KIND
-        @NAME | PATH | raw-syscall | DELTA | HOLDER: SHAPE | CLAIM
-    The first configuration is the base, and its rows are the rows with no
-    @NAME.  A row @NAME holds the difference of the count of the
-    configuration NAME from the base count.  A difference row of a call that
-    the base does not count gives the claim of the call.
-
-    The name of a configuration is the name of the configuration of a build
-    (THE CONFIGURATION of assay.core.configuration): the build kind, with
-    -bench and -fuzz.  The rows of THE POLICY of the same module judge a
-    build, as for the rules quarantine and heavy-include.  These rows are the
-    rows of the
-    configuration with its name, else the base rows.  A row of an arm of one
-    build kind is then judged in that build kind only, and no build skips the
-    rule.
-
-    At this time the configuration rows of this ledger give only the build
-    kind.  The other facts of a build, such as the tier of a CI runner, then
-    change no judgement.  A raw call that only such a fact changes fails the
-    build.
+    ThreadSanitizer compiles.  One set of rows judges each build, and the
+    count of a key is its largest count over the configurations of the
+    landing gate (THE REDUCE of assay.core.ledger).
 
 THE WRITE
-    `guard write --rule syscall-capability --build-dir DIR` writes the rows of
-    the configuration of the build: the base rows for the base, and the
-    difference rows for each other configuration.  When the ledger holds no
-    configuration, the write writes the base rows.  --add-configuration adds
-    the configuration of the build with its facts: the first one that a
-    ledger gets is the base.  write_target() of assay.core.configuration
-    gives the rows of each write.  A write from a build of a configuration that the ledger does not
-    hold writes no row and fails with no --add-configuration.  The modes
-    --raise and --admit and the reason of --reason are those of
-    assay.core.ledger (THE WRITE).
+    `guard write --rule syscall-capability --build-dir DIR` writes the counts
+    of one build, and it lowers no row (THE WRITE of assay.core.ledger).  The
+    landing gate lowers the rows.  The modes --raise and --admit and the
+    reason of --reason are those of assay.core.ledger.
 
 Usage
     guard check --rule syscall-capability --build-dir DIR [--warnings-dir DIR]
-    guard write --rule syscall-capability --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
+    guard write --rule syscall-capability --build-dir DIR [--raise | --admit] [--reason TEXT]
 
 Complexity: linear in the finding lines of the build, and in the rows of the ledger.
 """
 
+from collections import Counter
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -140,37 +113,33 @@ def message(item: plugin_sections.Finding) -> str:
 def row_errors(rows: rule_ledger.Ledger) -> list[check_report.Finding]:
     """Give one error for each row of a kind that no row admits, and for each row with no claim (THE LEDGER).
 
-    A difference row that adds a count must have a claim: its own claim, or the claim of its base row (THE
-    CONFIGURATIONS).  A difference row that lowers a count has no claim.  Complexity: linear in the rows.
+    Complexity: linear in the rows.
     """
     shown = rule_ledger.shown_path(RULE)
     errors: list[check_report.Finding] = []
-    tables = [(None, rows.base), *sorted(rows.deltas.items())]
-    for name, table in tables:
-        holder = "" if name is None else f" of the configuration {name}"
-        for key, entry in sorted(table.items()):
-            if key.kind in UNADMITTED_KINDS:
-                errors.append(
-                    check_report.Finding(
-                        "error",
-                        shown,
-                        entry.line,
-                        RULE,
-                        f"the row{holder} of {key.path} admits a finding of the kind {key.kind} ({key.entity}), and "
-                        f"no row can admit one.  Call the door, and remove the row",
-                    )
+    for key, entry in sorted(rows.base.items()):
+        if key.kind in UNADMITTED_KINDS:
+            errors.append(
+                check_report.Finding(
+                    "error",
+                    shown,
+                    entry.line,
+                    RULE,
+                    f"the row of {key.path} admits a finding of the kind {key.kind} ({key.entity}), and no row can "
+                    f"admit one.  Call the door, and remove the row",
                 )
-            elif not rows.reason_of(key, name) and (name is None or int(entry.value) > 0):
-                errors.append(
-                    check_report.Finding(
-                        "error",
-                        shown,
-                        entry.line,
-                        RULE,
-                        f"the row{holder} of {key.path} ({key.entity}) gives no capability claim.  Give the "
-                        f"effects::* claim of its calls in the REASON cell",
-                    )
+            )
+        elif not entry.reason:
+            errors.append(
+                check_report.Finding(
+                    "error",
+                    shown,
+                    entry.line,
+                    RULE,
+                    f"the row of {key.path} ({key.entity}) gives no capability claim.  Give the effects::* claim of "
+                    f"its calls in the REASON cell",
                 )
+            )
     return errors
 
 
@@ -191,44 +160,18 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     return [*found, *row_errors(rows)]
 
 
-def verdict(
-    rule: rule_registry.Rule, context: runner.PluginContext
-) -> tuple[list[check_report.Finding], build_config.Judging]:
-    """Return the findings of the build judged against the rows of THE POLICY of assay.core.configuration, and those
-    rows.
-
-    A context with no build, as a witness with no configuration row gives, is judged against the base rows.
-
-    Raises:
-        NotApplicable: If the rule does not apply to the build
-        BuildError: If the build cannot be read
-    """
-    found = findings(context)
-    base = build_config.Judging(None, build_config.BASE_WORDS, "")
-    try:
-        rows = rule_ledger.read(rule, context.root)
-    except rows_grammar.RowsError, OSError:
-        return meta_runner.judged(rule, context.root, found), base
-    try:
-        judged = build_config.judging(RULE, rows, context.configuration())
-    except runner.NotApplicable:
-        judged = base
-    return meta_runner.judged(rule, context.root, found, configuration=judged.name), judged
-
-
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the rows of its configuration (THE CONFIGURATIONS).
+    """Return the findings of the build judged against the rows of the ledger (THE LEDGER).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read
     """
-    return verdict(rule, context)[0]
+    return meta_runner.judged(rule, context.root, findings(context))
 
 
 def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build of the context, judge its findings against the rows of its configuration, and
-    write them.
+    """Run the rule on the build of the context, judge its findings against the rows of the ledger, and write them.
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -237,80 +180,69 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
     if isinstance(census, int):
         return census
     try:
-        found, judged = verdict(rule, context)
+        found = judge(rule, context)
     except runner.BuildError as problem:
         return check_report.emit(
             [check_report.Finding("error", context.build_shown(), 0, RULE, str(problem))], RULE, warnings_dir
         )
-    if judged.note:
-        check_report.write_line(judged.note)
     status = check_report.emit(found, RULE, warnings_dir)
     errors = sum(item.level == "error" for item in found)
-    check_report.write_line(
-        f"{RULE}: {errors} error(s), {len(found) - errors} warning(s), judged against {judged.words}"
-    )
+    check_report.write_line(f"{RULE}: {errors} error(s), {len(found) - errors} warning(s)")
     return status
 
 
+def build_counts(context: runner.PluginContext) -> Counter[rule_ledger.Key]:
+    """Return the count of each key of the raw system calls of the build of the context (THE WRITE).
+
+    Raises:
+        NotApplicable: If the rule does not apply to the build
+        BuildError: If the build cannot be read, or an object of the build has a problem
+    """
+    census = context.census()
+    if census.problems:
+        raise runner.BuildError(
+            f"the census has {len(census.problems)} problems, such as {census.problems[0].path}: "
+            f"{census.problems[0].message}"
+        )
+    return Counter(rule_ledger.key_of(item) for item in census.line_errors(RULE, message) if item.kind)
+
+
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the rows of the configuration of the build (THE WRITE).
+    """Write the counts of the builds of the request (THE WRITE).
 
     Returns:
-        0 when the ledger is written.  1 when the build cannot be read, an object has a problem or the mode refuses
-        a finding.  1 also when the ledger does not hold the configuration of the build and the write does not add
-        it.  2 for --import.  SKIPPED when the rule does not apply to the build
+        0 when the ledger is written.  1 when a build cannot be read, an object has a problem or the mode refuses a
+        finding.  SKIPPED when the rule does not apply to a build
     """
-    if request.import_log is not None:
-        check_report.write_line(
-            f"guard write: the rule {RULE} imports no log.  Write the rows of a configuration in its build",
-            is_error=True,
-        )
-        return 2
-    context = runner.PluginContext(request.root, request.build_dir)
     try:
         rows = rule_ledger.read(rule, request.root)
-        census = context.census()
-        configuration = context.configuration()
-    except runner.NotApplicable as reason:
-        check_report.write_line(f"guard write: the rule {RULE} does not apply: {reason}", is_error=True)
-        return runner.SKIPPED
-    except (runner.BuildError, rows_grammar.RowsError, OSError) as problem:
+    except (rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
         return 1
-    if census.problems:
-        check_report.write_line(f"guard write: the ledger of {RULE} is not written, because an object has a problem")
-        return check_report.emit(census.errors(RULE), RULE, None)
-    found = [item for item in census.line_errors(RULE, message) if item.kind]
-    target = build_config.write_target(RULE, rows, configuration, request.add_configuration)
-    if isinstance(target, str):
-        check_report.write_line(target, is_error=True)
-        return 1
-    mode = request.mode
-    if target.is_added and mode == rule_ledger.WriteMode.LOWER and len(target.ledger.configurations) > 1:
-        mode = rule_ledger.WriteMode.RAISE
+    per_build = runner.counts_of_builds(RULE, request, build_counts)
+    if isinstance(per_build, int):
+        return per_build
     moves = git.change_moves(request.root)
     before = rule_ledger.ledger_before(
         rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(RULE))
     )
     try:
-        written = rule_ledger.write(
+        written = rule_ledger.write_counts(
             rule,
-            target.ledger,
-            found,
-            configuration=target.name,
-            mode=mode,
+            rows,
+            rule_ledger.largest_counts(per_build),
+            mode=request.mode,
             reason=request.reason,
             moved=moves.renamed,
             flows=moves.flows,
             before=before,
+            is_partial=request.is_partial,
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
         return 1
     rule_ledger.store(written, request.root)
-    total = len(written.base) + sum(len(table) for table in written.deltas.values())
     check_report.write_line(
-        f"guard write: {rule_ledger.shown_path(RULE)} holds {total} rows, written for "
-        f"{'the base rows' if target.name is None else f'the configuration {target.name}'}"
+        f"guard write: {rule_ledger.shown_path(RULE)} holds {len(written.base)} rows, from {len(request.builds)} builds"
     )
     return 0

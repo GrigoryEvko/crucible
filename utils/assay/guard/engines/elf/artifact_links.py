@@ -52,12 +52,14 @@ THE MAP
 
 THE LEDGER
     utils/ledgers/artifact-links.txt has the policy count, in format 1 of
-    assay.core.ledger.  It holds one set of rows for each build, and no
-    configuration row (assay.guard.engines.elf.one_set, THE SET):
+    assay.core.ledger.  It holds one set of rows, and the set judges each
+    build (assay.guard.engines.elf.one_set, THE SET):
         @build/GROUP | KIND | 1 | ENTITY | -
     A new fact is an error, and a row of a fact that goes gives no finding
-    (THE POLICIES of assay.core.ledger).  A write keeps each row, and it gives
-    no row to a new fact without --raise (RAISE_REASONS, one_set, THE WRITE).
+    (THE POLICIES of assay.core.ledger).  A write from one build keeps each
+    row, and it gives no row to a new fact without --raise (RAISE_REASONS,
+    one_set, THE WRITE).  The reduce of the landing gate removes the row of
+    a fact that no build of the gate gives (one_set, THE REDUCE).
 
 THE PLANTS
     A row `facts KIND...` of plant.txt limits the facts of a plant to these
@@ -329,7 +331,7 @@ def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each configuration row and each row that does not have a shape of THE LEDGER.
+    """Return an error for each row that does not have a shape of THE LEDGER.
 
     A fact has the count 1.
     """

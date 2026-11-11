@@ -192,10 +192,10 @@ THE RUN OF THE BASE
 THE GATE
     The gate builds and tests a commit in the warm tree of each configuration
     that the change selects (assay.loop.gate).  The gate has no base side.  A
-    test that is red alone on HEAD then rejects each landing.  The gate
-    writes the falls of the counted ledgers into a new commit (THE FALLS of
-    assay.loop.gate).  That commit has the parents and the message of the
-    last commit of the batch.
+    test that is red alone on HEAD then rejects each landing.  When the gate
+    builds each of its configurations, it writes the falls of the counted
+    ledgers into a new commit (THE REDUCE of assay.loop.gate).  That commit
+    has the parents and the message of the last commit of the batch.
 
     The verdict gives it, and the compare-and-swap moves the branch to it.
     Each run of the gate writes its logs into a directory of its own
@@ -252,7 +252,7 @@ THE INDEX AND THE WORKING TREE
     The index gets the entry of the landed commit for each changed path, and
     the working tree does not change.  Then each patch goes to the working
     tree with git apply, unless the working tree holds it.  The ledgers of
-    THE FALLS go to each work tree of the batch one time.  Each edit goes to the working-tree
+    THE REDUCE go to each work tree of the batch one time.  Each edit goes to the working-tree
     copy of its file, unless the copy holds it.
 
     When a hunk does not apply, the process writes a warning.  The owner of
@@ -505,7 +505,7 @@ class Update:
     """The update of the work tree of a landed request (THE INDEX AND THE WORKING TREE).
 
     The index gets the entry of the commit `index_commit` for each path of `index_paths`.  `falls` holds the commit
-    that the gate tested and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE FALLS.
+    that the gate tested and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE REDUCE.
     """
 
     index_commit: str
@@ -860,14 +860,14 @@ def apply_patch(root: Path, patch: bytes, shown: str) -> list[str]:
 def update_working_tree(
     root: Path, request: Request, folded: tuple[str, str, tuple[str, ...]] | None = None
 ) -> list[str]:
-    """Give the working tree each patch, each edit and the ledgers of THE FALLS.
+    """Give the working tree each patch, each edit and the ledgers of THE REDUCE.
 
     The working tree gets only what it does not hold.
 
     Args:
         root: The top of the work tree of the request
         request: The request
-        folded: The commit that the gate tested, the commit that landed, and the ledgers of THE FALLS of
+        folded: The commit that the gate tested, the commit that landed, and the ledgers of THE REDUCE of
             assay.loop.gate.  None when the gate wrote no ledger
 
     Returns:
@@ -1253,7 +1253,7 @@ class BatchLanding:
     ) -> list[tuple[Queued, Decision]]:
         """Return the verdict of each accepted request, with the update of its work tree (THE INDEX AND THE WORKING TREE).
 
-        The ledgers of THE FALLS go to the last request of each work tree.  Complexity: linear in the paths of the
+        The ledgers of THE REDUCE go to the last request of each work tree.  Complexity: linear in the paths of the
         links.
         """
         ledgers = verdict.ledgers

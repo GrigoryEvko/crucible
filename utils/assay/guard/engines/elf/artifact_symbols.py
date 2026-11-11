@@ -197,8 +197,8 @@ THE CLASS OF A SYMBOL
 
 THE LEDGER
     utils/ledgers/artifact-symbols.txt has the policy count, in format 1 of
-    assay.core.ledger.  It holds one set of rows for each build, and no
-    configuration row (assay.guard.engines.elf.one_set, THE SET):
+    assay.core.ledger.  It holds one set of rows, and the set judges each
+    build (assay.guard.engines.elf.one_set, THE SET):
         @build/LIBRARY | MARK | 1 | IMPORT | -
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
@@ -238,14 +238,17 @@ THE VERDICT
 
 THE WRITE
     `guard write --rule artifact-symbols --build-dir DIR` writes the import
-    rows and the counts of helper-throw of the build into the set.  The write
-    keeps each row (assay.guard.engines.elf.one_set, THE WRITE).  It gives a
-    row to a new import with the mark `allow`, `libc-allow` or `crt-allow`,
-    and it refuses a new import with a ratchet mark (RATCHET_MARKS).  It
+    rows and the counts of helper-throw of the build into the set.  A write
+    from one build keeps each row (assay.guard.engines.elf.one_set, THE
+    WRITE).  It gives a row to a new import with the mark `allow`,
+    `libc-allow` or `crt-allow`, and it refuses a new import with a ratchet
+    mark (RATCHET_MARKS).  It
     also refuses a count of helper-throw above its row.  --raise also writes
     such an import or count.  Use it only for one of RAISE_REASONS, and give
     the reason in the commit.  The write adds no row throw or vtable: a
-    person writes it with its reason.
+    person writes it with its reason.  The reduce of the landing gate
+    removes the row of an import or a count that no build of the gate gives,
+    and it keeps each row throw and vtable (one_set, THE REDUCE).
 
 NOT APPLICABLE
     The rule does not apply (exit 77) to these builds:
@@ -612,7 +615,7 @@ def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each configuration row and each row that does not have a shape of THE LEDGER.
+    """Return an error for each row that does not have a shape of THE LEDGER.
 
     A row of an import has the count 1.
     """

@@ -293,14 +293,12 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
 
     Returns:
         0 when the ledger is written.  1 when the build cannot be read or a new row has no reason.  2 for a mode
-        other than the default and admit, for --import and for --add-configuration.  SKIPPED when the rule does not
-        apply
+        other than the default and admit, and for more than one build.  SKIPPED when the rule does not apply
     """
-    is_refused = request.import_log is not None or request.add_configuration
-    if is_refused or request.mode == rule_ledger.WriteMode.RAISE:
+    if request.more_builds or request.mode == rule_ledger.WriteMode.RAISE:
         check_report.write_line(
             f"guard write: the rule {RULE} has the policy max, and its rows hold the build kind.  Give --reason TEXT "
-            f"for a row, and no --raise, --import or --add-configuration",
+            f"for a row, one --build-dir DIR and no --raise",
             is_error=True,
         )
         return 2

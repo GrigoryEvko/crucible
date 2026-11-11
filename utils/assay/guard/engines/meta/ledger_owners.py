@@ -8,9 +8,9 @@ THE RULE
       schema  a file that assay.core.ledger.parse refuses for the policy of its
               rule: the rows 'format 1' and 'rule RULE' at the start, the five
               cells of an entry row, a VALUE of the type of the policy (a count
-              above 0, the word admit, a number, or BYTES/READERS), a difference
-              row only for the policy count, a second row with the same key, and
-              a row of the policy admit or max with no reason
+              above 0, the word admit, a number, or BYTES/READERS), a second
+              row with the same key, and a row of the policy admit or max with
+              no reason
 
 WHY
     A ledger that no rule reads, or that its rule cannot read, judges

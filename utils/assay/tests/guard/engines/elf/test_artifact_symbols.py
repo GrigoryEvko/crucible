@@ -659,16 +659,9 @@ class Scratch:
         """Run the rule through the runner of the engine, and return the status and the written text."""
         return quiet(lambda: runner.run_rule(self.rule, runner.ElfContext(self.root, self.build), None))
 
-    def write(
-        self,
-        mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER,
-        import_log: Path | None = None,
-        add_configuration: bool = False,
-    ) -> tuple[int, str]:
-        """Write the ledger from the build directory or from a log, and return the status and the written text."""
-        request = runner.WriteRequest(
-            self.root, None if import_log else self.build, mode, None, import_log, add_configuration
-        )
+    def write(self, mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER) -> tuple[int, str]:
+        """Write the ledger from the build directory, and return the status and the written text."""
+        request = runner.WriteRequest(self.root, self.build, mode)
         return quiet(lambda: artifact_symbols.write(self.rule, request))
 
     def ledger_text(self) -> str:
@@ -698,7 +691,6 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect(
         "a write with --raise writes one set with no configuration row, and a ratchet row of the class std",
         status == 0
-        and not written.configurations
         and len(threads) == 1
         and artifact_symbols.classify(threads[0]) == "std"
         and "configuration" not in scratch.ledger_text(),
@@ -794,7 +786,7 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def set_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold two build kinds that one set judges, the write of each, and the writes that do not apply to a set."""
+    """Hold two build kinds that one set judges, and the write of each."""
     good = scratch.ledger_text()
 
     def build_of(kind: str, units: list[str]) -> None:
@@ -818,11 +810,8 @@ def set_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 1 and scratch.ledger_text() == good,
     )
     build_of(OTHER, ["base"])
-    status, found, text = scratch.run()
-    expect(
-        "a different kind with fewer symbols passes, and prints no configuration row",
-        status == 0 and errors_of(found) == [] and rule_ledger.ROW_MARK not in text,
-    )
+    status, found, _ = scratch.run()
+    expect("a different kind with fewer symbols passes", status == 0 and errors_of(found) == [])
     status, _ = scratch.write()
     expect(
         "a write of the different kind keeps each row that only the first kind gives",
@@ -835,14 +824,6 @@ def set_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect(
         "a write with --raise of the different kind adds its rows, and the first kind still passes",
         status == 0 and status_kind == 0 and errors_of(found) == [] and "basic_string" in scratch.ledger_text(),
-    )
-    status_add, text_add = scratch.write(add_configuration=True)
-    status_import, text_import = scratch.write(import_log=scratch.root / "ci.log")
-    expect(
-        "--add-configuration and --import do not apply to one set of rows",
-        [status_add, status_import] == [one_set.USAGE_STATUS] * 2
-        and "no configuration" in text_add
-        and "no configuration" in text_import,
     )
     scratch.ledger.write_text(good, encoding="utf-8")
 

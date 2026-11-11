@@ -206,26 +206,24 @@ def judge_cases(expect: testing.Expect) -> None:
             "a crucible read whose row gives no reason is one error",
             [item.path for item in judged if item.level == "error"] == [rule_ledger.shown_path(RULE)],
         )
-        ledger = rule_ledger.read(rule, root)
-        counts = home.counts_to_write(rule, ledger, context.findings_of(rule), home.build_of(context))
+        counts = home.build_counts(rule, context)
         expect(
-            "a write counts each finding and keeps each row of a file that the build does not compile",
-            counts == Counter({forged_key: 1, read_key: 1, other_key: 2}),
+            "the counts of a build for a write hold each finding, and no row of a file that the build does not compile",
+            counts == Counter({forged_key: 1, read_key: 1}),
         )
 
 
 def write_cases(expect: testing.Expect) -> None:
-    """Hold a write that refuses its options, and a write with no build directory."""
+    """Hold a write with no build directory, and a write of a build that the rule does not apply to."""
     rule = rule_of()
     with tempfile.TemporaryDirectory(prefix="plugin-home-") as scratch_text:
         root = Path(scratch_text).resolve()
         build_dir = scratch_tree(root)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            refused = home.write(rule, runner.WriteRequest(root, build_dir, add_configuration=True))
-            imported = home.write(rule, runner.WriteRequest(root, build_dir, import_log=root / "log.txt"))
             skipped = home.write(rule, runner.WriteRequest(root, None))
-        expect("a write refuses --add-configuration and --import", refused == 2 and imported == 2)
+            refused = home.write(rule, runner.WriteRequest(root, build_dir))
         expect("a write with no build directory does not apply", skipped == runner.SKIPPED)
+        expect("a write of a build with no build kind does not apply, and it writes nothing", refused == runner.SKIPPED)
         expect("a refused write writes no ledger", not rule_ledger.ledger_path(RULE, root).exists())
 
 

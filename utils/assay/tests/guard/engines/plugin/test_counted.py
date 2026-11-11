@@ -1,19 +1,18 @@
 """The test of the counted rules of the engine plugin (assay.guard.engines.plugin.counted) and of their two rules.
 
 `guard selftest tests.guard.engines.plugin.test_counted` runs the test.  The
-rule heavy-include is the counted rule of most cases: a planted census, a
-planted configuration and a planted ledger in a throwaway directory.  The
-runs of THE POLICY of assay.core.configuration are cases too: the rows that
-judge a build of each configuration.  The seal rows of the rule
+rule heavy-include is the counted rule of most cases: a planted census and a
+planted ledger in a throwaway directory.  The write of one planted build and
+the reduce over two planted builds are cases too.  The seal rows of the rule
 detsafe-ledger and the cost rows of the rule heavy-include are cases too.
 Exit 0 when each case holds, else 1.
 """
 
+import dataclasses
 import functools
 import tempfile
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import git, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -24,13 +23,7 @@ from assay.readers import sections
 
 RULE = heavy_include.RULE
 KIND = heavy_include.HEAVY
-BASE = build_config.BuildConfiguration("planted", (("kind", "planted"), ("tier", "x86-64-0")))
-OTHER = build_config.BuildConfiguration("other", (("kind", "other"), ("tier", "x86-64-0")))
-LEDGER_HEAD = (
-    "# A planted ledger.\nformat 1\nrule heavy-include\n"
-    "configuration planted kind planted\nconfiguration planted tier x86-64-0\n"
-    "configuration other kind other\nconfiguration other tier x86-64-0\n"
-)
+LEDGER_HEAD = "# A planted ledger.\nformat 1\nrule heavy-include\n"
 COST_ROWS = (
     "\n" + header_costs.MARKER + "\n"
     "heavy <chrono> | 1.120 G, 70628 lines\n"
@@ -56,12 +49,9 @@ def plant_tree(root: Path, ledger_rows: str, table_rows: str = COST_ROWS) -> Non
     )
 
 
-def context_of(
-    root: Path, found: list[sections.Finding], configuration: build_config.BuildConfiguration
-) -> runner.PluginContext:
-    """Return a planted context: a census of the finding lines, and a configuration."""
-    census = runner.Census(1, frozenset(found))
-    return runner.PluginContext(root, None, census, configuration)
+def context_of(root: Path, found: list[sections.Finding]) -> runner.PluginContext:
+    """Return a planted context: a census of the finding lines."""
+    return runner.PluginContext(root, None, runner.Census(1, frozenset(found)))
 
 
 def key_cases(expect: testing.Expect) -> None:
@@ -90,86 +80,36 @@ def verdict_cases(expect: testing.Expect) -> None:
     """Check the verdict of the rule heavy-include: each count against its row, and the warnings."""
     with tempfile.TemporaryDirectory(prefix="counted-") as work:
         root = Path(work)
-        plant_tree(
-            root,
-            "a.h | heavy-include | 1 | <chrono> | -\nb.h | heavy-include | 1 | <thread> | a door\n"
-            "@other | a.h | heavy-include | +1 | <chrono> | -\n",
-        )
+        plant_tree(root, "a.h | heavy-include | 2 | <chrono> | -\nb.h | heavy-include | 1 | <thread> | a door\n")
         rule = rule_ledger.rule_of(RULE)
-        base_found = [finding("a.h", 2, KIND, "<chrono>"), finding("b.h", 3, KIND, "<thread>")]
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found, BASE), None))
+        base_found = [
+            finding("a.h", 2, KIND, "<chrono>"),
+            finding("a.h", 9, KIND, "<chrono>"),
+            finding("b.h", 3, KIND, "<thread>"),
+        ]
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found), None))
         expect(
             "a count equal to its row passes, with a warning for a row with no reason and none for a keep row",
             status == 0 and "a.h includes <chrono>" in text and "b.h includes" not in text,
         )
         more = [*base_found, finding("c.h", 4, KIND, "<chrono>")]
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, more, BASE), None))
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, more), None))
         expect("a new include of a heavy header is an error", status == 1 and "c.h includes <chrono> 1 times" in text)
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found[1:], BASE), None))
+        risen = [*base_found, finding("a.h", 11, KIND, "<chrono>")]
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, risen), None))
+        expect("a count above its row is an error", status == 1 and "a.h includes <chrono> 3 times" in text)
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found[1:]), None))
         expect(
-            "a count less than its row passes, because a ledger fails only on a growth",
-            status == 0 and "a.h includes" not in text,
+            "a count less than its row passes, because a build of a different configuration can give the row",
+            status == 0,
         )
         unmeasured = [*base_found, finding("d.h", 5, heavy_include.UNMEASURED, "<cstdio>")]
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, unmeasured, BASE), None))
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, unmeasured), None))
         expect(
             "an include of an unmeasured header is an error that names the measure",
             status == 1 and "derive header-costs --measure BUILD_DIR cstdio" in text,
         )
-        other = [
-            finding("a.h", 2, KIND, "<chrono>"),
-            finding("a.h", 9, KIND, "<chrono>"),
-            finding("b.h", 3, KIND, "<thread>"),
-        ]
-        status, _text = testing.captured(lambda: heavy_include.run(rule, context_of(root, other, OTHER), None))
-        expect("a configuration other than the base adds its difference to the base count", status == 0)
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found, OTHER), None))
-        expect(
-            "a fall of a configuration other than the base passes and writes its rows for --import",
-            status == 0 and rule_ledger.ROW_MARK in text,
-        )
-        failed = [*base_found, finding("c.h", 4, KIND, "<chrono>")]
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, failed, OTHER), None))
-        expect(
-            "a failure of a configuration other than the base writes its rows for --import",
-            status == 1 and rule_ledger.ROW_MARK in text,
-        )
-        unknown = build_config.BuildConfiguration("unknown", (("kind", "unknown"), ("tier", "x86-64-0")))
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found, unknown), None))
-        expect(
-            "the largest count of each key judges a configuration that the ledger does not hold, and the run writes "
-            "its rows",
-            status == 0
-            and "the largest count of each key over the configurations planted, other, because the ledger holds no "
-            "configuration unknown"
-            in text
-            and rule_ledger.ROW_MARK in text,
-        )
-        status, _text = testing.captured(lambda: heavy_include.run(rule, context_of(root, other, unknown), None))
-        expect(
-            "an include that only a different configuration counts passes in a configuration that the ledger does "
-            "not hold",
-            status == 0,
-        )
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, more, unknown), None))
-        expect(
-            "a finding of an arm that only a configuration that the ledger does not hold compiles is an error",
-            status == 1 and "c.h includes <chrono> 1 times" in text,
-        )
-        judged = heavy_include.judge(rule, context_of(root, more, unknown))
-        expect(
-            "judge gives the errors of the largest counts for a configuration that the ledger does not hold",
-            any(item.level == "error" and "c.h" in item.message for item in judged),
-        )
-        other_tier = build_config.BuildConfiguration("other", (("kind", "other"), ("tier", "x86-64-9")))
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, other, other_tier), None))
-        expect(
-            "the rows of its name judge a build with other facts, and a line names each fact that differs",
-            status == 0
-            and "tier is x86-64-9 in the build and x86-64-0 in the ledger" in text
-            and "judged against the rows of the configuration other" in text,
-        )
-        judged = heavy_include.judge(rule, context_of(root, more, BASE))
+        judged = heavy_include.judge(rule, context_of(root, more))
         expect(
             "judge gives the errors of the verdict",
             any(item.level == "error" and "c.h" in item.message for item in judged),
@@ -177,7 +117,7 @@ def verdict_cases(expect: testing.Expect) -> None:
         plant_tree(
             root, "a.h | heavy-include | 1 | <chrono> | -\n", COST_ROWS.replace("heavy <chrono>", "light <chrono>")
         )
-        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found[:1], BASE), None))
+        status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found[:1]), None))
         expect(
             "a cost row with a kind that does not agree with its measure is an error",
             status == 1 and "the row of <chrono> is light" in text,
@@ -195,18 +135,12 @@ def verdict_cases(expect: testing.Expect) -> None:
 
 
 def write_cases(expect: testing.Expect) -> None:
-    """Check the parts of the write: the increases that a mode permits, the rows of gone files and the import."""
+    """Check the increases that a mode of a write permits."""
     ledger = rule_ledger.parse(
-        LEDGER_HEAD + "a.h | heavy-include | 1 | <chrono> | -\n"
-        "@other | a.h | heavy-include | +1 | <chrono> | -\n"
-        "@other | gone.h | heavy-include | +2 | <chrono> | -\n"
-        "@other | @build/gen.h | heavy-include | +1 | <chrono> | -\n",
-        "planted",
-        RULE,
-        rule_registry.Policy.COUNT,
+        LEDGER_HEAD + "a.h | heavy-include | 1 | <chrono> | -\n", "planted", RULE, rule_registry.Policy.COUNT
     )
     counts = {rule_ledger.Key("a.h", KIND, "<chrono>"): 2}
-    permitted = functools.partial(counted.increases_permitted, heavy_include.SPEC, ledger, "planted")
+    permitted = functools.partial(counted.increases_permitted, heavy_include.SPEC, ledger, None)
     for mode, wanted in (
         (rule_ledger.WriteMode.LOWER, None),
         (rule_ledger.WriteMode.RAISE, True),
@@ -232,39 +166,50 @@ def write_cases(expect: testing.Expect) -> None:
         functools.partial(permitted, {**split, **counts}, moved, rule_ledger.WriteMode.LOWER)
     )
     expect("a rise that no fall pays stays an increase that the mode lower refuses", result is None)
+
+
+def build_cases(expect: testing.Expect) -> None:
+    """Check the write of one planted build, which lowers no row, and the reduce over two planted builds."""
     with tempfile.TemporaryDirectory(prefix="counted-") as work:
         root = Path(work)
-        (root / "a.h").write_text("", encoding="utf-8")
-        kept = counted.drop_gone_files(ledger, root, {})
-        other = kept.deltas["other"]
-        expect(
-            "a write of the base removes the difference rows of a source file that the tree does not hold",
-            rule_ledger.Key("gone.h", KIND, "<chrono>") not in other,
-        )
-        expect(
-            "a write of the base keeps the rows of a file of the build directory and of a file that stays",
-            rule_ledger.Key("@build/gen.h", KIND, "<chrono>") in other
-            and rule_ledger.Key("a.h", KIND, "<chrono>") in other,
-        )
-        log = root / "log.txt"
-        log.write_text(
-            "noise\n"
-            + "\n".join(
-                rule_ledger.rows_of_counts(
-                    ledger, "other", list(OTHER.facts), {rule_ledger.Key("a.h", KIND, "<chrono>"): 3}
+        plant_tree(root, "a.h | heavy-include | 2 | <chrono> | -\narm.h | heavy-include | 1 | <chrono> | -\n")
+        first, second, broken = root / "first", root / "second", root / "broken"
+        planted = {
+            first: [finding("a.h", 2, KIND, "<chrono>")],
+            second: [finding("a.h", 2, KIND, "<chrono>"), finding("arm.h", 3, KIND, "<chrono>")],
+        }
+
+        def planted_context(context_root: Path, build: Path | None) -> runner.PluginContext:
+            """Return the planted census of a build, or a census with a problem for the build `broken`."""
+            if build == broken:
+                return runner.PluginContext(
+                    context_root, None, runner.Census(1, problems=(runner.Problem("x.o", "a planted problem"),))
                 )
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        path = rule_ledger.ledger_path(RULE, root)
-        path.parent.mkdir(parents=True)
-        path.write_text(rule_ledger.render(ledger), encoding="utf-8")
-        status, _text = testing.captured(lambda: build_config.import_rows(rule_ledger.rule_of(RULE), root, log))
-        written = rule_ledger.read(rule_ledger.rule_of(RULE), root)
+            return context_of(context_root, planted[build] if build is not None else [])
+
+        spec = dataclasses.replace(heavy_include.SPEC, context_of=planted_context)
+        rule = rule_ledger.rule_of(RULE)
+        before = rule_ledger.read(rule, root).expected()
+        status, _text = testing.captured(lambda: counted.write(spec, rule, runner.WriteRequest(root, first)))
         expect(
-            "--import puts the rows of a heavy-include log into the ledger",
-            status == 0 and written.expected("other").get(rule_ledger.Key("a.h", KIND, "<chrono>")) == 3,
+            "the write of one build lowers no row, also a row that the build does not give",
+            status == 0 and rule_ledger.read(rule, root).expected() == before,
+        )
+        status, _text = testing.captured(
+            lambda: counted.write(spec, rule, runner.WriteRequest(root, first, more_builds=(second, broken)))
+        )
+        expect(
+            "a reduce with a build that has a problem writes nothing",
+            status == 1 and rule_ledger.read(rule, root).expected() == before,
+        )
+        status, _text = testing.captured(
+            lambda: counted.write(spec, rule, runner.WriteRequest(root, first, more_builds=(second,)))
+        )
+        expect(
+            "the reduce takes the largest count of each key over two builds, and it lowers each row to that count",
+            status == 0
+            and rule_ledger.read(rule, root).expected()
+            == {rule_ledger.Key("a.h", KIND, "<chrono>"): 1, rule_ledger.Key("arm.h", KIND, "<chrono>"): 1},
         )
 
 
@@ -306,4 +251,6 @@ def seal_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (key_cases, verdict_cases, write_cases, seal_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (key_cases, verdict_cases, write_cases, build_cases, seal_cases)
+    )

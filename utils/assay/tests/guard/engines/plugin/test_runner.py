@@ -2,22 +2,22 @@
 
 THE PLANTED BUILD
     Scratch makes a throwaway git repository.  It holds each source file of
-    the findings, a fake ninja, a fake compiler and a CMake cache.  It also
-    holds a compile database, objects with sections, a rule table and a
-    ledger.  A case changes the finding lines of an object.  Then it runs the
-    rule, writes the ledger or lists the findings, as `guard check`, `guard
-    write` and `guard list` do.
+    the findings, a fake ninja and a CMake cache.  It also holds a compile
+    database, objects with sections, a rule table and a ledger.  A case
+    changes the finding lines of an object.  Then it runs the rule, writes the
+    ledger or lists the findings, as `guard check`, `guard write` and `guard
+    list` do.  A complete write gives the write the planted build two times,
+    as a reduce of the landing gate gives it a build of each configuration.
 
 THE CASES
     The cases hold each behavior of the ledger of the rule quarantine:
       * The entity of each kind
       * The opted-out findings and the regions
-      * The configurations and their difference rows
-      * A build that the ledger does not hold, and the rows for an import
+      * One set of rows for the builds of two kinds, and an arm of one build
       * A file that git moves, and a file that the tree does not hold
       * A base header that git moves to a different layer
       * The directory warnings and the problems of the objects
-      * Each mode of the write.
+      * Each mode of the write, the write of one build and the complete write.
     The cases of the rule contract-specifier hold its errors and the problems
     of the census.
 """
@@ -30,12 +30,10 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import git as throwaway_repo
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.core import rows as rows_grammar
 from assay.core import ruletable, testing
 from assay.guard.engines.plugin import counted, quarantine, runner
 from assay.readers import cmake, compdb, elf
@@ -61,20 +59,6 @@ HEAD = "# a planted ledger\n"
 EMPTY_LEDGER = f"{HEAD}format 1\nrule {RULE}\n"
 STAMP_VALUE = "0123abcd"
 PROBE_REASON = "PROBE: a planted region"
-# A fake compiler: -Q --help=target prints the -march value of the file march.txt beside it, or of native.txt for
-# -march=native.  native.txt names the processor of a planted host.  -dumpmachine prints an x86_64 machine.
-FAKE_COMPILER = """\
-import sys
-from pathlib import Path
-if "-dumpmachine" in sys.argv:
-    sys.exit(print("x86_64-pc-linux-gnu"))
-here = Path(__file__).parent
-word = "native" if "-march=native" in sys.argv else "march"
-value = (here / f"{word}.txt").read_text().strip() if (here / f"{word}.txt").exists() else "x86-64"
-print("The following options are target specific:")
-print(f"  -march=                     \\t\\t{value}")
-print("  -mtune=                     \\t\\tgeneric")
-"""
 BASE_NAME = "x86_64-debug-asan"
 RELEASE_NAME = "x86_64-release"
 SOURCES = (
@@ -125,14 +109,8 @@ class Scratch:
         self.ninja = root / "ninja.py"
         self.ninja.write_text(f"#!{sys.executable}\n{FAKE_NINJA}", encoding="utf-8")
         self.ninja.chmod(0o755)
-        self.compiler = root / "compiler" / "g++"
-        self.compiler.parent.mkdir()
-        self.compiler.write_text(f"#!{sys.executable}\n{FAKE_COMPILER}", encoding="utf-8")
-        self.compiler.chmod(0o755)
         self.configure(BASE_NAME, "Debug")
         self.objects: dict[str, tuple[list[str], str, bool]] = {}
-        # The flags that the target of an object adds to its compile, as each bench target adds -march=native.
-        self.flags: dict[str, str] = {}
         header = "quarantine std-object include/crucible/Vigil.h:10:5 std::vector"
         self.add(
             "a",
@@ -154,9 +132,7 @@ class Scratch:
         )
         self.add("c", ["quarantine std-entity test/test_arena.cpp:2:1 std::swap"])
 
-    def configure(
-        self, kind: str, build_type: str, flags: str = "", extra: Mapping[str, tuple[str, str]] | None = None
-    ) -> None:
+    def configure(self, kind: str, build_type: str, flags: str = "") -> None:
         """Write the build kind and the reply of the CMake cache of one configuration of the planted build."""
         (self.build / "build-kind.txt").write_text(f"{kind}\n", encoding="utf-8")
         cmake.plant(
@@ -164,10 +140,8 @@ class Scratch:
             cache={
                 "CMAKE_GENERATOR": "Ninja",
                 "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(self.ninja)),
-                "CMAKE_CXX_COMPILER": ("FILEPATH", str(self.compiler)),
                 "CMAKE_BUILD_TYPE": ("STRING", build_type),
                 "CMAKE_CXX_FLAGS": ("STRING", flags),
-                **(extra or {}),
             },
         )
 
@@ -183,7 +157,6 @@ class Scratch:
     def drop(self, name: str) -> None:
         """Remove one object of all."""
         del self.objects[name]
-        self.flags.pop(name, None)
         self.flush()
 
     def flush(self) -> None:
@@ -200,8 +173,7 @@ class Scratch:
                     "directory": str(self.build),
                     "file": str(self.root / f"{name}.cpp"),
                     "output": f"{name}.o",
-                    "command": f"g++ {self.flags.get(name, '')} -fplugin=q.so {runner.STAMP_ARGUMENT}"
-                    f"{STAMP_VALUE} -c {name}.cpp",
+                    "command": f"g++ -fplugin=q.so {runner.STAMP_ARGUMENT}{STAMP_VALUE} -c {name}.cpp",
                 }
             )
         compdb.plant(self.build, rows)
@@ -221,14 +193,15 @@ class Scratch:
     def write(
         self,
         mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER,
-        add_configuration: bool = False,
-        import_log: Path | None = None,
         reason: str | None = None,
+        is_complete: bool = False,
     ) -> tuple[int, str]:
-        """Write the ledger of the rule quarantine from the planted build, and return the status and the text."""
-        request = runner.WriteRequest(
-            self.root, None if import_log is not None else self.build, mode, reason, add_configuration, import_log
-        )
+        """Write the ledger of the rule quarantine from the planted build, and return the status and the text.
+
+        With `is_complete`, the write gets the planted build two times, and it is a complete write that lowers the rows
+        (THE REDUCE of assay.core.ledger).
+        """
+        request = runner.WriteRequest(self.root, self.build, mode, reason, (self.build,) if is_complete else ())
         with (
             check_report.github_actions(False),
             contextlib.redirect_stdout(io.StringIO()) as printed,
@@ -257,29 +230,13 @@ class Scratch:
         return rule_ledger.read(RULES[RULE], self.root)
 
     def base(self) -> dict[Row, int]:
-        """Return the count of each base row of the planted ledger."""
+        """Return the count of each row of the planted ledger."""
         return as_tuples({key: int(entry.value) for key, entry in self.ledger_rows().base.items()})
-
-    def deltas(self, name: str) -> dict[Row, int]:
-        """Return the difference of each row of one configuration of the planted ledger."""
-        return as_tuples({key: int(entry.value) for key, entry in self.ledger_rows().deltas.get(name, {}).items()})
-
-    def tier(self, name: str) -> str:
-        """Return the tier of one configuration of the planted ledger, or an empty text."""
-        item = self.ledger_rows().configuration(name)
-        return dict(item.facts).get(build_config.TIER_KEY, "") if item is not None else ""
 
 
 def as_tuples(counts: Mapping[rule_ledger.Key, int]) -> dict[Row, int]:
     """Return the counts with each key as the tuple (file, kind, entity)."""
     return {(key.path, key.kind, key.entity): count for key, count in counts.items()}
-
-
-def delta_row(name: str, path: str, kind: str, delta: str, entity: str) -> str:
-    """Return one difference row that the rule writes for an import, with its mark."""
-    return rule_ledger.ROW_MARK + rows_grammar.render(
-        [f"{rule_ledger.DELTA_MARK}{name}"], [path, kind, delta, entity, ""]
-    )
 
 
 def directory_totals(counts: Mapping[Row, int], rows: list[str]) -> Counter[tuple[str, str]]:
@@ -316,12 +273,11 @@ def unit_cases(expect: testing.Expect) -> None:
     ):
         expect(f"the directory of {rel} is {wanted}", quarantine.directory_of(rel, rows) == wanted)
     keyed = rule_ledger.parse(
-        f"{EMPTY_LEDGER}configuration b machine x\nconfiguration r machine y\n"
+        f"{EMPTY_LEDGER}"
         "x.cpp | raw-pointer-object | 2 | - | -\n"
         "x.cpp | layer-header | 1 | <vector> in the layer X1 | -\n"
         "x.cpp | opted-out | 1 | PROBE: a region \\| c-library-call memcpy | -\n"
-        "x.cpp | region | 1 | PROBE: a region | -\n"
-        "@r | x.cpp | layer-header | +1 | <vector> in the layer X1 | -\n",
+        "x.cpp | region | 1 | PROBE: a region | -\n",
         "planted",
         RULE,
         RULES[RULE].policy,
@@ -334,8 +290,7 @@ def unit_cases(expect: testing.Expect) -> None:
             ("x.cpp", "layer-header", "<vector> in the layer X1"): 1,
             ("x.cpp", "opted-out", "PROBE: a region | c-library-call memcpy"): 1,
             ("x.cpp", "region", "PROBE: a region"): 1,
-        }
-        and keyed.expected("r")[rule_ledger.Key("x.cpp", "layer-header", "<vector> in the layer X1")] == 2,
+        },
     )
     expect(
         "the entity of a row names what the plugin refuses, and a declaration of a raw object keys no name",
@@ -479,8 +434,7 @@ def census_cases(expect: testing.Expect) -> None:
         [item.level for item in census.errors(CONTRACT)] == ["error"] * 3
         and all(item.check == CONTRACT for item in census.errors(CONTRACT)),
     )
-    configuration = build_config.BuildConfiguration("planted", (("kind", "planted"), ("tier", "x86-64-0")))
-    context = runner.PluginContext(Path("/planted"), None, census, configuration)
+    context = runner.PluginContext(Path("/planted"), None, census)
     counts = as_tuples(counted.counts_of(quarantine.findings(context)))
     expect(
         "a planted census gives the counts of the rule quarantine, with a region row and an opted-out row",
@@ -491,7 +445,6 @@ def census_cases(expect: testing.Expect) -> None:
             ("a.cpp", "opted-out", "PROBE: a region | std-entity std::swap"): 1,
         },
     )
-    expect("a planted context gives its configuration and reads no build", context.configuration() is configuration)
     no_build = runner.PluginContext(Path("/planted"))
     try:
         no_build.census()
@@ -539,20 +492,17 @@ def parsed_cases(expect: testing.Expect, scratch: Scratch) -> None:
 def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold the first write of an empty ledger, the equal build and the second write."""
     status, _, text = scratch.run()
-    expect(
-        "an empty ledger judges the build against the base rows, so each finding fails",
-        status == 1 and "judged against the base rows" in text and "holds no rows" not in text,
-    )
+    expect("an empty ledger fails each finding", status == 1 and "holds no rows" not in text)
     empty_text = scratch.ledger.read_text(encoding="utf-8")
     status, _ = scratch.write()
     expect(
-        "a write to a ledger with no configuration refuses each count above its base row",
+        "a write of one build refuses each new key with no --raise",
         status == 1 and scratch.ledger.read_text(encoding="utf-8") == empty_text,
     )
-    status, _ = scratch.write(add_configuration=True)
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     written = scratch.ledger_rows()
     expect(
-        "--add-configuration writes one row for each file, kind and entity of the base, and one for each region",
+        "--raise writes one row for each file, kind and entity of the build, and one for each region",
         status == 0
         and scratch.base()
         == {
@@ -566,15 +516,9 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
             ("test/test_arena.cpp", "std-entity", "std::swap"): 1,
         },
     )
-    base_keys = dict(written.configurations[0].facts) if written.configurations else {}
     expect(
-        "the write gives the ledger the head comment of the rule in place of the planted head, and it writes the "
-        "configuration under the name of the kind",
-        written.comment == quarantine.LEDGER_COMMENT != HEAD
-        and written.base_name == BASE_NAME
-        and base_keys.get("CMAKE_BUILD_TYPE") == "Debug"
-        and base_keys.get(build_config.KIND_KEY) == BASE_NAME
-        and base_keys.get(build_config.TIER_KEY, "").startswith("x86-64-"),
+        "the write gives the ledger the head comment of the rule in place of the planted head",
+        written.comment == quarantine.LEDGER_COMMENT != HEAD,
     )
     status, found, text = scratch.run()
     expect(
@@ -625,7 +569,15 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
         scratch.errors() == [],
     )
     status, _ = scratch.write()
-    expect("the write writes the shrink of a region", status == 0 and scratch.errors() == [])
+    expect(
+        "the write of one build keeps the row of a region that covers less",
+        status == 0 and scratch.base() == grown and scratch.errors() == [],
+    )
+    status, _ = scratch.write(is_complete=True)
+    expect(
+        "a complete write writes the shrink of a region",
+        status == 0 and memset_row not in scratch.base() and scratch.errors() == [],
+    )
     scratch.add(
         "a",
         [
@@ -677,9 +629,9 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "a row that admits more regions than the file has gives no error",
         scratch.errors() == [],
     )
-    status, _ = scratch.write()
+    status, _ = scratch.write(is_complete=True)
     expect(
-        "the write lowers the count of the regions, and the ledger keeps the rows of each region",
+        "a complete write lowers the count of the regions, and the ledger keeps the rows of each region",
         status == 0
         and {key: count for key, count in scratch.base().items() if key[1] in quarantine.ADMITTED_KINDS} == region_rows,
     )
@@ -735,9 +687,7 @@ def hole_cases(expect: testing.Expect, scratch: Scratch) -> None:
             ),
         ],
     )
-    first_row = scratch.ledger_rows().line_of(
-        rule_ledger.Key("test/fixy/test_b.cpp", "std-object", "std::span"), BASE_NAME
-    )
+    first_row = scratch.ledger_rows().line_of(rule_ledger.Key("test/fixy/test_b.cpp", "std-object", "std::span"))
     expect(
         "the error of a new entity points at the first row of its file",
         any(item.line == first_row and "std::map" in item.message for item in scratch.run()[1]),
@@ -790,9 +740,14 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 0 and not any(item.level == "error" for item in found),
     )
     scratch.write()
+    expect(
+        "the write of one build keeps the row of the finding that goes",
+        ("test/test_arena.cpp", "std-entity", "std::swap") in scratch.base(),
+    )
+    scratch.write(is_complete=True)
     status, _, _ = scratch.run()
     expect(
-        "after the write the build gives no error again",
+        "after a complete write the build gives no error again, and the row of the finding that goes is gone",
         status == 0 and ("test/test_arena.cpp", "std-entity", "std::swap") not in scratch.base(),
     )
     status, text = scratch.listed("test/fixy", "c-library-call")
@@ -822,7 +777,7 @@ def layer_move_cases(expect: testing.Expect) -> None:
         scratch.git("add", "--", old)
         scratch.git("commit", "-q", "-m", "Add a planted base header")
         scratch.add("e", [f"quarantine layer-header {old}:5:1 <tuple> in the layer X3_os"])
-        status, _ = scratch.write(add_configuration=True)
+        status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
         expect(
             "the row of an include holds the header and no layer",
             status == 0 and scratch.base().get((old, "layer-header", "<tuple>")) == 1,
@@ -856,19 +811,13 @@ def layer_move_cases(expect: testing.Expect) -> None:
         )
 
 
-def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a second configuration, its difference rows, a different tier, a gone file and a file of the build."""
+def build_kind_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold one set of rows for the builds of two kinds: an arm of one build, a file of the build, the reduce."""
     scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
     status, _, text = scratch.run()
-    expect(
-        "a build of a configuration that the ledger does not hold is judged against the largest count of each key",
-        status == 0
-        and f"judged against the largest count of each key over the configurations {BASE_NAME}, because the ledger "
-        f"holds no configuration {RELEASE_NAME}"
-        in text
-        and f"{rule_ledger.ROW_MARK}configuration {RELEASE_NAME} kind {RELEASE_NAME}" in text,
-    )
-    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
+    expect("the one set of rows judges a build of a different kind", status == 0 and "holds no rows" not in text)
+    swap = ("include/crucible/Vigil.h", "std-entity", "std::swap")
+    scratch.add("g", [f"quarantine std-entity {swap[0]}:31:7 std::swap"])
     before_write = scratch.ledger.read_text(encoding="utf-8")
     status, written_text = scratch.write()
     swap_error = (
@@ -876,201 +825,35 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
         "admits 0"
     )
     expect(
-        "a finding of an arm that only that build compiles fails it, and a write with no --add-configuration "
-        "writes nothing",
+        "a finding of an arm that only that build compiles fails it, and the write refuses it with no --raise",
         scratch.errors() == [swap_error]
         and status == 1
-        and written_text.startswith(f"{RULE}: the ledger holds no rows of {RELEASE_NAME} on the tier")
-        and "Give --add-configuration" in written_text
+        and "rises from 0" in written_text
         and scratch.ledger.read_text(encoding="utf-8") == before_write,
     )
-    scratch.drop("g")
-    (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
-    door = "<sys/socket.h> has the door include/fixy/os/Socket.h"
-    # Only the second configuration writes the file of the build directory.  The tree holds no file test_gone.cpp.
+    # Only the release build writes the file of the build directory.
     generated = (f"{ruletable.BUILD_PREFIX}gen/table.c", "c-array-object", "")
-    gone = ("test/fixy/test_gone.cpp", "std-entity", "std::swap")
-    lines_e = [
-        "quarantine compiler-builtin include/crucible/Vigil.h:30:7 __builtin_ia32_pause",
-        f"quarantine door-header include/fixy/session/Handle.h:5:0 {door}",
-        f"quarantine c-array-object {generated[0]}:3:1 int [4]",
-    ]
-    scratch.add("e", [*lines_e, f"quarantine std-entity {gone[0]}:2:1 std::swap"])
-    status, _ = scratch.write(add_configuration=True)
-    release = scratch.deltas(RELEASE_NAME)
+    scratch.add("e", [f"quarantine c-array-object {generated[0]}:3:1 int [4]"])
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     expect(
-        "--add-configuration writes the differences of a second configuration",
-        status == 0
-        and release
-        == {
-            ("include/crucible/Vigil.h", "compiler-builtin", "__builtin_ia32_pause"): 1,
-            ("include/fixy/session/Handle.h", "door-header", door): 1,
-            generated: 1,
-            gone: 1,
-        }
-        and scratch.tier(RELEASE_NAME) == "native-x86_64",
+        "--raise adds the arm and the file of the build to the one set, and the build then gives no error",
+        status == 0 and scratch.base().get(swap) == 1 and scratch.base().get(generated) == 1 and scratch.run()[0] == 0,
     )
-    expect("the second configuration gives no error", scratch.run()[0] == 0)
-    (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
-    status, _, text = scratch.run()
-    expect(
-        "a host with a different processor holds the configuration, and its rows judge the build with no line of a "
-        "fact",
-        status == 0
-        and f"judged against the rows of the configuration {RELEASE_NAME}" in text
-        and "holds no rows" not in text
-        and rule_ledger.ROW_MARK not in text,
-    )
-    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
-    status, written_text = scratch.write()
-    expect(
-        "a finding of an arm that only that host compiles fails the build, and a write refuses the rise",
-        scratch.run()[0] == 1 and status == 1 and "rises from 0" in written_text,
-    )
-    scratch.drop("g")
-    (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
     scratch.configure(BASE_NAME, "Debug")
+    scratch.drop("g")
     scratch.drop("e")
-    scratch.add("a", [line for line in scratch.objects["a"][0] if "memcpy" not in line])
-    status, _ = scratch.write()
-    lowered = scratch.deltas(RELEASE_NAME)
-    memcpy = ("test/fixy/test_a.cpp", "c-library-call", "memcpy")
-    expect(
-        "a write of the base keeps the count of each key of the second configuration",
-        status == 0
-        and {key: delta for key, delta in lowered.items() if key[0] in SOURCES}
-        == {**{key: delta for key, delta in release.items() if key[0] in SOURCES}, memcpy: 1},
-    )
-    expect(
-        "a write of the base removes the difference row of a source file that the tree does not hold",
-        gone not in lowered,
-    )
-    expect(
-        "a write of the base keeps the difference row of a file that a build of the configuration writes",
-        lowered.get(generated) == 1,
-    )
-    scratch.configure(RELEASE_NAME, "Release", "-O1 -march=native -DNDEBUG")
-    scratch.add("e", lines_e)
-    status, _, text = scratch.run()
-    expect(
-        "a count that fell in the second configuration too passes there, and the run writes its rows for an import",
-        status == 0 and scratch.errors() == [] and rule_ledger.ROW_MARK in text,
-    )
+    expect("a build that does not compile the arm passes with its row", scratch.errors() == [])
     status, _ = scratch.write()
     expect(
-        "a write of the second configuration records its fall with no --raise, and the build then gives no error",
-        status == 0 and memcpy not in scratch.deltas(RELEASE_NAME) and scratch.run()[0] == 0,
+        "the write of that build keeps the rows of the arm and of the file of the build, because one build cannot "
+        "see a different build",
+        status == 0 and scratch.base().get(swap) == 1 and scratch.base().get(generated) == 1,
     )
-    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
-    status, _, text = scratch.run()
+    status, _ = scratch.write(is_complete=True)
     expect(
-        "a failure of a later configuration writes its rows for an import",
-        status == 1 and delta_row(RELEASE_NAME, "include/crucible/Vigil.h", "std-entity", "+1", "std::swap") in text,
+        "a complete write over builds that do not give the arm removes its rows, and the builds give no error",
+        status == 0 and swap not in scratch.base() and generated not in scratch.base() and scratch.errors() == [],
     )
-    scratch.drop("g")
-    scratch.add("e", lines_e[:2])
-    expect(
-        "a build of the configuration that does not write the generated file passes with its row",
-        scratch.errors() == [],
-    )
-    status, _ = scratch.write()
-    expect(
-        "a write of that configuration removes the row, and the build then gives no error",
-        status == 0 and generated not in scratch.deltas(RELEASE_NAME) and scratch.errors() == [],
-    )
-
-
-def import_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a configuration that only CI builds: its rows go through a log."""
-    door = "<sys/socket.h> has the door include/fixy/os/Socket.h"
-    scratch.configure("aarch64-debug-asan", "Debug")
-    status, _, text = scratch.run()
-    expect(
-        "the largest count of each key judges a build that the ledger does not hold, so the arms that the "
-        "configuration x86_64-release counts pass, and it writes its configuration and its differences",
-        status == 0
-        and f"the largest count of each key over the configurations {BASE_NAME}, {RELEASE_NAME}, because the ledger "
-        f"holds no configuration aarch64-debug-asan"
-        in text
-        and f"{rule_ledger.ROW_MARK}configuration aarch64-debug-asan kind aarch64-debug-asan" in text
-        and delta_row(
-            "aarch64-debug-asan", "include/crucible/Vigil.h", "compiler-builtin", "+1", "__builtin_ia32_pause"
-        )
-        in text
-        and delta_row("aarch64-debug-asan", "include/fixy/session/Handle.h", "door-header", "+1", door) in text,
-    )
-    log = scratch.root / "ci.log"
-    log.write_text(
-        "".join(f"build+test aarch64\tQuarantine ratchet\t2026-10-02T21:00:00Z {line}\n" for line in text.splitlines()),
-        encoding="utf-8",
-    )
-    status, _ = scratch.write(import_log=log)
-    expect(
-        "--import puts the rows of a log into the ledger, and the build then gives no error",
-        status == 0 and scratch.ledger_rows().configuration("aarch64-debug-asan") is not None and scratch.run()[0] == 0,
-    )
-    third = delta_row(
-        "aarch64-debug-asan", "include/crucible/Vigil.h", "compiler-builtin", "+3", "__builtin_ia32_pause"
-    )
-    log.write_text(log.read_text(encoding="utf-8") + f"x\t{third}\n", encoding="utf-8")
-    before_import = scratch.ledger.read_text(encoding="utf-8")
-    status, _ = scratch.write(import_log=log)
-    expect(
-        "--import refuses two values for one row",
-        status == 1 and scratch.ledger.read_text(encoding="utf-8") == before_import,
-    )
-    scratch.configure(BASE_NAME, "Debug")
-    scratch.drop("e")
-    scratch.add("g", ["quarantine std-entity include/crucible/Vigil.h:31:7 std::swap"])
-    status, _, text = scratch.run()
-    expect(
-        "a failure of the base writes no rows, because a write writes the base",
-        status == 1 and rule_ledger.ROW_MARK not in text,
-    )
-    scratch.drop("g")
-
-
-def bench_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a bench target that adds -march=native to its own compiles, so that its arms depend on the host.
-
-    The tier names the native request and no processor.  A write from a host with a different processor then records
-    a fall with no --add-configuration.  The gate writes the falls of each configuration in this way (THE FALLS of
-    assay.loop.gate).
-    """
-    bench_name = f"{BASE_NAME}-bench"
-    scratch.configure(BASE_NAME, "Debug", extra={"CRUCIBLE_BENCH": ("BOOL", "ON")})
-    scratch.flags["h"] = "-O3 -march=native"
-    vector_compare = ("include/crucible/Vigil.h", "compiler-builtin", "__builtin_ia32_vpcmpb512")
-    scratch.add("h", [f"quarantine {vector_compare[1]} {vector_compare[0]}:40:7 {vector_compare[2]}"])
-    status, _ = scratch.write(add_configuration=True)
-    bench_tier = scratch.tier(bench_name)
-    expect(
-        "a compile with its own native flag adds the native request and the architecture to the tier",
-        status == 0 and bench_tier.startswith("x86-64-") and bench_tier.endswith("+native-x86_64"),
-    )
-    (scratch.compiler.parent / "native.txt").write_text("znver3\n", encoding="utf-8")
-    scratch.add("h", [])
-    status, _, text = scratch.run()
-    expect(
-        "the rows of its name judge a host with a different processor, and the arm that its bench compile does not "
-        "select is a count below its row, which passes",
-        status == 0
-        and f"judged against the rows of the configuration {bench_name}" in text
-        and "holds no rows" not in text
-        and "has 0 findings of the kind compiler-builtin" not in text,
-    )
-    status, written_text = scratch.write()
-    holds = (
-        status == 0
-        and vector_compare not in scratch.deltas(bench_name)
-        and scratch.tier(bench_name) == bench_tier
-        and scratch.run()[0] == 0
-    )
-    label = "a write from that host records the fall with no --add-configuration, and the build then gives no error"
-    expect(label if holds else f"{label}: {written_text}", holds)
-    (scratch.compiler.parent / "native.txt").write_text("znver5\n", encoding="utf-8")
-    scratch.drop("h")
-    scratch.configure(BASE_NAME, "Debug")
 
 
 def problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
@@ -1167,9 +950,7 @@ def ledger_cases(expect: testing.Expect) -> None:
         region_cases(expect, scratch)
         hole_cases(expect, scratch)
         file_cases(expect, scratch)
-        configuration_cases(expect, scratch)
-        import_cases(expect, scratch)
-        bench_cases(expect, scratch)
+        build_kind_cases(expect, scratch)
         problem_cases(expect, scratch)
         ledger_problem_cases(expect, scratch)
         parsed_cases(expect, scratch)
@@ -1212,17 +993,17 @@ def contract_cases(expect: testing.Expect) -> None:
             counts.get(("test/fixy/test_a.cpp", "opted-out", f"{PROBE_REASON} | contract-specifier pre")) == 1
             and not any(key[1] == CONTRACT for key in counts),
         )
-        scratch.write(add_configuration=True)
+        scratch.write(rule_ledger.WriteMode.RAISE)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             statuses = runner.run([RULES[CONTRACT], RULES[RULE]], scratch.root, scratch.build, None)
         expect("one run of the engine gives the status of each rule", statuses == [1, 0])
         status, text = scratch.listed(None, CONTRACT)
         expect("the list gives the findings of each rule", status == 0 and "2 findings" in text)
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            status = runner.write(
-                RULES[CONTRACT], runner.WriteRequest(scratch.root, scratch.build, add_configuration=True)
-            )
-        expect("the rule contract-specifier has no configuration to write", status == 2)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
+            status = runner.write(RULES[CONTRACT], runner.WriteRequest(scratch.root, scratch.build))
+        expect(
+            "the rule contract-specifier has no ledger to write", status == 1 and "the policy none" in said.getvalue()
+        )
 
 
 def main(argv: list[str]) -> int:

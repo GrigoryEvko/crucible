@@ -1,4 +1,4 @@
-"""The test of the ledgers (assay.core.ledger): the reader, the policies, the writes and the configurations.
+"""The test of the ledgers (assay.core.ledger): the reader, the policies, the writes and the reduce.
 
 `guard selftest tests.core.test_ledger` runs the test.  Each case prints one
 line.  Exit 0 when each case holds, else 1.
@@ -6,7 +6,7 @@ line.  Exit 0 when each case holds, else 1.
 
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -52,27 +52,19 @@ def errors(found: list[check_report.Finding]) -> list[check_report.Finding]:
 
 def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check the reader and the writer of the file."""
-    text = (
-        "# the head\nformat 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine "
-        "aarch64\na.py | kind | 2 | - | -\nb.py | kind | 1 | name | a reason\n@arm | a.py | kind | -1 | - | -\n"
-    )
+    text = "# the head\nformat 1\nrule count-rule\na.py | kind | 2 | - | -\nb.py | kind | 1 | name | a reason\n"
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
     expect(
-        "a ledger reads its configurations, its base rows and its difference rows",
-        ledger.base_name == "base" and len(ledger.base) == 2 and len(ledger.deltas["arm"]) == 1,
-    )
-    expect(
-        "expected() adds the differences of a configuration",
-        ledger.expected("arm") == {rule_ledger.Key("a.py", "kind", ""): 1, rule_ledger.Key("b.py", "kind", "name"): 1}
-        and ledger.expected()[rule_ledger.Key("a.py", "kind", "")] == 2,
+        "a ledger reads its rows, and expected() gives the count of each key",
+        ledger.expected() == {rule_ledger.Key("a.py", "kind", ""): 2, rule_ledger.Key("b.py", "kind", "name"): 1},
     )
     expect("render() gives the same text again", rule_ledger.render(ledger) == text)
     bad = {
         "a second row of a key": text.replace("b.py | kind | 1 | name", "a.py | kind | 1 | -"),
         "a count of 0": text.replace("a.py | kind | 2", "a.py | kind | 0"),
-        "a difference that makes a count below 0": text.replace("-1 | - | -", "-3 | - | -"),
         "a wrong rule row": text.replace("rule count-rule", "rule other-rule"),
-        "a configuration after an entry row": text + "configuration late machine x\n",
+        "a configuration row": text.replace("rule count-rule\n", "rule count-rule\nconfiguration base kind base\n"),
+        "a difference row": text + "@arm | a.py | kind | -1 | - | -\n",
     }
     for name, planted in bad.items():
         expect(
@@ -96,24 +88,19 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         text + "@build/gen/table.c | kind | 1 | - | -\n", "ledger.txt", "count-rule", rule_registry.Policy.COUNT
     )
     expect(
-        "a row of a file of the build directory is a base row, and @NAME with no slash is a difference row",
+        "a row of a file of the build directory reads and renders again",
         built.base.get(rule_ledger.Key("@build/gen/table.c", "kind", "")) is not None
-        and len(built.deltas["arm"]) == 1
         and without_lines(
             rule_ledger.parse(rule_ledger.render(built), "again.txt", "count-rule", rule_registry.Policy.COUNT)
         )
         == without_lines(built),
     )
     nameless = rule_ledger.parse(
-        text + "- | kind | 1 | name | -\n@arm | - | kind | +1 | name | -\n",
-        "ledger.txt",
-        "count-rule",
-        rule_registry.Policy.COUNT,
+        text + "- | kind | 1 | name | -\n", "ledger.txt", "count-rule", rule_registry.Policy.COUNT
     )
     expect(
-        "the PATH '-' is the empty path in a base row and in a difference row, and it renders as '-' again",
+        "the PATH '-' is the empty path, and it renders as '-' again",
         rule_ledger.Key("", "kind", "name") in nameless.base
-        and rule_ledger.Key("", "kind", "name") in nameless.deltas["arm"]
         and "\n- | kind | 1 | name | -\n" in rule_ledger.render(nameless),
     )
     with tempfile.TemporaryDirectory(prefix="test-ledger-") as scratch:
@@ -151,13 +138,7 @@ def reader_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 def without_lines(ledger: rule_ledger.Ledger) -> rule_ledger.Ledger:
     """Return a ledger with the line of each row at 0, so that two texts with the same rows in another order compare equal."""
-
-    def table(entries: Mapping[rule_ledger.Key, rule_ledger.Entry]) -> dict[rule_ledger.Key, rule_ledger.Entry]:
-        return {key: replace(entry, line=0) for key, entry in entries.items()}
-
-    return replace(
-        ledger, base=table(ledger.base), deltas={name: table(entries) for name, entries in ledger.deltas.items()}
-    )
+    return replace(ledger, base={key: replace(entry, line=0) for key, entry in ledger.base.items()})
 
 
 def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
@@ -232,28 +213,6 @@ def policy_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         "a baseline of digits reads as an accurate int above 2^53, a decimal as a float, and BYTES/READERS as text",
         values == {"sum": 9007199254740993, "part": 2.5, "h": "7/3"} and isinstance(values["sum"], int),
     )
-    configured = rule_ledger.parse(
-        "format 1\nrule base-rule\nconfiguration debug kind debug\nconfiguration release kind release\n"
-        "- | debug | 7/3 | h | -\n- | release | 8/3 | h | -\n",
-        "ledger.txt",
-        "base-rule",
-        rule_registry.Policy.BASELINE,
-    )
-    expect(
-        "a baseline ledger reads two configurations with rows that hold no count, and a difference row stays refused",
-        [item.name for item in configured.configurations] == ["debug", "release"]
-        and len(configured.base) == 2
-        and refuses(
-            lambda: rule_ledger.parse(
-                "format 1\nrule base-rule\nconfiguration debug kind debug\nconfiguration release kind release\n"
-                "@release | - | debug | +1 | h | -\n",
-                "ledger.txt",
-                "base-rule",
-                rule_registry.Policy.BASELINE,
-            ),
-            rows_grammar.RowsError,
-        ),
-    )
 
 
 def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
@@ -283,17 +242,6 @@ def keep_cases(expect: Expect, count: rule_registry.Rule) -> None:
     expect(
         "a path with a keep row and a count row with no reason asks for a removal, and names the keep rows",
         not errors(judged) and "Remove a finding" in message and "Keep rows count 2 of them" in message,
-    )
-    text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
-        "a.py | kind | 2 | - | a planted reason\n@arm | a.py | kind | +1 | - | -\n"
-    )
-    based = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    judged = rule_ledger.compare(count, based, [finding("a.py")] * 3, "arm")
-    message = judged[0].message if len(judged) == 1 else ""
-    expect(
-        "a difference row with no reason takes the reason of its base row, so its key is a keep row",
-        not errors(judged) and "each with its reason" in message and "Remove" not in message,
     )
 
 
@@ -363,10 +311,6 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
             "a second reason row of one prefix",
             f"{head}reason src/ | one\nreason src/ | two\nsrc/a.py | kind | 1 | - | -\n",
         ),
-        (
-            "a configuration row after a reason row",
-            f"{head}reason src/ | one\nconfiguration base machine x86_64\nsrc/a.py | kind | 1 | - | -\n",
-        ),
     ):
         expect(
             f"the reader refuses {name}",
@@ -391,13 +335,13 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         count, ledger, [finding("src/a.py")] + [finding(path) for path in ("src/c.py", "c.py", "other.py")]
     )
     expect(
-        "a write removes each reason row that no count row of its result holds, and keeps the others",
+        "a complete write removes each reason row that no count row of its result holds, and keeps the others",
         sorted(item.prefix for item in lowered.reasons) == ["c.py", "src/"],
     )
 
 
 def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the modes of write(), the moves, the configurations and the import of the rows of a configuration."""
+    """Check the modes of a complete write and the move of a file."""
     count = table["count-rule"]
     ledger = rule_ledger.write(
         count, rule_ledger.empty(count), [finding("a.py")] * 2, mode=rule_ledger.WriteMode.ADMIT, reason="first"
@@ -408,7 +352,7 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     )
     lowered = rule_ledger.write(count, ledger, [finding("a.py")])
     expect(
-        "the mode lower lowers a count and removes a row with no finding",
+        "a complete write lowers a count and removes a row with no finding",
         lowered.expected() == {rule_ledger.Key("a.py", "kind", ""): 1}
         and rule_ledger.write(count, ledger, []).base == {},
     )
@@ -426,179 +370,133 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         "a file that git moved keeps the rows of its old path",
         moved.expected() == {rule_ledger.Key("new/a.py", "kind", ""): 2},
     )
-    based = rule_ledger.Ledger(
-        "count-rule",
-        count.policy,
-        "# head\n",
-        (
-            rule_ledger.Configuration("base", (("machine", "x86_64"),)),
-            rule_ledger.Configuration("arm", (("machine", "aarch64"),)),
-        ),
-        ledger.base,
-    )
-    armed = rule_ledger.write(
-        count, based, [finding("a.py")] * 3, configuration="arm", mode=rule_ledger.WriteMode.RAISE
+
+
+def partial_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check the write of the counts of one build: it lowers no row and removes no row (THE WRITE)."""
+    count, admit = table["count-rule"], table["admit-rule"]
+    text = "format 1\nrule count-rule\na.py | kind | 2 | - | -\nb.py | kind | 1 | - | the arm of a different build\n"
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    kept = rule_ledger.write(count, ledger, [finding("a.py")], is_partial=True)
+    expect(
+        "a partial write keeps a row above the count of the build, and a row that the build does not give",
+        kept.expected() == ledger.expected() and without_lines(kept) == without_lines(ledger),
     )
     expect(
-        "a write of a configuration other than the base writes only its difference rows",
-        armed.base == based.base and armed.expected("arm")[rule_ledger.Key("a.py", "kind", "")] == 3,
-    )
-    shifted = rule_ledger.write(
-        count, based, [finding("new/a.py")] * 2, configuration="arm", moved={"new/a.py": "a.py"}
-    )
-    expect(
-        "a write of a later configuration after a move, before the write of the base, keeps the base rows and "
-        "gives its counts at the new path",
-        shifted.base == based.base
-        and shifted.expected("arm") == {rule_ledger.Key("new/a.py", "kind", ""): 2}
-        and shifted.expected() == {rule_ledger.Key("a.py", "kind", ""): 2},
-    )
-    lines = rule_ledger.rows_of_configuration(based, "arm", [("machine", "aarch64")], [finding("a.py")] * 4)
-    imported = rule_ledger.import_rows(based, "".join(f"2026-10-08 log: {line}\n" for line in lines))
-    expect(
-        "import_rows() puts the rows of a configuration from a log into the ledger",
-        imported.expected("arm")[rule_ledger.Key("a.py", "kind", "")] == 4,
-    )
-    expect(
-        "import_rows() refuses the rows of the base",
+        "a partial write refuses a count above its row and a new key in the mode lower",
         refuses(
-            lambda: rule_ledger.import_rows(based, f"{rule_ledger.ROW_MARK}configuration base machine x\n"),
-            rule_ledger.LedgerError,
+            lambda: rule_ledger.write(count, ledger, [finding("a.py")] * 3, is_partial=True), rule_ledger.LedgerError
+        )
+        and refuses(
+            lambda: rule_ledger.write(count, ledger, [finding("c.py")], is_partial=True), rule_ledger.LedgerError
         ),
     )
-
-
-def no_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the rows with the value admit of a count ledger, and a write of the base with a second configuration."""
-    count = table["count-rule"]
-    text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
-        "a.py | kind | 1 | - | -\nb.py | kind | admit | name | a planted reason\n@arm | a.py | kind | -1 | - | -\n"
+    raised = rule_ledger.write(
+        count, ledger, [finding("a.py")] * 3 + [finding("c.py")], mode=rule_ledger.WriteMode.RAISE, is_partial=True
     )
+    expect(
+        "a partial write with --raise raises a row and adds a key, and it keeps each other row",
+        raised.expected()
+        == {
+            rule_ledger.Key("a.py", "kind", ""): 3,
+            rule_ledger.Key("b.py", "kind", ""): 1,
+            rule_ledger.Key("c.py", "kind", ""): 1,
+        },
+    )
+    admitted = rule_ledger.write(
+        admit,
+        rule_ledger.empty(admit),
+        [finding("a.py", rule_id="admit-rule"), finding("b.py", rule_id="admit-rule")],
+        mode=rule_ledger.WriteMode.ADMIT,
+        reason="a planted reason",
+    )
+    expect(
+        "a partial write of the policy admit keeps a row that admits no finding of the build",
+        rule_ledger.write(admit, admitted, [finding("a.py", rule_id="admit-rule")], is_partial=True).base.keys()
+        == admitted.base.keys()
+        and rule_ledger.write(admit, admitted, [finding("a.py", rule_id="admit-rule")]).base.keys()
+        == {rule_ledger.Key("a.py", "kind", "")},
+    )
+
+
+def reduce_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check THE REDUCE: the largest count of each key over the builds, and the complete write of it."""
+    count = table["count-rule"]
+    key = rule_ledger.Key
+    first = {key("a.py", "kind", ""): 1, key("arm.h", "kind", ""): 0, key("b.py", "kind", ""): 2}
+    second = {key("a.py", "kind", ""): 3, key("arm.h", "kind", ""): 1}
+    expect(
+        "largest_counts() gives the largest count of each key over two builds, with no zero count",
+        rule_ledger.largest_counts([first, second])
+        == {key("a.py", "kind", ""): 3, key("arm.h", "kind", ""): 1, key("b.py", "kind", ""): 2}
+        and rule_ledger.largest_counts([]) == {},
+    )
+    text = (
+        "format 1\nrule count-rule\na.py | kind | 4 | - | -\narm.h | kind | 1 | - | -\nb.py | kind | 2 | - | -\n"
+        "gone.py | kind | 1 | - | -\n"
+    )
+    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    reduced = rule_ledger.write_counts(count, ledger, rule_ledger.largest_counts([first, second]))
+    expect(
+        "the reduce lowers a row to the largest count, keeps the count of an arm of one build, and removes a key "
+        "that no build gives",
+        reduced.expected() == {key("a.py", "kind", ""): 3, key("arm.h", "kind", ""): 1, key("b.py", "kind", ""): 2},
+    )
+    alone = rule_ledger.write_counts(count, ledger, first, is_partial=True)
+    expect(
+        "the write of one of the two builds lowers no row, because it cannot see the arm of the other build",
+        alone.expected() == ledger.expected(),
+    )
+
+
+def admit_row_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check the rows with the value admit of a count ledger (AN ADMIT ROW OF A COUNT LEDGER)."""
+    count = table["count-rule"]
+    text = "format 1\nrule count-rule\na.py | kind | 1 | - | -\nb.py | kind | admit | name | a planted reason\n"
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
     admit_key = rule_ledger.Key("b.py", "kind", "name")
     expect(
         "a count ledger reads a row with the value admit, which has no count",
         list(ledger.admits()) == [admit_key]
         and admit_key not in ledger.expected()
-        and admit_key not in ledger.expected("arm")
         and rule_ledger.render(ledger) == text,
     )
-    for name, planted in {
-        "a row with the value admit and no reason": text.replace("a planted reason", "-"),
-        "a difference row of a row with the value admit": text + "@arm | b.py | kind | +1 | name | -\n",
-    }.items():
-        expect(
-            f"a count ledger with {name} is refused",
-            refuses(
-                partial(rule_ledger.parse, planted, "ledger.txt", "count-rule", rule_registry.Policy.COUNT),
-                rows_grammar.RowsError,
+    expect(
+        "a count ledger with a row with the value admit and no reason is refused",
+        refuses(
+            partial(
+                rule_ledger.parse,
+                text.replace("a planted reason", "-"),
+                "ledger.txt",
+                "count-rule",
+                rule_registry.Policy.COUNT,
             ),
-        )
+            rows_grammar.RowsError,
+        ),
+    )
     found = [finding("a.py"), finding("b.py", entity="name"), finding("b.py", entity="name")]
-    judged = rule_ledger.compare(count, ledger, found, "base")
-    expect("a row with the value admit admits each finding of its key in the base", not errors(judged))
-    judged = rule_ledger.compare(count, ledger, [finding("b.py", entity="name")], "arm")
-    expect("a row with the value admit admits each finding of its key in another configuration", not errors(judged))
-    judged = rule_ledger.compare(count, ledger, [finding("a.py")], "base")
+    expect(
+        "a row with the value admit admits each finding of its key",
+        not errors(rule_ledger.compare(count, ledger, found)),
+    )
+    judged = rule_ledger.compare(count, ledger, [finding("a.py")])
     expect(
         "a row with the value admit that admits no finding of the build gives no finding",
         not errors(judged) and all("b.py" not in item.message for item in judged),
     )
-    written = rule_ledger.write(count, ledger, [finding("a.py")], "base")
+    written = rule_ledger.write(count, ledger, [finding("a.py")])
     expect(
-        "a write removes a row with the value admit that admits no finding of the build",
+        "a complete write removes a row with the value admit that admits no finding",
         written.admits() == {} and written.expected() == {rule_ledger.Key("a.py", "kind", ""): 1},
     )
-    written = rule_ledger.write(count, ledger, found, "base")
+    written = rule_ledger.write(count, ledger, found)
     expect(
-        "a write keeps a row with the value admit that admits a finding, with its value and its reason",
+        "a complete write keeps a row with the value admit that admits a finding, with its value and its reason",
         written.admits()[admit_key].reason == "a planted reason" and written.base[admit_key].value == "admit",
     )
-    written = rule_ledger.write(count, ledger, [finding("b.py", entity="name")], "arm")
     expect(
-        "a write of another configuration keeps a row with the value admit that admits a finding",
-        admit_key in written.admits() and written.expected("arm") == {},
-    )
-    lowered = rule_ledger.write(count, ledger, [finding("b.py", entity="name")], "base")
-    expect(
-        "a write of the base gives no count below 0 to another configuration",
-        lowered.expected("arm") == {}
-        and lowered.deltas["arm"] == {}
-        and rule_ledger.parse(
-            rule_ledger.render(lowered), "again.txt", "count-rule", rule_registry.Policy.COUNT
-        ).expected("arm")
-        == {},
-    )
-    two = rule_ledger.parse(
-        text.replace("@arm | a.py | kind | -1 | - | -\n", "@arm | c.py | kind | +1 | - | -\n"),
-        "ledger.txt",
-        "count-rule",
-        rule_registry.Policy.COUNT,
-    )
-    kept = rule_ledger.write(
-        count, two, [finding("d.py"), finding("b.py", entity="name")], "base", mode=rule_ledger.WriteMode.RAISE
-    )
-    expect(
-        "a write of the base that raises a base count keeps the count of each key of the other configuration",
-        kept.expected("arm") == two.expected("arm") and kept.expected() == {rule_ledger.Key("d.py", "kind", ""): 1},
-    )
-    lines = rule_ledger.rows_of_configuration(ledger, "arm", [("machine", "aarch64")], [finding("b.py", entity="name")])
-    expect(
-        "the rows of a configuration hold no row of a key with the value admit",
-        not any("b.py" in line for line in lines) and any("a.py | kind | -1" in line for line in lines),
-    )
-
-
-def other_configuration_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check that a write of the base changes no count of a different configuration (THE WRITE of assay.core.ledger)."""
-    count = table["count-rule"]
-    text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
-        "a.py | kind | 3 | same | -\nb.py | kind | 3 | partial | -\nc.py | kind | 3 | none | -\n"
-        "d.py | kind | 1 | gone | -\n@arm | b.py | kind | -1 | partial | -\n@arm | c.py | kind | -3 | none | -\n"
-    )
-    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    found = [finding(path, entity=entity) for path, entity in (("a.py", "same"), ("b.py", "partial"), ("c.py", "none"))]
-    lowered = rule_ledger.write(count, ledger, found * 2, "base")
-    expect(
-        "a write of the base that lowers base counts keeps the count of each key of the other configuration",
-        lowered.expected() == {key: 2 for key in map(rule_ledger.key_of, found)}
-        and lowered.expected("arm") == ledger.expected("arm"),
-    )
-    expect(
-        "the difference of a key in the other configuration changes by the opposite of the change of its base count",
-        {key.path: int(entry.value) for key, entry in lowered.deltas["arm"].items()}
-        == {"a.py": 1, "c.py": -2, "d.py": 1},
-    )
-    again = rule_ledger.parse(rule_ledger.render(lowered), "again.txt", "count-rule", rule_registry.Policy.COUNT)
-    expect(
-        "the written ledger reads again with the same counts in each configuration",
-        again.expected() == lowered.expected() and again.expected("arm") == ledger.expected("arm"),
-    )
-    later = rule_ledger.write(count, lowered, found[:2] * 2, "arm")
-    expect(
-        "a write of the other configuration then records its own fall, with no --raise",
-        later.expected("arm") == {key: 2 for key in map(rule_ledger.key_of, found[:2])}
-        and {key.path: int(entry.value) for key, entry in later.deltas["arm"].items()} == {"c.py": -2}
-        and later.base == lowered.base,
-    )
-    arm_found = [finding("a.py", entity="same"), finding("b.py", entity="partial")]
-    base_first = rule_ledger.write(count, rule_ledger.write(count, ledger, found, "base"), arm_found, "arm")
-    arm_first = rule_ledger.write(count, rule_ledger.write(count, ledger, arm_found, "arm"), found, "base")
-    expect(
-        "the writes of the two configurations give one ledger in each sequence: the base first, or the other first",
-        rule_ledger.render(base_first) == rule_ledger.render(arm_first)
-        and base_first.expected() == {key: 1 for key in map(rule_ledger.key_of, found)}
-        and base_first.expected("arm") == {key: 1 for key in map(rule_ledger.key_of, arm_found)},
-    )
-    moved = rule_ledger.write(
-        count, ledger, [finding("new/a.py", entity="same")] * 3, "base", moved={"new/a.py": "a.py"}
-    )
-    expect(
-        "a write of the base after a move gives the count of the old path to the new path in the other configuration",
-        moved.expected("arm").get(rule_ledger.Key("new/a.py", "kind", "same")) == 3
-        and rule_ledger.Key("a.py", "kind", "same") not in moved.expected("arm"),
+        "a partial write keeps a row with the value admit that admits no finding of the build",
+        admit_key in rule_ledger.write(count, ledger, [finding("a.py")], is_partial=True).admits(),
     )
 
 
@@ -606,9 +504,8 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check THE MOVE: an increase that a fall of a file that the change moved lines from pays, in each policy."""
     count, admit = table["count-rule"], table["admit-rule"]
     text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
+        "format 1\nrule count-rule\n"
         "split.h | kind | 3 | vector | the reason of the split header\nother.h | kind | 1 | vector | -\n"
-        "@arm | split.h | kind | -1 | vector | -\n"
     )
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
     flows = {("split.h", "part_a.h"), ("split.h", "part_b.h")}
@@ -619,9 +516,9 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     ]
     expect(
         "with no flow, the mode lower refuses the rows of the new files of a split",
-        refuses(lambda: rule_ledger.write(count, ledger, split, "base"), rule_ledger.LedgerError),
+        refuses(lambda: rule_ledger.write(count, ledger, split), rule_ledger.LedgerError),
     )
-    written = rule_ledger.write(count, ledger, split, "base", flows=flows)
+    written = rule_ledger.write(count, ledger, split, flows=flows)
     expect(
         "a fall of the divided file pays the increases of the two new files, and the mode lower writes them",
         written.expected()
@@ -638,16 +535,14 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     expect(
         "a fall pays one time: the same split with one more finding is refused",
         refuses(
-            lambda: rule_ledger.write(
-                count, ledger, [*split, finding("part_b.h", entity="vector")], "base", flows=flows
-            ),
+            lambda: rule_ledger.write(count, ledger, [*split, finding("part_b.h", entity="vector")], flows=flows),
             rule_ledger.LedgerError,
         ),
     )
     expect(
         "a fall pays only an increase of the same kind and entity",
         refuses(
-            lambda: rule_ledger.write(count, ledger, [finding("part_a.h", entity="map")], "base", flows=flows),
+            lambda: rule_ledger.write(count, ledger, [finding("part_a.h", entity="map")], flows=flows),
             rule_ledger.LedgerError,
         ),
     )
@@ -658,32 +553,25 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
                 count,
                 ledger,
                 [finding("part_a.h", entity="vector"), finding("other.h", entity="vector")],
-                "base",
                 flows={("other.h", "part_a.h")},
             ),
             rule_ledger.LedgerError,
         ),
     )
+    partial_split = rule_ledger.write(count, ledger, split, flows=flows, is_partial=True)
     expect(
-        "a write of the base moves each paid count in the other configuration too, up to the count that it holds",
-        written.expected("arm")
-        == {rule_ledger.Key("part_a.h", "kind", "vector"): 2, rule_ledger.Key("other.h", "kind", "vector"): 1},
-    )
-    armed = rule_ledger.write(count, ledger, split[:2], "arm", flows=flows)
-    expect(
-        "a write of another configuration pays an increase of its own counts, the absolute counts of that configuration",
-        armed.expected("arm") == {rule_ledger.Key("part_a.h", "kind", "vector"): 2},
-    )
-    expect(
-        "the writes of a split give one ledger in each sequence: the base first, or the other configuration first",
-        rule_ledger.render(rule_ledger.write(count, written, split[:2], "arm", flows=flows))
-        == rule_ledger.render(rule_ledger.write(count, armed, split, "base", flows=flows)),
+        "a partial write writes the paid increases with no --raise, and it keeps the row of the divided file",
+        partial_split.expected()
+        == {
+            rule_ledger.Key("split.h", "kind", "vector"): 3,
+            rule_ledger.Key("part_a.h", "kind", "vector"): 2,
+            rule_ledger.Key("part_b.h", "kind", "vector"): 1,
+            rule_ledger.Key("other.h", "kind", "vector"): 1,
+        },
     )
     expect(
         "move_payments gives each part of a fall that pays an increase, in the sequence of the paths",
-        rule_ledger.move_payments(
-            ledger.expected(), rule_ledger.write(count, ledger, split, "base", flows=flows).expected(), flows
-        )
+        rule_ledger.move_payments(ledger.expected(), written.expected(), flows)
         == (
             rule_ledger.Payment(
                 rule_ledger.Key("split.h", "kind", "vector"), rule_ledger.Key("part_a.h", "kind", "vector"), 2
@@ -716,79 +604,44 @@ def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     )
 
 
-def written_in_sequence(
-    rule: rule_registry.Rule,
-    before: rule_ledger.Ledger,
-    found: Mapping[str, list[check_report.Finding]],
-    names: tuple[str, ...],
-    flows: set[tuple[str, str]],
-) -> rule_ledger.Ledger:
-    """Return the ledger after the writes of the configurations of `names` in sequence, from the ledger `before`."""
-    written = before
-    for name in names:
-        written = rule_ledger.write(rule, written, found[name], name, flows=flows, before=before)
-    return written
-
-
 def before_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE LEDGER BEFORE THE CHANGE: a move applies at most one time to a configuration, in each sequence."""
+    """Check THE LEDGER BEFORE THE CHANGE: a fall pays one time, also after a partial write kept its row."""
     count = table["count-rule"]
-    text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nconfiguration arm machine aarch64\n"
-        "split.h | kind | 2 | vector | -\n"
-    )
+    text = "format 1\nrule count-rule\nsplit.h | kind | 1 | vector | -\n"
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    flows = {("split.h", "part.h")}
-    halves = [finding("split.h", entity="vector"), finding("part.h", entity="vector")]
-    found = {"base": halves, "arm": halves}
-    measured = {rule_ledger.Key("split.h", "kind", "vector"): 1, rule_ledger.Key("part.h", "kind", "vector"): 1}
-    sequences = {
-        "the other configuration first, the base second": ("arm", "base"),
-        "the base first, the other configuration second": ("base", "arm"),
-        "the other configuration two times, then the base": ("arm", "arm", "base"),
-        "the other configuration, the base, the other configuration again": ("arm", "base", "arm"),
-        "the base two times, then the other configuration": ("base", "base", "arm"),
-        "the base only, so the other configuration gets the estimate": ("base",),
-    }
-    rendered: set[str] = set()
-    for words, names in sequences.items():
-        written = written_in_sequence(count, ledger, found, names, flows)
-        expect(
-            f"a partial fall of a split, {words}: the move applies one time to each configuration",
-            written.expected("base") == measured and written.expected("arm") == measured,
-        )
-        rendered.add(rule_ledger.render(written))
-    expect("each sequence of the writes of one change gives the same ledger", len(rendered) == 1)
-    expect(
-        "with no ledger before the change, a write uses its own ledger",
-        rule_ledger.write(count, ledger, halves, "base", flows=flows).expected("arm") == measured,
+    flows = {("split.h", "part_a.h"), ("split.h", "part_b.h")}
+    first = rule_ledger.write(
+        count, ledger, [finding("part_a.h", entity="vector")], flows=flows, before=ledger, is_partial=True
     )
-    own = rule_ledger.parse(text + "@arm | split.h | kind | +1 | vector | -\n", "l.txt", "count-rule", count.policy)
-    kept = {rule_ledger.Key("split.h", "kind", "vector"): 2, rule_ledger.Key("part.h", "kind", "vector"): 1}
-    found_own = {"base": halves, "arm": [*halves, finding("split.h", entity="vector")]}
     expect(
-        "a count that only the other configuration holds stays at the source of the move, in each sequence",
-        all(
-            written_in_sequence(count, own, found_own, names, flows).expected("arm") == kept
-            for names in sequences.values()
+        "a partial write of a move keeps the row of the source and writes the paid row",
+        first.expected()
+        == {rule_ledger.Key("split.h", "kind", "vector"): 1, rule_ledger.Key("part_a.h", "kind", "vector"): 1},
+    )
+    second_found = [finding("part_a.h", entity="vector"), finding("part_b.h", entity="vector")]
+    expect(
+        "a second write of the change pays against the ledger before the change, so the one fall pays one time",
+        refuses(
+            lambda: rule_ledger.write(count, first, second_found, flows=flows, before=ledger, is_partial=True),
+            rule_ledger.LedgerError,
         ),
     )
-    added = rule_ledger.parse(
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\nsplit.h | kind | 2 | vector | -\n",
-        "l.txt",
-        "count-rule",
-        count.policy,
-    )
     expect(
-        "a configuration that the ledger before the change does not hold keeps its counts after a write of the base",
-        rule_ledger.write(count, ledger, halves, "base", flows=flows, before=added).expected("arm")
-        == {rule_ledger.Key("split.h", "kind", "vector"): 2},
+        "with no ledger before the change, the kept row of the source pays again, which the ledger before prevents",
+        rule_ledger.write(count, first, second_found, flows=flows, is_partial=True)
+        .expected()
+        .get(rule_ledger.Key("part_b.h", "kind", "vector"))
+        == 1,
     )
+    again = rule_ledger.write(
+        count, first, [finding("part_a.h", entity="vector")], flows=flows, before=ledger, is_partial=True
+    )
+    expect("the same write again gives the same ledger", rule_ledger.render(again) == rule_ledger.render(first))
     read_back = rule_ledger.ledger_before(count, "abc123", text.encode())
     expect(
         "ledger_before reads the text at the base: None with no base or a bad text, an empty ledger with no file",
         read_back is not None
-        and read_back.expected("arm") == ledger.expected("arm")
+        and read_back.expected() == ledger.expected()
         and rule_ledger.ledger_before(count, None, text.encode()) is None
         and rule_ledger.ledger_before(count, "abc123", b"format 9\n") is None
         and rule_ledger.ledger_before(count, "abc123", None) == rule_ledger.empty(count),
@@ -817,16 +670,16 @@ def namespace_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
     )
     count, admit = table["count-rule"], table["admit-rule"]
     text = (
-        "format 1\nrule count-rule\nconfiguration base machine x86_64\n"
+        "format 1\nrule count-rule\n"
         f"old.h | kind | 1 | {old} | the reason of the walk\nuser.h | kind | 1 | ::{old} | -\n"
     )
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
     moved = [finding("new.h", entity=new), finding("user.h", entity=f"::{new}")]
     expect(
         "with no flow, the entity in the new file has no row, and the mode lower refuses it",
-        refuses(lambda: rule_ledger.write(count, ledger, moved, "base"), rule_ledger.LedgerError),
+        refuses(lambda: rule_ledger.write(count, ledger, moved), rule_ledger.LedgerError),
     )
-    written = rule_ledger.write(count, ledger, moved, "base", flows={("old.h", "new.h")})
+    written = rule_ledger.write(count, ledger, moved, flows={("old.h", "new.h")})
     expect(
         "a fall pays an entity that agrees along a pair, and in its own file with no pair",
         written.expected()
@@ -837,7 +690,7 @@ def namespace_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
         "an entity that does not agree stays a new row",
         refuses(
             lambda: rule_ledger.write(
-                count, ledger, [finding("new.h", entity="std::vector")], "base", flows={("old.h", "new.h")}
+                count, ledger, [finding("new.h", entity="std::vector")], flows={("old.h", "new.h")}
             ),
             rule_ledger.LedgerError,
         ),
@@ -883,8 +736,9 @@ def main(argv: list[str]) -> int:
     policy_cases(expect, table)
     prefix_cases(expect, table)
     write_cases(expect, table)
-    no_configuration_cases(expect, table)
-    other_configuration_cases(expect, table)
+    partial_cases(expect, table)
+    reduce_cases(expect, table)
+    admit_row_cases(expect, table)
     move_cases(expect, table)
     before_cases(expect, table)
     namespace_cases(expect, table)

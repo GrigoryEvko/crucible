@@ -7,53 +7,27 @@
 # run holds the findings of the plugin in the source of the fixture.  The rule counts each finding of a kind of the
 # rule quarantine one time, and each finding of the kinds detail-use, lifetime-start, unchecked-use and door-use
 # (THE SCOPE of the module).  A count above its row fails the rule, and a fixture that the ledger does not hold and
-# that has a finding fails too: a new fixture has no finding.  A count below its row passes.  After a run of each
-# fixture, this command writes the lower count:
-#     python3 utils/bin/guard write --rule fixture-quarantine --build-dir build
-# On a merge conflict in this file, take the version of main, run the fixtures, and write the rows again.
+# that has a finding fails too: a new fixture has no finding.  A count below its row passes.  A write of a build of
+# each configuration of the landing gate, after a run of each fixture, writes the lower count (THE REDUCE of
+# utils/assay/core/ledger.py).
+# On a merge conflict in this file, take the version of main, and write each raise of the change again.
 #
 # THE ROWS (the rows grammar of utils/assay/core/rows.py)
-#   configuration NAME KEY VALUE   A build that counts, as in utils/ledgers/quarantine.txt.  The first
-#                                  configuration is the base.
 #   reason PREFIX | REASON         The reason of each count row of a fixture under PREFIX, as in
 #                                  utils/ledgers/quarantine.txt.
 #   FILE | KIND | COUNT | ENTITY | REASON
 #                                  The number of findings of the kind KIND and the entity ENTITY in
-#                                  the source FILE of a fixture, in the base configuration.  THE
-#                                  ENTITY of utils/assay/guard/engines/plugin/quarantine.py gives the
-#                                  entity of each kind.  An opted-out row holds the reason of its
-#                                  region, and the kind and the entity of the finding in it, as in
+#                                  the source FILE of a fixture.  THE ENTITY of
+#                                  utils/assay/guard/engines/plugin/quarantine.py gives the entity of
+#                                  each kind.  An opted-out row holds the reason of its region, and the
+#                                  kind and the entity of the finding in it, as in
 #                                  utils/ledgers/quarantine.txt.  A kind with no entity has the cell "-".
 #                                  A row of a kind of a probe tells what the fixture probes in REASON.
 #                                  Each other row has the cell "-" there.
-#   @NAME | FILE | KIND | DELTA | ENTITY | -
-#                                  The count of the configuration NAME, as a difference from the
-#                                  base count (+N or -N).
 #
-# THE CONFIGURATIONS
-#   x86_64-debug-asan              The default preset, in the build directory build.  The base.
-#   The largest count of each key over the configurations judges a build of a name that the ledger
-#   does not hold (THE POLICY of utils/assay/core/configuration.py).
+# One set of rows judges each build.
 format 1
 rule fixture-quarantine
-configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan CRUCIBLE_TSAN off
-configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan CRUCIBLE_PGO off
-configuration x86_64-debug-asan CRUCIBLE_BENCH off
-configuration x86_64-debug-asan CRUCIBLE_FUZZ off
-configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan TORCH_DIR unset
-configuration x86_64-debug-asan CRUCIBLE_SYNTAX_ONLY off
 reason test/ | The unit fixtures of section 14.1 of the plan misc/01_10_2026_quarantine.md moves the negative-compile fixtures onto the types of the base, and a fixture that probes a raw behavior on purpose keeps a region
 test/canopy_neg/neg_hyparview_direct_ctor.cpp | std-entity | 2 | std::span | -
 test/canopy_neg/neg_lifeguard_direct_ctor.cpp | std-entity | 1 | std::span | -

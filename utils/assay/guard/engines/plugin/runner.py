@@ -29,11 +29,15 @@ THE PROBLEMS
     table.  Each rule of a call gives each problem as an error, because the
     findings of the rule are then not complete.
 
-THE CONFIGURATION
-    The context gives the configuration of the build (assay.core.configuration,
-    THE CONFIGURATION), with the compile commands of the objects of all.  A
-    rule with rows of each configuration judges each build with the rows of
-    THE POLICY of that module.
+THE WRITE
+    `guard write --rule RULE --build-dir DIR` writes the ledger of a rule from
+    one build.  The counts of one build are partial, and the write lowers no
+    row (THE WRITE of assay.core.ledger).  The landing gate gives one write
+    a build of each of its configurations, and that write is complete (THE
+    REDUCE of assay.core.ledger).  The write reads the counts of each build
+    (counts_of_builds()).  A build that the rule does not apply to, a build
+    that cannot be read, and a build with a problem make the write write
+    nothing.
 
 THE RULES
     Each finding line has a rule of the engine plugin of utils/registry.txt.
@@ -60,6 +64,7 @@ THE STATUS
 `guard selftest tests.guard.engines.plugin.test_runner` does a test of the module.
 """
 
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -119,14 +124,13 @@ class Census:
     """The finding lines of the objects of all, the opt-out regions, and the problems of the objects.
 
     `findings` holds each finding line one time, with no line of the kind region.  `regions` holds the first line
-    and the reason of each region of each file, sorted.  `commands` holds the compile command of each object.
+    and the reason of each region of each file, sorted.
     """
 
     objects: int
     findings: frozenset[quarantine_sections.Finding] = frozenset()
     regions: Mapping[str, tuple[tuple[int, str], ...]] = field(default_factory=dict)
     problems: tuple[Problem, ...] = ()
-    commands: tuple[str, ...] = ()
 
     def of_rule(self, rule_id: str) -> list[quarantine_sections.Finding]:
         """Return the finding lines of one rule, sorted."""
@@ -156,18 +160,27 @@ class Census:
 
 @dataclass(frozen=True, slots=True)
 class WriteRequest:
-    """What one write of the ledger of a plugin rule does.
+    """What one write of the ledger of a plugin rule does (THE WRITE).
 
-    `mode` is the mode of assay.core.ledger.  `add_configuration` writes the configuration of the build with its
-    name, and `import_log` puts the rows of a configuration from a log into the ledger, with no build.
+    `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
+    (THE REDUCE of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.
     """
 
     root: Path
     build_dir: Path | None
     mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER
     reason: str | None = None
-    add_configuration: bool = False
-    import_log: Path | None = None
+    more_builds: tuple[Path, ...] = ()
+
+    @property
+    def builds(self) -> tuple[Path, ...]:
+        """The builds of the write: `build_dir` and `more_builds`, or none when the request has no build."""
+        return (self.build_dir, *self.more_builds) if self.build_dir is not None else ()
+
+    @property
+    def is_partial(self) -> bool:
+        """True when the write reads one build, and its counts are partial (THE WRITE of assay.core.ledger)."""
+        return not self.more_builds
 
 
 # ── The sections ───────────────────────────────────────────────────
@@ -241,7 +254,7 @@ def read_parsed(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
     return ObjectSection(shown, stamp, section)
 
 
-def census_of(items: Sequence[ObjectSection], commands: Sequence[str] = ()) -> Census:
+def census_of(items: Sequence[ObjectSection]) -> Census:
     """Return the census of the sections of the objects: each finding line one time, the regions and the problems.
 
     A test or a witness can give planted sections here.  Complexity: linear in the finding lines of the sections.
@@ -286,7 +299,6 @@ def census_of(items: Sequence[ObjectSection], commands: Sequence[str] = ()) -> C
         frozenset(findings),
         {file: tuple(starts) for file, starts in grouped.items()},
         tuple(problems),
-        tuple(commands),
     )
 
 
@@ -313,7 +325,7 @@ def read_census(build_dir: Path, root: Path) -> Census:
     reader = read_parsed if is_parse else read_object
     with ThreadPoolExecutor(max_workers=READERS) as pool:
         items = list(pool.map(lambda item: reader(item[0], item[1], build_dir), objects))
-    return census_of(items, [command for _, _, command in objects])
+    return census_of(items)
 
 
 # ── The context ────────────────────────────────────────────────────
@@ -322,24 +334,17 @@ def read_census(build_dir: Path, root: Path) -> Census:
 class PluginContext:
     """The build that the rules of the engine plugin read: the root of the tree, the build directory and its census.
 
-    The context reads the census and the configuration one time, on the first use.  A test or a witness can give a
-    planted census and a planted configuration, and then no build directory.
+    The context reads the census one time, on the first use.  A test or a witness can give a planted census, and then
+    no build directory.
     """
 
-    __slots__ = ("_census", "_configuration", "build_dir", "root")
+    __slots__ = ("_census", "build_dir", "root")
 
-    def __init__(
-        self,
-        root: Path,
-        build_dir: Path | None = None,
-        census: Census | None = None,
-        configuration: build_config.BuildConfiguration | None = None,
-    ) -> None:
-        """Keep the root, the build directory, and a planted census and configuration."""
+    def __init__(self, root: Path, build_dir: Path | None = None, census: Census | None = None) -> None:
+        """Keep the root, the build directory, and a planted census."""
         self.root = root
         self.build_dir = build_dir
         self._census = census
-        self._configuration = configuration
 
     def build_shown(self) -> str:
         """Return the build directory as a message shows it, relative to the root when the root holds it."""
@@ -359,24 +364,6 @@ class PluginContext:
                 )
             self._census = read_census(self.build_dir, self.root)
         return self._census
-
-    def configuration(self) -> build_config.BuildConfiguration:
-        """Return the configuration of the build (THE CONFIGURATION).
-
-        Raises:
-            NotApplicable: If the call gives no build directory, or the rules do not apply to the build
-            BuildError: If the build cannot be read, or the compiler does not print its target
-        """
-        if self._configuration is None:
-            if self.build_dir is None:
-                raise NotApplicable(
-                    "the engine plugin reads the configuration of a build, and the call gives no --build-dir DIR"
-                )
-            try:
-                self._configuration = build_config.read_configuration(self.build_dir, self.census().commands)
-            except build_config.ConfigurationError as problem:
-                raise BuildError(str(problem)) from None
-        return self._configuration
 
     def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:
         """Return the findings of the function findings(context) of the module of a rule.
@@ -440,50 +427,95 @@ def judged(rule: rule_registry.Rule, context: PluginContext) -> list[check_repor
     return meta_runner.module_judged(rule, context)
 
 
+def counts_of_builds(
+    rule_id: str,
+    request: WriteRequest,
+    counts: Callable[[PluginContext], Mapping[rule_ledger.Key, int]],
+    context_of: Callable[[Path, Path | None], PluginContext] = PluginContext,
+) -> list[Mapping[rule_ledger.Key, int]] | int:
+    """Return the counts of each build of a write, or the status of a build that the write cannot use (THE WRITE).
+
+    `counts` gives the counts of one build, and it raises BuildError for a build with a problem.  The function writes
+    one line for a build that the rule does not apply to and for a build that cannot be read, and the write then
+    writes nothing.  Complexity: one call of `counts` for each build.
+
+    Returns:
+        The counts of each build, in the sequence of the builds.  SKIPPED when the rule does not apply to a build,
+        and 1 when a build cannot be read or has a problem
+    """
+    if not request.builds:
+        check_report.write_line(
+            f"guard write: the rule {rule_id} does not apply: the call gives no --build-dir DIR", is_error=True
+        )
+        return SKIPPED
+    found: list[Mapping[rule_ledger.Key, int]] = []
+    for build in request.builds:
+        try:
+            found.append(counts(context_of(request.root, build)))
+        except NotApplicable as reason:
+            check_report.write_line(
+                f"guard write: the rule {rule_id} does not apply to {build}: {reason}.  The write writes nothing",
+                is_error=True,
+            )
+            return SKIPPED
+        except (BuildError, rows_grammar.RowsError, OSError) as problem:
+            check_report.write_line(
+                f"guard write: the ledger of {rule_id} is not written: {build}: {problem}", is_error=True
+            )
+            return 1
+    return found
+
+
+def finding_counts(rule: rule_registry.Rule, context: PluginContext) -> Counter[rule_ledger.Key]:
+    """Return the count of each key of the errors of a rule in the build of the context, as write() of the ledger
+    counts them.
+
+    Raises:
+        NotApplicable: If the rule does not apply to the build
+        BuildError: If the build cannot be read, or its census has a problem
+    """
+    problems = context.census().problems
+    if problems:
+        raise BuildError(f"the census has {len(problems)} problems, such as {problems[0].path}: {problems[0].message}")
+    return Counter(rule_ledger.key_of(item) for item in context.findings_of(rule) if item.level == "error")
+
+
 def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
-    """Write the ledger of one plugin rule.
+    """Write the ledger of one plugin rule from the builds of the request (THE WRITE).
 
     A module that writes its ledger itself writes it.  For each other rule, assay.core.ledger writes it.
 
     Returns:
-        0 when the ledger is written.  1 when the mode refuses a finding or the build cannot be read.  2 on a usage
-        error.  SKIPPED when the rule does not apply
+        0 when the ledger is written.  1 when the mode refuses a finding or a build cannot be read.  SKIPPED when the
+        rule does not apply to a build
     """
     own_write = getattr(meta_runner.rule_module(rule), "write", None)
     if own_write is not None:
         return int(own_write(rule, request))
-    if request.add_configuration or request.import_log is not None:
-        check_report.write_line(
-            f"guard write: the rule {rule.id} has no configurations, so --add-configuration and "
-            f"--import do not apply to it",
-            is_error=True,
-        )
-        return 2
-    context = PluginContext(request.root, request.build_dir)
+    per_build = counts_of_builds(rule.id, request, lambda context: finding_counts(rule, context))
+    if isinstance(per_build, int):
+        return per_build
     moves = git.change_moves(request.root)
     before = rule_ledger.ledger_before(
         rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
     )
     try:
-        written = rule_ledger.write(
+        written = rule_ledger.write_counts(
             rule,
             rule_ledger.read(rule, request.root),
-            context.findings_of(rule),
+            rule_ledger.largest_counts(per_build),
             mode=request.mode,
             reason=request.reason,
             moved=moves.renamed,
             flows=moves.flows,
             before=before,
+            is_partial=request.is_partial,
         )
-    except NotApplicable as reason:
-        check_report.write_line(f"guard write: the rule {rule.id} does not apply: {reason}", is_error=True)
-        return SKIPPED
-    except (BuildError, rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
+    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1
     rule_ledger.store(written, request.root)
-    rows = len(written.base) + sum(len(table) for table in written.deltas.values())
-    check_report.write_line(f"guard write: {rule_ledger.shown_path(rule.id)} holds {rows} rows")
+    check_report.write_line(f"guard write: {rule_ledger.shown_path(rule.id)} holds {len(written.base)} rows")
     return 0
 
 

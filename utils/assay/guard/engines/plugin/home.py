@@ -258,48 +258,40 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
     return status
 
 
-def counts_to_write(
-    rule: rule_registry.Rule, ledger: rule_ledger.Ledger, found: Sequence[check_report.Finding], build: Build
-) -> Counter[rule_ledger.Key]:
-    """Return the count of each key that a write writes: the findings, and each row that the build does not judge."""
-    counts = Counter(rule_ledger.key_of(item) for item in found if item.level == "error" and item.kind)
-    for key, entry in ledger.base.items():
-        if not build.judges(key):
-            counts[key] = int(entry.value) if rule.policy == rule_registry.Policy.COUNT else 1
-    return counts
+def build_counts(rule: rule_registry.Rule, context: runner.PluginContext) -> Counter[rule_ledger.Key]:
+    """Return the count of each key of the findings of the build of the context, for a write.
+
+    The counts of one build are partial, and a write from one build keeps each row that the build does not judge
+    (THE WRITE of assay.core.ledger).
+
+    Raises:
+        NotApplicable: If the rule does not apply to the build
+        BuildError: If the build cannot be read, or it has a problem
+    """
+    found = context.findings_of(rule)
+    problems = [item for item in found if item.level == "error" and not item.kind]
+    if problems:
+        raise runner.BuildError(
+            f"the build has {len(problems)} problems, such as {problems[0].path}: {problems[0].message}"
+        )
+    return Counter(rule_ledger.key_of(item) for item in found if item.level == "error")
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the findings of a build, and keep each row that the build does not judge.
+    """Write the ledger of the rule from the findings of the builds of the request.
 
     Returns:
-        0 when the ledger is written.  1 when the census has a problem, a count rose in the mode lower or an input
-        cannot be read.  2 on a usage error.  SKIPPED when the rule does not apply
+        0 when the ledger is written.  1 when a build has a problem, a count rose in the mode lower or an input
+        cannot be read.  SKIPPED when the rule does not apply to a build
     """
-    if request.add_configuration or request.import_log is not None:
-        check_report.write_line(
-            f"guard write: the rule {rule.id} has no configurations, so --add-configuration and --import do not "
-            f"apply to it",
-            is_error=True,
-        )
-        return 2
-    context = runner.PluginContext(request.root, request.build_dir)
     try:
         ledger = rule_ledger.read(rule, request.root)
-        found = context.findings_of(rule)
-        build = build_of(context)
-    except runner.NotApplicable as reason:
-        check_report.write_line(f"guard write: the rule {rule.id} does not apply: {reason}", is_error=True)
-        return runner.SKIPPED
-    except (runner.BuildError, rows_grammar.RowsError, OSError) as problem:
+    except (rows_grammar.RowsError, OSError) as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1
-    problems = [item for item in found if item.level == "error" and not item.kind]
-    if problems:
-        check_report.write_line(
-            f"guard write: the ledger of {rule.id} is not written, because the build has a problem", is_error=True
-        )
-        return check_report.emit(problems, rule.id, None)
+    per_build = runner.counts_of_builds(rule.id, request, lambda context: build_counts(rule, context))
+    if isinstance(per_build, int):
+        return per_build
     moves = git.change_moves(request.root)
     before = rule_ledger.ledger_before(
         rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
@@ -308,13 +300,13 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         written = rule_ledger.write_counts(
             rule,
             ledger,
-            counts_to_write(rule, ledger, found, build),
-            None,
+            rule_ledger.largest_counts(per_build),
             request.mode,
             request.reason,
             moves.renamed,
             moves.flows,
             before,
+            request.is_partial,
         )
     except rule_ledger.LedgerError as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)

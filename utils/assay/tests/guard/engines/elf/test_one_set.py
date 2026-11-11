@@ -5,9 +5,9 @@ case writes one line.  Exit 0 when each case holds, else 1.
 
 The cases hold the refused counts of a write, the problems of a ledger and
 the counts of the written set.  They also hold the run of an inspection, the
-writes that stop before the ledger, and a write that keeps each row of the
-set.  The tests of the rules artifact-symbols and artifact-links hold the
-write on planted builds.
+writes that stop before the ledger, a write that keeps each row of the set,
+and the reduce over two planted builds.  The tests of the rules
+artifact-symbols and artifact-links hold the write on planted builds.
 """
 
 from pathlib import Path
@@ -23,7 +23,6 @@ from assay.tests.guard.engines.elf.test_runner import quiet
 RULE = "planted-one-set"
 REGISTRY_ROWS = (f"rule {RULE} engine=elf scope=builddir ledger=count doc=XII | a planted rule | lower it",)
 HEAD = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
-CONFIGURATION = "configuration k kind k\nconfiguration k tier t\n"
 
 
 def planted_rule() -> rule_registry.Rule:
@@ -76,13 +75,9 @@ def risen_cases(expect: testing.Expect) -> None:
 
 
 def problem_cases(expect: testing.Expect) -> None:
-    """Hold the problems of a ledger: a configuration row, a row shape and a count of 2 of a single kind."""
+    """Hold the problems of a ledger: a row shape and a count of 2 of a single kind."""
     good = "@build/a | fact | 1 | x | -\n@build/a | count | 5 | y | -\n@build/a | site | admit | z | a reason\n"
     expect("a set of good rows has no problem", problems(good) == [])
-    expect(
-        "a configuration row is a problem",
-        any("no configuration row" in item for item in problems(f"{CONFIGURATION}@build/a | fact | 1 | x | -\n")),
-    )
     expect(
         "a row that the rule refuses gives the shape", problems("@build/a | other | 1 | x | -\n") == ["a planted shape"]
     )
@@ -136,7 +131,7 @@ def run_cases(expect: testing.Expect) -> None:
 
 
 def stop_cases(expect: testing.Expect, root: Path, policy: one_set.WritePolicy) -> None:
-    """Hold the writes that stop: the mode admit, --import, --add-configuration, a build that fails, an unadmitted error.
+    """Hold the writes that stop: the mode admit, no build, a build that fails, and an unadmitted error.
 
     Each write goes through the function that writer() gives.  The cases then also hold writer().
     """
@@ -154,10 +149,8 @@ def stop_cases(expect: testing.Expect, root: Path, policy: one_set.WritePolicy) 
     unused = runner.BuildError("unused")
     status, text = written(runner.WriteRequest(root, root, rule_ledger.WriteMode.ADMIT), unused)
     expect("the mode admit does not apply", status == one_set.USAGE_STATUS and "admit" in text)
-    status, text = written(runner.WriteRequest(root, root, import_log=root / "ci.log"), unused)
-    expect("--import does not apply", status == one_set.USAGE_STATUS and "no configuration" in text)
-    status, text = written(runner.WriteRequest(root, root, add_configuration=True), unused)
-    expect("--add-configuration does not apply", status == one_set.USAGE_STATUS and "no configuration" in text)
+    status, text = written(runner.WriteRequest(root, None), unused)
+    expect("a write with no build does not apply", status == runner.SKIPPED and "--build-dir" in text)
     status, _ = written(runner.WriteRequest(root, root), runner.NotApplicable("planted"))
     expect("a build that the rule does not read writes nothing and exits 77", status == runner.SKIPPED)
     status, text = written(runner.WriteRequest(root, root), runner.BuildError("a planted failure"))
@@ -220,14 +213,54 @@ def write_cases(expect: testing.Expect) -> None:
                 key("@build/a", "count", "helper"): 3,
             }
             and written.base[key("@build/a", "fact", "new")].reason == "a planted reason"
-            and key("@build/a", "site", "z") in written.admits()
-            and not written.configurations,
+            and key("@build/a", "site", "z") in written.admits(),
         )
         status, _ = write({key("@build/a", "fact", "new"): 1}, rule_ledger.WriteMode.LOWER)
         expect(
             "a write of a build with fewer facts and a lower count keeps each row and each count",
             status == 0 and rule_ledger.read(rule, root).expected() == written.expected(),
         )
+        reduce_cases(expect, root, policy)
+
+
+def reduce_cases(expect: testing.Expect, root: Path, policy: one_set.WritePolicy) -> None:
+    """Hold the reduce over two planted builds: the largest count of each key, and a refused count above its row."""
+    rule = planted_rule()
+    first, second = root / "first", root / "second"
+    planted = {
+        first: {key("@build/a", "fact", "new"): 1, key("@build/a", "count", "helper"): 1},
+        second: {key("@build/a", "count", "helper"): 2},
+    }
+
+    def examine(_rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Inspection:
+        """Give an inspection of the planted counts of the build of the context against the ledger of the tree."""
+        assert context.build_dir is not None
+        return one_set.Inspection((), rule_ledger.read(rule, root), planted[context.build_dir])
+
+    def reduced(mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER) -> tuple[int, str]:
+        """Write the reduce over the two planted builds, and return the status and the text."""
+        request = runner.WriteRequest(root, first, mode, more_builds=(second,))
+        return quiet(lambda: one_set.writer(examine, policy)(rule, request))
+
+    before = rule_ledger.read(rule, root)
+    status, _ = reduced()
+    after = rule_ledger.read(rule, root)
+    expect(
+        "the reduce lowers each row to the largest count over the builds, removes a fact that no build gives, and "
+        "keeps each admit row",
+        status == 0
+        and after.expected() == {key("@build/a", "fact", "new"): 1, key("@build/a", "count", "helper"): 2}
+        and after.admits().keys() == before.admits().keys(),
+    )
+    planted[second] = {key("@build/a", "count", "helper"): 2, key("@build/a", "fact", "risen"): 1}
+    text_before = rule_ledger.ledger_path(RULE, root).read_text(encoding="utf-8")
+    status, text = reduced()
+    expect(
+        "the reduce refuses a count above its row of each kind, and it writes nothing",
+        status == 1
+        and "@build/a gets the row fact risen" in text
+        and rule_ledger.ledger_path(RULE, root).read_text(encoding="utf-8") == text_before,
+    )
 
 
 def main(argv: list[str]) -> int:

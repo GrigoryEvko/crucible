@@ -1,136 +1,31 @@
 # The ledger of the rule heavy-include: the includes of heavy headers outside the source root by the
-# files under include/, in each configuration of a build.  `python3 utils/bin/guard explain heavy-include`
-# tells the rule.
+# files under include/.  `python3 utils/bin/guard explain heavy-include` tells the rule.
 #
 # A header that each translation unit compiles must not include a heavy header for one function.  The
 # heavy and light rows of utils/rule-table.txt give the cost of each header.  A header is heavy when it
 # costs more than <meta> times the factor of the measured rule heavy-include of utils/registry.txt.
 #
-# The rows of assay.core.ledger with the policy count, and the configurations of
-# assay.guard.engines.plugin.counted:
+# The rows of assay.core.ledger with the policy count (assay.guard.engines.plugin.counted).  One set of
+# rows judges each build, and the count of a key is its largest count over the configurations of the
+# landing gate:
 #   PATH | heavy-include | COUNT | <header> | -
-#     The includes that the base configuration holds today.  Each run gives a warning for the row.  When
-#     you remove the include, run python3 utils/bin/guard write --rule heavy-include --build-dir DIR in
-#     the same commit.
+#     The includes that the tree holds today.  Each run gives a warning for the row.  A landing that
+#     builds each configuration of the gate lowers the row when the include goes.
 #   PATH | heavy-include | COUNT | <header> | REASON
 #     A header that owns a heavy header on purpose, for example the one door of a system facility.  The
 #     reason makes the row a keep row, and the row gives no warning.
-#   @NAME | PATH | heavy-include | DELTA | <header> | -
-#     The difference of the configuration NAME from the base count.
 format 1
 rule heavy-include
-configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan CRUCIBLE_TSAN off
-configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan CRUCIBLE_PGO off
-configuration x86_64-debug-asan CRUCIBLE_BENCH off
-configuration x86_64-debug-asan CRUCIBLE_FUZZ off
-configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan TORCH_DIR unset
-configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier native-x86_64
-configuration x86_64-release CMAKE_BUILD_TYPE Release
-configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
-configuration x86_64-release CRUCIBLE_SANITIZE on
-configuration x86_64-release CRUCIBLE_TSAN off
-configuration x86_64-release CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-release CRUCIBLE_ANALYZER off
-configuration x86_64-release CRUCIBLE_VERIFY off
-configuration x86_64-release CRUCIBLE_PGO off
-configuration x86_64-release CRUCIBLE_BENCH off
-configuration x86_64-release CRUCIBLE_FUZZ off
-configuration x86_64-release CRUCIBLE_EXAMPLES on
-configuration x86_64-release CRUCIBLE_HAVE_BPF on
-configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-release TORCH_DIR unset
-configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
-configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
-configuration x86_64-debug-tsan kind x86_64-debug-tsan
-configuration x86_64-debug-tsan tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
-configuration x86_64-debug-tsan CRUCIBLE_TSAN on
-configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
-configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
-configuration x86_64-debug-tsan CRUCIBLE_PGO off
-configuration x86_64-debug-tsan CRUCIBLE_BENCH off
-configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
-configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-tsan TORCH_DIR unset
-configuration x86_64-debug-asan-syntax kind x86_64-debug-asan
-configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+native-x86_64
-configuration x86_64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan-syntax CMAKE_CXX_FLAGS -march=x86-64-v3
-configuration x86_64-debug-asan-syntax CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan-syntax CRUCIBLE_TSAN off
-configuration x86_64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan-syntax CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan-syntax CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan-syntax CRUCIBLE_PGO off
-configuration x86_64-debug-asan-syntax CRUCIBLE_BENCH off
-configuration x86_64-debug-asan-syntax CRUCIBLE_FUZZ off
-configuration x86_64-debug-asan-syntax CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan-syntax CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan-syntax TORCH_DIR unset
-configuration x86_64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
-configuration aarch64-debug-asan-syntax kind aarch64-debug-asan
-configuration aarch64-debug-asan-syntax tier default-ddafb5bb
-configuration aarch64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
-configuration aarch64-debug-asan-syntax CMAKE_CXX_FLAGS unset
-configuration aarch64-debug-asan-syntax CRUCIBLE_SANITIZE on
-configuration aarch64-debug-asan-syntax CRUCIBLE_TSAN off
-configuration aarch64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
-configuration aarch64-debug-asan-syntax CRUCIBLE_ANALYZER off
-configuration aarch64-debug-asan-syntax CRUCIBLE_VERIFY off
-configuration aarch64-debug-asan-syntax CRUCIBLE_PGO off
-configuration aarch64-debug-asan-syntax CRUCIBLE_BENCH off
-configuration aarch64-debug-asan-syntax CRUCIBLE_FUZZ off
-configuration aarch64-debug-asan-syntax CRUCIBLE_EXAMPLES on
-configuration aarch64-debug-asan-syntax CRUCIBLE_HAVE_BPF off
-configuration aarch64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration aarch64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE unset
-configuration aarch64-debug-asan-syntax TORCH_DIR unset
-configuration aarch64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
 include/crucible/CKernel.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
 include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
 include/crucible/SchemaTable.h | heavy-include | 1 | <memory> | clear() makes the bounded counter again with std::construct_at, because the counter refuses each decrease, also a step back to 0
 include/crucible/Serialize.h | heavy-include | 1 | <memory> | the reader makes the variant counter of a node with std::construct_at, because the counter refuses a step to the value 0 that a file can hold
+include/crucible/SwissTable.h | heavy-include | 1 | <arm_neon.h> | -
 include/crucible/TraceLoader.h | heavy-include | 1 | <memory> | the loaders give the loaded trace in a std::unique_ptr, which std::make_unique makes
 include/crucible/Vigil.h | heavy-include | 1 | <memory> | the class holds its ring, its metadata log, its store, its senses and its watchdog in std::unique_ptr members
 include/crucible/cntp/CongestionControl.h | heavy-include | 1 | <filesystem> | the reader gives fixy::mint_tagged a std::filesystem::path of the sysfs file that lists the available congestion controls
+include/crucible/cntp/Fec.h | heavy-include | 1 | <arm_neon.h> | -
 include/crucible/cntp/RoceConfig.h | heavy-include | 1 | <filesystem> | the reader holds the sysfs root of the network devices in a std::filesystem::path, and it makes each file path with its operator /
 include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | the reader gives fixy::sanitize_path a tagged std::filesystem::path, because that function takes no other path type
 include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | the store reads the wall clock with std::chrono::system_clock, because the time to live of an entry is an age across processes and reboots
@@ -160,5 +55,3 @@ include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source get
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/SelfContained.h | heavy-include | 1 | <ranges> | the predicates of a self-contained type read std::ranges::range, view, borrowed_range and range_value_t, and the walk of a range reads std::ranges::begin and end
 include/fixy/os/Path.h | heavy-include | 1 | <filesystem> | the path type is a Tagged over std::filesystem::path, so this header is the one owner of <filesystem> in fixy
-@aarch64-debug-asan-syntax | include/crucible/SwissTable.h | heavy-include | +1 | <arm_neon.h> | -
-@aarch64-debug-asan-syntax | include/crucible/cntp/Fec.h | heavy-include | +1 | <arm_neon.h> | -

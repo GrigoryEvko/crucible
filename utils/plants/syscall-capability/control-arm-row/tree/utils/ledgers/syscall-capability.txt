@@ -1,0 +1,4 @@
+# The ledger of the control.  The one row counts the one call of close of the arm.
+format 1
+rule syscall-capability
+src/raw.cpp | raw-syscall | 1 | planted::release(int): close | effects::IO of the control

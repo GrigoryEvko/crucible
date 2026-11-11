@@ -21,7 +21,8 @@ THE OPT-OUT REGIONS
     increases a count of opted-out, and a new region increases a count of
     region.  The rule refuses each one until `guard write --admit` writes it.
     The rule counts only the regions that a build compiles.  A region in a
-    file or a preprocessor arm that no configuration compiles has no row.
+    file or a preprocessor arm that no build of the landing gate compiles has
+    no row.
 
 THE ENTITY
     The ledger counts the findings of each file, kind and entity.  The entity
@@ -75,24 +76,16 @@ THE LEDGER
 
         format 1
         rule quarantine
-        configuration NAME KEY VALUE           One row for each key of the
-                                               configuration NAME
-        FILE | KIND | COUNT | ENTITY | -       The count of the base
-                                               configuration.  A kind with
-                                               no entity has the cell "-"
-        @NAME | FILE | KIND | DELTA | ENTITY | -
-                                               The count of the configuration
-                                               NAME, as a difference from the
-                                               base count: +N or -N
+        reason PREFIX | REASON                 The reason of each count row of
+                                               a file under PREFIX
+        FILE | KIND | COUNT | ENTITY | -       The count of the key.  A kind
+                                               with no entity has the cell "-"
 
-    The first configuration of the ledger is the base (assay.core.configuration,
-    THE POLICY).  The count of a different configuration is the base count
-    plus its difference.  A write changes only the counts of the
-    configuration of its build.  A change that lowers a count in each
-    configuration then writes the rows of each configuration in its build.
-    The run, the write and the import are
-    those of assay.guard.engines.plugin.counted, which the rule heavy-include
-    also uses.
+    One set of rows judges each build.  The count of a key is its largest
+    count over the configurations of the landing gate (THE REDUCE of
+    assay.core.ledger).  The run and the write are those of
+    assay.guard.engines.plugin.counted, which the rule heavy-include also
+    uses.
 
 THE VERDICT
     * A count more than its ledger count is an error.  A change can only
@@ -103,7 +96,7 @@ THE VERDICT
       a new file has no finding (CLAUDE.md section XXII).
     * A count less than its ledger count gives no finding, because a ledger
       fails only on a growth (THE POLICIES of assay.core.ledger).  The landing
-      gate writes the lower count (THE FALLS of assay.loop.gate).
+      gate writes the lower count (THE REDUCE of assay.loop.gate).
     * An opted-out finding of a file with no region line is an error, because
       the rule cannot give it its region.
     * Each directory gives one warning, and the findings and the regions that
@@ -115,12 +108,12 @@ THE VERDICT
     * Each problem of the census of the runner is an error.
 
 WRITE THE LEDGER
-    `guard write --rule quarantine --build-dir DIR` writes the rows of the
-    configuration of the build.  For the base, it writes the counts.  For a
-    different configuration, it writes the differences from the base rows.
-    Write the base rows first.  The write keeps the head comment, the other
-    configurations and their counts.  It refuses a count more than its row:
-    remove the new finding.
+    `guard write --rule quarantine --build-dir DIR` writes the counts of one
+    build.  It lowers no row, because one build cannot see the findings of a
+    different build (THE WRITE of assay.core.ledger).  Only the landing gate
+    lowers a row (THE REDUCE of assay.core.ledger).  The write gives the
+    ledger its head comment.  It refuses a count more than its row: remove
+    the new finding.
     * --raise writes such a count too.  Use it only when the plugin or the
       rule table changed what the plugin reports.  Give the reason in the
       commit.
@@ -130,54 +123,22 @@ WRITE THE LEDGER
       Give the reason of the region, with its class, in the message of the
       commit.
     * --reason TEXT gives the reason cell of each new row.
-    * A file that git reports as moved takes the rows of its earlier path in
-      each configuration.  Git reports a move after `git mv` or `git add`,
-      when the similarity of the two files is a minimum of
-      assay.core.git.MOVE_SIMILARITY percent (THE MOVES of assay.core.git).  A
-      rewrite below it is a new file.
-    * The write removes the rows of a source file that the tree does not hold
-      in each configuration, because no build compiles it.  A file of the
-      build directory keeps its rows, because a build of a different
-      configuration can write it.  The run of that build compares those rows
-      as it compares each other row, and a row that counts more than the
-      build passes.
-    * --add-configuration writes the configuration of the build with its
-      name.  Without it, a write from a build of a configuration that the
-      ledger does not hold writes nothing and fails (THE POLICY of
-      assay.core.configuration).  It replaces the keys and the
-      rows of a configuration with the same name that is not the base.  The
-      first configuration of an empty ledger is the base.  A change of the
-      keys of the base makes the ledger again.  Keep its head and remove its
-      rows.  Then write each configuration with --add-configuration in its
-      build, the base first.
-
-A CONFIGURATION THAT ONLY CI BUILDS
-    No aarch64 compiler is on the build host, and only a CI leg can count an
-    aarch64 configuration.  For a configuration other than the base, the run
-    writes each row of the build with the prefix "ledger-row: "
-    (assay.core.ledger.rows_of_counts).  It writes them after a failure and
-    when the ledger does not hold the configuration.  `guard write --rule
-    quarantine --import LOG` puts those rows into the ledger
-    (assay.core.ledger.import_rows).  They replace the earlier rows of the
-    configuration.  Import the log of the commit that you merge, because a
-    difference row is relative to the base rows of that commit.
-
-    Import only a configuration that no build of the host counts.  The name
-    of a configuration does not hold its tier.  The rows of an x86_64 CI
-    runner of a different tier then replace the rows that the local build
-    counts.
+    * A file that git reports as moved takes the rows of its earlier path.
+      Git reports a move after `git mv` or `git add`, when the similarity of
+      the two files is a minimum of assay.core.git.MOVE_SIMILARITY percent
+      (THE MOVES of assay.core.git).  A rewrite below it is a new file.
+    * A change that moves lines to a different file writes the paid increase
+      with no --raise (THE MOVE of assay.core.ledger).  The landing gate then
+      lowers the row of the file that the lines left.
 
 NOT APPLICABLE
     The rule exits 77 when the runner does not apply to the build (THE STATUS
-    of the runner).  The base rows judge a build of a configuration that the
-    ledger does not hold (THE POLICY of assay.core.configuration).
-    The rule then writes the rows of the build.
+    of the runner).
 
 Usage
     guard check --rule quarantine --build-dir DIR [--warnings-dir DIR]
     guard check --engine plugin --build-dir DIR [--warnings-dir DIR]
-    guard write --rule quarantine --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
-    guard write --rule quarantine --import LOG
+    guard write --rule quarantine --build-dir DIR [--raise | --admit] [--reason TEXT]
     guard list --build-dir DIR [--path FILE|DIRECTORY] [--kind KIND]
 
 Complexity: linear in the finding lines of the build, and O(k log k) for k rows of the ledger and counts of the build.
@@ -188,7 +149,6 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -228,31 +188,22 @@ LEDGER_COMMENT = (
     "# A count above its row fails the rule, because a change can only lower a count (rule R11 of\n"
     "# misc/01_10_2026_quarantine.md).  So a change that removes std::vector from a file and adds std::map\n"
     "# to it fails.  A file that the ledger does not hold and that has a finding fails too: a new file has\n"
-    "# no finding.  A count below its row passes, and this command writes the lower count:\n"
-    "#     python3 utils/bin/guard write --rule quarantine --build-dir build\n"
-    "# On a merge conflict in this file, take the version of main, build, and write the rows again.\n"
+    "# no finding.  A count below its row passes.\n"
+    "# On a merge conflict in this file, take the version of main, and write each raise of the change again.\n"
     "#\n"
     "# THE ROWS (the rows grammar of utils/assay/core/rows.py)\n"
-    "#   configuration NAME KEY VALUE   A build that counts: the build kind and the target tier of\n"
-    "#                                  utils/assay/core/target.py, and each cache variable that changes\n"
-    "#                                  the objects of all or their preprocessor arms.  NAME is the build\n"
-    "#                                  kind, with -bench, -fuzz and -syntax for those options.  The\n"
-    "#                                  first configuration is the base.\n"
     "#   reason PREFIX | REASON         The reason of each count row of a file under PREFIX: the step of\n"
     "#                                  the plan that removes its findings.  A person writes these rows,\n"
     "#                                  and a write removes a row that holds no count row (THE REASON OF\n"
     "#                                  A PREFIX of utils/assay/core/ledger.py).\n"
     "#   FILE | KIND | COUNT | ENTITY | -\n"
     "#                                  The number of findings of the kind KIND and the entity ENTITY in\n"
-    "#                                  the file, in the base configuration.  A file of the build\n"
-    "#                                  directory has the prefix @build/.  The head comment of\n"
-    "#                                  utils/tools/quarantine/plugin.h gives the kinds, and THE ENTITY\n"
-    "#                                  of utils/assay/guard/engines/plugin/quarantine.py gives the\n"
-    "#                                  entity of each kind.  The entity holds no line, so a move of\n"
-    '#                                  code keeps each row.  A kind with no entity has the cell "-".\n'
-    "#   @NAME | FILE | KIND | DELTA | ENTITY | -\n"
-    "#                                  The count of the configuration NAME, as a difference from the\n"
-    "#                                  base count (+N or -N).\n"
+    "#                                  the file.  A file of the build directory has the prefix @build/.\n"
+    "#                                  The head comment of utils/tools/quarantine/plugin.h gives the\n"
+    "#                                  kinds, and THE ENTITY of\n"
+    "#                                  utils/assay/guard/engines/plugin/quarantine.py gives the entity of\n"
+    "#                                  each kind.  The entity holds no line, so a move of code keeps each\n"
+    '#                                  row.  A kind with no entity has the cell "-".\n'
     "#\n"
     "# THE OPT-OUT REGIONS\n"
     '#   A finding in an opt-out region has the kind opted-out, and its entity is "REASON | KIND\n'
@@ -264,60 +215,24 @@ LEDGER_COMMENT = (
     "#   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section\n"
     "#   XXII, and give the reason in the commit.  Only a region that a build compiles has a row.\n"
     "#\n"
-    "# THE TIER\n"
-    "#   The tier names the target of the build flags.  When a compile of the objects of all has its own\n"
-    '#   -march=native or -mcpu=native, the tier adds "+" and the native request: the word native and\n'
-    "#   the architecture, such as native-x86_64.  The units of test/layer/admitted_flag_matrix compile\n"
-    "#   with the release flags, and each bench target adds -march=native, so each x86_64 configuration\n"
-    "#   here holds that request.  The tier names no processor of the host.  So a host with a different\n"
-    "#   processor of one architecture has the same configuration.  Its native compiles can select other\n"
-    "#   preprocessor arms, for example the AVX-512 arm of include/crucible/SwissTable.h.  The rows of its\n"
-    "#   name judge it, so such an arm gives a count above its row, which fails, or below its row.\n"
-    "#\n"
-    "# THE CONFIGURATIONS\n"
-    "#   x86_64-debug-asan              The default preset, in the build directory build.  The base.\n"
-    "#   x86_64-release                 The release preset (build-release).\n"
-    "#   x86_64-debug-asan-bench-fuzz   The default preset with CRUCIBLE_BENCH=ON and CRUCIBLE_FUZZ=ON,\n"
-    "#                                  in the build directory build-bench-fuzz:\n"
-    "#                                      cmake --preset default -B build-bench-fuzz -DCRUCIBLE_BENCH=ON\n"
-    "#                                      -DCRUCIBLE_FUZZ=ON\n"
-    "#                                  The CI job fuzz builds it.\n"
-    "#   x86_64-debug-tsan              The tsan preset (build-tsan).  Its preprocessor arms of\n"
-    "#                                  __SANITIZE_THREAD__, such as the routes of\n"
-    "#                                  src/foundation/os/Intercepted.cpp, count here.\n"
-    "#   x86_64-debug-asan-syntax       The parse build of the preset syntax-x86-64-v3\n"
-    "#                                  (build-syntax-x86-64-v3).  `python3 utils/bin/loop syntax DIR`\n"
-    "#                                  parses its units, and it compiles no object.\n"
-    "#   aarch64-debug-asan-syntax      The parse build of the preset syntax-aarch64\n"
-    "#                                  (build-syntax-aarch64), with the cross compiler for aarch64.\n"
-    "#   aarch64-...                    The default and the release preset on aarch64.  Only CI builds\n"
-    "#                                  them.  The leg writes the rows of its configuration after a\n"
-    "#                                  failure of the rule and when the ledger does not hold it, each\n"
-    '#                                  after the mark "ledger-row: ", and\n'
-    "#                                      python3 utils/bin/guard write --rule quarantine --import LOG\n"
-    "#                                  puts them here.\n"
-    "#   The rows of the configuration with the name of a build judge it, and a line names each fact\n"
-    "#   of the configuration that the build does not share.  The largest count of each key over the\n"
-    "#   configurations judges a build of a name that the ledger does not hold, and no build skips the\n"
-    "#   rule (THE POLICY of utils/assay/core/configuration.py).  An arm that a configuration here\n"
-    "#   counts then passes, and a new finding fails.\n"
-    "#   A write changes only the counts of the configuration of its build (THE WRITE of\n"
-    "#   utils/assay/core/ledger.py).  This command builds the build directory of each configuration\n"
-    "#   of this ledger that the host builds, and it writes each configuration, the base first:\n"
-    "#       python3 utils/bin/guard write --all-configurations --rule quarantine\n"
-    "#   It refuses a count above its row.  At each landing, the gate of `python3 utils/bin/loop land`\n"
-    "#   writes each count that falls in a configuration that it builds, and it folds the ledger into the\n"
-    "#   commit (THE FALLS of utils/assay/loop/gate.py).  A change of the keys of the base makes this\n"
-    "#   file again: remove the rows, and write each configuration with --add-configuration in its build\n"
-    "#   directory, the base first.\n"
-    "#   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration sets\n"
-    "#   TORCH_DIR, so the ledger does not count those units.  The rows of its name judge a build with\n"
-    "#   TORCH_DIR, so the findings of those units fail it.\n"
+    "# ONE SET OF ROWS\n"
+    "#   One set of rows judges each build.  The count of a key is its largest count over the\n"
+    "#   configurations of the landing gate: each configure preset with the tier gate, the builds of\n"
+    "#   objects and the two parse builds (utils/assay/loop/gate.py).  A build of a different\n"
+    "#   configuration gets the same verdict, for example an aarch64 build of objects in CI.  A count\n"
+    "#   above its row fails it.\n"
+    "#   python3 utils/bin/guard write --rule quarantine --build-dir build\n"
+    "#   writes the counts of one build.  It lowers no row, because one build cannot see the findings of\n"
+    "#   a different build.  A landing of `python3 utils/bin/loop land` that builds each configuration of\n"
+    "#   the gate lowers each row to that largest count, and it folds the ledger into the commit (THE\n"
+    "#   REDUCE of utils/assay/loop/gate.py).\n"
+    "#   The vessel units that need PyTorch compile only when TORCH_DIR is set.  No configuration of the\n"
+    "#   gate sets TORCH_DIR, so the ledger does not count those units, and their findings fail a build\n"
+    "#   with TORCH_DIR.\n"
     "#   No configuration turns on CRUCIBLE_SENSE_HUB_V2.  Each build compiles the SenseHub v2 sources\n"
     "#   in two object libraries that no target links, with and without CRUCIBLE_SENSE_HUB_EXTENDED\n"
-    "#   (CMakeLists.txt), so these rows count each arm of those sources.  The UBSan-strict, verify,\n"
-    "#   bench and PGO presets are no configuration.  The largest counts judge their builds, so a\n"
-    "#   finding of an arm that only they compile fails them.\n"
+    "#   (CMakeLists.txt), so these rows count each arm of those sources.  A finding of an arm that only\n"
+    "#   a preset outside the gate compiles, such as the verify preset or a PGO preset, fails its build.\n"
 )
 
 # The file, the kind and the entity of one count: the key of a row of the ledger.
@@ -481,14 +396,14 @@ def load_rows(root: Path) -> list[str]:
 
 
 def evaluate(
-    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str | None, rows: list[str], build_shown: str
+    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, rows: list[str], build_shown: str
 ) -> list[check_report.Finding]:
     """Compare each count of the build with its ledger count, and give one warning for each directory with no error.
 
     `rows` are the directory rows of load_rows.  Complexity: O(k log k) for k counts of the build and the ledger.
     """
     findings_found: list[check_report.Finding] = []
-    expected = ledger.expected(name)
+    expected = ledger.expected()
     held = {key.path for key in expected}
     failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
@@ -499,7 +414,7 @@ def evaluate(
         if measured <= admitted:
             continue
         failed.add(directory_of(file, rows))
-        line = ledger.line_of(key, name)
+        line = ledger.line_of(key)
         listing = f"`python3 utils/bin/guard list --build-dir {build_shown} --path {file} --kind {kind}`"
         what = counted.described(kind, entity)
         if kind == OPTED_OUT:
@@ -541,10 +456,10 @@ def evaluate(
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count
         kept_keys.setdefault(directory, []).append(key)
-        first_line.setdefault(directory, ledger.line_of(key, name))
+        first_line.setdefault(directory, ledger.line_of(key))
     for directory, kinds in sorted(kept.items()):
         listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
-        state, tail = kept_state(ledger, kept_keys[directory], name)
+        state, tail = kept_state(ledger, kept_keys[directory])
         findings_found.append(
             check_report.Finding(
                 "warning",
@@ -557,7 +472,7 @@ def evaluate(
     return findings_found
 
 
-def kept_state(ledger: rule_ledger.Ledger, keys: Sequence[Key], name: str | None) -> tuple[str, str]:
+def kept_state(ledger: rule_ledger.Ledger, keys: Sequence[Key]) -> tuple[str, str]:
     """Return the words of the warning of the kept counts of one directory (assay.core.ledger, kept_words()).
 
     The entity of a count of the kind region or opted-out holds the reason of
@@ -565,17 +480,16 @@ def kept_state(ledger: rule_ledger.Ledger, keys: Sequence[Key], name: str | None
     count must have a reason of its row or of a prefix.
     """
     reasoned = [key for key in keys if key.kind not in (REGION, OPTED_OUT)]
-    return rule_ledger.kept_words(ledger, reasoned, name) if reasoned else (", each with its reason", "")
+    return rule_ledger.kept_words(ledger, reasoned) if reasoned else (", each with its reason", "")
 
 
-def summary(counts: Mapping[Key, int], configuration: build_config.BuildConfiguration, objects: int, verb: str) -> str:
+def summary(counts: Mapping[Key, int], objects: int, verb: str) -> str:
     """Return the line that tells the findings, the regions, the rows and the files of one run or one write."""
     regions = sum(count for key, count in counts.items() if key.kind == REGION)
     files = {key.path for key in counts}
     return (
         f"{RULE}: {verb} {sum(counts.values()) - regions} findings and {regions} regions in {len(counts)} rows "
-        f"of {len(files)} files, configuration {configuration.name} on {configuration.tier}, from {objects} "
-        f"objects"
+        f"of {len(files)} files, from {objects} objects"
     )
 
 
@@ -607,11 +521,10 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the rows of the configuration of the build (WRITE THE LEDGER), or import the rows of a log.
+    """Write the counts of the builds of the request (WRITE THE LEDGER).
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be
-        read.  1 also when the ledger does not hold the configuration of the build and the write does not add it.
-        SKIPPED when the rule does not apply
+        read.  SKIPPED when the rule does not apply to a build
     """
     return counted.write(SPEC, rule, request)

@@ -4,35 +4,21 @@ THE CONFIGURATIONS
     CONFIGURATIONS gives each configuration of the gate: each configure
     preset with the tier gate (assay.loop.tiers), the parse presets first.  A
     configuration has the name of its preset and its build directory in the
-    warm tree.  The block of the preset gives its name in a ledger
-    (assay.core.configuration).  A parse configuration is a preset that sets
-    CRUCIBLE_SYNTAX_ONLY.  The ledger names are the names of an x86_64 host,
-    the build host of the tree.  The gate reads the presets of the tree of
-    the package, and it refuses presets with a problem.
+    warm tree.  The block of the preset gives the name of the configuration
+    of its build (assay.core.configuration).  A parse configuration is a
+    preset that sets CRUCIBLE_SYNTAX_ONLY.  These configurations are the one
+    list of the configurations that a counted ledger holds (THE REDUCE).
+    The gate reads the presets of the tree of the package, and it refuses
+    presets with a problem.
 
 THE COUNTED RULES
     A counted rule is a rule of the engine plugin or elf with the policy
-    count or admit and a ledger with a row (counted_ledgers()).  Each one
-    reads the objects of the target all of a build, or the reports of a
-    parse build.  A ledger holds each configuration that its configuration
-    rows name.  A ledger with no configuration row has one set of rows, and
-    these rows judge each build of the rule.  Such a ledger holds each
-    configuration that checks its rule in its run.  The run of a
-    configuration of objects checks each rule.  The run of a parse
-    configuration checks only the rules of COUNTED_RULES of
-    assay.guard.engines.buildsys.parse_builds.  A parse configuration holds
-    no ledger of a different rule (holding()).
-
-    A write in the build of a configuration changes only the counts of that
-    configuration (THE WRITE of assay.core.ledger).  The writes of the
-    configurations then give one ledger in each sequence.  A write of a
-    ledger with no configuration row measures each of its rows, or it keeps
-    a row that the build does not judge.  A second write in a different
-    build then finds no fall to move, and a move applies one time.  `guard
-    write --all-configurations` writes each configuration of a counted
-    ledger in its build directory (assay.guard.write_configurations), and
-    the gate writes the falls of each configuration that it builds (THE
-    FALLS).
+    count or admit and a ledger with a row (counted_rules()).  Each one reads
+    the objects of the target all of a build, or the reports of a parse
+    build.  Its ledger holds one set of rows, and these rows judge each build
+    of the rule.  The run of a configuration of objects checks each rule.
+    The run of a parse configuration checks only the rules of COUNTED_RULES
+    of assay.guard.engines.buildsys.parse_builds (is_checked()).
 
 THE SELECTION
     The gate holds one invariant: a landing cannot make a test red in a
@@ -87,10 +73,6 @@ THE SELECTION
     build only through an arm.  Each parse configuration also runs for a
     change of the plugin or of the rule table, and for --all-configurations.
 
-    A ledger can name a configuration that the host cannot build, such as an
-    aarch64 configuration of objects.  The gate then writes a note and does
-    not build it.
-
     The configurations of the last two modes run at the same time as the
     configurations of the full suite (THE THREADS).  The model holds no
     inputs of a script test that reads a build, such as the parts of the
@@ -105,13 +87,12 @@ THE SELECTION
     in the bench and fuzz build.  A change of bench/ selects the full suite
     of that build.
 
-    The rows of each counted ledger hold the counts of each configuration at
-    each commit of main.  Each configuration compiles the files of include/
-    and src/.  The bench targets also compile the arms of CRUCIBLE_BENCH in
-    them.  An arm in include/crucible/BackgroundThread.h is an example.  An
-    arm that only one configuration compiles then gets its verdict in the
-    landing of the change.  A count above its row fails there, and the
-    landing writes a count below its row (THE FALLS).
+    Each configuration compiles the files of include/ and src/.  The bench
+    targets also compile the arms of CRUCIBLE_BENCH in them.  An arm in
+    include/crucible/BackgroundThread.h is an example.  An arm that only one
+    configuration compiles then gets its verdict in the landing of the
+    change, and a count above its row fails there.  A landing that builds
+    each configuration writes each count below its row (THE REDUCE).
 
     A change that no unit of a configuration reads makes its build do
     nothing.  A parse build then keeps the report of each unit (THE KEPT
@@ -147,16 +128,14 @@ THE RUN OF A CONFIGURATION
          `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
-         assay.guard.engines.buildsys.parse_builds, at the same time.  Then
-         THE FALLS, and after a failure each check runs again.
+         assay.guard.engines.buildsys.parse_builds, at the same time.
       3. A configuration of objects: `loop test BUILD` with the words of its
          mode, which builds the target all and runs the tests of the mode
          (assay.loop.affected, THE SELECTION).  A retry after a move of HEAD
          and each subsequent run of a batch run `loop test BUILD` in a
          configuration of the full suite.  That command runs only the tests
          with an input that changed, and each test of a rule that reads a
-         build.  The file of --only is in the directory of the logs.  After
-         the tests, THE FALLS write the counted ledgers.
+         build.  The file of --only is in the directory of the logs.
          Then each test that is red runs one more time, alone, one test at
          a time.  A test that is red alone too rejects the commit.
          An exit other than 0 with no red test rejects the commit too.  Then
@@ -172,7 +151,7 @@ THE RUN OF A CONFIGURATION
          of Ninja that does not exist rejects the commit.  No test of the
          suite can configure the build that runs it, so the gate runs the
          rule.  The step runs in each mode of THE SELECTION and in THE RUN OF
-         THE BASE.  The run again after THE FALLS does not run it.
+         THE BASE.  The run again after THE REDUCE does not run it.
     Each step runs the masters of the warm tree.  Then the tests of the
     commit judge the commit.  The step writes its two outputs to a log in
     the directory of the logs of the gate (THE LOGS).  The first
@@ -204,8 +183,8 @@ THE THREADS
     build of ALWAYS.  The run of ALWAYS then first builds the target
     build.ninja of its build, which configures the build again with the
     change.  Then the other configurations start.  The checks of a parse
-    configuration run in threads of their own too.  The writes of THE FALLS
-    of a configuration also run in threads of their own.
+    configuration run in threads of their own too.  The writes of THE REDUCE
+    also run in threads of their own.
 
     The verdict gives the configurations, their times and their problems in
     the sequence of the plan and then of the other configurations.  It does
@@ -234,40 +213,35 @@ THE STOP
     master with no such step.  Its children run in process groups of their
     own, and they then go on in the warm tree.
 
-THE LOCKS OF THE LEDGERS
-    Two configurations that run at the same time can write one ledger.  An
-    example is the ledger of the rule quarantine, which holds rows of each
-    configuration.  A write reads the ledger, changes the counts of its
-    configuration and writes the ledger again.  When two such writes occur
-    at one time, the ledger can hold only one of them.  The heavy step then
-    holds one lock for each rule.  Each write of a rule in THE FALLS holds
-    the lock of its rule.  A write takes the lock
-    before its slot of the jobserver.  No thread then holds a slot while it
-    waits for a lock.  store() of
-    assay.core.ledger writes a new file and renames it over the ledger.  A
-    test that reads a ledger during a write then reads all of the earlier
-    file or all of the new file.  A write of the base count keeps the counts
-    of each other configuration (THE WRITE of assay.core.ledger).  The
-    sequence of the writes of two configurations then does not change the
-    ledger.
-
-THE FALLS
+THE REDUCE
     A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
     count below its row, and a row of the policy admit that admits no
-    finding, then make no check fail.  The gate then lowers the rows at each
-    landing.  After the checks or the tests of each configuration of the
-    first round, it runs `guard write --rule RULE --build-dir BUILD` of each
-    counted rule with a ledger that holds the configuration, in the mode
-    lower.  Each mode of THE SELECTION builds the target all first, and a
-    write then reads the full build.  These writes run at the same time,
-    each with the lock of its rule (THE LOCKS OF THE LEDGERS).  A write
-    refuses each count above its row and each new row, other than an
+    finding, then make no check fail.  Only the gate lowers the rows of a
+    counted ledger, because one build cannot see the findings of a different
+    build (THE WRITE of assay.core.ledger).  The legs of the gate write no
+    ledger.
+
+    The gate lowers the rows only when the first round built each
+    configuration of CONFIGURATIONS with no problem (is_each_built()).  A
+    landing that builds only some configurations then lowers no row, and
+    its checks still judge each of its builds.  After each leg of the first
+    round ended, the gate runs one `guard write --rule RULE --build-dir
+    BUILD...` of each counted rule.  The write gets the build of each
+    configuration that checks the rule (is_checked()).  It takes the largest
+    count of each key over these builds, and it lowers each row above that
+    count (THE REDUCE of assay.core.ledger).  Each mode of THE SELECTION
+    builds the target all first, and a write then reads the full build.  The
+    writes of the rules run at the same time, and each ledger has one writer.
+
+    A write refuses each count above its row and each new row, other than an
     increase that a move pays (THE MOVE of assay.core.ledger).  The write
     gets the variable CRUCIBLE_CHANGE_BASE with the commit that the
-    composition started from.  Its moves are then those of the full change,
-    also after an earlier write changed a ledger of the warm tree.  The
-    check then keeps a refused count as its error.  After each thread of the
-    heavy step ended, the gate folds each ledger that a write changed into a
+    composition started from.  Its moves are then those of the full change.
+    The gate does not write the increase that a move pays, because the check
+    of each leg refuses it first.  The change writes that increase with
+    `guard write --rule RULE --build-dir BUILD` before the landing.
+
+    After the writes, the gate folds each ledger that a write changed into a
     new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
     ledgers.  A landing of more than one commit gets the ledgers in its last
@@ -284,8 +258,8 @@ THE FALLS
     SELECTION again, with the ledgers in the change.
 
     The verdict gives the new commit and the ledgers, and the landing moves
-    the branch to that commit.  A change that lowers counts then lands with
-    no manual write of a ledger.
+    the branch to that commit.  A change that lowers counts and lands with
+    --all-configurations then lands with no manual write of a ledger.
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
@@ -295,7 +269,7 @@ THE RUN OF THE BASE
     in a thread of its own (focused_runs()).  It runs the red tests with
     `loop test BUILD --only FILE`, a parse configuration in its mode, and
     each other configuration in the mode of the changed inputs.  The run of
-    the base writes no fall and folds no ledger.  Its problems then have the
+    the base writes no ledger and folds no ledger.  Its problems then have the
     words of the problems of the batch.  A problem of a run of the base does
     not stop the other configurations of the focus (THE STOP).  The run of
     the base gives the result of each of them, because the landing compares
@@ -393,12 +367,13 @@ STOP_GRACE_S = 30.0
 class Configuration:
     """One configuration of the gate: a configure preset with the tier gate (THE CONFIGURATIONS).
 
-    `build` is the build directory of the preset, relative to the tree.
+    `build` is the build directory of the preset, relative to the tree.  `configuration_name` is the name of the
+    configuration of its build (assay.core.configuration).
     """
 
     name: str
     build: str
-    ledger_name: str
+    configuration_name: str
     is_parse: bool
 
 
@@ -488,7 +463,7 @@ class Verdict:
 
     `seconds` holds the wait for the lock.  `step_seconds` gives the time of each configuration in its heavy step after
     the wait, in the sequence of `configurations`.  `final` is the commit that the gate judged
-    last, and `ledgers` holds each ledger that THE FALLS folded into it.  `final` is "" for a verdict of no commit.
+    last, and `ledgers` holds each ledger that THE REDUCE folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
     VERDICT).
     """
@@ -527,7 +502,6 @@ class Outcome:
 
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
-BY_LEDGER_NAME = {configuration.ledger_name: configuration for configuration in CONFIGURATIONS}
 
 
 def is_build_file(path: str) -> bool:
@@ -632,11 +606,10 @@ def focused_runs(focus: Sequence[Focus]) -> tuple[Run, ...]:
     return tuple(runs)
 
 
-def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
-    """Return the configuration names of the ledger of each counted rule of a tree (THE COUNTED RULES).
+def counted_rules(tree: Path) -> tuple[str, ...]:
+    """Return each counted rule of a tree, sorted (THE COUNTED RULES).
 
-    A ledger with no configuration row gives no name.  A ledger with no row gives a write no fall and no move, and its
-    rule is not counted.
+    A ledger with no row gives a write no fall and no move, and its rule is not counted.
 
     Raises:
         GateError: If the registry or the ledger of a counted rule does not read
@@ -648,7 +621,7 @@ def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
         registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
     except (OSError, ValueError) as problem:
         raise GateError(f"the registry of {tree} does not read: {problem}") from None
-    counted: dict[str, tuple[str, ...]] = {}
+    counted: list[str] = []
     for rule_id, rule in sorted(registry.rules.items()):
         if rule.engine not in COUNTED_ENGINES or rule.policy not in COUNTED_POLICIES:
             continue
@@ -656,9 +629,9 @@ def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
             ledger = rule_ledger.read(rule, tree)
         except (OSError, ValueError) as problem:
             raise GateError(f"the ledger of {rule_id} in {tree} does not read: {problem}") from None
-        if ledger.configurations or ledger.base:
-            counted[rule_id] = tuple(item.name for item in ledger.configurations)
-    return counted
+        if ledger.base:
+            counted.append(rule_id)
+    return tuple(counted)
 
 
 def is_checked(configuration: Configuration, rule_id: str) -> bool:
@@ -666,17 +639,25 @@ def is_checked(configuration: Configuration, rule_id: str) -> bool:
     return not configuration.is_parse or rule_id in COUNTED_RULES
 
 
-def holding(counted: Mapping[str, Sequence[str]], configuration: Configuration) -> list[str]:
-    """Return each counted rule with a ledger that holds a configuration, sorted (THE COUNTED RULES).
+def is_each_built(outcomes: Sequence[Outcome]) -> bool:
+    """Tell if the outcomes of a round build each configuration of CONFIGURATIONS with no problem (THE REDUCE).
 
-    A ledger holds each configuration that it names.  A ledger that names no configuration holds each configuration
-    that checks its rule (is_checked()).  Complexity: linear in the rules and their names.
+    Complexity: linear in the outcomes.
     """
-    return sorted(
-        rule_id
-        for rule_id, names in counted.items()
-        if is_checked(configuration, rule_id) and (configuration.ledger_name in names or not names)
-    )
+    built = {item.name for item in outcomes if not item.is_stopped and not item.problems}
+    return all(item.name in built for item in CONFIGURATIONS)
+
+
+def reduce_words(tree: Path, rule_id: str) -> list[str]:
+    """Return the words after `guard write` of the reduce of one counted rule in a tree (THE REDUCE).
+
+    The words give the build of each configuration that checks the rule (is_checked()).
+    """
+    words = ["write", "--rule", rule_id]
+    for configuration in CONFIGURATIONS:
+        if is_checked(configuration, rule_id):
+            words += ["--build-dir", str(build_directory(tree, configuration))]
+    return words
 
 
 # ── The warm tree ──────────────────────────────────────────────────────────
@@ -851,7 +832,7 @@ class Gate:
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
         others: tuple[Configuration, ...] = ()
-        counted: dict[str, tuple[str, ...]] = {}
+        counted: tuple[str, ...] = ()
         is_each = True
         if candidate.focus:
             plan = focused_runs(candidate.focus)
@@ -864,10 +845,7 @@ class Gate:
             uncompiled = [path for path in candidate.changed if not is_compiled_change(path)]
             if touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled)):
                 presets += [item.name for item in CONFIGURATIONS if item.is_parse]
-            counted = counted_ledgers(self.tree)
-            for name in sorted({item for listed in counted.values() for item in listed}):
-                if name not in BY_LEDGER_NAME:
-                    check_report.write_line(f"loop land: the host does not build the configuration {name} of a ledger")
+            counted = counted_rules(self.tree)
             selected = select(candidate.changed, presets, self.is_every)
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
@@ -888,7 +866,7 @@ class Gate:
                 jobserver.connected(server.path) as client,
             ):
                 flags = {jobserver.VARIABLE: server.makeflags}
-                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs, counted)
+                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs)
                 if is_each:
                     step.always_ready.set()
 
@@ -901,6 +879,13 @@ class Gate:
                 final: str = candidate.commit
                 ledgers: tuple[str, ...] = ()
                 if not candidate.focus and not any(item.problems for item in outcomes):
+                    if is_each_built(outcomes):
+                        step.reduce(counted)
+                    else:
+                        check_report.write_line(
+                            "loop land: the landing builds only some configurations of the gate, so the gate lowers "
+                            "no row of a counted ledger"
+                        )
                     final, ledgers = step.fold()
                 if ledgers:
                     check_report.write_line(
@@ -934,22 +919,19 @@ class Gate:
 
 
 class Step:
-    """The work of one heavy step of a check: its commands, its threads, its stop event and the locks of its rules.
+    """The work of one heavy step of a check: its commands, its threads and its stop event.
 
     `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
-    the base of the change for the writes (THE FALLS).  `jobs` is the job count of the heavy step and of its
+    the base of the change for the writes (THE REDUCE).  `jobs` is the job count of the heavy step and of its
     jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).
     """
 
     __slots__ = (
-        "_locks",
-        "_locks_guard",
         "_said",
         "always_ready",
         "based",
         "candidate",
         "client",
-        "counted",
         "environment",
         "gate",
         "jobs",
@@ -964,31 +946,22 @@ class Step:
         based: Mapping[str, str],
         client: jobserver.Client,
         jobs: int,
-        counted: Mapping[str, Sequence[str]],
     ) -> None:
-        """Keep the gate, the candidate, the environments, the jobserver client, the jobs and the counted rules."""
+        """Keep the gate, the candidate, the environments, the jobserver client and the jobs."""
         self.gate = gate
         self.candidate = candidate
         self.environment = dict(environment)
         self.based = dict(based)
         self.client = client
         self.jobs = jobs
-        self.counted = counted
         self.stop = threading.Event()
         self.always_ready = threading.Event()
-        self._locks: dict[str, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
         self._said = threading.Lock()
 
     def say(self, text: str) -> None:
         """Write one line of the gate, with no line of a different thread in it."""
         with self._said:
             check_report.write_line(text)
-
-    def rule_lock(self, rule: str) -> threading.Lock:
-        """Return the lock of the writes of a rule in the heavy step (THE LOCKS OF THE LEDGERS)."""
-        with self._locks_guard:
-            return self._locks.setdefault(rule, threading.Lock())
 
     def concurrently[Item, Result](self, items: Sequence[Item], work: Callable[[Item], Result]) -> list[Result]:
         """Run the work of each item in a thread of its own, and return the results in the sequence of the items.
@@ -1112,42 +1085,24 @@ class Step:
 
         return [problem for problem in self.concurrently(list(rules), check_one) if problem is not None]
 
-    def write_falls(self, configuration: Configuration, counted: Mapping[str, Sequence[str]]) -> bool:
-        """Run `guard write` of each counted rule with a ledger that holds a configuration, at the same time (THE FALLS).
+    def reduce(self, counted: Sequence[str]) -> None:
+        """Run the reduce of each counted rule over the builds of the configurations, at the same time (THE REDUCE).
 
-        Each write gets the environment with the base of the change, and it holds the lock of its rule (THE LOCKS OF THE
-        LEDGERS).  A write that refuses a count above its row exits 1, and the check of the rule keeps that count as
-        its error.  Return True when a rule holds the configuration.
+        Each rule has one write, and the write gets the environment with the base of the change.  A write that refuses
+        a count exits 1, and it writes no ledger.  Complexity: one write of each counted rule.
         """
-        build = build_directory(self.gate.tree, configuration)
-        rules = holding(counted, configuration)
 
         def write_one(rule: str) -> None:
-            """Write the ledger of one rule with the lock of the rule."""
-            log = f"{configuration.name}.write-{rule}.log"
-            command = [*self.gate.master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
-            with self.rule_lock(rule):
-                status = self.run_logged(command, log, self.based, proc.TOOL_S)
-            self.say(f"loop land: {configuration.name}: the write of {rule} exits {status}")
+            """Write the ledger of one rule over the build of each configuration that checks it."""
+            log = f"reduce-{rule}.log"
+            command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule)]
+            status = self.run_logged(command, log, self.based, proc.TOOL_S)
+            self.say(f"loop land: the reduce of {rule} exits {status}")
 
-        self.concurrently(rules, write_one)
-        return bool(rules)
-
-    def checked_falls(
-        self, configuration: Configuration, rules: Sequence[str], counted: Mapping[str, Sequence[str]]
-    ) -> list[str]:
-        """Run the checks of some rules on a build, then THE FALLS, and after a failure the checks again.
-
-        A write can pay an increase with a fall along a move (THE MOVE of assay.core.ledger).  The checks of a failure
-        then run again after the writes.
-        """
-        problems = self.checked(configuration, rules, self.environment)
-        if self.write_falls(configuration, counted) and problems:
-            problems = self.checked(configuration, rules, self.environment)
-        return problems
+        self.concurrently(list(counted), write_one)
 
     def fold(self) -> tuple[str, tuple[str, ...]]:
-        """Fold each ledger that THE FALLS changed in the warm tree into the commit, and give the commit and the ledgers.
+        """Fold each ledger that THE REDUCE changed in the warm tree into the commit, and give the commit and the ledgers.
 
         The warm tree moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
 
@@ -1196,7 +1151,7 @@ class Step:
                 red.append(name)
         return red
 
-    def run_parse(self, configuration: Configuration, counted: Mapping[str, Sequence[str]]) -> list[str]:
+    def run_parse(self, configuration: Configuration) -> list[str]:
         """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
         problem = self.configure(configuration)
         if problem is not None:
@@ -1206,19 +1161,17 @@ class Step:
         command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.jobs)]
         if self.run_logged(command, log, self.environment, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
-        return self.checked_falls(configuration, COUNTED_RULES, counted)
+        return self.checked(configuration, COUNTED_RULES, self.environment)
 
     def run_objects(
         self, configuration: Configuration, words: Sequence[str], is_again: bool
     ) -> tuple[list[str], tuple[str, ...]]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
-        `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  After the tests, THE FALLS
-        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger, and it
-        does not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other
-        configurations wait for it (THE THREADS).  The second result holds the tests that are red alone too.
+        `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold does
+        not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other configurations
+        wait for it (THE THREADS).  The second result holds the tests that are red alone too.
         """
-        counted: Mapping[str, Sequence[str]] = {} if is_again else self.counted
         problem = self.configure(configuration)
         if problem is not None:
             return [problem], ()
@@ -1248,7 +1201,6 @@ class Step:
         skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
         if skipped:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
-        self.write_falls(configuration, counted)
         if red:
             self.say(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
         still = self.red_alone(configuration, red)
@@ -1263,12 +1215,12 @@ class Step:
         return self.checked(configuration, (RECONFIGURE_RULE,), self.environment), ()
 
     def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...]]:
-        """Run one configuration, or its tests again after THE FALLS, and give each problem and the tests red alone too."""
+        """Run one configuration, or its tests again after THE REDUCE, and give each problem and the tests red alone too."""
         configuration = run.configuration
         if configuration.is_parse and is_again:
             return self.checked(configuration, COUNTED_RULES, self.environment), ()
         if configuration.is_parse:
-            return self.run_parse(configuration, self.counted), ()
+            return self.run_parse(configuration), ()
         words = self.gate.loop_words(run, is_retry or is_again)
         return self.run_objects(configuration, words, is_again)
 

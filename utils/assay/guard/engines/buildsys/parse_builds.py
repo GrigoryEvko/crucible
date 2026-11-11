@@ -119,7 +119,7 @@ def judged_parse(context: BuildContext, rule_id: str, preset: str) -> list[check
         verdict = "refuses" if status == 1 else "does not apply to"
         message = (
             f"the rule {rule.id} {verdict} the parse build {shown_build} (the lines above).  Correct the change, or "
-            f"write the rows of the configuration of the build with `python3 utils/bin/guard write --rule {rule.id} "
+            f"write a move or a raise from that build with `python3 utils/bin/guard write --rule {rule.id} "
             f"--build-dir {shown_build}`"
         )
         found.append(error(rule_id, first, message, "counted", rule.id))

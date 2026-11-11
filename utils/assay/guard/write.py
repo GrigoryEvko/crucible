@@ -1,22 +1,14 @@
 """guard write — write the ledger of one rule through assay.core.ledger, with the checks of its policy.
 
-usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR] [--path PATH]...
-       guard write --rule ID --build-dir DIR [--raise | --admit] [--reason TEXT] [--add-configuration]
-                                           a rule of the engine plugin or elf, or a rule
-                                           of the engine build with configurations.  A rule
-                                           of the engine elf takes no --add-configuration
-       guard write --rule ID --import LOG  a rule of the engine plugin with configurations, or a
-                                           rule of the engine build with a module that writes its ledger
+usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]... [--path PATH]...
        guard write --rule ID [ARG]...      a rule with a legacy module
-       guard write --all-configurations [--rule ID]... [--root DIR] [--jobs N] [--no-build]
-                                           each counted rule, or each rule of --rule, in the build of each
-                                           configuration of its ledger (assay.guard.write_configurations)
 
 A rule with a module of its own: the command runs the rule and writes its
 ledger in the mode of the call (assay.core.ledger, THE WRITE).  The default
-mode lowers each count and removes each row that admits nothing, and it
-refuses a new finding.  --raise also writes a count above its row: use it only
-when the rule changed what it reports, and give the reason in the commit.
+mode lowers each count, removes each row that admits nothing, and refuses a
+new finding.  A write from one build of THE BUILDS lowers no row.  --raise
+also writes a count above its row: use it only when the rule changed what it
+reports, and give the reason in the commit.
 --admit also writes a row for each new finding, with the reason of --reason.
 A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
@@ -39,28 +31,24 @@ file again, and the command prints the line that the function returns.  The
 list test/layer/header-constexpr-ops.txt of the rule header-constexpr-ops is
 such a file.
 
-A rule of the engine plugin writes through assay.guard.engines.plugin.runner,
-which reads the build of --build-dir.  A module that writes its ledger itself
-gives the function write(rule, request), and its head comment tells its modes.
-The module of the rule quarantine does that.  --add-configuration writes the
-configuration of the build with its name (THE POLICY of
-assay.core.configuration).  --import LOG puts the rows of a configuration
-that a CI leg wrote into the ledger.  The command exits 77 when the rule does
-not apply to the build.
+THE BUILDS
+    A rule of the engine plugin writes through
+    assay.guard.engines.plugin.runner, and a rule of the engine elf through
+    the function write(rule, request) of its module
+    (assay.guard.engines.elf.runner).  A module of the engine build that
+    judges its ledger itself gives write(rule, request), with the
+    WriteRequest of assay.guard.engines.plugin.runner
+    (assay.guard.engines.buildsys.runner, THE MODULES THAT JUDGE THEIR
+    LEDGER).  The rule fixture-quarantine writes its ledger in this way.
+    Each such write reads the builds of --build-dir.
 
-A rule of the engine elf writes through the function write(rule, request) of
-its module (assay.guard.engines.elf.runner), which reads the build of
---build-dir.  The rules artifact-symbols and artifact-links write the rows
-of the build into one set of rows (assay.guard.engines.elf.one_set).
---add-configuration and --import LOG do not apply to a rule of the engine
-elf.
-
-A module of the engine build that judges
-its ledger itself gives write(rule, request), with the WriteRequest of
-assay.guard.engines.plugin.runner (assay.guard.engines.buildsys.runner, THE
-MODULES THAT JUDGE THEIR LEDGER).  --add-configuration and --import LOG apply
-to it as to a rule of the engine plugin.  The rule fixture-quarantine writes
-its ledger in this way.
+    One --build-dir gives the counts of one build, and the write lowers no
+    row (THE WRITE of assay.core.ledger).  More than one --build-dir is a
+    reduce (THE REDUCE of assay.core.ledger).  The builds must be one build
+    of each configuration of the landing gate that checks the rule
+    (assay.loop.gate, THE COUNTED RULES).  The write then lowers each row to
+    the largest count over the builds.  The landing gate makes this write.
+    The command exits 77 when the rule does not apply to a build.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
@@ -68,6 +56,7 @@ does.
 """
 
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -83,8 +72,36 @@ PARTIAL_POLICIES = (rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT)
 OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
 # The policies of a rule that judges its ledger itself.  The module of such a rule writes the ledger.
 JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
-# The word that writes each configuration of the counted ledgers (assay.guard.write_configurations).
-CONFIGURATIONS_FLAG = "--all-configurations"
+
+
+def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
+    """Return the reason that the builds of a reduce are not one build of each configuration of the gate, or "".
+
+    The configurations are those of the landing gate that check the rule (THE BUILDS).  Complexity: one read of the
+    build kind and the CMake cache of each build, and one read of the presets of the tree.
+    """
+    from assay.core import configuration as build_config
+    from assay.loop import gate
+
+    names: list[str] = []
+    for build in builds:
+        try:
+            names.append(build_config.read_configuration(build).name)
+        except build_config.ConfigurationError as problem:
+            return str(problem)
+    try:
+        required = sorted(
+            item.configuration_name for item in gate.configurations(root) if gate.is_checked(item, rule_id)
+        )
+    except gate.GateError as problem:
+        return str(problem)
+    if sorted(names) != required:
+        return (
+            f"a write with more than one --build-dir lowers the rows, and it takes one build of each configuration of "
+            f"the landing gate that checks the rule: {', '.join(required)}.  The builds have the configurations "
+            f"{', '.join(sorted(names))}"
+        )
+    return ""
 
 
 def main(argv: list[str]) -> int:
@@ -93,10 +110,6 @@ def main(argv: list[str]) -> int:
     Returns:
         0 when the ledger is written, 1 when the mode refuses a finding, 2 on a usage error
     """
-    if CONFIGURATIONS_FLAG in argv:
-        from assay.guard import write_configurations
-
-        return write_configurations.main(argv)
     registry = check.load_registry()
     if registry is None:
         return 2
@@ -115,9 +128,7 @@ def main(argv: list[str]) -> int:
     modes.add_argument("--admit", dest="mode", action="store_const", const=rule_ledger.WriteMode.ADMIT)
     parser.add_argument("--reason", default=None)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
-    parser.add_argument("--build-dir", type=Path, default=None)
-    parser.add_argument("--add-configuration", dest="add_configuration", action="store_true")
-    parser.add_argument("--import", dest="import_log", type=Path, default=None, metavar="LOG")
+    parser.add_argument("--build-dir", dest="build_dirs", type=Path, action="append", default=[], metavar="DIR")
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     options = parser.parse_args(argv)
     requested = registry.rules.get(options.rule)
@@ -128,56 +139,56 @@ def main(argv: list[str]) -> int:
         return 2
     rule = chosen[0]
     if options.paths and (rule.engine in OWN_WRITE_ENGINES or rule.policy not in PARTIAL_POLICIES):
-        check_report.write_line("guard write: --path applies only to a rule of the engine build, meta or tsast with "
-                                "the policy count or admit", is_error=True)
+        check_report.write_line(
+            "guard write: --path applies only to a rule of the engine build, meta or tsast with "
+            "the policy count or admit",
+            is_error=True,
+        )
         return 2
     root = options.root.resolve()
-    build_dir = options.build_dir.resolve() if options.build_dir is not None else None
-    if rule.engine == rule_registry.Engine.PLUGIN:
-        from assay.guard.engines.plugin import runner as plugin_runner
-
-        if build_dir is None and options.import_log is None:
-            check_report.write_line(f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir "
-                                    f"DIR", is_error=True)
-            return 2
-        return plugin_runner.write(rule, plugin_runner.WriteRequest(
-            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
-            options.import_log.resolve() if options.import_log is not None else None))
-    if rule.engine == rule_registry.Engine.ELF:
-        from assay.guard.engines.elf import runner as elf_runner
-
-        if build_dir is None and options.import_log is None:
-            check_report.write_line(f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir "
-                                    f"DIR", is_error=True)
-            return 2
-        return elf_runner.write(rule, elf_runner.WriteRequest(
-            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason,
-            options.import_log.resolve() if options.import_log is not None else None, options.add_configuration))
+    builds = [path.resolve() for path in options.build_dirs]
+    build_dir = builds[0] if builds else None
     own_write = None
     if rule.engine == rule_registry.Engine.BUILD and not is_held_write:
         own_write = getattr(runner.rule_module(rule), "write", None)
-    if own_write is not None:
+    is_build_write = rule.engine in OWN_WRITE_ENGINES or own_write is not None
+    if is_build_write and not builds:
+        check_report.write_line(
+            f"guard write: the rule {rule.id} reads the objects of a build: give --build-dir DIR", is_error=True
+        )
+        return 2
+    if len(builds) > 1:
+        refusal = (
+            reduce_refusal(rule.id, root, builds)
+            if is_build_write
+            else (
+                "more than one --build-dir applies only to a rule of the engine plugin or elf, or to a rule of the "
+                "engine build whose module writes its ledger"
+            )
+        )
+        if refusal:
+            check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {refusal}", is_error=True)
+            return 2
+    mode = options.mode or rule_ledger.WriteMode.LOWER
+    if rule.engine == rule_registry.Engine.ELF:
+        from assay.guard.engines.elf import runner as elf_runner
+
+        return elf_runner.write(rule, elf_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:])))
+    if is_build_write:
         from assay.guard.engines.plugin import runner as plugin_runner
 
-        if build_dir is None and options.import_log is None:
-            check_report.write_line(f"guard write: the rule {rule.id} reads a build: give --build-dir DIR",
-                                    is_error=True)
-            return 2
-        return int(own_write(rule, plugin_runner.WriteRequest(
-            root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
-            options.import_log.resolve() if options.import_log is not None else None)))
-    if options.add_configuration or options.import_log is not None:
-        check_report.write_line("guard write: --add-configuration and --import apply only to a rule of the engine "
-                                "plugin, or to a rule of the engine build whose module writes its ledger",
-                                is_error=True)
-        return 2
+        request = plugin_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:]))
+        if own_write is not None:
+            return int(own_write(rule, request))
+        return plugin_runner.write(rule, request)
     context = check.rule_context(rule, root, build_dir, options.paths)
     try:
         if rule.policy == rule_registry.Policy.NONE:
             refresh = getattr(runner.rule_module(rule), "refresh", None)
             if refresh is None:
-                check_report.write_line(f"guard write: the rule {rule.id} has no ledger, and its module writes no "
-                                        f"data file", is_error=True)
+                check_report.write_line(
+                    f"guard write: the rule {rule.id} has no ledger, and its module writes no data file", is_error=True
+                )
                 return 2
             check_report.write_line(f"guard write: {refresh(context)}")
             return 0
@@ -194,17 +205,31 @@ def main(argv: list[str]) -> int:
             unread = [item for item in found if item.level == "error" and item.kind in refused]
             if unread:
                 check_report.emit(unread, rule.id, None)
-                check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {len(unread)} findings "
-                                        f"of a kind that no row admits.  Correct them first", is_error=True)
+                check_report.write_line(
+                    f"guard write: the ledger of {rule.id} is not written: {len(unread)} findings "
+                    f"of a kind that no row admits.  Correct them first",
+                    is_error=True,
+                )
                 return 1
             named = set(options.paths)
-            judged = replace(ledger, base={key: entry for key, entry in ledger.base.items()
-                                           if not named or key.path in named})
+            judged = replace(
+                ledger, base={key: entry for key, entry in ledger.base.items() if not named or key.path in named}
+            )
             found = [item for item in found if not named or item.path in named]
             moves = git.change_moves(root)
-            before = rule_ledger.ledger_before(rule, moves.base, git.base_file(root, moves, rule_ledger.shown_path(rule.id)))
-            written = rule_ledger.write(rule, judged, found, mode=options.mode or rule_ledger.WriteMode.LOWER,
-                                        reason=options.reason, moved=moves.renamed, flows=moves.flows, before=before)
+            before = rule_ledger.ledger_before(
+                rule, moves.base, git.base_file(root, moves, rule_ledger.shown_path(rule.id))
+            )
+            written = rule_ledger.write(
+                rule,
+                judged,
+                found,
+                mode=mode,
+                reason=options.reason,
+                moved=moves.renamed,
+                flows=moves.flows,
+                before=before,
+            )
             if named:
                 kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
                 own = written.base
@@ -218,7 +243,8 @@ def main(argv: list[str]) -> int:
         print(f"guard write: the ledger of {rule.id} is not written: {problem}", file=sys.stderr)
         return 1
     changed = rule_ledger.store(written, root)
-    rows = len(written.base) + sum(len(table) for table in written.deltas.values())
-    print(f"guard write: {rule_ledger.shown_path(rule.id)} holds {rows} rows"
-          + ("" if changed else ", with no change"))
+    print(
+        f"guard write: {rule_ledger.shown_path(rule.id)} holds {len(written.base)} rows"
+        + ("" if changed else ", with no change")
+    )
     return 0

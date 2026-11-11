@@ -75,13 +75,11 @@ def main(argv: list[str]) -> int:
             except (rows_grammar.RowsError, OSError) as problem:
                 print(f"guard list: the ledger of {rule.id} cannot be read: {problem}", file=sys.stderr)
                 continue
-            rows = [("", entry) for entry in ledger.base.values()]
-            rows += [(f"@{name} ", entry) for name, table in ledger.deltas.items() for entry in table.values()]
-            for configuration, entry in sorted(rows, key=lambda item: item[1].line):
+            for entry in sorted(ledger.base.values(), key=lambda item: item.line):
                 key = entry.key
                 if key.path == wanted:
                     shown += 1
-                    print(f"{rule_ledger.shown_path(rule.id)}:{entry.line}: {rule.id} {configuration}{key.kind or '-'} "
+                    print(f"{rule_ledger.shown_path(rule.id)}:{entry.line}: {rule.id} {key.kind or '-'} "
                           f"{rule_ledger.value_text(entry.value)} {key.entity or '-'}: {entry.reason or 'no reason'}")
         print(f"guard list: {shown} ledger rows of {rule_ledger.LEDGER_DIRECTORY}/ name {wanted}")
         return 0

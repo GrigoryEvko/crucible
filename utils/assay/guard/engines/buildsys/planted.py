@@ -9,8 +9,8 @@ THE FILE
 
         format 1
         kind KIND                         the build kind of build-kind.txt, and the
-                                          configuration KIND with the one fact kind
-                                          KIND (BuildContext, THE CONFIGURATION)
+                                          configuration KIND (BuildContext, THE
+                                          CONFIGURATION)
         configuration NAME                the name of build-configuration.txt.  A
                                           build with a kind row and no such row has
                                           the name KIND there
@@ -656,5 +656,5 @@ def plant_context(plant: Path, scratch: Path) -> BuildContext:
         raise meta_runner.NotApplicable(f"the planted registry does not read: {problem}") from None
     configuration = None
     if planted.kind is not None:
-        configuration = build_config.BuildConfiguration(planted.kind, ((build_config.KIND_KEY, planted.kind),))
+        configuration = build_config.BuildConfiguration(planted.kind)
     return BuildContext(scratch, build, registry=registry, configuration=configuration)

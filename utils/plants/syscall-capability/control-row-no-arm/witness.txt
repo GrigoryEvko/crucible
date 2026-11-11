@@ -1,0 +1,7 @@
+# A row of the ledger admits the call of an arm, and the build does not
+# compile the arm.  The row admits no finding, and it gives no error, because
+# a ledger fails only on a growth.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw

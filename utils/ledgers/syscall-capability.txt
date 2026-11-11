@@ -4,59 +4,13 @@
 #       parameters, "macro NAME" or namespace-scope, and SHAPE is the name of a function of the C
 #       library, or syscall(SYS_NAME).  CLAIM is the effects::* capability claim of the calls, and a
 #       row with no claim is an error
-#   configuration NAME kind KIND
-#       The build kind KIND has the configuration NAME.  The first configuration is the base, and
-#       the rows with no @NAME are its counts
-#   @NAME | PATH | raw-syscall | DELTA | HOLDER: SHAPE | CLAIM
-#       The count of the configuration NAME is the base count plus DELTA.  The rule judges a build
-#       against the rows of the configuration with its name, and a build of each other name against
-#       the largest count of each key over the configurations.  So a row of an arm that only one
-#       build kind compiles is judged in that build kind, and in a build that the ledger does not
-#       hold
+# One set of rows judges each build.  N is the largest count over the configurations of the landing
+# gate, so the set also holds the row of an arm that only one build kind compiles.
 # No row admits a finding of the kind outside-door.  Each count only falls.
-# `python3 utils/bin/guard explain syscall-capability` tells the rule, and
-# `python3 utils/bin/guard write --rule syscall-capability --build-dir DIR` writes this file in the
-# commit that lowers a count.
+# `python3 utils/bin/guard explain syscall-capability` tells the rule.  A landing that builds each
+# configuration of the gate writes the lower count into this file.
 format 1
 rule syscall-capability
-configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-tsan kind x86_64-debug-tsan
-configuration x86_64-debug-asan-syntax kind x86_64-debug-asan
-configuration x86_64-debug-asan-syntax tier x86-64-v3-bb11d7e7+native-x86_64
-configuration x86_64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan-syntax CMAKE_CXX_FLAGS -march=x86-64-v3
-configuration x86_64-debug-asan-syntax CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan-syntax CRUCIBLE_TSAN off
-configuration x86_64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan-syntax CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan-syntax CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan-syntax CRUCIBLE_PGO off
-configuration x86_64-debug-asan-syntax CRUCIBLE_BENCH off
-configuration x86_64-debug-asan-syntax CRUCIBLE_FUZZ off
-configuration x86_64-debug-asan-syntax CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan-syntax CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan-syntax TORCH_DIR unset
-configuration x86_64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
-configuration aarch64-debug-asan-syntax kind aarch64-debug-asan
-configuration aarch64-debug-asan-syntax tier default-ddafb5bb
-configuration aarch64-debug-asan-syntax CMAKE_BUILD_TYPE Debug
-configuration aarch64-debug-asan-syntax CMAKE_CXX_FLAGS unset
-configuration aarch64-debug-asan-syntax CRUCIBLE_SANITIZE on
-configuration aarch64-debug-asan-syntax CRUCIBLE_TSAN off
-configuration aarch64-debug-asan-syntax CRUCIBLE_UBSAN_STRICT off
-configuration aarch64-debug-asan-syntax CRUCIBLE_ANALYZER off
-configuration aarch64-debug-asan-syntax CRUCIBLE_VERIFY off
-configuration aarch64-debug-asan-syntax CRUCIBLE_PGO off
-configuration aarch64-debug-asan-syntax CRUCIBLE_BENCH off
-configuration aarch64-debug-asan-syntax CRUCIBLE_FUZZ off
-configuration aarch64-debug-asan-syntax CRUCIBLE_EXAMPLES on
-configuration aarch64-debug-asan-syntax CRUCIBLE_HAVE_BPF off
-configuration aarch64-debug-asan-syntax CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration aarch64-debug-asan-syntax CRUCIBLE_VALGRIND_INCLUDE unset
-configuration aarch64-debug-asan-syntax TORCH_DIR unset
-configuration aarch64-debug-asan-syntax CRUCIBLE_SYNTAX_ONLY on
 include/crucible/canopy/Hlc.h | raw-syscall | 1 | crucible::canopy::Hlc::read_realtime_ns_(): clock_gettime | effects::Init.  Only mint_hlc builds a clock, and it takes the init context.  The read gives the physical part of a hybrid logical time
 include/crucible/ledger/LedgerStore.h | raw-syscall | 1 | crucible::ledger::store_detail::temp_filename(crucible::ledger::HostFingerprint): getpid | effects::IO.  The process id names the temporary file of one ledger write, so two writers never share a file.  The ledger write that calls it holds IO
 include/crucible/ledger/ProbeSupport.h | raw-syscall | 1 | crucible::ledger::ProbeRegion::create(const crucible::ledger::LedgerIoCtx&, std::size_t, crucible::ledger::PagePolicy): madvise | effects::IO and effects::Block of the context of the probe.  The advice is a hint, and a kernel with no huge page support refuses it with no damage to the region
@@ -139,6 +93,8 @@ src/foundation/os/GuardedRegion.cpp | raw-syscall | 1 | foundation::os::GuardedR
 src/foundation/os/GuardedRegion.cpp | raw-syscall | 1 | foundation::os::map_guarded_region(std::size_t): raw_syscall(mmap) | The doors of the hooks of the session watch.  The signal door installs the handler of each fatal signal under effects::Init, and its handler puts back the action that it replaced (rule R20).  The guarded memory door maps, protects and unmaps the alternate signal stack of a thread for the signal door and the thread door.  The monotonic clock door reads the clock for the wait_scope of a session handle
 src/foundation/os/GuardedRegion.cpp | raw-syscall | 1 | foundation::os::map_guarded_region(std::size_t): raw_syscall(mprotect) | The doors of the hooks of the session watch.  The signal door installs the handler of each fatal signal under effects::Init, and its handler puts back the action that it replaced (rule R20).  The guarded memory door maps, protects and unmaps the alternate signal stack of a thread for the signal door and the thread door.  The monotonic clock door reads the clock for the wait_scope of a session handle
 src/foundation/os/GuardedRegion.cpp | raw-syscall | 1 | foundation::os::map_guarded_region(std::size_t): raw_syscall(munmap) | The doors of the hooks of the session watch.  The signal door installs the handler of each fatal signal under effects::Init, and its handler puts back the action that it replaced (rule R20).  The guarded memory door maps, protects and unmaps the alternate signal stack of a thread for the signal door and the thread door.  The monotonic clock door reads the clock for the wait_scope of a session handle
+src/foundation/os/Intercepted.cpp | raw-syscall | 1 | foundation::os::detail::read_intercepted(uint64_t, uint64_t, uint64_t): read | effects::IO of the door that issues the raw read or write.  In a build with ThreadSanitizer, the primitive gives a read or a write that can block to the function of the C library, which the sanitizer intercepts, so a handler of a signal runs during the call
+src/foundation/os/Intercepted.cpp | raw-syscall | 1 | foundation::os::detail::write_intercepted(uint64_t, uint64_t, uint64_t): write | effects::IO of the door that issues the raw read or write.  In a build with ThreadSanitizer, the primitive gives a read or a write that can block to the function of the C library, which the sanitizer intercepts, so a handler of a signal runs during the call
 src/foundation/os/ReportSink.cpp | raw-syscall | 1 | foundation::core::detail::write_sink_(foundation::core::Sink, const char*, std::size_t): raw_syscall(write) | A report that is safe in a signal handler and in each other context.  The sink write writes to standard output or standard error only
 src/foundation/os/Syscall.cpp | raw-syscall | 1 | foundation::os::(anonymous namespace)::refuse_an_older_kernel(): raw_syscall(uname) | effects::Init.  The start-up check reads the release of the kernel one time, before main, and it changes nothing
 src/foundation/os/Syscall.cpp | raw-syscall | 1 | foundation::os::(anonymous namespace)::write_to_standard_error(const char*, std::size_t): raw_syscall(write) | effects::Init.  The start-up check writes its refusal of an older kernel to standard error, and the process ends next
@@ -155,14 +111,3 @@ src/topology/CongestionTelemetry.cpp | raw-syscall | 2 | crucible::topology::det
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::configure_hardware_timestamping(crucible::cntp::SocketFd, crucible::cntp::NicInterfaceName): ioctl | effects::IO.  SIOCSHWTSTAMP, with an interface name of at most IFNAMSIZ bytes
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::enable_socket_timestamping(crucible::cntp::SocketFd): setsockopt | effects::IO.  The call sets SO_TIMESTAMPING
 src/topology/Ptp.cpp | raw-syscall | 1 | crucible::topology::recv_with_hw_timestamp(crucible::cntp::SocketFd, std::span<std::byte, 18446744073709551615>): recvmsg | effects::IO.  MSG_DONTWAIT, and the control data gives SCM_TIMESTAMPING
-@aarch64-debug-asan-syntax | src/perf/PmuSample.cpp | raw-syscall | -1 | crucible::perf::(anonymous namespace)::PerfFds::~PerfFds(): close | -
-@aarch64-debug-asan-syntax | src/perf/PmuSample.cpp | raw-syscall | -1 | crucible::perf::(anonymous namespace)::perf_event_open_syscall(perf_event_attr*, pid_t, int, int, long unsigned int): syscall(SYS_perf_event_open) | -
-@aarch64-debug-asan-syntax | src/perf/PmuSample.cpp | raw-syscall | -1 | crucible::perf::PmuSample::load(const fixy::InitLoadCtx&): close | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::(anonymous namespace)::open_ro(const char*): open | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::(anonymous namespace)::pread_full(int, char*, size_t): pread | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::ProcGauges::read_block_queue_depth_max_() const: pread | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::ProcGauges::read_loadavg_x100_(uint64_t&, uint64_t&, uint64_t&) const: pread | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::ProcGauges::read_pressure_avg10_x100_(int, const char*) const: pread | -
-@aarch64-debug-asan-syntax | src/perf/ProcGauges.cpp | raw-syscall | -1 | crucible::perf::ScopedFd::close_(): close | -
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | raw-syscall | +1 | foundation::os::detail::read_intercepted(uint64_t, uint64_t, uint64_t): read | effects::IO of the door that issues the raw read or write.  In a build with ThreadSanitizer, the primitive gives a read or a write that can block to the function of the C library, which the sanitizer intercepts, so a handler of a signal runs during the call
-@x86_64-debug-tsan | src/foundation/os/Intercepted.cpp | raw-syscall | +1 | foundation::os::detail::write_intercepted(uint64_t, uint64_t, uint64_t): write | effects::IO of the door that issues the raw read or write.  In a build with ThreadSanitizer, the primitive gives a read or a write that can block to the function of the C library, which the sanitizer intercepts, so a handler of a signal runs during the call

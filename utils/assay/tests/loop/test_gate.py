@@ -4,8 +4,8 @@
 line.  Exit 0 when each case holds, else 1.
 
 The cases hold the selection of the configurations of a change.  They hold
-the table of the configurations against the ledgers and the presets of this
-tree, and the warm tree on a planted repository.  The planted repository
+the table of the configurations against the presets of this tree, and the
+warm tree on a planted repository.  The planted repository
 holds a registry with a rule that reads the build, the ledger of a counted
 rule, and two planted masters.  The planted master loop writes a JUnit
 report that a mode file of the build directory selects.  A planted ctest
@@ -14,13 +14,13 @@ again alone.  The run of the gate then gives its verdict with no compiler
 and no CMake.  A change of a C++ file must run the tests of the changed
 inputs in each other configuration of objects.  A red test there must
 reject the commit.  A change of the module of the rule that reads the build
-must run that test in each other configuration of objects.  A moved row of
-a counted ledger with no configuration row must land with the write of the
-gate.  The first run of each configuration of objects must end with the
-rule reconfigure-noop, and a failure of that rule must reject the commit.
+must run that test in each other configuration of objects.  A landing that
+builds each configuration must reduce each counted ledger over the builds,
+and a landing that builds only some configurations must write no ledger.
+The first run of each configuration of objects must end with the rule
+reconfigure-noop, and a failure of that rule must reject the commit.
 """
 
-import itertools
 import json
 import os
 import sys
@@ -31,16 +31,15 @@ from dataclasses import replace
 from pathlib import Path
 
 from assay.core import git, jobserver, paths, testing
-from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.loop import gate, syntax
 from assay.loop import inputs as guard_inputs
 from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
 
-# The registry of the planted repository: one measured rule, one rule with a ledger of configurations, and a rule that
-# reads the build.  It also holds the other rules that a parse configuration checks.  The rule trait-guard is there too,
-# for a ledger with no configuration row.
+# The registry of the planted repository: one measured rule, one counted rule that a parse configuration checks, and a
+# rule that reads the build.  It also holds the other rules that a parse configuration checks.  The counted rule
+# trait-guard is there too, and no parse configuration checks it.
 REGISTRY = (
     "format 1\n"
     "rule slow-row engine=build scope=builddir ledger=max warn=10 error=20 unit=s held-by=loop-gauge doc=XV | a time | "
@@ -63,16 +62,14 @@ OTHER_BUILDS = {
     "build-ubsan-strict": "clean",
     "build-bench-fuzz": "clean",
 }
-DOOR_LEDGER = (
-    "format 1\nrule door-unit\n"
-    "configuration x86_64-release kind x86_64-release\n"
-    "configuration aarch64-debug-asan kind aarch64-debug-asan\n"
-)
-# The ledger of the rule trait-guard.  It has no configuration row.
+# The ledger of the rule door-unit with no row, and with a row of the count 2.
+DOOR_LEDGER = "format 1\nrule door-unit\n"
+DOOR_PATH = "utils/ledgers/door-unit.txt"
+COUNTED_DOORS = f"{DOOR_LEDGER}src/door.cpp | header-door | 2 | door.h | -\n"
+# The ledger of the rule trait-guard.
 TRAIT_LEDGER = "utils/ledgers/trait-guard.txt"
-# The registry of the counted rules.  It holds a count ledger with configurations and a count ledger with no
-# configuration row.  It also holds an admit ledger, a count rule with no ledger file and a count rule of a different
-# engine.
+# The registry of the counted rules.  It holds two count ledgers with a row, an admit ledger, a count rule with no
+# ledger file and a count rule of a different engine.
 COUNTED_REGISTRY = (
     "format 1\n"
     "rule door-unit engine=plugin scope=tracked ledger=count kinds=header-door doc=XXII.R4 | a door | move the door\n"
@@ -139,10 +136,8 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
-# reconfigure-noop gives findings.  `write` lowers the count 2 of the planted ledger to 1, as the
-# write of a fall does, and writes its rule.  The write of trait-guard moves the row of include/old.h to
-# include/new.h, as the write of a divided header does (THE MOVE of assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for
-# SLOW_S seconds.  It then writes its rule and the times of its start and its end to intervals.txt.
+# reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
+# gate does.  Each write writes its rule and the count of its build directories to writes.txt of each of them.
 UTILS_MARK = "@UTILS@"
 SLOW_MARK = "@SLOW_S@"
 SLOW_S = 1.0
@@ -150,7 +145,6 @@ GUARD_MASTER = """import os
 import pathlib
 import subprocess
 import sys
-import time
 
 words = sys.argv[1:]
 if words[0] == "check":
@@ -165,20 +159,13 @@ if words[0] == "check":
         if "| 1 |" in subprocess.run(shown, capture_output=True, text=True, check=False).stdout:
             sys.exit(1)
 if words[0] == "write":
-    build = pathlib.Path(words[4])
-    began = time.time()
-    if (build / "slow-writes.txt").is_file():
-        time.sleep(@SLOW_S@)
-    name, old, new = {
-        "trait-guard": ("trait-guard", "include/old.h", "include/new.h"),
-    }.get(words[2], ("door-unit", "| 2 |", "| 1 |"))
-    ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
-    ledger.write_text(ledger.read_text().replace(old, new))
-    with open(build / "writes.txt", "a", encoding="utf-8") as handle:
-        handle.write(f"{words[2]}\\n")
-    if (build / "slow-writes.txt").is_file():
-        with open(build / "intervals.txt", "a", encoding="utf-8") as handle:
-            handle.write(f"{words[2]} {began} {time.time()}\\n")
+    builds = [pathlib.Path(words[index + 1]) for index, word in enumerate(words) if word == "--build-dir"]
+    if words[2] == "door-unit":
+        ledger = pathlib.Path("utils/ledgers/door-unit.txt")
+        ledger.write_text(ledger.read_text().replace("| 2 |", "| 1 |"))
+    for build in builds:
+        with open(build / "writes.txt", "a", encoding="utf-8") as handle:
+            handle.write(f"{words[2]} {len(builds)}\\n")
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
@@ -212,7 +199,7 @@ report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</test
 PLANTED = {
     "notes.txt": "notes at head\n",
     "utils/registry.txt": REGISTRY,
-    "utils/ledgers/door-unit.txt": DOOR_LEDGER,
+    DOOR_PATH: DOOR_LEDGER,
     "utils/bin/loop": LOOP_MASTER,
     "utils/bin/guard": GUARD_MASTER,
     BUILD_RULE_MODULE: "VALUE = 1\n",
@@ -298,14 +285,12 @@ def select_cases(expect: testing.Expect) -> None:
 
 
 def table_cases(expect: testing.Expect) -> None:
-    """Hold the table of the configurations against the ledgers and the presets of this tree (THE CONFIGURATIONS)."""
-    registry = rule_registry.load(paths.REPO_ROOT / rule_registry.REGISTRY_PATH)
-    named: set[str] = set()
-    for rule in registry.rules.values():
-        if rule.policy != rule_registry.Policy.NONE:
-            named.update(item.name for item in rule_ledger.read(rule, paths.REPO_ROOT).configurations)
-    unknown = sorted(name for name in named if name not in gate.BY_LEDGER_NAME)
-    expect(f"each configuration that a ledger of this tree names is in the table of the gate: {unknown}", not unknown)
+    """Hold the table of the configurations against the presets of this tree (THE CONFIGURATIONS)."""
+    names = [configuration.configuration_name for configuration in gate.CONFIGURATIONS]
+    expect(
+        f"each configuration of the gate names the configuration of its build, and no two name the same: {names}",
+        all(names) and len(set(names)) == len(names),
+    )
     parse = [configuration.name for configuration in gate.CONFIGURATIONS if configuration.is_parse]
     expect(
         f"the parse configurations of the gate are the parse presets of loop syntax, in their sequence: {parse}",
@@ -428,7 +413,7 @@ def change_cases(expect: testing.Expect) -> None:
             and change.deleted == {str(tree / "notes.txt")}
             and change.rows == {"slow-row"},
         )
-        item, gone, other = str(tree / "data" / "item.txt"), str(tree / "data" / "gone.txt"), str(tree / "other.txt")
+        item, gone, other = (str(tree / "data" / "item.txt"), str(tree / "data" / "gone.txt"), str(tree / "other.txt"))
         read = guard_inputs.Inputs(files=(item,), directories=(str(tree / "data"),), rules=("plan-check",))
         empty: frozenset[str] = frozenset()
         expect(
@@ -491,6 +476,16 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
     return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB)
+
+
+def every_gate(work: Path, root: Path, tree: Path, modes: Mapping[str, str] | None = None) -> gate.Gate:
+    """Plant the build of each configuration of the gate, and return a gate of --all-configurations.
+
+    Each build has the mode clean, and `modes` maps the name of a build directory to a different mode.
+    """
+    others = {item.build: "clean" for item in gate.CONFIGURATIONS if item.build != "build"}
+    planted = planted_gate(work, root, tree, "clean", {**others, **(modes or {})})
+    return replace(planted, is_every=True)
 
 
 def run_cases(expect: testing.Expect) -> None:
@@ -578,39 +573,38 @@ def run_cases(expect: testing.Expect) -> None:
         )
 
 
-def falls_cases(expect: testing.Expect) -> None:
-    """Hold THE FALLS: a fall of a count in the base lands in a new commit of the gate, with no manual write."""
-    with tempfile.TemporaryDirectory(prefix="gate-falls-") as work_text:
+def reduce_cases(expect: testing.Expect) -> None:
+    """Hold THE REDUCE: a landing that builds each configuration lowers a counted ledger over the builds, and folds it."""
+    with tempfile.TemporaryDirectory(prefix="gate-reduce-") as work_text:
         work = Path(work_text)
         root = work / "repo"
-        planted_repository(root)
-        ledger = "utils/ledgers/door-unit.txt"
-        counted_ledger = (
-            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
-            "src/door.cpp | header-door | 2 | door.h | -\n"
-        )
-        head = commit_change(root, ledger, counted_ledger, "Count two doors")
+        head = planted_repository(root, {DOOR_PATH: COUNTED_DOORS})
         commit = commit_change(root, "notes.txt", "a change that removes one door\n", "Remove a door\n\nThe body.")
         candidate = gate.Candidate(head, commit, ("notes.txt",))
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "clean")
+        planted = every_gate(work, root, tree)
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
-        expect(
-            "the gate accepts a commit whose suite is green with a fall of a counted ledger, and it writes the fall",
-            verdict.is_accepted and verdict.configurations == ("default", "default"),
+        every = tuple(item.name for item in gate.CONFIGURATIONS)
+        checkers = sum(1 for item in gate.CONFIGURATIONS if gate.is_checked(item, "door-unit"))
+        writes = tree / "build" / "writes.txt"
+        written = writes.read_text(encoding="utf-8").splitlines() if writes.is_file() else []
+        holds = verdict.is_accepted and verdict.configurations == every + every and written == [f"door-unit {checkers}"]
+        label = (
+            f"a landing that builds each configuration with no problem runs one write of each counted rule, with the "
+            f"build of each configuration that checks it: the gate runs {verdict.configurations} and writes {written}"
         )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         expect(
-            "the counted rule writes its fall, the gate folds the ledger into a new commit with the parents and the "
-            "message of the commit, and the warm tree holds that commit",
+            "the gate folds the lowered ledger into a new commit with the parents and the message of the commit, and "
+            "the warm tree holds that commit",
             verdict.final not in ("", commit)
-            and verdict.ledgers == (ledger,)
-            and git.show(root, verdict.final, ledger) == counted_ledger.replace("| 2 |", "| 1 |").encode()
+            and verdict.ledgers == (DOOR_PATH,)
+            and git.show(root, verdict.final, DOOR_PATH) == COUNTED_DOORS.replace("| 2 |", "| 1 |").encode()
             and git.show(root, verdict.final, "notes.txt") == b"a change that removes one door\n"
             and git.parent(root, verdict.final) == head
             and git.message_of(root, verdict.final) == git.message_of(root, commit)
-            and git.head(tree) == verdict.final
-            and (tree / "build" / "writes.txt").read_text(encoding="utf-8") == "door-unit\n",
+            and git.head(tree) == verdict.final,
         )
         expect(
             "after the fold, the tests run again on the new commit",
@@ -623,93 +617,114 @@ def falls_cases(expect: testing.Expect) -> None:
         )
 
 
-def falls_move_cases(expect: testing.Expect) -> None:
-    """Hold THE FALLS of a ledger with no configuration row: the gate writes the move of its row and folds it."""
-    with tempfile.TemporaryDirectory(prefix="gate-falls-move-") as work_text:
+def partial_cases(expect: testing.Expect) -> None:
+    """Hold THE REDUCE of a landing that builds only some configurations: the gate and its legs write no ledger."""
+    with tempfile.TemporaryDirectory(prefix="gate-partial-") as work_text:
         work = Path(work_text)
         root = work / "repo"
-        planted_repository(root)
-        traits = "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n"
-        head = commit_change(root, TRAIT_LEDGER, traits, "Count two open reads")
-        commit = commit_change(
-            root, "notes.txt", "a change that divides include/old.h\n", "Divide a header\n\nThe body."
-        )
+        head = planted_repository(root, {DOOR_PATH: COUNTED_DOORS})
+        commit = commit_change(root, "notes.txt", "a change that removes one door\n", "Remove a door\n\nThe body.")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "moves")
+        planted = planted_gate(work, root, tree, "clean")
         verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
-        writes = tree / "build" / "writes.txt"
         holds = (
             verdict.is_accepted
-            and verdict.ledgers == (TRAIT_LEDGER,)
-            and git.show(root, verdict.final, TRAIT_LEDGER) == traits.replace("include/old.h", "include/new.h").encode()
-            and writes.is_file()
-            and writes.read_text(encoding="utf-8") == "trait-guard\n"
+            and verdict.configurations == ("default",)
+            and verdict.final == commit
+            and not verdict.ledgers
+            and not (tree / "build" / "writes.txt").is_file()
+            and "lowers no row" in printed
         )
         label = (
-            f"a commit whose suite is red only on a moved row of a ledger with no configuration row lands: the base "
-            f"build writes the move one time, and the gate folds the ledger.  The gate gives {verdict.problems[:1]} "
-            f"and folds {verdict.ledgers}"
+            f"a landing that builds only some configurations lowers no row, and the gate keeps the commit: the gate "
+            f"runs {verdict.configurations} and folds {verdict.ledgers}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        traits = "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n"
+        moved = commit_change(root, TRAIT_LEDGER, traits, "Count two open reads")
+        divided = commit_change(root, "notes.txt", "a change that divides include/old.h\n", "Divide a header")
+        planted = every_gate(work, root, tree, {"build": "moves"})
+        verdict, printed = testing.captured(
+            lambda: planted.check(gate.Candidate(moved, divided, ("notes.txt",)), False)
+        )
+        holds = (
+            not verdict.is_accepted
+            and any("red alone too: test_ledger" in problem for problem in verdict.problems)
+            and not verdict.ledgers
+            and not (tree / "build" / "writes.txt").is_file()
+        )
+        label = (
+            f"a commit whose suite is red on a moved row is a refusal, because a leg writes no ledger: the change "
+            f"writes the move before the landing.  The gate gives {verdict.problems[:1]} and folds {verdict.ledgers}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
 def counted_cases(expect: testing.Expect) -> None:
-    """Hold THE COUNTED RULES: the ledgers that THE FALLS write, and the configurations that each ledger holds."""
+    """Hold THE COUNTED RULES, the words of the reduce of a counted rule, and is_each_built() (THE REDUCE)."""
     with tempfile.TemporaryDirectory(prefix="gate-counted-") as work_text:
         root = Path(work_text)
         files = {
             rule_registry.REGISTRY_PATH: COUNTED_REGISTRY,
-            "utils/ledgers/door-unit.txt": DOOR_LEDGER,
+            DOOR_PATH: COUNTED_DOORS,
             TRAIT_LEDGER: "format 1\nrule trait-guard\ninclude/old.h | open-read | 2 | a::trait_v | -\n",
             "utils/ledgers/mint-pattern.txt": (
                 "format 1\nrule mint-pattern\ninclude/a.h | mint | admit | a::mint_a | a hatch\n"
             ),
+            "utils/ledgers/padded-list.txt": "format 1\nrule padded-list\n",
             "utils/ledgers/erased-brand.txt": "format 1\nrule erased-brand\nc.h | - | 1 | z | -\n",
         }
         for name, text in files.items():
             (root / name).parent.mkdir(parents=True, exist_ok=True)
             (root / name).write_text(text, encoding="utf-8")
-        counted = gate.counted_ledgers(root)
+        counted = gate.counted_rules(root)
         expect(
-            f"a ledger of a rule of the engine plugin or elf with the policy count or admit and a row is counted, also "
-            f"with no configuration row, and an empty ledger and a rule of a different engine are not: {counted}",
-            counted == {"door-unit": ("x86_64-release", "aarch64-debug-asan"), "mint-pattern": (), "trait-guard": ()},
+            f"a rule of the engine plugin or elf with the policy count or admit and a ledger with a row is counted, and "
+            f"a ledger with no row and a rule of a different engine are not: {counted}",
+            counted == ("door-unit", "mint-pattern", "trait-guard"),
         )
-    parse = next(item for item in gate.CONFIGURATIONS if item.is_parse)
-    named = {"door-unit": (), "quarantine": (parse.ledger_name,), "trait-guard": ()}
+    tree = Path("/planted/tree")
+    every = [str(gate.build_directory(tree, item)) for item in gate.CONFIGURATIONS]
+    objects = [str(gate.build_directory(tree, item)) for item in gate.CONFIGURATIONS if not item.is_parse]
     expect(
-        "a ledger with no configuration row holds each configuration of objects, and a parse configuration only for a "
-        "rule that the run of the parse configuration checks",
-        gate.holding(named, gate.BY_NAME[gate.ALWAYS]) == ["door-unit", "trait-guard"]
-        and gate.holding(named, gate.BY_NAME["release"]) == ["door-unit", "trait-guard"]
-        and gate.holding(named, parse) == ["door-unit", "quarantine"],
+        "the reduce of a rule that a parse configuration checks gets the build of each configuration, and the reduce "
+        "of a different rule gets the build of each configuration of objects",
+        gate.reduce_words(tree, "door-unit")
+        == ["write", "--rule", "door-unit", *(word for build in every for word in ("--build-dir", build))]
+        and gate.reduce_words(tree, "trait-guard")
+        == ["write", "--rule", "trait-guard", *(word for build in objects for word in ("--build-dir", build))]
+        and len(objects) < len(every),
+    )
+    built = [gate.Outcome(item.name, (), (), 1.0, False) for item in gate.CONFIGURATIONS]
+    first = built[0].name
+    expect(
+        "a round builds each configuration when each configuration ends with no problem, and not when one "
+        "configuration is missing, stopped or red",
+        gate.is_each_built(built)
+        and not gate.is_each_built(built[1:])
+        and not gate.is_each_built([*built[1:], gate.Outcome(first, (), (), 1.0, True)])
+        and not gate.is_each_built([*built[1:], gate.Outcome(first, ("a problem",), (), 1.0, False)]),
     )
 
 
-def falls_parse_cases(expect: testing.Expect) -> None:
-    """Hold THE FALLS with the parse configurations: a folded ledger that makes their check red rejects the commit."""
-    with tempfile.TemporaryDirectory(prefix="gate-falls-parse-") as work_text:
+def reduce_parse_cases(expect: testing.Expect) -> None:
+    """Hold THE REDUCE with the parse configurations: a folded ledger that makes their check red rejects the commit."""
+    with tempfile.TemporaryDirectory(prefix="gate-reduce-parse-") as work_text:
         work = Path(work_text)
         root = work / "repo"
-        ledger = "utils/ledgers/door-unit.txt"
-        doors = (
-            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
-            "src/door.cpp | header-door | 2 | door.h | -\n"
-        )
-        head = planted_repository(root, {ledger: doors})
-        commit = commit_change(root, ledger, f"# the doors of the tree\n{doors}", "Note the doors")
+        head = planted_repository(root, {DOOR_PATH: COUNTED_DOORS})
+        commit = commit_change(root, "notes.txt", "a change that removes one door\n", "Remove a door")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         names = tuple(item.name for item in gate.CONFIGURATIONS if item.is_parse)
-        parses = {item.build: "clean" for item in gate.CONFIGURATIONS if item.is_parse}
-        parses[gate.BY_NAME[names[0]].build] = "parse-falls"
-        planted = planted_gate(work, root, tree, "clean", parses)
-        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
+        every = tuple(item.name for item in gate.CONFIGURATIONS)
+        planted = every_gate(work, root, tree, {gate.BY_NAME[names[0]].build: "parse-falls"})
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
         holds = (
             not verdict.is_accepted
-            and verdict.configurations[:3] == (*names, gate.ALWAYS)
-            and names[0] in verdict.configurations[3:]
+            and verdict.configurations[: len(every)] == every
+            and names[0] in verdict.configurations[len(every) :]
             and all(problem.startswith(f"{names[0]}: the rule ") for problem in verdict.problems)
             and verdict.focus == (gate.Focus(names[0]),)
         )
@@ -726,10 +741,7 @@ def changed_tests_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
         work = Path(work_text)
         root = work / "repo"
-        planted_repository(root)
-        bench = "configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan-bench-fuzz\n"
-        door = DOOR_LEDGER.replace("configuration aarch64-debug-asan kind aarch64-debug-asan\n", bench)
-        head = commit_change(root, "utils/ledgers/door-unit.txt", door, "Count the bench build")
+        head = planted_repository(root)
         commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
@@ -959,7 +971,7 @@ def masked_error_cases(expect: testing.Expect) -> None:
         work = Path(work_text)
         planted = gate.Gate(work, work / "land", 2, False)
         with jobserver.connected(server.path) as client:
-            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2, {})
+            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2)
 
             def work_of(index: int) -> int:
                 """Wait for the stop in the first item and give Stopped, and give an error in the second item."""
@@ -992,43 +1004,6 @@ def masked_error_cases(expect: testing.Expect) -> None:
             outcomes = [gate.Outcome("default", ("default: a problem",), (), 1.0, False)]
             step.require_problem(outcomes)
             expect("a stop with a problem of a configuration is no error", True)
-
-
-def rule_lock_cases(expect: testing.Expect) -> None:
-    """Hold THE LOCKS OF THE LEDGERS: two configurations at the same time do not write one ledger at one time."""
-    with tempfile.TemporaryDirectory(prefix="gate-rule-lock-") as work_text:
-        work = Path(work_text)
-        root = work / "repo"
-        doors = (
-            "format 1\nrule door-unit\nconfiguration x86_64-debug-asan kind x86_64-debug-asan\n"
-            "configuration x86_64-release kind x86_64-release\nsrc/door.cpp | header-door | 2 | door.h | -\n"
-        )
-        planted_repository(root, {"utils/ledgers/door-unit.txt": doors})
-        head = git.head(root)
-        commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
-        tree = work / "land" / gate.TREE
-        gate.move_tree(root, tree, head)
-        planted = replace(planted_gate(work, root, tree, "flaky", {**OTHER_BUILDS, "build-release": "flaky"}), jobs=8)
-        for name in ("build", "build-release"):
-            (tree / name / "slow-writes.txt").write_text("slow\n", encoding="utf-8")
-        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
-        spans: list[tuple[float, float]] = []
-        for name in ("build", "build-release"):
-            for line in (tree / name / "intervals.txt").read_text(encoding="utf-8").splitlines():
-                rule, first, last = line.split()
-                if rule == "door-unit":
-                    spans.append((float(first), float(last)))
-        spans.sort()
-        holds = (
-            verdict.is_accepted
-            and len(spans) == 2
-            and all(later[0] >= earlier[1] for earlier, later in itertools.pairwise(spans))
-        )
-        label = (
-            f"the writes of one rule of two configurations at the same time do not overlap: {spans}, and the gate "
-            f"gives {verdict.problems[:1]}"
-        )
-        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
 def base_run_cases(expect: testing.Expect) -> None:
@@ -1137,17 +1112,16 @@ def main(argv: list[str]) -> int:
             tree_cases,
             change_cases,
             run_cases,
-            falls_cases,
-            falls_move_cases,
+            reduce_cases,
+            partial_cases,
             counted_cases,
-            falls_parse_cases,
+            reduce_parse_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,
             memory_cases,
             stop_cases,
             masked_error_cases,
-            rule_lock_cases,
             base_run_cases,
             lock_cases,
         ),

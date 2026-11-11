@@ -28,12 +28,9 @@ THE KIND
     build of its kind.
 
 THE CONFIGURATION
-    configuration() gives the configuration of the build
-    (assay.core.configuration, THE CONFIGURATION).  The native flags of the
-    compile commands of the objects of the target all are part of its tier.
-    A rule with rows that change with the configuration holds the rows of
-    each configuration with its facts.  THE POLICY
-    of that module judges a build and writes its rows.
+    configuration() gives the name of the configuration of the build
+    (assay.core.configuration, THE CONFIGURATION).  A rule that judges only
+    one configuration, such as the rule instruction-total, reads it.
 
 THE PLANTS
     A plant of a build rule holds the file build.txt, which tells what its
@@ -51,7 +48,7 @@ THE MODULES THAT JUDGE THEIR LEDGER
     request), with the WriteRequest of assay.guard.engines.plugin.runner.  The
     run calls run(), the witness calls judge() on each plant, and `guard
     write` calls write().  The rule fixture-quarantine counts its findings in
-    the rows of each configuration in this way.
+    this way.
 
 Complexity: one read of each input that a rule of the call reads.
 """
@@ -196,25 +193,12 @@ class BuildContext:
     def configuration(self) -> build_config.BuildConfiguration:
         """Return the configuration of the build (THE CONFIGURATION).
 
-        Complexity: linear in the rows of the compile database and the inputs of all, and one compiler run for
-        each tier of the build.
-
         Raises:
-            NotApplicable: If the call gives no build directory, or the build made only some targets, or its
-                generator is not Ninja
-            build_census.CensusError: If the inputs of all or the compile database cannot be read
-            compdb.CompdbError: If the build has no compile database
-            build_config.ConfigurationError: If the build has no build kind, its CMake cache cannot be read, or the
-                compiler does not print its target
+            NotApplicable: If the call gives no build directory
+            build_config.ConfigurationError: If the build has no build kind, or its CMake cache cannot be read
         """
         if self._configuration is None:
-            build = self.require_build()
-            try:
-                objects = {str(path) for path, _ in build_census.objects_of_all(build, self.root)}
-            except build_census.NotApplicable as reason:
-                raise meta_runner.NotApplicable(str(reason)) from None
-            commands = [entry.command for entry in self.entries() if entry.output in objects]
-            self._configuration = build_config.read_configuration(build, commands)
+            self._configuration = build_config.read_configuration(self.require_build())
         return self._configuration
 
     def census(self) -> build_census.Census:

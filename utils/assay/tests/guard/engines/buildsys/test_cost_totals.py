@@ -14,7 +14,7 @@ what a plant cannot hold:
 Exit 0 when each case holds, else 1.
 """
 
-import sys
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -26,6 +26,7 @@ from assay.core import testing
 from assay.guard.engines.buildsys import cost_totals, planted
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
+from assay.readers import cmake
 
 KIND = cost_totals.BASE_CONFIGURATION
 # A build of two objects of 2 G instructions and two fixtures of 5 G: 14 G, the total of LEDGER_ROWS.
@@ -55,10 +56,7 @@ LEDGER_ROWS = f"""\
 """
 # A head comment that a different writer wrote, with an incorrect fact.
 STALE_HEAD = "# The rows count the last real compile of each unit.\n"
-# The output of -Q --help=target of a planted compiler: x86-64 with no flag, and znver5, the processor of a planted
-# host, with -march=native.
-COMPILER_HELP = "The following options are target specific:\n  -march=   \t\tx86-64\n  -mtune=   \t\tgeneric\n"
-# The rows of a build that a planted compiler compiles, with one object of all that takes -march=native.
+# The rows of a build that is not planted with a configuration, with one object of all that takes -march=native.
 NATIVE_ROWS = f"""\
 format 1
 kind {KIND}
@@ -90,25 +88,9 @@ def plant(root: Path, rows: str, ledger_rows: str) -> Path:
     return build
 
 
-def plant_compiler(root: Path, exit_status: int = 0) -> None:
-    """Write a planted compiler that prints COMPILER_HELP, with znver5 for -march=native, and exits with a status.
-
-    The compiler prints an x86_64 machine for -dumpmachine.
-    """
-    compiler = root / "planted-cxx"
-    compiler.write_text(
-        f"#!{sys.executable}\nimport sys\n"
-        f"print('x86_64-pc-linux-gnu') if '-dumpmachine' in sys.argv else "
-        f"print({COMPILER_HELP!r}.replace('x86-64', 'znver5' if '-march=native' in sys.argv else 'x86-64'))\n"
-        f"sys.exit({exit_status})\n",
-        encoding="utf-8",
-    )
-    compiler.chmod(0o755)
-
-
 def configuration_of(name: str) -> build_config.BuildConfiguration:
-    """Return a planted configuration of a name with the build kind KIND, as planted.plant_context() gives it."""
-    return build_config.BuildConfiguration(name, ((build_config.KIND_KEY, KIND),))
+    """Return a planted configuration of a name, as planted.plant_context() gives it."""
+    return build_config.BuildConfiguration(name)
 
 
 def judged_of(
@@ -260,33 +242,17 @@ def growth_cases(expect: testing.Expect) -> None:
 
 
 def real_cases(expect: testing.Expect) -> None:
-    """A build that is not planted gives its configuration from its CMake cache, its compiler and its commands."""
+    """A build that is not planted gives the name of its configuration from its build kind and its CMake cache."""
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
-        plant_compiler(root)
         build = plant(root, NATIVE_ROWS, LEDGER_ROWS)
         configuration = BuildContext(root, build).configuration()
-        tier = dict(configuration.facts).get(build_config.TIER_KEY, "")
-        expect(
-            "the configuration of a Debug build has the name of its kind and the tier of its build flags",
-            configuration.name == KIND and tier.startswith("x86-64-"),
-        )
-        expect(
-            "a compile of all with -march=native adds the native request to the tier, once, and no processor",
-            tier.count("+") == 1 and tier.endswith("+native-x86_64") and "znver5" not in tier,
-        )
-        expect(
-            "the cache entry of the build type is a fact of the configuration",
-            dict(configuration.facts).get("CMAKE_BUILD_TYPE") == "Debug",
-        )
-    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-        root = Path(scratch)
-        plant_compiler(root, 1)
-        build = plant(root, NATIVE_ROWS, LEDGER_ROWS)
+        expect("the configuration of a Debug build has the name of its kind", configuration.name == KIND)
+        shutil.rmtree(build.joinpath(*cmake.API_DIRECTORY))
         context = BuildContext(root, build)
         found, _ = testing.captured(lambda: context.findings_of(rule_of()))
         expect(
-            "a compiler that does not print its target gives one error of the kind configuration",
+            "a build whose CMake cache cannot be read gives one error of the kind configuration",
             [(item.level, item.kind) for item in found] == [("error", "configuration")],
         )
 

@@ -305,16 +305,9 @@ def census_baseline(frame: CensusFrame) -> CensusTotal | None:
     Complexity: O(r log r) for r rows.
 
     Raises:
-        CensusRefusal: If the ledger has a configuration row, or a row that is not a total row of BASE_CONFIGURATION.
-            Also if it has one total row, or two rows with two reasons
+        CensusRefusal: If the ledger has a row that is not a total row of BASE_CONFIGURATION.  Also if it has one
+            total row, or two rows with two reasons
     """
-    if frame.ledger.configurations:
-        raise frame.refusal(
-            f"{frame.shown}: the ledger holds the configuration row of {frame.ledger.configurations[0].name}.  The "
-            f"rule judges only the configuration {BASE_CONFIGURATION}, and its ledger holds no configuration row.  "
-            f"Remove each configuration row",
-            0,
-        )
     rows: dict[str, rule_ledger.Entry] = {}
     for entry in sorted(frame.ledger.base.values(), key=lambda item: item.line):
         value = entry.value

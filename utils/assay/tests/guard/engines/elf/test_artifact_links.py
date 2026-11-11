@@ -106,8 +106,8 @@ def fact_cases(expect: testing.Expect) -> None:
         ledger.write_text(f"{head}{configured}{rows}", encoding="utf-8")
         judged = artifact_links.examine(rule, context).findings
         expect(
-            "a ledger with a configuration row is an error",
-            any("no configuration row" in item.message for item in judged if item.level == "error"),
+            "a ledger with a configuration row cannot be read, and that is an error",
+            any("cannot be read" in item.message for item in judged if item.level == "error"),
         )
         program = next(item.path for item in context.linked_artifacts() if item.directory == "examples")
         program.with_name(program.name + artifact_links.MAP_SUFFIX).unlink()

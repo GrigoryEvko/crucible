@@ -22,21 +22,19 @@ THE RULE
     target all of one build (assay.guard.engines.plugin.runner, THE
     SECTIONS).  The entity of a finding is the header in angle brackets.  The
     plugin reads only the arms of a preprocessor conditional that a build
-    compiles.  An include in a different arm counts only in a configuration
-    that compiles that arm.
+    compiles.  An include in a different arm counts only in a build that
+    compiles that arm.
 
 THE LEDGER
     utils/ledgers/heavy-include.txt counts the includes of each file and
-    header in each configuration of a build (assay.guard.engines.plugin.counted,
-    THE COUNTED RULES).  A row with no reason is an include that the tree
-    holds at this time, and each run gives one warning for it.  A row with a
-    reason is a header that owns the heavy header on purpose, such as the one
-    door of a system header.  Such a row gives no warning.  `guard write
-    --rule heavy-include --admit --reason TEXT` writes such a row.  A reason
-    row of a prefix also gives the reason of a row (assay.core.ledger, THE
-    REASON OF A PREFIX).  The base
-    rows judge a build of a configuration that the ledger does not hold (THE
-    POLICY of assay.core.configuration).
+    header (assay.guard.engines.plugin.counted, THE COUNTED RULES).  The count
+    of a key is its largest count over the configurations of the landing gate.
+    A row with no reason is an include that the tree holds at this time, and
+    each run gives one warning for it.  A row with a reason is a header that
+    owns the heavy header on purpose, such as the one door of a system header.
+    Such a row gives no warning.  `guard write --rule heavy-include --admit
+    --reason TEXT` writes such a row.  A reason row of a prefix also gives the
+    reason of a row (assay.core.ledger, THE REASON OF A PREFIX).
 
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
@@ -55,8 +53,7 @@ THE VERDICT
 
 Usage
     guard check --rule heavy-include --build-dir DIR [--warnings-dir DIR]
-    guard write --rule heavy-include --build-dir DIR [--raise | --admit --reason TEXT] [--add-configuration]
-    guard write --rule heavy-include --import LOG
+    guard write --rule heavy-include --build-dir DIR [--raise | --admit --reason TEXT]
 
 Complexity: linear in the finding lines of the build, and O(k log k) for k rows of the ledger and counts of the build.
 """
@@ -132,19 +129,19 @@ def no_inputs(_root: Path) -> None:
 
 
 def evaluate(
-    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, name: str | None, _inputs: None, build_shown: str
+    counts: Mapping[Key, int], ledger: rule_ledger.Ledger, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
     """Compare each count of the build with its ledger count (THE VERDICT).
 
     Complexity: O(k log k) for k counts of the build and the ledger.
     """
     found: list[check_report.Finding] = []
-    expected = ledger.expected(name)
+    expected = ledger.expected()
     shown = rule_ledger.shown_path(RULE)
     command = f"python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}"
     for key in sorted(set(counts) | set(expected)):
         measured, admitted = counts.get(key, 0), expected.get(key, 0)
-        line = ledger.line_of(key, name)
+        line = ledger.line_of(key)
         header = key.entity
         if key.kind == UNMEASURED and measured > 0:
             found.append(
@@ -171,7 +168,7 @@ def evaluate(
                     f"`{command} --admit --reason TEXT`",
                 )
             )
-        elif measured > 0 and not ledger.kept_reason(key, name):
+        elif measured > 0 and not ledger.kept_reason(key):
             found.append(
                 check_report.Finding(
                     "warning",
@@ -212,11 +209,10 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the rows of the configuration of the build (THE LEDGER), or import the rows of a log.
+    """Write the counts of the builds of the request (THE LEDGER).
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be
-        read.  1 also when the ledger does not hold the configuration of the build and the write does not add it.
-        SKIPPED when the rule does not apply
+        read.  SKIPPED when the rule does not apply to a build
     """
     return counted.write(SPEC, rule, request)

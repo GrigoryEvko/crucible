@@ -25,8 +25,7 @@ THE SCOPE
     `std::start_lifetime_as` starts.  It can also use an unchecked access,
     or a second definition of a door owner.  Each row of such a kind gives
     its reason, which tells what the fixture probes.  A row of such a kind
-    with no reason is an error.  A difference row of a key with a base row
-    has the reason of the base row.  The rule counts no other kind of the
+    with no reason is an error.  The rule counts no other kind of the
     census.  Test code can use the testing door, and the rule
     ctx-testing-boundary does not read test/.  The rule does not count
     `testing-use` for that reason.  It does not count the kinds of the rules
@@ -71,10 +70,9 @@ THE FILES OF THE FIXTURES
 
 THE LEDGER
     utils/ledgers/fixture-quarantine.txt holds the count of each fixture
-    source, kind and entity in the rows of each configuration.  The ledger of
-    the rule quarantine has the same rows (assay.guard.engines.plugin.counted).
-    The rows of the configuration of a build judge it (THE POLICY of
-    assay.core.configuration).
+    source, kind and entity in one set of rows, and these rows judge each
+    build.  The ledger of the rule quarantine has the same rows
+    (assay.guard.engines.plugin.counted).
 
 THE VERDICT
     * A count above its row is an error.  A new finding of a fixture cannot
@@ -82,15 +80,16 @@ THE VERDICT
     * A fixture source with a finding and no row in the ledger is an error: a
       new fixture has no finding (CLAUDE.md section XXII).
     * A count below its row gives no finding (THE POLICIES of
-      assay.core.ledger).  A write of the rule lowers the row.
+      assay.core.ledger).  A complete write lowers the row.
     * Each directory of fixture sources with a kept count gives one warning.
 
 WRITE THE LEDGER
-    `guard write --rule fixture-quarantine --build-dir DIR` writes the rows of
-    the configuration of the build, with the modes of the rule quarantine:
-    --raise for a change of the plugin or of the rule table, --reason TEXT,
-    --add-configuration and --import LOG (assay.guard.engines.plugin.counted).
-    Run each fixture of the build first.
+    `guard write --rule fixture-quarantine --build-dir DIR` writes the counts
+    of one build, with the modes of the rule quarantine: --raise for a change
+    of the plugin or of the rule table, and --reason TEXT
+    (assay.guard.engines.plugin.counted).  It lowers no row.  The write of a
+    build of each configuration of the landing gate lowers the rows (THE
+    REDUCE of assay.core.ledger).  Run each fixture of each build first.
 
 THE ORDER
     The test guard_fixture_quarantine starts after each fixture test
@@ -113,12 +112,10 @@ THE PLANTS
         read stamps | DIRECTORY
                 DIRECTORY, a path of the tree, is the directory of the mode
                 stamps that an argument stamps= of the plugin names
-    The configuration of a planted build is PLANTED_CONFIGURATION.
 
 Usage
     guard check --rule fixture-quarantine --build-dir DIR [--warnings-dir DIR]
-    guard write --rule fixture-quarantine --build-dir DIR [--raise] [--reason TEXT] [--add-configuration]
-    guard write --rule fixture-quarantine --import LOG
+    guard write --rule fixture-quarantine --build-dir DIR [--raise] [--reason TEXT]
 
 Complexity: linear in the fixtures of the build, the findings of their records and the files of the units.  O(k log k)
 for k rows of the ledger and counts of the build.
@@ -130,7 +127,6 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
@@ -164,9 +160,8 @@ ALL_UNITS = "all"
 STAMPS_UNIT = "stamps"
 # The plugin argument of the directory of the mode stamps (THE FILES OF THE FIXTURES).
 STAMPS_ARGUMENT = f"{plugin_runner.PLUGIN_ARGUMENT}stamps="
-# The file of the planted fixtures of a plant, and the configuration of a planted build (THE PLANTS).
+# The file of the planted fixtures of a plant (THE PLANTS).
 PLANT_FILE = "fixtures.txt"
-PLANTED_CONFIGURATION = build_config.BuildConfiguration("planted", (("kind", "planted"), ("tier", "planted")))
 # The advice of a write that refuses a count above its row.
 REFUSAL = (
     "Remove the new findings from the fixture, and use a type of the base.  Give --raise only when the plugin or the "
@@ -201,12 +196,11 @@ class FixtureCensus:
 
 
 class FixtureContext(plugin_runner.PluginContext):
-    """The build that the rule reads: the root, the build directory, its fixtures and its configuration.
+    """The build that the rule reads: the root, the build directory and its fixtures.
 
     The context of assay.guard.engines.plugin.counted (THE CONTEXT of that module).  It reads the census of the
-    fixtures, and not the sections of the objects.  It reads the fixtures, the census and the configuration one time, on
-    the first use.  A plant gives planted fixtures and a planted configuration, and then no build directory (THE
-    PLANTS).
+    fixtures, and not the sections of the objects.  It reads the fixtures and the census one time, on the first use.  A
+    plant gives planted fixtures, and then no build directory (THE PLANTS).
     """
 
     __slots__ = ("_fixtures", "_found", "_reads")
@@ -216,15 +210,14 @@ class FixtureContext(plugin_runner.PluginContext):
         root: Path,
         build_dir: Path | None = None,
         fixtures: Sequence[FixtureFacts] | None = None,
-        configuration: build_config.BuildConfiguration | None = None,
         reads: Sequence[tuple[str, str]] | None = None,
     ) -> None:
-        """Keep the root, the build directory, and planted fixtures, a planted configuration and planted reads.
+        """Keep the root, the build directory, and planted fixtures and planted reads.
 
         `reads` holds the read rows of a plant: the name of a fixture, or ALL_UNITS, and a path of the tree (THE
         PLANTS).
         """
-        super().__init__(root, build_dir, None, configuration)
+        super().__init__(root, build_dir, None)
         self._fixtures = tuple(fixtures) if fixtures is not None else None
         self._found: FixtureCensus | None = None
         self._reads = tuple(reads) if reads is not None else None
@@ -294,20 +287,6 @@ class FixtureContext(plugin_runner.PluginContext):
             os.path.realpath(os.path.join(root, unit.source)) for unit in units if unit.kind == "fixture"
         )
         return unjudged_findings(fixture_reads, objects, sources, stamp_directories, root, self.build_dir)
-
-    def configuration(self) -> build_config.BuildConfiguration:
-        """Return the configuration of the build (assay.core.configuration, THE CONFIGURATION).
-
-        Raises:
-            NotApplicable: If the call gives no build directory, or the build made only some targets
-            BuildError: If the build cannot be read
-        """
-        if self._configuration is None:
-            try:
-                self._configuration = BuildContext(self.root, self.build_dir).configuration()
-            except (build_census.CensusError, compdb.CompdbError, build_config.ConfigurationError) as problem:
-                raise plugin_runner.BuildError(str(problem)) from None
-        return self._configuration
 
 
 # ── The census ─────────────────────────────────────────────────────
@@ -544,12 +523,9 @@ def load_inputs(root: Path) -> None:
 def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
     """Give one error for each row of a kind of PROBE_KINDS with no reason (THE SCOPE).
 
-    A difference row of a key with a base row has the reason of the base row.  Complexity: linear in the rows of the
-    ledger.
+    Complexity: linear in the rows of the ledger.
     """
     shown = rule_ledger.shown_path(RULE)
-    unheld = (entry for table in ledger.deltas.values() for entry in table.values() if entry.key not in ledger.base)
-    entries = [*ledger.base.values(), *unheld]
     return [
         check_report.Finding(
             "error",
@@ -559,7 +535,7 @@ def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
             f"the row of {entry.key.path} with {counted.described(entry.key.kind, entry.key.entity)} gives no "
             f"reason.  The REASON cell of a row of a kind of a probe tells what the fixture probes",
         )
-        for entry in entries
+        for entry in ledger.base.values()
         if entry.key.kind in PROBE_KINDS and not entry.reason
     ]
 
@@ -572,7 +548,6 @@ def directory_of(path: str) -> str:
 def evaluate(
     counts: Mapping[rule_ledger.Key, int],
     ledger: rule_ledger.Ledger,
-    name: str | None,
     inputs: None,
     build_shown: str,
 ) -> list[check_report.Finding]:
@@ -581,7 +556,7 @@ def evaluate(
     Complexity: O(k log k) for k counts of the build and rows of the ledger.
     """
     found = reason_problems(ledger)
-    expected = ledger.expected(name)
+    expected = ledger.expected()
     held = {key.path for key in expected}
     failed: set[str] = set()
     shown = rule_ledger.shown_path(RULE)
@@ -602,7 +577,7 @@ def evaluate(
                 f"change can only lower a count, also when a finding of a different entity goes: use a type of the "
                 f"base"
             )
-        found.append(check_report.Finding("error", shown, ledger.line_of(key, name), RULE, message))
+        found.append(check_report.Finding("error", shown, ledger.line_of(key), RULE, message))
     kept: dict[str, Counter[str]] = {}
     kept_keys: dict[str, list[rule_ledger.Key]] = {}
     first_line: dict[str, int] = {}
@@ -613,10 +588,10 @@ def evaluate(
             continue
         kept.setdefault(directory, Counter())[key.kind] += kept_count
         kept_keys.setdefault(directory, []).append(key)
-        first_line.setdefault(directory, ledger.line_of(key, name))
+        first_line.setdefault(directory, ledger.line_of(key))
     for directory, kinds in sorted(kept.items()):
         listed = ", ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
-        state, tail = quarantine.kept_state(ledger, kept_keys[directory], name)
+        state, tail = quarantine.kept_state(ledger, kept_keys[directory])
         found.append(
             check_report.Finding(
                 "warning",
@@ -665,11 +640,11 @@ def judge(rule: rule_registry.Rule, context: BuildContext | FixtureContext) -> l
 
 
 def write(rule: rule_registry.Rule, request: plugin_runner.WriteRequest) -> int:
-    """Write the rows of the configuration of the build (WRITE THE LEDGER), or import the rows of a log.
+    """Write the counts of the builds of the request (WRITE THE LEDGER).
 
     Returns:
         0 when the ledger is written, 1 when a fixture has a problem or a count increased, SKIPPED when the rule does
-        not apply
+        not apply to a build
     """
     return counted.write(SPEC, rule, request)
 
@@ -694,7 +669,7 @@ def plant_context(plant: Path, scratch: Path) -> FixtureContext:
     unknown = sorted({name for name, _ in reads} - {item.name for item in facts} - {ALL_UNITS, STAMPS_UNIT})
     if unknown:
         raise meta_runner.NotApplicable(f"a read row names no fixture of the plant: {', '.join(unknown)}")
-    return FixtureContext(scratch, None, facts, PLANTED_CONFIGURATION, reads)
+    return FixtureContext(scratch, None, facts, reads)
 
 
 def planted_reads(rows: Sequence[rows_grammar.Row]) -> tuple[tuple[str, str], ...]:

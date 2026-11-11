@@ -155,7 +155,6 @@ THE LEDGER
     template in its position lets a translation unit specialize a verdict.
     An item with no row is an error, and a row with more items than the
     tree holds is an error too.  The rule also refuses these rows:
-      - a configuration row, and a difference row of a configuration
       - a row with a kind that is not one of the six kinds
       - a row with a path that is not in include/
       - a row with no reason.
@@ -1490,7 +1489,7 @@ def check_file_findings(context: TsastContext) -> list[check_report.Finding]:
 
 
 def ledger_findings(context: TsastContext) -> list[check_report.Finding]:
-    """Return an error for each row of the ledger that no item of a header can match, and each configuration row.
+    """Return an error for each row of the ledger that no item of a header can match.
 
     A ledger that does not obey the rows grammar gives the error of
     judged() of assay.guard.engines.meta.runner.  This function then reads
@@ -1502,19 +1501,7 @@ def ledger_findings(context: TsastContext) -> list[check_report.Finding]:
     except rows_grammar.RowsError, OSError:
         return []
     shown = rule_ledger.shown_path(RULE)
-    found = [
-        check_report.Finding(
-            "error",
-            shown,
-            0,
-            RULE,
-            f"the ledger names the configuration {item.name}, and the ledger of {RULE} has no "
-            f"configuration.  Remove the configuration rows and each difference row",
-            LEDGER_KIND,
-            item.name,
-        )
-        for item in ledger.configurations
-    ]
+    found: list[check_report.Finding] = []
     for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
         if key.kind not in KINDS or not key.path.startswith(INCLUDE):
             problem = (

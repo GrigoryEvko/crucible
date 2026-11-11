@@ -1,7 +1,5 @@
 # A planted ledger of the rule fixture-quarantine.
 format 1
 rule fixture-quarantine
-configuration planted kind planted
-configuration planted tier planted
 test/fixy/neg/neg_beta.cpp | opted-out | 1 | PROBE: a planted reason \| c-array-object | -
 test/fixy/neg/neg_beta.cpp | region | 1 | PROBE: a planted reason | -

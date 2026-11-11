@@ -1,11 +1,11 @@
-"""one_set — the run and the write of a rule of the engine elf with one set of rows for each build.
+"""one_set — the run and the write of a rule of the engine elf with one set of rows that judges each build.
 
 THE SET
-    The ledger of such a rule holds one set of rows, and no configuration
-    row.  A Debug build, a Release build and a build with a sanitizer give
-    other facts, and the set holds the facts of each of them.  Each build is
-    judged against the full set (assay.core.ledger.compare() with no
-    configuration).  A fact of the build with no row is an error.  A row
+    The ledger of such a rule holds one set of rows.  A Debug build, a
+    Release build and a build with a sanitizer give other facts, and the set
+    holds the facts of each of them.  Each build is judged against the full
+    set (assay.core.ledger.compare()).  A fact of the build with no row is an
+    error.  A row
     that the build does not give passes, because a ledger fails only on a
     growth (THE POLICIES of assay.core.ledger).
 
@@ -17,21 +17,22 @@ THE WRITE
       * The write keeps each row of the ledger.  One build cannot see the
         facts of a different build.  A write that removed a row that the
         build does not give could make the run of a different build fail.
-        The writes of the builds of the landing gate then give one set in
-        each sequence.
       * It adds a row for each fact of the build with no row, and it raises
         each count of the build that is above its row.  The refusals of the
         rule (WritePolicy.refusals) are rows that only --raise writes.
       * The mode admit does not apply.  A person writes each admit row with
         its reason.
-      * --import LOG and --add-configuration do not apply, because the
-        ledger has no configuration.
       * A ledger with a row problem writes nothing.  A build that the rule
         cannot read writes nothing.  A build with an error that no row of the
         ledger admits writes nothing (Inspection.unadmitted).
-    A row of a fact that no build gives stays until a person removes it.
-    After such a removal, the run of each build shows if a build still gives
-    the fact.
+
+THE REDUCE
+    The landing gate gives the write a build of each of its configurations
+    of objects (THE REDUCE of assay.core.ledger).  The write then takes the
+    largest count of each key over these builds, and it lowers each row to
+    that count.  It removes a row of a fact that no build gives, and it keeps
+    each admit row.  It refuses each count above its row, because the check
+    of each build refused it first.
 
 `guard selftest tests.guard.engines.elf.test_one_set` does the test of the module.
 """
@@ -46,7 +47,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.elf import runner
 
-# The mode admit, --import LOG and --add-configuration of a write give this status (THE WRITE).
+# The mode admit of a write gives this status (THE WRITE).
 USAGE_STATUS = 2
 
 
@@ -107,19 +108,12 @@ def ledger_problems(
     row_shape: str,
     is_single: Callable[[rule_ledger.Key], bool],
 ) -> list[check_report.Finding]:
-    """Return an error for each configuration row and each row of a ledger that the rule refuses (THE SET).
+    """Return an error for each row of a ledger that the rule refuses (THE SET).
 
     `is_row` accepts a row, and `row_shape` tells the shape of a row.  A key that `is_single` accepts has the count
     1.  Complexity: linear in the rows.
     """
     problems: list[tuple[int, str]] = []
-    if ledger.configurations:
-        names = ", ".join(item.name for item in ledger.configurations)
-        said = (
-            f"the ledger holds one set of rows for each build, and no configuration row.  Remove the configuration "
-            f"rows of {names}"
-        )
-        problems.append((0, said))
     for key, entry in sorted(ledger.base.items(), key=lambda item: item[1].line):
         if not is_row(key, entry):
             problems.append((entry.line, row_shape))
@@ -177,47 +171,76 @@ def set_counts(ledger: rule_ledger.Ledger, counts: Mapping[rule_ledger.Key, int]
     return merged
 
 
+def inspected_builds(
+    rule: rule_registry.Rule,
+    request: runner.WriteRequest,
+    examine: Callable[[runner.ElfContext], Inspection],
+    policy: WritePolicy,
+) -> list[Inspection] | int:
+    """Return the inspection of each build of a write, or the status of a build that the write cannot use.
+
+    Complexity: one inspection of each build.
+
+    Returns:
+        The inspection of each build.  1 when a build cannot be read, its ledger has a row problem or it gives an
+        error that no row admits.  SKIPPED when the rule does not apply to a build
+    """
+    if not request.builds:
+        check_report.write_line(
+            f"guard write: the rule {rule.id} does not apply: the call gives no --build-dir DIR", is_error=True
+        )
+        return runner.SKIPPED
+    found: list[Inspection] = []
+    for build in request.builds:
+        try:
+            inspection = examine(runner.ElfContext(request.root, build))
+        except runner.NotApplicable as reason:
+            check_report.write_line(
+                f"guard write: the rule {rule.id} does not apply to {build}: {reason}.  The write writes nothing",
+                is_error=True,
+            )
+            return runner.SKIPPED
+        except runner.BuildError as problem:
+            check_report.write_line(
+                f"guard write: the ledger of {rule.id} is not written: {build}: {problem}", is_error=True
+            )
+            return 1
+        problems = [*policy.row_problems(inspection.ledger), *inspection.unadmitted]
+        if problems:
+            check_report.write_line(
+                f"guard write: the ledger of {rule.id} is not written: {build}: {problems[0].message}", is_error=True
+            )
+            return 1
+        found.append(inspection)
+    return found
+
+
 def write_inspection(
     rule: rule_registry.Rule,
     request: runner.WriteRequest,
     examine: Callable[[runner.ElfContext], Inspection],
     policy: WritePolicy,
 ) -> int:
-    """Write the set of the ledger with the counts of the build (THE WRITE).
+    """Write the set of the ledger with the counts of the builds of the request (THE WRITE, THE REDUCE).
 
     Returns:
-        0 when the ledger is written.  1 when the write refuses a count or the build cannot be read.  2 for the mode
-        admit, --import and --add-configuration.  SKIPPED when the rule does not apply
+        0 when the ledger is written.  1 when the write refuses a count or a build cannot be read.  2 for the mode
+        admit.  SKIPPED when the rule does not apply to a build
     """
-    if request.import_log is not None or request.add_configuration:
-        check_report.write_line(
-            f"guard write: the ledger of {rule.id} holds one set of rows and no configuration, so --import and "
-            f"--add-configuration do not apply to it",
-            is_error=True,
-        )
-        return USAGE_STATUS
     if request.mode == rule_ledger.WriteMode.ADMIT:
         check_report.write_line(f"guard write: {policy.admit_text}.  The mode admit does not apply", is_error=True)
         return USAGE_STATUS
-    try:
-        inspection = examine(runner.ElfContext(request.root, request.build_dir))
-    except runner.NotApplicable as reason:
-        check_report.write_line(f"guard write: the rule {rule.id} does not apply: {reason}", is_error=True)
-        return runner.SKIPPED
-    except runner.BuildError as problem:
-        check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
-        return 1
-    ledger = inspection.ledger
-    problems = [*policy.row_problems(ledger), *inspection.unadmitted]
-    if problems:
-        check_report.write_line(
-            f"guard write: the ledger of {rule.id} is not written: {problems[0].message}", is_error=True
-        )
-        return 1
-    refused = risen_rows(inspection, ledger.expected(), policy.refusal_kinds)
+    inspections = inspected_builds(rule, request, examine, policy)
+    if isinstance(inspections, int):
+        return inspections
+    ledger = inspections[0].ledger
+    largest = Inspection((), ledger, rule_ledger.largest_counts(item.counts for item in inspections))
+    is_reduce = bool(request.more_builds)
+    kinds = tuple(sorted({key.kind for key in largest.counts})) if is_reduce else policy.refusal_kinds
+    refused = risen_rows(largest, ledger.expected(), kinds)
     for line in refused:
         check_report.write_line(f"guard write: {line}", is_error=True)
-    if refused and request.mode != rule_ledger.WriteMode.RAISE:
+    if refused and (is_reduce or request.mode != rule_ledger.WriteMode.RAISE):
         check_report.write_line(
             f"guard write: the ledger of {rule.id} is not written: {len(refused)} counts that only --raise writes.  "
             f"Remove their cause.  Give --raise only for {', for '.join(policy.raise_reasons)}, and give the reason "
@@ -225,12 +248,16 @@ def write_inspection(
             is_error=True,
         )
         return 1
-    written = rule_ledger.write_counts(
-        rule, ledger, set_counts(ledger, inspection.counts), None, rule_ledger.WriteMode.RAISE, request.reason
-    )
+    if is_reduce:
+        counts = {**largest.counts, **dict.fromkeys(ledger.admits(), 1)}
+        written = rule_ledger.write_counts(rule, ledger, counts, rule_ledger.WriteMode.LOWER, request.reason)
+    else:
+        written = rule_ledger.write_counts(
+            rule, ledger, set_counts(ledger, largest.counts), rule_ledger.WriteMode.RAISE, request.reason
+        )
     rule_ledger.store(written, request.root)
     check_report.write_line(
-        f"guard write: wrote {len(inspection.counts)} {policy.rows} of the build into the set of "
+        f"guard write: wrote {len(largest.counts)} {policy.rows} of {len(inspections)} builds into the set of "
         f"{rule_ledger.shown_path(rule.id)}"
     )
     return 0
@@ -245,11 +272,11 @@ def writer(
     """
 
     def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-        """Write the set of the ledger with the counts of the build of the request (THE WRITE).
+        """Write the set of the ledger with the counts of the builds of the request (THE WRITE).
 
         Returns:
-            0 when the ledger is written.  1 when the write refuses a count or the build cannot be read.  2 for the
-            mode admit, --import and --add-configuration.  SKIPPED when the rule does not apply
+            0 when the ledger is written.  1 when the write refuses a count or a build cannot be read.  2 for the mode
+            admit.  SKIPPED when the rule does not apply to a build
         """
         return write_inspection(rule, request, lambda context: examine(rule, context), policy)
 

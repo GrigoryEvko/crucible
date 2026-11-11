@@ -197,16 +197,20 @@ class PlantedBuild:
 class WriteRequest:
     """What one write of the ledger of a rule of the engine does.
 
-    `mode` is the mode of assay.core.ledger.  `import_log` and `add_configuration` hold the options --import LOG and
-    --add-configuration of `guard write`, and each rule of the engine refuses them.
+    `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
+    (THE REDUCE of assay.core.ledger).
     """
 
     root: Path
     build_dir: Path | None
     mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER
     reason: str | None = None
-    import_log: Path | None = None
-    add_configuration: bool = False
+    more_builds: tuple[Path, ...] = ()
+
+    @property
+    def builds(self) -> tuple[Path, ...]:
+        """The builds of the write: `build_dir` and `more_builds`, or none when the request has no build."""
+        return (self.build_dir, *self.more_builds) if self.build_dir is not None else ()
 
 
 class ElfContext:
