@@ -3,7 +3,7 @@
 
 WHAT THIS MEASURES, AND WHY IT IS NOT THE SAME AS THE C++ BENCHES
 
-`bench/baselines/record_leaf.json` times `Vigil::dispatch_op` with the ring and
+`bench/baselines/<tier>/record_leaf.json` times `Vigil::dispatch_op` with the ring and
 the metadata already in hand.  That is the last step of the per-op path.  The
 steps ahead of it -- the Python binding, the ATen dispatcher, the unboxed
 recording kernel and the metadata bridge -- are the rest of it, and no figure in
@@ -65,6 +65,10 @@ USAGE
 
 The pin matters. Refer to the Code Guide, "Measurement discipline". Set
 CRUCIBLE_BUILD_DIR to the directory holding the libraries under test.
+
+A full run writes bench/baselines/TIER/vessel_e2e.json.  TIER is the hardware
+tier of the build under test, the entry CRUCIBLE_HOST_TIER of its CMake cache
+(cmake/HostTier.cmake).  --out names a different file.
 """
 
 from __future__ import annotations
@@ -1080,7 +1084,7 @@ def build_document(by_workload: dict[str, dict], runs: int,
                    sweep: list | None = None) -> list:
     """Assemble the baseline document.
 
-    The shape follows bench/baselines/record_leaf.json: a list whose first
+    The shape follows bench/baselines/<tier>/record_leaf.json: a list whose first
     element carries the commentary and a zeroed template of the fields, and
     whose later elements are the measurements.
     """
@@ -1154,6 +1158,54 @@ def build_document(by_workload: dict[str, dict], runs: int,
     return document
 
 
+# =====================================================================
+# The baseline file
+# =====================================================================
+
+# The cache entry of the hardware tier of a build (cmake/HostTier.cmake).
+TIER_ENTRY = "CRUCIBLE_HOST_TIER"
+REPOSITORY = Path(__file__).resolve().parent.parent.parent
+
+
+def build_tier() -> str:
+    """Return the hardware tier of the build under test, or "" when its cache gives none.
+
+    The build is the first directory with a CMake cache in the sequence that
+    crucible_native searches for the libraries: CRUCIBLE_BUILD_DIR, then
+    build-release.  Its cache entry CRUCIBLE_HOST_TIER holds the tier.
+    """
+    searched = []
+    override = os.environ.get("CRUCIBLE_BUILD_DIR")
+    if override:
+        searched.append(Path(override) if Path(override).is_absolute() else REPOSITORY / override)
+    searched.append(REPOSITORY / "build-release")
+    for directory in searched:
+        cache = directory / "CMakeCache.txt"
+        if not cache.is_file():
+            continue
+        for line in cache.read_text(encoding="utf-8").splitlines():
+            name, _, value = line.partition("=")
+            if name.split(":", 1)[0] == TIER_ENTRY:
+                return value.strip()
+        return ""
+    return ""
+
+
+def baseline_path() -> Path:
+    """Return bench/baselines/TIER/vessel_e2e.json for the tier of the build under test.
+
+    Raises:
+        SystemExit: If the build under test gives no tier.  Then --out must
+            name the file
+    """
+    tier = build_tier()
+    if not tier:
+        raise SystemExit("bench_e2e: the CMake cache of the build under test gives no "
+                         f"{TIER_ENTRY}, so the baseline file of its tier is unknown.  "
+                         "Configure the build again, or give --out")
+    return REPOSITORY / "bench" / "baselines" / tier / "vessel_e2e.json"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workload", choices=sorted(ITERATIONS),
@@ -1165,7 +1217,9 @@ def main() -> int:
                         help="override the per-workload iteration count")
     parser.add_argument("--emit-json", action="store_true",
                         help="print the report as JSON, for the orchestrator")
-    parser.add_argument("--out", default="bench/baselines/vessel_e2e.json")
+    parser.add_argument("--out",
+                        help="the file to write, else bench/baselines/TIER/vessel_e2e.json "
+                             "for the hardware tier of the build under test")
     parser.add_argument("--no-perf", action="store_true",
                         help="skip the hardware-counter table")
     parser.add_argument("--perf-runs", type=int, default=2,
@@ -1198,6 +1252,7 @@ def main() -> int:
               else json.dumps(report, indent=2))
         return 0
 
+    out = Path(args.out) if args.out else baseline_path()
     kinds = [args.workload] if args.workload else list(ITERATIONS)
     by_workload: dict[str, dict] = {}
     for kind in kinds:
@@ -1222,7 +1277,6 @@ def main() -> int:
     document = build_document(by_workload, args.runs, perf, sweep)
     text = json.dumps(document, indent=2) + "\n"
 
-    out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text)
     print(text)

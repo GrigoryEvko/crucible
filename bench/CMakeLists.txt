@@ -117,8 +117,16 @@ crucible_bench(bench_swmr_session)
 #
 # Keep it off that list.
 crucible_bench(bench_record_leaf)
+# The baseline of the hardware tier of this host (cmake/HostTier.cmake).  A
+# host of a tier with no baseline file measures, prints its numbers and passes.
+# A host with no tier gets an empty path, with the same result.
+set(_record_leaf_baseline "")
+if(CRUCIBLE_HOST_TIER)
+  set(_record_leaf_baseline "${CMAKE_CURRENT_SOURCE_DIR}/baselines/${CRUCIBLE_HOST_TIER}/record_leaf.json")
+endif()
 target_compile_definitions(bench_record_leaf PRIVATE
-  CRUCIBLE_RECORD_LEAF_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/baselines/record_leaf.json")
+  CRUCIBLE_RECORD_LEAF_TIER="${CRUCIBLE_HOST_TIER}"
+  CRUCIBLE_RECORD_LEAF_BASELINE="${_record_leaf_baseline}")
 
 # The only `add_test` in bench/.  The rest of the tree is a compile
 # gate; this one runs, compares against a committed ceiling and fails.

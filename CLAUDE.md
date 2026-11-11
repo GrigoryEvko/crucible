@@ -175,7 +175,7 @@ Per-tensor, optimal, no manual `torch.utils.checkpoint()`. Threshold adapts to m
 
 Every PyTorch op dispatches through the Dispatcher's priority-ordered function pointer table. `DispatchKey::Crucible` intercepts each operation above the backend keys. The patched PyTorch fork adds that key, and `vessel/torch/register.cpp` registers one recording kernel for each of the 3110 ATen operators of the fork.
 
-**RECORD mode** (6 steps). `bench/baselines/record_leaf.json` gives the measured costs of the recording path, without the eager execution of step 3:
+**RECORD mode** (6 steps). `bench/baselines/<tier>/record_leaf.json` gives the measured costs of the recording path on each hardware tier (`cmake/HostTier.cmake`), without the eager execution of step 3:
 1. Snapshot input TensorMeta (shapes, strides, dtype, device, data_ptr). Handle TensorList unpacking. Encode scalars as int64 (up to 5 inline).
 2. Compute schema_hash (op name) and shape_hash (input sizes).
 3. Execute eagerly via redispatch.
@@ -1591,7 +1591,7 @@ Background (warm):  one pipeline thread, which starts four stage threads and joi
   publish   makes the RegionNode and its memory plan, and activates the region
 ```
 
-`BackgroundThread::start` (`include/crucible/BackgroundThread.h`, with its body in `src/BackgroundThread.cpp`) starts the pipeline thread. The pipeline gives each stage a thread of its own, and SPSC channels connect the stages. Each stage spins on its input channel. The build stage and the publish stage share no lock. Each one has a scratch arena of its own, and a message moves the parts of each region to the publish stage. `bench/baselines/record_leaf.json` holds the measured cost of a foreground record. The Vigil starts no other thread. The ledger refresh daemon and its cache-tier probe in `include/crucible/ledger/` have threads of their own, and only their tests start them at this time. Apart from these, only the OS and OS-adjacent code (systemd, signal handlers) add threads. Background workers for parallel kernel compilation inside Mimic are planned.
+`BackgroundThread::start` (`include/crucible/BackgroundThread.h`, with its body in `src/BackgroundThread.cpp`) starts the pipeline thread. The pipeline gives each stage a thread of its own, and SPSC channels connect the stages. Each stage spins on its input channel. The build stage and the publish stage share no lock. Each one has a scratch arena of its own, and a message moves the parts of each region to the publish stage. `bench/baselines/<tier>/record_leaf.json` holds the measured cost of a foreground record on each hardware tier. The Vigil starts no other thread. The ledger refresh daemon and its cache-tier probe in `include/crucible/ledger/` have threads of their own, and only their tests start them at this time. Apart from these, only the OS and OS-adjacent code (systemd, signal handlers) add threads. Background workers for parallel kernel compilation inside Mimic are planned.
 
 ### SPSC ring pattern
 

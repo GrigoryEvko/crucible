@@ -54,6 +54,14 @@ endif()
 crucible_ccache_after_project()
 crucible_relocatable_objects()
 
+# The hardware tier of this host (cmake/HostTier.cmake).  A compiler that does
+# not resolve the native target, such as a cross compiler, gives no tier, and
+# the configure continues.  The PGO block below stops with the reason.
+include(cmake/HostTier.cmake)
+crucible_host_tier(_crucible_host_tier CRUCIBLE_HOST_TARGET_HELP CRUCIBLE_HOST_TIER_PROBLEM)
+set(CRUCIBLE_HOST_TIER "${_crucible_host_tier}" CACHE INTERNAL
+  "The hardware tier of this host, or empty when the compiler does not resolve the native target")
+
 # ═══════════════════════════════════════════════════════════════
 # Profile-guided optimization: CRUCIBLE_PGO = off | generate | use
 #
@@ -144,39 +152,14 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   set(CMAKE_C_COMPILER_LAUNCHER "")
 
   # The tier is the name the compiler gives the silicon of this host.
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    set(_crucible_pgo_native_flag -march=native)
-    set(_crucible_pgo_tier_option "-march=")
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    set(_crucible_pgo_native_flag -mcpu=native)
-    set(_crucible_pgo_tier_option "-mcpu=")
-  else()
-    message(FATAL_ERROR "PGO tier detection covers x86_64 and aarch64. "
-      "CMAKE_SYSTEM_PROCESSOR is '${CMAKE_SYSTEM_PROCESSOR}'.")
+  if(CRUCIBLE_HOST_TIER STREQUAL "")
+    message(FATAL_ERROR "PGO tier detection: ${CRUCIBLE_HOST_TIER_PROBLEM}")
   endif()
-  execute_process(
-    COMMAND "${CMAKE_CXX_COMPILER}" ${_crucible_pgo_native_flag} -Q --help=target
-    OUTPUT_VARIABLE _crucible_pgo_target_help
-    ERROR_VARIABLE _crucible_pgo_target_error
-    RESULT_VARIABLE _crucible_pgo_target_result)
-  if(NOT _crucible_pgo_target_result EQUAL 0)
-    message(FATAL_ERROR "PGO tier detection: "
-      "'${CMAKE_CXX_COMPILER} ${_crucible_pgo_native_flag} -Q --help=target' failed:\n"
-      "${_crucible_pgo_target_error}")
-  endif()
-  if(NOT _crucible_pgo_target_help MATCHES "\n[ \t]*${_crucible_pgo_tier_option}[ \t]+([^ \t\r\n]+)")
-    message(FATAL_ERROR "PGO tier detection: the --help=target output has no "
-      "'${_crucible_pgo_tier_option}' line with a value. The compiler did not resolve native to a name.")
-  endif()
-  set(_crucible_pgo_tier "${CMAKE_MATCH_1}")
-  if(_crucible_pgo_tier STREQUAL "native")
-    message(FATAL_ERROR "PGO tier detection: the compiler reports '${_crucible_pgo_tier_option}native' "
-      "unresolved, so the tier has no name.")
-  endif()
+  set(_crucible_pgo_tier "${CRUCIBLE_HOST_TIER}")
   # The tier name is for the directory and for the reader.  The pin is
   # the full target option set, which two hosts with the same name but
   # a different feature set do not share.
-  string(SHA256 _crucible_pgo_fingerprint "${_crucible_pgo_target_help}")
+  string(SHA256 _crucible_pgo_fingerprint "${CRUCIBLE_HOST_TARGET_HELP}")
   string(REGEX MATCH "^[0-9]+\\.[0-9]+" _crucible_pgo_gcc_version "${CMAKE_CXX_COMPILER_VERSION}")
   set(CRUCIBLE_PGO_TIER "${_crucible_pgo_tier}" CACHE INTERNAL "The hardware tier of this host")
   set(CRUCIBLE_PGO_PROFILE_DIR "${CRUCIBLE_PGO_DIR}/gcc-${_crucible_pgo_gcc_version}/${_crucible_pgo_tier}"
@@ -1633,7 +1616,7 @@ endif()
 # list when it has its own number, not before.
 #
 # bench/ declares zero `add_test`, so there is no committed per-op
-# latency in the tree to compare against.  bench/baselines/record_leaf.json
+# latency in the tree to compare against.  bench/baselines/znver5/record_leaf.json
 # predates this change and its dispatch figures were taken under
 # `ignore`; they are not comparable to a production path and re-taking
 # them waits on the recording-path rewrite now in flight.  Shrink this

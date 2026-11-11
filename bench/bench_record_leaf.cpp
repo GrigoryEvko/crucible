@@ -288,11 +288,13 @@ constexpr bool kGateOnP99 = false;
 
 // A deliberately small reader: the file is a flat list of
 // {"name":..,"p50_ns":..,"p99_ns":..} objects and nothing else, so a full
-// JSON parser would be a dependency bought for no reason.
-[[nodiscard]] std::vector<Ceiling> read_baseline(const char* path) {
+// JSON parser would be a dependency bought for no reason.  is_present tells
+// if the file opens, so that a missing file and a file with no row differ.
+[[nodiscard]] std::vector<Ceiling> read_baseline(const char* path, bool& is_present) {
     std::vector<Ceiling> out;
     std::FILE* f = std::fopen(path, "rb");
-    if (f == nullptr) return out;
+    is_present = f != nullptr;
+    if (!is_present) return out;
     std::string text;
     char buf[4096];
     size_t n = 0;
@@ -490,11 +492,17 @@ int main() {
 
     // ── Gate ────────────────────────────────────────────────────────
 
-    const std::vector<Ceiling> baseline = read_baseline(CRUCIBLE_RECORD_LEAF_BASELINE);
+    // The baseline of the hardware tier of this host (bench/CMakeLists.txt).  A tier with no baseline file measures,
+    // prints its numbers above and passes.  A baseline file that gives no row fails, because it gates nothing.
+    bool has_baseline_file = false;
+    const std::vector<Ceiling> baseline = read_baseline(CRUCIBLE_RECORD_LEAF_BASELINE, has_baseline_file);
     if (baseline.empty()) {
-        std::fprintf(stderr, "\nbench_record_leaf: no baseline at %s — nothing to gate against.\n",
-                     CRUCIBLE_RECORD_LEAF_BASELINE);
-        return 1;
+        std::fprintf(stderr,
+                     "\nbench_record_leaf: %s '%s', the baseline of the tier '%s' of this host.  The gate "
+                     "judges nothing, and the run %s.\n",
+                     has_baseline_file ? "no row in" : "no file at", CRUCIBLE_RECORD_LEAF_BASELINE,
+                     CRUCIBLE_RECORD_LEAF_TIER, has_baseline_file ? "fails" : "passes");
+        return has_baseline_file ? 1 : 0;
     }
 
     std::printf("\n=== gate (ceiling = baseline x %.2f) ===\n", kTolerance);
