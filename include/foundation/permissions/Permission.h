@@ -196,7 +196,7 @@ concept DistinctTags = tags_are_distinct({^^Tags...});
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
 //      form, which every_class_in_has_edge audits for the canonical tags.
 //      Only this header holds a declaration in the namespace.  The rule
-//      trait-guard of the quarantine plugin refuses one in each other file;
+//      home of the quarantine plugin refuses one in each other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;

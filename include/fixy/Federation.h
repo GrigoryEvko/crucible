@@ -12,7 +12,7 @@
 //
 // foundation/permissions/Permission.h declares FederationAdmission and
 // the key, and this header holds the definition of the admission.  The
-// definition is the full door.  The rule federation-admission of the
+// definition is the full door.  The rule home of the
 // quarantine plugin refuses a definition, a specialization or a member
 // definition of FederationAdmission in each other file
 // (utils/tools/quarantine/home.cpp).

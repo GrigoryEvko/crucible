@@ -3656,7 +3656,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 # ── The permissioned channels ─────────────────────────────────────────
 #
 # The header of each channel holds the specialization of can_split_into for
-# its three tags, in the file of the tags, as the rule splits-orphan asks.
+# its three tags, in the file of the tags, as the rule home asks.
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
 fixy_test(test_channel_identity)

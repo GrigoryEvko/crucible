@@ -16,7 +16,7 @@
 // friend.  A reflection check cannot refuse it: GCC gives the location
 // of the primary template for an instance of a partial specialization,
 // and a #line directive moves any location.  The rule
-// federation-admission of the quarantine plugin refuses each definition
+// home of the quarantine plugin refuses each definition
 // and each specialization of FederationAdmission, and each definition of
 // one of its members, in a file other than fixy/Federation.h
 // (utils/tools/quarantine/home.cpp).  The plugin also refuses a #line

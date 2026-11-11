@@ -111,7 +111,7 @@ constexpr uint64_t fmix64(uint64_t k) {
 // A second copy of this body under any other name is a drift surface:
 // changing the salt, the mix or the finalizer would leave that copy stale
 // and change the shared key while every assertion against it still passed.
-// The rule no-combine-ids-duplicate of the quarantine plugin refuses a
+// The rule home of the quarantine plugin refuses a
 // second body (utils/tools/quarantine/home.cpp).
 [[nodiscard]] constexpr uint64_t combine_ids(uint64_t a, uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);

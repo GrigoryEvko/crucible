@@ -93,7 +93,7 @@
 #include <type_traits>
 
 // The owner of the key below.  foundation/effects/ImageRead.h defines it,
-// and the rule host-owners admits its definition only in that header.
+// and the rule home admits its definition only in that header.
 namespace foundation::effects::host {
 struct ImageReader;
 }  // namespace foundation::effects::host

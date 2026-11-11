@@ -11,7 +11,7 @@
 // The lattices are below the effect layer, so they cannot name a context.
 // Each one gives a read that takes a CountImageKey, and the image reader
 // below is the one class that builds such a key.  The reader gives the key
-// only to mint_from_image, its one friend.  The rule host-owners admits the
+// only to mint_from_image, its one friend.  The rule home admits the
 // definition of the reader only in this header, so no other unit defines a
 // reader that builds the key.
 
