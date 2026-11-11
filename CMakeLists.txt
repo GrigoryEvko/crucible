@@ -273,7 +273,7 @@ endif()
 include(cmake/JobPools.cmake)
 
 # Each link of the tree runs the pinned mold with the thread count of the rule
-# link-threads of utils/registry.txt (cmake/Linker.cmake).  The file puts the
+# build-graph of utils/registry.txt (cmake/Linker.cmake).  The file puts the
 # linker flags into CMAKE_EXE_LINKER_FLAGS, CMAKE_SHARED_LINKER_FLAGS and
 # CMAKE_MODULE_LINKER_FLAGS.  A try_compile then gets them too.  The file comes
 # before the first target and before check_pie_supported().

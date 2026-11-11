@@ -68,8 +68,8 @@ EXCLUDED_NAME = "vmlinux.h"
 # The tool of assay.setup.install that gives the formatter (THE FORMATTER).
 TOOL = "clang-format"
 CONFIGURATION_FILES = (".clang-format", ".clang-format-ignore")
-# The batches at the same time: the job count of the package (THE WORKER POOLS of
-# assay.guard.engines.buildsys.job_pools), and the batches of one job.
+# The batches at the same time: the job count of the package (THE JOB COUNT of assay.core.proc), and the batches of
+# one job.
 MAX_JOBS = proc.DEFAULT_JOBS
 BATCHES_PER_JOB = 4
 CACHE_NAME = "clang-format"

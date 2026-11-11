@@ -1,0 +1,28 @@
+# a comment
+include CMakeFiles/rules.ninja
+rule CXX_COMPILER__a_unscanned_Debug
+  command = g++ $in
+build liba.a: CXX_STATIC_LIBRARY_LINKER__a_Debug a.o
+  pool = link
+build a.o: CXX_COMPILER__a_unscanned_Debug a.cpp || cmake_object_order_depends_target_a
+  pool = compile
+build cmake_object_order_depends_target_a: phony || .
+build gen.c | ${cmake_ninja_workdir}gen.c: CUSTOM_COMMAND gen.in || liba.a
+build cmake_object_order_depends_target_b: phony || gen.c cmake_object_order_depends_target_a
+build b.o: CXX_COMPILER__b_unscanned_Debug b.cpp || cmake_object_order_depends_target_b
+  pool = compile
+build b2.o: CXX_COMPILER__b_unscanned_Debug $
+    b2.cpp || cmake_object_order_depends_target_b
+  pool = compile
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug tool.o
+  FLAGS = -g -O1
+  LINK_FLAGS = -fuse-ld=mold -Bplanted-mold/ -Wl,--threads=4 -Wl,--no-fork -fPIE -pie
+  pool = link
+build tool.o: CXX_COMPILER__tool_unscanned_Debug tool.cpp
+  pool = compile
+build hdr.h: CUSTOM_COMMAND tool
+build cmake_object_order_depends_target_c: phony || hdr.h
+build c.o: CXX_COMPILER__c_unscanned_Debug c.cpp || cmake_object_order_depends_target_c
+  pool = compile
+build all: phony liba.a tool
+default all

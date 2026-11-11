@@ -1,0 +1,3 @@
+# The planted registry gives the rule build-graph no limit, and the rule then has no number of threads of one link.
+# The rule gives one error input, and it does not judge the linker words of the links.
+format 1

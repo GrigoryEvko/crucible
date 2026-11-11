@@ -1,3 +1,0 @@
-# A module of the package starts a pool with a parameter whose literal default is 24.  The rule gives the error
-# pool-workers.
-format 1

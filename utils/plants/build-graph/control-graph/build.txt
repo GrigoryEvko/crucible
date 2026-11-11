@@ -1,0 +1,7 @@
+# The tree of each plant of the rule.  The included file CMakeFiles/rules.ninja holds the pools compile and link.  Each
+# compile and the custom command that compiles probe.bpf.o are in the pool compile, and each link and the archive are
+# in the pool link.  probe.bpf.o has a depfile with deps = gcc, and it is not on the disk.  Each link gives the
+# compiler -fuse-ld=mold, the -B prefix planted-mold/, which holds ld.mold, and the linker options --threads=4 and
+# --no-fork of the planted registry.  The link of tool has the order-only input liblib.a, and no compile waits for
+# it.  The custom command that writes gen.h is in no pool.  The rule gives no error.
+format 1

@@ -10,7 +10,7 @@
 #   link     each link and each archive of each target.  The depth is half the
 #            number of logical cores of the host, and at least 1
 #
-# Each link runs mold with the threads of the rule link-threads
+# Each link runs mold with the threads of the rule build-graph
 # (cmake/Linker.cmake).  On 2026-10-17, a relink of the tree ran 128 links at
 # one time on a host of 224 CPUs, and it took 0.298 s with mold at 4 threads.
 # Half the cores is the fraction nearest to that count.  On
@@ -18,9 +18,9 @@
 # 3.6 GB, so the memory does not limit the depth.
 #
 # Ninja runs at most the depth of a pool of its edges at one time, also with a
-# larger -j.  The rules compile-jobs and link-jobs
-# (utils/assay/guard/engines/buildsys/job_pools.py) refuse a build.ninja with
-# an edge that is not in its pool.
+# larger -j.  The rule build-graph
+# (utils/assay/guard/engines/buildsys/build_graph.py) refuses a build.ninja
+# with an edge that is not in its pool.
 #
 # A target reads CMAKE_JOB_POOL_COMPILE and CMAKE_JOB_POOL_LINK when it is
 # created, so this file comes before the first target.  The file of the quarantine

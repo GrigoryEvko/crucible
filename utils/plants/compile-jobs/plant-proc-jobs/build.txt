@@ -1,2 +1,0 @@
-# DEFAULT_JOBS of proc.py is the literal count 16.  The rule gives the error program-jobs.
-format 1

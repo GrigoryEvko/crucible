@@ -21,7 +21,7 @@ THE RUN
        before the configure can name a target that the configure removes.
        Ninja then stops on that unknown target.  This occurs in a warm tree
        that a different commit configured.  The input targets write the
-       inputs of the compiles, and they do no compile and no link.  The rule build-order holds that no such target waits for a
+       inputs of the compiles, and they do no compile and no link.  The rule build-graph holds that no such target waits for a
        link.  The compile database holds the stamp of the last configure,
        and the run reads the compile commands after this step.
     2. The run removes each report directory of SYNTAX_DIRECTORY that no

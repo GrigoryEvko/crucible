@@ -1,2 +1,0 @@
-# A module of the package gives make the words -j and 8.  The rule gives the error literal-jobs.
-format 1

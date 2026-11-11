@@ -1,3 +1,0 @@
-# The test preset gives no execution.jobs, and ctest then runs one test at a time.  The rule gives the error
-# program-jobs.
-format 1

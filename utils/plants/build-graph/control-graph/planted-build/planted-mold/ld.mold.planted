@@ -1,0 +1,2 @@
+# A stand-in for ld.mold in the -B prefix planted-mold/ of the planted build.  The rule build-graph reads only that
+# the file is there.

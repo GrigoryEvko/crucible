@@ -1,3 +1,0 @@
-# A module of the package starts a pool with the attribute options.workers, which the rule cannot bound.  The rule
-# gives the error pool-workers.
-format 1

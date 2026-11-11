@@ -1,3 +1,0 @@
-# The build preset and the test preset each give the literal job count 8.  The rule gives the error program-jobs for
-# each preset.
-format 1

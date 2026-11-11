@@ -1,6 +1,0 @@
-{
-  "version": 11,
-  "configurePresets": [{ "name": "default", "binaryDir": "${sourceDir}/build", "generator": "Ninja" }],
-  "buildPresets": [{ "name": "default", "configurePreset": "default" }],
-  "testPresets": [{ "name": "default", "configurePreset": "default", "execution": { "timeout": 300 } }]
-}

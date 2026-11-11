@@ -62,8 +62,8 @@ BUILD_DIR_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 # The test is a program that fails when a row is different.  Each other
 # emitted test fails to compile.
 RUNTIME_TESTS: dict[str, tuple[str, ...]] = {"fixy_wire": WIRE_FAMILIES}
-# The units of one part at one time: the job count of the package (THE WORKER
-# POOLS of assay.guard.engines.buildsys.job_pools).  A program compiles its
+# The units of one part at one time: the job count of the package (THE JOB
+# COUNT of assay.core.proc).  A program compiles its
 # shards in a pool of its own.  The compile slots of the store hold the
 # compiles of all units to the same count (THE COMPILE SLOTS of
 # assay.oracle.unit_store).  Each compile parses its headers, and the longest

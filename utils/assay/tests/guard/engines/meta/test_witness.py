@@ -14,7 +14,7 @@ from assay.core import report as check_report
 from assay.core import testing
 from assay.guard.engines.meta import runner as meta_runner
 
-RULE_ID = "build-order"
+RULE_ID = "build-graph"
 OUTCOME_FILE = "outcome.txt"
 CI_VARIABLE = "GITHUB_ACTIONS"
 

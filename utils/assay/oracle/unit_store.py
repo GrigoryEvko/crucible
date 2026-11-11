@@ -140,8 +140,7 @@ THE COMPILE SLOTS
     Each compile of a unit, with its dependency runs, holds one slot of the
     store.  Each link also holds one slot.  The store has proc.DEFAULT_JOBS
     slots by default.  A run then starts at most that many compilers at one
-    time, also with the two pools.  THE WORKER POOLS of
-    assay.guard.engines.buildsys.job_pools gives the bound of a pool.
+    time, also with the two pools.
 
     On 2026-10-12, a cold run of the 49 units of the test with no slots took
     34.3 s.  It had up to 86 compilers and 16.2 GB at one time.  With 16

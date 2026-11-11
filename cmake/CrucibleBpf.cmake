@@ -192,7 +192,7 @@ function(crucible_bpf_program name source)
   # the generator.  The depfile names each header that the compile reads,
   # also common.h, vmlinux.h and the libbpf headers.  Ninja moves the list
   # into its dependency log, so an edit of a header compiles the object
-  # again.  The rule custom-deps (utils/assay/guard/engines/buildsys/build_graph.py)
+  # again.  The rule build-graph (utils/assay/guard/engines/buildsys/build_graph.py)
   # holds this for each object that a custom command compiles.
   #
   # The kernel compiles with -fms-extensions, so vmlinux.h has members such
@@ -202,7 +202,7 @@ function(crucible_bpf_program name source)
   # -Werror makes each other warning stop the build.
   #
   # The compile is in the Ninja pool of the compiles (cmake/JobPools.cmake).
-  # The rule compile-jobs refuses a custom command that compiles an object and
+  # The rule build-graph refuses a custom command that compiles an object and
   # is not in that pool.
   #
   # The two commands read no file that a target of the build writes.  The

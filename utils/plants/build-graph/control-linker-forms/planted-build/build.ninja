@@ -1,0 +1,14 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = compile
+build libshared.so: CXX_SHARED_LIBRARY_LINKER__shared_Debug a.o
+  FLAGS = -g
+  LINK_FLAGS = -fuse-ld=mold -Bplanted-mold/ -Wl,--threads=8,--fork -Wl,--thread-count,4 -Wl,--no-fork
+  pool = link
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug a.o
+  FLAGS = -g -O1 -fuse-ld=bfd
+  LINK_FLAGS = -fuse-ld=mold -B planted-mold -Xlinker --thread-count=4 -Xlinker --no-fork -fPIE -pie
+  pool = link
+build all: phony libshared.so tool
+default all

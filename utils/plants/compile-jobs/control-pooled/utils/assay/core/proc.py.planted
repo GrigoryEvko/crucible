@@ -1,5 +1,0 @@
-"""A planted proc.py: the default job count of the package is the CPU count of the process."""
-
-import os
-
-DEFAULT_JOBS = os.process_cpu_count() or 1

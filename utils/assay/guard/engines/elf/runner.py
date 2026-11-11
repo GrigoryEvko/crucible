@@ -137,7 +137,7 @@ LINKED_ROWS = frozenset({PROGRAM_ROW, MODULE_ROW})
 # (THE PLANTS).  cmake/Linker.cmake gives each link of the tree the same words, and the link is then complete when
 # the compiler driver stops.
 LINKER_TOOL = "mold"
-THREADS_RULE = "link-threads"
+THREADS_RULE = "build-graph"
 NO_FORK_WORD = "-Wl,--no-fork"
 SKIPPED = meta_runner.SKIPPED
 NotApplicable = meta_runner.NotApplicable
@@ -506,7 +506,7 @@ def host_flags(words: Sequence[str]) -> list[str]:
 def mold_words() -> tuple[str, ...]:
     """Return the words that make the compiler link with the pinned mold (THE PLANTS).
 
-    The thread count is the limit of the rule link-threads of the registry of the repository.  The check of the
+    The thread count is the limit of the rule build-graph of the registry of the repository.  The check of the
     install runs mold two times, and the cache does it one time in a process.
 
     Raises:

@@ -1,8 +1,0 @@
-"""A planted proc.py: the module gives the job count only in a function."""
-
-import os
-
-
-def default_jobs() -> int:
-    """Return the CPU count of the process."""
-    return os.process_cpu_count() or 1

@@ -961,8 +961,7 @@ _BATCH = 64
 # A text of this size or more parses in a task of its own, so two slow
 # texts never wait for each other in one worker.
 _BATCH_BYTES = 64 << 10
-# The host is shared, so a call starts at most the job count of the package (THE WORKER POOLS of
-# assay.guard.engines.buildsys.job_pools).
+# The host is shared, so a call starts at most the job count of the package (THE JOB COUNT of assay.core.proc).
 _MAX_WORKERS = proc.DEFAULT_JOBS
 _TREE_IDENTITY: bytes | None = None
 

@@ -13,7 +13,7 @@
 #                     Else it runs an ld.mold of PATH, such as the mold 2.40.4
 #                     of Fedora 44, which cannot read the linker script
 #                     libatomic_asneeded.so of GCC 16
-#   -Wl,--threads=N   N is the limit of the rule link-threads of
+#   -Wl,--threads=N   N is the limit of the rule build-graph of
 #                     utils/registry.txt
 #   -Wl,--no-fork     mold links in its own process.  With its fork, mold links
 #                     in a child process, and the parent ends before the child.
@@ -28,8 +28,8 @@
 # CMP0056).  add_link_options() does not apply to a try_compile, and
 # CMAKE_LINKER_TYPE gives a try_compile -fuse-ld=mold with no -B.  For that
 # reason, the root CMakeLists.txt includes this file before the first target
-# and before check_pie_supported().  The rule link-threads
-# (utils/assay/guard/engines/buildsys/job_pools.py) refuses a link edge of
+# and before check_pie_supported().  The rule build-graph
+# (utils/assay/guard/engines/buildsys/build_graph.py) refuses a link edge of
 # build.ninja with no such words.
 #
 # The build configures again when the pin table or the registry changes, and
@@ -105,7 +105,7 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/utils/pins.txt" "${CRUCIBLE_MOLD_BIN}/mold")
 
-crucible_rule_limit(link-threads CRUCIBLE_LINK_THREADS)
+crucible_rule_limit(build-graph CRUCIBLE_LINK_THREADS)
 set(CRUCIBLE_LINKER_OPTIONS
   -fuse-ld=mold "-B${CRUCIBLE_MOLD_BIN}/" "-Wl,--threads=${CRUCIBLE_LINK_THREADS}" -Wl,--no-fork)
 list(JOIN CRUCIBLE_LINKER_OPTIONS " " _crucible_linker_words)

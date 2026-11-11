@@ -136,10 +136,8 @@ THE JOB COUNT
     DEFAULT_JOBS is the one default count of the parallel work of the package.
     That work is a build, a test run, a parse build and the compiles of a
     measure.  The count is the number of CPUs that the process can use
-    (os.process_cpu_count()), or 1 when Python cannot read it.  The rule
-    compile-jobs of utils/registry.txt refuses a literal integer here, and a
-    literal job count in a module of the package or in CMakePresets.json.  A
-    build runs no more compiles than the depth of the Ninja pool compile
+    (os.process_cpu_count()), or 1 when Python cannot read it.  A build runs
+    no more compiles than the depth of the Ninja pool compile
     (cmake/JobPools.cmake), also with a larger -j N.  A heavy step of a gate
     or an entry decreases its jobs to the free memory (assay.loop.heavy).
 

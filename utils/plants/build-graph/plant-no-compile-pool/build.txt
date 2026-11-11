@@ -1,0 +1,3 @@
+# The included file of the graph holds a rule and the pool link, and no pool compile.  The edges name a pool compile
+# that no file has.  The rule gives the error no-pool for the pool compile.
+format 1

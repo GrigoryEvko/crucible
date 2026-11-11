@@ -1,0 +1,6 @@
+include CMakeFiles/rules.ninja
+
+build stale.bpf.o: CUSTOM_COMMAND ../src/stale.bpf.c
+  depfile = CMakeFiles/d/stale.d
+  deps = gcc
+  pool = compile

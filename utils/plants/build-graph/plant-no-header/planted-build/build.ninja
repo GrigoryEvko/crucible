@@ -1,0 +1,7 @@
+include CMakeFiles/rules.ninja
+
+build empty.bpf.o: CUSTOM_COMMAND ../src/empty.bpf.c
+  COMMAND = clang -MD -MF CMakeFiles/d/empty.d -c ../src/empty.bpf.c -o empty.bpf.o
+  depfile = CMakeFiles/d/empty.d
+  deps = gcc
+  pool = compile

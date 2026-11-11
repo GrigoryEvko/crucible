@@ -1,0 +1,10 @@
+include CMakeFiles/rules.ninja
+
+build a.o: CXX_COMPILER__lib_unscanned_Debug a.cpp
+  pool = compile
+build tool: CXX_EXECUTABLE_LINKER__tool_Debug a.o
+  FLAGS = -g -O1
+  LINK_FLAGS = -fuse-ld=mold -Bplanted-mold/ -Wl,--threads -Wl,--no-fork -fPIE -pie
+  pool = link
+build all: phony tool
+default all

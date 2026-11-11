@@ -1,3 +1,0 @@
-build missing.bpf.o: CUSTOM_COMMAND ../src/missing.bpf.c
-  depfile = CMakeFiles/d/missing.d
-  deps = gcc

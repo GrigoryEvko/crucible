@@ -1,0 +1,14 @@
+include CMakeFiles/rules.ninja
+
+build bin/tool: CXX_EXECUTABLE_LINKER__tool_Debug tool.o
+  FLAGS = -g -O1
+  LINK_FLAGS = -fuse-ld=mold -Bplanted-mold/ -Wl,--threads=4 -Wl,--no-fork -fPIE -pie
+  pool = link
+build tool.o: CXX_COMPILER__tool_unscanned_Debug tool.cpp
+  pool = compile
+build gen.h: CUSTOM_COMMAND gen.in || bin/tool
+build cmake_object_order_depends_target_user: phony || gen.h
+build user.o: CXX_COMPILER__user_unscanned_Debug user.cpp || cmake_object_order_depends_target_user
+  pool = compile
+build all: phony bin/tool user.o
+default all

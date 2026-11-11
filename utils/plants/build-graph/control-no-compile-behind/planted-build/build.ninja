@@ -1,0 +1,9 @@
+include CMakeFiles/rules.ninja
+
+build liba.a: CXX_STATIC_LIBRARY_LINKER__a_Debug a.o
+  pool = link
+build a.o: CXX_COMPILER__a_unscanned_Debug a.cpp
+  pool = compile
+build stamp.txt: CUSTOM_COMMAND stamp.in || liba.a
+build all: phony liba.a stamp.txt
+default all

@@ -2,7 +2,7 @@
 
 `guard selftest tests.guard.engines.buildsys.test_runner` runs the test.  Each
 case gives the context a planted build or no build, and reads the inputs or
-runs the rule build-order of the registry.  Exit 0 when each case holds, else 1.
+runs the rule build-graph of the registry.  Exit 0 when each case holds, else 1.
 """
 
 import tempfile
@@ -11,7 +11,7 @@ from pathlib import Path
 from assay.core import registry as rule_registry
 from assay.core import testing
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.buildsys import planted, runner
+from assay.guard.engines.buildsys import build_graph, planted, runner
 from assay.guard.engines.meta import runner as meta_runner
 
 
@@ -51,13 +51,13 @@ def context_cases(expect: testing.Expect) -> None:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run the rule build-order on its plants, and give its findings to the judge of the ledger."""
-    rule = rule_registry.load().rules["build-order"]
+    """Run the rule build-graph on its plants, and give its findings to the judge of the ledger."""
+    rule = rule_registry.load().rules["build-graph"]
     status, _ = testing.captured(lambda: runner.witness(rule))
-    expect("the witness of the rule build-order holds", status == 0)
+    expect("the witness of the rule build-graph holds", status == 0)
     with tempfile.TemporaryDirectory(prefix="test-runner-") as scratch:
         plant = REPO_ROOT / meta_runner.PLANTS / rule.id / "plant-link-order-only"
-        context = planted.plant_context(plant, Path(scratch) / "tree")
+        context = build_graph.plant_context(plant, Path(scratch) / "tree")
         findings = context.findings_of(rule)
         expect(
             "findings_of() gives the error of a compile that waits for a link",
