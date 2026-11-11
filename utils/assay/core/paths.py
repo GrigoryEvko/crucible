@@ -1,11 +1,9 @@
 """The root of the repository and the masters, found from the location of this file.
 
 This file is utils/assay/core/paths.py, and the root is three directories
-above it.  Each module of the package gets the root from REPO_ROOT here.  The
-rule job-owners holds that no different Python file of utils/ calculates the
-root from its own position.
+above it.  Each module of the package gets the root from REPO_ROOT here.
 
-The rule holds in each copy of the tree: a checkout, a git worktree, the warm
+REPO_ROOT is correct in each copy of the tree: a checkout, a git worktree, the warm
 tree of the gate, and a self-test copy.  Git and the working directory of the
 caller do not change the result.
 

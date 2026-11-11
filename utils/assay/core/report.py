@@ -183,10 +183,7 @@ def escape_property(text: str) -> str:
 
 
 def write_line(text: str, *, is_error: bool = False) -> None:
-    """Write one line to the standard output, or to the standard error when is_error is True.
-
-    The rule job-owners holds that no different module of the package writes to a standard stream.
-    """
+    """Write one line to the standard output, or to the standard error when is_error is True."""
     print(text, file=sys.stderr if is_error else sys.stdout)
 
 

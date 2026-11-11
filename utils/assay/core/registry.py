@@ -55,9 +55,9 @@ THE ROWS
 
     A job row names a Python entity and the modules that can use it.  An
     owner is a dotted name from utils/: a module of the package, such as
-    assay.core.proc, or a master, such as bin.guard.  The rule job-owners
-    reads the job rows.  A path row gives a glob of tracked paths and what
-    those files are.  The rule layout reads the path rows.
+    assay.core.proc, or a master, such as bin.guard.  A path row gives a glob
+    of tracked paths and what those files are.  The rule layout reads the
+    path rows.
 
 LOAD AND EXAMINE
     load() reads the registry and refuses the first problem.  examine() reads
