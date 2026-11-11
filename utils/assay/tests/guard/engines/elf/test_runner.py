@@ -82,13 +82,13 @@ def planted_cases(expect: testing.Expect) -> None:
     entry = compdb.CompileEntry("/tree/a.cpp", "/build", "/build/a.o", "g++ -c /tree/a.cpp")
     archive = Path("/build/libfoundation.a")
     planted = runner.PlantedBuild(
-        "k", "t", "cxx", {"foundation": archive}, (entry,), {"foundation": frozenset({"/build/a.o"})}, {"NAME": "V"}
+        "k", "cxx", {"foundation": archive}, (entry,), {"foundation": frozenset({"/build/a.o"})}, {"NAME": "V"}
     )
     context = runner.ElfContext(Path("/tree"), None, planted)
     expect(
         "a planted build gives each fact with no build directory",
-        (context.kind(), context.tier(), context.compiler(), context.libraries(), context.entries())
-        == ("k", "t", "cxx", {"foundation": archive}, (entry,))
+        (context.kind(), context.compiler(), context.libraries(), context.entries())
+        == ("k", "cxx", {"foundation": archive}, (entry,))
         and context.objects_of("foundation") == frozenset({"/build/a.o"})
         and (context.cache_value("NAME"), context.cache_value("OTHER")) == ("V", ""),
     )
@@ -233,7 +233,6 @@ def manifest_cases(expect: testing.Expect) -> None:
         build = Path(scratch_text) / "build"
         shapes = (
             ("kind a b", "kind KIND"),
-            ("tier", "tier TIER"),
             ("cache NAME", "cache NAME VALUE"),
             ("library one", "library NAME UNIT..."),
             ("archive one", "archive NAME UNIT..."),
@@ -249,14 +248,14 @@ def manifest_cases(expect: testing.Expect) -> None:
             said = raised(partial(runner.planted_build, tree, build, "planted-cxx"), runner.BuildError) or ""
             expect(f"plant.txt refuses the row {row!r}", f"is '{shape}'" in said)
         (tree / runner.MANIFEST).write_text(
-            "kind k\ntier t\ncache NAME VALUE\nunit foundation src/a.cpp | -O2 -I{root}/include\nprobe x | a row\n",
+            "kind k\ncache NAME VALUE\nunit foundation src/a.cpp | -O2 -I{root}/include\nprobe x | a row\n",
             encoding="utf-8",
         )
         built = runner.planted_build(tree, build, "planted-cxx")
         entry = built.entries[0] if built.entries else compdb.CompileEntry("", "", "", "")
         expect(
-            "a planted build gives the kind, the tier and the cache of plant.txt, and no library",
-            (built.kind, built.tier, dict(built.cache), dict(built.libraries)) == ("k", "t", {"NAME": "VALUE"}, {}),
+            "a planted build gives the kind and the cache of plant.txt, and no library",
+            (built.kind, dict(built.cache), dict(built.libraries)) == ("k", {"NAME": "VALUE"}, {}),
         )
         expect(
             "a unit row gives a row of the compile database, with the root of the copy for the word {root}",
@@ -269,14 +268,11 @@ def manifest_cases(expect: testing.Expect) -> None:
         )
         expect(
             "a row with a different head word stays for the module of the rule",
-            [row.words[0] for row in built.rows if row.words[0] not in ("kind", "tier", "cache", "unit")] == ["probe"],
+            [row.words[0] for row in built.rows if row.words[0] not in ("kind", "cache", "unit")] == ["probe"],
         )
         (tree / runner.MANIFEST).write_text("# a plant with no row\n", encoding="utf-8")
         bare = runner.planted_build(tree, build, "planted-cxx")
-        expect(
-            "a plant with no kind row and no tier row has the kind and the tier planted",
-            (bare.kind, bare.tier) == (runner.PLANTED, runner.PLANTED),
-        )
+        expect("a plant with no kind row has the kind planted", bare.kind == runner.PLANTED)
         machine = platform.machine()
         if machine in runner.CFI_FLAGS:
             expect(

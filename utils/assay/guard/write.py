@@ -53,8 +53,7 @@ its module (assay.guard.engines.elf.runner), which reads the build of
 of the build into one set of rows, and --add-configuration and --import LOG
 do not apply to them (assay.guard.engines.elf.one_set).
 
-A rule of a family module of the engine build with `configured` holds the
-rows of each configuration.  --add-configuration applies to it.  A module of the engine build that judges
+A module of the engine build that judges
 its ledger itself gives write(rule, request), with the WriteRequest of
 assay.guard.engines.plugin.runner (assay.guard.engines.buildsys.runner, THE
 MODULES THAT JUDGE THEIR LEDGER).  --add-configuration and --import LOG apply
@@ -165,19 +164,12 @@ def main(argv: list[str]) -> int:
         return int(own_write(rule, plugin_runner.WriteRequest(
             root, build_dir, options.mode or rule_ledger.WriteMode.LOWER, options.reason, options.add_configuration,
             options.import_log.resolve() if options.import_log is not None else None)))
-    is_configured = (options.add_configuration and rule.engine == rule_registry.Engine.BUILD and not is_held_write
-                     and runner.is_configured(rule))
-    if (options.add_configuration and not is_configured) or options.import_log is not None:
-        check_report.write_line("guard write: --add-configuration applies only to a rule with the rows of each "
-                                "configuration of a build, and --import to a rule of the engine plugin or elf",
+    if options.add_configuration or options.import_log is not None:
+        check_report.write_line("guard write: --add-configuration and --import apply only to a rule of the engine "
+                                "plugin or elf, or to a rule of the engine build whose module writes its ledger",
                                 is_error=True)
         return 2
     context = check.rule_context(rule, root, build_dir, options.paths)
-    if is_configured:
-        from assay.guard.engines.buildsys import runner as build_runner
-
-        if isinstance(context, build_runner.BuildContext):
-            context.add_configuration = options.add_configuration
     try:
         if rule.policy == rule_registry.Policy.NONE:
             refresh = getattr(runner.rule_module(rule), "refresh", None)

@@ -8,7 +8,6 @@ THE BUILD
       * The compiler of the CMake cache, CMAKE_CXX_COMPILER.  The compiler
         PREFIX/usr/bin/COMPILER, or PREFIX/bin/COMPILER, has the prefix
         PREFIX (toolchain_prefix())
-      * The target tier of the build (assay.core.target.build_tier)
       * The static libraries of the root CMakeLists.txt.  Each one is a
         target of the type STATIC_LIBRARY in the code model of the CMake file
         API.  The source root is its source directory.  A library of a
@@ -39,7 +38,6 @@ THE PLANTS
     PlantedBuild with these facts:
 
         kind KIND                      the build kind.  The default is planted
-        tier TIER                      the target tier.  The default is planted
         flags WORD...                  the words of each compile of a library
                                        unit.  The default is FLAGS
         library NAME UNIT...           compile each unit, and put the objects
@@ -185,7 +183,6 @@ class PlantedBuild:
     """
 
     kind: str = PLANTED
-    tier: str = PLANTED
     compiler: str = ""
     libraries: Mapping[str, Path] = field(default_factory=dict)
     entries: tuple[compdb.CompileEntry, ...] = ()
@@ -230,7 +227,6 @@ class ElfContext:
         "_links",
         "_model",
         "_objects",
-        "_tier",
         "build_dir",
         "planted",
         "root",
@@ -244,7 +240,6 @@ class ElfContext:
         self._model: cmake.CodeModel | None = None
         self._kind: str | None = None if planted is None else planted.kind
         self._compiler: str | None = None if planted is None else planted.compiler
-        self._tier: str | None = None if planted is None else planted.tier
         self._libraries: dict[str, Path] | None = None if planted is None else dict(planted.libraries)
         self._links: tuple[str, ...] | None = None if planted is None else planted.link_libraries
         self._linked: tuple[LinkedArtifact, ...] | None = None if planted is None else planted.linked
@@ -311,20 +306,6 @@ class ElfContext:
                 raise BuildError(f"the CMake cache of {self.build_shown()} names no {COMPILER_ENTRY}")
             self._compiler = compiler
         return self._compiler
-
-    def tier(self) -> str:
-        """Return the target tier of the build (assay.core.target, THE TARGET TIER).
-
-        Raises:
-            NotApplicable: If the call gives no build directory
-            BuildError: If the CMake cache cannot be read, or the compiler does not print its target
-        """
-        if self._tier is None:
-            try:
-                self._tier = build_target.build_tier(self.directory(), self.compiler())
-            except build_target.TierError as problem:
-                raise BuildError(str(problem)) from None
-        return self._tier
 
     def libraries(self) -> dict[str, Path]:
         """Return the archive of each static library of the root CMakeLists.txt, by its target name.
@@ -575,7 +556,6 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
     # The shape of each row, its number of words, and the numbers of cells that it can have (THE PLANTS).
     shapes = {
         "kind": ("kind KIND", 2, (0,)),
-        "tier": ("tier TIER", 2, (0,)),
         "cache": ("cache NAME VALUE", 3, (0,)),
         "library": ("library NAME UNIT...", 3, (0,)),
         "archive": ("archive NAME UNIT...", 3, (0,)),
@@ -592,7 +572,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
             or (row.words[0] not in (*LIBRARY_ROWS, *LINKED_ROWS) and len(row.words) != shape[1])
         ):
             raise refused(row, shape[0])
-    facts = {row.words[0]: row.words[1] for row in rows if row.words[0] in ("kind", "tier")}
+    kind = next((row.words[1] for row in rows if row.words[0] == "kind"), PLANTED)
     flags = host_flags(next((row.words[1:] for row in rows if row.words[0] == "flags"), FLAGS))
     built = [row for row in rows if row.words[0] in LIBRARY_ROWS]
     artifacts = [row for row in rows if row.words[0] in LINKED_ROWS]
@@ -640,8 +620,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
         targets.setdefault(row.words[1], set()).add(output)
     cache = {row.words[1]: row.words[2] for row in rows if row.words[0] == "cache"}
     return PlantedBuild(
-        facts.get("kind", PLANTED),
-        facts.get("tier", PLANTED),
+        kind,
         compiler,
         archives,
         tuple(entries),

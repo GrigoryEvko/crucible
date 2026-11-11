@@ -33,10 +33,7 @@ THE CONFIGURATION
     compile commands of the objects of the target all are part of its tier.
     A rule with rows that change with the configuration holds the rows of
     each configuration with its facts.  THE POLICY
-    of that module judges a build and writes its rows.  The member of such a
-    rule has `configured` (assay.guard.engines.meta.runner, THE FAMILIES).
-    `guard write --add-configuration` then sets add_configuration of the
-    context.
+    of that module judges a build and writes its rows.
 
 THE PLANTS
     A plant of a build rule holds the file build.txt, which tells what its
@@ -93,7 +90,6 @@ class BuildContext:
         "_graph",
         "_kind",
         "_model",
-        "add_configuration",
         "build_dir",
         "paths",
         "registry",
@@ -132,7 +128,6 @@ class BuildContext:
         self._graph: ninja_reader.Graph | None = None
         self._kind: str | None = None
         self._configuration = configuration
-        self.add_configuration = False
 
     def require_build(self) -> Path:
         """Return the build directory of the call (THE BUILD DIRECTORY).
