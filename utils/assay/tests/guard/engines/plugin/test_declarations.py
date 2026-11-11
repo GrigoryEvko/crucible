@@ -27,7 +27,7 @@ from assay.readers import sections as plugin_sections
 RULE = mint_pattern.RULE
 REGISTRY_ROWS = (
     (
-        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-not-constexpr doc=XXI | a "
+        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-not-noexcept doc=XXI | a "
         "planted mint rule | give the mint its shape"
     ),
     "rule process-wide-state engine=plugin scope=tracked ledger=admit doc=XV | a planted rule of each file | mark it",
@@ -35,7 +35,7 @@ REGISTRY_ROWS = (
 )
 TABLE_TEXT = "layer base 0 include/fixy/\nquarantine include/crucible/\nquarantine test/\n"
 FACTS = (
-    "name=mint_cell static=0 shape=ctx template=1 nodiscard=1 constexpr=0 noexcept=1 constrained=1 gated=1 projection=0"
+    "name=mint_cell static=0 shape=ctx template=1 nodiscard=1 constexpr=0 noexcept=0 constrained=1 gated=1 projection=0"
 )
 ENTITY = "fixy::mint_cell(const Ctx&)"
 
@@ -60,7 +60,7 @@ def alias_record(alias: str, owner: str, entity: str | None = None) -> plugin_se
     return plugin_sections.Finding("include/fixy/A.h", 9, 1, RULE, declarations.ALIAS_RECORD, text)
 
 
-def finding(file: str, line: int, kind: str = "mint-not-constexpr") -> plugin_sections.Finding:
+def finding(file: str, line: int, kind: str = "mint-not-noexcept") -> plugin_sections.Finding:
     """Return a planted finding of the rule mint-pattern at a position."""
     return plugin_sections.Finding(file, line, 1, RULE, kind, ENTITY)
 
@@ -104,10 +104,10 @@ def place_cases(expect: testing.Expect) -> None:
     """Hold one position for each kind and entity: the line at the first position."""
     later = finding("include/fixy/B.h", 9)
     first = finding("include/fixy/A.h", 30)
-    other = finding("include/fixy/B.h", 9, "mint-not-noexcept")
+    other = finding("include/fixy/B.h", 9, "mint-not-nodiscard")
     placed = declarations.first_places([later, first, other])
     expect("each kind and entity has one line", len(placed) == 2)
-    expect("the line at the first place wins", placed[("mint-not-constexpr", ENTITY)] == first)
+    expect("the line at the first place wins", placed[("mint-not-noexcept", ENTITY)] == first)
 
 
 def record_cases(expect: testing.Expect) -> None:
@@ -203,14 +203,14 @@ def rule_cases(expect: testing.Expect) -> None:
         expect(
             "a mint record and an alias record are no finding, and a line outside the scope is none",
             [(item.path, item.line, item.kind) for item in found]
-            == [("include/fixy/OwnedRegion.h", 452, "mint-not-constexpr")],
+            == [("include/fixy/OwnedRegion.h", 452, "mint-not-noexcept")],
         )
         expect(
             "the finding names its entity and the action",
-            bool(found) and found[0].entity == ENTITY and "is not constexpr" in found[0].message,
+            bool(found) and found[0].entity == ENTITY and "is not noexcept" in found[0].message,
         )
         rule = declarations.rule_of(context, RULE)
-        key = rule_ledger.Key("include/fixy/OwnedRegion.h", "mint-not-constexpr", ENTITY)
+        key = rule_ledger.Key("include/fixy/OwnedRegion.h", "mint-not-noexcept", ENTITY)
         ledger = rule_ledger.Ledger(
             RULE,
             rule.policy,

@@ -19,11 +19,9 @@ THE ROWS
     numbers, because an edit above a mint moves its line.
 
 THE CARVE-OUTS
-    A row of utils/ledgers/mint-pattern.txt with the kind mint-not-constexpr
-    admits a mint that allocates or reads runtime state, and the inventory
-    shows "- (alloc)".  A row with the kind mint-unconstrained admits a mint
-    with a gate on values that no concept can see, and the inventory shows
-    "- (pre)".
+    A row of utils/ledgers/mint-pattern.txt with the kind mint-unconstrained
+    admits a mint with a gate on values that no concept can see, and the
+    inventory shows "- (pre)".
 
 THE FIXTURES
     The HS14 count of a row is the number of negative-compile fixtures of its
@@ -79,7 +77,6 @@ SUBSTRATE_TESTS = ("fixy", "foundation")
 FIXTURE_SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
 CRUCIBLE = "crucible"
 SUBSTRATE = "substrate"
-CARVE_CX = "mint-not-constexpr"
 CARVE_RQ = "mint-unconstrained"
 WRITER = "python3 utils/bin/loop derive mint-inventory --write"
 
@@ -101,7 +98,6 @@ class Row:
     family: str
     hs14: int
     is_overloaded: bool
-    is_cx_carved: bool
     is_rq_carved: bool
 
     @property
@@ -177,8 +173,8 @@ def fixture_count(
     return sum(1 for spelled in names if record.name in spelled)
 
 
-def carved(root: Path, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
-    """Return the entities that each kind of THE CARVE-OUTS admits in the ledger of mint-pattern.
+def carved(root: Path, rule: rule_registry.Rule) -> frozenset[str]:
+    """Return the entities that the ledger of mint-pattern admits with the kind of THE CARVE-OUTS.
 
     Raises:
         InventoryError: If the ledger does not obey its grammar
@@ -187,7 +183,7 @@ def carved(root: Path, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
         ledger = rule_ledger.read(rule, root)
     except (rows_grammar.RowsError, OSError) as problem:
         raise InventoryError(f"the ledger of {rule.id} cannot be read: {problem}") from None
-    return {kind: frozenset(key.entity for key in ledger.base if key.kind == kind) for kind in (CARVE_CX, CARVE_RQ)}
+    return frozenset(key.entity for key in ledger.base if key.kind == CARVE_RQ)
 
 
 def rows_of(context: runner.PluginContext) -> list[Row]:
@@ -225,8 +221,7 @@ def rows_of(context: runner.PluginContext) -> list[Row]:
                 mint, len(carriers[(family_of(mint.path), mint.record.name)]), names[family_of(mint.path)], aliases
             ),
             sites[(mint.path, mint.record.owner, mint.record.name)] > 1,
-            mint.record.entity in carve_outs[CARVE_CX],
-            mint.record.entity in carve_outs[CARVE_RQ],
+            mint.record.entity in carve_outs,
         )
         for mint in mints
     ]
@@ -238,10 +233,8 @@ def cells(row: Row) -> list[str]:
     mint = row.mint.record
     if mint.is_constexpr:
         cx = "Y"
-    elif mint.is_projection:
-        cx = NOT_APPLICABLE
     else:
-        cx = "- (alloc)" if row.is_cx_carved else "-"
+        cx = NOT_APPLICABLE if mint.is_projection else "-"
     if not mint.is_template:
         rq = NOT_APPLICABLE
     elif mint.is_constrained:
@@ -295,15 +288,15 @@ overload by its parameter types.
 | `mint` | The factory, with its class for a member, and its parameter types when its header overloads it. |
 | `site` | The header of the record with the body of the mint, or else of its first declaration. |
 | `nd` | `[[nodiscard]]` on a declaration. |
-| `cx` | `constexpr` or `consteval`.  `- (alloc)` is a mint that allocates or reads runtime state, which a row of the kind mint-not-constexpr of `utils/ledgers/mint-pattern.txt` admits.  `{NOT_APPLICABLE}` marks a borrow projection, which returns a view of its own object and is never a constant expression. |
+| `cx` | `constexpr` or `consteval`.  No rule holds this column: section XXI gives no `constexpr` to a mint that allocates or reads runtime state, and `-Winvalid-constexpr` refuses an incorrect `constexpr`.  `{NOT_APPLICABLE}` marks a borrow projection, which returns a view of its own object and is never a constant expression. |
 | `ne` | `noexcept`. |
 | `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `- (pre)` is a gate on values that a row of the kind mint-unconstrained admits.  `{NOT_APPLICABLE}` marks a mint that is not a template, which cannot have a constraint. |
 | `cb` | The authorization shape: `ctx` (the first parameter is `Ctx const&`), `token` (authority from the arguments), or `member` (a non-static method, whose authority is its object).  A static member takes its shape from its parameters. |
 | `fit` | For a `ctx` row: a constraint names the context, so the mint refuses a context that does not fit.  `-` means that the mint accepts each context. |
 | `HS14` | The number of negative-compile fixtures of the layer of the row that name the mint.  `⚠` marks a count under the floor of {HS14_FLOOR}. |
 
-`-` in a flag column is a shortfall.  `{NOT_APPLICABLE}` means that the axis
-does not apply to the row.
+`-` in a flag column other than `cx` is a shortfall.  `{NOT_APPLICABLE}` means
+that the axis does not apply to the row.
 """
 
 

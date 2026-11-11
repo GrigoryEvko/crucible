@@ -81,14 +81,17 @@
 //     of the mints and the rule mint-floor count the fixtures of the mints of
 //     include/ only, so an alias of a different file gets no record.  The axes:
 //       nodiscard     the attribute [[nodiscard]] on a declaration
-//       constexpr     constexpr or consteval, unless the body is a borrow
-//                     projection: one return that calls mint_view with this
 //       noexcept      a noexcept specification that is not noexcept(false)
 //       constraint    a mint that is a template has a constraint: a concept
 //                     on a template parameter, or a requires-clause
 //       context fit   a mint that takes a context first, `Ctx const&`, has a
 //                     constraint that names that context.  The concept
 //                     IsExecCtx on the parameter is its shape, and no gate
+//     The facts constexpr and projection are no axis.  constexpr is 1 for
+//     constexpr or consteval, and projection is 1 when the body is a borrow
+//     projection: one return that calls mint_view with this.  A mint that
+//     allocates or reads runtime state has no constexpr, and
+//     -Winvalid-constexpr refuses an incorrect constexpr (section XXI).
 //     The shape of a mint is member for a member function that is not static,
 //     ctx when its first parameter is a reference to a const context (a type
 //     named Ctx, or a template parameter that IsExecCtx constrains), and token
@@ -1303,9 +1306,6 @@ void check_mint(tree function, bool is_pattern) {
     record_property(Kind::mint_record, place, entity + facts);
     if (!is_nodiscard) {
         record_property(Kind::mint_not_nodiscard, place, entity);
-    }
-    if (!is_constexpr && !is_projection) {
-        record_property(Kind::mint_not_constexpr, place, entity);
     }
     if (!is_noexcept) {
         record_property(Kind::mint_not_noexcept, place, entity);

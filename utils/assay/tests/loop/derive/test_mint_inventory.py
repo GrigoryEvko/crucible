@@ -9,7 +9,7 @@ census.  The fixtures parse with the pinned tree-sitter kit.  The cases hold:
   * The fixture directories of each layer, and the files that are not fixtures
   * The count of the fixtures of a member mint of a name that two classes have
   * The rows of the records: the count of each mint, the carve-out of the
-    ledger of mint-pattern and the label of an overload
+    ledger, the cx cell and the label of an overload
   * The finding of drift() before and after a write of the inventory
   * The command line of main.
 Exit 0 when each case holds, else 1.
@@ -29,16 +29,17 @@ from assay.readers import sections as plugin_sections
 RULE = declarations.MINT_RULE
 REGISTRY_ROWS = (
     (
-        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-alias,mint-not-constexpr "
+        "rule mint-pattern engine=plugin scope=include/ ledger=admit kinds=mint,mint-alias,mint-unconstrained "
         "doc=XXI | a planted mint rule | give the mint its shape"
     ),
 )
 TABLE_TEXT = "layer base 0 include/fixy/\nquarantine include/crucible/\nquarantine test/\n"
-FACTS = "static=0 template=0 nodiscard=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1"
-# The ledger of mint-pattern of the tree: one row that admits a mint that is not constexpr.
+FACTS = "static=0 nodiscard=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1"
+# The ledger of mint-pattern of the tree: one row that admits a template mint with no constraint.
 LEDGER = (
     "format 1\nrule mint-pattern\n"
-    "include/fixy/A.h | mint-not-constexpr | admit | fixy::mint_cell(int) | the mint allocates\n"
+    "include/fixy/A.h | mint-unconstrained | admit | fixy::mint_cell(int) | the gate is on values that no concept "
+    "can see\n"
 )
 # Each fixture: its path, and the code that it spells.
 FIXTURES = (
@@ -55,17 +56,25 @@ FIXTURES = (
 
 
 def record(
-    entity: str, name: str, shape: str = "token", constexpr: int = 1, class_name: str = "-", owner: str = "-"
+    entity: str,
+    name: str,
+    shape: str = "token",
+    constexpr: int = 1,
+    template: int = 0,
+    class_name: str = "-",
+    owner: str = "-",
 ) -> plugin_sections.Finding:
     """Return a planted mint record of include/fixy/A.h with the facts of FACTS."""
-    facts = f"name={name} shape={shape} constexpr={constexpr} {FACTS} class={class_name} owner={owner}"
+    facts = (
+        f"name={name} shape={shape} constexpr={constexpr} template={template} {FACTS} class={class_name} owner={owner}"
+    )
     return plugin_sections.Finding(
         "include/fixy/A.h", len(entity), 1, RULE, declarations.MINT_RECORD, f"{entity} | {facts}"
     )
 
 
 RECORDS = (
-    record("fixy::mint_cell(int)", "mint_cell", constexpr=0),
+    record("fixy::mint_cell(int)", "mint_cell", constexpr=0, template=1),
     record("fixy::mint_cell(int, int)", "mint_cell"),
     record("fixy::Holder::mint_member()", "mint_member", "member", class_name="Holder", owner="fixy::Holder"),
     record("fixy::Keeper::mint_member()", "mint_member", "member", class_name="Keeper", owner="fixy::Keeper"),
@@ -166,10 +175,12 @@ def row_cases(expect: testing.Expect) -> None:
             "the classes Holder and Keeper count only the fixtures that name them or their alias",
             rows["fixy::Holder::mint_member()"].hs14 == 1 and rows["fixy::Keeper::mint_member()"].hs14 == 1,
         )
+        cell_cells = inventory.cells(rows["fixy::mint_cell(int)"])
         expect(
-            "a row of the kind mint-not-constexpr of the ledger of mint-pattern carves the cx cell",
-            rows["fixy::mint_cell(int)"].is_cx_carved and "- (alloc)" in inventory.cells(rows["fixy::mint_cell(int)"]),
+            "a row of the kind mint-unconstrained of the ledger of mint-pattern carves the rq cell",
+            rows["fixy::mint_cell(int)"].is_rq_carved and cell_cells[5] == "- (pre)",
         )
+        expect("a mint that is not constexpr has - in the cx cell, with no carve-out", cell_cells[3] == "-")
         expect(
             "an overload names its parameter types, and a member mint names its class",
             rows["fixy::mint_cell(int, int)"].label == "mint_cell(int, int)"

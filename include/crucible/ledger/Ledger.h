@@ -147,7 +147,7 @@ private:
 //
 // The mint is not constexpr: opening and reading a file invokes the
 // kernel, and constexpr would lie about the cost. §XXI allows that for an
-// allocating mint, and a row of utils/ledgers/mint-pattern.txt admits it.
+// allocating mint.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(

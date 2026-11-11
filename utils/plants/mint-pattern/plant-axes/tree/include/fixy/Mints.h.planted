@@ -59,10 +59,10 @@ struct Carrier {
     [[nodiscard]] View<int> mint_member_view() const noexcept { return mint_view(value); }
 };
 
-// The pattern of a member of a class template.
+// The pattern of a member of a class template, with no noexcept.
 template <class T>
 struct Holder {
-    [[nodiscard]] Thing mint_in_template() const noexcept { return {}; }
+    [[nodiscard]] Thing mint_in_template() const { return {}; }
 };
 
 }  // namespace plant

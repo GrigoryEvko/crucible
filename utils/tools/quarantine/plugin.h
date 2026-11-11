@@ -191,8 +191,6 @@
 //                           with a member mint in a file of include/, for the
 //                           count of the fixtures of the mint
 //     mint-not-nodiscard    a mint with no [[nodiscard]]
-//     mint-not-constexpr    a mint that is not constexpr or consteval, and that
-//                           is no borrow projection
 //     mint-not-noexcept     a mint with no noexcept
 //     mint-unconstrained    a mint template with no constraint
 //     mint-unfit-context    a mint that takes a context first, and no constraint
@@ -771,7 +769,6 @@ enum class Kind : std::uint8_t {
     mint_record,
     mint_alias,
     mint_not_nodiscard,
-    mint_not_constexpr,
     mint_not_noexcept,
     mint_unconstrained,
     mint_unfit_context,
@@ -993,8 +990,6 @@ inline const char* kind_name(Kind kind) {
             return "mint-alias";
         case Kind::mint_not_nodiscard:
             return "mint-not-nodiscard";
-        case Kind::mint_not_constexpr:
-            return "mint-not-constexpr";
         case Kind::mint_not_noexcept:
             return "mint-not-noexcept";
         case Kind::mint_unconstrained:
@@ -1145,7 +1140,6 @@ inline Rule rule_of(Kind kind) {
         case Kind::mint_record:
         case Kind::mint_alias:
         case Kind::mint_not_nodiscard:
-        case Kind::mint_not_constexpr:
         case Kind::mint_not_noexcept:
         case Kind::mint_unconstrained:
         case Kind::mint_unfit_context:
@@ -1359,7 +1353,6 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"mint-pattern", "mint"},
     {"mint-pattern", "mint-alias"},
     {"mint-pattern", "mint-not-nodiscard"},
-    {"mint-pattern", "mint-not-constexpr"},
     {"mint-pattern", "mint-not-noexcept"},
     {"mint-pattern", "mint-unconstrained"},
     {"mint-pattern", "mint-unfit-context"},

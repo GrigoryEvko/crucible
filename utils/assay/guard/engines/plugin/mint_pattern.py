@@ -5,7 +5,6 @@ THE RULE
     gives a finding for each axis of section XXI that the mint does not meet
     (utils/tools/quarantine/declaration.cpp, THE RULE mint-pattern):
       mint-not-nodiscard   no [[nodiscard]]
-      mint-not-constexpr   no constexpr, and the body is no borrow projection
       mint-not-noexcept    no noexcept, or noexcept(false)
       mint-unconstrained   a template with no constraint
       mint-unfit-context   a mint that takes a context first, and no
@@ -14,6 +13,11 @@ THE RULE
     all (assay.guard.engines.plugin.runner, THE SECTIONS).  It keeps the
     lines in the scope of its row of utils/registry.txt.  A record of the
     kind mint or mint-alias is no finding.
+
+    constexpr is no axis of the rule.  Section XXI gives no constexpr to a
+    mint that allocates or reads runtime state, and -Winvalid-constexpr
+    refuses an incorrect constexpr.  The record keeps the fact for the
+    inventory.
 
 THE POSITION OF A MINT
     A mint with a declaration in one header and its definition in a
@@ -25,10 +29,10 @@ THE LEDGER
     A row of utils/ledgers/mint-pattern.txt admits one axis of one mint:
     `PATH | KIND | admit | ENTITY | REASON`.  The entity is the full name of
     the mint, with its namespaces and the types of its parameters.  The
-    reason says why the mint keeps its shape.  An example: the mint
-    allocates, calls the kernel or reads runtime state, and
-    -Winvalid-constexpr refuses constexpr on such a function.  A row that
-    admits no finding gives no finding, and a write removes it.
+    reason says why the mint keeps its shape.  An example: the constraint
+    of the mint is a gate on values that no concept can see.  A row that
+    admits no finding gives no finding, and a write removes it.  The tree
+    holds no such row, and a rule with no ledger file has an empty ledger.
 
 Usage
     guard check --rule mint-pattern --build-dir DIR [--warnings-dir DIR]
@@ -45,8 +49,6 @@ RULE = declarations.MINT_RULE
 # The action for each kind of finding (CLAUDE.md section XXI).
 ACTIONS = {
     "mint-not-nodiscard": "has no [[nodiscard]].  Give it [[nodiscard]]",
-    "mint-not-constexpr": "is not constexpr.  Give it constexpr, or add a ledger row that says why it allocates or "
-    "reads runtime state",
     "mint-not-noexcept": "is not noexcept.  Give it noexcept",
     "mint-unconstrained": "is a template with no constraint.  Give it one concept that holds the fit check",
     "mint-unfit-context": "takes a context, and no constraint names that context.  Write a CtxFits... concept on "

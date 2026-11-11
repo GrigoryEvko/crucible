@@ -25,10 +25,10 @@ template <typename Element>
 }
 
 // The second parameter has the name of the first parameter of first_mixed in
-// other_first.cpp.  The mint is not constexpr, so the mode error gives an error
+// other_first.cpp.  The mint is not noexcept, so the mode error gives an error
 // with its entity.
 template <typename Key, typename Item>
-[[nodiscard]] Item mint_mixed(Pair<Box<Key>, Item>& pair) noexcept
+[[nodiscard]] Item mint_mixed(Pair<Box<Key>, Item>& pair)
     requires(sizeof(Key) > 0)
 {
     return pair.right;

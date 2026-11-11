@@ -2,7 +2,7 @@
 
 namespace quarantined {
 
-// A mint of a quarantined file, with no constexpr.
-[[nodiscard]] inline plant::Thing mint_quarantined(plant::Thing) noexcept { return {}; }
+// A mint of a quarantined file, with no noexcept.
+[[nodiscard]] inline plant::Thing mint_quarantined(plant::Thing) { return {}; }
 
 }  // namespace quarantined
