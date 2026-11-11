@@ -70,10 +70,11 @@ an error with no regex when the rule started, `- | - | admit | FIXTURE |
 REASON`.  The rule fixture-own-reason of the registry has the policy admit,
 and the driver holds it (held-by=loop-fixture).  A ledger that does not
 exist has no row, and the driver then imports no ledger module.  A listed
-fixture gives a warning in the format of utils/assay/core/report.py, and the
-driver writes it to the warnings directory (`fixture-own-reason.NAME.txt`).  A
-listed fixture with no such error gives no finding, because a row that
-admits nothing passes (THE POLICIES of assay.core.ledger).
+fixture gives no finding, because its row admits its errors, and a row that
+admits a finding gives no output.  A listed fixture with no such error gives
+no finding too, because a row that admits nothing passes (THE POLICIES of
+assay.core.ledger).  A run removes the old warnings file of its fixture
+(`fixture-own-reason.NAME.txt`) from the warnings directory.
 CRUCIBLE_NEG_REASON_LEDGER names a different ledger in the same format, for
 the tests of the driver.
 
@@ -3073,11 +3074,11 @@ def report_own_reason(fixture_name: str, source: Path, unmatched: list[str], is_
     """Report each error of the compile that no regex reaches, against the ledger, and return 1 when the test fails.
 
     `unmatched` comes from `evaluate`.  An error with no regex fails the test,
-    unless the ledger names the fixture: a listed fixture gives one warning.
-    A listed fixture with no such error gives no finding (the module text,
-    The reason of the failure).  A run with no finding removes the warnings
-    file of its fixture.  A run with no finding and no such file reads no
-    report module.  The driver reads the ledger on each run, when it exists.
+    unless the ledger names the fixture: a listed fixture gives no finding,
+    also with no such error (the module text, The reason of the failure).  A
+    run with no finding removes the warnings file of its fixture.  A run with
+    no finding and no such file reads no report module.  The driver reads the
+    ledger on each run, when it exists.
     """
     variable, default = _REASON_LEDGER
     path = Path(os.environ.get(variable) or default)
@@ -3116,13 +3117,7 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
     findings: list[object] = []
     if problem:
         findings.append(report.Finding("error", place, 0, _REASON_CHECK, f"{problem}."))
-    elif unmatched and is_listed:
-        findings.append(report.Finding(
-            "warning", place, 0, _REASON_CHECK,
-            f"{measured} of the fixture {fixture_name} gave {len(unmatched)} error(s) that no regex matches, and the "
-            f"fixture has a row in the ledger: {ledger[fixture_name][1]}.  The first error: "
-            f"{_shown_line(unmatched[0])}"))
-    elif unmatched:
+    elif unmatched and not is_listed:
         findings.extend(report.Finding(
             "error", place, 0, _REASON_CHECK,
             f"{measured} of the fixture {fixture_name} gave an error that no regex matches: {_shown_line(line)}.  A "

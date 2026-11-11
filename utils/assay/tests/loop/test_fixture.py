@@ -1174,8 +1174,9 @@ class StoreTest:
         """An error that no regex matches fails the fixture, unless the ledger names it, also from the store.
 
         neg_two_reasons fails for two reasons: the static assertion that SIZE
-        matches, and a name that is not declared.  A listed fixture warns, and a
-        listed fixture with no such error gives no finding.
+        matches, and a name that is not declared.  A listed fixture gives no
+        finding and removes the old warnings file of its fixture, and a listed
+        fixture with no such error gives no finding.
         """
         # The planted ledger does not exist until a case writes it, so it has no row.
         ledger = self.root / "fixture-own-reason.txt"
@@ -1200,16 +1201,17 @@ class StoreTest:
         self.expect(both[0] == 0 and finding(both[1], "error") is None and finding(both[1], "warning") is None,
                     f"a fixture whose errors each have a regex passes: {both[0]} {both[1]}")
         plant_ledger(ledger, "fixture-own-reason", "- | - | admit | neg_two_reasons | a planted reason\n")
+        warnings.mkdir(parents=True, exist_ok=True)
+        own_file.write_text("test/neg_two_reasons.cpp:0: warning: [fixture-own-reason] an old warning\n")
         listed = self.run("neg_two_reasons", *SIZE, warnings_dir=warnings, **env)
-        line = finding(listed[1], "warning")
-        self.expect(listed[0] == 0 and line is not None and "a planted reason" in line and "was not declared" in line
-                    and own_file.is_file() and own_file.read_text().strip() == line,
-                    f"a listed fixture warns in the file of its fixture: {listed[0]} {line}")
+        self.expect(listed[0] == 0 and finding(listed[1], "error") is None and finding(listed[1], "warning") is None
+                    and not own_file.exists(),
+                    f"a listed fixture gives no finding, and the old warnings file of its fixture goes: {listed[0]} "
+                    f"{listed[1]}")
         stale = self.run("neg_two_reasons", *SIZE, *PROBE, warnings_dir=warnings, **env)
         self.expect(stale[0] == 0 and finding(stale[1], "error") is None and finding(stale[1], "warning") is None
                     and not own_file.exists(),
-                    f"a listed fixture with no such error gives no finding, and its warnings file goes: {stale[0]} "
-                    f"{stale[1]}")
+                    f"a listed fixture with no such error gives no finding: {stale[0]} {stale[1]}")
         plant_ledger(ledger, "fixture-own-reason", "neg_two_reasons\n")
         malformed = self.run("neg_size", *SIZE, **env)
         line = finding(malformed[1], "error")

@@ -1,0 +1,4 @@
+# A planted ledger of the rule fixture-own-reason: a row of a fixture with an error that no regex matches.
+format 1
+rule fixture-own-reason
+- | - | admit | neg_two | a planted reason
