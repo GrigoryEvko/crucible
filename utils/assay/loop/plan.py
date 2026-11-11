@@ -319,7 +319,6 @@ STEPS = (
 )
 SUITE = Holding(is_suite=True)
 HOLDERS = {
-    "cmake": SUITE,
     "header-alone": Holding(rule="header-alone"),
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),

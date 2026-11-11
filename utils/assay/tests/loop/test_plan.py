@@ -31,7 +31,7 @@ REGISTRY = (
     "rule tested engine=meta scope=tracked ledger=none doc=XV | a fault | repair it\n"
     "rule gauged engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-gauge doc=XV | a time | "
     "lower it\n"
-    "rule launched engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=cmake doc=XV | a time | "
+    "rule launched engine=build scope=builddir ledger=max warn=1 error=2 unit=s held-by=loop-fixture doc=XV | a time | "
     "lower it\n"
     "rule header-alone engine=build scope=builddir ledger=max warn=1 error=2 unit=MB doc=XV | a size | lower it\n"
     "rule alone engine=build scope=builddir ledger=max warn=1 error=2 unit=MB held-by=header-alone doc=XV | a size | "
