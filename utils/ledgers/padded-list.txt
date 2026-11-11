@@ -7,12 +7,10 @@
 #
 # The rows of assay.core.ledger with the policy count:
 #   PATH | KIND | 1 | DECLARATION: ELEMENT | -
-#     A padded list that the tree holds today.  Each run gives a warning for its file.  When you
-#     remove the padding, run python3 utils/bin/guard write --rule padded-list --build-dir DIR in the
-#     same commit.
+#     A padded list that the tree holds today.  A row gives no output.  When you remove the padding,
+#     run python3 utils/bin/guard write --rule padded-list --build-dir DIR in the same commit.
 #   PATH | KIND | 1 | DECLARATION: ELEMENT | REASON
-#     An element type with padding on purpose.  The reason makes the row a keep row, and the warning
-#     of its file gives the reason.
+#     An element type with padding on purpose.  The reason tells why the row stays.
 #
 # The kind is padded-alias, padded-member, padded-return or padded-parameter.  DECLARATION and
 # ELEMENT are the spellings of GCC that the quarantine plugin gives

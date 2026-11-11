@@ -6,7 +6,3 @@
 format 1
 rule determinism
 utils/assay/guard/engines/meta/rule_witness.py | listing | admit | findings | The listing gives the names of the entries to any(), and the sequence of the names changes no verdict
-utils/assay/guard/engines/plugin/counted.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
-utils/assay/guard/engines/plugin/home.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
-utils/assay/guard/engines/plugin/runner.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
-utils/assay/guard/engines/plugin/syscall_capability.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
