@@ -1,0 +1,5 @@
+# A planted ledger of the rule registry.  Its row has the key of the finding of the kind that the plugin does not
+# give, and the part kinds still gives the error, because no row admits a finding of a refused kind.
+format 1
+rule registry
+utils/registry.txt | missing-kind | admit | quarantine door-header | A planted row that tries to admit a finding of a refused kind
