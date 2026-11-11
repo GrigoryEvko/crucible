@@ -30,7 +30,8 @@ THE PARSE TREES
     context of the engine tsast (assay.guard.engines.tsast.runner).  The
     context keeps each tree, so the two targets load each tree one time.
     Each target gives an error for each file that the kit cannot parse.
-    With no pinned parse kit, the rule does not apply.
+    With no pinned parse kit, the rule and its witness do not apply
+    (applies()).
 
 THE BUILD
     The targets mint-inventory and row-hashes read the build of --build-dir:
@@ -74,6 +75,18 @@ RULE = "derived-files"
 BASE = "control-agree"
 
 
+def applies() -> None:
+    """Return when the pinned parse kit is installed (THE PARSE TREES).  The witness runs no plant without it.
+
+    Raises:
+        NotApplicable: If the pinned parse kit is not installed
+    """
+    try:
+        tsast.kit_dir()
+    except tsast.KitMissing as problem:
+        raise NotApplicable(f"the parse kit is not installed: {problem}") from None
+
+
 def plant_context(plant: Path, scratch: Path) -> MetaContext:
     """Copy the tree of the base control and then the files of a plant to a throwaway repository (THE PLANTS)."""
     return copy_overlay(plant, scratch, BASE)
@@ -103,11 +116,9 @@ def tree_part(context: MetaContext) -> list[check_report.Finding]:
     Raises:
         NotApplicable: If the pinned parse kit is not installed
     """
+    applies()
     trees = TsastContext(context.root, context.build_dir, keep=True)
-    try:
-        return [*walk_units.drift(trees), *header_lists.drift(trees)]
-    except tsast.KitMissing as problem:
-        raise NotApplicable(f"the parse kit is not installed: {problem}") from None
+    return [*walk_units.drift(trees), *header_lists.drift(trees)]
 
 
 def inventory_part(context: MetaContext) -> list[check_report.Finding]:
