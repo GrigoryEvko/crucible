@@ -1,8 +1,5 @@
 # The door calls of foundation: abort from the member of the abort door, and read, write and __errno_location from
-# the member Intercepted.cpp.o, in a build kind with the word tsan.  Each one has the mark libc-allow.  The version of
-# each symbol differs on x86_64 and on aarch64.  For that reason, the ledger holds a configuration of each machine,
-# and no configuration of the kind of the plant: the largest count of each key judges the plant, and a key of the
-# other machine is no error.
+# the member Intercepted.cpp.o, in a build kind with the word tsan.  Each one has the mark libc-allow.
 kind planted-tsan
 library planted_tree externs.cpp
 library foundation base.cpp Abort.cpp Intercepted.cpp

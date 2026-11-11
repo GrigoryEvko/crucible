@@ -2,14 +2,15 @@
 
 THE CASES
     The cases hold these parts of the rule:
-      * The class of a symbol, and the mark and the entity of an import
+      * The class of a symbol, and the mark of an import
       * The providers of the compiler and of a link line, and the owner of a
         name
       * The shapes of the ledger
       * The throws, the downcasts and the classes of planted archives
       * The hidden imports of planted objects.  Each unit plants the section
         of the quarantine plugin with an asm statement (HIDDEN_FIXTURES)
-      * The run and the write of the rule on a planted build directory.
+      * The run and the write of the rule on a planted build directory, also
+        for two build kinds that one set of rows judges.
     The compile cases use the compiler that ASSAY_TEST_CXX names.  The
     registration of the test in test/CMakeLists.txt gives the compiler of the
     build.
@@ -25,21 +26,18 @@ THE PLANTED BUILD DIRECTORY
     the ledger, and then it runs or writes the rule.
 """
 
-import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import proc, testing
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
-from assay.core import target as build_target
-from assay.guard.engines.elf import artifact_symbols, runner
+from assay.guard.engines.elf import artifact_symbols, one_set, runner
 from assay.readers import cmake, elf, sections
 from assay.tests.guard.engines.elf.test_runner import quiet
 
@@ -50,9 +48,7 @@ REGISTRY_ROWS = (
 HEAD = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
 KIND = "planted-kind"
 OTHER = "planted-other"
-THIRD = "planted-third"
 ROWS_K = "configuration k kind k\nconfiguration k tier t\n"
-ROWS_KM = f"{ROWS_K}configuration m kind m\nconfiguration m tier t\n"
 # The head of an asm statement that plants the section of the quarantine plugin, and its end.  Each record of a unit
 # is one more .ascii line between them.
 SECTION_HEAD = (
@@ -169,17 +165,6 @@ LINKED_UNITS = {
     "host_impl": 'extern "C" int crucible_host_call(int value) { return value + 1; }\n',
     "static_impl": 'extern "C" int crucible_static_call(int value) { return value + 2; }\n',
 }
-# A compiler that prints the target of an aarch64 GCC with no target flag.  It runs the patched compiler for each
-# other command.  It has no -march value, and it gives its target through -mcpu.
-AARCH64_WRAPPER = """\
-import os
-import sys
-if "--help=target" in sys.argv:
-    sys.stdout.write({help!r})
-    sys.exit(0)
-os.execv({real!r}, [{real!r}, *sys.argv[1:]])
-"""
-LOG_PREFIX = "build+test aarch64\tTest\t2026-10-02T21:00:00Z "
 
 
 def planted_rule() -> rule_registry.Rule:
@@ -190,11 +175,6 @@ def planted_rule() -> rule_registry.Rule:
 def errors_of(findings: Iterable[check_report.Finding]) -> list[str]:
     """Return the message of each error."""
     return [item.message for item in findings if item.level == "error"]
-
-
-def bare(entity: str) -> str:
-    """Return the name of an import with no version (THE VERSIONS)."""
-    return entity.partition(artifact_symbols.VERSION_MARK)[0]
 
 
 def parsed(text: str) -> rule_ledger.Ledger:
@@ -319,8 +299,9 @@ def class_cases(expect: testing.Expect) -> None:
             module.mark_for(library, symbol, module.RUNTIME, support, members, kind) == wanted,
         )
     expect(
-        "an import of a shared library has the entity SYMBOL@VERSION, and an import of an archive the name alone",
-        module.entity_of("memcpy", "GLIBC_2.14") == "memcpy@GLIBC_2.14" and module.entity_of("atexit", "") == "atexit",
+        "a message gives the mangled name only when it is not the demangled name",
+        module.named("memcpy", "memcpy") == "memcpy"
+        and module.named("_ZSt9terminatev", "std::terminate()") == "std::terminate() (_ZSt9terminatev)",
     )
     expect(
         "the names of the linker have no provider",
@@ -339,12 +320,12 @@ def provider_cases(expect: testing.Expect) -> None:
     providers = artifact_symbols.providers_of(compiler, ("-lstdc++exp", "-lm"))
     names = ("memcpy", "atexit", "sqrt", "__udivti3", "_Unwind_Resume", "__dso_handle", "__cxa_guard_acquire")
 
-    def owner(name: str) -> tuple[str, str, str]:
-        """Return the family, the file name and the version of the owner of a name, or empty texts."""
+    def owner(name: str) -> tuple[str, str]:
+        """Return the family and the file name of the owner of a name, or empty texts."""
         found = providers.owners.get(name)
-        return (found.family, found.label, found.versions[name]) if found is not None else ("", "", "")
+        return (found.family, found.label) if found is not None else ("", "")
 
-    owners = {name: owner(name)[:2] for name in names}
+    owners = {name: owner(name) for name in names}
     expect(
         "the owner of a name is the first provider in the sequence of a link",
         owners
@@ -357,10 +338,6 @@ def provider_cases(expect: testing.Expect) -> None:
             "__dso_handle": (artifact_symbols.CRT, "crtbegin.o"),
             "__cxa_guard_acquire": (artifact_symbols.LIBSTDCXX, owners["__cxa_guard_acquire"][1]),
         },
-    )
-    expect(
-        "a shared library gives the default version of a name, and an archive no version",
-        owner("memcpy")[2] == "GLIBC_2.14" and owner("atexit")[2] == "" and owner("__udivti3")[2].startswith("GCC_"),
     )
     expect("the dynamic loader of libc.so.6 owns __tls_get_addr", owner("__tls_get_addr")[1].startswith("ld-linux"))
     expect(
@@ -395,38 +372,23 @@ def provider_cases(expect: testing.Expect) -> None:
 def ledger_cases(expect: testing.Expect) -> None:
     """Hold the shapes of the ledger (THE LEDGER): each malformed ledger is refused, and the good one is read."""
     for name, body in (
-        ("a row with three cells", f"{ROWS_K}@build/lib.a | ratchet | 1 | _ZSt9terminatev\n"),
-        ("a row with an unknown mark", f"{ROWS_K}@build/lib.a | maybe | 1 | _Zx | -\n"),
-        ("a row that names no archive of the build directory", f"{ROWS_K}lib.a | ratchet | 1 | _Zx | -\n"),
-        ("a symbol row with the count 2", f"{ROWS_K}@build/lib.a | ratchet | 2 | _Zx | -\n"),
-        ("a symbol row before the configuration rows", f"@build/lib.a | ratchet | 1 | _Zx | -\n{ROWS_K}"),
-        ("a second tier of one kind", f"{ROWS_K}configuration k tier u\n"),
-        ("a configuration with no tier", "configuration k kind k\n"),
-        ("a configuration with a kind that is not its name", "configuration k kind m\nconfiguration k tier t\n"),
-        ("symbol rows and no configuration", "@build/lib.a | ratchet | 1 | _Zx | -\n"),
-        (
-            "a difference row that gives a symbol the count 2",
-            f"{ROWS_KM}@build/lib.a | ratchet | 1 | _Zx | -\n@m | @build/lib.a | ratchet | +1 | _Zx | -\n",
-        ),
-        ("a row throw with no reason", f"{ROWS_K}@build/lib.a | throw | admit | entry | -\n"),
-        ("a row throw with a count", f"{ROWS_K}@build/lib.a | throw | 1 | entry | -\n"),
-        ("a symbol row with the value admit", f"{ROWS_K}@build/lib.a | ratchet | admit | _Zx | a reason\n"),
-        ("a row of an unknown kind with the value admit", f"{ROWS_K}@build/lib.a | catch | admit | entry | a reason\n"),
-        (
-            "a row downcast with the value admit",
-            f"{ROWS_K}@build/lib.a | downcast | admit | __dynamic_cast | a reason\n",
-        ),
-        (
-            "a difference row of a row throw",
-            f"{ROWS_KM}@build/lib.a | throw | admit | entry | a reason\n@m | @build/lib.a | throw | +1 | entry | -\n",
-        ),
+        ("a row with three cells", "@build/lib.a | ratchet | 1 | _ZSt9terminatev\n"),
+        ("a row with an unknown mark", "@build/lib.a | maybe | 1 | _Zx | -\n"),
+        ("a row that names no archive of the build directory", "lib.a | ratchet | 1 | _Zx | -\n"),
+        ("a symbol row with the count 2", "@build/lib.a | ratchet | 2 | _Zx | -\n"),
+        ("a configuration row", f"{ROWS_K}@build/lib.a | ratchet | 1 | _Zx | -\n"),
+        ("a row throw with no reason", "@build/lib.a | throw | admit | entry | -\n"),
+        ("a row throw with a count", "@build/lib.a | throw | 1 | entry | -\n"),
+        ("a symbol row with the value admit", "@build/lib.a | ratchet | admit | _Zx | a reason\n"),
+        ("a row of an unknown kind with the value admit", "@build/lib.a | catch | admit | entry | a reason\n"),
+        ("a row downcast with the value admit", "@build/lib.a | downcast | admit | __dynamic_cast | a reason\n"),
     ):
         expect(f"the ledger refuses {name}", is_refused(body))
     good = (
-        f"{ROWS_KM}@build/lib.a | allow | 1 | __cxa_guard_acquire | -\n"
+        "@build/lib.a | allow | 1 | __cxa_guard_acquire | -\n"
         "@build/lib.a | libc-allow | 1 | memcpy | -\n@build/lib.a | libc-ratchet | 1 | getenv | -\n"
+        "@build/lib.a | helper-throw | 3 | _ZSt20__throw_length_errorPKc | -\n"
         "@build/lib.a | throw | admit | entry | a reason\n@build/lib.a | vtable | admit | Class | a reason\n"
-        "@m | @build/lib.a | allow | -1 | __cxa_guard_acquire | -\n"
     )
     expect("the ledger reads a good set of rows of each shape", not is_refused(good))
 
@@ -717,16 +679,11 @@ class Scratch:
         """Read the ledger."""
         return rule_ledger.read(self.rule, self.root)
 
-    def tier(self, kind: str) -> str:
-        """Return the tier of the configuration of a kind in the ledger, or an empty text."""
-        configuration = self.rows().configuration(kind)
-        return dict(configuration.facts).get(build_config.TIER_KEY, "") if configuration is not None else ""
 
-
-def keys_of(ledger: rule_ledger.Ledger, kind: str) -> dict[str, dict[str, int]]:
-    """Return the symbols of each library of the configuration of a kind, with their counts."""
+def keys_of(ledger: rule_ledger.Ledger) -> dict[str, dict[str, int]]:
+    """Return the symbols of each library of the set, with their counts."""
     found: dict[str, dict[str, int]] = {}
-    for key, count in ledger.expected(kind).items():
+    for key, count in ledger.expected().items():
         found.setdefault(key.path, {})[key.entity] = count
     return found
 
@@ -737,23 +694,20 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect("a write refuses the first ratchet symbols without --raise", status == 1 and scratch.ledger_text() == HEAD)
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     written = scratch.rows()
-    threads = [entity for entity in keys_of(written, KIND).get("@build/libfoundation.a", {}) if "hardware" in entity]
+    threads = [entity for entity in keys_of(written).get("@build/libfoundation.a", {}) if "hardware" in entity]
     expect(
-        "a write with --raise writes the configuration of the kind as the base, and a ratchet row of the class std",
+        "a write with --raise writes one set with no configuration row, and a ratchet row of the class std",
         status == 0
-        and written.base_name == KIND
+        and not written.configurations
         and len(threads) == 1
         and artifact_symbols.classify(threads[0]) == "std"
-        and f"configuration {KIND} kind {KIND}\n" in scratch.ledger_text(),
+        and "configuration" not in scratch.ledger_text(),
     )
-    crucible_rows = {key.entity: key.kind for key in written.expected(KIND) if key.path == "@build/libcrucible.a"}
+    crucible_rows = {key.entity: key.kind for key in written.expected() if key.path == "@build/libcrucible.a"}
     expect(
-        "memcpy of glibc gets the mark libc-allow with its version, and atexit of libc_nonshared.a the mark "
-        "libc-ratchet with no version",
-        {bare(entity): kind for entity, kind in crucible_rows.items()}
-        == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET}
-        and any(entity.startswith("memcpy@GLIBC_") for entity in crucible_rows)
-        and "atexit" in crucible_rows,
+        "memcpy of glibc gets the mark libc-allow and atexit of libc_nonshared.a the mark libc-ratchet, each with no "
+        "version",
+        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET},
     )
     expect(
         "a reference to a name that a different library of the root defines gives no row",
@@ -783,14 +737,15 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.archive("foundation", ["base"])
     status, found, _ = scratch.run()
     expect(
-        "a symbol that goes passes, and its row stays until a write",
+        "a symbol that goes passes, and its row stays",
         status == 0 and errors_of(found) == [] and "hardware_concurrency" in scratch.ledger_text(),
     )
     status, _ = scratch.write()
     expect(
-        "after a write the build passes, and the ledger keeps no row of std::thread",
-        status == 0 and scratch.run()[0] == 0 and "hardware_concurrency" not in scratch.ledger_text(),
+        "a write keeps the row of std::thread, because a different build can give it",
+        status == 0 and scratch.run()[0] == 0 and "hardware_concurrency" in scratch.ledger_text(),
     )
+    scratch.archive("foundation", ["base", "threads"])
     # Rule R5 gives foundation no allowlist symbol of libstdc++.  The allowlist plant goes to fixy.
     scratch.archive("fixy", ["base", "guard"])
     status, found, _ = scratch.run()
@@ -800,7 +755,7 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
         status == 1 and guard_errors != [] and all("allowlist" in message for message in guard_errors),
     )
     status, _ = scratch.write()
-    guard_rows = {bare(key.entity): key.kind for key in scratch.rows().expected(KIND) if key.path == "@build/libfixy.a"}
+    guard_rows = {key.entity: key.kind for key in scratch.rows().expected() if key.path == "@build/libfixy.a"}
     expect(
         "a write writes the allowlist symbols without --raise: the mark allow, and libc-allow for the unwinder",
         status == 0
@@ -811,12 +766,12 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a row with an incorrect mark, a row of a library that the build does not make, and a different tier."""
+    """Hold a row with an incorrect mark, and a row of a library that the build does not make."""
     good = scratch.ledger_text()
     scratch.ledger.write_text(
         good.replace(
-            "libfixy.a | allow | 1 | __cxa_guard_acquire@",
-            "libfixy.a | ratchet | 1 | __cxa_guard_acquire@",
+            "libfixy.a | allow | 1 | __cxa_guard_acquire |",
+            "libfixy.a | ratchet | 1 | __cxa_guard_acquire |",
         ),
         encoding="utf-8",
     )
@@ -832,29 +787,15 @@ def ledger_row_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, found, _ = scratch.run()
     written, _ = scratch.write()
     expect(
-        "a row of a library that the build does not make passes, and a write removes it",
-        status == 0 and errors_of(found) == [] and written == 0 and "libgone.a" not in scratch.ledger_text(),
-    )
-    tier = scratch.tier(KIND)
-    scratch.ledger.write_text(
-        good.replace(f"configuration {KIND} tier {tier}\n", f"configuration {KIND} tier other\n"), encoding="utf-8"
-    )
-    status, _, text = scratch.run()
-    expect(
-        "the rows of its name judge a build of a different tier, and one line gives the two tiers",
-        status == 0
-        and f"on the tier {tier}" in text
-        and f"{KIND} on other" in text
-        and f"tier is {tier} in the build and other in the ledger" in text
-        and rule_ledger.ROW_MARK not in text,
+        "a row of a library that the build does not make passes, and a write keeps it",
+        status == 0 and errors_of(found) == [] and written == 0 and "libgone.a" in scratch.ledger_text(),
     )
     scratch.ledger.write_text(good, encoding="utf-8")
 
 
-def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold a kind that the ledger does not hold, its import from a log, and the write of each configuration."""
+def set_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold two build kinds that one set judges, the write of each, and the writes that do not apply to a set."""
     good = scratch.ledger_text()
-    tier = scratch.tier(KIND)
 
     def build_of(kind: str, units: list[str]) -> None:
         """Set the kind of the build directory, and make the archives of foundation and fixy again.
@@ -868,118 +809,46 @@ def configuration_cases(expect: testing.Expect, scratch: Scratch) -> None:
     build_of(OTHER, ["base", "guard", "text"])
     status, found, _ = scratch.run()
     expect(
-        "a kind that the ledger does not hold fails on a symbol that no configuration counts",
+        "a different kind is judged against the same set, and fails on a symbol that the set does not hold",
         status == 1 and errors_of(found) != [] and all("text.o" in message for message in errors_of(found)),
     )
-    status, text = scratch.write()
-    expect(
-        "a write of a kind that the ledger does not hold writes nothing, and names --add-configuration",
-        status == 1 and "--add-configuration" in text and scratch.ledger_text() == good,
-    )
-    build_of(OTHER, ["base"])
-    status, _, text = scratch.run()
-    mark = rule_ledger.ROW_MARK
-    expect(
-        "a kind that the ledger does not hold is judged against the largest count of each symbol, passes with fewer "
-        "symbols, and prints its configuration rows and its difference rows",
-        status == 0
-        and f"the largest count of each key over the configurations {KIND}" in text
-        and f"{mark}configuration {OTHER} tier {tier}" in text
-        and f"{mark}@{OTHER} | @build/libfixy.a | allow | -1 | __cxa_guard_acquire" in text,
-    )
-    log = scratch.root / "ci.log"
-    log.write_text(
-        "".join(f"{LOG_PREFIX}{line}\n" for line in [*text.splitlines(), f"{mark}configuration {OTHER} extra fact"]),
-        encoding="utf-8",
-    )
-    imported, said = scratch.write(import_log=log)
-    expect(
-        "--import refuses a configuration with a fact other than the kind and the tier, and writes no ledger",
-        imported == 1 and "no other" in said and scratch.ledger_text() == good,
-    )
-    log.write_text("".join(f"{LOG_PREFIX}{line}\n" for line in text.splitlines()), encoding="utf-8")
-    imported, _ = scratch.write(import_log=log)
-    status, found, _ = scratch.run()
-    expect(
-        "--import puts the rows of the log into the ledger, and the build of the kind then passes",
-        imported == 0
-        and status == 0
-        and errors_of(found) == []
-        and [item.name for item in scratch.rows().configurations] == [KIND, OTHER],
-    )
-    build_of(KIND, ["base", "threads", "guard"])
-    scratch.write(rule_ledger.WriteMode.RAISE)
-    build_of(OTHER, ["base"])
-    status, found, _ = scratch.run()
-    expect("a write of the base keeps the symbols of the other kind", status == 0 and errors_of(found) == [])
-    build_of(OTHER, ["base", "guard"])
     status, _ = scratch.write()
-    build_of(KIND, ["base", "threads", "guard"])
-    status_base, found, _ = scratch.run()
     expect(
-        "a write of the other kind writes its differences and keeps the symbols of the base",
-        status == 0 and status_base == 0 and errors_of(found) == [],
+        "a write refuses the new ratchet symbols of the different kind, and writes nothing",
+        status == 1 and scratch.ledger_text() == good,
     )
-
-    def guard_rows(kind: str) -> set[str]:
-        """Return the guard imports of libfixy.a that the configuration of a kind counts."""
-        held = keys_of(scratch.rows(), kind).get("@build/libfixy.a", {})
-        return {entity for entity, count in held.items() if count > 0 and "__cxa_guard" in entity}
-
     build_of(OTHER, ["base"])
-    status, found, _ = scratch.run()
+    status, found, text = scratch.run()
     expect(
-        "a kind other than the base passes when an import of its rows goes, and its rows stay until a write",
-        status == 0 and errors_of(found) == [] and guard_rows(OTHER) != set(),
+        "a different kind with fewer symbols passes, and prints no configuration row",
+        status == 0 and errors_of(found) == [] and rule_ledger.ROW_MARK not in text,
     )
     status, _ = scratch.write()
     expect(
-        "a write of the other kind removes the rows of the imports that went, and keeps the rows of the base",
-        status == 0 and guard_rows(OTHER) == set() and guard_rows(KIND) != set(),
+        "a write of the different kind keeps each row that only the first kind gives",
+        status == 0 and scratch.ledger_text() == good,
     )
-    build_of(KIND, ["base", "guard"])
-    scratch.write()
-    build_of(OTHER, ["base", "guard", "threads"])
-    scratch.write(rule_ledger.WriteMode.RAISE)
-    build_of(THIRD, ["base", "guard", "threads"])
-    status, found, _ = scratch.run()
-    expect(
-        "a kind that the ledger does not hold passes with the symbols of an arm that only a different kind counts",
-        status == 0 and errors_of(found) == [],
-    )
-    status, _ = scratch.write(add_configuration=True)
-    expect(
-        "--add-configuration writes the configuration of a kind that the ledger does not hold",
-        status == 0 and [item.name for item in scratch.rows().configurations] == [KIND, OTHER, THIRD],
-    )
-    scratch.ledger.write_text(good, encoding="utf-8")
-    build_of(KIND, ["base", "guard"])
-
-
-def tier_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold an aarch64 compiler with no -march value, and the builds that do not apply."""
-    good = scratch.ledger_text()
-    real = scratch.compiler
-    wrapper = scratch.root / "aarch64-g++"
-    wrapper.write_text(
-        f"#!{sys.executable}\n" + AARCH64_WRAPPER.format(help=build_target.AARCH64_HELP, real=real), encoding="utf-8"
-    )
-    wrapper.chmod(0o755)
-    scratch.compiler = str(wrapper)
-    scratch.plant()
-    status, text = scratch.write()
-    expect(
-        "a write of the base name with other facts writes nothing, and names --add-configuration",
-        status == 1 and "--add-configuration" in text and scratch.ledger_text() == good,
-    )
-    scratch.ledger.write_text(HEAD, encoding="utf-8")
+    build_of(OTHER, ["base", "threads", "guard", "text"])
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
+    build_of(KIND, ["base", "threads", "guard"])
+    status_kind, found, _ = scratch.run()
     expect(
-        "a compiler with no -march value has a tier, and the build of an aarch64 compiler is read",
-        status == 0 and scratch.run()[0] == 0 and scratch.tier(KIND).startswith(build_target.DEFAULT_NAME + "-"),
+        "a write with --raise of the different kind adds its rows, and the first kind still passes",
+        status == 0 and status_kind == 0 and errors_of(found) == [] and "basic_string" in scratch.ledger_text(),
     )
-    scratch.compiler = real
+    status_add, text_add = scratch.write(add_configuration=True)
+    status_import, text_import = scratch.write(import_log=scratch.root / "ci.log")
+    expect(
+        "--add-configuration and --import do not apply to one set of rows",
+        [status_add, status_import] == [one_set.USAGE_STATUS] * 2
+        and "no configuration" in text_add
+        and "no configuration" in text_import,
+    )
     scratch.ledger.write_text(good, encoding="utf-8")
+
+
+def unapplied_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold the builds that do not apply, a build of the UBSan-strict preset, a root with no crucible, and the mode admit."""
     scratch.missing = ["unbuilt"]
     scratch.plant()
     status, _, text = scratch.run()
@@ -1001,7 +870,7 @@ def tier_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.units = saved
     scratch.plant()
     status, text = scratch.write(rule_ledger.WriteMode.ADMIT)
-    expect("the mode admit does not apply to the write", status == 2 and "reason" in text)
+    expect("the mode admit does not apply to the write", status == one_set.USAGE_STATUS and "reason" in text)
 
 
 def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
@@ -1020,15 +889,15 @@ def admit_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _ = scratch.write()
     written = scratch.ledger_text()
     expect(
-        "a write keeps a row throw that admits a throw, with its reason, and removes a row that admits nothing",
-        status == 0 and admitted in written and "no_such_function" not in written and scratch.run()[0] == 0,
+        "a write keeps a row throw that admits a throw and a row that admits nothing, each with its reason",
+        status == 0 and admitted in written and stale in written and scratch.run()[0] == 0,
     )
     scratch.archive("fixy", ["base", "guard"])
     status, found, _ = scratch.run()
     written_status, _ = scratch.write()
     expect(
-        "a row throw of a throw that goes passes, and a write removes it",
-        status == 0 and errors_of(found) == [] and written_status == 0 and "thrower_entry" not in scratch.ledger_text(),
+        "a row throw of a throw that goes passes, and a write keeps it",
+        status == 0 and errors_of(found) == [] and written_status == 0 and admitted in scratch.ledger_text(),
     )
     scratch.ledger.write_text(good, encoding="utf-8")
 
@@ -1090,8 +959,8 @@ def build_cases(expect: testing.Expect) -> None:
         scratch = Scratch(Path(scratch_text) / "tree", compiler, planted_rule())
         first_write_cases(expect, scratch)
         ledger_row_cases(expect, scratch)
-        configuration_cases(expect, scratch)
-        tier_cases(expect, scratch)
+        set_cases(expect, scratch)
+        unapplied_cases(expect, scratch)
         admit_cases(expect, scratch)
         link_line_cases(expect, scratch)
 

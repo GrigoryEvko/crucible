@@ -48,8 +48,7 @@ THE POLICY
     The summary line of a run names the rows.  A build of a new kind then
     fails on each new finding of an arm that only it compiles.  No finding
     with no row gets through.  The plugin rules
-    quarantine, heavy-include and syscall-capability and the elf rule
-    artifact-symbols use this policy.
+    quarantine, heavy-include and syscall-capability use this policy.
 
     A write from a different build puts the counts of other arms into the
     rows.  The write of a build is then possible only in two conditions

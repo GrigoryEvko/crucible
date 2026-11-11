@@ -51,9 +51,9 @@ not apply to the build.
 
 A rule of the engine elf writes through the function write(rule, request) of
 its module (assay.guard.engines.elf.runner), which reads the build of
---build-dir.  The module of the rule artifact-symbols writes the
-configuration of the build with its rows.  --add-configuration and --import
-LOG apply to it as to a rule of the engine plugin.
+--build-dir.  The rules artifact-symbols and artifact-links write the rows
+of the build into one set of rows, and --add-configuration and --import LOG
+do not apply to them (assay.guard.engines.elf.one_set).
 
 A rule of a family module of the engine build with `configured` holds the
 rows of each configuration.  --add-configuration applies to it.  A module of the engine build that judges

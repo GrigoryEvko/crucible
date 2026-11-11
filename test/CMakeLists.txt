@@ -4711,8 +4711,9 @@ set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 
 
 # build_target_self_test — utils/assay/core/target.py gives the build kind
-# and the target tier to the rules quarantine and artifact-symbols.  The
-# self-test reads planted target help of x86_64 and aarch64 GCC.
+# and the target tier to the rule quarantine, and the build kind to the rule
+# artifact-symbols.  The self-test reads planted target help of x86_64 and
+# aarch64 GCC.
 crucible_script_test(NAME build_target_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.target)
 set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
@@ -4965,6 +4966,7 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
 # for the fill of the tree cache.
 crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES codegen-shapes)
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
+        guard.engines.elf.test_one_set
         guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls guard.engines.elf.test_configured
         guard.engines.elf.test_artifact_links guard.engines.elf.test_artifact_hardening
         guard.test_bom guard.test_asm_compare)

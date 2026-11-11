@@ -4,9 +4,8 @@
 Each case writes one line.  Exit 0 when each case holds, else 1.
 
 THE CASES
-    The cases hold the groups, the paths and the word of the C library of the
-    rule, and the facts of planted programs.  They also hold a link with no
-    map, and the verdict of
+    The cases hold the groups and the paths of the rule, and the facts of
+    planted programs.  They also hold a link with no map, and the verdict of
     a planted ledger.  The directory cases hold each reason of a run path
     directory that the host does not give.  A planted program names such a
     directory in its run path.  The compile cases use the compiler that
@@ -44,21 +43,11 @@ def path_cases(expect: testing.Expect) -> None:
         [artifact_links.group_of(name) for name in ("vessel", "bench", "test", "examples", "")]
         == ["vessel", "benches", "tests", "tools", "tools"],
     )
-    words = artifact_links.host_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
+    words = artifact_links.path_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
     expect(
         "a run path gets the word of the toolchain and of the build directory, and a different path stays",
-        [
-            artifact_links.shown_path(item, words.paths)
-            for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/usr/lib")
-        ]
+        [artifact_links.shown_path(item, words) for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/usr/lib")]
         == ["{toolchain}/usr/lib64", "{build}/test", "/usr/lib"],
-    )
-    expect("a compiler that cannot run gives no text of the C library", words.libc == frozenset())
-    host = artifact_links.HostWords((), frozenset({"GCC: (GNU) 16.1.1 (host)"}))
-    expect(
-        "a text of the C library of the host gets the word {libc}, and a different text stays",
-        [host.comment(text) for text in ("GCC: (GNU) 16.1.1 (host)", "GCC: (GNU) 16.2.1", "mold 3.0.0")]
-        == [artifact_links.LIBC_WORD, "GCC: (GNU) 16.2.1", "mold 3.0.0"],
     )
 
 
@@ -86,63 +75,40 @@ def fact_cases(expect: testing.Expect) -> None:
         found = {(fact.group, fact.kind, fact.entity) for fact in facts}
         expect("each program counts in its group", counts == {"tests": 1, "tools": 1, "vessel": 1})
         expect("a program with no run path names no missing directory", reading.missing == ())
-        expect(
-            "a program gives its needed libraries, its file type and its interpreter",
-            {("tools", "needed", "libc.so.6"), ("tools", "elf-type", "executable")} <= found
-            and any(group == "tools" and kind == "interpreter" for group, kind, _ in found),
-        )
+        expect("a program gives its needed libraries", ("tools", "needed", "libc.so.6") in found)
         expect(
             "the map gives the member of libc_nonshared.a that the link takes for atexit",
             ("tools", "static-member", "libc_nonshared.a(atexit.oS)") in found,
         )
         expect(
-            "the init array gives the constructor and frame_dummy",
-            {("tools", "init", "_ZL12planted_initv"), ("tools", "init", "frame_dummy")} <= found,
-        )
-        expect(
-            "a program gives its needed versions, its sections and the texts of .comment",
-            any(kind == "version" and entity.startswith("libc.so.6 GLIBC_") for _, kind, entity in found)
-            and ("tools", "section", ".text") in found
-            and any(kind == "comment" and entity.startswith("GCC:") for _, kind, entity in found),
-        )
-        words = artifact_links.host_words(compiler, scratch / "build")
-        comments = {entity for _, kind, entity in found if kind == "comment"}
-        expect(
-            "the start files of the C library give the word {libc} and no text of the C library of the host, and the "
-            "start file of the toolchain keeps its own text",
-            not words.libc
-            or (
-                artifact_links.LIBC_WORD in comments
-                and not words.libc & comments
-                and any(entity.startswith("GCC:") for entity in comments)
-            ),
-        )
-        expect(
-            "only the group vessel gives its imports, with their versions",
-            any(
-                group == "vessel" and kind == "import" and entity.startswith("printf@GLIBC_")
-                for group, kind, entity in found
-            )
-            and not any(kind == "import" and group != "vessel" for group, kind, _ in found),
+            "each fact has a kind of the rule, so a program gives no fact of the host, and the vessel gives no import",
+            {kind for _, kind, _ in found} <= set(artifact_links.KINDS),
         )
         rule = rule_ledger.rule_of(artifact_links.RULE)
         ledger = rule_ledger.ledger_path(artifact_links.RULE, context.root)
         ledger.parent.mkdir(parents=True)
-        head = f"format {rule_ledger.FORMAT}\nrule {artifact_links.RULE}\nconfiguration planted kind planted\n"
-        ledger.write_text(f"{head}configuration planted tier planted\n", encoding="utf-8")
+        head = f"format {rule_ledger.FORMAT}\nrule {artifact_links.RULE}\n"
+        ledger.write_text(head, encoding="utf-8")
         inspection = artifact_links.examine(rule, context)
         expect(
             "each fact that the ledger does not hold is an error",
             len([item for item in inspection.findings if item.level == "error"]) == len(facts),
         )
         rows = "".join(f"{item.path} | {item.kind} | 1 | {item.entity} | -\n" for item in inspection.counts)
-        ledger.write_text(f"{head}configuration planted tier planted\n{rows}", encoding="utf-8")
+        ledger.write_text(f"{head}{rows}", encoding="utf-8")
         judged = artifact_links.examine(rule, context).findings
         expect("a ledger with each fact gives no error", [item for item in judged if item.level == "error"] == [])
         gone = "@build/tools | needed | 1 | libplanted_gone.so | -\n"
-        ledger.write_text(f"{head}configuration planted tier planted\n{rows}{gone}", encoding="utf-8")
+        ledger.write_text(f"{head}{rows}{gone}", encoding="utf-8")
         judged = artifact_links.examine(rule, context).findings
         expect("a row of a fact that goes gives no error", [item for item in judged if item.level == "error"] == [])
+        configured = "configuration planted kind planted\nconfiguration planted tier planted\n"
+        ledger.write_text(f"{head}{configured}{rows}", encoding="utf-8")
+        judged = artifact_links.examine(rule, context).findings
+        expect(
+            "a ledger with a configuration row is an error",
+            any("no configuration row" in item.message for item in judged if item.level == "error"),
+        )
         program = next(item.path for item in context.linked_artifacts() if item.directory == "examples")
         program.with_name(program.name + artifact_links.MAP_SUFFIX).unlink()
         try:
@@ -224,11 +190,11 @@ def missing_cases(expect: testing.Expect) -> None:
         rule = rule_ledger.rule_of(artifact_links.RULE)
         ledger = rule_ledger.ledger_path(artifact_links.RULE, context.root)
         ledger.parent.mkdir(parents=True)
-        head = f"format {rule_ledger.FORMAT}\nrule {artifact_links.RULE}\nconfiguration planted kind planted\n"
-        ledger.write_text(f"{head}configuration planted tier planted\n", encoding="utf-8")
+        head = f"format {rule_ledger.FORMAT}\nrule {artifact_links.RULE}\n"
+        ledger.write_text(head, encoding="utf-8")
         counts = artifact_links.examine(rule, context).counts
         rows = "".join(f"{item.path} | {item.kind} | 1 | {item.entity} | -\n" for item in counts)
-        ledger.write_text(f"{head}configuration planted tier planted\n{rows}", encoding="utf-8")
+        ledger.write_text(f"{head}{rows}", encoding="utf-8")
         inspection = artifact_links.examine(rule, context)
         errors = [(item.kind, item.entity) for item in inspection.findings if item.level == "error"]
         expect(

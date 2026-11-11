@@ -1,8 +1,8 @@
 """target — the build kind and the target tier of a build, and the rows of a build that a ledger does not hold.
 
-The rules quarantine and artifact-symbols hold ledgers with rows that depend
-on the build.  This module gives these rules the same facts, and the same
-line for a build that the ledger does not hold.
+The rule quarantine holds a ledger with rows that depend on the build.  This
+module gives the rule these facts, and the line for a build that the ledger
+does not hold.
 
 THE BUILD KIND
     The one line of BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake

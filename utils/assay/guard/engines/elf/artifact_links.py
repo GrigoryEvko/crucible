@@ -12,40 +12,19 @@ THE FACTS
       `needed`         each entry DT_NEEDED
       `runpath`        each directory of DT_RUNPATH (THE PATHS)
       `rpath`          each directory of DT_RPATH (THE PATHS)
-      `elf-type`       executable, pie or shared (assay.readers.elf, THE
-                       FILE TYPE)
-      `interpreter`    the path of the segment PT_INTERP
-      `version`        each version that the file gets from a shared
-                       library, as FILE VERSION
       `static-member`  ARCHIVE(MEMBER) of each member that the link takes
                        from an archive out of the build directory (THE MAP)
-      `init`           the function of each entry of .preinit_array and
-                       .init_array
-      `ifunc`          each function of the type STT_GNU_IFUNC
-      `section`        the name of each section
-      `comment`        each text of the section .comment
-      `import`         each undefined dynamic symbol, as SYMBOL@VERSION or
-                       SYMBOL.  Only the group vessel gives this kind
     A group holds a fact when one of its artifacts gives it, and the row of
     the fact has the count 1.  A new program then adds no row, unless it
-    gives a new fact.
+    gives a new fact.  The rule reads no fact that changes with the host and
+    not with the code, such as the interpreter, a needed version or a text
+    of .comment.  The rule artifact-hardening holds the file type.
 
 THE PATHS
     A directory of a run path holds the paths of one host.  The rule writes
     {toolchain} for the prefix of the compiler, and {build} for the build
     directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
     prefix.
-
-THE COMPILER OF THE C LIBRARY
-    The start files of the C library of the host hold the text of .comment of
-    the compiler that built the C library.  An example is GCC: (GNU) 16.1.1
-    20260515 (Red Hat 16.1.1-2).  Each artifact gets that text.  Two hosts
-    with the same toolchain can then give different texts.  For this reason,
-    the rule writes {libc} for each text of .comment of the files of
-    LIBC_FILES (host_words()).  The driver of the compiler gives the path of
-    each such file with -print-file-name.  A text that the start file
-    TOOLCHAIN_FILE of the compiler itself also gives keeps its text.  The
-    ledger then holds no compiler of the C library of a host.
 
 THE RUN PATH DIRECTORIES
     The loader reads each directory of DT_RUNPATH and DT_RPATH on each start
@@ -61,7 +40,7 @@ THE RUN PATH DIRECTORIES
         rule does not expand it.
     The error names the directory with the words of THE PATHS, and also its
     path on the host.  No ledger row admits such an error, and a write of
-    the ledger refuses a build with one (configured.Inspection.unadmitted).
+    the ledger refuses a build with one (one_set.Inspection.unadmitted).
 
 THE MAP
     cmake/LinkMap.cmake makes mold write the map of each link adjacent to
@@ -73,24 +52,18 @@ THE MAP
 
 THE LEDGER
     utils/ledgers/artifact-links.txt has the policy count, in format 1 of
-    assay.core.ledger:
-        configuration NAME kind KIND
-        configuration NAME tier TIER
-        configuration NAME OPTION on
+    assay.core.ledger.  It holds one set of rows for each build, and no
+    configuration row (assay.guard.engines.elf.one_set, THE SET):
         @build/GROUP | KIND | 1 | ENTITY | -
-        @CONFIGURATION | @build/GROUP | KIND | +1 | ENTITY | -
-    The first configuration is the base, and a row of a different
-    configuration gives its difference.  A new fact is an error, and a row of
-    a fact that goes gives no finding (THE POLICIES of assay.core.ledger).  A
-    write removes such a row, and it gives no row to a new fact without
-    --raise (RAISE_REASONS).  THE POLICY of assay.core.configuration judges
-    each build, as in the rule artifact-symbols.
+    A new fact is an error, and a row of a fact that goes gives no finding
+    (THE POLICIES of assay.core.ledger).  A write keeps each row, and it gives
+    no row to a new fact without --raise (RAISE_REASONS, one_set, THE WRITE).
 
 THE PLANTS
     A row `facts KIND...` of plant.txt limits the facts of a plant to these
-    kinds.  The interpreter, the versions and the texts of .comment change
-    with the machine and the toolchain.  A control then holds only the kinds
-    that do not change.
+    kinds.  The link of a planted program can add a run path of the
+    toolchain of the host.  A control then holds only the kinds that it
+    plants.
 
 NOT APPLICABLE
     The rule does not apply (exit 77) to these builds:
@@ -99,20 +72,19 @@ NOT APPLICABLE
         (assay.core.configuration.is_parse_build)
       * A build with no linked artifact, or one that has not made each one.
 
-Complexity: linear in the artifacts, their symbols and sections, the directories of their run paths, and the archive
-members of their maps.
+Complexity: linear in the artifacts, their dynamic entries, the directories of their run paths, and the archive members
+of their maps.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
-from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.elf import configured, runner
+from assay.guard.engines.elf import one_set, runner
 from assay.readers import census as build_census
 from assay.readers import elf, linkmap
 
@@ -121,40 +93,20 @@ GROUP_PREFIX = "@build/"
 # The group of each first directory of a source directory (THE ARTIFACTS).  Each other directory is of the group tools.
 GROUPS = {"vessel": "vessel", "bench": "benches", "test": "tests"}
 TOOLS = "tools"
-VESSEL = "vessel"
 NEEDED = "needed"
 RUNPATH = "runpath"
 RPATH = "rpath"
-ELF_TYPE = "elf-type"
-INTERPRETER = "interpreter"
-VERSION = "version"
 STATIC_MEMBER = "static-member"
-INIT = "init"
-IFUNC = "ifunc"
-SECTION = "section"
-COMMENT = "comment"
-IMPORT = "import"
-KINDS = (NEEDED, RUNPATH, RPATH, ELF_TYPE, INTERPRETER, VERSION, STATIC_MEMBER, INIT, IFUNC, SECTION, COMMENT, IMPORT)
-# The names of the file types (THE FACTS).
-EXECUTABLE = "executable"
-PIE = "pie"
-SHARED = "shared"
+KINDS = (NEEDED, RUNPATH, RPATH, STATIC_MEMBER)
 # The words that THE PATHS writes for the prefix of the compiler and for the build directory.
 TOOLCHAIN_WORD = "{toolchain}"
 BUILD_WORD = "{build}"
-# LIBC_WORD replaces each text of .comment of the C library of the host.  The files of LIBC_FILES give such texts.
-# The texts of the start file of the toolchain stay (THE COMPILER OF THE C LIBRARY).
-LIBC_WORD = "{libc}"
-LIBC_FILES = ("crt1.o", "Scrt1.o", "crti.o", "crtn.o", "libc_nonshared.a")
-TOOLCHAIN_FILE = "crtbeginS.o"
 MAP_SUFFIX = ".map"
 FACTS_ROW = "facts"
-VERSION_MARK = "@"
 RAISE_REASONS = (
     "a new toolchain",
     "a new library or a new kind of artifact on a link line",
     "a new build kind or target",
-    "a kind of fact that the rule did not read before",
 )
 ROW_SHAPE = (
     f"a row is '@build/GROUP | KIND | 1 | ENTITY | -', with a GROUP of {', '.join(sorted({*GROUPS.values(), TOOLS}))} "
@@ -196,22 +148,6 @@ class MissingDirectory:
 
 
 @dataclass(frozen=True, slots=True)
-class HostWords:
-    """The words that the rule writes for the facts of one host (THE PATHS, THE COMPILER OF THE C LIBRARY).
-
-    `paths` holds each path that the rule replaces with its word, the longest path first.  `libc` holds each text of
-    .comment that the files of LIBC_FILES give, less the texts of TOOLCHAIN_FILE.
-    """
-
-    paths: tuple[tuple[str, str], ...]
-    libc: frozenset[str]
-
-    def comment(self, text: str) -> str:
-        """Return the entity of one text of .comment: LIBC_WORD for a text of the C library of the host, else the text."""
-        return LIBC_WORD if text in self.libc else text
-
-
-@dataclass(frozen=True, slots=True)
 class LinkReading:
     """The facts of the linked artifacts, the number of artifacts of each group, and the missing run path directories.
 
@@ -219,7 +155,7 @@ class LinkReading:
     """
 
     facts: tuple[Fact, ...]
-    counts: Mapping[str, int]
+    counts: dict[str, int]
     missing: tuple[MissingDirectory, ...]
 
 
@@ -229,30 +165,6 @@ class LinkReading:
 def group_of(directory: str) -> str:
     """Return the group of the first directory of a source directory (THE ARTIFACTS)."""
     return GROUPS.get(directory, TOOLS)
-
-
-def driver_file(compiler: str, name: str) -> Path | None:
-    """Return the file that the driver of the compiler links for a name, from -print-file-name, or None.
-
-    The driver gives the name itself when it finds no file, and the result is then None.  A compiler that cannot run
-    gives None too.
-    """
-    try:
-        completed = proc.run(proc.Command([compiler, f"-print-file-name={name}"], timeout_s=proc.QUICK_S))
-    except proc.CannotStart, proc.TimedOut:
-        return None
-    path = Path(completed.stdout.decode("utf-8", "surrogateescape").strip())
-    return path if completed.exit == 0 and path.is_absolute() and path.is_file() else None
-
-
-def file_comments(path: Path | None) -> frozenset[str]:
-    """Return each text of .comment of a file or of each member of an archive, or no text when it cannot be read."""
-    if path is None:
-        return frozenset()
-    try:
-        return frozenset(text for member in elf.members(path) for text in member.comments())
-    except OSError, elf.ElfError:
-        return frozenset()
 
 
 def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
@@ -267,16 +179,6 @@ def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(pairs.items(), key=lambda item: -len(item[0])))
 
 
-def host_words(compiler: str, build_dir: Path) -> HostWords:
-    """Return the words of the facts of the host of a build (THE PATHS, THE COMPILER OF THE C LIBRARY).
-
-    Complexity: one run of the driver of the compiler for each file of LIBC_FILES and for TOOLCHAIN_FILE.
-    """
-    libc = frozenset(text for name in LIBC_FILES for text in file_comments(driver_file(compiler, name)))
-    own = file_comments(driver_file(compiler, TOOLCHAIN_FILE))
-    return HostWords(path_words(compiler, build_dir), libc - own)
-
-
 def shown_path(directory: str, words: Iterable[tuple[str, str]]) -> str:
     """Return a directory of a run path with the word of its prefix (THE PATHS)."""
     for path, word in words:
@@ -285,49 +187,18 @@ def shown_path(directory: str, words: Iterable[tuple[str, str]]) -> str:
     return directory
 
 
-def file_type_of(member: elf.Member, entries: Iterable[elf.DynamicEntry]) -> str:
-    """Return the file type of an artifact: executable, pie or shared (THE FACTS)."""
-    kind = member.file_type()
-    if kind == elf.ET_EXEC:
-        return EXECUTABLE
-    if kind == elf.ET_DYN:
-        is_pie = any(entry.tag == elf.DT_FLAGS_1 and entry.value & elf.DF_1_PIE for entry in entries)
-        return PIE if is_pie else SHARED
-    return f"type {kind}"
+def member_facts(entries: Sequence[elf.DynamicEntry], words: Iterable[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Return the facts of one linked artifact that its dynamic entries give: the needed libraries and the run paths.
 
-
-def member_facts(
-    member: elf.Member, entries: Sequence[elf.DynamicEntry], words: HostWords, is_vessel: bool
-) -> set[tuple[str, str]]:
-    """Return the facts of one linked artifact that its ELF file and its dynamic entries give (THE FACTS).
-
-    `entries` are the entries of member.dynamic(), which the caller reads one time.
-
-    Raises:
-        elf.ElfError: If a table of the file is not fully in the file
+    `entries` are the entries of member.dynamic(), which the caller reads one time, and `words` are the words of
+    path_words() (THE FACTS).
     """
+    pairs = tuple(words)
     found = {(NEEDED, entry.text) for entry in entries if entry.tag == elf.DT_NEEDED}
     for entry in entries:
         if entry.tag in (elf.DT_RUNPATH, elf.DT_RPATH):
             kind = RUNPATH if entry.tag == elf.DT_RUNPATH else RPATH
-            found |= {(kind, shown_path(part, words.paths)) for part in entry.directories()}
-    found.add((ELF_TYPE, file_type_of(member, entries)))
-    interpreter = member.interpreter()
-    if interpreter:
-        found.add((INTERPRETER, interpreter))
-    found |= {(VERSION, f"{need.file} {need.name}") for need in member.version_needs()}
-    found |= {(INIT, name or "-") for name in member.init_functions()}
-    found |= {
-        (IFUNC, symbol.name) for symbol in member.symbols() if symbol.is_defined and symbol.kind == elf.STT_GNU_IFUNC
-    }
-    found |= {(SECTION, section.name) for section in member.sections() if section.name}
-    found |= {(COMMENT, words.comment(text)) for text in member.comments()}
-    if is_vessel:
-        found |= {
-            (IMPORT, f"{symbol.name}{VERSION_MARK}{symbol.version}" if symbol.version else symbol.name)
-            for symbol in member.dynamic_symbols()
-            if symbol.is_undefined
-        }
+            found |= {(kind, shown_path(part, pairs)) for part in entry.directories()}
     return found
 
 
@@ -417,7 +288,7 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
     unmade = sorted(build_census.shown(item.path, context.root) for item in linked if not item.path.is_file())
     if unmade:
         raise runner.NotApplicable(f"the build has not made {len(unmade)} artifacts, such as {unmade[0]}")
-    words = host_words(context.compiler(), build_dir)
+    words = path_words(context.compiler(), build_dir)
     kinds = kinds_of(context)
     first: dict[tuple[str, str, str], str] = {}
     counts: dict[str, int] = {}
@@ -428,18 +299,17 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
         try:
             with elf.mapped(path) as member:
                 entries = member.dynamic()
-                facts = member_facts(member, entries, words, group == VESSEL)
-                parts = missing_directories(entries, path)
         except (OSError, elf.ElfError) as problem:
             raise runner.BuildError(f"the ELF reader cannot read {path}: {problem}") from None
+        facts = member_facts(entries, words)
         if STATIC_MEMBER in kinds:
             facts |= map_facts(path, build_dir)
         shown = build_census.shown(path, context.root)
         for kind, entity in facts:
             if kind in kinds:
                 first.setdefault((group, kind, entity), shown)
-        for part, host_path, reason in parts:
-            key = (shown_path(part, words.paths), host_path, reason)
+        for part, host_path, reason in missing_directories(entries, path):
+            key = (shown_path(part, words), host_path, reason)
             example, number = missing.get(key, (shown, 0))
             missing[key] = (example, number + 1)
     return LinkReading(
@@ -453,17 +323,17 @@ def read_facts(context: runner.ElfContext, build_dir: Path) -> LinkReading:
 
 
 def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
-    """Return True for a base row with the shape of THE LEDGER: a fact of a group, with a count."""
+    """Return True for a row with the shape of THE LEDGER: a fact of a group, with a count."""
     groups = {f"{GROUP_PREFIX}{name}" for name in (*GROUPS.values(), TOOLS)}
     return key.path in groups and key.kind in KINDS and bool(key.entity) and entry.value != rule_ledger.ADMIT_VALUE
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each configuration and each row that does not have a shape of THE LEDGER.
+    """Return an error for each configuration row and each row that does not have a shape of THE LEDGER.
 
-    A fact has the count 0 or 1 in each configuration.
+    A fact has the count 1.
     """
-    return configured.ledger_problems(RULE, ledger, is_row, ROW_SHAPE, lambda _key: True)
+    return one_set.ledger_problems(RULE, ledger, is_row, ROW_SHAPE, lambda _key: True)
 
 
 def finding_of(fact: Fact) -> check_report.Finding:
@@ -497,8 +367,8 @@ def missing_finding(item: MissingDirectory) -> check_report.Finding:
     )
 
 
-def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.Inspection:
-    """Read the linked artifacts of the build, and judge their facts against the ledger (THE LEDGER).
+def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Inspection:
+    """Read the linked artifacts of the build, and judge their facts against the set of the ledger (THE LEDGER).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
@@ -509,30 +379,24 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     build_dir = context.build_dir if context.build_dir is not None else Path(context.root)
     if context.build_dir is not None and build_config.is_parse_build(context.build_dir):
         raise runner.NotApplicable("the build only parses its units, and it links no artifact")
-    ledger = configured.read_ledger(rule, context.root)
-    if isinstance(ledger, configured.Inspection):
+    ledger = one_set.read_ledger(rule, context.root)
+    if isinstance(ledger, one_set.Inspection):
         return ledger
     reading = read_facts(context, build_dir)
     counts = reading.counts
-    configuration = configured.configuration_of(context)
-    judged = build_config.judging(RULE, ledger, configuration)
     found = [finding_of(fact) for fact in reading.facts]
-    verdict = rule_ledger.compare(rule, ledger, found, judged.name)
+    verdict = rule_ledger.compare(rule, ledger, found)
     # The ledger does not judge a run path directory that the host does not give (THE RUN PATH DIRECTORIES).
     missing = tuple(missing_finding(item) for item in reading.missing)
     groups = ", ".join(f"{counts[name]} {name}" for name in sorted(counts))
     summary = (
-        f"{RULE}: {sum(counts.values())} linked artifacts ({groups}), {len(reading.facts)} facts of "
-        f"{configuration.name} on {context.tier()}, judged against {judged.words}.  Run path directories that the host "
-        f"does not give: {len(missing)}"
+        f"{RULE}: {sum(counts.values())} linked artifacts ({groups}), {len(reading.facts)} facts, judged against the "
+        f"set of the ledger.  Run path directories that the host does not give: {len(missing)}"
     )
-    return configured.Inspection(
+    return one_set.Inspection(
         (*row_problems(ledger), *verdict, *missing),
         ledger,
-        configuration,
-        judged,
         {rule_ledger.key_of(item): 1 for item in found},
-        {},
         summary,
         missing,
     )
@@ -557,22 +421,17 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build, write its findings, and print its rows (assay.guard.engines.elf.configured).
+    """Run the rule on the build, and write its findings and its summary (assay.guard.engines.elf.one_set).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
     """
-    return configured.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
-
-
-def refusals(inspection: configured.Inspection, held: Mapping[rule_ledger.Key, int]) -> list[str]:
-    """Return a line for each new fact of the build (THE LEDGER)."""
-    return configured.risen_rows(inspection, held, KINDS)
+    return one_set.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
 
 
 # The facts that a write refuses with no --raise, and the reasons for --raise (THE LEDGER).
-WRITE_POLICY = configured.WritePolicy(
-    row_problems, refusals, RAISE_REASONS, f"each row of {RULE} is a fact of the build", "rows of link facts"
+WRITE_POLICY = one_set.WritePolicy(
+    row_problems, KINDS, RAISE_REASONS, f"each row of {RULE} is a fact of the build", "rows of link facts"
 )
-# The write of the configuration and the fact rows of the build (THE LEDGER, assay.guard.engines.elf.configured).
-write = configured.writer(examine, WRITE_POLICY)
+# The write of the fact rows of the build into the set (THE LEDGER, assay.guard.engines.elf.one_set).
+write = one_set.writer(examine, WRITE_POLICY)

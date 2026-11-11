@@ -54,9 +54,9 @@ THE THROW HELPERS
     (BASE_LIBRARIES), each other helper is a throw finding.  Only a row
     throw with its reason admits it.  In each other archive, each live
     reference to such a helper is a finding of the kind helper-throw.  Its
-    key is the archive and the mangled name of the helper, and the ledger
-    counts the references of each key in each configuration.  The count can
-    only fall.  The migration to the types of the base removes the
+    key is the archive and the mangled name of the helper.  The ledger holds
+    the largest count of the references of each key in the builds, and the
+    count can only fall.  The migration to the types of the base removes the
     containers and the views of the standard library.
 
 THE IMPORTS
@@ -97,13 +97,14 @@ THE PROVIDERS
     provider gives is an error of the kind unknown-provider, and no row
     admits it.
 
-THE VERSIONS
-    The entity of an import of a shared library is SYMBOL@VERSION.  VERSION
-    is the default version of the name in the dynamic symbols of the owner,
-    such as memcpy@GLIBC_2.14.  A version that nm prints after "@" and not
-    after "@@" is hidden, and a link cannot use it.  A name with only such
-    versions is not a name of that library.  The entity of each other import
-    is the name alone.
+THE NAMES
+    The entity of an import is the name of its symbol, with no version.  The
+    version of a name of a shared library changes with the C library of the
+    host, and not with the code: memcpy has the version GLIBC_2.14 on x86_64
+    and GLIBC_2.17 on aarch64.  A version of the dynamic symbols of a shared
+    library that nm prints after "@" and not after "@@" is hidden, and a link
+    cannot use it.  A name with only such versions is not a name of that
+    library.
 
 THE MARKS
     The kind of the finding of an import is its mark:
@@ -196,27 +197,20 @@ THE CLASS OF A SYMBOL
 
 THE LEDGER
     utils/ledgers/artifact-symbols.txt has the policy count, in format 1 of
-    assay.core.ledger:
-        configuration NAME kind KIND
-        configuration NAME tier TIER
-        configuration NAME OPTION on
+    assay.core.ledger.  It holds one set of rows for each build, and no
+    configuration row (assay.guard.engines.elf.one_set, THE SET):
         @build/LIBRARY | MARK | 1 | IMPORT | -
-        @NAME | @build/LIBRARY | MARK | +1 | IMPORT | -
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
-        @NAME | @build/ARCHIVE | helper-throw | DELTA | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
-    MARK is one of MARKS (THE MARKS), and IMPORT is the entity of THE
-    VERSIONS.  A row helper-throw gives the references of an archive that is
-    not of the base to a throw helper (THE THROW HELPERS).  The imports
-    change with the build, because the inlining, the sanitizers and the
-    macro _GLIBCXX_ASSERTIONS change the references.  A configuration is a
-    build kind on a target tier (assay.core.target).  The first
-    configuration is the base, and a row of a different configuration gives
-    its difference.  LIBRARY and ARCHIVE are the file name of the archive.
+    MARK is one of MARKS (THE MARKS), and IMPORT is the name of THE NAMES.  A
+    row helper-throw gives the references of an archive that is not of the
+    base to a throw helper (THE THROW HELPERS).  The imports change with the
+    build, because the inlining, the sanitizers and the macro
+    _GLIBCXX_ASSERTIONS change the references.  The set holds the imports of
+    each build, and each build is judged against the full set.  LIBRARY and
+    ARCHIVE are the file name of the archive.
 
-    The rows throw and vtable belong to no configuration (assay.core.ledger,
-    THE PART OF NO CONFIGURATION), and each build of each kind judges them.
     A row throw admits a throw in a function of its archive when the
     demangled name of the function holds TEXT.  It also admits the throw
     when the name of the object of the function holds TEXT.  A row vtable
@@ -224,8 +218,8 @@ THE LEDGER
     holds TEXT.  The entity of each such finding is then TEXT.  The inlining
     moves a throw from one function to a different function between a Debug
     build, a Release build and a build with a sanitizer.  TEXT names the
-    site in a way that each configuration shares.  An object name, such as
-    Topology.cpp.o, names a site in each configuration.  A finding that no
+    site in a way that each build shares.  An object name, such as
+    Topology.cpp.o, names a site in each build.  A finding that no
     row admits has its full name as its entity.  The rule
     refuses a row of a different kind, and no row can admit a downcast.
 
@@ -233,14 +227,9 @@ THE VERDICT
     assay.core.ledger judges the findings.  A ledger fails only when a count
     is more than its row (THE POLICIES of assay.core.ledger).  A finding with
     no row is an error.  A row of an import that goes gives no finding, and a
-    write removes the row.  A hidden import and an import with no provider
-    are errors that no row admits.  Each library with rows gives one warning.
-
-    A row throw or vtable that admits nothing of the build gives no finding,
-    and a write removes it.  The exception is a row throw that names a
-    function or an object of its archive (quiet_rows).  A write keeps such a
-    row, because the inlining of one configuration can remove a throw that a
-    different configuration keeps.
+    row throw or vtable that admits nothing gives no finding too.  A hidden
+    import and an import with no provider are errors that no row admits.
+    Each library with rows gives one warning.
 
     These archives are errors, because the rule read nothing there:
       * An archive that the ELF reader cannot read
@@ -248,33 +237,15 @@ THE VERDICT
       * An archive of IMPORTING_LIBRARIES with no undefined reference.
 
 THE WRITE
-    `guard write --rule artifact-symbols --build-dir DIR` writes the
-    configuration and the import rows of the build.  A write of the base
-    keeps the imports of each different configuration.  The write gives a
-    row to a new import with the mark `allow`, `libc-allow` or `crt-allow`, and it refuses a new import with
-    a ratchet mark (RATCHET_MARKS).  It also refuses a count of helper-throw
-    above its row.  --raise also writes such an import or count.  Use it
-    only for one of RAISE_REASONS, and give the reason in the commit.  A
-    write keeps each row throw or vtable that admits a finding, and it
-    removes each such row that admits nothing.  It adds no such row: a
-    person writes it with its reason.  --import LOG puts the rows of a
-    configuration that a CI leg printed into the ledger
-    (assay.core.configuration.import_rows).  The import refuses a row that
-    does not have a shape of THE LEDGER.
-
-THE POLICY
-    The configuration of a build is its build kind and its tier, and its
-    name is the build kind.  THE POLICY of assay.core.configuration judges
-    each build, and no build skips the rule because of its configuration.
-    The rows of the configuration with the name of the build judge it.  The
-    largest count of each key over the configurations judges a build of a
-    name that the ledger does not hold (assay.core.ledger, THE MAXIMUM).  An
-    import that a different configuration counts then gives no error, and a
-    new import gives an error.  The run prints the rows of a configuration
-    other than the base after a failure.  It also prints them each time when
-    the ledger does not hold the configuration.  A write from a build of a
-    configuration that the ledger does not hold writes nothing and fails,
-    unless it gives --add-configuration.
+    `guard write --rule artifact-symbols --build-dir DIR` writes the import
+    rows and the counts of helper-throw of the build into the set.  The write
+    keeps each row (assay.guard.engines.elf.one_set, THE WRITE).  It gives a
+    row to a new import with the mark `allow`, `libc-allow` or `crt-allow`,
+    and it refuses a new import with a ratchet mark (RATCHET_MARKS).  It
+    also refuses a count of helper-throw above its row.  --raise also writes
+    such an import or count.  Use it only for one of RAISE_REASONS, and give
+    the reason in the commit.  The write adds no row throw or vtable: a
+    person writes it with its reason.
 
 NOT APPLICABLE
     The rule does not apply (exit 77) to these builds:
@@ -289,12 +260,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.elf import configured, runner
+from assay.guard.engines.elf import one_set, runner
 from assay.readers import census as build_census
 from assay.readers import elf
 from assay.readers import sections as plugin_sections
@@ -331,7 +301,6 @@ UNKNOWN_PROVIDER = "unknown-provider"
 HIDDEN_IMPORT = "hidden-import"
 # The sections of the type tables of the exceptions.  Their relocations name the typeinfo of each catch clause.
 EXCEPTION_TABLES = (".gcc_except_table",)
-VERSION_MARK = "@"
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
 # The kind of a reference to a throw helper in an archive that is not of the base (THE THROW HELPERS).
@@ -500,7 +469,7 @@ RAISE_REASONS = (
     "a new build kind or target",
     "a class of symbols that the rule did not read before",
 )
-# The three shapes of a base row (THE LEDGER).
+# The three shapes of a row (THE LEDGER).
 ROW_SHAPE = (
     f"a row is '@build/LIBRARY | {'|'.join(MARKS)} | 1 | IMPORT | -', "
     "'@build/ARCHIVE | helper-throw | COUNT | HELPER | -', or '@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
@@ -542,14 +511,11 @@ class Artifact:
 
 @dataclass(frozen=True, slots=True)
 class Provider:
-    """One file that can give an import: its file name, its family, and its names (THE PROVIDERS).
-
-    `versions` gives the default version of each name that the file gives, or an empty version (THE VERSIONS).
-    """
+    """One file that can give an import: its file name, its family, and the names that it gives (THE PROVIDERS)."""
 
     label: str
     family: str
-    versions: Mapping[str, str]
+    names: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,16 +596,6 @@ def mark_for(
     return STATIC_RATCHET if family == STATIC else HOST_RATCHET
 
 
-def entity_of(symbol: str, version: str) -> str:
-    """Return the entity of an import: SYMBOL@VERSION, or the name alone with no version (THE VERSIONS)."""
-    return f"{symbol}{VERSION_MARK}{version}" if version else symbol
-
-
-def symbol_of(entity: str) -> str:
-    """Return the symbol of the entity of an import that entity_of() wrote, with no version (THE VERSIONS)."""
-    return entity.partition(VERSION_MARK)[0]
-
-
 def is_linker_name(symbol: str) -> bool:
     """Return True for a name that the linker makes itself (THE PROVIDERS)."""
     return symbol in LINKER_NAMES or symbol.startswith(LINKER_PREFIXES)
@@ -649,18 +605,18 @@ def is_linker_name(symbol: str) -> bool:
 
 
 def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
-    """Return True for a base row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable."""
+    """Return True for a row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable."""
     is_symbol = (key.kind in MARKS or key.kind == HELPER_THROW) and entry.value != rule_ledger.ADMIT_VALUE
     is_admit = key.kind in ADMITTED_KINDS and entry.value == rule_ledger.ADMIT_VALUE
     return key.path.startswith(LIBRARY_PREFIX) and bool(key.entity) and (is_symbol or is_admit)
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each configuration and each row that does not have a shape of THE LEDGER.
+    """Return an error for each configuration row and each row that does not have a shape of THE LEDGER.
 
-    A row of an import has the count 0 or 1 in each configuration.
+    A row of an import has the count 1.
     """
-    return configured.ledger_problems(RULE, ledger, is_row, ROW_SHAPE, lambda key: key.kind != HELPER_THROW)
+    return one_set.ledger_problems(RULE, ledger, is_row, ROW_SHAPE, lambda key: key.kind != HELPER_THROW)
 
 
 def admitting_text(rows: Sequence[rule_ledger.Key], path: str, kind: str, subject: str) -> str | None:
@@ -870,37 +826,36 @@ def runtime_file(compiler: str, name: str) -> Path:
 
 
 def read_provider(path: Path, is_shared: bool, family: str) -> Provider:
-    """Read one provider: the default version of each global name with a section of the file (THE VERSIONS).
+    """Read one provider: each global name with a section of the file (THE NAMES).
 
     A shared library gives its dynamic symbols, and a name with only hidden
     versions is no name of the library.  An archive or an object gives the
-    symbols of each member, with no version.  A start file or an end file,
-    such as crtn.o, can give no global name.  Complexity: linear in the
-    symbols of the file.
+    symbols of each member.  A start file or an end file, such as crtn.o,
+    can give no global name.  Complexity: linear in the symbols of the file.
 
     Raises:
         runner.BuildError: If the ELF reader cannot read the file, or reads no such name from a file that must give one
     """
-    versions: dict[str, str] = {}
+    names: set[str] = set()
     try:
         if is_shared:
             with elf.mapped(path) as library:
-                for symbol in library.dynamic_symbols():
-                    if symbol.is_defined and not symbol.is_local and not symbol.is_hidden_version:
-                        versions[symbol.name] = symbol.version
+                names.update(
+                    symbol.name
+                    for symbol in library.dynamic_symbols()
+                    if symbol.is_defined and not symbol.is_local and not symbol.is_hidden_version
+                )
         else:
             for member in elf.members(path):
-                versions.update(
-                    (symbol.name, "") for symbol in member.symbols() if symbol.is_defined and not symbol.is_local
-                )
+                names.update(symbol.name for symbol in member.symbols() if symbol.is_defined and not symbol.is_local)
     except (OSError, elf.ElfError) as problem:
         raise runner.BuildError(f"the symbols of {path} cannot be read: {problem}") from None
-    if not versions and family != CRT:
+    if not names and family != CRT:
         raise runner.BuildError(
             f"the ELF reader reads no global name with a section from {path}, and the rule has no provider to compare "
             f"with"
         )
-    return Provider(path.name, family, versions)
+    return Provider(path.name, family, frozenset(names))
 
 
 def link_file(compiler: str, word: str) -> Path:
@@ -977,12 +932,12 @@ def providers_of(compiler: str, links: Sequence[str]) -> Providers:
         if family == SANITIZER:
             sanitizers.append(provider)
             continue
-        for name in provider.versions:
+        for name in provider.names:
             owners.setdefault(name, provider)
         if path.name in SUPPORT_ARCHIVES:
-            support |= provider.versions.keys()
+            support |= provider.names
     for provider in sanitizers:
-        for name in provider.versions:
+        for name in provider.names:
             owners.setdefault(name, provider)
     return Providers(owners, frozenset(support))
 
@@ -1106,28 +1061,6 @@ def class_findings(
     return found
 
 
-def quiet_rows(
-    admits: Mapping[rule_ledger.Key, rule_ledger.Entry],
-    artifacts: Mapping[str, Artifact],
-    names: Mapping[str, str],
-    found: set[rule_ledger.Key],
-) -> set[rule_ledger.Key]:
-    """Return the rows throw that admit no finding of the build and name a function or an object of their archive.
-
-    The site of such a row stays in the archive, and the inlining of the build removed its throw.  A write keeps such
-    a row (THE VERDICT).  `found` holds the keys of the findings of the build.  Complexity: linear in the rows times
-    the symbols that the archives hold.
-    """
-    quiet: set[rule_ledger.Key] = set()
-    for key in admits:
-        artifact = artifacts.get(key.path.removeprefix(LIBRARY_PREFIX))
-        if key.kind != THROW or key in found or artifact is None:
-            continue
-        if any(key.entity in f"{member} {names.get(symbol, symbol)}" for member, symbol in artifact.defined):
-            quiet.add(key)
-    return quiet
-
-
 def helper_findings(
     artifacts: Mapping[str, Artifact], base_archives: frozenset[str], names: Mapping[str, str]
 ) -> list[check_report.Finding]:
@@ -1157,8 +1090,13 @@ def helper_findings(
     return found
 
 
+def named(symbol: str, shown: str) -> str:
+    """Return the demangled name of a symbol for a message, with the mangled name when the two are different."""
+    return shown if shown == symbol else f"{shown} ({symbol})"
+
+
 def import_message(
-    archive: str, library: str, entity: str, provider: Provider, mark: str, shown: str, used: str
+    archive: str, library: str, symbol: str, provider: Provider, mark: str, shown: str, used: str
 ) -> str:
     """Return the message of one import of a library (THE MARKS).
 
@@ -1166,17 +1104,16 @@ def import_message(
     names the members that reference it.
     """
     if mark == ALLOW:
-        return f"{archive} uses {shown} in {used} ({entity}), a symbol of the allowlist of plan section 13.4"
+        return f"{archive} uses {named(symbol, shown)} in {used}, a symbol of the allowlist of plan section 13.4"
     if mark == RATCHET:
         return (
-            f"{archive} uses the libstdc++ symbol {shown} in {used} ({entity}), of the class "
-            f"{classify(symbol_of(entity))}.  A change can only remove a libstdc++ use (rule R5): use a "
-            f"type of fixy or foundation"
+            f"{archive} uses the libstdc++ symbol {named(symbol, shown)} in {used}, of the class {classify(symbol)}.  "
+            f"A change can only remove a libstdc++ use (rule R5): use a type of fixy or foundation"
         )
     if mark in (LIBC_ALLOW, CRT_ALLOW):
-        return f"{archive} uses {entity} of {provider.label} in {used}, a symbol of the allowlist of {library}"
+        return f"{archive} uses {symbol} of {provider.label} in {used}, a symbol of the allowlist of {library}"
     return (
-        f"{archive} uses the {provider.family} symbol {entity} of {provider.label} in {used}.  A change can only "
+        f"{archive} uses the {provider.family} symbol {symbol} of {provider.label} in {used}.  A change can only "
         f"remove such a use (rule R5): call a door of fixy/os, or use a type of fixy or foundation"
     )
 
@@ -1186,7 +1123,7 @@ class Import:
     """One import of a static library: the archive, the name, the members that reference it, its owner and its mark.
 
     `provider` is None for a name that no provider gives.  `mark` is empty for such a name and for a name of a
-    sanitizer runtime, which has no row (THE MARKS).  `entity` is SYMBOL@VERSION, or the name alone (THE VERSIONS).
+    sanitizer runtime, which has no row (THE MARKS).
     """
 
     archive: str
@@ -1194,7 +1131,6 @@ class Import:
     members: frozenset[str]
     provider: Provider | None
     mark: str
-    entity: str
 
 
 def imports_of(
@@ -1213,10 +1149,10 @@ def imports_of(
                 continue
             provider = providers.owners.get(symbol)
             if provider is None or provider.family == SANITIZER:
-                found.append(Import(archive, symbol, members, provider, "", symbol))
+                found.append(Import(archive, symbol, members, provider, ""))
                 continue
             mark = mark_for(targets[archive], symbol, provider.family, providers.support, members, kind)
-            found.append(Import(archive, symbol, members, provider, mark, entity_of(symbol, provider.versions[symbol])))
+            found.append(Import(archive, symbol, members, provider, mark))
     return found
 
 
@@ -1245,11 +1181,11 @@ def import_findings(
         if not item.mark:
             continue
         said = import_message(
-            item.archive, targets[item.archive], item.entity, item.provider, item.mark, names[item.symbol], used
+            item.archive, targets[item.archive], item.symbol, item.provider, item.mark, names[item.symbol], used
         )
         if item.mark not in RATCHET_MARKS:
             said = f"{said}.  {write}"
-        found.append(finding(path, item.mark, item.entity, said))
+        found.append(finding(path, item.mark, item.symbol, said))
     return found, unknown
 
 
@@ -1286,8 +1222,8 @@ def hidden_findings(
                 finding(
                     f"{LIBRARY_PREFIX}{item.archive}",
                     HIDDEN_IMPORT,
-                    item.entity,
-                    f"{item.archive} imports {names.get(item.symbol, item.symbol)} ({item.entity}) in "
+                    item.symbol,
+                    f"{item.archive} imports {named(item.symbol, names.get(item.symbol, item.symbol))} in "
                     f"{build_census.names_text(members)}, and no record of the library code of the member connects "
                     f"to it.  The rule cannot give the import a line of the source.  A data table of the tree that "
                     f"names the symbol has no record: name the symbol in code, or remove the table.  `objdump -dr` of "
@@ -1302,9 +1238,7 @@ def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
     texts: list[str] = []
     for path in sorted({item.path for item in symbols}):
         marks = Counter(item.kind for item in symbols if item.path == path)
-        classes = Counter(
-            classify(symbol_of(item.entity)) for item in symbols if item.path == path and item.kind == RATCHET
-        )
+        classes = Counter(classify(item.entity) for item in symbols if item.path == path and item.kind == RATCHET)
         shown = ", ".join(f"{name} {classes[name]}" for name in CLASSES if classes[name]) or "none"
         counted = ", ".join(f"{marks[mark]} {mark}" for mark in MARKS if marks[mark] and mark != RATCHET)
         texts.append(
@@ -1314,8 +1248,8 @@ def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
     return "; ".join(texts) or "none"
 
 
-def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.Inspection:
-    """Read the libraries of the build, and judge their findings against the ledger (THE VERDICT).
+def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Inspection:
+    """Read the libraries of the build, and judge their findings against the set of the ledger (THE VERDICT).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
@@ -1323,12 +1257,10 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     """
     # A build with no build kind does not apply, also when its ledger cannot be read (NOT APPLICABLE).
     context.kind()
-    ledger = configured.read_ledger(rule, context.root)
-    if isinstance(ledger, configured.Inspection):
+    ledger = one_set.read_ledger(rule, context.root)
+    if isinstance(ledger, one_set.Inspection):
         return ledger
     artifacts, targets, base_archives = read_libraries(context)
-    configuration = configured.configuration_of(context)
-    judged = build_config.judging(RULE, ledger, configuration)
     providers = providers_of(context.compiler(), context.link_libraries())
     wanted = {reference.function for artifact in artifacts.values() for reference in artifact.references}
     wanted |= {reference.symbol for artifact in artifacts.values() for reference in artifact.references}
@@ -1339,8 +1271,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
         names = dict(zip(ordered, elf.demangle(ordered), strict=True))
     except elf.ElfError as problem:
         raise runner.BuildError(str(problem)) from None
-    admits = ledger.admits()
-    admit_rows = [key for key, _ in sorted(admits.items(), key=lambda item: item[1].line)]
+    admit_rows = [key for key, _ in sorted(ledger.admits().items(), key=lambda item: item[1].line)]
     counted: Counter[str] = Counter()
     classes = class_findings(artifacts, names, admit_rows, counted, base_archives)
     listed = imports_of(artifacts, targets, providers, context.kind())
@@ -1348,21 +1279,17 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> configured.
     hidden = hidden_findings(artifacts, listed, providers.support, names)
     helpers = helper_findings(artifacts, base_archives, names)
     symbols = [*imports, *helpers]
-    quiet = quiet_rows(admits, artifacts, names, {rule_ledger.key_of(item) for item in classes})
-    verdict = rule_ledger.compare(rule, ledger, [*classes, *symbols], judged.name)
+    verdict = rule_ledger.compare(rule, ledger, [*classes, *symbols])
     summary = (
         f"{RULE}: {len(artifacts)} libraries ({sum(item.symbols for item in artifacts.values())} symbols, "
         f"{counted['allocation']} throws of the allocator, {len(helpers)} references to throw helpers outside the "
-        f"base), {len(imports)} imports of {configuration.name} on {context.tier()}: {symbol_classes(imports)}, "
-        f"{len(hidden)} hidden imports, judged against {judged.words}"
+        f"base), {len(imports)} imports: {symbol_classes(imports)}, {len(hidden)} hidden imports, judged against the "
+        f"set of the ledger"
     )
-    return configured.Inspection(
+    return one_set.Inspection(
         (*row_problems(ledger), *unknown, *hidden, *verdict),
         ledger,
-        configuration,
-        judged,
         Counter(rule_ledger.key_of(item) for item in symbols),
-        Counter(key for key in map(rule_ledger.key_of, classes) if key in admits) + Counter(quiet),
         summary,
     )
 
@@ -1386,26 +1313,22 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build, write its findings, and print its rows (assay.guard.engines.elf.configured).
+    """Run the rule on the build, and write its findings and its summary (assay.guard.engines.elf.one_set).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
     """
-    return configured.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
+    return one_set.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
 
 
-def refusals(inspection: configured.Inspection, held: Mapping[rule_ledger.Key, int]) -> list[str]:
-    """Return a line for each new import with a ratchet mark and each risen count of a throw helper (THE WRITE)."""
-    return configured.risen_rows(inspection, held, (*RATCHET_MARKS, HELPER_THROW))
-
-
-# The rows that a write refuses with no --raise, and the reasons for --raise (THE WRITE).
-WRITE_POLICY = configured.WritePolicy(
+# The rows that a write refuses with no --raise: a new import with a ratchet mark and a risen count of a throw helper.
+# Then the reasons for --raise (THE WRITE).
+WRITE_POLICY = one_set.WritePolicy(
     row_problems,
-    refusals,
+    (*RATCHET_MARKS, HELPER_THROW),
     RAISE_REASONS,
     f"a person writes each row throw or vtable of {RULE} with its reason",
     "rows of imports and throw helpers",
 )
-# The write of the configuration and the import rows of the build (THE WRITE, assay.guard.engines.elf.configured).
-write = configured.writer(examine, WRITE_POLICY)
+# The write of the import rows of the build into the set (THE WRITE, assay.guard.engines.elf.one_set).
+write = one_set.writer(examine, WRITE_POLICY)

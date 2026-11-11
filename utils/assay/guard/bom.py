@@ -168,7 +168,7 @@ def library_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
     names = [
         Name(
             item.symbol,
-            item.entity,
+            item.symbol,
             item.provider.label if item.provider is not None else "no provider",
             item.provider.family if item.provider is not None else "-",
             item.mark or "-",
@@ -193,7 +193,7 @@ def linked_imports(artifact: Artifact) -> Imports:
         names = [
             Name(
                 symbol.name,
-                artifact_symbols.entity_of(symbol.name, symbol.version),
+                f"{symbol.name}@{symbol.version}" if symbol.version else symbol.name,
                 files.get(symbol.version, "no version"),
                 DYNAMIC,
                 "-",
@@ -307,10 +307,10 @@ def link_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> li
         said = f"a static library has no link.  It has {len(members)} members and {len(groups)} COMDAT groups"
         return [f"4. link facts: {said}"]
     build_dir = context.directory()
-    words = artifact_links.host_words(context.compiler(), build_dir)
+    words = artifact_links.path_words(context.compiler(), build_dir)
     with elf.mapped(artifact.path) as member:
-        is_vessel = artifact_links.group_of(artifact.directory) == artifact_links.VESSEL
-        facts = artifact_links.member_facts(member, member.dynamic(), words, is_vessel)
+        entries = member.dynamic()
+    facts = artifact_links.member_facts(entries, words)
     facts |= artifact_links.map_facts(artifact.path, build_dir)
     kinds = Counter(kind for kind, _ in facts)
     counted = ", ".join(f"{kind} {kinds[kind]}" for kind in artifact_links.KINDS if kinds[kind])

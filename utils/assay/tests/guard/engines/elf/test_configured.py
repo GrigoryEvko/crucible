@@ -5,8 +5,7 @@ case writes one line.  Exit 0 when each case holds, else 1.
 
 The cases hold the refused counts of a write and the problems of a ledger.
 They also hold the run of an inspection, and the writes that stop before the
-ledger.  The tests of the rules artifact-symbols and artifact-links hold the
-full write on planted builds.
+ledger.
 """
 
 from pathlib import Path

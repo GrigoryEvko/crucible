@@ -1,6 +1,6 @@
-# The ledger holds each C runtime import of the planted configuration with its version: clock_gettime, a door
-# call of the library fixy, the helper __udivti3 of the support library of GCC in the library crucible, and
-# getrandom as a ratchet row of the library foundation.  Each version is the same on x86_64 and on aarch64.
+# The ledger holds each C runtime import of the planted configuration: clock_gettime, a door call of the library
+# fixy, the helper __udivti3 of the support library of GCC in the library crucible, and getrandom as a ratchet row
+# of the library foundation.
 library planted_tree externs.cpp
 library foundation base.cpp random.cpp
 library fixy base.cpp clock.cpp
