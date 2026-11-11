@@ -1,8 +1,6 @@
 """The exit status of each master and each subcommand of the utils system.
 
-ExitCode is the one enumeration of the exit statuses.  The rule exit-codes
-holds that sys.exit and SystemExit take only a member of it.  Each status then
-has one name in the package.
+ExitCode is the one enumeration of the exit statuses of the package.
 """
 
 import enum
