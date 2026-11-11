@@ -108,6 +108,17 @@ def scope_cases(expect: testing.Expect) -> None:
         "a line that is not in the text has the holder <module>",
         python_reader.holder(table, 0) == "<module>" and python_reader.holder(table, 999) == "<module>",
     )
+    docs = {name: python_reader.docstring_of(node) for name, node in python_reader.scope_nodes(source.tree)}
+    module_doc = python_reader.docstring_of(source.tree)
+    expect(
+        "docstring_of() gives the docstring constant of the module, a class and a function, and None with no docstring",
+        module_doc is not None
+        and module_doc.value == "The module docstring."
+        and (doc := docs["Holder.method"]) is not None
+        and doc.value == "The method docstring."
+        and docs["Holder.method.inner"] is None
+        and docs["function"] is None,
+    )
 
 
 def import_cases(expect: testing.Expect) -> None:

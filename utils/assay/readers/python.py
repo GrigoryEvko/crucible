@@ -110,6 +110,14 @@ def scope_nodes(node: ast.AST, prefix: str = "") -> Iterator[tuple[str, ScopeNod
             yield from scope_nodes(child, prefix)
 
 
+def docstring_of(node: ast.Module | ScopeNode) -> ast.Constant | None:
+    """Return the constant of the docstring of a module, a class or a function, or None."""
+    first = node.body[0] if node.body else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        return first.value
+    return None
+
+
 def holders(source: Source) -> tuple[str, ...]:
     """Return the name of the innermost function or class that holds each line, at the index LINE - 1.
 
