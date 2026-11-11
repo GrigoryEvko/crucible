@@ -43,11 +43,11 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from assay.core import git, ruletable
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
+from assay.core import ruletable
 from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.plugin import runner
@@ -292,10 +292,6 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     per_build = runner.counts_of_builds(rule.id, request, lambda context: build_counts(rule, context))
     if isinstance(per_build, int):
         return per_build
-    moves = git.change_moves(request.root)
-    before = rule_ledger.ledger_before(
-        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
-    )
     try:
         written = rule_ledger.write_counts(
             rule,
@@ -303,9 +299,6 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             rule_ledger.largest_counts(per_build),
             request.mode,
             request.reason,
-            moves.renamed,
-            moves.flows,
-            before,
             request.is_partial,
         )
     except rule_ledger.LedgerError as problem:

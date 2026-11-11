@@ -656,7 +656,7 @@ def partial_cases(expect: testing.Expect) -> None:
         )
         label = (
             f"a commit whose suite is red on a moved row is a refusal, because a leg writes no ledger: the change "
-            f"writes the move before the landing.  The gate gives {verdict.problems[:1]} and folds {verdict.ledgers}"
+            f"writes the raise before the landing.  The gate gives {verdict.problems[:1]} and folds {verdict.ledgers}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
@@ -971,7 +971,7 @@ def masked_error_cases(expect: testing.Expect) -> None:
         work = Path(work_text)
         planted = gate.Gate(work, work / "land", 2, False)
         with jobserver.connected(server.path) as client:
-            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2)
+            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, client, 2)
 
             def work_of(index: int) -> int:
                 """Wait for the stop in the first item and give Stopped, and give an error in the second item."""

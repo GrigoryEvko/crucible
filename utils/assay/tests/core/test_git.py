@@ -150,126 +150,6 @@ def numbered_lines(count: int, changed: frozenset[int]) -> bytes:
     ).encode()
 
 
-def move_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check THE MOVES: a rename with most lines kept is a move, and a rewrite that keeps half of the lines is not."""
-    with git.scratch_repository({"old.cpp": numbered_lines(20, frozenset())}) as root:
-        git.commit_all(root, "The first commit")
-        (root / "old.cpp").unlink()
-        (root / "rewritten.cpp").write_bytes(numbered_lines(20, frozenset(range(8))))
-        git.run(root, "add", "-A", "--", ".")
-        plain = git.run(root, "diff", "--find-renames", "--name-status", "HEAD", "--").decode()
-        expect(
-            "the plant is a rewrite that the default of git (50 %) reports as a move",
-            plain.startswith("R") and "rewritten.cpp" in plain,
-        )
-        expect(
-            "the moves of the change give no moved file for a rewrite below MOVE_SIMILARITY",
-            git.diff_moves(root, "HEAD").renamed == {},
-        )
-        rewrite = git.commit_all(root, "Rewrite the file under a new name")
-        (root / "rewritten.cpp").unlink()
-        (root / "renamed.cpp").write_bytes(numbered_lines(20, frozenset(range(9))))
-        git.run(root, "add", "-A", "--", ".")
-        expect(
-            "the moves of the change give the old path of a rename that keeps 19 of 20 lines",
-            git.diff_moves(root, "HEAD").renamed == {"renamed.cpp": "rewritten.cpp"},
-        )
-        git.run(root, "branch", "-M", git.MAIN_BRANCH)
-        expect(
-            "change_moves reads the change against change_base(), here HEAD of a tree with an edit",
-            git.change_moves(root).renamed == {"renamed.cpp": "rewritten.cpp"},
-        )
-        git.commit_all(root, "Rename the file")
-        expect(
-            "change_moves of a clean main reads the last commit, which the moves against HEAD do not see",
-            git.change_moves(root).renamed == {"renamed.cpp": "rewritten.cpp"}
-            and git.diff_moves(root, "HEAD").renamed == {},
-        )
-        moves = git.change_moves(root)
-        expect(
-            "the moves give the commit of the base, and base_file reads a file there, or None with no file or no base",
-            moves.base == rewrite
-            and git.base_file(root, moves, "rewritten.cpp") is not None
-            and git.base_file(root, moves, "renamed.cpp") is None
-            and git.base_file(root, git.Moves(), "rewritten.cpp") is None,
-        )
-
-
-def moved_line_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check THE MOVED LINES: a division into two new files, a changed text, an empty line and the multiset of texts."""
-    header = b"#pragma once\n\nint first_value = 1;\n  int second_value = 2;\nint third_value = 3;\n\nint kept = 4;\n"
-    with git.scratch_repository({"split.h": header, "other.h": b"int third_value = 3;\n"}) as root:
-        base = git.commit_all(root, "The first commit")
-        (root / "split.h").write_bytes(b'#pragma once\n\n#include "part_a.h"\n#include "part_b.h"\n\nint kept = 4;\n')
-        (root / "part_a.h").write_bytes(b"#pragma once\n\nint first_value = 1;\nint second_value = 2;\n")
-        (root / "part_b.h").write_bytes(
-            b"#pragma once\n\nint third_value = 3;\nint third_value = 3;\nint fourth = 5;\n"
-        )
-        (root / "other.h").write_bytes(b"")
-        moves = git.moves_of(git.file_diffs(root, base, with_new=True))
-        expect(
-            "the flows give each pair of files where the change moved a line, also with other white space, and two "
-            "removed copies of a text in two files pay for two added copies",
-            moves.flows == {("split.h", "part_a.h"), ("split.h", "part_b.h"), ("other.h", "part_b.h")},
-        )
-        expect("a new file is not a moved file", moves.renamed == {})
-        (root / "part_b.h").write_bytes(b"#pragma once\n\nint third_value = 30;\n")
-        changed = git.moves_of(git.file_diffs(root, base, with_new=True))
-        expect(
-            "a line whose text the change also changed is not moved, and gives no flow",
-            ("split.h", "part_b.h") not in changed.flows,
-        )
-
-
-def diff_reader_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check read_diff(): the counts of a hunk give its lines, and a removed line that starts with '-- ' is no head."""
-    output = (
-        b"diff --git a/a.sql b/a.sql\n"
-        b"index 1111111..2222222 100644\n"
-        b"--- a/a.sql\n"
-        b"+++ b/a.sql\n"
-        b"@@ -2,2 +2 @@ select\n"
-        b"--- a comment of the old text\n"
-        b"-+++ b/not-a-file\n"
-        b"+-- a new comment\n"
-        b"\\ No newline at end of file\n"
-        b"diff --git a/gone.h b/gone.h\n"
-        b"deleted file mode 100644\n"
-        b"--- a/gone.h\n"
-        b"+++ /dev/null\n"
-        b"@@ -1 +0,0 @@\n"
-        b"-int gone = 0;\n"
-        b"diff --git a/old.h b/new.h\n"
-        b"similarity index 100%\n"
-        b"rename from old.h\n"
-        b"rename to new.h\n"
-        b"diff --git a/tool.sh b/tool.sh\n"
-        b"old mode 100644\n"
-        b"new mode 100755\n"
-    )
-    diffs = git.read_diff(output)
-    expect(
-        "a removed line that starts with '-- ' or '++ ' is a line of its hunk, not the head of a file",
-        len(diffs) == 3
-        and diffs[0]
-        == git.FileDiff(
-            "a.sql",
-            "a.sql",
-            (git.Hunk(2, 2, 2, 1),),
-            ("-- a comment of the old text", "+++ b/not-a-file"),
-            ((2, "-- a new comment"),),
-        ),
-    )
-    expect(
-        "a removed file has no new path and gives its removed lines",
-        diffs[1] == git.FileDiff("gone.h", None, (git.Hunk(1, 1, 0, 0),), ("int gone = 0;",), ()),
-    )
-    expect(
-        "a move with no change of a line has its two paths and no hunk", diffs[2] == git.FileDiff("old.h", "new.h", ())
-    )
-    expect("a change of the mode only gives no file", all(item.new_path != "tool.sh" for item in diffs))
-
-
 def change_base_cases(expect: Callable[[str, bool], None]) -> None:
     """Check THE CHANGE: the base of a change in each case that change_base() reads."""
     with git.scratch_repository({"a.cpp": numbered_lines(4, frozenset())}) as root:
@@ -306,7 +186,7 @@ def change_base_cases(expect: Callable[[str, bool], None]) -> None:
 
 
 def file_change_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check file_diffs(): the hunks of a changed file, a move with an edit, a new file and the head of a hunk."""
+    """Check changed_files(): a changed, a removed, a moved, an added and a new file of a change."""
     with git.scratch_repository(
         {"kept.cpp": numbered_lines(10, frozenset()), "moved.cpp": numbered_lines(20, frozenset())}
     ) as root:
@@ -316,47 +196,10 @@ def file_change_cases(expect: Callable[[str, bool], None]) -> None:
         (root / "renamed.cpp").write_bytes(numbered_lines(20, frozenset({5})))
         (root / "fresh.cpp").write_bytes(b"int first = 1;\nint second = 2;\n")
         git.run(root, "add", "-A", "--", ".")
-        changes = {item.new_path: item for item in git.file_diffs(root, base) if item.new_path is not None}
-        kept = changes.get("kept.cpp")
-        expect(
-            "a changed file has one hunk for each block, with the removed and the added lines",
-            kept is not None
-            and kept.old_path == "kept.cpp"
-            and kept.hunks == (git.Hunk(3, 1, 3, 1), git.Hunk(10, 0, 11, 1))
-            and kept.added == ((3, "changed line 02 of the moved file"), (11, "one more line"))
-            and kept.removed == ("the first text 02 of the moved file",),
-        )
-        renamed = changes.get("renamed.cpp")
-        expect(
-            "a move with an edit gives its previous path and the hunk of the edit",
-            renamed is not None and renamed.old_path == "moved.cpp" and renamed.hunks == (git.Hunk(6, 1, 6, 1),),
-        )
-        fresh = changes.get("fresh.cpp")
-        expect(
-            "a new file has no previous path and one hunk that adds each line",
-            fresh is not None and fresh.old_path is None and fresh.hunks == (git.Hunk(0, 0, 1, 2),),
-        )
-        expect("a removed file has no new path", "moved.cpp" not in changes)
         (root / "untracked.cpp").write_bytes(b"int third = 3;\nint fourth = 4;\n")
-        with_new = {item.new_path: item for item in git.file_diffs(root, base, with_new=True)}
-        untracked = with_new.get("untracked.cpp")
-        expect(
-            "with_new gives a new file that is not in the index, with each of its lines as an added line",
-            untracked is not None
-            and untracked.old_path is None
-            and untracked.hunks == (git.Hunk(0, 0, 1, 2),)
-            and untracked.added == ((1, "int third = 3;"), (2, "int fourth = 4;"))
-            and "untracked.cpp" not in changes,
-        )
         expect(
             "changed_files gives a changed, a removed, a moved, an added and a new file",
             git.changed_files(root, base) == ("fresh.cpp", "kept.cpp", "moved.cpp", "renamed.cpp", "untracked.cpp"),
-        )
-        expect(
-            "the head of a hunk reads the counts, and a count that the diff omits is 1",
-            git.hunk_of("@@ -3 +4,0 @@ int x;") == git.Hunk(3, 1, 4, 0)
-            and git.hunk_of("@@@ -1 +1 @@") is None
-            and git.hunk_of("+++ b/a.cpp") is None,
         )
 
 
@@ -464,9 +307,6 @@ def main(argv: list[str]) -> int:
     command_cases(expect)
     answer_cases(expect)
     object_cases(expect)
-    move_cases(expect)
-    moved_line_cases(expect)
-    diff_reader_cases(expect)
     change_base_cases(expect)
     file_change_cases(expect)
     replaced_cases(expect)

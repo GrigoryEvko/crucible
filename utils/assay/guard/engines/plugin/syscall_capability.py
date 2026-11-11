@@ -71,7 +71,6 @@ Complexity: linear in the finding lines of the build, and in the rows of the led
 from collections import Counter
 from pathlib import Path
 
-from assay.core import git
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -222,10 +221,6 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     per_build = runner.counts_of_builds(RULE, request, build_counts)
     if isinstance(per_build, int):
         return per_build
-    moves = git.change_moves(request.root)
-    before = rule_ledger.ledger_before(
-        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(RULE))
-    )
     try:
         written = rule_ledger.write_counts(
             rule,
@@ -233,9 +228,6 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             rule_ledger.largest_counts(per_build),
             mode=request.mode,
             reason=request.reason,
-            moved=moves.renamed,
-            flows=moves.flows,
-            before=before,
             is_partial=request.is_partial,
         )
     except rule_ledger.LedgerError as problem:

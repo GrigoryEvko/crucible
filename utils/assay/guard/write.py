@@ -118,7 +118,6 @@ def main(argv: list[str]) -> int:
         if rule is not None and rule.legacy is not None:
             return check.run_legacy(rule, ["--write", *argv[2:]])
     from assay.core import cli
-    from assay.core import git
     from assay.guard.engines.meta import runner
 
     parser = cli.parser("guard write", "write the ledger of one rule")
@@ -216,20 +215,7 @@ def main(argv: list[str]) -> int:
                 ledger, base={key: entry for key, entry in ledger.base.items() if not named or key.path in named}
             )
             found = [item for item in found if not named or item.path in named]
-            moves = git.change_moves(root)
-            before = rule_ledger.ledger_before(
-                rule, moves.base, git.base_file(root, moves, rule_ledger.shown_path(rule.id))
-            )
-            written = rule_ledger.write(
-                rule,
-                judged,
-                found,
-                mode=mode,
-                reason=options.reason,
-                moved=moves.renamed,
-                flows=moves.flows,
-                before=before,
-            )
+            written = rule_ledger.write(rule, judged, found, mode=mode, reason=options.reason)
             if named:
                 kept = {key: entry for key, entry in ledger.base.items() if key.path not in named}
                 own = written.base

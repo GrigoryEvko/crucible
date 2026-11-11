@@ -1,4 +1,4 @@
-"""The one module of the package that runs git: the files, the history and the moves of a tree, and a throwaway repository.
+"""The one module of the package that runs git: the files and the history of a tree, and a throwaway repository.
 
 THE COMMAND
     run() runs one git command in a tree, through assay.core.proc, with a
@@ -45,46 +45,10 @@ THE ISOLATION
     directory of -C, also when this process holds such a variable.  init()
     makes a repository and stops unless git resolves the directory itself.
 
-THE MOVES
-    A move is a file that git finds as renamed with a similarity of
-    MOVE_SIMILARITY percent or more.  change_moves() gives the ledger writers
-    the previous path of each moved file, and the file takes the rows of that
-    path.  The default of git is 50 %.  With that default, a file that keeps half of its lines takes
-    each row of its previous path.  Its new half can then hold new findings of
-    the same entities.  A rewrite below the threshold is a removed file and a
-    new file.
-
-THE MOVED LINES
-    A change can move lines from one file to a different file, for example
-    when it divides a header into two headers.  The similarity of each part
-    is then far below MOVE_SIMILARITY.  An added line is a moved line when a
-    removed line of a file of the change has the same text.  The text of a
-    line has no white space at its start and at its end.  A line with no
-    text other than white space is no moved line.
-
-    One removed line makes at most one added line a moved line.  The texts
-    are then a multiset.  An added line takes a removed line of its own file
-    first.  Else it takes a removed line of a different file, the first in
-    the sorted sequence of the paths.  moves_of() gives each pair of files
-    (A, B) where the change moved a line from A to B.  The ledger writers
-    read these pairs (THE MOVE of assay.core.ledger).  Moves.base is the
-    commit of the base of the diff.  base_file() reads a file at that
-    commit, such as a ledger before the change (THE LEDGER BEFORE THE
-    CHANGE of assay.core.ledger).
-
-THE DIFF
-    read_diff() reads the output of `git diff -U0`.  The head of a hunk gives
-    the number of its removed lines and of its added lines.  The reader reads
-    that number of lines as the lines of the hunk.  A removed line that
-    starts with "-- " is then no head of a file.  A file that the change
-    removes has no new path, and a file that the base does not hold has no
-    path at the base.  A file that git reports as moved with no change of a
-    line has no hunk.
-
 THE CHANGE
-    change_base() gives the commit that a change starts from.  file_diffs()
-    gives the lines between that commit and the working tree, and
-    changed_files() gives each path that the change touches.
+    change_base() gives the commit that a change starts from, and
+    changed_files() gives each path that the change touches.  The rules of
+    the parse builds read them (THE CHANGE OF AN ARM of assay.loop.syntax).
     The base is the first of these commits that applies:
       * The commit that the environment variable CHANGE_BASE_VARIABLE names.
       * When HEAD is on a branch other than main, and the repository has a
@@ -115,9 +79,8 @@ import contextlib
 import os
 import shutil
 import tempfile
-from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import proc
@@ -127,26 +90,9 @@ SCRATCH_IDENTITY = {"GIT_AUTHOR_NAME": "crucible-scratch", "GIT_AUTHOR_EMAIL": "
                     "GIT_COMMITTER_NAME": "crucible-scratch", "GIT_COMMITTER_EMAIL": "crucible-scratch@invalid"}
 # The time limit of one git command, in seconds.
 TIMEOUT_S = 300.0
-# The lowest similarity of a move, in percent (THE MOVES), and the option of git that finds such moves.
-MOVE_SIMILARITY = 90
-FIND_MOVES = f"--find-renames={MOVE_SIMILARITY}%"
 # The environment variable that names the base of a change (THE CHANGE), and the branch that a work tree branches from.
 CHANGE_BASE_VARIABLE = "CRUCIBLE_CHANGE_BASE"
 MAIN_BRANCH = "main"
-# The marks of a unified diff that read_diff() reads (THE DIFF).
-FILE_MARK = "diff --git "
-HUNK_MARK = "@@ "
-OLD_FILE_MARK = "--- "
-NEW_FILE_MARK = "+++ "
-RENAME_FROM_MARK = "rename from "
-RENAME_TO_MARK = "rename to "
-NO_FILE = "/dev/null"
-REMOVED_MARK = "-"
-ADDED_MARK = "+"
-CONTEXT_MARK = " "
-NO_NEWLINE_MARK = "\\"
-# The options of the diff that file_diffs() reads: no context line, no color and no external diff.
-DIFF_OPTIONS = ("diff", "-U0", "--no-color", "--no-ext-diff", FIND_MOVES)
 # The options of `git ls-files` that list each file that is not in the index and that .gitignore does not match.
 NEW_FILE_OPTIONS = ("--others", "--exclude-standard")
 # The file of the shared git directory that a borrowing repository copies, and the mode of a new file of a tree (THE
@@ -160,20 +106,18 @@ INITIAL_COMMIT = "(initial)"
 NULL_OBJECT = "0" * 40
 # The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
 READS_HISTORY = frozenset({
-    "archive", "base_file", "blobs", "change_base", "change_moves", "changed_files", "commit_subject", "diff_moves",
-    "file_diffs", "has_no_change", "head", "index_changes", "index_patch", "is_ancestor", "is_clean", "is_index_clean",
-    "message_of", "parent", "patch", "quiet_diff", "replaced_commit", "resolve", "short_name", "show", "status",
-    "symbolic_head", "tree_changes", "tree_entry", "work_changes",
+    "archive", "blobs", "change_base", "changed_files", "commit_subject", "has_no_change", "head", "index_changes",
+    "index_patch", "is_ancestor", "is_clean", "is_index_clean", "message_of", "parent", "patch", "quiet_diff",
+    "replaced_commit", "resolve", "short_name", "show", "status", "symbolic_head", "tree_changes", "tree_entry",
+    "work_changes",
 })
 READS_NAMES = frozenset({
-    "change_base", "change_moves", "changed_files", "diff_moves", "file_diffs", "has_no_change", "listed_files",
-    "listed_paths", "new_files", "tracked_files",
+    "change_base", "changed_files", "has_no_change", "listed_files", "listed_paths", "new_files", "tracked_files",
 })
 READS_NEITHER = frozenset({
     "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files",
-    "hash_object", "holds_patch", "hunk_of", "index_object", "init", "moves_of", "new_file_diff", "null_separated",
-    "read_diff", "run", "run_any_exit", "scratch_repository", "set_index_entries", "set_index_entry", "side_path",
-    "swap_ref", "toplevel", "write_tree",
+    "hash_object", "holds_patch", "index_object", "init", "null_separated", "run", "run_any_exit",
+    "scratch_repository", "set_index_entries", "set_index_entry", "swap_ref", "toplevel", "write_tree",
 })
 
 
@@ -183,19 +127,6 @@ class NotIsolated(Exception):
 
 class GitError(Exception):
     """A git command cannot run, or it exits with a status that is not 0."""
-
-
-@dataclass(frozen=True, slots=True)
-class Hunk:
-    """One block of a diff with no unchanged line: the first line and the number of the removed and the added lines.
-
-    A block that adds no line has `new_count` 0, and its `new_start` is the line before it.  The lines start at 1.
-    """
-
-    old_start: int
-    old_count: int
-    new_start: int
-    new_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,36 +144,6 @@ class TreeEntry:
     mode: str
     kind: str
     name: str
-
-
-@dataclass(frozen=True, slots=True)
-class FileDiff:
-    """The lines of one file that a diff removes and adds (THE DIFF).
-
-    `old_path` is the path at the base, or None for a file that the base does not hold.  `new_path` is the path at
-    the other side, or None for a file that the change removes.  `removed` holds the text of each removed line, and
-    `added` holds the line and the text of each added line.  The lines start at 1.
-    """
-
-    old_path: str | None
-    new_path: str | None
-    hunks: tuple[Hunk, ...]
-    removed: tuple[str, ...] = ()
-    added: tuple[tuple[int, str], ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class Moves:
-    """The moves of a change: the moved files (THE MOVES) and the files of the moved lines (THE MOVED LINES).
-
-    `renamed` gives the path at the base of each moved file, by its new path.  `flows` holds each pair (A, B) where
-    the change moved a line from the file A at the base to the file B.  `base` is the commit of the base, or None with
-    no base.
-    """
-
-    renamed: Mapping[str, str] = field(default_factory=dict)
-    flows: frozenset[tuple[str, str]] = frozenset()
-    base: str | None = None
 
 
 def run_any_exit(root: Path, *arguments: str, stdin: bytes = b"", extra: Mapping[str, str] | None = None,
@@ -435,199 +336,6 @@ def change_base(root: Path) -> str | None:
     if not is_clean(root) or new_files(root):
         return head(root)
     return resolve(root, "HEAD^1")
-
-
-def hunk_of(line: str) -> Hunk | None:
-    """Read the head of one hunk of a unified diff, '@@ -A[,B] +C[,D] @@ ...', or return None for another line."""
-    if not line.startswith(HUNK_MARK):
-        return None
-    words = line.removeprefix(HUNK_MARK).split(" ")
-    if len(words) < 2 or not words[0].startswith("-") or not words[1].startswith("+"):
-        return None
-    numbers: list[int] = []
-    for word in (words[0][1:], words[1][1:]):
-        start, _, count = word.partition(",")
-        if not start.isdigit() or (count and not count.isdigit()):
-            return None
-        numbers += [int(start), int(count) if count else 1]
-    return Hunk(*numbers)
-
-
-def side_path(line: str, mark: str, prefix: str) -> str | None:
-    """Return the path of a '--- a/PATH' or '+++ b/PATH' line of a unified diff, or None for /dev/null."""
-    path = line.removeprefix(mark).rstrip("\t")
-    return None if path == NO_FILE else path.removeprefix(prefix)
-
-
-def read_diff(output: bytes) -> tuple[FileDiff, ...]:
-    """Read the output of `git diff -U0`: the paths, the hunks, the removed lines and the added lines of each file.
-
-    The counts of the head of each hunk give its lines (THE DIFF).  A file with no path and no move, such as a change
-    of the mode only, has no entry.  Complexity: linear in the length of the output.
-    """
-    found: list[FileDiff] = []
-    # The paths and the lines of the file that the reader reads, and the lines of its hunk that it did not read.
-    paths: dict[str, str | None] = {}
-    hunks: list[Hunk] = []
-    removed: list[str] = []
-    added: list[tuple[int, str]] = []
-    old_left = new_left = line_number = 0
-
-    def keep() -> None:
-        """Keep the file that the lines before gave."""
-        old_path, new_path = paths.get(OLD_FILE_MARK), paths.get(NEW_FILE_MARK)
-        if OLD_FILE_MARK in paths and (old_path is not None or new_path is not None):
-            found.append(FileDiff(old_path, new_path, tuple(hunks), tuple(removed), tuple(added)))
-        elif paths.get(RENAME_FROM_MARK) is not None and paths.get(RENAME_TO_MARK) is not None:
-            found.append(FileDiff(paths[RENAME_FROM_MARK], paths[RENAME_TO_MARK], ()))
-
-    for line in output.decode("utf-8", "surrogateescape").split("\n"):
-        if old_left > 0 or new_left > 0:
-            mark = line[:1]
-            if mark == REMOVED_MARK and old_left > 0:
-                removed.append(line[1:])
-                old_left -= 1
-                continue
-            if mark == ADDED_MARK and new_left > 0:
-                added.append((line_number, line[1:]))
-                line_number, new_left = line_number + 1, new_left - 1
-                continue
-            if mark == CONTEXT_MARK and old_left > 0 and new_left > 0:
-                old_left, new_left, line_number = old_left - 1, new_left - 1, line_number + 1
-                continue
-            if mark != NO_NEWLINE_MARK:
-                old_left = new_left = 0
-        if line.startswith(NO_NEWLINE_MARK):
-            continue
-        if line.startswith(FILE_MARK):
-            keep()
-            paths.clear()
-            hunks, removed, added = [], [], []
-        elif line.startswith(OLD_FILE_MARK):
-            paths[OLD_FILE_MARK] = side_path(line, OLD_FILE_MARK, "a/")
-        elif line.startswith(NEW_FILE_MARK):
-            paths[NEW_FILE_MARK] = side_path(line, NEW_FILE_MARK, "b/")
-            paths.setdefault(OLD_FILE_MARK, None)
-        elif line.startswith(RENAME_FROM_MARK):
-            paths[RENAME_FROM_MARK] = line.removeprefix(RENAME_FROM_MARK)
-        elif line.startswith(RENAME_TO_MARK):
-            paths[RENAME_TO_MARK] = line.removeprefix(RENAME_TO_MARK)
-        elif (hunk := hunk_of(line)) is not None:
-            hunks.append(hunk)
-            old_left, new_left, line_number = hunk.old_count, hunk.new_count, hunk.new_start
-    keep()
-    return tuple(found)
-
-
-def new_file_diff(root: Path, path: str) -> FileDiff:
-    """Return the diff of a new file of a tree that is not in the index: one hunk that adds each of its lines.
-
-    Raises:
-        OSError: If the file cannot be read
-    """
-    text = (root / path).read_bytes().decode("utf-8", "surrogateescape")
-    lines = text.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    return FileDiff(None, path, (Hunk(0, 0, 1, len(lines)),), (), tuple(enumerate(lines, start=1)))
-
-
-def file_diffs(
-    root: Path, base: str, revision: str | None = None, paths: Sequence[str] = (), with_new: bool = False
-) -> tuple[FileDiff, ...]:
-    """Return the lines that each file of a diff removes and adds (THE DIFF), from a commit to a revision.
-
-    With no revision, the other side is the working tree.  `paths` limits the diff to some paths.  The diff finds
-    moves with FIND_MOVES.  With `with_new` and no revision, the diff also adds each new file (new_files()), as a
-    file that the base does not hold.  Complexity: linear in the length of the diff and in the bytes of the new files.
-
-    Raises:
-        GitError: If git fails, or a new file cannot be read
-    """
-    arguments = [*DIFF_OPTIONS, base, *((revision,) if revision is not None else ()), "--", *paths]
-    found = list(read_diff(run(root, *arguments)))
-    if with_new and revision is None:
-        try:
-            found += [new_file_diff(root, path) for path in listed_files(root, NEW_FILE_OPTIONS, paths)]
-        except OSError as problem:
-            raise GitError(f"a new file of {root} cannot be read: {problem}") from None
-    return tuple(found)
-
-
-def moves_of(diffs: Sequence[FileDiff]) -> Moves:
-    """Return the moved files and the files of the moved lines of the diffs of a change (THE MOVES, THE MOVED LINES).
-
-    Complexity: O(n log n) for the n removed and added lines.
-    """
-    renamed = {item.new_path: item.old_path for item in diffs
-               if item.new_path is not None and item.old_path is not None and item.new_path != item.old_path}
-    removed: dict[str, Counter[str]] = {}
-    added: dict[str, list[tuple[str, int, str | None]]] = {}
-    for item in diffs:
-        if item.old_path is not None:
-            for text in item.removed:
-                if key := text.strip():
-                    removed.setdefault(key, Counter())[item.old_path] += 1
-        if item.new_path is not None:
-            for line, text in item.added:
-                if key := text.strip():
-                    added.setdefault(key, []).append((item.new_path, line, item.old_path))
-    flows: set[tuple[str, str]] = set()
-    for key, places in added.items():
-        pool = removed.get(key)
-        if not pool:
-            continue
-        others: list[str] = []
-        for path, _, own in sorted(places, key=lambda place: (place[0], place[1])):
-            if own is not None and pool[own] > 0:
-                pool[own] -= 1
-                if own != path:
-                    flows.add((own, path))
-            else:
-                others.append(path)
-        sources = iter(sorted(source for source, count in pool.items() for _ in range(count)))
-        for path, source in zip(others, sources):
-            if source != path:
-                flows.add((source, path))
-    return Moves(renamed, frozenset(flows))
-
-
-def diff_moves(root: Path, base: str, revision: str | None = None, paths: Sequence[str] = ()) -> Moves:
-    """Return the moves of the diff from a commit to a revision, or to the working tree with its new files.
-
-    `paths` limits the diff to some paths.  The field base of the result is the base.  Complexity: that of
-    file_diffs() and moves_of().
-
-    Raises:
-        GitError: If git fails, or a new file cannot be read
-    """
-    return replace(moves_of(file_diffs(root, base, revision, paths, with_new=revision is None)), base=base)
-
-
-def base_file(root: Path, moves: Moves, path: str) -> bytes | None:
-    """Return the content of a file at the commit of the base of a change (Moves.base).
-
-    The result is None with no base, with no such file at the base, and for an error of git.
-    """
-    if moves.base is None:
-        return None
-    try:
-        return show(root, moves.base, path)
-    except GitError:
-        return None
-
-
-def change_moves(root: Path) -> Moves:
-    """Return the moves of the change of a tree against change_base() (THE MOVES and THE MOVED LINES).
-
-    These conditions give no move: a tree that is not a git work tree, a root commit with no change, and an error
-    of git.
-    """
-    try:
-        base = change_base(root)
-        return diff_moves(root, base) if base is not None else Moves()
-    except GitError:
-        return Moves()
 
 
 def changed_files(root: Path, base: str) -> tuple[str, ...]:

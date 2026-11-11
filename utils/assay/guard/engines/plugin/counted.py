@@ -40,13 +40,8 @@ THE WRITE
     ledger the head comment of the rule, and with no such comment it keeps
     the head of the file.  It refuses a count more than its row, with two
     exceptions.  --raise permits each such count, and --admit permits a count
-    of an admitted kind of the rule.  A file that git reports as moved takes
-    the rows of its earlier path.  A fall of a file that the change moved
-    lines from pays an increase of the same kind.  The entity of the increase
-    is the same entity or an entity that agrees (THE MOVE of
-    assay.core.ledger).  A change that divides a file then writes its rows
-    with no --raise.  The fall pays against the ledger before the change
-    (THE LEDGER BEFORE THE CHANGE of assay.core.ledger).
+    of an admitted kind of the rule.  The write reads no git history, so a
+    change that moves a finding to a key with no row writes it with --raise.
 
 Complexity: linear in the finding lines of the builds, and O(k log k) for k rows of the ledger and counts of the builds.
 """
@@ -57,11 +52,11 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from assay.core import git, ruletable
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
+from assay.core import ruletable
 from assay.guard.engines.plugin import runner
 
 # The file, the kind and the entity of one count: the key of a row of the ledger.
@@ -226,11 +221,7 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     if isinstance(per_build, int):
         return per_build
     counts = rule_ledger.largest_counts(per_build)
-    moves = git.change_moves(request.root)
-    before = rule_ledger.ledger_before(
-        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
-    )
-    increased = increases_permitted(spec, ledger, before, counts, moves, request.mode)
+    increased = increases_permitted(spec, ledger, counts, request.mode)
     if increased is None:
         return 1
     written = rule_ledger.write_counts(
@@ -239,9 +230,6 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         counts,
         rule_ledger.WriteMode.RAISE if increased else rule_ledger.WriteMode.LOWER,
         request.reason,
-        moved=moves.renamed,
-        flows=moves.flows,
-        before=before,
         is_partial=request.is_partial,
     )
     if spec.comment:
@@ -257,31 +245,24 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
 def increases_permitted[Inputs](
     spec: CountedRule[Inputs],
     ledger: rule_ledger.Ledger,
-    before: rule_ledger.Ledger | None,
     counts: Mapping[Key, int],
-    moves: git.Moves,
     mode: rule_ledger.WriteMode,
 ) -> bool | None:
     """Write each count of the builds that is more than its row, and tell if the mode of the write permits each one.
 
-    --raise permits each increase, and --admit permits an increase of a kind of the admitted kinds of the rule.  An
-    increase that a fall of a file that the change moved lines from pays is no increase (THE MOVE of assay.core.ledger).
-    The fall pays against `before` (THE LEDGER BEFORE THE CHANGE of assay.core.ledger).
+    --raise permits each increase, and --admit permits an increase of a kind of the admitted kinds of the rule.
 
     Returns:
         True when a count increased and the mode permits each increase.  False when no count increased.  None when
         the mode refuses an increase
     """
-    expected = rule_ledger.moved_counts(ledger.expected(), moves.renamed)
-    started = rule_ledger.moved_counts(before.expected(), moves.renamed) if before is not None else expected
-    paid = rule_ledger.paid_counts(started, counts, moves.flows)
-    admitted = rule_ledger.admitted_counts(expected, started, paid)
-    held_files = {key.path for key in expected}
+    expected = ledger.expected()
+    held_paths = {key.path for key in expected}
     increases = sorted(
-        (key, count, expected.get(key, 0)) for key, count in counts.items() if count > admitted.get(key, 0)
+        (key, count, expected.get(key, 0)) for key, count in counts.items() if count > expected.get(key, 0)
     )
     for key, count, row in increases:
-        words = "a file that the ledger does not hold" if key.path not in held_files else f"rises from {row}"
+        words = "a path that the ledger does not hold" if key.path not in held_paths else f"rises from {row}"
         check_report.write_line(
             f"{spec.rule_id}: {key.path} has {count} findings of {described(key.kind, key.entity)}, {words}",
             is_error=True,

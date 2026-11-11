@@ -14,7 +14,8 @@ THE CASES
       * The entity of each kind
       * The opted-out findings and the regions
       * One set of rows for the builds of two kinds, and an arm of one build
-      * A file that git moves, and a file that the tree does not hold
+      * A file that git moves, which needs --raise, and a file that the tree
+        does not hold
       * A base header that git moves to a different layer
       * The directory warnings and the problems of the objects
       * Each mode of the write, the write of one build and the complete write.
@@ -761,8 +762,10 @@ def file_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add("a", [line.replace("test_b.cpp", "test_c.cpp") for line in scratch.objects["a"][0]])
     expect("a moved file fails at its new path until the ledger is written again", len(scratch.errors()) == 1)
     status, _ = scratch.write()
+    expect("the write reads no git move, and it refuses the new path with no --raise", status == 1)
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     expect(
-        "the write moves the rows of a file that git reports as moved",
+        "--raise writes the row of the new path, and the build then gives no error",
         status == 0 and ("test/fixy/test_c.cpp", "std-object", "std::span") in scratch.base() and scratch.run()[0] == 0,
     )
 
@@ -789,9 +792,10 @@ def layer_move_cases(expect: testing.Expect) -> None:
             "a header moved to a different layer fails at its new path until the ledger is written again",
             len(scratch.errors()) == 1,
         )
-        status, _ = scratch.write()
+        status, _ = scratch.write(rule_ledger.WriteMode.RAISE, is_complete=True)
         expect(
-            "the write gives the moved header the row of its include, and the build then gives no error",
+            "a complete write with --raise gives the moved header the row of its include, and the build then gives "
+            "no error",
             status == 0
             and scratch.base().get((new, "layer-header", "<tuple>")) == 1
             and (old, "layer-header", "<tuple>") not in scratch.base()

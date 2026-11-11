@@ -123,13 +123,10 @@ WRITE THE LEDGER
       Give the reason of the region, with its class, in the message of the
       commit.
     * --reason TEXT gives the reason cell of each new row.
-    * A file that git reports as moved takes the rows of its earlier path.
-      Git reports a move after `git mv` or `git add`, when the similarity of
-      the two files is a minimum of assay.core.git.MOVE_SIMILARITY percent
-      (THE MOVES of assay.core.git).  A rewrite below it is a new file.
-    * A change that moves lines to a different file writes the paid increase
-      with no --raise (THE MOVE of assay.core.ledger).  The landing gate then
-      lowers the row of the file that the lines left.
+    * The write reads no git history.  A change that moves a finding to a
+      file with no row raises the count of that file: write it with --raise,
+      and give the reason in the commit.  The landing gate then lowers the row
+      of the file that the finding left.
 
 NOT APPLICABLE
     The rule exits 77 when the runner does not apply to the build (THE STATUS
@@ -436,8 +433,8 @@ def evaluate(
             message = (
                 f"{file} has {measured} findings of {what}, and the ledger holds no row of the file.  A new "
                 f"file has no finding (CLAUDE.md section XXII).  List them with {listing}, and use a type of "
-                f"fixy or foundation.  If the change moves the file, stage the move with `git mv` and write "
-                f"the ledger again"
+                f"fixy or foundation.  If the change moves code to this file, write the ledger with "
+                f"`{command} --raise`, and give the reason in the commit"
             )
         else:
             message = (

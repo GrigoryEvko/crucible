@@ -341,7 +341,7 @@ def prefix_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the modes of a complete write and the move of a file."""
+    """Check the modes of a complete write, and the raise that a moved finding needs."""
     count = table["count-rule"]
     ledger = rule_ledger.write(
         count, rule_ledger.empty(count), [finding("a.py")] * 2, mode=rule_ledger.WriteMode.ADMIT, reason="first"
@@ -365,10 +365,12 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
             rule_ledger.LedgerError,
         ),
     )
-    moved = rule_ledger.write(count, ledger, [finding("new/a.py")] * 2, moved={"new/a.py": "a.py"})
+    moved = [finding("new/a.py")] * 2
     expect(
-        "a file that git moved keeps the rows of its old path",
-        moved.expected() == {rule_ledger.Key("new/a.py", "kind", ""): 2},
+        "the write reads no move: a finding of a new path needs the mode raise, and a partial write keeps the old row",
+        refuses(lambda: rule_ledger.write(count, ledger, moved, is_partial=True), rule_ledger.LedgerError)
+        and rule_ledger.write(count, ledger, moved, mode=rule_ledger.WriteMode.RAISE, is_partial=True).expected()
+        == {rule_ledger.Key("a.py", "kind", ""): 2, rule_ledger.Key("new/a.py", "kind", ""): 2},
     )
 
 
@@ -500,221 +502,6 @@ def admit_row_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
     )
 
 
-def move_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE MOVE: an increase that a fall of a file that the change moved lines from pays, in each policy."""
-    count, admit = table["count-rule"], table["admit-rule"]
-    text = (
-        "format 1\nrule count-rule\n"
-        "split.h | kind | 3 | vector | the reason of the split header\nother.h | kind | 1 | vector | -\n"
-    )
-    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    flows = {("split.h", "part_a.h"), ("split.h", "part_b.h")}
-    split = [
-        *[finding("part_a.h", entity="vector")] * 2,
-        finding("part_b.h", entity="vector"),
-        finding("other.h", entity="vector"),
-    ]
-    expect(
-        "with no flow, the mode lower refuses the rows of the new files of a split",
-        refuses(lambda: rule_ledger.write(count, ledger, split), rule_ledger.LedgerError),
-    )
-    written = rule_ledger.write(count, ledger, split, flows=flows)
-    expect(
-        "a fall of the divided file pays the increases of the two new files, and the mode lower writes them",
-        written.expected()
-        == {
-            rule_ledger.Key("part_a.h", "kind", "vector"): 2,
-            rule_ledger.Key("part_b.h", "kind", "vector"): 1,
-            rule_ledger.Key("other.h", "kind", "vector"): 1,
-        },
-    )
-    expect(
-        "a new row of a moved finding gets the reason of the row of its fall",
-        written.base[rule_ledger.Key("part_a.h", "kind", "vector")].reason == "the reason of the split header",
-    )
-    expect(
-        "a fall pays one time: the same split with one more finding is refused",
-        refuses(
-            lambda: rule_ledger.write(count, ledger, [*split, finding("part_b.h", entity="vector")], flows=flows),
-            rule_ledger.LedgerError,
-        ),
-    )
-    expect(
-        "a fall pays only an increase of the same kind and entity",
-        refuses(
-            lambda: rule_ledger.write(count, ledger, [finding("part_a.h", entity="map")], flows=flows),
-            rule_ledger.LedgerError,
-        ),
-    )
-    expect(
-        "a fall of a file that the change moved no line from pays nothing, and a file that keeps its count pays nothing",
-        refuses(
-            lambda: rule_ledger.write(
-                count,
-                ledger,
-                [finding("part_a.h", entity="vector"), finding("other.h", entity="vector")],
-                flows={("other.h", "part_a.h")},
-            ),
-            rule_ledger.LedgerError,
-        ),
-    )
-    partial_split = rule_ledger.write(count, ledger, split, flows=flows, is_partial=True)
-    expect(
-        "a partial write writes the paid increases with no --raise, and it keeps the row of the divided file",
-        partial_split.expected()
-        == {
-            rule_ledger.Key("split.h", "kind", "vector"): 3,
-            rule_ledger.Key("part_a.h", "kind", "vector"): 2,
-            rule_ledger.Key("part_b.h", "kind", "vector"): 1,
-            rule_ledger.Key("other.h", "kind", "vector"): 1,
-        },
-    )
-    expect(
-        "move_payments gives each part of a fall that pays an increase, in the sequence of the paths",
-        rule_ledger.move_payments(ledger.expected(), written.expected(), flows)
-        == (
-            rule_ledger.Payment(
-                rule_ledger.Key("split.h", "kind", "vector"), rule_ledger.Key("part_a.h", "kind", "vector"), 2
-            ),
-            rule_ledger.Payment(
-                rule_ledger.Key("split.h", "kind", "vector"), rule_ledger.Key("part_b.h", "kind", "vector"), 1
-            ),
-        ),
-    )
-    admitted = rule_ledger.write(
-        admit,
-        rule_ledger.empty(admit),
-        [finding("split.h", entity="door", rule_id="admit-rule")],
-        mode=rule_ledger.WriteMode.ADMIT,
-        reason="the reason of the door",
-    )
-    moved_door = [finding("part_a.h", entity="door", rule_id="admit-rule")]
-    expect(
-        "the policy admit refuses a new row with no flow",
-        refuses(lambda: rule_ledger.write(admit, admitted, moved_door), rule_ledger.LedgerError),
-    )
-    expect(
-        "the policy admit writes a moved row with the reason of the row of its fall",
-        rule_ledger.write(admit, admitted, moved_door, flows=flows).base
-        == {
-            rule_ledger.Key("part_a.h", "kind", "door"): rule_ledger.Entry(
-                rule_ledger.Key("part_a.h", "kind", "door"), rule_ledger.ADMIT_VALUE, "the reason of the door"
-            )
-        },
-    )
-
-
-def before_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE LEDGER BEFORE THE CHANGE: a fall pays one time, also after a partial write kept its row."""
-    count = table["count-rule"]
-    text = "format 1\nrule count-rule\nsplit.h | kind | 1 | vector | -\n"
-    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    flows = {("split.h", "part_a.h"), ("split.h", "part_b.h")}
-    first = rule_ledger.write(
-        count, ledger, [finding("part_a.h", entity="vector")], flows=flows, before=ledger, is_partial=True
-    )
-    expect(
-        "a partial write of a move keeps the row of the source and writes the paid row",
-        first.expected()
-        == {rule_ledger.Key("split.h", "kind", "vector"): 1, rule_ledger.Key("part_a.h", "kind", "vector"): 1},
-    )
-    second_found = [finding("part_a.h", entity="vector"), finding("part_b.h", entity="vector")]
-    expect(
-        "a second write of the change pays against the ledger before the change, so the one fall pays one time",
-        refuses(
-            lambda: rule_ledger.write(count, first, second_found, flows=flows, before=ledger, is_partial=True),
-            rule_ledger.LedgerError,
-        ),
-    )
-    expect(
-        "with no ledger before the change, the kept row of the source pays again, which the ledger before prevents",
-        rule_ledger.write(count, first, second_found, flows=flows, is_partial=True)
-        .expected()
-        .get(rule_ledger.Key("part_b.h", "kind", "vector"))
-        == 1,
-    )
-    again = rule_ledger.write(
-        count, first, [finding("part_a.h", entity="vector")], flows=flows, before=ledger, is_partial=True
-    )
-    expect("the same write again gives the same ledger", rule_ledger.render(again) == rule_ledger.render(first))
-    read_back = rule_ledger.ledger_before(count, "abc123", text.encode())
-    expect(
-        "ledger_before reads the text at the base: None with no base or a bad text, an empty ledger with no file",
-        read_back is not None
-        and read_back.expected() == ledger.expected()
-        and rule_ledger.ledger_before(count, None, text.encode()) is None
-        and rule_ledger.ledger_before(count, "abc123", b"format 9\n") is None
-        and rule_ledger.ledger_before(count, "abc123", None) == rule_ledger.empty(count),
-    )
-
-
-def namespace_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the second half of THE MOVE: a move of code to a different namespace of the tree changes no finding."""
-    old = "foundation::algebra::transition::read(const foundation::algebra::transition::node&): std::meta::info"
-    new = "fixy::session::transition::read(const fixy::session::transition::node&): std::meta::info"
-    expect(
-        "the qualifiers of the tree start at each root namespace, and a name of the library starts none",
-        rule_ledger.tree_qualifiers("::fixy::session::read(std::meta::info)") == {"fixy::", "fixy::session::"}
-        and rule_ledger.tree_qualifiers("std::vector") == frozenset()
-        and rule_ledger.tree_qualifiers("my_fixy::read") == frozenset(),
-    )
-    expect(
-        "one replacement of a qualifier at each place gives an entity that agrees",
-        rule_ledger.entities_agree(old, new) and rule_ledger.entities_agree(new, old),
-    )
-    expect(
-        "two replacements, a different last name and a namespace of the library give no agreement",
-        not rule_ledger.entities_agree(old, new.replace("const fixy::session::", "const crucible::"))
-        and not rule_ledger.entities_agree(old, new.replace("::read(", "::write("))
-        and not rule_ledger.entities_agree("std::vector", "boost::vector"),
-    )
-    count, admit = table["count-rule"], table["admit-rule"]
-    text = (
-        "format 1\nrule count-rule\n"
-        f"old.h | kind | 1 | {old} | the reason of the walk\nuser.h | kind | 1 | ::{old} | -\n"
-    )
-    ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
-    moved = [finding("new.h", entity=new), finding("user.h", entity=f"::{new}")]
-    expect(
-        "with no flow, the entity in the new file has no row, and the mode lower refuses it",
-        refuses(lambda: rule_ledger.write(count, ledger, moved), rule_ledger.LedgerError),
-    )
-    written = rule_ledger.write(count, ledger, moved, flows={("old.h", "new.h")})
-    expect(
-        "a fall pays an entity that agrees along a pair, and in its own file with no pair",
-        written.expected()
-        == {rule_ledger.Key("new.h", "kind", new): 1, rule_ledger.Key("user.h", "kind", f"::{new}"): 1}
-        and written.base[rule_ledger.Key("new.h", "kind", new)].reason == "the reason of the walk",
-    )
-    expect(
-        "an entity that does not agree stays a new row",
-        refuses(
-            lambda: rule_ledger.write(
-                count, ledger, [finding("new.h", entity="std::vector")], flows={("old.h", "new.h")}
-            ),
-            rule_ledger.LedgerError,
-        ),
-    )
-    admitted = rule_ledger.write(
-        admit,
-        rule_ledger.empty(admit),
-        [finding("old.h", entity=old, rule_id="admit-rule")],
-        mode=rule_ledger.WriteMode.ADMIT,
-        reason="the reason of the walk",
-    )
-    expect(
-        "the policy admit moves a row to an entity that agrees, with its reason",
-        rule_ledger.write(
-            admit, admitted, [finding("new.h", entity=new, rule_id="admit-rule")], flows={("old.h", "new.h")}
-        ).base
-        == {
-            rule_ledger.Key("new.h", "kind", new): rule_ledger.Entry(
-                rule_ledger.Key("new.h", "kind", new), rule_ledger.ADMIT_VALUE, "the reason of the walk"
-            )
-        },
-    )
-
-
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -739,9 +526,6 @@ def main(argv: list[str]) -> int:
     partial_cases(expect, table)
     reduce_cases(expect, table)
     admit_row_cases(expect, table)
-    move_cases(expect, table)
-    before_cases(expect, table)
-    namespace_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")
         return 1

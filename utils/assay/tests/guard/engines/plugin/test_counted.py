@@ -13,10 +13,10 @@ import functools
 import tempfile
 from pathlib import Path
 
-from assay.core import git, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
+from assay.core import testing
 from assay.guard.engines.plugin import counted, detsafe_ledger, heavy_include, runner
 from assay.loop.derive import header_costs
 from assay.readers import sections
@@ -140,32 +140,25 @@ def write_cases(expect: testing.Expect) -> None:
         LEDGER_HEAD + "a.h | heavy-include | 1 | <chrono> | -\n", "planted", RULE, rule_registry.Policy.COUNT
     )
     counts = {rule_ledger.Key("a.h", KIND, "<chrono>"): 2}
-    permitted = functools.partial(counted.increases_permitted, heavy_include.SPEC, ledger, None)
+    permitted = functools.partial(counted.increases_permitted, heavy_include.SPEC, ledger)
     for mode, wanted in (
         (rule_ledger.WriteMode.LOWER, None),
         (rule_ledger.WriteMode.RAISE, True),
         (rule_ledger.WriteMode.ADMIT, True),
     ):
-        result, _text = testing.captured(functools.partial(permitted, counts, git.Moves(), mode))
+        result, _text = testing.captured(functools.partial(permitted, counts, mode))
         expect(f"the mode {mode} {'refuses' if wanted is None else 'permits'} a count above its row", result == wanted)
     unmeasured = {rule_ledger.Key("d.h", heavy_include.UNMEASURED, "<cstdio>"): 1}
-    result, _text = testing.captured(functools.partial(permitted, unmeasured, git.Moves(), rule_ledger.WriteMode.ADMIT))
+    result, _text = testing.captured(functools.partial(permitted, unmeasured, rule_ledger.WriteMode.ADMIT))
     expect("--admit permits no increase of a kind that is not an admitted kind", result is None)
-    result, _text = testing.captured(functools.partial(permitted, {}, git.Moves(), rule_ledger.WriteMode.LOWER))
+    result, _text = testing.captured(functools.partial(permitted, {}, rule_ledger.WriteMode.LOWER))
     expect("a write with no increase permits the write in each mode", result is False)
     split = {rule_ledger.Key("b.h", KIND, "<chrono>"): 1}
-    result, _text = testing.captured(functools.partial(permitted, split, git.Moves(), rule_ledger.WriteMode.LOWER))
-    expect("the mode lower refuses the row of a new file with no move", result is None)
-    moved = git.Moves(flows=frozenset({("a.h", "b.h")}))
-    result, _text = testing.captured(functools.partial(permitted, split, moved, rule_ledger.WriteMode.LOWER))
+    result, text = testing.captured(functools.partial(permitted, split, rule_ledger.WriteMode.LOWER))
     expect(
-        "a fall of a file that the change moved lines from pays the rise of the new file, so it is no increase",
-        result is False,
+        "the write reads no move: the mode lower refuses the row of a new path, also when a different path falls",
+        result is None and "a path that the ledger does not hold" in text,
     )
-    result, _text = testing.captured(
-        functools.partial(permitted, {**split, **counts}, moved, rule_ledger.WriteMode.LOWER)
-    )
-    expect("a rise that no fall pays stays an increase that the mode lower refuses", result is None)
 
 
 def build_cases(expect: testing.Expect) -> None:

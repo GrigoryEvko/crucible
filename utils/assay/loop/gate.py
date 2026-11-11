@@ -233,13 +233,10 @@ THE REDUCE
     builds the target all first, and a write then reads the full build.  The
     writes of the rules run at the same time, and each ledger has one writer.
 
-    A write refuses each count above its row and each new row, other than an
-    increase that a move pays (THE MOVE of assay.core.ledger).  The write
-    gets the variable CRUCIBLE_CHANGE_BASE with the commit that the
-    composition started from.  Its moves are then those of the full change.
-    The gate does not write the increase that a move pays, because the check
-    of each leg refuses it first.  The change writes that increase with
-    `guard write --rule RULE --build-dir BUILD` before the landing.
+    A write refuses each count above its row and each new row.  The write
+    reads no git history.  The gate does not write an increase, because the
+    check of each leg refuses it first.  The change writes an increase with
+    `guard write --rule RULE --build-dir BUILD --raise` before the landing.
 
     After the writes, the gate folds each ledger that a write changed into a
     new commit (replaced_commit() of assay.core.git).  The new commit has
@@ -866,7 +863,7 @@ class Gate:
                 jobserver.connected(server.path) as client,
             ):
                 flags = {jobserver.VARIABLE: server.makeflags}
-                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs)
+                step = Step(self, candidate, {**environment, **flags}, client, jobs)
                 if is_each:
                     step.always_ready.set()
 
@@ -921,15 +918,14 @@ class Gate:
 class Step:
     """The work of one heavy step of a check: its commands, its threads and its stop event.
 
-    `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
-    the base of the change for the writes (THE REDUCE).  `jobs` is the job count of the heavy step and of its
-    jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).
+    `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER).  `jobs` is the
+    job count of the heavy step and of its jobserver.  `always_ready` tells that the build of ALWAYS holds the configure
+    of the change (THE THREADS).
     """
 
     __slots__ = (
         "_said",
         "always_ready",
-        "based",
         "candidate",
         "client",
         "environment",
@@ -943,15 +939,13 @@ class Step:
         gate: Gate,
         candidate: Candidate,
         environment: Mapping[str, str],
-        based: Mapping[str, str],
         client: jobserver.Client,
         jobs: int,
     ) -> None:
-        """Keep the gate, the candidate, the environments, the jobserver client and the jobs."""
+        """Keep the gate, the candidate, the environment, the jobserver client and the jobs."""
         self.gate = gate
         self.candidate = candidate
         self.environment = dict(environment)
-        self.based = dict(based)
         self.client = client
         self.jobs = jobs
         self.stop = threading.Event()
@@ -1088,15 +1082,15 @@ class Step:
     def reduce(self, counted: Sequence[str]) -> None:
         """Run the reduce of each counted rule over the builds of the configurations, at the same time (THE REDUCE).
 
-        Each rule has one write, and the write gets the environment with the base of the change.  A write that refuses
-        a count exits 1, and it writes no ledger.  Complexity: one write of each counted rule.
+        Each rule has one write.  A write that refuses a count exits 1, and it writes no ledger.  Complexity: one write
+        of each counted rule.
         """
 
         def write_one(rule: str) -> None:
             """Write the ledger of one rule over the build of each configuration that checks it."""
             log = f"reduce-{rule}.log"
             command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule)]
-            status = self.run_logged(command, log, self.based, proc.TOOL_S)
+            status = self.run_logged(command, log, self.environment, proc.TOOL_S)
             self.say(f"loop land: the reduce of {rule} exits {status}")
 
         self.concurrently(list(counted), write_one)

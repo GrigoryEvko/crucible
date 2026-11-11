@@ -70,8 +70,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.core import configuration as build_config
-from assay.core import git, proc
 from assay.core import ledger as rule_ledger
+from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import rows as rows_grammar
@@ -495,10 +495,6 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
     per_build = counts_of_builds(rule.id, request, lambda context: finding_counts(rule, context))
     if isinstance(per_build, int):
         return per_build
-    moves = git.change_moves(request.root)
-    before = rule_ledger.ledger_before(
-        rule, moves.base, git.base_file(request.root, moves, rule_ledger.shown_path(rule.id))
-    )
     try:
         written = rule_ledger.write_counts(
             rule,
@@ -506,9 +502,6 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
             rule_ledger.largest_counts(per_build),
             mode=request.mode,
             reason=request.reason,
-            moved=moves.renamed,
-            flows=moves.flows,
-            before=before,
             is_partial=request.is_partial,
         )
     except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
