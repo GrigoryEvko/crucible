@@ -239,7 +239,7 @@
       "displayName": "The tests of the build with no BPF substrate, with no ledger rule whose base rows count the BPF facades",
       "vendor": { "crucible": { "tier": "nightly" } },
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "name": "^guard_(plugin|artifact_symbols|artifact_links|library_bytes)$" } },
+      "filter": { "exclude": { "name": "^guard_(plugin|artifact_symbols|artifact_links)$" } },
       "execution": { "jobs": 224,"timeout": 300 }
     },
     {

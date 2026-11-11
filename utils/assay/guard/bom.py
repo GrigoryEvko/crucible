@@ -20,8 +20,9 @@ THE LAYERS
                          CODE).  For a linked file, each library of
                          DT_NEEDED, and each undefined dynamic symbol as
                          SYMBOL@VERSION with the file of its version
-      2. library code    the exclusive bytes of each class of the rule
-                         library-bytes, and the largest library bodies
+      2. library code    the exclusive bytes of each class of
+                         assay.readers.library_bytes (THE MEASURE), and the
+                         largest library bodies
       3. compiler calls  each import that GCC adds to the code itself
                          (COMPILER_MADE of artifact_symbols), and each
                          import of a function of the support library of
@@ -53,9 +54,9 @@ from pathlib import Path
 
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.elf import artifact_links, artifact_symbols, library_bytes, runner
+from assay.guard.engines.elf import artifact_links, artifact_symbols, runner
 from assay.readers import census as build_census
-from assay.readers import dwarf, elf, linkmap, sections
+from assay.readers import dwarf, elf, library_bytes, linkmap, sections
 
 LIMIT = 20
 INDENT = "     "
@@ -66,6 +67,7 @@ LAYER_PROBLEMS = (
     runner.NotApplicable,
     elf.ElfError,
     dwarf.DwarfError,
+    library_bytes.MeasureError,
     linkmap.LinkMapError,
     sections.SectionError,
     OSError,
@@ -242,10 +244,17 @@ def import_layer(imports: Imports, limit: int) -> list[str]:
 def code_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> list[str]:
     """Return the lines of layer 2: the bytes of each class and the largest library bodies, from DWARF.
 
+    The tree is the source root and the build directory, and the toolchain is the prefix of the compiler of the build.
+
     Raises:
-        runner.BuildError: If the DWARF of the artifact or the names of its bodies cannot be read
+        runner.NotApplicable: If the call gives no build directory
+        runner.BuildError: If the CMake cache cannot be read or names no compiler, or the names of the bodies cannot
+            be read
+        library_bytes.MeasureError: If the DWARF of the artifact cannot be read
     """
-    measure = library_bytes.read_measure(artifact.path, library_bytes.places_of(context))
+    tree = [Path(context.root)] + ([context.build_dir] if context.build_dir is not None else [])
+    places = library_bytes.places_of(tree, runner.toolchain_prefix(context.compiler()))
+    measure = library_bytes.read_measure(artifact.path, places)
     classes = ", ".join(f"{name} {measure.classes.get(name, 0)}" for name in library_bytes.CLASSES)
     largest = sorted(measure.bodies.items(), key=lambda item: (-item[1], item[0]))
     try:

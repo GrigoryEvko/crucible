@@ -166,7 +166,7 @@ THE RUN OF A CONFIGURATION
          An exit other than 0 with no red test rejects the commit too.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
          kind, such as the tests guard_plugin (with the rule
-         quarantine-lines), guard_artifact_symbols and guard_library_bytes.
+         quarantine-lines) and guard_artifact_symbols.
          A second run of these checks gives no new verdict.  A test that gives
          a skip does not reject the commit, and the gate writes its name.
          A red test that runs alone writes its output to its log.

@@ -1,3 +1,0 @@
-# The library foundation inlines code of libstdc++, and its row holds 1,000,000 bytes.  The fall passes.
-flags -std=c++17 -O1 -g -ffunction-sections
-library foundation unit.cpp

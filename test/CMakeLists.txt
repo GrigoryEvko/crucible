@@ -4960,7 +4960,7 @@ crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its configured ledgers and of its
-# six rules build planted libraries, programs, modules and probe units with the
+# five rules build planted libraries, programs, modules and probe units with the
 # compiler of this build, and they link with the pinned mold (the plants of
 # assay.guard.engines.elf.runner).  The test of codegen-shapes
 # also compiles the probe unit of this build with a planted header.  The test
@@ -4973,7 +4973,7 @@ crucible_elf_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} TREES codegen-shapes)
 foreach(_assay_test guard.engines.elf.test_runner guard.engines.elf.test_artifact_symbols
         guard.engines.elf.test_codegen_shapes guard.engines.elf.test_static_tls guard.engines.elf.test_configured
         guard.engines.elf.test_artifact_links guard.engines.elf.test_artifact_hardening
-        guard.engines.elf.test_library_bytes guard.test_bom guard.test_asm_compare)
+        guard.test_bom guard.test_asm_compare)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})
@@ -5048,13 +5048,14 @@ set_tests_properties(assay_readers_test_ctest PROPERTIES LABELS "ci_guard;meta"
   ENVIRONMENT "ASSAY_TEST_CMAKE=${CMAKE_COMMAND};ASSAY_TEST_CTEST=${CMAKE_CTEST_COMMAND}")
 # The tests of the SARIF reader and of the reader of the include trace compare
 # each reader with the text output of the compiler of this build.  The tests of
-# the ELF reader, of the DWARF reader and of the reader of a disassembly read
-# the objects that the compiler of this build gives.  The test of the reader of
+# the ELF reader, of the DWARF reader, of the reader of the library bytes and
+# of the reader of a disassembly read the objects that the compiler of this
+# build gives.  The test of the reader of
 # a link map reads the map that the pinned mold writes of a link with the
 # compiler of this build.  The test of the reader of the statistics of ccache
 # compiles through ccache with the compiler of this build.
 foreach(_assay_test readers.test_sarif readers.test_include_trace readers.test_elf readers.test_objdump
-        readers.test_linkmap readers.test_dwarf readers.test_ccache)
+        readers.test_linkmap readers.test_dwarf readers.test_library_bytes readers.test_ccache)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")
   crucible_script_test(NAME ${_assay_test_name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.${_assay_test})

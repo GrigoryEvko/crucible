@@ -1,2 +1,0 @@
-// A function with no code of a library.
-int planted_entry(int value) { return value * 3 + 1; }
