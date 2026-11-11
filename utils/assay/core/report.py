@@ -35,13 +35,11 @@ GITHUB ANNOTATIONS
     an annotation on its file.
 
 A CI RUNNER
-    The time thresholds apply to the build host, and a GitHub runner is
-    slower (utils/assay/core/meter.py, A CI RUNNER).  A check makes the
-    finding of a judgment of a measured value with judged().  When
-    GITHUB_ACTIONS is "true", judged() gives a warning for an error of a time
-    rule, and the message tells so.  An error of a memory rule, of a size rule
-    or of an input stays an error.  github_actions() sets or removes the
-    variable for the cases of a self-test.
+    A check makes the finding of a judgment of a measured value with
+    judged().  No measured rule judges a time, so a finding has the same
+    level on a GitHub runner and on the build host (utils/assay/core/meter.py,
+    A CI RUNNER).  github_actions() sets or removes GITHUB_ACTIONS for the
+    cases of a self-test.
 
 THE KIND AND THE ENTITY
     A finding of a rule with a ledger also has a kind and an entity, and
@@ -277,13 +275,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def judged(level: Level, path: str, line: int, check: str, message: str) -> Finding:
     """Return the finding of one judgment of a measured value against a threshold or a ledger row.
 
-    On a GitHub runner, an error of a time rule becomes a warning that gives
-    the reason (utils/assay/core/meter.py, ci_verdict).  A finding that
-    reports an input that the check cannot read is not a judgment, and a
-    check makes it with Finding.
+    A finding that reports an input that the check cannot read is not a
+    judgment, and a check makes it with Finding.
 
     Args:
-        level: The level of the judgment on the build host
+        level: The level of the judgment
         path: The place of the finding
         line: The line of the finding, or 0
         check: The name of the check, which is the ID of its measured rule
@@ -292,8 +288,7 @@ def judged(level: Level, path: str, line: int, check: str, message: str) -> Find
     Returns:
         The finding
     """
-    shown_level, shown_message = cost_meter.ci_verdict(level, check, message)
-    return Finding("error" if shown_level == "error" else "warning", path, line, check, shown_message)
+    return Finding(level, path, line, check, message)
 
 
 @contextlib.contextmanager
@@ -521,34 +516,20 @@ def self_test() -> int:
     with contextlib.redirect_stderr(io.StringIO()):
         expect("--error-threshold fails for a missing rule", print_error_threshold("no-such-check") == 1)
 
-    expect("the time rows of cost_meter are the measured rules of unit s of the repository registry",
-           cost_meter.TIME_ROWS == {row.check for row in budgets.values() if row.unit == "s"})
+    expect("no measured rule of the repository registry judges a time",
+           not any(row.unit == "s" for row in budgets.values()))
     expect("a finding keeps its kind and its entity, and its text does not show them",
            Finding("error", "a.py", 3, "alpha", "m", "regex-call", "f()").text() == "a.py:3: error: [alpha] m")
     refuses("Finding refuses a kind with a space", lambda: Finding("error", "p", 1, "alpha", "m", "a b"))
     earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
-    with github_actions(False):
-        expect("off a CI runner, a time error stays an error",
-               judged("error", "t.cpp", 0, "configure-time", "slow")
-               == Finding("error", "t.cpp", 0, "configure-time", "slow"))
-        os.environ[cost_meter.GITHUB_ACTIONS_ENV] = "false"
-        expect("GITHUB_ACTIONS=false is not a CI runner",
-               judged("error", "t.cpp", 0, "configure-time", "m").level == "error")
     with github_actions(True):
-        demoted = judged("error", "t.cpp", 0, "configure-time", "slow")
-        expect("on a CI runner, a time error is a warning that says that it was demoted",
-               demoted.level == "warning" and demoted.message == f"slow.  {cost_meter.CI_DEMOTION}.")
         expect("on a CI runner, a memory error stays an error",
                judged("error", "t.cpp", 0, "test-memory", "big") == Finding("error", "t.cpp", 0, "test-memory", "big"))
-        expect("on a CI runner, an error of a row that is not a time stays an error",
-               judged("error", "t.o", 0, "function-size", "f").level == "error")
-        expect("on a CI runner, a time warning keeps its message",
-               judged("warning", "t.cpp", 0, "configure-time", "w")
-               == Finding("warning", "t.cpp", 0, "configure-time", "w"))
+        warned = judged("warning", "t.cpp", 0, "test-memory", "w")
         with contextlib.redirect_stdout(io.StringIO()) as printed:
-            status = emit([demoted], "configure-time", None)
-        expect("on a CI runner, a demoted time error gives status 0 and an annotation",
-               status == 0 and "::warning file=t.cpp,title=configure-time::" in printed.getvalue())
+            status = emit([warned], "test-memory", None)
+        expect("on a CI runner, a warning gives status 0 and an annotation",
+               status == 0 and "::warning file=t.cpp,title=test-memory::" in printed.getvalue())
     expect("github_actions() puts the earlier value back", os.environ.get(cost_meter.GITHUB_ACTIONS_ENV) == earlier)
 
     if failures:

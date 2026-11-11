@@ -16,7 +16,6 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 
 BUDGET = check_report.Budget("compile-memory", 2.0, 4.0, "GB", "a planted quantity")
-SPACE = check_report.Budget("configure-time", 10.0, 20.0, "s", "a planted time")
 
 
 def rows_of(admitted: dict[str, float]) -> cost_budget.Rows:
@@ -199,8 +198,6 @@ def judge_cases(expect: testing.Expect) -> None:
             held is not None and held.check == "header-alone" and "header-alone-fixy" in held.message,
         )
     with check_report.github_actions(True):
-        timed = cost_budget.judge("configure-time", SPACE, cost_budget.Measure("u", "u", 30.0, "said"), empty)
-        expect("on a GitHub runner an error of a time rule is a warning", level_of(timed) == "warning")
         sized = cost_budget.judge("compile-memory", BUDGET, measure, empty)
         expect("on a GitHub runner an error of a memory rule stays an error", level_of(sized) == "error")
 

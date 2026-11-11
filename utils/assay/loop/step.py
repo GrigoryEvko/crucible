@@ -240,7 +240,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         message = (f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
                    f"{limit_words}, and no CPU limit stopped it")
         if cost_meter.is_github_actions():
-            # The hard stop is no time rule of TIME_ROWS, and a runner demotes its error as it demotes a time rule.
+            # A runner is slower than the build host, so the error of the hard stop is a warning there.
             return "built", ("warning", LIMIT_CHECK, f"{message}.  {cost_meter.CI_DEMOTION}.")
         return "rejected", ("error", LIMIT_CHECK, f"{message}.  The launcher removed the output")
     if memory_row in budget and cost_budget.verdict(run.peak_gb, *budget[memory_row], None) == cost_budget.WARNING:

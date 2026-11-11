@@ -105,17 +105,14 @@ A COMPILE THROUGH CCACHE
     directly, so their counts are counts of the compiler run too.
 
 A CI RUNNER
-    The thresholds of the time rules (TIME_ROWS) and the hard stops of the
-    steps apply to the build host of the tree,
-    which has 384 hardware threads.  A GitHub runner has 4 slower vCPUs and
-    16 GB, and it runs two or three jobs at a time.  A time there can exceed
-    an error threshold with no defect in the tree.  When the environment sets
-    GITHUB_ACTIONS to "true", ci_verdict() changes an error of a time rule to
-    a warning, and the message tells so.  limit_cpu() then sets no CPU limit,
-    because a step that the limit stops cannot become a warning.  `loop step`
-    then gives a warning for a step past its hard stop.  An error of a memory
-    rule, of a size rule or of an input stays an error.  Each check that
-    judges a time rule calls ci_verdict().
+    The hard stops of the steps apply to the build host of the tree.  A
+    GitHub runner has 4 slower vCPUs and 16 GB, and it runs two or three jobs
+    at a time.  A step there can pass a hard stop with no defect in the tree.
+    When the environment sets GITHUB_ACTIONS to "true", limit_cpu() sets no
+    CPU limit, because a step that the limit stops cannot become a warning.
+    `loop step` then gives a warning for a step past its hard stop.  No
+    measured rule judges a time, so an error of a measured rule stays an
+    error on a runner.
 
 THE JOBSERVER OF A TEST
     ctest gives each test the variable MAKEFLAGS of the GNU make jobserver
@@ -210,12 +207,9 @@ if TYPE_CHECKING:
 KIND_FILE = "build-kind.txt"
 CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
-# The measured rules of utils/registry.txt whose value is a time.  The self-test
-# of utils/assay/core/report.py holds this set equal to the rules of unit s.
-TIME_ROWS: frozenset[str] = frozenset()
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
-CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
-               "thresholds apply to the build host, and a CI runner is slower")
+CI_DEMOTION = ("The step demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the hard "
+               "stops apply to the build host, and a CI runner is slower")
 # The CPU time and the run-queue wait of this task since its fork, in nanoseconds (THE OWN RUN).
 SCHEDSTAT_FILE = "/proc/self/schedstat"
 # CRUCIBLE_COUNT_INSTRUCTIONS=0 opens no instruction counter, as on a host with no counter.
@@ -322,24 +316,6 @@ def is_github_actions() -> bool:
     return os.environ.get(GITHUB_ACTIONS_ENV, "") == "true"
 
 
-def ci_verdict(level: str, check: str, message: str) -> tuple[str, str]:
-    """Return the level and the message of one judgment of a measured value, for the host that measured it.
-
-    Args:
-        level: "warning" or "error"
-        check: The ID of the measured rule that the judgment reads
-        message: The message of the judgment
-
-    Returns:
-        A warning whose message gives the reason, for an error of a rule in TIME_ROWS on a GitHub runner.
-        Else the level and the message, unchanged
-    """
-    if level != "error" or check not in TIME_ROWS or not is_github_actions():
-        return level, message
-    stop = "" if message.endswith(".") else "."
-    return "warning", f"{message}{stop}  {CI_DEMOTION}."
-
-
 def limit_cpu(seconds: float) -> int | None:
     """Give this process, and each process that it starts after the call, a CPU limit.
 
@@ -349,8 +325,8 @@ def limit_cpu(seconds: float) -> int | None:
     action of SIGXCPU writes a core dump, and the GCC 16 driver crashes when
     it reports a compiler that SIGXCPU stopped.  A hard limit that the
     environment set lower stays.  On a GitHub runner, the function sets no
-    limit, because a time error there is a warning (the module docstring
-    tells why).
+    limit, because the error of a hard stop there is a warning (the module
+    docstring tells why).
 
     Args:
         seconds: The limit, in seconds of CPU time
