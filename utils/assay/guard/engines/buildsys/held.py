@@ -10,16 +10,16 @@ THE HOLDERS
     registry of the copy of the plant (BuildContext.budget()):
       loop-gauge      judged_record() of assay.loop.gauge for each record of
                       the file GAUGE_RECORDS of the build
-      loop-test-step  judge() of assay.loop.teststep for the record of each
-                      test of the build, with the limits of the kind test and
-                      the ledgers of the copy
       loop-fixture    cost_findings() and own_reason_findings() of
                       assay.loop.fixture.store for each fixture of the build
       a rule ID       the findings of that rule on the plant
     The rules step-cost and step-memory have a module of their own, and a
-    step meter judges their kinds test and fixture.  The witness of the two
-    rules runs the judges of loop-test-step and loop-fixture of this table
-    on each plant too (judge() of assay.guard.engines.buildsys.cost_budgets).
+    step meter judges their kind test and the kind fixture of step-cost.
+    The witness of the two rules also runs two judges of this module on
+    each plant (judge() of assay.guard.engines.buildsys.cost_budgets).
+    test_step_findings() runs judge() of assay.loop.teststep on the record of
+    each test, with the limits of the kind test and the ledgers of the copy.
+    fixture_findings() is the judge of the holder loop-fixture.
     The field holder of a held rule names the function of its holder that
     judges it.  The rule rule-implementations makes sure that the judge of the
     holder in HOLDERS calls that function.  For a holder that is a rule ID,
@@ -207,7 +207,6 @@ def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[ch
 
 HOLDERS: dict[str, Judge] = {
     "loop-gauge": gauge_findings,
-    "loop-test-step": test_step_findings,
     "loop-fixture": fixture_findings,
 }
 

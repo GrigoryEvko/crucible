@@ -34,8 +34,8 @@ THE ROWS
                    divided by commas
       held-by      the rule or the command that reads the limit of a
                    measured rule that has no module of its own: a rule ID,
-                   or loop-gauge, loop-step, loop-test-step or loop-fixture.
-                   A step meter (loop-step, loop-test-step or loop-fixture)
+                   or loop-gauge, loop-step or loop-fixture.
+                   A step meter (loop-step or loop-fixture)
                    can also hold a rule with no limit, which it judges
                    for each step
       holder       the function of the holder that judges a rule with
@@ -118,12 +118,11 @@ HOLDING_COMMANDS = frozenset(
     {
         "loop-gauge",
         "loop-step",
-        "loop-test-step",
         "loop-fixture",
     }
 )
 # The step meters, which judge each step that they run.  Such a meter can also hold a rule with no limit.
-STEP_METERS = frozenset({"loop-step", "loop-test-step", "loop-fixture"})
+STEP_METERS = frozenset({"loop-step", "loop-fixture"})
 # The character between the module and the function in the field holder.
 HOLDER_SEPARATOR = ":"
 
