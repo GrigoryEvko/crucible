@@ -69,7 +69,7 @@ THE STEP METERS
     `loop step`, `loop test-step` and `loop fixture` judge each step with
     verdict() and row_of(), and they give their own messages.  The import
     closure of a step meter does not hold assay.core.report, which imports
-    argparse and re (the rule import-closure).  This module then imports only
+    argparse and re.  This module then imports only
     assay.core.value at its import.  It imports assay.core.meter and
     assay.core.report in a function that gives a finding or reads a ledger.
 

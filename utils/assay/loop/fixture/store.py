@@ -1447,8 +1447,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
     if not driver:
         return None, f"the compiler driver {argv[0]} is not in PATH"
     driver = os.path.join(directory, driver)
-    # A fixture imports the store at its start, and tests.guard.test_import_closure holds the imports of that
-    # step.  This import is in the function, and it does not change that list.
+    # A fixture imports the store at its start.  This import is in the function, and it adds no module to that start.
     from assay.readers import elf
 
     try:

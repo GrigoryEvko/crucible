@@ -4,7 +4,7 @@ THE COST
     CMake and ctest start a step meter for each compile, each link, each test
     and each fixture.  The step meters are `loop step`, `loop test-step` and
     `loop fixture`.  The modules that the import of a step meter adds are a
-    cost of each run (the rule import-closure).  The measurements of
+    cost of each run.  The measurements of
     2026-10-09 give the p50 of 15 runs of one import in a new interpreter
     with -S.  The import of dataclasses took 10.9 ms, enum took 2.2 ms and
     pathlib took 7.6 ms.  A step meter itself takes approximately 10 ms.  A record that a step meter builds or writes then

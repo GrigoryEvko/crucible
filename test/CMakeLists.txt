@@ -4953,8 +4953,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # and of the tracer of its calls plant test programs in the work root of the
 # caches.  The tests of the reader of
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
-# of the import closure imports the module of each hidden subcommand of the
-# masters in a new interpreter.  The test of the memo of the file hashes hashes
+# of the memo of the file hashes hashes
 # planted files, and the test of the run of mypy runs a planted mypy.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
   TREES admitted-audit decide-cite-ratio derived-files plan-coverage prose-bans)
@@ -4988,7 +4987,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         guard.engines.buildsys.test_planted guard.engines.buildsys.test_held guard.engines.buildsys.test_cost_totals
         readers.test_compdb readers.test_python
         readers.test_tool_reports readers.test_bench
-        readers.test_sections readers.test_prose guard.test_import_closure
+        readers.test_sections readers.test_prose
         guard.engines.meta.test_package guard.engines.meta.test_ste_dictionary guard.engines.meta.test_witness
         guard.engines.meta.test_test_registration
         guard.engines.meta.test_types

@@ -97,7 +97,7 @@ class DigestMemo:
         """Return the answer for a path in a new call, from a kept entry when its stat fields are the same.
 
         The function imports the meter of the clock here.  The fixture driver then imports this module for
-        stat_fields() with no meter (THE CLOSURE of tests.guard.test_import_closure).
+        stat_fields() with no meter.
         """
         from assay.core import meter
 

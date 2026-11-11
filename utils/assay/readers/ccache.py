@@ -21,8 +21,8 @@ THE HITS
     of a cache directory are the sum of the two counts (Statistics.hits).
 
 THE COST
-    The step meter `loop step` imports this module for each compile (the rule
-    import-closure).  At its start, the module imports assay.core.value only.
+    The step meter `loop step` imports this module for each compile.  At its
+    start, the module imports assay.core.value only.
     statistics() imports assay.core.proc when it runs.
 
 `guard selftest tests.readers.test_ccache` does the test of the module.
