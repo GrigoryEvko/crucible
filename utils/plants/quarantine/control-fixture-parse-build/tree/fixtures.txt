@@ -1,0 +1,7 @@
+parse
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 99999999
+finding neg_alpha | std-object | 5 | std::vector
+fixture neg_delta | test/foundation/neg/neg_delta.cpp | 0123abcd | 0123abcd
+finding neg_delta | std-entity | 3 | std::span::operator[]
+fixture neg_omega | test/foundation/neg/neg_omega.cpp | 0123abcd | missing
+read neg_delta | test/foundation/neg/neg_helper.h

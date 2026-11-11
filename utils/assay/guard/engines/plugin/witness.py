@@ -33,6 +33,8 @@ THE MANIFEST
       procedure WORD                         one procedure of THE PROCEDURES
       judge NAME                             the module of the rule judges the finding lines of NAME
                                              (THE KINDS OF A PLANT)
+      fixtures FILE                          the module of the rule judges the planted fixtures of FILE
+                                             (THE KINDS OF A PLANT)
       link PATH TARGET                     the path PATH of the tree is a symbolic link to the path
                                              TARGET of the tree (THE LINKS)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
@@ -143,9 +145,9 @@ THE PROCEDURES
     ccache or no build directory, writes "skip" and gives no failure.
 
 THE KINDS OF A PLANT
-    A plant has a compile with the exit fail, a refused table, a procedure or
-    a judge row.  A control has no compile with the exit fail, no error row
-    and no refused table.
+    A plant has a compile with the exit fail, a refused table, a procedure, a
+    judge row or a fixtures row.  A control has no compile with the exit
+    fail, no error row and no refused table.
 
     A ledger of a family rule judges its findings, and the compile in the
     mode report does not fail.  A judge row names a compile, and the module
@@ -154,6 +156,13 @@ THE KINDS OF A PLANT
     the plant, which is empty when the plant holds none.  The judged
     compiles of a plant give a minimum of one error, and the judged compiles
     of a control give none.
+
+    A fixtures row names a file of the tree with planted fixtures (THE
+    PLANTS of assay.guard.engines.plugin.fixtures).  Then the function
+    judge(rule, context) of the module judges the lines of the judged
+    compiles and the planted fixtures together, as a run of the rule does
+    (assay.guard.engines.meta.runner.module_judged).  The same verdict of a
+    plant and of a control applies.
 
 THE ENVIRONMENT
     The witness runs the plants of a rule at one time, in the threads of one
@@ -326,6 +335,7 @@ class Manifest:
     procedures: tuple[str, ...] = ()
     judged: tuple[str, ...] = ()
     links: tuple[tuple[str, str], ...] = ()
+    fixtures: str = ""
 
     @property
     def is_refused(self) -> bool:
@@ -336,6 +346,7 @@ class Manifest:
             or "refused" in self.white_space
             or bool(self.procedures)
             or bool(self.judged)
+            or bool(self.fixtures)
         )
 
     @property
@@ -378,14 +389,14 @@ def diagnostic_place(text: str, row: rows_grammar.Row) -> str:
 
 
 def tree_path(text: str, row: rows_grammar.Row) -> str:
-    """Return the path of a link row with each `.` part and each `..` part removed, a relative path in the tree.
+    """Return the path of a link row or a fixtures row with each `.` part and `..` part removed, a path in the tree.
 
     Raises:
         rows_grammar.RowsError: If the path is absolute, is not in the tree or names the tree itself (THE LINKS)
     """
     normal = os.path.normpath(text)
     if os.path.isabs(normal) or normal == "." or normal == ".." or normal.startswith("../"):
-        raise row.error(f"the path {text!r} of a link row is not a path in the tree")
+        raise row.error(f"the path {text!r} of a {row.words[0]} row is not a path in the tree")
     return normal
 
 
@@ -480,6 +491,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
     procedures: list[str] = []
     judged: list[str] = []
     links: dict[str, str] = {}
+    fixtures = ""
     named: list[rows_grammar.Row] = []
     for row in rows_grammar.parse(text, path):
         kind = row.words[0]
@@ -562,10 +574,15 @@ def parse_manifest(text: str, path: str) -> Manifest:
             if link_path in links or link_path == link_target:
                 raise row.error("a link row is 'link PATH TARGET', one for each PATH, with a TARGET that is not PATH")
             links[link_path] = link_target
+        elif kind == "fixtures":
+            shape(row, 2, 0)
+            if fixtures:
+                raise row.error("a fixtures row is 'fixtures FILE', one in a manifest")
+            fixtures = tree_path(row.words[1], row)
         else:
             raise row.error(
                 f"the row kind {kind!r} is unknown.  The kinds are compile, flag, exit, finding, error, note, text, "
-                f"missing, table-unit, table, white-space, reads, procedure, judge and link"
+                f"missing, table-unit, table, white-space, reads, procedure, judge, link and fixtures"
             )
     for row in named:
         if row.words[1] not in compiles:
@@ -639,6 +656,7 @@ def parse_manifest(text: str, path: str) -> Manifest:
         tuple(procedures),
         tuple(judged),
         tuple(sorted(links.items())),
+        fixtures,
     )
 
 
@@ -1555,19 +1573,29 @@ def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
     return outcome.section.findings if outcome.section is not None else ()
 
 
-def module_errors(rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding]) -> list[str]:
+def module_errors(rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding], fixtures: str = "") -> list[str]:
     """Return the errors that the module of a rule gives on the finding lines of a plant (THE KINDS OF A PLANT).
 
-    The module judges the lines against the ledger of the tree of the plant.  Complexity: linear in the lines.
+    The module judges the lines against the ledger of the tree of the plant.  With `fixtures`, the file of planted
+    fixtures of the tree, judge() of the module judges the lines and the planted fixtures together.  Complexity:
+    linear in the lines and the planted fixtures.
+
+    Raises:
+        rows_grammar.RowsError: If the file of the planted fixtures does not obey its rows
+        OSError: If the file of the planted fixtures cannot be read
     """
     from assay.core import registry as rule_registry
+    from assay.guard.engines.plugin import fixtures as planted_fixtures
     from assay.guard.engines.plugin import runner as plugin_runner
 
     rule = rule_registry.load().rules[rule_id]
     section = plugin_sections.Section("", tuple(lines))
     census = plugin_runner.census_of([plugin_runner.ObjectSection("plant", "", section)])
-    context = plugin_runner.PluginContext(tree, census=census)
-    findings = meta_runner.judged(rule, tree, context.findings_of(rule))
+    if fixtures:
+        context = planted_fixtures.plant_context(tree, census, tree / fixtures)
+        findings = meta_runner.module_judged(rule, context)
+    else:
+        findings = meta_runner.judged(rule, tree, plugin_runner.PluginContext(tree, census=census).findings_of(rule))
     return [item.text() for item in findings if item.level == "error"]
 
 
@@ -1622,14 +1650,19 @@ def run_plant(compiler: Compiler, plant: Path, rule_id: str = QUARANTINE_RULE) -
                 ruletable.load(Path(compiler.resolved(path, work)))
             except (ruletable.TableError, OSError) as problem:
                 failures.append(f"ruletable.py does not read {path}: {problem}")
-        if manifest.judged:
-            errors = module_errors(rule_id, work / TREE, lines)
+        if manifest.judged or manifest.fixtures:
+            try:
+                errors = module_errors(rule_id, work / TREE, lines, manifest.fixtures)
+            except (rows_grammar.RowsError, OSError) as problem:
+                return [*failures, f"the planted fixtures cannot be read: {problem}"], 0, False
             if is_plant and not errors:
-                failures.append(f"the module of {rule_id} gives no error on the finding lines of the judged compiles")
+                failures.append(
+                    f"the module of {rule_id} gives no error on the judged compiles and the planted fixtures"
+                )
             if not is_plant and errors:
                 failures += [f"the module of {rule_id} gives an error: {error}" for error in errors]
         skipped = False
-        cases = len(compiles) + len(tables) + len(manifest.reads)
+        cases = len(compiles) + len(tables) + len(manifest.reads) + (1 if manifest.fixtures else 0)
         for word in manifest.procedures:
             result = PROCEDURES[word](Plant(compiler, plant, work))
             if isinstance(result, str):

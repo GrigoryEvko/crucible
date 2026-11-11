@@ -2,17 +2,24 @@
 
 THE PLANTED BUILD
     Scratch makes a throwaway git repository.  It holds each source file of
-    the findings, a fake ninja and a CMake cache.  It also holds a compile
-    database, objects with sections and a ledger.  A case changes the finding
-    lines of an object.  Then it runs the rule, writes the ledger or lists the
-    findings, as `guard check`, `guard write` and `guard list` do.  A complete
-    write gives the write the planted build two times, as a reduce of the
-    landing gate gives it a build of each configuration.
+    the findings, a fake ninja, a fake ctest and a CMake cache.  It also holds
+    a compile database, objects with sections and a ledger.  The fake ctest
+    lists the planted negative fixtures, and a case can write the record of
+    the run of a fixture with its census.  A case changes the finding lines
+    of an object or the census of a fixture.  Then it runs the rule, writes
+    the ledger or lists the findings, as `guard check`, `guard write` and
+    `guard list` do.  A complete write gives the write the planted build two
+    times, as a reduce of the landing gate gives it a build of each
+    configuration.
 
 THE CASES
     The cases hold each behavior of the ledger of the rule quarantine:
-      * The key of a directory and a kind, and the entity of each kind of the
-        rule fixture-quarantine
+      * The key of a directory and a kind
+      * The census of the fixtures: a build with no fixture run and a parse
+        build, a new finding in a directory with no row, the source root of
+        a census, a kind of a probe and its reason, the problems of the
+        records, a file that only the compiles of fixtures read, and a
+        reduce with no fixture run
       * The opted-out findings and the regions, with the reason in the key
       * A replaced finding of the same kind in one directory, which passes,
         and a count above the row of its directory, which fails
@@ -28,18 +35,20 @@ THE CASES
 
 import contextlib
 import io
+import json
 import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import git as throwaway_repo
 from assay.core import ledger as rule_ledger
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core import ruletable, testing
-from assay.guard.engines.buildsys import fixture_quarantine
-from assay.guard.engines.plugin import counted, quarantine, runner
+from assay.guard.engines.plugin import counted, fixtures, quarantine, runner
 from assay.readers import cmake, compdb, elf
 from assay.readers import sections as quarantine_sections
 
@@ -49,11 +58,19 @@ REGISTRY_ROWS = (
     "rule quarantine engine=plugin scope=quarantined ledger=count doc=XXII.R11 | a planted quarantine rule | lower it",
     "rule contract-specifier engine=plugin scope=tracked ledger=none doc=XII | a planted contract rule | use a macro",
 )
+# The fake ninja prints the planted dependency log for `-t deps`, and the planted inputs of all for each other tool.
 FAKE_NINJA = """\
 import sys
 from pathlib import Path
 build = Path(sys.argv[sys.argv.index("-C") + 1])
-sys.stdout.write((build / "inputs.txt").read_text())
+sys.stdout.write((build / ("deps.txt" if "deps" in sys.argv else "inputs.txt")).read_text())
+"""
+# The fake ctest prints the planted test list of the directory of --test-dir.
+FAKE_CTEST = """\
+import sys
+from pathlib import Path
+directory = Path(sys.argv[sys.argv.index("--test-dir") + 1])
+sys.stdout.write((directory / "tests.json").read_text())
 """
 HEAD = "# a planted ledger\n"
 EMPTY_LEDGER = f"{HEAD}format 1\nrule {RULE}\n"
@@ -83,13 +100,13 @@ RULES = rule_registry.planted_rules(REGISTRY_ROWS)
 
 
 class Scratch:
-    """A planted build with a fake ninja, a compile database, objects with sections, a rule table and a ledger.
+    """A planted build with a fake ninja, a fake ctest, a compile database, objects with sections and a ledger.
 
     The root is a throwaway git repository with each source file of the findings.  A move is then a git move.
     """
 
     def __init__(self, root: Path) -> None:
-        """Make the tree with three objects."""
+        """Make the tree with three objects and no fixture."""
         self.root = root
         self.build = root / "build"
         self.build.mkdir(parents=True)
@@ -106,8 +123,12 @@ class Scratch:
         self.ninja = root / "ninja.py"
         self.ninja.write_text(f"#!{sys.executable}\n{FAKE_NINJA}", encoding="utf-8")
         self.ninja.chmod(0o755)
+        self.ctest = root / "ctest.py"
+        self.ctest.write_text(f"#!{sys.executable}\n{FAKE_CTEST}", encoding="utf-8")
+        self.ctest.chmod(0o755)
         self.configure(BASE_NAME, "Debug")
         self.objects: dict[str, tuple[list[str], str, bool]] = {}
+        self.fixtures: dict[str, tuple[str, str]] = {}
         header = "quarantine std-object include/crucible/Vigil.h:10:5 std::vector"
         self.add(
             "a",
@@ -129,16 +150,21 @@ class Scratch:
         )
         self.add("c", ["quarantine std-entity test/test_arena.cpp:2:1 std::swap"])
 
-    def configure(self, kind: str, build_type: str, flags: str = "") -> None:
-        """Write the build kind and the reply of the CMake cache of one configuration of the planted build."""
+    def configure(self, kind: str, build_type: str, flags: str = "", is_parse: bool = False) -> None:
+        """Write the build kind and the reply of the CMake cache of one configuration of the planted build.
+
+        With `is_parse`, the cache sets the option of a parse build (assay.core.configuration.is_parse_build).
+        """
         (self.build / "build-kind.txt").write_text(f"{kind}\n", encoding="utf-8")
         cmake.plant(
             self.build,
             cache={
                 "CMAKE_GENERATOR": "Ninja",
                 "CMAKE_MAKE_PROGRAM": ("FILEPATH", str(self.ninja)),
+                "CMAKE_CTEST_COMMAND": ("FILEPATH", str(self.ctest)),
                 "CMAKE_BUILD_TYPE": ("STRING", build_type),
                 "CMAKE_CXX_FLAGS": ("STRING", flags),
+                **({build_config.SYNTAX_OPTION: ("BOOL", "ON")} if is_parse else {}),
             },
         )
 
@@ -156,9 +182,49 @@ class Scratch:
         del self.objects[name]
         self.flush()
 
+    def add_fixture(self, name: str, source: str, stamp: str = STAMP_VALUE) -> None:
+        """Register one negative fixture of the build and write its source, with a command that loads the plugin."""
+        (self.root / source).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / source).write_text(f"// {source}\n", encoding="utf-8")
+        self.fixtures[name] = (source, stamp)
+        self.flush()
+
+    def record(self, name: str, census: list[cost_record.CensusFinding], stamp: str = STAMP_VALUE) -> None:
+        """Write the record of a run of one fixture, with its census and the stamp of the census."""
+        source, _ = self.fixtures[name]
+        path = Path(cost_record.fixture_record_file(self.build, name))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cost_record.write(
+            path, cost_record.FixtureRecord(name, "compiled", 0.1, 0.0, None, (str(self.root / source),), stamp, census)
+        )
+
     def flush(self) -> None:
-        """Write each object, the compile database and the inputs of all."""
-        rows = []
+        """Write each object, the compile database, the inputs of all and the test list of the fixtures."""
+        tests = [
+            {
+                "name": name,
+                "command": [
+                    sys.executable,
+                    str(self.root / "utils/bin/loop"),
+                    "fixture",
+                    str(self.build),
+                    str(self.root / source),
+                    name,
+                ],
+            }
+            for name, (source, _) in self.fixtures.items()
+        ]
+        (self.build / "tests.json").write_text(json.dumps({"kind": "ctestInfo", "tests": tests}), encoding="utf-8")
+        rows = [
+            {
+                "directory": str(self.build),
+                "file": str(self.root / source),
+                "output": f"neg/{name}.o",
+                "command": f"g++ -fplugin=q.so {runner.STAMP_ARGUMENT}{stamp} {fixtures.ROOT_ARGUMENT}{self.root} "
+                f"-c {source}",
+            }
+            for name, (source, stamp) in self.fixtures.items()
+        ]
         for name, (lines, stamp, has_section) in self.objects.items():
             text = "".join(f"{line}\n" for line in [f"{quarantine_sections.HEAD_PREFIX}2 stamp={stamp}", *lines])
             sections = [elf.Planted(".text", b"\x90")] + (
@@ -175,6 +241,11 @@ class Scratch:
             )
         compdb.plant(self.build, rows)
         (self.build / "inputs.txt").write_text("".join(f"{name}.o\n" for name in self.objects), encoding="utf-8")
+        header = self.root / SOURCES[0]
+        (self.build / "deps.txt").write_text(
+            "".join(f"{name}.o: #deps 1, deps mtime 1 (VALID)\n    {header}\n\n" for name in self.objects),
+            encoding="utf-8",
+        )
 
     def run(self, rule: str = RULE) -> tuple[int, list[check_report.Finding], str]:
         """Run one rule on the planted build, and return the status, the findings and the written text."""
@@ -267,72 +338,6 @@ def unit_cases(expect: testing.Expect) -> None:
             ("test/fixy/", "region", "PROBE: a region"): 1,
         }
         and keyed.idle_reasons() == [],
-    )
-    expect(
-        "the entity of a row of the rule fixture-quarantine names what the plugin refuses, and a declaration of a "
-        "raw object keys no name",
-        [
-            fixture_quarantine.entity_key(kind, entity)
-            for kind, entity in (
-                ("std-object", "std::span"),
-                ("c-library-object", "_IO_FILE"),
-                ("raw-pointer-object", "expression"),
-                ("c-array-object", "bytes"),
-                ("raw-function-pointer", "callback"),
-                ("raw-new-delete", "placement new"),
-                ("raw-new-delete", "new"),
-                ("raw-new-delete", "delete"),
-                ("raw-new-delete", "declaration of operator new"),
-                ("std-entity", "std::array::operator[]"),
-                ("c-library-call", "memcpy"),
-                ("layer-header", "<vector>  in the layer X1"),
-                (
-                    "layer-header",
-                    "<atomic> in the layer F0_core, a file of the language with the allowance of the layer F0_primitives",
-                ),
-                ("layer-header", "<vector>"),
-                (
-                    "upward-include",
-                    "include/fixy/concurrent/ParallelismRule.h (the layer X4_concurrent) from the layer X3_os",
-                ),
-                ("upward-include", "include/crucible/Arena.h (no layer) from the layer X1_wrappers"),
-                ("upward-include", "include/crucible/X.h"),
-                ("door-header", "<pthread.h> has the door src/fixy/os/Thread.cpp"),
-                ("replace-pending:std::bit_cast", "std::bit_cast"),
-            )
-        ]
-        == [
-            "std::span",
-            "_IO_FILE",
-            "",
-            "",
-            "",
-            "placement new",
-            "new",
-            "delete",
-            "declaration of operator new",
-            "std::array::operator[]",
-            "memcpy",
-            "<vector>",
-            "<atomic>",
-            "<vector>",
-            "include/fixy/concurrent/ParallelismRule.h",
-            "include/crucible/Arena.h",
-            "include/crucible/X.h",
-            "<pthread.h> has the door src/fixy/os/Thread.cpp",
-            "std::bit_cast",
-        ],
-    )
-    expect(
-        "an include in an opt-out region keys its inner entity with no layer too",
-        fixture_quarantine.opted_out_key("C-HEADER: a struct", "layer-header <vector> in the layer X3_os")
-        == "C-HEADER: a struct | layer-header <vector>",
-    )
-    expect(
-        "the entity of an opted-out row of a fixture holds the reason of its region, and the inner kind and entity",
-        fixture_quarantine.opted_out_key("PROBE: a region", "std-object  std::vector")
-        == "PROBE: a region | std-object std::vector"
-        and fixture_quarantine.opted_out_key("ABI: x", "raw-pointer-object bytes") == "ABI: x | raw-pointer-object",
     )
     doors = ruletable.parse(
         "layer os 0 src/foundation/\ndoor <sys/socket.h> src/foundation/os/A.cpp\n\ndoor <linux/types.h> "
@@ -577,7 +582,11 @@ def region_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect(
         "an opted-out finding before each region of its file is an error, and the write refuses it",
         status == 1
-        and any(item.path == "test/fixy/test_a.cpp" and "no section gives a region" in item.message for item in found)
+        and any(
+            item.path == "test/fixy/test_a.cpp"
+            and "no section and no census of a fixture gives a region" in item.message
+            for item in found
+        )
         and scratch.write()[0] == 1,
     )
     second = "quarantine region test/fixy/test_a.cpp:20:1 PROBE: a planted region"
@@ -938,6 +947,135 @@ def ledger_cases(expect: testing.Expect) -> None:
         parsed_cases(expect, scratch)
 
 
+# ── The census of the fixtures ─────────────────────────────────────
+
+
+NEG_A = "test/neg/neg_a.cpp"
+NEG_B = "test/neg/neg_b.cpp"
+VECTOR = ("std-object", 5, 3, "std::vector")
+PROBE = ("detail-use", 7, 1, "main(): fixy::detail")
+
+
+def fixture_run_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold a build with no fixture run, a reduce with no fixture run, a new directory and the source root."""
+    scratch.write(rule_ledger.WriteMode.RAISE)
+    before = scratch.base()
+    scratch.add_fixture("neg_a", NEG_A)
+    expect(
+        "a build with a fixture with the plugin and no fixture run counts its objects only, and asks for no census",
+        scratch.errors() == [] and scratch.counts() == before,
+    )
+    status, text = scratch.write(is_complete=True)
+    expect(
+        "a reduce in which no build has a fixture run is refused, because it would remove each row of a fixture",
+        status == 1 and "no build of objects of the reduce has a fixture run" in text and scratch.base() == before,
+    )
+    scratch.record("neg_a", [VECTOR])
+    expect(
+        "a new fixture finding in a directory with no row fails",
+        scratch.errors()
+        == ["test/neg/ has 1 findings of the kind std-object, and the ledger holds no row of the directory"],
+    )
+    status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
+    expect(
+        "--raise writes the row of the directory of the fixture, and the build then gives no error",
+        status == 0 and scratch.base().get(("test/neg/", "std-object", "")) == 1 and scratch.errors() == [],
+    )
+    other = fixtures.FixtureContext(Path("/planted-checkout"), scratch.build)
+    expect(
+        "the census names the source of a fixture relative to the argument root= of its command, also for a check "
+        "from a different checkout",
+        {item.file for item in other.part().lines} == {NEG_A} and other.part().fixtures == 1,
+    )
+    status, text = scratch.listed("test/neg/")
+    expect(
+        "the list gives the lines of the census of a fixture",
+        status == 0 and f"quarantine std-object {NEG_A}:5:3 std::vector" in text and "1 findings" in text,
+    )
+    status, _ = scratch.write(is_complete=True)
+    expect(
+        "a reduce with a fixture run keeps the row of the fixture",
+        status == 0 and scratch.base().get(("test/neg/", "std-object", "")) == 1,
+    )
+    _, _, text = scratch.run()
+    expect("the summary of a run counts the fixture with a census as a unit", "from 4 objects and fixtures" in text)
+
+
+def fixture_problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold a kind of a probe and its reason, the problems of the records, a parse build and the files of fixtures."""
+    scratch.record("neg_a", [VECTOR, PROBE])
+    expect(
+        "a kind of a probe counts in the census of a fixture",
+        scratch.errors() == ["test/neg/ has 1 findings of the kind detail-use of a probe, and the ledger admits 0"],
+    )
+    status, _ = scratch.write()
+    expect("the write refuses a new count of a kind of a probe with no --admit", status == 1)
+    status, _ = scratch.write(rule_ledger.WriteMode.ADMIT, reason="the fixture probes a private check")
+    expect(
+        "--admit with a reason writes the row of the probe with its reason, and the build then gives no error",
+        status == 0
+        and scratch.ledger_rows().reason_of(rule_ledger.Key("test/neg/", "detail-use", ""))
+        == "the fixture probes a private check"
+        and scratch.errors() == [],
+    )
+    text = scratch.ledger.read_text(encoding="utf-8")
+    scratch.ledger.write_text(text.replace("the fixture probes a private check", "-"), encoding="utf-8")
+    expect(
+        "a row of a kind of a probe with no reason is an error",
+        scratch.errors() == ["the row of test/neg/ with the kind detail-use gives no reason"],
+    )
+    scratch.ledger.write_text(text, encoding="utf-8")
+    scratch.add_fixture("neg_b", NEG_B)
+    found = scratch.errors()
+    expect(
+        "a build with the record of one fixture and no record of a different fixture is an error",
+        len(found) == 1 and "1 of the 2 fixtures with the plugin have no record" in found[0],
+    )
+    scratch.record("neg_b", [], stamp="ffff")
+    expect(
+        "a census with a stamp that is not the stamp of the compile command is an error, and the write refuses it",
+        any("has the stamp ffff" in item for item in scratch.errors()) and scratch.write()[0] == 1,
+    )
+    scratch.record("neg_b", [])
+    expect("a fixture with an empty census passes", scratch.errors() == [])
+    scratch.configure(BASE_NAME, "Debug", is_parse=True)
+    parsed = fixtures.FixtureContext(scratch.root, scratch.build).part()
+    expect(
+        "a parse build reads no record, so it gives no fixture finding and asks for no census",
+        parsed.fixtures == 0 and not parsed.lines and not parsed.problems,
+    )
+    scratch.configure(BASE_NAME, "Debug")
+    root = Path("/planted")
+    unjudged = fixtures.unjudged_findings(
+        [
+            ("neg_a", "/planted/test/neg/neg_a.cpp"),
+            ("neg_a", "/planted/test/neg/helper.h"),
+            ("neg_a", "/planted/include/fixy/Core.h"),
+            ("neg_b", "/planted/build/quarantine/modes/test/neg/neg_b.cpp"),
+            ("neg_b", "/usr/include/c++/16/vector"),
+        ],
+        frozenset({"/planted/include/fixy/Core.h"}),
+        frozenset({"/planted/test/neg/neg_a.cpp"}),
+        ("/planted/build/quarantine",),
+        root,
+        None,
+    )
+    expect(
+        "a file of the tree that only the compiles of fixtures read fails, and the source of a fixture, a file of "
+        "all, a mode stamp and a file outside the tree do not",
+        [(item.path, "only the compiles of the fixtures neg_a" in item.message) for item in unjudged]
+        == [("test/neg/helper.h", True)],
+    )
+
+
+def fixture_cases(expect: testing.Expect) -> None:
+    """Run each case of the census of the fixtures on one planted build, in sequence."""
+    with tempfile.TemporaryDirectory(prefix="plugin-fixtures-") as scratch_text:
+        scratch = Scratch(Path(scratch_text) / "tree")
+        fixture_run_cases(expect, scratch)
+        fixture_problem_cases(expect, scratch)
+
+
 # ── The rule contract-specifier ────────────────────────────────────
 
 
@@ -993,5 +1131,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (unit_cases, census_cases, ledger_cases, layer_move_cases, contract_cases),
+        (unit_cases, census_cases, ledger_cases, layer_move_cases, fixture_cases, contract_cases),
     )

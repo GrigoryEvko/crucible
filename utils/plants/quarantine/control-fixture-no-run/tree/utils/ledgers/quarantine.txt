@@ -1,0 +1,6 @@
+# A planted ledger of the rule quarantine.
+format 1
+rule quarantine
+test/fixy/neg/ | c-library-call | 1 | - | -
+test/fixy/neg/ | lifetime-start | 1 | - | the fixture probes a forged lifetime
+test/fixy/neg/ | std-object | 1 | - | -

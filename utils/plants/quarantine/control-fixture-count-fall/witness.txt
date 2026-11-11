@@ -1,0 +1,4 @@
+# The call of abort left neg_alpha, and the row of its directory keeps the count 1.  The count below its row
+# passes, because a ledger fails only on a growth.
+
+fixtures fixtures.txt

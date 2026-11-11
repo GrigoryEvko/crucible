@@ -1,0 +1,5 @@
+# A parse build has no fixture run.  Its planted records hold a census with a stamp of an earlier plugin and
+# findings in a directory with no row, and the rule reads none of them.  It refuses no row of a directory of
+# fixtures, and it asks for no census.
+
+fixtures fixtures.txt

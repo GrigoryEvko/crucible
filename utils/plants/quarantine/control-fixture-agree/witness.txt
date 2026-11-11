@@ -1,0 +1,4 @@
+# Two fixtures whose censuses agree with the rows of their directory, and a fixture whose command loads no
+# plugin.  A finding of a kind of a different rule does not count.
+
+fixtures fixtures.txt

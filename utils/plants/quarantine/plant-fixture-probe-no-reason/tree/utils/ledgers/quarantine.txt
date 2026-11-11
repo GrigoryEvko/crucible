@@ -1,0 +1,5 @@
+# A planted ledger of the rule quarantine.
+format 1
+rule quarantine
+reason test/ | a planted step of the plan
+test/fixy/neg/ | lifetime-start | 1 | - | -

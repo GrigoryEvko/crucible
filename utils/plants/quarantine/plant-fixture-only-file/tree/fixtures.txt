@@ -1,0 +1,5 @@
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+read neg_alpha | test/fixy/neg/neg_alpha.cpp
+read neg_alpha | test/fixy/neg/neg_helper.h
+read neg_alpha | include/fixy/Core.h
+read all | include/fixy/Core.h

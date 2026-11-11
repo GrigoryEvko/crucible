@@ -513,33 +513,36 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
 
 
 def print_findings(root: Path, build_dir: Path, place: str | None, kind: str | None) -> int:
-    """Write each finding line and each region line of a build, of a place, and of one kind.
+    """Write each finding line and each region line of a build and of the census of its fixtures, of a place and kind.
 
     A place is a file, or a directory and each directory under it.  A place with '/' at its end selects the files of
     that one directory, the key of a row of the rule quarantine (THE KEY of assay.guard.engines.plugin.quarantine).
+    The census of the fixtures gives the lines of their sources (assay.guard.engines.plugin.fixtures).
 
     Returns:
         0, or SKIPPED when the build does not apply, or 1 when the build cannot be read
     """
-    from assay.guard.engines.plugin import quarantine
+    from assay.guard.engines.plugin import fixtures, quarantine
 
-    context = PluginContext(root, build_dir)
+    context = fixtures.FixtureContext(root, build_dir)
     try:
-        census = context.census()
+        census = context.objects()
+        part = context.part()
     except NotApplicable as reason:
         check_report.write_line(f"guard list: {reason}.  The build does not apply")
         return SKIPPED
     except BuildError as problem:
         check_report.write_line(f"guard list: the build cannot be read: {problem}", is_error=True)
         return 1
-    lines = [
+    lines = {
         *census.findings,
+        *part.lines,
         *(
             quarantine_sections.Finding(file, line, 1, REGION_RULE, quarantine_sections.REGION, reason)
-            for file, items in census.regions.items()
+            for file, items in quarantine.merged_regions(census.regions, part.regions).items()
             for line, reason in items
         ),
-    ]
+    }
     prefix = (place or "").rstrip("/")
 
     def is_in_place(file: str) -> bool:

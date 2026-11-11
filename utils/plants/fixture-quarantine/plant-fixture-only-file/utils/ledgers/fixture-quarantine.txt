@@ -1,3 +1,0 @@
-# A planted ledger of the rule fixture-quarantine.
-format 1
-rule fixture-quarantine

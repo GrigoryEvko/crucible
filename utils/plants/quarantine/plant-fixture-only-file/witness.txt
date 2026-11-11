@@ -1,0 +1,4 @@
+# A fixture compile reads a helper header that no object of the target all reads.  The census of the fixture
+# counts its source only, and no row counts the findings of the header.
+
+fixtures fixtures.txt

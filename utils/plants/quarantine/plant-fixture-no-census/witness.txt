@@ -1,0 +1,3 @@
+# The command of neg_alpha loads the plugin, and its record holds no census.
+
+fixtures fixtures.txt

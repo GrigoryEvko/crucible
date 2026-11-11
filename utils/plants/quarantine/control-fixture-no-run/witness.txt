@@ -1,0 +1,4 @@
+# No fixture ran in the build, so the build has no census.  The rule counts its objects only, it refuses no row of
+# a directory of fixtures, and it asks for no census.
+
+fixtures fixtures.txt

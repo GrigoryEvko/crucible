@@ -1,0 +1,7 @@
+# A planted ledger of the rule quarantine.
+format 1
+rule quarantine
+test/fixy/neg/ | detail-use | 1 | - | the fixture probes a witness of a detail namespace
+test/fixy/neg/ | door-use | 1 | - | the fixture probes a second definition of a door owner
+test/fixy/neg/ | lifetime-start | 1 | - | the fixture probes a forged lifetime
+test/fixy/neg/ | unchecked-use | 1 | - | the fixture probes an unchecked walk

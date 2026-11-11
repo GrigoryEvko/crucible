@@ -1,0 +1,4 @@
+# A new fixture in test/foundation/neg/ has a finding, and the ledger holds no row of that directory.  A new
+# directory of fixtures has no finding.
+
+fixtures fixtures.txt

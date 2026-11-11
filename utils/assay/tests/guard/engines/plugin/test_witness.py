@@ -139,6 +139,11 @@ def manifest_cases(expect: testing.Expect) -> None:
         "a judge row names a compile whose lines the module judges, and it states a plant with no error row",
         judged.judged == ("a",) and judged.is_refused and not judged.has_errors,
     )
+    with_fixtures = witness.parse_manifest("fixtures ./planted/../fixtures.txt\n", "witness.txt")
+    expect(
+        "a fixtures row names a file of planted fixtures in the tree, and it states a plant with no error row",
+        with_fixtures.fixtures == "fixtures.txt" and with_fixtures.is_refused and not with_fixtures.has_errors,
+    )
     expect(
         "each malformed manifest is refused at its line",
         [
@@ -162,8 +167,11 @@ def manifest_cases(expect: testing.Expect) -> None:
             refuses("compile a unit.cpp\nexit a pass\njudge b\n"),
             refuses("compile a unit.cpp\nexit a pass\njudge a\njudge a\n"),
             refuses("compile a unit.cpp\nexit a pass\nconfiguration x86_64-release\n"),
+            refuses("fixtures a.txt\nfixtures b.txt\n"),
+            refuses("fixtures ../a.txt\n"),
+            refuses("fixtures a.txt b.txt\n"),
         ]
-        == [1, 1, 2, 2, 1, 1, 3, 1, 1, 1, 3, 1, 3, 2, 0, 2, 1, 3, 4, 3],
+        == [1, 1, 2, 2, 1, 1, 3, 1, 1, 1, 3, 1, 3, 2, 0, 2, 1, 3, 4, 3, 2, 1, 1],
     )
     expect(
         "a place FILE:* and the place - are diagnostic places",

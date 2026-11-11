@@ -4,7 +4,9 @@
 # The rule quarantine reads this ledger (`python3 utils/bin/guard explain quarantine`).  Its module
 # utils/assay/guard/engines/plugin/quarantine.py writes each count row and this head through
 # utils/assay/core/ledger.py.  Do not edit a count row by hand.  The rule reads the section
-# .crucible.quarantine of each object of the target all, and it counts each finding line one time.
+# .crucible.quarantine of each object of the target all, and the census in the record of the run
+# of each negative fixture.  It counts each finding line one time.  The directory of the source of a
+# fixture, such as test/foundation/neg/, is a directory of this ledger too.
 #
 # A count above its row fails the rule, because a change can only lower a count (rule R11 of
 # misc/01_10_2026_quarantine.md).  A directory that the ledger does not hold and that has a finding
@@ -37,14 +39,23 @@
 #   rule until
 #       python3 utils/bin/guard write --rule quarantine --build-dir build --admit
 #   writes the new count.  Use --admit only for a region of a reason class of CLAUDE.md section
-#   XXII, and give the reason in the commit.  Only a region that a build compiles has a row.
+#   XXII, and give the reason in the commit.  Only a region that a build compiles, or that the
+#   census of a fixture holds, has a row.
+#
+# THE KINDS OF A PROBE
+#   DIRECTORY | KIND | COUNT | - | REASON
+#   In the census of a fixture, the rule also counts the kinds detail-use, lifetime-start,
+#   unchecked-use and door-use.  Each such row is a reviewed exception, and REASON tells what the
+#   fixtures of the directory probe.  A row of such a kind with no reason fails the rule.  A new
+#   count of such a kind needs `guard write --rule quarantine --build-dir build --admit --reason TEXT`.
 #
 # ONE SET OF ROWS
 #   One set of rows judges each build.  The count of a key is its largest count over the
 #   configurations of the landing gate: each configure preset with the tier gate, the builds of
 #   objects and the two parse builds (utils/assay/loop/gate.py).  A build of a different
 #   configuration gets the same verdict, for example an aarch64 build of objects in CI.  A count
-#   above its row fails it.
+#   above its row fails it.  A build with no fixture run, such as a parse build, gives the counts
+#   of its objects only, and the rows of the fixtures come from the builds of objects.
 #   python3 utils/bin/guard write --rule quarantine --build-dir build
 #   writes the counts of one build.  It lowers no row, because one build cannot see the findings of
 #   a different build.  A landing of `python3 utils/bin/loop land` that builds each configuration of
@@ -432,12 +443,27 @@ test/ | replace-pending:<limits> | 14 | - | -
 test/ | replace-pending:std::bit_cast | 104 | - | -
 test/ | std-entity | 5557 | - | -
 test/ | std-object | 1861 | - | -
+test/canopy_neg/ | raw-pointer-object | 1 | - | -
+test/canopy_neg/ | std-entity | 10 | - | -
+test/cipher_neg/ | raw-function-pointer | 2 | - | -
+test/cipher_neg/ | raw-pointer-object | 2 | - | -
+test/cipher_neg/ | std-entity | 48 | - | -
+test/cipher_neg/ | std-object | 10 | - | -
+test/cipher_neg/ | unchecked-use | 2 | - | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
+test/cntp_neg/ | raw-pointer-object | 1 | - | -
+test/cntp_neg/ | std-entity | 75 | - | -
+test/cntp_neg/ | std-object | 41 | - | -
+test/cog_neg/ | std-entity | 5 | - | -
+test/cog_neg/ | std-object | 1 | - | -
 test/ct/ | c-array-object | 5 | - | -
 test/ct/ | c-library-call | 16 | - | -
 test/ct/ | inline-asm | 5 | - | -
 test/ct/ | raw-pointer-object | 5 | - | -
 test/ct/ | std-entity | 23 | - | -
 test/ct/ | std-object | 14 | - | -
+test/dag_neg/ | raw-pointer-object | 7 | - | -
+test/dag_neg/ | std-entity | 1 | - | -
+test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 102 | - | -
 test/fixy/ | c-library-call | 1530 | - | -
 test/fixy/ | c-library-object | 10 | - | -
@@ -456,6 +482,18 @@ test/fixy/ | replace-pending:std::bit_cast | 20 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3374 | - | -
 test/fixy/ | std-object | 1269 | - | -
+test/fixy/neg/ | c-array-object | 53 | - | -
+test/fixy/neg/ | c-library-call | 253 | - | -
+test/fixy/neg/ | c-library-object | 2 | - | -
+test/fixy/neg/ | detail-use | 220 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
+test/fixy/neg/ | raw-function-pointer | 2 | - | -
+test/fixy/neg/ | raw-new-delete | 1 | - | -
+test/fixy/neg/ | raw-pointer-object | 41 | - | -
+test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
+test/fixy/neg/ | replace-pending:std::source_location | 6 | - | -
+test/fixy/neg/ | std-entity | 217 | - | -
+test/fixy/neg/ | std-object | 125 | - | -
 test/foundation/ | c-array-object | 59 | - | -
 test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -
@@ -471,6 +509,14 @@ test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
 test/foundation/ | std-entity | 609 | - | -
 test/foundation/ | std-object | 201 | - | -
+test/foundation/neg/ | c-array-object | 21 | - | -
+test/foundation/neg/ | c-library-call | 2 | - | -
+test/foundation/neg/ | detail-use | 81 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
+test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
+test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
+test/foundation/neg/ | raw-pointer-object | 18 | - | -
+test/foundation/neg/ | std-entity | 80 | - | -
+test/foundation/neg/ | std-object | 51 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -
 test/fuzz/boundary/ | c-library-call | 25 | - | -
 test/fuzz/boundary/ | door-header | 2 | - | -
@@ -492,6 +538,11 @@ test/fuzz/property/ | raw-pointer-object | 79 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 44 | - | -
 test/fuzz/property/ | std-entity | 413 | - | -
 test/fuzz/property/ | std-object | 136 | - | -
+test/graph_neg/ | raw-pointer-object | 6 | - | -
+test/kernel_neg/ | raw-pointer-object | 1 | - | -
+test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
+test/kernel_neg/ | std-entity | 2 | - | -
+test/kernel_neg/ | std-object | 8 | - | -
 test/layer/ | door-header | 1 | - | -
 test/layer/ | raw-new-delete | 1 | - | -
 test/layer/ | replace-pending:<limits> | 11 | - | -
@@ -564,6 +615,15 @@ test/layer/checks/foundation/reflect/ | raw-function-pointer | 3 | - | -
 test/layer/checks/foundation/reflect/ | raw-pointer-object | 5 | - | -
 test/layer/checks/foundation/reflect/ | std-entity | 44 | - | -
 test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
+test/memory_neg/ | raw-pointer-object | 2 | - | -
+test/memory_neg/ | std-entity | 11 | - | -
+test/memory_neg/ | std-object | 6 | - | -
+test/mimic_neg/ | std-entity | 1 | - | -
+test/mimic_neg/ | std-object | 2 | - | -
+test/perf_neg/ | std-entity | 1 | - | -
+test/perf_neg/ | std-object | 14 | - | -
+test/recipe_neg/ | std-entity | 3 | - | -
+test/recipe_neg/ | std-object | 6 | - | -
 test/session_oracle/ | c-array-object | 37 | - | -
 test/session_oracle/ | c-library-call | 13 | - | -
 test/session_oracle/ | door-header | 1 | - | -
@@ -573,9 +633,23 @@ test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1385 | - | -
 test/shape/ | opted-out | 40 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/singleton_neg/ | std-entity | 4 | - | -
+test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
+test/tensor_neg/ | raw-pointer-object | 1 | - | -
+test/topology_neg/ | std-entity | 14 | - | -
+test/topology_neg/ | std-object | 14 | - | -
+test/trace_neg/ | c-array-object | 8 | - | -
+test/trace_neg/ | replace-pending:<limits> | 1 | - | -
+test/trace_neg/ | std-entity | 44 | - | -
+test/trace_neg/ | std-object | 14 | - | -
 test/tsan/ | c-library-call | 1 | - | -
 test/tsan/ | std-entity | 43 | - | -
 test/tsan/ | std-object | 15 | - | -
+test/types_neg/ | raw-function-pointer | 1 | - | -
+test/vessel_neg/ | c-array-object | 1 | - | -
+test/vigil_neg/ | c-array-object | 1 | - | -
+test/vigil_neg/ | raw-pointer-object | 6 | - | -
+test/vigil_neg/ | std-entity | 1 | - | -
 utils/tools/ | c-array-object | 3 | - | -
 utils/tools/ | c-library-call | 40 | - | -
 utils/tools/ | raw-pointer-object | 4 | - | -

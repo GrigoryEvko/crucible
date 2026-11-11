@@ -1,0 +1,2 @@
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | lifetime-start | 6 | main(): std::start_lifetime_as

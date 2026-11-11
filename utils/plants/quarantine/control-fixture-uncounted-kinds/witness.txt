@@ -1,0 +1,4 @@
+# A fixture with a finding of each kind that the rule does not count in a census, and the ledger holds no row of
+# its directory.
+
+fixtures fixtures.txt

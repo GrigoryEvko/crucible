@@ -1,0 +1,3 @@
+# The census of neg_alpha has the stamp of an earlier plugin or rule table.
+
+fixtures fixtures.txt

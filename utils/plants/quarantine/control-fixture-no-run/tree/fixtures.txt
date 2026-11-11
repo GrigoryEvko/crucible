@@ -1,0 +1,2 @@
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | missing
+fixture neg_beta | test/fixy/neg/neg_beta.cpp | 0123abcd | missing

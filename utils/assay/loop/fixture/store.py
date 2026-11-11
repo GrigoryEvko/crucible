@@ -98,7 +98,7 @@ finding stays, such as the error of the contract rule.  The regexes of the
 fixtures neg_contract_specifier_* read that error.  The results of the plugin in the
 source of the fixture are its census (`fixture_census`).  The record of the
 run holds the census and the stamp argument of the plugin (The record of a
-run), and the rule fixture-quarantine counts them.
+run), and the rule quarantine counts them.
 
 A compile that succeeds writes an object, and the plugin then writes its
 findings into the section of the object and not into the log.  The census of
@@ -391,7 +391,7 @@ count, and each file that the compile read.  The list is the dependency file
 of GCC, the list of the `-M -MG` pass after a fatal error, or the list of the
 stored result, with the path of `realpath()` of each file (real_inputs).  A
 header that the compile opened through a link of layer-roots/ then has the
-path of the file of the tree.  The rule fixture-quarantine reads these
+path of the file of the tree.  The rule quarantine reads these
 files for each fixture.  The record
 also holds the census of the fixture and the stamp argument of the plugin
 (The quarantine plugin).
@@ -778,8 +778,8 @@ def section_census(argv: list[str], directory: Path, source: Path, output: Path,
 
     A compile that succeeds writes an object, and the plugin writes its
     findings into the section of the object and not into the log.  The lines
-    of the rule quarantine are each finding that the rule fixture-quarantine
-    counts, also each opted-out finding and each region.  A line names its
+    of the rule quarantine are each finding that the rule quarantine counts
+    in a census, also each opted-out finding and each region.  A line names its
     file relative to the root argument of the plugin.  The result is None
     when the command has no root argument, or when the object has no section.
     It is None when the section cannot be read or holds a different stamp
@@ -2938,7 +2938,7 @@ def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, 
     The record is BUILD_DIR/neg-compile/NAME/NAME.inputs (assay.core.record,
     THE RECORDS).  It names each file by the path of `realpath()` in
     `directory`, the directory of the compile (real_inputs).  The rule
-    instruction-total reads its cost, and the rule fixture-quarantine reads
+    instruction-total reads its cost, and the rule quarantine reads
     its files and the census of fixture_census().  A failure to
     write changes no verdict.
     """

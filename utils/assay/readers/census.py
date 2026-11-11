@@ -266,11 +266,14 @@ def read_fixture(
     return Unit("fixture", name, shown(source, root), Cost(record.cpu_s, record.instructions)), names, ""
 
 
-def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
+def read_census(
+    build_dir: Path, root: Path, read_files: bool = True, fixtures: Sequence[tuple[str, str]] | None = None
+) -> Census:
     """Read the units of one build, and with read_files the real path of each file that they read.
 
-    A stat of each real path makes sure that the file is there.  Complexity: linear in the total length of the file
-    lists, with one realpath and one stat for each distinct name.
+    A stat of each real path makes sure that the file is there.  `fixtures` gives the name and the source of each
+    fixture, when the caller read the test list already (fixtures_of()).  Complexity: linear in the total length of
+    the file lists, with one realpath and one stat for each distinct name.
 
     Raises:
         NotApplicable: If an input does not exist by the design of the build
@@ -282,7 +285,7 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
     if read_files:
         lists = read_dependencies(build_dir, [unit.item for unit in units])
         names_of = [lists[unit.item] for unit in units]
-    fixtures = fixtures_of(build_dir)
+    fixtures = fixtures_of(build_dir) if fixtures is None else list(fixtures)
     missing: list[str] = []
     problems: list[str] = []
     for name, source in fixtures:

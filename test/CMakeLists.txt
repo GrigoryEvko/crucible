@@ -4719,10 +4719,12 @@ set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
 # guard_plugin — the runner of the engine plugin
 # (utils/assay/guard/engines/plugin/runner.py) reads the section of each object
 # of all one time, and judges each rule of the engine plugin of
-# utils/registry.txt.  The rule quarantine counts the distinct findings in each
-# file, kind and entity, and each opt-out region as the kind region, against
-# utils/ledgers/quarantine.txt.  A count above or below its row fails, and so
-# does a finding in a file that the ledger does not hold.  A finding inside an
+# utils/registry.txt.  The rule quarantine counts the distinct findings of the
+# objects and of the census of each negative fixture in each directory and
+# kind, and each opt-out region as the kind region, against
+# utils/ledgers/quarantine.txt.  A count above its row fails, and so does a
+# finding in a directory that the ledger does not hold.  The test starts after
+# each fixture (crucible_order_census_checks below).  A finding inside an
 # opt-out region counts with the reason of its region.  The rule heavy-include
 # counts the includes of a heavy header in the same way, against
 # utils/ledgers/heavy-include.txt.  The test exits 77 for a build whose
@@ -4910,7 +4912,7 @@ endforeach()
 # ctest test cannot do that to the build that runs it.  So it gets only its
 # witness, and a step of the CI build job runs the check.  The test of
 # session-oracle has the label session_oracle of the emitted tests.  The census rule instruction-total and the rule
-# fixture-quarantine read the record of each negative fixture.  Each fixture
+# quarantine of the test guard_plugin read the record of each negative fixture.  Each fixture
 # registration appends its name to the global property
 # CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top directory makes
 # these tests DEPEND on each fixture.
@@ -4919,7 +4921,7 @@ set_tests_properties(guard_parse_builds PROPERTIES FIXTURES_REQUIRED tsast_trees
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(guard_instruction_total guard_fixture_quarantine
+  set_tests_properties(guard_instruction_total guard_plugin
       DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)

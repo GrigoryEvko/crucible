@@ -1,0 +1,4 @@
+# A fixture with a finding of a kind of a probe, and the row of its directory gives no reason.  The reason row of
+# the prefix test/ gives the row no reason.
+
+fixtures fixtures.txt

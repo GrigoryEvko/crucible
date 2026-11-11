@@ -1,0 +1,3 @@
+# A second object of std::vector in neg_alpha, so the count of the row of its directory rises.
+
+fixtures fixtures.txt

@@ -1,11 +1,11 @@
 """counted — the verdict and the write of a plugin rule with a ledger that counts the findings of each key.
 
 THE COUNTED RULES
-    The rules quarantine, heavy-include and fixture-quarantine count the
-    findings of each key in the rows of assay.core.ledger (the policy count).
-    A key is the path, the kind and the entity of a finding.  The rule
-    quarantine gives the directory of a file as the path, and the other rules
-    give the file.  The arms of a preprocessor conditional change with the
+    The rules quarantine and heavy-include count the findings of each key in
+    the rows of assay.core.ledger (the policy count).  A key is the path, the
+    kind and the entity of a finding.  The rule quarantine gives the
+    directory of a file as the path, and the rule heavy-include gives the
+    file.  The arms of a preprocessor conditional change with the
     configuration of a build (assay.core.configuration, THE CONFIGURATION).
     One set of rows judges each build, and the count of a key is its largest
     count over the configurations of the landing gate (THE REDUCE of
@@ -23,9 +23,10 @@ THE CONTEXT
     A rule reads its build through a runner.PluginContext: root, build_dir,
     build_shown() and census().  census() gives the number of units of the
     build in its field objects, and the summary line names them.  The rule
-    fixture-quarantine of the engine build counts the census of each
-    negative fixture.  Its CountedRule gives a subclass of the context in
-    `context_of`, and each other rule takes runner.PluginContext.
+    quarantine also counts the census of each negative fixture
+    (assay.guard.engines.plugin.fixtures).  Its CountedRule gives a subclass
+    of the context in `context_of`, and the rule heavy-include takes
+    runner.PluginContext.
 
 THE RUN
     A run reads the ledger and the inputs of the rule first.  A ledger or an

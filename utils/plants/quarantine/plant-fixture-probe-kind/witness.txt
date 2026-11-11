@@ -1,0 +1,4 @@
+# A fixture with a finding of a kind of a probe, and the ledger holds no row of that kind.  The rule counts the
+# kind in the census of a fixture.
+
+fixtures fixtures.txt

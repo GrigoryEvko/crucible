@@ -1,0 +1,6 @@
+fixture neg_alpha | test/fixy/neg/neg_alpha.cpp | 0123abcd | 0123abcd
+finding neg_alpha | testing-use | 5 | main(): foundation::effects::testing
+finding neg_alpha | mint-not-noexcept | 6 | fixy::mint_probe
+finding neg_alpha | permission-member | 7 | Holder::token
+finding neg_alpha | union | 8 | Forged
+finding neg_alpha | outside-home | 9 | crucible::InitOwner

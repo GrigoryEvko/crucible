@@ -1,0 +1,4 @@
+# No compile command of a fixture loads the plugin, so the build has no census, and the rule counts its objects
+# only.
+
+fixtures fixtures.txt
