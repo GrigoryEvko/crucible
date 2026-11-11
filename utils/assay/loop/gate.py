@@ -232,8 +232,8 @@ THE LOCKS OF THE LEDGERS
     configuration.  A write reads the ledger, changes the counts of its
     configuration and writes the ledger again.  When two such writes occur
     at one time, the ledger can hold only one of them.  The heavy step then
-    holds one lock for each rule.  Each write of a rule, in THE FALLS and in
-    THE KEPT ROWS, holds the lock of its rule.  A write takes the lock
+    holds one lock for each rule.  Each write of a rule in THE FALLS holds
+    the lock of its rule.  A write takes the lock
     before its slot of the jobserver.  No thread then holds a slot while it
     waits for a lock.  store() of
     assay.core.ledger writes a new file and renames it over the ledger.  A
@@ -278,25 +278,6 @@ THE FALLS
     The verdict gives the new commit and the ledgers, and the landing moves
     the branch to that commit.  A change that lowers counts then lands with
     no manual write of a ledger.
-
-THE KEPT ROWS
-    A measured rule of the policy max keeps an item over its warning
-    threshold with a row of its ledger.  The row keeps the item up to the
-    value of the row, with the noise of its unit (assay.core.budget, THE
-    NOISE).  The dimension of an object has no noise.  An object that
-    becomes one byte larger than its row then fails the test of the rule.
-    That also occurs in a configuration that the author of the change does
-    not build.  The candidate can hold rows of `--keep` RULE REASON of
-    assay.loop.land, each for such a rule.  When the test of such a rule is
-    red in a configuration, the gate runs `guard write --rule RULE
-    --build-dir BUILD` there, with the lock of the rule.  It runs the write
-    after THE FALLS and before the run of the test alone.  The write gives
-    each row of the configuration the measured value of its item.  It gives
-    no row to an item over the error threshold with no row, and it refuses
-    such an item.  That error then stays, and the test stays red.  Each row
-    with a value that rose gets REASON as its reason.  The ledger goes into
-    the commit of THE FALLS, and the field kept of the verdict gives each
-    raised row.  The write adds no row to the ledger.
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
@@ -345,7 +326,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from assay.core import git, jobserver, paths, proc
@@ -466,14 +447,6 @@ class Run:
 
 
 @dataclass(frozen=True, slots=True)
-class Keep:
-    """One row of `--keep` of a landing: a measured rule of the policy max, and the reason of its rows (THE KEPT ROWS)."""
-
-    rule: str
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
 class Focus:
     """One configuration of a run of the base, and the tests that were red alone too in it (THE RUN OF THE BASE).
 
@@ -486,16 +459,15 @@ class Focus:
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """The commit of a landing: the commit that the composition started from, the commit, the paths and the kept rules.
+    """The commit of a landing: the commit that the composition started from, the commit, the paths and the focus.
 
-    `keeps` holds the rows of `--keep` of the requests of the commit (THE KEPT ROWS).  `focus` is empty for the commit
-    of a batch, and it gives the configurations of a run of the base (THE RUN OF THE BASE).
+    `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (THE RUN OF THE
+    BASE).
     """
 
     head: str
     commit: str
     changed: tuple[str, ...]
-    keeps: tuple[Keep, ...] = ()
     focus: tuple[Focus, ...] = ()
 
 
@@ -506,8 +478,8 @@ class Verdict:
     `seconds` holds the wait for the lock.  `step_seconds` gives the time of each configuration in its heavy step after
     the wait, in the sequence of `configurations`.  `final` is the commit that the gate judged
     last, and `ledgers` holds each ledger that THE FALLS folded into it.  `final` is "" for a verdict of no commit.
-    `logs` is the directory of the logs of the run (THE LOGS).  `kept` gives each row that a rule of `--keep` raised
-    (THE KEPT ROWS).  `focus` gives each configuration with a problem (THE VERDICT).
+    `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
+    VERDICT).
     """
 
     configurations: tuple[str, ...]
@@ -517,7 +489,6 @@ class Verdict:
     final: str = ""
     ledgers: tuple[str, ...] = ()
     logs: str = ""
-    kept: tuple[str, ...] = ()
     focus: tuple[Focus, ...] = ()
 
     @property
@@ -648,11 +619,6 @@ def focused_runs(focus: Sequence[Focus]) -> tuple[Run, ...]:
         else:
             runs.append(Run(configuration, Mode.CHANGED))
     return tuple(runs)
-
-
-def guard_test_name(rule_id: str) -> str:
-    """Return the name of the test guard_ID of a rule, as cmake/Guards.cmake gives it: each - of the ID becomes _."""
-    return "guard_" + rule_id.replace("-", "_")
 
 
 def counted_ledgers(tree: Path) -> dict[str, tuple[str, ...]]:
@@ -938,7 +904,6 @@ class Gate:
 
                     outcomes += step.run_all(plan, again_plan if others else None, True, is_retry)
                     step.require_problem(outcomes)
-                kept = tuple(step.kept)
         except jobserver.JobserverError as problem:
             raise GateError(str(problem)) from None
         ended = [item for item in outcomes if not item.is_stopped]
@@ -950,7 +915,6 @@ class Gate:
             final,
             ledgers,
             str(self.logs),
-            kept,
             tuple(Focus(item.name, item.red) for item in outcomes if item.problems),
         )
 
@@ -963,8 +927,7 @@ class Step:
 
     `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
     the base of the change for the writes (THE FALLS).  `jobs` is the job count of the heavy step and of its
-    jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).  `kept`
-    receives each row that a rule of `--keep` raised (THE KEPT ROWS).
+    jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).
     """
 
     __slots__ = (
@@ -979,7 +942,6 @@ class Step:
         "environment",
         "gate",
         "jobs",
-        "kept",
         "stop",
     )
 
@@ -1003,7 +965,6 @@ class Step:
         self.counted = counted
         self.stop = threading.Event()
         self.always_ready = threading.Event()
-        self.kept: list[str] = []
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
         self._said = threading.Lock()
@@ -1236,74 +1197,17 @@ class Step:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
         return self.checked_falls(configuration, COUNTED_RULES, counted)
 
-    def write_keeps(self, configuration: Configuration, keeps: Sequence[Keep], red: Sequence[str]) -> list[str]:
-        """Write the measured value of each row of each rule of `--keep` with a red test, and return the raised rows.
-
-        A raised row gets the reason of its `--keep` (THE KEPT ROWS).  The write holds the lock of its rule (THE LOCKS OF
-        THE LEDGERS).  A write that refuses an item exits 1, and the test of the rule keeps that item as its error.
-
-        Raises:
-            GateError: If the registry or a ledger of the warm tree does not read
-        """
-        tree = self.gate.tree
-        build = build_directory(tree, configuration)
-        raised: list[str] = []
-        for keep in keeps:
-            if guard_test_name(keep.rule) not in red:
-                continue
-            with self.rule_lock(keep.rule):
-                raised += self.write_keep(configuration, build, keep)
-        return raised
-
-    def write_keep(self, configuration: Configuration, build: Path, keep: Keep) -> list[str]:
-        """Write the measured value of each row of one rule of `--keep`, and return its raised rows (THE KEPT ROWS).
-
-        The caller holds the lock of the rule.
-
-        Raises:
-            GateError: If the registry or the ledger of the rule does not read
-        """
-        tree = self.gate.tree
-        try:
-            rule = rule_registry.load(tree / rule_registry.REGISTRY_PATH).rules[keep.rule]
-            before = rule_ledger.read(rule, tree)
-        except (OSError, ValueError, KeyError) as problem:
-            raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
-        log = f"{configuration.name}.keep-{keep.rule}.log"
-        command = [*self.gate.master("guard"), "write", "--rule", keep.rule, "--build-dir", str(build)]
-        status = self.run_logged(command, log, self.environment, proc.TOOL_S)
-        self.say(f"loop land: {configuration.name}: the write of --keep {keep.rule} exits {status}")
-        if status != ExitCode.OK:
-            return []
-        try:
-            after = rule_ledger.read(rule, tree)
-        except (OSError, ValueError) as problem:
-            raise GateError(f"the ledger of the rule {keep.rule} of --keep does not read: {problem}") from None
-        raised: list[str] = []
-        base = dict(after.base)
-        for key, entry in after.base.items():
-            old = before.base.get(key)
-            if old is None or not isinstance(entry.value, int | float) or not isinstance(old.value, int | float):
-                continue
-            if entry.value > old.value:
-                base[key] = replace(entry, reason=keep.reason)
-                values = f"from {rule_ledger.value_text(old.value)} to {rule_ledger.value_text(entry.value)}"
-                raised.append(f"{keep.rule}: {key.path} in {key.kind} {values}")
-        rule_ledger.store(replace(after, base=base), tree)
-        return raised
-
     def run_objects(
         self, configuration: Configuration, words: Sequence[str], is_again: bool
     ) -> tuple[list[str], tuple[str, ...]]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
         `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  After the tests, THE FALLS
-        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger.  A red
-        test of a rule of `--keep` gets the write of THE KEPT ROWS.  The run of ALWAYS first builds the target build.ninja when the other configurations
-        wait for it (THE THREADS).  The second result holds the tests that are red alone too.
+        write each counted ledger that holds the configuration.  A run again after the fold writes no ledger.  The run
+        of ALWAYS first builds the target build.ninja when the other configurations wait for it (THE THREADS).  The
+        second result holds the tests that are red alone too.
         """
         counted: Mapping[str, Sequence[str]] = {} if is_again else self.counted
-        keeps = () if is_again else self.candidate.keeps
         problem = self.configure(configuration)
         if problem is not None:
             return [problem], ()
@@ -1335,9 +1239,6 @@ class Step:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         self.write_falls(configuration, counted)
         if red:
-            raised = self.write_keeps(configuration, keeps, red)
-            with self._locks_guard:
-                self.kept += raised
             self.say(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
         still = self.red_alone(configuration, red)
         if still:

@@ -49,7 +49,6 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from assay.core import git, paths, proc, testing
-from assay.core import registry as rule_registry
 from assay.core.exit import ExitCode
 from assay.loop import gate, heavy, land
 
@@ -136,10 +135,9 @@ def request_of(
     edits: tuple[land.Edit, ...] = (),
     own: tuple[str, ...] = (),
     patches: tuple[Path, ...] = (),
-    keeps: tuple[gate.Keep, ...] = (),
 ) -> land.Request:
     """Return a request of the planted repository."""
-    return land.Request(messages, patches, edits, own, keeps)
+    return land.Request(messages, patches, edits, own)
 
 
 def options(is_dry_run: bool = False, is_tree_only: bool = False, is_check: bool = False) -> land.Options:
@@ -276,19 +274,18 @@ def word_cases(expect: testing.Expect) -> None:
         scratch = Path(scratch_text)
         (scratch / "old").write_text("beta\n", encoding="utf-8")
         (scratch / "new").write_text("gamma\n", encoding="utf-8")
-        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch", "--keep", "demo", "-- is a reason"]
+        words = ["-m", "-x is a subject", "-m", "body", "--patch", "change.patch"]
         request, parsed = land.parse(
             [*words, "--jobs", "3", "--all-configurations", "--replace", "shared.txt", "old", "new", "--", "own.txt"],
             scratch,
         )
         expect(
-            "the parse keeps a message and a reason that start with -, reads the edit files from the current "
-            "directory, and gives each patch a full path",
+            "the parse keeps a message that starts with -, reads the edit files from the current directory, and "
+            "gives each patch a full path",
             request.messages == ("-x is a subject", "body")
             and request.edits == (land.Edit("shared.txt", land.REPLACE, "beta\n", "gamma\n"),)
             and request.patches == ((scratch / "change.patch").resolve(),)
             and request.paths == ("own.txt",)
-            and request.keeps == (gate.Keep("demo", "-- is a reason"),)
             and request.message == "-x is a subject\n\nbody\n"
             and parsed == land.Options(False, False, False, False, True, 3),
         )
@@ -960,7 +957,7 @@ def queue_cases(expect: testing.Expect) -> None:
         patch.write_bytes(git.patch(root, ["HEAD"], ["shared.txt"]))
         (root / "shared.txt").write_text(PLANTED["shared.txt"], encoding="utf-8")
         edit = land.Edit("shared.txt", land.INSERT, "alpha\n", "inserted\n")
-        full = request_of(("A subject", "A body"), (edit,), ("own.txt",), (patch,), (gate.Keep("demo", "why"),))
+        full = request_of(("A subject", "A body"), (edit,), ("own.txt",), (patch,))
         expect(
             "the queue of a repository is a directory of its own, keyed by its shared git directory",
             queue.parent == work / land.QUEUE and len(queue.name) == land.KEY_LENGTH,
@@ -974,20 +971,24 @@ def queue_cases(expect: testing.Expect) -> None:
             stored = found[0].request
             expect(
                 "two waiting requests get the numbers 1 and 2, each holds its lock, and the holder reads them in "
-                "their sequence with the message, the copy of the patch, the edit, the own path, the kept row and "
-                "the token",
+                "their sequence with the message, the copy of the patch, the edit, the own path and the token",
                 (first.number, second.number) == (1, 2)
                 and heavy.is_held(lock)
                 and [item.number for item in found] == [1, 2]
                 and stored.messages == full.messages
                 and stored.edits == full.edits
                 and stored.paths == full.paths
-                and stored.keeps == full.keeps
                 and [path.read_bytes() for path in stored.patches] == [patch.read_bytes()]
                 and found[0].branch == land.branch_of(root)
                 and found[0].root == root
                 and found[0].token == first.token
                 and first.token != second.token,
+            )
+            elsewhere = replace(found[1], branch="refs/heads/elsewhere")
+            expect(
+                "a batch holds the requests with the git directory and the branch of its first request, in their "
+                "sequence",
+                land.batch_of(found) == found and land.batch_of([found[0], elsewhere]) == [found[0]],
             )
             verdict = land.Decision(3, "abc", (land.Line("one"), land.Line("two", True)))
             land.write_decision(queue, found[0], verdict)
@@ -1225,69 +1226,6 @@ def journal_cases(expect: testing.Expect) -> None:
                 and any("git cannot tell" in line.content for line in decision.lines)
                 and not has_journal,
             )
-
-
-def keep_cases(expect: testing.Expect) -> None:
-    """Hold the rows of --keep: the parse, the rule of a row, the batch of a row and the verdict of a request."""
-    with tempfile.TemporaryDirectory(prefix="land-keep-") as work_text:
-        work = Path(work_text)
-        request, _ = land.parse(["-m", "s", "--keep", "slow-row", "the bench grows", "--", "own.txt"], work)
-        expect("the parse keeps each row of --keep", request.keeps == (gate.Keep("slow-row", "the bench grows"),))
-        for name, words in (
-            ("--keep with no rule ID", ["-m", "s", "--keep", "Not A Rule", "why", "--", "own.txt"]),
-            ("--keep with no reason", ["-m", "s", "--keep", "slow-row", " ", "--", "own.txt"]),
-        ):
-            try:
-                land.parse(words, work)
-                expect(f"the parse refuses {name}", False)
-            except land.LandError:
-                expect(f"the parse refuses {name}", True)
-        root = work / "repo"
-        planted_repository(root)
-        meta_row = (
-            "rule planted-meta engine=meta scope=utils/registry.txt ledger=admit doc=XV | a planted meta rule | change "
-            "nothing"
-        )
-        rows = sorted([rule_registry.measured_rule("slow-row", 10, 20, "KB", "a size"), meta_row])
-        (root / rule_registry.REGISTRY_PATH).write_text(rule_registry.planted(rows), encoding="utf-8")
-        refusals = []
-        for rule_id in ("planted-meta", "no-such-rule"):
-            try:
-                land.checked_keeps(root, request_of(("s",), keeps=(gate.Keep(rule_id, "why"),)))
-                refusals.append(False)
-            except land.LandError:
-                refusals.append(True)
-        land.checked_keeps(root, request)
-        expect(
-            "a row of --keep takes only a measured rule of the policy max of the engine build", refusals == [True] * 2
-        )
-        plain = land.Queued(1, root, request_of(("Plain",), own=("own.txt",)), options())
-        kept = land.Queued(2, root, request, options())
-        expect(
-            "a request with --keep ends the batch before it, and a first request with --keep is the only request of "
-            "its batch",
-            land.batch_of([plain, kept, replace(plain, number=3)]) == [plain]
-            and land.batch_of([kept, replace(plain, number=3)]) == [kept],
-        )
-        (root / "r1.txt").write_text("one\n", encoding="utf-8")
-        alone = request_of(("Add r1",), own=("r1.txt",), keeps=(gate.Keep("slow-row", "the first reason"),))
-        seen: list[tuple[gate.Candidate, bool]] = []
-        raised = "slow-row: @build/bench/a.o in x86_64-debug-asan-bench-fuzz from 10 to 12"
-
-        def keeping(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
-            seen.append((candidate, is_retry))
-            return gate.Verdict(("bench-fuzz",), (), 1.0, kept=(raised,))
-
-        decisions, _ = landed(root, [alone], keeping)
-        expect(
-            "the candidate holds the rows of --keep of its request, and the verdict gives the raised rows",
-            seen[0][0].keeps == (gate.Keep("slow-row", "the first reason"),)
-            and any(raised in line.content for line in decisions[1].lines),
-        )
-        queue = land.queue_of(work / "work", root)
-        with land.entered(queue, root, alone, options()):
-            found = land.waiting_requests(queue, no_pause)
-        expect("a request of the queue keeps its rows of --keep", found[0].request.keeps == alone.keeps)
 
 
 def record_cases(expect: testing.Expect) -> None:
@@ -1550,7 +1488,6 @@ def main(argv: list[str]) -> int:
             drop_cases,
             queue_cases,
             journal_cases,
-            keep_cases,
             record_cases,
             heavy_lock_cases,
             process_cases,

@@ -125,9 +125,6 @@ if mode == "build":
 statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
-if mode == "keep":
-    ledger = pathlib.Path("utils/ledgers/slow-row.txt").read_text()
-    statuses["guard_slow_row"] = "fail" if "| 10 |" in ledger else "run"
 if mode == "moves":
     ledger = pathlib.Path("utils/ledgers/trait-guard.txt").read_text()
     statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
@@ -141,9 +138,8 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # The planted master guard: `warnings` gives 0, and `check` writes its rule and the base of the change, and does not
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  `write` lowers the count 2 of the planted ledger to 1, as the
-# write of a fall does, and writes its rule.  The write of slow-row raises the value 10 of its ledger to 12, as the
-# write of a kept row does.  The write of trait-guard moves the row of include/old.h to include/new.h, as the write of
-# a divided header does (THE MOVE of assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for
+# write of a fall does, and writes its rule.  The write of trait-guard moves the row of include/old.h to
+# include/new.h, as the write of a divided header does (THE MOVE of assay.core.ledger).  In a build with the file slow-writes.txt, a write runs for
 # SLOW_S seconds.  It then writes its rule and the times of its start and its end to intervals.txt.
 UTILS_MARK = "@UTILS@"
 SLOW_MARK = "@SLOW_S@"
@@ -170,7 +166,6 @@ if words[0] == "write":
     if (build / "slow-writes.txt").is_file():
         time.sleep(@SLOW_S@)
     name, old, new = {
-        "slow-row": ("slow-row", "| 10 |", "| 12 |"),
         "trait-guard": ("trait-guard", "include/old.h", "include/new.h"),
     }.get(words[2], ("door-unit", "| 2 |", "| 1 |"))
     ledger = pathlib.Path(f"utils/ledgers/{name}.txt")
@@ -193,8 +188,8 @@ with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
     handle.write(" ".join(words[words.index("--build") + 2 :]) + "\\n")
 """
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
-# unless it is test_broken, or test_ledger or guard_slow_row before the write of its ledger.  A fall of door-unit makes
-# no test red, because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).
+# unless it is test_broken, or test_ledger before the write of its ledger.  A fall of door-unit makes no test red,
+# because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).
 CTEST = """import pathlib
 import sys
 
@@ -207,9 +202,7 @@ report = pathlib.Path(words[words.index("--output-junit") + 1])
 red = {"test_broken"}
 traits = pathlib.Path("utils/ledgers/trait-guard.txt")
 red |= {"test_ledger"} if traits.is_file() and "include/old.h" in traits.read_text() else set()
-slow = pathlib.Path("utils/ledgers/slow-row.txt")
-red |= {"guard_slow_row"} if slow.is_file() and "| 10 |" in slow.read_text() else set()
-cases = "".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
+cases ="".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
 report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</testsuite>')
 """
 PLANTED = {
@@ -225,9 +218,6 @@ PLANTED = {
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 3.0
 SMALL_MEMORY_JOBS = 2
-# The ledger of the measured rule of the planted registry, and the head of a planted ledger.
-SLOW_LEDGER = "utils/ledgers/slow-row.txt"
-LEDGER_HEAD = "# a planted ledger\nformat 1\nrule {rule}\n"
 
 
 def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
@@ -707,60 +697,24 @@ def falls_parse_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
-def keep_cases(expect: testing.Expect) -> None:
-    """Hold the kept rows: a red test of a rule of --keep gets the write of the rule, and the gate folds the ledger."""
-    with tempfile.TemporaryDirectory(prefix="gate-keep-") as work_text:
-        work = Path(work_text)
-        root = work / "repo"
-        planted_repository(root)
-        row = "@build/bench/a.o | x86_64-debug-asan-bench-fuzz | 10 | - | the measure of the first build\n"
-        head = commit_change(root, SLOW_LEDGER, LEDGER_HEAD.format(rule="slow-row") + row, "Keep an object")
-        commit = commit_change(root, "notes.txt", "a change that grows the object\n", "Grow the object")
-        tree = work / "land" / gate.TREE
-        gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "keep")
-        keep = gate.Keep("slow-row", "the doors of fixy/os add code to the bench")
-        verdict, _ = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
-        expect(
-            "with no --keep, a red test of a measured rule rejects the commit",
-            not verdict.is_accepted and any("guard_slow_row" in problem for problem in verdict.problems),
-        )
-        verdict, _ = testing.captured(
-            lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",), (keep,)), True)
-        )
-        kept = (git.show(root, verdict.final, SLOW_LEDGER) or b"").decode()
-        expect(
-            "with --keep, the gate writes the measured value, gives the raised row the reason of --keep, and folds the "
-            "ledger into the commit of the falls",
-            verdict.is_accepted
-            and verdict.ledgers == (SLOW_LEDGER,)
-            and "| 12 | - | the doors of fixy/os add code to the bench" in kept
-            and verdict.kept == ("slow-row: @build/bench/a.o in x86_64-debug-asan-bench-fuzz from 10 to 12",)
-            and git.parent(root, verdict.final) == head,
-        )
-
-
 def changed_tests_cases(expect: testing.Expect) -> None:
-    """Hold a configuration of the tests of the changed inputs: no --all, a red test rejects, and --keep applies."""
+    """Hold a configuration of the tests of the changed inputs: no --all, and a red test rejects."""
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
         work = Path(work_text)
         root = work / "repo"
         planted_repository(root)
         bench = "configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan-bench-fuzz\n"
         door = DOOR_LEDGER.replace("configuration aarch64-debug-asan kind aarch64-debug-asan\n", bench)
-        commit_change(root, "utils/ledgers/door-unit.txt", door, "Count the bench build")
-        row = "@build/bench/a.o | x86_64-debug-asan-bench-fuzz | 10 | - | the measure of the first build\n"
-        head = commit_change(root, SLOW_LEDGER, LEDGER_HEAD.format(rule="slow-row") + row, "Keep an object")
+        head = commit_change(root, "utils/ledgers/door-unit.txt", door, "Count the bench build")
         commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         verdicts: dict[str, gate.Verdict] = {}
         words: dict[str, list[str]] = {}
-        for mode in ("clean", "broken", "keep"):
+        for mode in ("clean", "broken"):
             others = {**OTHER_BUILDS, "build-bench-fuzz": mode}
             planted = planted_gate(work, root, tree, "clean", others)
-            keeps = (gate.Keep("slow-row", "the bench grows"),) if mode == "keep" else ()
-            candidate = gate.Candidate(head, commit, ("test/a.cpp",), keeps)
+            candidate = gate.Candidate(head, commit, ("test/a.cpp",))
 
             def run(planted: gate.Gate = planted, candidate: gate.Candidate = candidate) -> gate.Verdict:
                 return planted.check(candidate, False)
@@ -793,14 +747,6 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             and broken.problems[0].startswith("bench-fuzz: red alone too: test_broken")
             and broken.focus == (gate.Focus("bench-fuzz", ("test_broken",)),)
             and "bench-fuzz" in broken.configurations,
-        )
-        kept = (git.show(root, verdicts["keep"].final, SLOW_LEDGER) or b"").decode()
-        expect(
-            "with --keep, the gate writes the measured value of a kept row in that configuration, and accepts the "
-            "commit",
-            verdicts["keep"].is_accepted
-            and "| 12 | - | the bench grows" in kept
-            and verdicts["keep"].kept == ("slow-row: @build/bench/a.o in x86_64-debug-asan-bench-fuzz from 10 to 12",),
         )
 
 
@@ -1068,7 +1014,7 @@ def base_run_cases(expect: testing.Expect) -> None:
         focus = batch_verdict.focus + (gate.Focus("bench-fuzz"),)
         base = planted_gate(work, root, tree, "clean", others)
         base_verdict, printed = testing.captured(
-            lambda: base.check(gate.Candidate(head, head, ("test/a.cpp",), (), focus), True)
+            lambda: base.check(gate.Candidate(head, head, ("test/a.cpp",), focus), True)
         )
         ran = {
             name: (tree / name / "words.txt").read_text(encoding="utf-8").splitlines()
@@ -1140,7 +1086,6 @@ def main(argv: list[str]) -> int:
             falls_move_cases,
             counted_cases,
             falls_parse_cases,
-            keep_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

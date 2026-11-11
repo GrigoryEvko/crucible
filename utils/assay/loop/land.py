@@ -7,8 +7,7 @@ THE REQUEST
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
-      `--keep` RULE REASON      The gate writes the measured value of each row of RULE that grew, with REASON (THE KEPT ROWS)
-      --jobs N                  The jobs of each build and each test run of the gate, else DEFAULT_JOBS
+      --jobs N                 The jobs of each build and each test run of the gate, else DEFAULT_JOBS
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (THE DRIVER)
@@ -50,21 +49,6 @@ THE COMPOSITION
     writes is then in the repository.  The scratch repository reads the own
     paths from the work tree of the request through --work-tree.
 
-THE KEPT ROWS
-    A measured rule of the policy max keeps an item over its warning
-    threshold with a row, up to the value of the row.  A change can make
-    such an item larger in a configuration that its author does not build.
-    An example is a bench object of the build bench-fuzz.  With `--keep`
-    RULE REASON, the author gives the reason of that growth with the
-    request.  The gate then writes the measured value of each row of RULE
-    that rose, with REASON as its reason (THE KEPT ROWS of assay.loop.gate).
-
-    The ledger goes into the commit of THE FALLS.  An item over the error
-    threshold with no row stays an error.  RULE must be a measured rule of
-    the policy max of the engine build.  A request with `--keep` lands in a
-    batch of its own (THE BATCH).  Each raised row is then a row of that
-    request.  The verdict and the record give each raised row.
-
 THE QUEUE
     A landing writes its request into the queue of its repository before it
     waits for the lock of the warm tree.  The queue is the directory
@@ -81,12 +65,10 @@ THE QUEUE
 
     The process holds that exclusive lock of flock(2) while it waits.  Then
     it writes a copy of each patch and the file NUMBER.request.  That file
-    holds the message, the edits, the own paths, the rows of THE KEPT ROWS
-    and the options.  It also holds the work tree, its
-    branch, the commit of its HEAD, its shared git directory and a random
-    token.  The verdict of the request
-    holds the same token, and the process reads no verdict with a different
-    token.
+    holds the message, the edits, the own paths and the options.  It also
+    holds the work tree, its branch, the commit of its HEAD, its shared git
+    directory and a random token.  The verdict of the request holds the same
+    token, and the process reads no verdict with a different token.
 
     The kernel removes the lock when the process ends, also on a signal.  A
     process that ends removes its request file first and its lock file last.
@@ -118,9 +100,7 @@ THE HOLDER
     gate, through the shared git directory, and not through the work tree of
     a request.
 
-    A request with `--keep` ends the batch before it, unless it is the first
-    request.  A first request with `--keep` is the only request of its
-    batch.  The holder lands the batch (THE BATCH).  It writes the verdict
+    The holder lands the batch (THE BATCH).  It writes the verdict
     of a request only while the process of the request holds its lock.  The
     holder keeps the number of each request with a verdict, and it gives no
     request a second verdict.
@@ -315,8 +295,7 @@ THE DRIVER
 
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
-              [`--keep` RULE REASON]... [--jobs N] [--all-configurations]
-              [--check [--here] | --dry-run | --tree] -- [PATH]...
+              [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]...
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -341,7 +320,6 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from assay.core import cache, git, paths, proc
-from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.loop import gate, heavy
@@ -356,7 +334,7 @@ PAUSE_RANGE_S = (0.1, 0.9)
 INSERT = "insert"
 REPLACE = "replace"
 # The count of the values of each option, for the division of the words (split_words()).
-VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--keep": 2, "--jobs": 1}
+VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--jobs": 1}
 FLAG_DRY_RUN = "--dry-run"
 FLAG_TREE = "--tree"
 FLAG_CHECK = "--check"
@@ -368,8 +346,7 @@ HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--keep RULE REASON]... [--jobs N] [--all-configurations]\n"
-    "                 [--check [--here] | --dry-run | --tree] -- [PATH]..."
+    "                 [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]..."
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
@@ -436,16 +413,12 @@ class Edit:
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """The message, the patches, the edits and the own paths of one landing (THE REQUEST).
-
-    `keeps` holds the rows of `--keep` (THE KEPT ROWS).
-    """
+    """The message, the patches, the edits and the own paths of one landing (THE REQUEST)."""
 
     messages: tuple[str, ...]
     patches: tuple[Path, ...]
     edits: tuple[Edit, ...]
     paths: tuple[str, ...]
-    keeps: tuple[gate.Keep, ...] = ()
 
     @property
     def message(self) -> str:
@@ -686,39 +659,16 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
         for kind, option in ((INSERT, "--block"), (REPLACE, "--replace"))
         for path, first, second in values[option]
     ]
-    keeps = tuple(gate.Keep(rule, reason) for rule, reason in values["--keep"])
-    for keep in keeps:
-        if not rule_registry.is_rule_id(keep.rule) or not keep.reason.strip():
-            raise LandError(f"--keep takes the ID of a rule and a reason, not {keep.rule!r} and {keep.reason!r}")
     request = Request(
         tuple(item[0] for item in values["-m"]),
         tuple((current / item[0]).resolve() for item in values["--patch"]),
         tuple(edits),
         tuple(own),
-        keeps,
     )
     return request, checked_options(flags, values["--jobs"], request)
 
 
 # ── The edits ──────────────────────────────────────────────────────────────
-
-
-def checked_keeps(root: Path, request: Request) -> None:
-    """Refuse a row of `--keep` with a rule that is not a measured rule of the policy max of the engine build.
-
-    Raises:
-        LandError: If such a rule is not in the registry of the work tree, or the registry does not read
-    """
-    if not request.keeps:
-        return
-    try:
-        registry = rule_registry.load(root / rule_registry.REGISTRY_PATH)
-    except (OSError, ValueError) as problem:
-        raise LandError(f"the registry of {root} does not read: {problem}") from None
-    for keep in request.keeps:
-        rule = registry.rules.get(keep.rule)
-        if rule is None or rule.policy != rule_registry.Policy.MAX or rule.engine != rule_registry.Engine.BUILD:
-            raise LandError(f"--keep takes a measured rule of the policy max of the engine build, and not {keep.rule}")
 
 
 def edit_state(content: str, kind: str, first: str, second: str) -> str:
@@ -1135,12 +1085,8 @@ class BatchLanding:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
-        The candidate holds one row of `--keep` for each rule: the row of the first request with that rule.  A
-        request with `--keep` is the only request of its batch (THE HOLDER).
         """
-        keeps = {keep.rule: keep for link in reversed(chain) for keep in link.queued.request.keeps}
-        kept = tuple(keeps[rule] for rule in sorted(keeps))
-        candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain), kept)
+        candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain))
         verdict = self.check(candidate, bool(self.runs))
         numbers = tuple(link.queued.number for link in chain)
         self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
@@ -1324,8 +1270,6 @@ class BatchLanding:
                 lines.append(
                     Line(f"loop land: a batch of {len(accepted)} requests landed at {final[:SHORT_HASH]} with one swap")
                 )
-            if link.queued.request.keeps:
-                lines += [Line(f"loop land: the gate wrote the kept row of {row}") for row in verdict.kept]
             has_falls = bool(ledgers) and last_of_root[link.queued.root] == index
             update = Update(
                 final,
@@ -1512,7 +1456,6 @@ def encoded_request(queued: Queued, patch_names: Sequence[str]) -> bytes:
         "patches": list(patch_names),
         "edits": [asdict(edit) for edit in request.edits],
         "paths": list(request.paths),
-        "keeps": [asdict(keep) for keep in request.keeps],
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
     }
@@ -1564,7 +1507,6 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     if record.get("format") != REQUEST_FORMAT:
         raise ValueError(f"the request is not of the format {REQUEST_FORMAT}")
     edits = tuple(Edit(*item) for item in records_of(record.get("edits"), "edits", ("path", "kind", "first", "second")))
-    keeps = tuple(gate.Keep(*item) for item in records_of(record.get("keeps"), "keeps", ("rule", "reason")))
     keys = ("root", "branch", "common", "token", "head")
     root, branch, common, token, head = text_list([record.get(key) for key in keys], "root")
     jobs, every = record.get("jobs"), record.get("every")
@@ -1577,7 +1519,6 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         tuple(queue / name for name in text_list(record.get("patches"), "patches")),
         edits,
         text_list(record.get("paths"), "paths"),
-        keeps,
     )
     options = Options(False, False, is_every=every, jobs=jobs)
     return Queued(number, Path(root), request, options, branch, common, token, head)
@@ -1817,17 +1758,12 @@ def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queue
 def batch_of(found: Sequence[Queued]) -> list[Queued]:
     """Return the requests of the next batch, in their sequence (THE HOLDER).
 
-    The batch holds the requests with the git directory and the branch of the first request.  A request with `--keep`
-    ends it before itself, and a first request with `--keep` is the only request of its batch.
+    The batch holds the requests with the git directory and the branch of the first request.
     """
     if not found:
         return []
     first = found[0]
-    if first.request.keeps:
-        return [first]
-    same = [item for item in found if (item.common, item.branch) == (first.common, first.branch)]
-    end = next((index for index, item in enumerate(same) if item.request.keeps), len(same))
-    return same[:end]
+    return [item for item in found if (item.common, item.branch) == (first.common, first.branch)]
 
 
 def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause = time.sleep) -> bool:
@@ -2065,7 +2001,6 @@ def main(argv: list[str]) -> int:
         main_tree = driver_tree(root)
         if main_tree is not None and not options.is_here:
             return run_driver(main_tree, argv)
-        checked_keeps(root, request)
         work = cache.work_root() / WORK_NAME
         if options.is_check:
             return checked(root, request, options, work)
