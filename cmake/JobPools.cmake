@@ -12,8 +12,8 @@
 #
 # Each link runs mold with the threads of the rule link-threads
 # (cmake/Linker.cmake).  On 2026-10-17, a relink of the tree ran 128 links at
-# one time on a host of 224 logical cores, and it took 0.298 s with mold at 4
-# threads.  Half the cores is the fraction nearest to that count.  On
+# one time on a host of 224 CPUs, and it took 0.298 s with mold at 4 threads.
+# Half the cores is the fraction nearest to that count.  On
 # 2026-10-16, the sum of the 128 largest link peaks of the Debug build was
 # 3.6 GB, so the memory does not limit the depth.
 #
