@@ -12,8 +12,8 @@
 //         library.cpp      the library entities and the admitted list
 //         owner.cpp        the family owner: each named reference of the code,
 //                          the names that the front end folds (THE FOLDED
-//                          NAMES), and the rules owners and
-//                          syscall-capability
+//                          NAMES), the rule owners and the claims of the
+//                          rule syscalls
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
 //         expression.cpp   the family expression shape: the walk of a body
@@ -252,7 +252,7 @@
 //     The rule refined-pre-subsumption (expression.cpp, THE REFINED PARAMETERS):
 //     retest                a precondition that tests again the predicate of a
 //                           refined parameter
-//     The rule syscall-grant-coverage (expression.cpp, THE GRANTS):
+//     The rule syscalls (expression.cpp, THE GRANTS):
 //     not-granted           a system call that the grant file issues and that
 //                           its grant alias does not name
 //     not-issued            a system call that the grant alias names and that
@@ -316,12 +316,13 @@
 //                           member of a class of include/
 //     walked-return         a function that uses unchecked and returns a member
 //                           of a class that a walk found
-//     The rule syscall-capability:
+//     The rule syscalls also has (owner.cpp, THE CLAIMS and THE DENIED CALLS):
 //     raw-syscall           a call of a system call of a syscall row, or a call
 //                           of syscall() with the number of a macro SYS_NAME,
 //                           in a file of the claim trees
-//     outside-door          a use of an entity of an owner row of the rule
+//     outside-door          a use of an entity of an owner row of the kind
 //                           outside the sites of the row
+//     denied-syscall        a raw call of a system call that a deny row names
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -667,10 +668,9 @@ enum class Rule : std::uint8_t {
     proof_routes,
     padded_list,
     refined_pre_subsumption,
-    syscall_grant_coverage,
+    syscalls,
     home,
     owners,
-    syscall_capability,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -728,7 +728,7 @@ enum class Kind : std::uint8_t;
 // (owner.cpp, THE NAMES OF THE SOURCE).  The kind of the row selects what the
 // family reads, and the rule RULE gives no more selection.
 struct OwnerRow {
-    Rule rule = Rule::syscall_capability;
+    Rule rule = Rule::syscalls;
     Kind kind{};
     std::string entity;
     std::vector<std::string> paths;
@@ -899,14 +899,12 @@ inline const char* rule_name(Rule rule) {
             return "padded-list";
         case Rule::refined_pre_subsumption:
             return "refined-pre-subsumption";
-        case Rule::syscall_grant_coverage:
-            return "syscall-grant-coverage";
+        case Rule::syscalls:
+            return "syscalls";
         case Rule::home:
             return "home";
         case Rule::owners:
             return "owners";
-        case Rule::syscall_capability:
-            return "syscall-capability";
         case Rule::library_records:
             return "library-records";
     }
@@ -914,7 +912,7 @@ inline const char* rule_name(Rule rule) {
 }
 
 // The rules of the family owner, in the order of the enumeration.
-inline constexpr Rule kOwnerRules[] = {Rule::owners, Rule::syscall_capability};
+inline constexpr Rule kOwnerRules[] = {Rule::syscalls, Rule::owners};
 
 // True when an owner row of the kind KIND reads the names that the source
 // spells, from the events of the parser (owner.cpp, THE NAMES OF THE SOURCE).
@@ -1186,7 +1184,10 @@ inline Rule rule_of(Kind kind) {
         case Kind::grant_wrong_helper:
         case Kind::grant_unread:
         case Kind::grant_compared:
-            return Rule::syscall_grant_coverage;
+        case Kind::raw_syscall:
+        case Kind::outside_door:
+        case Kind::denied_syscall:
+            return Rule::syscalls;
         case Kind::federation_outside_home:
         case Kind::owner_outside_home:
         case Kind::combine_outside_home:
@@ -1208,10 +1209,6 @@ inline Rule rule_of(Kind kind) {
         case Kind::open_static_member:
         case Kind::walked_return:
             return Rule::owners;
-        case Kind::raw_syscall:
-        case Kind::outside_door:
-        case Kind::denied_syscall:
-            return Rule::syscall_capability;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1247,10 +1244,9 @@ inline bool is_family_kind(Kind kind) {
         case Rule::proof_routes:
         case Rule::padded_list:
         case Rule::refined_pre_subsumption:
-        case Rule::syscall_grant_coverage:
+        case Rule::syscalls:
         case Rule::home:
         case Rule::owners:
-        case Rule::syscall_capability:
         case Rule::library_records:
             return true;
         default:
@@ -1360,11 +1356,14 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"padded-list", "padded-return"},
     {"padded-list", "padded-parameter"},
     {"refined-pre-subsumption", "retest"},
-    {"syscall-grant-coverage", "not-granted"},
-    {"syscall-grant-coverage", "not-issued"},
-    {"syscall-grant-coverage", "wrong-helper"},
-    {"syscall-grant-coverage", "unread-grant"},
-    {"syscall-grant-coverage", "compared"},
+    {"syscalls", "not-granted"},
+    {"syscalls", "not-issued"},
+    {"syscalls", "wrong-helper"},
+    {"syscalls", "unread-grant"},
+    {"syscalls", "compared"},
+    {"syscalls", "raw-syscall"},
+    {"syscalls", "outside-door"},
+    {"syscalls", "denied-syscall"},
     {"home", "outside-home"},
     {"home", "federation-outside-home"},
     {"home", "owner-outside-home"},
@@ -1384,9 +1383,6 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"owners", "member-splice"},
     {"owners", "open-static-member"},
     {"owners", "walked-return"},
-    {"syscall-capability", "raw-syscall"},
-    {"syscall-capability", "outside-door"},
-    {"syscall-capability", "denied-syscall"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -2266,7 +2262,8 @@ void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
 
 // expression.cpp: the family expression shape, the walk of a body, and the
-// rules proof-routes, refined-pre-subsumption and syscall-grant-coverage.
+// rules proof-routes and refined-pre-subsumption, and the grants of the rule
+// syscalls.
 void walk_root(tree* root, location_t location, bool is_pattern);
 void walk_body(tree function, bool is_pattern);
 void check_route_alias(tree decl);

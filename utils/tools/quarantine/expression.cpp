@@ -1,5 +1,5 @@
-// The family expression shape: the walk of a body, and the rules proof-routes,
-// refined-pre-subsumption and syscall-grant-coverage.  The walk
+// The family expression shape: the walk of a body, the rules proof-routes and
+// refined-pre-subsumption, and the grants of the rule syscalls.  The walk
 // reads each expression of a function body, of an initializer, of a default
 // argument and of an unevaluated operand.  It gives the shapes of an
 // expression their findings, such as a new-expression, an explicit temporary
@@ -129,7 +129,7 @@
 //     the parameter, is the finding retest.  Its entity is FUNCTION:
 //     PARAMETER: decide::PROCEDURE.  A lambda has a body of its own.
 //
-// THE GRANTS (the rule syscall-grant-coverage)
+// THE GRANTS (the rule syscalls)
 //     A grant row of the rule table names a grant file, its alias, the
 //     enumeration of the system calls and the door files.  The code of the
 //     grant file is each body of the grant file, and each expression that a

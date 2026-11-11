@@ -52,7 +52,7 @@ from assay.loop import syntax
 
 RULE = "parse-builds"
 # The rules that judge a parse build (THE RULE, step 4).
-COUNTED_RULES = ("quarantine", "heavy-include", "syscall-capability", "door-unit")
+COUNTED_RULES = ("quarantine", "heavy-include", "syscalls", "door-unit")
 # The units with no current report that the message of the error stale names (THE RULE, step 3).
 SHOWN_STALE_UNITS = 3
 # The directory of the scripts of the programs of a plant, and the suffix of a script (THE PLANTS).

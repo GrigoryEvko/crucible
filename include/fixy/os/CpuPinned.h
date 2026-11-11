@@ -34,13 +34,13 @@
 //   an AffinityMask.  So the door includes no header of the kernel and no
 //   header of the C library.  A door function that issues one system call
 //   NAME out of line has the name NAME_sys, so the rule
-//   syscall-grant-coverage counts a call of it as a call of NAME.
+//   syscalls counts a call of it as a call of NAME.
 //
 // A pin that does not go through the door is not recorded.  A
 // sched_setaffinity call around the door, a call from another thread that
 // names this thread, and a taskset from outside the process move the
 // thread with no record, and a proof then stays in force for a mask the
-// thread no longer has.  The rule syscall-capability of the quarantine
+// thread no longer has.  The rule syscalls of the quarantine
 // plugin refuses the first two in each file that a build compiles: a
 // sched_setaffinity of the C library or of the raw primitive, or a
 // pthread_setaffinity_np, outside detail::sched_setaffinity_sys is a

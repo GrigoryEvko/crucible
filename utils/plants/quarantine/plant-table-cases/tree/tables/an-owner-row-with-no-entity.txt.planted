@@ -1,1 +1,1 @@
-owner syscall-capability outside-door | no entity
+owner syscalls outside-door | no entity

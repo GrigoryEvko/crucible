@@ -15,7 +15,7 @@
 //
 //   An argument word can be an address that the kernel reads or writes, so
 //   the primitive is not safe.  Only a door issues it, and the door gives a
-//   safe operation.  An owner row of the rule syscall-capability in
+//   safe operation.  An owner row of the rule syscalls in
 //   utils/rule-table.txt admits a call of raw_syscall only in the door
 //   directories: include/foundation/os, src/foundation/os, include/fixy/os
 //   and src/fixy/os.  Each call is also the kind raw-syscall of that rule,
@@ -25,7 +25,7 @@
 //   not issue raw, because the C library owns its state: the signal calls, the
 //   thread and process starts, the thread and TLS state, the credentials, the
 //   program break and the exits.  The enumeration names none of them, and the
-//   rule syscall-capability refuses a raw call of one (denied-syscall).
+//   rule syscalls refuses a raw call of one (denied-syscall).
 //
 // THE SANITIZERS
 //   ThreadSanitizer delivers a signal only inside a call that it intercepts,

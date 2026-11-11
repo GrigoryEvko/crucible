@@ -463,7 +463,7 @@ public:
 // smaller than the truth while every check beside it stayed green.
 //
 // The grant row of utils/rule-table.txt names this alias.  The rule
-// syscall-grant-coverage of the quarantine plugin derives the set from the
+// syscalls of the quarantine plugin derives the set from the
 // call sites in this header and fails when the two disagree, so the list is
 // checked against the code rather than against its own prose.  The two
 // affinity calls come through fixy::sched::apply_affinity_to_cpu, and the

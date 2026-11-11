@@ -48,7 +48,7 @@ REGISTRY = (
     "rule plan-check engine=meta scope=builddir ledger=none doc=XIII | a planted rule of the build | change nothing\n"
     "rule quarantine engine=plugin scope=tracked ledger=count kinds=std-object doc=XXII | a finding | remove it\n"
     "rule heavy-include engine=plugin scope=include/ ledger=count kinds=heavy-include doc=XV | a header | remove it\n"
-    "rule syscall-capability engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
+    "rule syscalls engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
     "rule trait-guard engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
 # The module of the rule that reads the build, its test, and the module of the test launcher of the planted repository.

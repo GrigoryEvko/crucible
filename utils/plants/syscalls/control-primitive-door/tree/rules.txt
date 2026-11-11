@@ -1,0 +1,13 @@
+# The rule table of this control: the rule table of the plant
+# plant-primitive-door.  The owner row of sched_setaffinity gives the one door
+# function of the affinity call.
+
+layer floor 0 include/fixy/
+
+allow floor <cstdint>
+
+quarantine src/
+
+owner syscalls outside-door planted::raw_syscall include/fixy/os/ | the door directory of the control
+owner syscalls outside-door sched_setaffinity include/fixy/os/Pin.h by=planted::pin_door | the door of the affinity call of the control
+primitive planted::raw_syscall | the primitive of the control

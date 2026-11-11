@@ -1,0 +1,12 @@
+# A base header of the door directory issues the primitive with the
+# enumerator sched_setaffinity in the door function of the affinity call, and
+# again in a function that goes around that door.  Each call is a raw system
+# call.  The call around the door is a use of sched_setaffinity outside its
+# door, the kind outside-door.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Pin.h stage=c
+exit sentinel pass
+judge sentinel
+finding sentinel syscalls raw-syscall include/fixy/os/Pin.h:16:62 | planted::pin_door(long int): raw_syscall(sched_setaffinity)
+finding sentinel syscalls raw-syscall include/fixy/os/Pin.h:18:64 | planted::pin_around(long int): raw_syscall(sched_setaffinity)
+finding sentinel syscalls outside-door include/fixy/os/Pin.h:18:64 | planted::pin_around(long int): raw_syscall(sched_setaffinity)

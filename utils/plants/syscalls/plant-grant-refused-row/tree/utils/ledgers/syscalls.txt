@@ -1,0 +1,5 @@
+# The ledger of the plant.  The row names a difference of a grant set, and no
+# row can admit one.
+format 1
+rule syscalls
+include/crucible/warden/Hardening.h | not-issued | 1 | ptrace | a planted reason

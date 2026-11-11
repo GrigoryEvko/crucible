@@ -71,7 +71,7 @@ namespace {
 // A second declaration of read or write with the attribute nothrow is not a
 // solution.  It gives the function the source location of this file.  The
 // quarantine plugin then sees no call of the C library, and the rule
-// syscall-capability does not count the call.
+// syscalls does not count the call.
 
 [[gnu::no_sanitize_thread]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address,
                                                   std::uint64_t count) {

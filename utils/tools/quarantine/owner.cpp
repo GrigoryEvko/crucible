@@ -20,7 +20,7 @@
 //     primitive with the enumerator NAME.  A lambda is a part of the function
 //     that holds it.
 //
-// THE CLAIMS (the rule syscall-capability)
+// THE CLAIMS (the rule syscalls)
 //     The rule table names the system calls and the primitive of the base:
 //         syscall NAME... | REASON
 //         primitive FUNCTION | REASON
@@ -33,7 +33,7 @@
 //     of a primitive is an enumerator, and its name is the name of the system
 //     call.
 //
-// THE DENIED CALLS (the rule syscall-capability)
+// THE DENIED CALLS (the rule syscalls)
 //     The rule table names the system calls that the base does not issue raw:
 //         deny NAME... | REASON
 //     A call of syscall() with the number of the macro SYS_NAME, and a call of

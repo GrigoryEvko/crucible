@@ -1,0 +1,6 @@
+# A ledger row of the kind not-issued names a grant file.  No row admits a
+# kind of the grants.  The build gives no finding, and the row is an error.
+
+compile raw src/raw.cpp stage=c
+exit raw pass
+judge raw

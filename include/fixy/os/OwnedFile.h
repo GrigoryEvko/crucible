@@ -33,7 +33,7 @@
 // region does: it claims nothing and closes nothing.  A failed open is
 // not an empty handle.  It is the errno, handed back with no handle built.
 //
-// The stdio calls are not in the syscall-capability guard's name set, so
+// The stdio calls are not in the syscall rows of the rule syscalls, so
 // they carry no allowlist line.
 
 #include <fixy/atoms/Os.h>

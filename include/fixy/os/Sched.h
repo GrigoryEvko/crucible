@@ -358,7 +358,7 @@ private:
 // force.  The result holds the mask of the thread before the pin.
 //
 // The two door calls stand in the body and not in a lambda, because the walk
-// of the rule syscall-grant-coverage does not read the body of a lambda, and
+// of the rule syscalls does not read the body of a lambda, and
 // the grant of crucible/warden/Hardening.h names the two calls of this door.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>

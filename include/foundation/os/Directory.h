@@ -17,7 +17,7 @@
 //
 // The calls of the kernel are in src/foundation/os/Directory.cpp, in a
 // function that is not a template, so the ledger of the rule
-// syscall-capability names each call one time.
+// syscalls names each call one time.
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Text.h>

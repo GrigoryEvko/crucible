@@ -1,0 +1,6 @@
+// A quarantined unit of src/ with no system call.
+namespace planted {
+
+int release(int descriptor) { return descriptor; }
+
+}  // namespace planted

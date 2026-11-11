@@ -34,7 +34,7 @@ using HardeningAtoms = ::crucible::warden::hardening_syscall_atoms;
 
 // This count is a claim about the code that no compile-time check can
 // confirm, because the code it describes is a set of call sites rather
-// than a type.  The rule syscall-grant-coverage of the quarantine plugin
+// than a type.  The rule syscalls of the quarantine plugin
 // reads those call sites and compares them with the tuple.  That rule, not
 // this line, keeps the two equal.
 static_assert(std::tuple_size_v<HardeningAtoms> == 9,

@@ -1,0 +1,9 @@
+# A base header of the door directory issues the primitive with the
+# enumerator sched_setaffinity only in the door function of the affinity call.
+# The call is a raw system call, and no use of sched_setaffinity stands
+# outside its door.  The control does not judge the raw call, because the tree
+# of the control holds no ledger.
+
+compile sentinel src/use.cpp sentinel=include/fixy/os/Pin.h stage=c
+exit sentinel pass
+finding sentinel syscalls raw-syscall include/fixy/os/Pin.h:15:62 | planted::pin_door(long int): raw_syscall(sched_setaffinity)

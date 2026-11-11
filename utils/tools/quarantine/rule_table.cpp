@@ -382,7 +382,7 @@ bool owner_kind_of(Rule rule, const std::string& text, Kind& kind) {
         {Rule::owners, Kind::testing_use},
         {Rule::owners, Kind::detail_use},
         {Rule::owners, Kind::unchecked_use},
-        {Rule::syscall_capability, Kind::outside_door},
+        {Rule::syscalls, Kind::outside_door},
     };
     for (const OwnerKind& known : kOwnerKinds) {
         if (known.rule == rule && text == kind_name(known.kind)) {
@@ -408,7 +408,7 @@ std::string parse_owner(const std::vector<std::string>& args, OwnerRow& row) {
         }
     }
     if (!is_rule) {
-        return "the rule " + args[0] + " is no rule of the family owner; the rules are owners and syscall-capability";
+        return "the rule " + args[0] + " is no rule of the family owner; the rules are owners and syscalls";
     }
     if (!owner_kind_of(row.rule, args[1], row.kind)) {
         return "the kind " + args[1] + " is no kind of a use outside the sites of an owner row of the rule " + args[0];

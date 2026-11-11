@@ -149,7 +149,7 @@
 #       is each body of FILE, and each expression that a macro body of FILE
 #       spells where a unit expands the macro.  A function of a DOOR file that
 #       the code of FILE calls stands for each system call that its body
-#       issues.  The rule syscall-grant-coverage refuses each system
+#       issues.  The rule syscalls refuses each system
 #       call of one set that the other set does not hold.  ALIAS and
 #       ENUMERATION are qualified names, and each FILE and DOOR is one file of
 #       the source root.  A FILE has one grant row at most
@@ -208,7 +208,7 @@
 #   syscall NAME... | REASON
 #       Each NAME is a function of the C library that issues one system call.
 #       A call of NAME, and a call of syscall(), is a finding of the kind
-#       raw-syscall of the rule syscall-capability in a file under include/,
+#       raw-syscall of the rule syscalls in a file under include/,
 #       src/ or vessel/, outside each directory named test, bench, examples,
 #       third_party, external or vendor, and each directory whose name starts
 #       with build.  The ledger of the rule gives the capability claim of each
@@ -217,14 +217,14 @@
 #       FUNCTION is a raw system call primitive of the base: a qualified
 #       name, whose first argument is an enumerator that names the system
 #       call.  A call of FUNCTION is a raw system call of the rule
-#       syscall-capability, with the shape FUNCTION(NAME) for the enumerator
+#       syscalls, with the shape FUNCTION(NAME) for the enumerator
 #       NAME, as a call of syscall() is.  A FUNCTION has one primitive row
 #       at most, and the reason is necessary
 #   deny NAME... | REASON
 #       Each NAME is a system call that the base does not issue raw.  The C
 #       library owns its state.  A call of syscall() with the number of
 #       the macro SYS_NAME, and a call of a primitive with the enumerator
-#       NAME, is the kind denied-syscall of the rule syscall-capability in
+#       NAME, is the kind denied-syscall of the rule syscalls in
 #       each file that a build compiles.  No ledger row admits it.  A NAME
 #       has one deny row at most, and the reason is necessary
 #
@@ -477,9 +477,9 @@ grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_at
 # The owner rows of the kinds lifetime-start and outside-door.
 owner owners lifetime-start std::start_lifetime_as include/foundation/Lifetime.h | an array of proofs, an aggregate that holds a proof and an array start each give a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses the three routes at compile time
 owner owners lifetime-start std::start_lifetime_as_array include/foundation/Lifetime.h | the library puts no mandate on the element type, so a start of an array of proofs gives a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses it at compile time
-owner syscall-capability outside-door sched_setaffinity src/fixy/os/CpuPinned.cpp by=fixy::detail::sched_setaffinity_sys | the door records a pin event, and a pin proof stays in force across a pin that goes around the door
-owner syscall-capability outside-door pthread_setaffinity_np src/fixy/os/CpuPinned.cpp by=fixy::detail::sched_setaffinity_sys | the call changes the same mask as sched_setaffinity, and its door is the same function, which does not call it
-owner syscall-capability outside-door foundation::os::raw_syscall include/foundation/os/ src/foundation/os/ include/fixy/os/ src/fixy/os/ | a word of the primitive can be an address that the kernel writes, so only a door issues it and gives a safe operation
+owner syscalls outside-door sched_setaffinity src/fixy/os/CpuPinned.cpp by=fixy::detail::sched_setaffinity_sys | the door records a pin event, and a pin proof stays in force across a pin that goes around the door
+owner syscalls outside-door pthread_setaffinity_np src/fixy/os/CpuPinned.cpp by=fixy::detail::sched_setaffinity_sys | the call changes the same mask as sched_setaffinity, and its door is the same function, which does not call it
+owner syscalls outside-door foundation::os::raw_syscall include/foundation/os/ src/foundation/os/ include/fixy/os/ src/fixy/os/ | a word of the primitive can be an address that the kernel writes, so only a door issues it and gives a safe operation
 
 # The owner rows of the kinds that read the names of the source.  The ledger
 # of the rule owners admits the reviewed uses with their reasons.
@@ -490,7 +490,7 @@ owner owners detail-use foundation include/foundation/ include/fixy/ src/foundat
 owner owners detail-use fixy include/foundation/ include/fixy/ src/foundation/ src/fixy/ test/layer/checks/foundation/ test/layer/checks/fixy/ | a detail function does the work of a door with no gate of its own, so only the base and the check files of its headers name it
 owner owners unchecked-use std::meta::access_context::unchecked | a splice of a private member has no access check, and a walk under unchecked gives the reflection of each private member of a proof type
 
-# The system calls of the rule syscall-capability, and the call syscall()
+# The system calls of the rule syscalls, and the call syscall()
 # with the number of a system call.
 syscall socket socketpair bind listen connect accept accept4 send sendto sendmsg recv recvfrom recvmsg shutdown setsockopt getsockopt | a call that makes, configures or uses a socket of the kernel
 syscall mmap munmap mremap mprotect madvise mincore mlock mlock2 munlock mlockall munlockall brk sbrk mbind set_mempolicy get_mempolicy memfd_create membarrier | a call that maps, locks, places or advises memory, or a memory barrier of the kernel

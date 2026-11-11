@@ -8,7 +8,7 @@ THE PARSE BUILD
     (assay.core.configuration.is_parse_build), such as a build of the presets
     syntax-x86-64-v3 and syntax-aarch64.  It compiles the preprocessor arms of
     its target, and no build of an object compiles them.  The ledgers of the
-    rules quarantine, heavy-include and syscall-capability count its
+    rules quarantine, heavy-include and syscalls count its
     findings in a configuration of their own (CLAUDE.md section XXII, The
     ratchet).
 
