@@ -15,12 +15,12 @@ THE INPUTS
     (build_names()).
 
 THE RULES OF A STEP
-    compile-cpu, compile-instructions, compile-memory, link-time and
-    link-memory read the record OUTPUT.cost of each output
-    (assay.core.record).  compile-cpu and link-time read the user and system
-    CPU time.  compile-instructions reads the user instructions of the
-    compiler run, in G (10^9).  compile-memory and link-memory read the peak
-    resident memory, in GB of 2^30 bytes.  A record of a ccache hit holds no
+    compile-instructions, compile-memory, link-time and link-memory read the
+    record OUTPUT.cost of each output (assay.core.record).  link-time reads
+    the user and system CPU time.  compile-instructions reads the user
+    instructions of the compiler run, in G (10^9).  compile-memory and
+    link-memory read the peak resident memory, in GB of 2^30 bytes.  A record
+    of a ccache hit holds no
     time, and the rule counts the output but does not judge it.  An output
     with no usable record did not come through the build launcher, and it
     gives an error of the kind no-record.  A record is not usable when it has
@@ -30,11 +30,9 @@ THE RULES OF A STEP
 
     The CPU time of a compile increases with the load of the host, and the
     instruction count does not (assay.core.meter, THE INSTRUCTION COUNT).
-    When the record of a compile holds a count, compile-instructions holds the
-    error level of the compile.  compile-cpu then gives a warning of the kind
-    count-holds-error for a time over its error threshold.  A record with no
-    count keeps the error of compile-cpu.  compile-instructions does not apply
-    to a build in which no record holds a count.
+    No rule judges the CPU time of a compile, and compile-instructions judges
+    its cost.  compile-instructions does not apply to a build in which no
+    record holds a count.
 
 THE RULES OF AN OBJECT
     function-size reads the largest STT_FUNC symbol of each object, in KB.
@@ -73,8 +71,6 @@ THE JUDGE
       `row-unused`       a row of the name of the configuration of the build
                          with an item that the build does not hold: a warning
                          at the row
-      count-holds-error  a compile-cpu time over the error threshold, in a
-                         record that holds an instruction count: a warning
       no-record          an output with no usable record
       not-wired          no output with a usable record
       input              an input that the rule cannot read
@@ -277,7 +273,6 @@ class StepRule:
 
 
 STEP_RULES = {
-    "compile-cpu": StepRule(cost_record.COMPILE, Quantity.TIME),
     "compile-instructions": StepRule(cost_record.COMPILE, Quantity.INSTRUCTIONS),
     "compile-memory": StepRule(cost_record.COMPILE, Quantity.MEMORY),
     "link-time": StepRule(cost_record.LINK, Quantity.TIME),
@@ -285,8 +280,6 @@ STEP_RULES = {
 }
 OBJECT_RULES = frozenset({"function-size", "object-text"})
 HEADER_ALONE = "header-alone"
-# The count rule of a time rule.  When a record holds an accurate count, the count rule holds the error level.
-COUNT_RULES = {"compile-cpu": "compile-instructions"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,13 +295,11 @@ class Measured:
     """The values of the items of one rule.
 
     `held` holds each item that the build holds and the rule does not judge,
-    such as a ccache hit.  `counted` holds each item with an instruction count
-    that holds the error level of its time (COUNT_RULES).
+    such as a ccache hit.
     """
 
     values: tuple[cost_budget.Measure, ...] = ()
     held: frozenset[str] = frozenset()
-    counted: frozenset[str] = frozenset()
     problems: tuple[check_report.Finding, ...] = ()
 
 
@@ -575,7 +566,6 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
     noun = "compile job" if spec.step == cost_record.COMPILE else "link"
     values: list[cost_budget.Measure] = []
     held: set[str] = set()
-    counted: set[str] = set()
     uncounted = 0
     problems: list[tuple[Output, str]] = []
     for output in outputs:
@@ -592,12 +582,11 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
             held.add(item)
             continue
         cost = found.cost
-        count = cost.compiler_instructions
         if spec.quantity == Quantity.INSTRUCTIONS:
-            if count is None:
+            if cost.compiler_instructions is None:
                 uncounted += 1
                 continue
-            value = count / GIGA
+            value = cost.compiler_instructions / GIGA
             said = (
                 f"the {noun} of {item} ran {value:.1f} G user instructions ({cost.cpu_s:.1f} s CPU at a load of "
                 f"{cost.load:.0f})"
@@ -605,8 +594,6 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
         elif spec.quantity == Quantity.TIME:
             value = cost.cpu_s
             said = f"the {noun} of {item} took {value:.1f} s CPU ({cost.wall_s:.1f} s wall)"
-            if count is not None and rule_id in COUNT_RULES:
-                counted.add(item)
         else:
             value = cost.peak_rss_kb / cost_meter.KB_PER_GB
             said = f"the {noun} of {item} took {value:.2f} GB of peak memory"
@@ -614,11 +601,10 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
     if spec.quantity == Quantity.INSTRUCTIONS and not values and uncounted:
         raise meta_runner.NotApplicable(
             f"no record of the {uncounted} compile jobs that ran holds an instruction count, because the host gives no "
-            f"exact counter (utils/assay/core/meter.py, THE INSTRUCTION COUNT).  compile-cpu keeps the error level"
+            f"exact counter (utils/assay/core/meter.py, THE INSTRUCTION COUNT).  On such a host, no rule judges the CPU "
+            f"work of a compile"
         )
-    return Measured(
-        tuple(values), frozenset(held), frozenset(counted), tuple(record_problems(context, rule_id, outputs, problems))
-    )
+    return Measured(tuple(values), frozenset(held), tuple(record_problems(context, rule_id, outputs, problems)))
 
 
 def object_code(path: Path) -> ObjectCode:
@@ -821,23 +807,7 @@ def judged_values(
     found: list[check_report.Finding] = []
     for value in measured.values:
         budget = budgets[value.threshold_rule or rule_id]
-        level = check_report.classify(value.value, budget)
         row = rows.admitted.get(value.item)
-        if row is None and level == "error" and value.item in measured.counted:
-            found.append(
-                check_report.Finding(
-                    "warning",
-                    value.path,
-                    0,
-                    rule_id,
-                    f"{value.said}, over the error threshold {budget.error:g} {budget.unit}.  The record holds an "
-                    f"instruction count, so the measured rule {COUNT_RULES[rule_id]} holds the error level of this "
-                    f"step, and the CPU time, which increases with the load of the host, gives a warning only",
-                    "count-holds-error",
-                    value.item,
-                )
-            )
-            continue
         verdict = cost_budget.judge(rule_id, budget, value, rows)
         if verdict is None:
             continue
@@ -1825,7 +1795,6 @@ def budget_member(rule_id: str) -> meta_runner.Member:
 
 
 RULES = {
-    "compile-cpu": budget_member("compile-cpu"),
     "compile-instructions": budget_member("compile-instructions"),
     "compile-memory": budget_member("compile-memory"),
     "link-time": budget_member("link-time"),

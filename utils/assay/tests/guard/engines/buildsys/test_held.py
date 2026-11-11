@@ -100,7 +100,7 @@ def routing_cases(expect: testing.Expect) -> None:
     step_rule = rule_registry.planted_rules(planted_rows)["planted-step"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), BUILD_HEAD)
-        expect("a rule with no holder is refused", is_refused(tree_rule("compile-cpu"), context))
+        expect("a rule with no holder is refused", is_refused(tree_rule("compile-memory"), context))
         expect("a holder with no judge in the witness is refused", is_refused(step_rule, context))
 
 

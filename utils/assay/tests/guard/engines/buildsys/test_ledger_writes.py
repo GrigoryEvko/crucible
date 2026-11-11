@@ -110,7 +110,7 @@ def record_cases(expect: testing.Expect) -> None:
             ledger_values(context, "test-memory")[(KIND, "big_test")] == (2.0, "a planted reason"),
         )
         registry = rule_registry.load()
-        other = rule_ledger.empty(registry.rules["compile-cpu"])
+        other = rule_ledger.empty(registry.rules["compile-memory"])
         expect(
             "written() of test_time refuses the ledger of a rule other than the rules of the test launcher",
             "is not a ledger of" in raised(lambda: test_time.written(context, other, None)),

@@ -8,7 +8,7 @@
 # and holds no time.  The launcher also holds the budget of the step: a step
 # over the memory error threshold fails, and RLIMIT_CPU stops a step that
 # runs away (the docstring of the launcher gives the rules).
-# The rules compile-cpu, compile-instructions, compile-memory, link-time and link-memory
+# The rules compile-instructions, compile-memory, link-time and link-memory
 # (`guard check --rule ID`) read the records and the outputs.
 #
 # This file comes after each block that sets or clears the compiler

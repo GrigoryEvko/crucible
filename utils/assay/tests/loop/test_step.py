@@ -9,8 +9,13 @@ a planted linker.  A planted registry and a directory of ledgers of the test
 set the thresholds and the admitted outputs.  A case examines the status, the
 output and the record of the launcher.  Each case runs with no
 GITHUB_ACTIONS, except two cases that set it to "true": on a CI runner, a
-compile past the CPU limit runs to its end with a warning, and a compile over
-the memory error threshold still fails.  The cases that read the instruction
+link past the CPU limit runs to its end with a warning, and a compile over
+the memory error threshold still fails.  The limit of a compile is
+COMPILE_CPU_LIMIT_S of the launcher, and no registry row gives it.  A case
+of a compile at its limit gives the launcher a hard RLIMIT_CPU of 1 s, and
+the launcher keeps that lower limit.  The cases of a compile over
+COMPILE_CPU_LIMIT_S call judge() of the launcher with a planted
+measurement.  The cases that read the instruction
 counts of a compile record expect them when this host gives an exact counter
 (utils/assay/core/meter.py, THE INSTRUCTION COUNT), and no count with
 CRUCIBLE_COUNT_INSTRUCTIONS=0.  The planted ccache is a file named ccache.
@@ -21,9 +26,10 @@ then see the bytes of the miss.  Each bench has a root of the caches of its
 own.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
-The other compiles a constant evaluation that runs away, and the compile must
-end at the CPU limit with status 1, as the GCC driver reports a compiler that
-SIGKILL stopped.  When ccache is on PATH, a case compiles a source that
+The other compiles a constant evaluation that runs away, with a hard
+RLIMIT_CPU of 1 s.  The compile must end at the CPU limit with status 1, as
+the GCC driver reports a compiler that SIGKILL stopped.  When ccache is on
+PATH, a case compiles a source that
 includes <vector> directly, through the real ccache with CCACHE_DISABLE, and
 through the real ccache with a cache directory of its own.  The three counts
 of the compiler run must agree within COUNT_TOLERANCE.  A cold cache must
@@ -58,6 +64,7 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
+from assay.loop import step as step_meter
 
 # The launcher as CMake starts it: the master loop with the subcommand step.
 LAUNCHER = (str(LOOP), "step")
@@ -120,6 +127,16 @@ if status == 0:
 sys.exit(status)
 """
 
+# A planted environment with a hard CPU limit.  The program sets RLIMIT_CPU to the seconds of its first argument.
+# Then it replaces itself with the command of its other arguments (os.execv).  limit_cpu() of meter.py keeps a lower
+# hard limit, and the launcher then gives a compile that limit and not COMPILE_CPU_LIMIT_S.
+HARD_LIMIT = """\
+import os, resource, sys
+seconds = int(sys.argv[1])
+resource.setrlimit(resource.RLIMIT_CPU, (seconds, seconds))
+os.execv(sys.argv[2], sys.argv[2:])
+"""
+
 # A constant evaluation that takes minutes, so a compile of it reaches each CPU limit of the test.
 SPIN_SOURCE = """\
 constexpr unsigned long spin(unsigned long count) {
@@ -151,8 +168,8 @@ def planted_registry(*rules: tuple[str, float, float, str]) -> str:
     return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
 
 
-QUIET = planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 1000, 2000, "GB"),
-                         ("link-time", 1000, 2000, "s"), ("link-memory", 1000, 2000, "GB"))
+QUIET = planted_registry(("compile-memory", 1000, 2000, "GB"), ("link-time", 1000, 2000, "s"),
+                         ("link-memory", 1000, 2000, "GB"))
 
 
 class Bench:
@@ -203,6 +220,11 @@ class Bench:
         """Run the launcher in front of one tool and wait for it."""
         return proc.run(proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S,
                                      env={**self.env, **env}))
+
+    def launch_limited(self, tool: list[str], hard_limit_s: int, **env: str) -> proc.Completed:
+        """Run the launcher in front of one compile with a hard CPU limit on the launcher, and wait for it."""
+        argv = [sys.executable, "-S", "-c", HARD_LIMIT, str(hard_limit_s), *self.argv(tool)]
+        return proc.run(proc.Command(argv, timeout_s=LAUNCH_TIMEOUT_S, env={**self.env, **env}))
 
     def record(self, output: Path | None = None) -> dict[str, object]:
         """Return the record of an output, or an empty dictionary."""
@@ -312,15 +334,16 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
            result.exit == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
            and result.stderr == b"tool stderr\n" and not count_file.exists())
 
-    bench.table(planted_registry(("compile-cpu", 0, 1000, "s"), ("compile-memory", 0, 1000, "GB")))
+    bench.table(planted_registry(("compile-memory", 0, 1000, "GB"), ("link-time", 0, 1000, "s")))
     result = bench.launch(bench.tool)
     lines = result.stderr.decode().splitlines()
     found = [check_report.parse_line(line) for line in lines[1:]]
-    expect("a compile over two warning thresholds prints one warning line after the tool output",
+    expect("a compile over the memory warning threshold prints one warning line after the tool output, and the "
+           "line gives no CPU time, because no rule judges the CPU time of a compile",
            result.exit == 0 and lines[0] == "tool stderr" and len(found) == 1 and found[0] is not None
-           and found[0].level == "warning" and found[0].check == "compile-cpu"
-           and "peak memory" in found[0].message)
-    bench.table(planted_registry(("compile-cpu", 0, 1, "s")).replace(" warn=0 ", " warn=zero "))
+           and found[0].level == "warning" and found[0].check == "compile-memory"
+           and "peak memory" in found[0].message and "CPU" not in found[0].message)
+    bench.table(planted_registry(("compile-memory", 0, 1, "GB")).replace(" warn=0 ", " warn=zero "))
     result = bench.launch(bench.tool)
     expect("a broken registry changes neither the status nor the output",
            result.exit == 0 and result.stderr == b"tool stderr\n")
@@ -390,7 +413,7 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     """A compile over the memory error threshold, and the rows of the ledger that admit it or do not."""
     expect = verdicts.expect
-    bench.table(planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 0.0001, 0.0002, "GB")))
+    bench.table(planted_registry(("compile-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
     expect("a compile over the memory error threshold fails, removes the object and gives a rejected record",
@@ -438,28 +461,72 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
 
 
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
-    """A planted compile that runs away ends at the CPU limit, and on a CI runner it runs to its end."""
+    """A planted step that runs away ends at the CPU limit, and on a CI runner a link runs to its end."""
     expect = verdicts.expect
+    linked = bench.root / "out" / "program"
     # The error threshold of 0.03 s gives a limit of 0.9 s (CPU_LIMIT_FACTOR), and the kernel takes the next second.
-    bench.table(planted_registry(("compile-cpu", 0.01, 0.03, "s"), ("compile-memory", 1000, 2000, "GB")))
+    bench.table(planted_registry(("link-time", 0.01, 0.03, "s"), ("link-memory", 1000, 2000, "GB")))
     started = time.monotonic()
-    result = bench.launch(bench.tool, PLANTED_MODE="spin")
+    result = bench.launch(bench.tool, link=True, output=linked, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
-    expect("a compile that runs away ends at the CPU limit, with an error line",
+    expect("a link that runs away ends at the CPU limit, with an error line",
            result.exit == 1 and time.monotonic() - started < 15 and found_line is not None
-           and found_line.level == "error" and found_line.check == "compile-cpu"
-           and "hard limit of 1 s" in found_line.message and bench.record().get("result") == "failed")
-    result = bench.launch(bench.tool, PLANTED_MODE="spin", PLANTED_SPIN_S="1.5", GITHUB_ACTIONS="true")
+           and found_line.level == "error" and found_line.check == "link-time"
+           and "hard limit of 1 s" in found_line.message and bench.record(linked).get("result") == "failed")
+    result = bench.launch(bench.tool, link=True, output=linked, PLANTED_MODE="spin", PLANTED_SPIN_S="1.5",
+                          GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
-    expect("on a CI runner, a compile past the CPU limit runs to its end, and its time error is a warning",
-           result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
-           and found_line is not None and found_line.level == "warning" and found_line.check == "compile-cpu"
+    expect("on a CI runner, a link past the CPU limit runs to its end, and its time error is a warning",
+           result.exit == 0 and linked.exists() and bench.record(linked).get("result") == "built"
+           and found_line is not None and found_line.level == "warning" and found_line.check == "link-time"
            and "hard limit of 0.9 s" in found_line.message and "demoted" in found_line.message)
+    bench.table(QUIET)
+    started = time.monotonic()
+    result = bench.launch_limited(bench.tool, 1, PLANTED_MODE="spin")
+    found_line = last_finding(result.stderr)
+    expect(f"a compile that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends "
+           f"at it with an error line of the check {step_meter.LIMIT_CHECK}",
+           result.exit == 1 and time.monotonic() - started < 15 and found_line is not None
+           and found_line.level == "error" and found_line.check == step_meter.LIMIT_CHECK
+           and "hard limit of 1 s" in found_line.message and bench.record().get("result") == "failed")
+
+
+def run_compile_limit(verdicts: Verdicts) -> None:
+    """judge() of the launcher at the hard stop of a compile, with planted measurements of a compile that ran long.
+
+    main() runs the cases before the groups start their threads, because the
+    cases set GITHUB_ACTIONS in this process.
+    """
+    expect = verdicts.expect
+    budget = {"compile-memory": (1000.0, 2000.0)}
+    limit = step_meter.COMPILE_CPU_LIMIT_S
+
+    def compile_run(cpu_s: float) -> cost_meter.Measurement:
+        """Return a planted measurement of a compile with no CPU limit on it."""
+        return cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, 1024, 1.0, 1.0, None)
+
+    compile_limit = step_meter.cpu_limit("compile", {})
+    expect(f"the CPU limit of a compile is {limit} s with no registry row, and a link with no time row has no limit",
+           compile_limit is not None and compile_limit[0] == limit and step_meter.cpu_limit("link", {}) is None)
+    expect("the launcher reads no time row for a compile", step_meter.step_rows("compile") == ("compile-memory",))
+    with check_report.github_actions(False):
+        result, line = step_meter.judge("compile", "out.o", compile_run(limit - 1.0), budget, False)
+        expect("a compile under the hard stop gives no line, however long it ran, because no rule judges its CPU time",
+               result == "built" and line is None)
+        result, line = step_meter.judge("compile", "out.o", compile_run(limit + 1.0), budget, False)
+        expect("off a CI runner, a compile past the hard stop with no CPU limit on it is rejected with an error",
+               result == "rejected" and line is not None and line[0] == "error" and line[1] == step_meter.LIMIT_CHECK
+               and f"hard limit of {limit} s" in line[2] and "removed the output" in line[2])
+    with check_report.github_actions(True):
+        result, line = step_meter.judge("compile", "out.o", compile_run(limit + 1.0), budget, False)
+        expect("on a CI runner, a compile past the hard stop runs to its end, and the line is a demoted warning",
+               result == "built" and line is not None and line[0] == "warning" and line[1] == step_meter.LIMIT_CHECK
+               and "demoted" in line[2])
 
 
 def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:
     """On a CI runner, a compile over the memory error threshold still fails."""
-    bench.table(planted_registry(("compile-cpu", 1000, 2000, "s"), ("compile-memory", 0.0001, 0.0002, "GB")))
+    bench.table(planted_registry(("compile-memory", 0.0001, 0.0002, "GB")))
     result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
     verdicts.expect("on a CI runner, a compile over the memory error threshold still fails and removes the object",
@@ -519,16 +586,14 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
                                          stderr=proc.Output.INHERIT)).exit == 0)
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
-        bench.table(planted_registry(("compile-cpu", 0.01, 0.03, "s"), ("compile-memory", 1000, 2000, "GB")))
         started = time.monotonic()
-        stopped_run = bench.launch([cxx, *SPIN_FLAGS])
+        stopped_run = bench.launch_limited([cxx, *SPIN_FLAGS], 1)
         found_line = last_finding(stopped_run.stderr)
         expect("the real compiler: a compile at the CPU limit ends with status 1 and an error line, and the "
                "driver reports no internal compiler error",
                stopped_run.exit == 1 and time.monotonic() - started < 15
                and b"internal compiler error" not in stopped_run.stderr and found_line is not None
-               and found_line.check == "compile-cpu" and "hard limit of 1 s" in found_line.message)
-        bench.table(QUIET)
+               and found_line.check == step_meter.LIMIT_CHECK and "hard limit of 1 s" in found_line.message)
         bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
     if cxx and real_ccache:
         config = bench.root / "ccache.conf"
@@ -586,6 +651,8 @@ def main(argv: list[str]) -> int:
         lambda bench, verdicts: run_real_tools(bench, verdicts, arguments.cxx),
     ]
     verdicts = [Verdicts() for _ in groups]
+    judged = Verdicts()
+    run_compile_limit(judged)
     with tempfile.TemporaryDirectory(prefix="loop-step-") as scratch:
         benches: list[Bench] = []
         for index in range(len(groups)):
@@ -596,6 +663,7 @@ def main(argv: list[str]) -> int:
                        for group, bench, verdict in zip(groups, benches, verdicts, strict=True)]
             for future in futures:
                 future.result()
+    verdicts.insert(0, judged)
     for verdict in verdicts:
         print("\n".join(verdict.lines))
     failures = [failure for verdict in verdicts for failure in verdict.failures]

@@ -8,7 +8,7 @@ THE FORMAT
 
     PATH is relative to the repository root when the finding is in the tree.
     LINE is 0 when no line applies.  CHECK is the name of the check, for
-    example compile-cpu.  An error fails the check, and the exit status is 1.
+    example link-time.  An error fails the check, and the exit status is 1.
     A warning does not fail the check.  With warnings only, the exit status
     is 0.
 
@@ -429,9 +429,9 @@ def self_test() -> int:
             return
         expect(name, False)
 
-    sample = Finding("warning", "include/fixy/Refined.h", 12, "compile-cpu", "12.4 s CPU, 50% over 10 s")
+    sample = Finding("warning", "include/fixy/Refined.h", 12, "link-time", "12.4 s CPU, 50% over 10 s")
     expect("text has the format", sample.text()
-           == "include/fixy/Refined.h:12: warning: [compile-cpu] 12.4 s CPU, 50% over 10 s")
+           == "include/fixy/Refined.h:12: warning: [link-time] 12.4 s CPU, 50% over 10 s")
     expect("parse_line reads text back", parse_line(sample.text()) == sample)
     expect("parse_line refuses a free line", parse_line("STALE something") is None)
     expect("annotation escapes", Finding("error", "a,b:c.h", 3, "function-size", "100% of x").annotation()
@@ -439,9 +439,9 @@ def self_test() -> int:
     expect("escape_data escapes line breaks", escape_data("a\r\nb") == "a%0D%0Ab")
     expect("annotation omits line 0", "line=" not in Finding("warning", "build/x.o", 0, "object-text", "m")
            .annotation())
-    refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "compile-cpu", "m"))  # type: ignore[arg-type]
-    refuses("Finding refuses a check name", lambda: Finding("error", "p", 1, "Compile_CPU", "m"))
-    refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "compile-cpu", "a\nb"))
+    refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "link-time", "m"))  # type: ignore[arg-type]
+    refuses("Finding refuses a check name", lambda: Finding("error", "p", 1, "Link_Time", "m"))
+    refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "link-time", "a\nb"))
 
     budgets = read_budgets()
     expect("the measured rules of the repository registry read", bool(budgets))
@@ -534,7 +534,7 @@ def self_test() -> int:
         expect("off a CI runner, a time error stays an error",
                judged("error", "t.cpp", 0, "test-time", "slow") == Finding("error", "t.cpp", 0, "test-time", "slow"))
         os.environ[cost_meter.GITHUB_ACTIONS_ENV] = "false"
-        expect("GITHUB_ACTIONS=false is not a CI runner", judged("error", "t.cpp", 0, "compile-cpu", "m").level == "error")
+        expect("GITHUB_ACTIONS=false is not a CI runner", judged("error", "t.cpp", 0, "link-time", "m").level == "error")
     with github_actions(True):
         demoted = judged("error", "t.cpp", 0, "test-time", "slow")
         expect("on a CI runner, a time error is a warning that says that it was demoted",

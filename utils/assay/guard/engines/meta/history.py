@@ -236,7 +236,7 @@ THE MEASUREMENT
 WHY THE RULE CANNOT BE MET BY ACCIDENT
     A number with no unit, a count of files, a date or a commit hash is not a
     number with the unit of the rule.  A body that only tells the change
-    ("raise compile-cpu from 10 s to 20 s") fails, because the rule does not
+    ("raise link-time from 2 s to 5 s") fails, because the rule does not
     count a value that the rule ever had.  A body passes only with a quantity
     in the unit of the rule that no threshold of the rule ever was.
 
@@ -347,7 +347,6 @@ EARLIER_FILES = {
         "utils/scripts/no-reserve-allowlist.txt",
         "utils/scripts/no-spawn-process-allowlist.txt",
     ),
-    "compile-cpu": ("utils/scripts/compile-cpu-ledger.txt",),
     "compile-instructions": ("utils/scripts/compile-instructions-ledger.txt",),
     "compile-memory": ("utils/scripts/compile-memory-ledger.txt",),
     "contract-form": ("utils/scripts/contract-form-allowlist.txt",),
