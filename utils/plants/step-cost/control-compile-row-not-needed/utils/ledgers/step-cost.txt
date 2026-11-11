@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-cost, with a row of the kind compile.
+format 1
+rule step-cost
+@build/CMakeFiles/lib.dir/light.cpp.o | compile | 120 | - | a planted reason

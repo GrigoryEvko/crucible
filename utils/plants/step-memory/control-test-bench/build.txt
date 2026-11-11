@@ -1,0 +1,8 @@
+# The record of a test of the directory bench of the build gives a peak memory of 2 GB, above the limit 1.5 GB of the
+# kind test.  No measured rule judges a test of bench (THE SCOPE of utils/assay/core/budget.py), and judge() of `loop
+# test-step` gives no finding.  A small compile and a small link give the module an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp cpu=1 peak=0.1
+link test/small_test cpu=1 peak=0.1
+test-record bench_large wall=1 peak=2 program={build}/bench/bench_large

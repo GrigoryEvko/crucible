@@ -164,8 +164,8 @@ THE WEIGHTS
     --measure BUILD_DIR` measures each weight again.  A weight goes stale
     when a check file or a header that it reads changes.  A stale weight
     makes units that are not equal.  When a unit then costs more than the
-    limit of the rule compile-instructions, the test
-    guard_compile_instructions fails.  Measure again then.
+    limit of the kind compile of the rule step-cost, the test
+    guard_step_cost fails.  Measure again then.
 
 WHAT THE ANALYSIS CANNOT SEE
     With no types, the analysis does not follow these paths.  A walk that

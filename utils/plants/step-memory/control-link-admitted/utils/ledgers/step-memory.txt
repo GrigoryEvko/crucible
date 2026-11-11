@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-memory, with a row of the kind link.
+format 1
+rule step-memory
+@build/test/library.so | link | 1.5 | - | a planted reason

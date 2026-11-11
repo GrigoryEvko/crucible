@@ -1,0 +1,6 @@
+# A ledger row names an object that the build does not hold.  An optional target is not in each build, and only
+# the landing gate lowers a row, so the rule gives no finding.  A small link gives the kind link an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1
+link test/small_test cpu=1 peak=0.1

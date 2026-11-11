@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-memory, with a row that names the release build kind as its kind.
+format 1
+rule step-memory
+@build/CMakeFiles/lib.dir/slower.cpp.o | x86_64-release | 5 | - | a planted reason

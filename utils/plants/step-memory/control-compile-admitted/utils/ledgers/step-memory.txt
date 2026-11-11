@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-memory, with a row of the kind compile.
+format 1
+rule step-memory
+@build/CMakeFiles/lib.dir/slower.cpp.o | compile | 5 | - | a planted reason

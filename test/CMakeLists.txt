@@ -4690,8 +4690,8 @@ set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
     LABELS "ci_guard")
 
 # The test launcher (cmake/TestLauncher.cmake) runs in front of each test
-# except a negative fixture, and it holds the rules test-memory and
-# test-instructions of utils/registry.txt while the test runs.  The fixture
+# except a negative fixture, and it holds the kind test of the rules
+# step-memory and step-cost of utils/registry.txt while the test runs.  The fixture
 # driver holds them for a fixture.  The rule test-registration (test
 # guard_test_registration) refuses a test that the two do not run.
 crucible_script_test(NAME test_launcher_self_test

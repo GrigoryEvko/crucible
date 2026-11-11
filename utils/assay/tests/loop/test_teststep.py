@@ -56,13 +56,15 @@ class Planted:
         return path
 
     def budget(self, memory_limit: float, instruction_limit: float | None = None) -> None:
-        """Write the planted registry with the limit of each rule.
+        """Write the planted registry with the limit of the kind test of each rule.
 
-        With no `instruction_limit`, the registry has no rule test-instructions, and no rule judges a count.
+        With no `instruction_limit`, the registry has no rule step-cost, and no rule judges a count.
         """
-        rules = [rule_registry.measured_rule("test-memory", memory_limit, "GB", "the peak memory")]
+        memory = {"compile": 4, "link": 1, "test": memory_limit}
+        rules = [rule_registry.measured_rule("step-memory", memory, "GB", "the peak memory")]
         if instruction_limit is not None:
-            rules.append(rule_registry.measured_rule("test-instructions", instruction_limit, "G", "the instructions"))
+            cost = {"compile": 110, "fixture": 45, "test": instruction_limit}
+            rules.append(rule_registry.measured_rule("step-cost", cost, "G", "the instructions"))
         self.table.write_text(rule_registry.planted(rules))
 
     def ledger(self, row: str, text: str) -> None:
@@ -131,13 +133,13 @@ class Planted:
 
     def status_cases(self, expect: testing.Expect) -> None:
         """Check that the status and the signal of a test go through, and the record of the test."""
-        self.ledger("test-memory", "")
+        self.ledger("step-memory", "")
         self.budget(2000)
         for code in ("0", "1", "3"):
             status, said = self.launch(self.program, code)
             expect(
                 f"the status {code} of the test goes through, with no finding",
-                status == int(code) and "[test-" not in said,
+                status == int(code) and "[step-" not in said,
             )
         record = self._record_of("test_planted")
         expect(
@@ -303,17 +305,17 @@ class Planted:
         )
 
     def limit_cases(self, expect: testing.Expect) -> None:
-        """Check the limit of test-memory, also on a CI runner."""
+        """Check the limit of the kind test of step-memory, also on a CI runner."""
         program = self.program
         self.budget(2000)
         status, said = self.launch(program)
-        expect("a test at or below the limit passes with no line", status == 0 and "[test-" not in said)
+        expect("a test at or below the limit passes with no line", status == 0 and "[step-" not in said)
 
         self.budget(0)
         status, said = self.launch(program)
         expect(
-            "a passed test above the memory limit fails, with an error line that names its program",
-            status == 1 and f"{program}:0: error: [test-memory] " in said and "no row of" in said,
+            "a passed test above the memory limit of the kind test fails, with an error line that names its program",
+            status == 1 and f"{program}:0: error: [step-memory] " in said and "no row of the kind test" in said,
         )
         record = self._record_of("test_planted")
         expect("the record of the failed test says rejected", record["result"] == "rejected")
@@ -321,18 +323,18 @@ class Planted:
         expect(
             "a passed script test above the memory limit fails, with an error line that names its record",
             status == 1
-            and f"{cost_record.test_record_file(self.build, 'planted_script')}:0: error: [test-memory] " in said
+            and f"{cost_record.test_record_file(self.build, 'planted_script')}:0: error: [step-memory] " in said
             and self._record_of("planted_script")["result"] == "rejected",
         )
         status, said = self.launch(program, "3")
         expect(
             "a test that failed keeps its status above the limit",
-            status == 3 and ": error: [test-memory] " in said,
+            status == 3 and ": error: [step-memory] " in said,
         )
         status, said = self.launch(program, GITHUB_ACTIONS="true")
         expect(
             "on a CI runner, a passed test above the memory limit still fails",
-            status == 1 and ": error: [test-memory] " in said,
+            status == 1 and ": error: [step-memory] " in said,
         )
 
     def _count_of(self, name: str) -> object:
@@ -341,13 +343,13 @@ class Planted:
         return cost.get(cost_record.TEST_COUNT_KEY) if isinstance(cost, dict) else None
 
     def count_cases(self, expect: testing.Expect) -> None:
-        """Check test-instructions (THE MEASURED RULES).
+        """Check the kind test of step-cost (THE MEASURED RULES).
 
         A planted test that does more work than the limit, or than its row keeps, fails.  A run with no count, as on a
         host with no accurate counter, has no judge of its instructions.
         """
-        self.ledger("test-memory", "")
-        self.ledger("test-instructions", "")
+        self.ledger("step-memory", "")
+        self.ledger("step-cost", "")
         host_counts = cost_meter.host_gives_counter()
         on_host = f"(this host: {'a counter' if host_counts else 'no counter'})"
         worker = self.plant_test(
@@ -357,72 +359,75 @@ class Planted:
         status, said = self.launch(worker, **{cost_meter.INSTRUCTIONS_ENV: "0"})
         expect(
             f"a run with {cost_meter.INSTRUCTIONS_ENV}=0 has no count and no judge of its instructions, and it passes",
-            status == 0 and "[test-instructions]" not in said and self._count_of("test_working") is None,
+            status == 0 and "[step-cost]" not in said and self._count_of("test_working") is None,
         )
         self.budget(2000)
         status, said = self.launch(worker)
         count = self._count_of("test_working")
         expect(
-            f"a registry with no rule test-instructions judges no count, and the record keeps the count {on_host}",
+            f"a registry with no rule step-cost judges no count, and the record keeps the count {on_host}",
             status == 0
-            and "[test-instructions]" not in said
+            and "[step-cost]" not in said
             and ((isinstance(count, int) and count > 0) if host_counts else count is None),
         )
         if not host_counts:
-            expect(f"skip the cases of test-instructions {on_host}", True)
+            expect(f"skip the cases of the kind test of step-cost {on_host}", True)
             return
         self.budget(2000, 0.0002)
         status, said = self.launch(worker)
         measured = self._count_of("test_working")
         expect(
-            "a passed test above the limit of test-instructions fails, with an error line that gives its count",
-            status == 1 and ": error: [test-instructions] " in said and " G user instructions" in said,
+            "a passed test above the limit of the kind test of step-cost fails, with an error line that gives its count",
+            status == 1 and ": error: [step-cost] " in said and " G user instructions" in said,
         )
         if not isinstance(measured, int):
             expect("the record of a counted test keeps its count", False)
             return
         giga = measured / test_launcher.GIGA
-        self.ledger("test-instructions", f"- | - | {giga * 2:.6f} | test_working | a planted reason\n")
+        self.ledger("step-cost", f"- | test | {giga * 2:.6f} | test_working | a planted reason\n")
         status, said = self.launch(worker)
-        expect("a ledger row keeps a test up to its kept value, with no line", status == 0 and "[test-" not in said)
-        self.ledger("test-instructions", f"- | - | {giga / 2:.6f} | test_working | a planted reason\n")
+        expect("a ledger row keeps a test up to its kept value, with no line", status == 0 and "[step-" not in said)
+        self.ledger("step-cost", f"- | test | {giga / 2:.6f} | test_working | a planted reason\n")
         status, said = self.launch(worker)
         expect(
             "a test that does more work than its row keeps fails again",
-            status == 1 and ": error: [test-instructions] " in said and "more than the row" in said,
+            status == 1 and ": error: [step-cost] " in said and "more than the row" in said,
         )
-        self.ledger("test-instructions", "")
+        self.ledger("step-cost", "")
 
     def ledger_cases(self, expect: testing.Expect) -> None:
         """Check the rows of a ledger, and a test that cannot start."""
         program = self.program
         self.budget(0)
-        self.ledger("test-memory", "- | - | 0.05 | test_planted | a planted reason\n")
+        self.ledger("step-memory", "- | test | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
-        expect("a ledger row admits the test, with no line", status == 0 and "[test-" not in said)
-        self.ledger("test-memory", "- | x86_64-release | 0.05 | test_planted | a planted reason\n")
+        expect("a ledger row of the kind test admits the test, with no line", status == 0 and "[step-" not in said)
+        self.ledger("step-memory", "- | compile | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
-        expect("a ledger row with a KIND admits nothing", status == 1)
-        self.ledger("test-memory", "@build/test/test_planted | - | 0.05 | - | a planted reason\n")
+        expect("a ledger row of the kind compile admits no test", status == 1)
+        self.ledger("step-memory", "- | x86_64-release | 0.05 | test_planted | a planted reason\n")
+        status, said = self.launch(program)
+        expect("a ledger row with a KIND that is no kind of the rule admits nothing", status == 1)
+        self.ledger("step-memory", "@build/test/test_planted | test | 0.05 | - | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row that names a file and not a test admits nothing", status == 1)
-        self.ledger("test-memory", "- | - | 0.000001 | test_planted | a planted reason\n")
+        self.ledger("step-memory", "- | test | 0.000001 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
             "a test over the kept value of its row with the noise of the unit fails again",
-            status == 1 and ": error: [test-memory] " in said and "more than the row" in said,
+            status == 1 and ": error: [step-memory] " in said and "more than the row" in said,
         )
         (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
-        self.ledger("test-memory", "- | - | 0.05 | test_planted | a row of each build\n")
+        self.ledger("step-memory", "- | test | 0.05 | test_planted | a row of each build\n")
         status, said = self.launch(program)
-        expect("a ledger row keeps the test of a build with options too", status == 0 and "[test-" not in said)
+        expect("a ledger row keeps the test of a build with options too", status == 0 and "[step-" not in said)
         (self.build / cost_meter.CONFIGURATION_FILE).unlink()
         self.budget(2000)
         status, said = self.launch(program)
         expect(
             "a ledger row whose test stays at or under the limit passes the test with no finding, because a ledger "
             "fails only on a growth",
-            status == 0 and "test-memory" not in said,
+            status == 0 and "step-memory" not in said,
         )
         status, said = self.launch(self.root / "no-such-test")
         expect("a test that cannot start gives status 127", status == 127 and "cannot start" in said)
@@ -491,11 +496,11 @@ class Planted:
 
 def fallen_row_cases(expect: testing.Expect) -> None:
     """Check that a run below the limit gives no finding for the row that keeps the test."""
-    budget = {"test-memory": 1.5}
+    budget = {"step-memory": 1.5}
     run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 50 * 1024, 1.0, 0.0, None)
     with tempfile.TemporaryDirectory(prefix="test-step-rows-") as directory:
-        Path(cost_meter.ledger_file("test-memory", directory)).write_text(
-            "format 1\nrule test-memory\n- | - | 0.6 | test_planted | a planted row\n", encoding="utf-8"
+        Path(cost_meter.ledger_file("step-memory", directory)).write_text(
+            "format 1\nrule step-memory\n- | test | 0.6 | test_planted | a planted row\n", encoding="utf-8"
         )
         measured = test_launcher.judge("test_planted", "test/test_planted", run, budget, directory)
     expect(
@@ -507,7 +512,7 @@ def fallen_row_cases(expect: testing.Expect) -> None:
 
 def bench_scope_cases(expect: testing.Expect) -> None:
     """Check that a test of the directory bench of the build has no judge, and that each other test has one."""
-    budget = {"test-memory": 1.5}
+    budget = {"step-memory": 1.5}
     run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 2 * 1024 * 1024, 1.0, 0.0, None)
     with tempfile.TemporaryDirectory(prefix="test-step-scope-") as directory:
         build = str(Path(directory) / "build")
@@ -523,13 +528,20 @@ def bench_scope_cases(expect: testing.Expect) -> None:
         judged = test_launcher.judge("test_heavy", "test/test_heavy", run, budget, directory)
         expect(
             "a test of a different directory above the limit has an error",
-            [row for row, _ in judged] == ["test-memory"],
+            [row for row, _ in judged] == ["step-memory"],
         )
         outside = test_launcher.judge("test_away", "/elsewhere/bench/x", run, budget, directory)
         expect(
             "a program outside the build directory is judged, also in a directory with the name bench",
-            [row for row, _ in outside] == ["test-memory"],
+            [row for row, _ in outside] == ["step-memory"],
         )
+    expect(
+        "test_limits() gives the limit of the kind test of each rule of the launcher, and no other rule or kind",
+        test_launcher.test_limits(
+            {"step-memory": {"compile": 4, "test": 1.5}, "step-cost": {"compile": 110}, "other-rule": {"test": 2}}
+        )
+        == {"step-memory": 1.5},
+    )
 
 
 def version_unit_cases(expect: testing.Expect) -> None:

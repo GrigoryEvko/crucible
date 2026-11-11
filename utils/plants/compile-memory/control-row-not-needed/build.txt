@@ -1,5 +1,0 @@
-# A ledger row keeps a compile of 1.5 GB of peak memory, which is not more than the limit 4 GB.  The rule gives no
-# finding, because a ledger fails only on a growth.
-format 1
-kind x86_64-debug-asan
-compile CMakeFiles/lib.dir/slow.cpp.o src/slow.cpp cpu=12 peak=1.5

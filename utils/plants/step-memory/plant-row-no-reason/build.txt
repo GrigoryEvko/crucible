@@ -1,0 +1,6 @@
+# A ledger row has the empty cell as its reason, and a row of the policy max gives a reason.  The rule gives one
+# error at the line of the row.  A small link gives the kind link an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/quick.cpp.o src/quick.cpp cpu=1
+link test/small_test cpu=1 peak=0.1

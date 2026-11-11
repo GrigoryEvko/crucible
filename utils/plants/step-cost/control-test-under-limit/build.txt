@@ -1,0 +1,10 @@
+# The record of one test of the build gives 10 G user instructions, under the limit 500 G of the kind test.  A
+# second test sleeps for 40 s with the same count, and no rule judges its wall time.  A third test has no count, as
+# on a host with no counter.  judge() of `loop test-step` gives no finding.  A light compile gives the kind compile an
+# input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=1
+test-record test_small wall=1 instructions=10
+test-record test_sleeping wall=40 instructions=10
+test-record test_uncounted wall=1

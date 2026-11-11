@@ -162,13 +162,12 @@ int main() {
 COUNT_TOLERANCE = 0.005
 
 
-def planted_registry(*rules: tuple[str, float, str]) -> str:
-    """Return the text of a planted registry with one measured rule for each (rule, limit, unit)."""
+def planted_registry(*rules: tuple[str, float | dict[str, float], str]) -> str:
+    """Return the text of a planted registry with one measured rule for each (rule, limit of each kind, unit)."""
     return rule_registry.planted(rule_registry.measured_rule(*rule) for rule in rules)
 
 
-QUIET = planted_registry(("compile-memory", 2000, "GB"),
-                         ("link-memory", 2000, "GB"))
+QUIET = planted_registry(("step-memory", {"compile": 2000, "link": 2000, "test": 2000}, "GB"))
 
 
 class Bench:
@@ -198,13 +197,25 @@ class Bench:
         self.registry.write_text(QUIET, encoding="utf-8")
         # The cost store of the bench is in a root of the caches of its own.
         self.caches = root / "caches"
-        self.env = proc.environment({"CRUCIBLE_BUILD_REGISTRY": str(self.registry),
-                                     "CRUCIBLE_BUILD_LEDGERS": str(self.ledgers),
-                                     cache_root.ROOT_VARIABLE: str(self.caches)})
+        self.env = proc.environment(
+            {
+                "CRUCIBLE_BUILD_REGISTRY": str(self.registry),
+                "CRUCIBLE_BUILD_LEDGERS": str(self.ledgers),
+                cache_root.ROOT_VARIABLE: str(self.caches),
+            }
+        )
         # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
-        for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS",
-                     cost_meter.INSTRUCTIONS_ENV, cost_meter.CCACHE_PREFIX_ENV, cost_meter.COMPILER_COUNT_ENV):
+        for name in (
+            "CCACHE_STATSLOG",
+            "CCACHE_DISABLE",
+            "CCACHE_RECACHE",
+            "CCACHE_READONLY",
+            "GITHUB_ACTIONS",
+            cost_meter.INSTRUCTIONS_ENV,
+            cost_meter.CCACHE_PREFIX_ENV,
+            cost_meter.COMPILER_COUNT_ENV,
+        ):
             self.env.pop(name, None)
 
     def argv(self, tool: list[str], link: bool = False, output: Path | None = None) -> list[str]:
@@ -214,14 +225,15 @@ class Bench:
             return [sys.executable, "-S", *LAUNCHER, "--link", *tool, str(self.object), "-o", target]
         return [sys.executable, "-S", *LAUNCHER, *tool, "-o", target, "-c", str(self.source)]
 
-    def launch(self, tool: list[str], link: bool = False, output: Path | None = None,
-               **env: str) -> proc.Completed:
+    def launch(self, tool: list[str], link: bool = False, output: Path | None = None, **env: str) -> proc.Completed:
         """Run the launcher in front of one tool and wait for it."""
-        return proc.run(proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S,
-                                     env={**self.env, **env}))
+        return proc.run(
+            proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S, env={**self.env, **env})
+        )
 
-    def launch_limited(self, tool: list[str], hard_limit_s: int, link: bool = False, output: Path | None = None,
-                       **env: str) -> proc.Completed:
+    def launch_limited(
+        self, tool: list[str], hard_limit_s: int, link: bool = False, output: Path | None = None, **env: str
+    ) -> proc.Completed:
         """Run the launcher in front of one tool with a hard CPU limit on the launcher, and wait for it."""
         argv = [sys.executable, "-S", "-c", HARD_LIMIT, str(hard_limit_s), *self.argv(tool, link, output)]
         return proc.run(proc.Command(argv, timeout_s=LAUNCH_TIMEOUT_S, env={**self.env, **env}))
@@ -230,7 +242,7 @@ class Bench:
         """Return the record of an output, or an empty dictionary."""
         try:
             return json.loads(cost_record.record_file(output or self.object).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return {}
 
     def table(self, text: str) -> None:
@@ -240,7 +252,8 @@ class Bench:
     def ledger(self, rule: str, rows: str) -> None:
         """Write the planted ledger of one rule with these rows after its head lines."""
         Path(cost_meter.ledger_file(rule, str(self.ledgers))).write_text(
-            f"# a planted ledger\nformat 1\nrule {rule}\n{rows}", encoding="utf-8")
+            f"# a planted ledger\nformat 1\nrule {rule}\n{rows}", encoding="utf-8"
+        )
 
 
 class Verdicts:
@@ -258,6 +271,12 @@ class Verdicts:
             self.failures.append(name)
 
 
+def cost_of(record: dict[str, object]) -> dict[str, object]:
+    """Return the part cost of a record, or an empty part when the record holds none."""
+    cost = record.get("cost")
+    return cost if isinstance(cost, dict) else {}
+
+
 def last_finding(stderr: bytes) -> check_report.Finding | None:
     """Return the finding of the last line of standard error, or None."""
     lines = stderr.decode().splitlines()
@@ -268,80 +287,133 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     """The status, the output and the record of a compile, a failed compile, a signal and a ccache hit."""
     expect = verdicts.expect
     result = bench.launch(bench.tool)
-    expect("a compile passes its status and its output unchanged",
-           result.exit == 0 and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n")
+    expect(
+        "a compile passes its status and its output unchanged",
+        result.exit == 0 and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n",
+    )
     first = bench.record()
-    expect("a compile gives a built record with its time, its source and the output size",
-           first.get("step") == "compile" and first.get("result") == "built"
-           and first.get("output_bytes") == bench.object.stat().st_size
-           and float(first["cost"]["cpu_s"]) > 0 and first.get("source") == str(bench.source))
+    expect(
+        "a compile gives a built record with its time, its source and the output size",
+        first.get("step") == "compile"
+        and first.get("result") == "built"
+        and first.get("output_bytes") == bench.object.stat().st_size
+        and float(first["cost"]["cpu_s"]) > 0
+        and first.get("source") == str(bench.source),
+    )
     expect("the stats log of the call is removed", not Path(f"{bench.object}.ccache-stats").exists())
     host_counts = cost_meter.host_gives_counter()
     counted = first["cost"].get(cost_record.COMPILER_COUNT_KEY)
-    expect(f"a compile record holds the user instructions of the compiler run exactly when the host gives a counter, "
-           f"and a compile with no ccache holds no ccache part "
-           f"(this host: {'a counter' if host_counts else 'no counter'})",
-           ((isinstance(counted, int) and counted > 0) if host_counts else counted is None)
-           and cost_record.CCACHE_COUNT_KEY not in first["cost"] and "instructions" not in first["cost"])
+    expect(
+        f"a compile record holds the user instructions of the compiler run exactly when the host gives a counter, "
+        f"and a compile with no ccache holds no ccache part "
+        f"(this host: {'a counter' if host_counts else 'no counter'})",
+        ((isinstance(counted, int) and counted > 0) if host_counts else counted is None)
+        and cost_record.CCACHE_COUNT_KEY not in cost_of(first)
+        and "instructions" not in cost_of(first),
+    )
     bench.launch(bench.tool, **{cost_meter.INSTRUCTIONS_ENV: "0"})
-    expect(f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
-           bench.record().get("result") == "built" and cost_record.COMPILER_COUNT_KEY not in bench.record()["cost"])
+    expect(
+        f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
+        bench.record().get("result") == "built" and cost_record.COMPILER_COUNT_KEY not in cost_of(bench.record()),
+    )
 
     result = bench.launch(bench.tool, PLANTED_MODE="fail")
-    expect("a failed compile passes status 1 and gives a failed record",
-           result.exit == 1 and bench.record().get("result") == "failed")
+    expect(
+        "a failed compile passes status 1 and gives a failed record",
+        result.exit == 1 and bench.record().get("result") == "failed",
+    )
 
     result = bench.launch(bench.tool, PLANTED_MODE="term")
-    expect("a compile that ends on SIGTERM makes the launcher end on SIGTERM",
-           result.exit == -signal.SIGTERM and b"Traceback" not in result.stderr)
+    expect(
+        "a compile that ends on SIGTERM makes the launcher end on SIGTERM",
+        result.exit == -signal.SIGTERM and b"Traceback" not in result.stderr,
+    )
 
     bench.record_path.unlink()
-    result = proc.run(proc.Command([sys.executable, "-S", *LAUNCHER, sys.executable, "-c", "print(7)"],
-                                   timeout_s=LAUNCH_TIMEOUT_S, env=bench.env))
-    expect("a command with no output runs and writes no record",
-           result.exit == 0 and result.stdout == b"7\n" and not bench.record_path.exists())
+    result = proc.run(
+        proc.Command(
+            [sys.executable, "-S", *LAUNCHER, sys.executable, "-c", "print(7)"],
+            timeout_s=LAUNCH_TIMEOUT_S,
+            env=bench.env,
+        )
+    )
+    expect(
+        "a command with no output runs and writes no record",
+        result.exit == 0 and result.stdout == b"7\n" and not bench.record_path.exists(),
+    )
 
     bench.launch(bench.tool)
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="1")
     hit = bench.record()
-    expect("a ccache hit gives a hit record with no time, and no last cost when no compile through ccache made its "
-           "object, also after a compile of the same output with no ccache",
-           result.exit == 0 and hit.get("result") == "hit" and "cost" not in hit and "last_cost" not in hit
-           and hit.get("output_bytes") == len(b"cached object"))
+    expect(
+        "a ccache hit gives a hit record with no time, and no last cost when no compile through ccache made its "
+        "object, also after a compile of the same output with no ccache",
+        result.exit == 0
+        and hit.get("result") == "hit"
+        and "cost" not in hit
+        and "last_cost" not in hit
+        and hit.get("output_bytes") == len(b"cached object"),
+    )
     count_file = Path(f"{bench.object}{cost_meter.COMPILER_COUNT_SUFFIX}")
     expect("a ccache hit runs no meter and leaves no file of counts", not count_file.exists())
     outer = bench.root / "outer.log"
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_STATSLOG=str(outer))
-    expect("a ccache miss gives a built record, and the counters reach the stats log of the build",
-           result.exit == 0 and bench.record().get("result") == "built"
-           and "cache_miss" in outer.read_text(encoding="utf-8"))
+    expect(
+        "a ccache miss gives a built record, and the counters reach the stats log of the build",
+        result.exit == 0
+        and bench.record().get("result") == "built"
+        and "cache_miss" in outer.read_text(encoding="utf-8"),
+    )
     missed = bench.record().get("cost", {})
     compiler_count = missed.get(cost_record.COMPILER_COUNT_KEY)
     rest_count = missed.get(cost_record.CCACHE_COUNT_KEY)
-    expect(f"a ccache miss records the count of the compiler run alone, and the rest of the step apart, exactly when "
-           f"the host gives a counter, and the launcher removes the file of counts (this host: "
-           f"{'a counter' if host_counts else 'no counter'})",
-           ((isinstance(compiler_count, int) and compiler_count > 0 and isinstance(rest_count, int) and rest_count > 0)
-            if host_counts else compiler_count is None and rest_count is None)
-           and result.stdout == b"tool stdout\n" and result.stderr == b"tool stderr\n" and not count_file.exists())
+    expect(
+        f"a ccache miss records the count of the compiler run alone, and the rest of the step apart, exactly when "
+        f"the host gives a counter, and the launcher removes the file of counts (this host: "
+        f"{'a counter' if host_counts else 'no counter'})",
+        (
+            (isinstance(compiler_count, int) and compiler_count > 0 and isinstance(rest_count, int) and rest_count > 0)
+            if host_counts
+            else compiler_count is None and rest_count is None
+        )
+        and result.stdout == b"tool stdout\n"
+        and result.stderr == b"tool stderr\n"
+        and not count_file.exists(),
+    )
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", CCACHE_PREFIX=shutil.which("env") or "env")
-    expect("with CCACHE_PREFIX in the environment, the launcher sets no meter, and the record holds no count",
-           result.exit == 0 and bench.record().get("result") == "built"
-           and cost_record.COMPILER_COUNT_KEY not in bench.record()["cost"]
-           and cost_record.CCACHE_COUNT_KEY not in bench.record()["cost"])
+    expect(
+        "with CCACHE_PREFIX in the environment, the launcher sets no meter, and the record holds no count",
+        result.exit == 0
+        and bench.record().get("result") == "built"
+        and cost_record.COMPILER_COUNT_KEY not in cost_of(bench.record())
+        and cost_record.CCACHE_COUNT_KEY not in cost_of(bench.record()),
+    )
     result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="0", PLANTED_MODE="fail")
-    expect("a failed compile through ccache passes status 1 and the output of the compiler through the meter",
-           result.exit == 1 and bench.record().get("result") == "failed" and result.stdout == b"tool stdout\n"
-           and result.stderr == b"tool stderr\n" and not count_file.exists())
+    expect(
+        "a failed compile through ccache passes status 1 and the output of the compiler through the meter",
+        result.exit == 1
+        and bench.record().get("result") == "failed"
+        and result.stdout == b"tool stdout\n"
+        and result.stderr == b"tool stderr\n"
+        and not count_file.exists(),
+    )
 
-    bench.table(planted_registry(("compile-memory", 1000, "GB")))
+    bench.table(planted_registry(("step-memory", {"compile": 1000, "link": 1000}, "GB")))
     result = bench.launch(bench.tool)
-    expect("a compile at or below the memory limit prints no line after the tool output",
-           result.exit == 0 and result.stderr == b"tool stderr\n")
-    bench.table(planted_registry(("compile-memory", 0.0001, "GB")).replace(" limit=0.0001 ", " limit=zero "))
+    expect(
+        "a compile at or below the memory limit prints no line after the tool output",
+        result.exit == 0 and result.stderr == b"tool stderr\n",
+    )
+    bench.table(
+        planted_registry(("step-memory", {"compile": 0.0001}, "GB")).replace(
+            " limit=compile:0.0001 ", " limit=compile:zero "
+        )
+    )
     result = bench.launch(bench.tool)
-    expect("a broken registry changes neither the status nor the output",
-           result.exit == 0 and result.stderr == b"tool stderr\n")
+    expect(
+        "a broken registry changes neither the status nor the output",
+        result.exit == 0 and result.stderr == b"tool stderr\n",
+    )
 
 
 def store_entries(caches: Path) -> list[Path]:
@@ -363,21 +435,31 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
     missed = bench.record().get("cost")
     entries = store_entries(bench.caches)
     written = entries[0].read_text(encoding="utf-8") if len(entries) == 1 else ""
-    expect("a miss through ccache writes one entry, which holds the cost block of its record",
-           isinstance(missed, dict) and written.endswith("\n") and json.loads(written) == missed
-           and cost_record.cost_from_text(written) is not None)
+    expect(
+        "a miss through ccache writes one entry, which holds the cost block of its record",
+        isinstance(missed, dict)
+        and written.endswith("\n")
+        and json.loads(written) == missed
+        and cost_record.cost_from_text(written) is not None,
+    )
     bench.launch(through_ccache, PLANTED_HIT="1")
     hit = bench.record()
-    expect("a hit of the object of the miss keeps the cost of the miss as its last cost",
-           hit.get("result") == "hit" and "cost" not in hit and hit.get("last_cost") == missed)
+    expect(
+        "a hit of the object of the miss keeps the cost of the miss as its last cost",
+        hit.get("result") == "hit" and "cost" not in hit and hit.get("last_cost") == missed,
+    )
     bench.launch(through_ccache, PLANTED_HIT="1")
     expect("a second hit keeps the same last cost", bench.record().get("last_cost") == missed)
     bench.launch([*through_ccache, "-DPLANTED_OPTION"], PLANTED_HIT="1")
-    expect("a hit of the same bytes under a different command keeps no last cost",
-           bench.record().get("result") == "hit" and "last_cost" not in bench.record())
+    expect(
+        "a hit of the same bytes under a different command keeps no last cost",
+        bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
+    )
     bench.launch(through_ccache, PLANTED_HIT="1", PLANTED_STORED=str(bench.root / "no-copy"))
-    expect("a hit of different bytes under the same command keeps no last cost",
-           bench.record().get("result") == "hit" and "last_cost" not in bench.record())
+    expect(
+        "a hit of different bytes under the same command keeps no last cost",
+        bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
+    )
 
     shared = bench.root / "shared-copy"
     bench.launch(through_ccache, PLANTED_HIT="0", PLANTED_STORED=str(shared))
@@ -386,66 +468,99 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
     other = Bench(bench.root / "other")
     other.env[cache_root.ROOT_VARIABLE] = str(bench.caches)
     other.launch([*other.ccache, *other.tool], PLANTED_HIT="1", PLANTED_STORED=str(shared))
-    expect("a hit in a different build directory keeps the cost of the miss of the first build directory",
-           other.record().get("result") == "hit" and other.record().get("last_cost") == first_cost)
+    expect(
+        "a hit in a different build directory keeps the cost of the miss of the first build directory",
+        other.record().get("result") == "hit" and other.record().get("last_cost") == first_cost,
+    )
 
     before = store_entries(bench.caches)
     bench.env[cache_root.ROOT_VARIABLE] = cache_root.OFF
     bench.launch([*through_ccache, "-DCACHES_OFF"], PLANTED_HIT="0")
     expect("with the caches off, a miss writes no entry", store_entries(bench.caches) == before)
     bench.launch(through_ccache, PLANTED_HIT="1")
-    expect("with the caches off, a hit keeps no last cost, also when the store holds the cost of its object",
-           bench.record().get("result") == "hit" and "last_cost" not in bench.record())
+    expect(
+        "with the caches off, a hit keeps no last cost, also when the store holds the cost of its object",
+        bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
+    )
     bench.env[cache_root.ROOT_VARIABLE] = str(bench.caches)
 
     for entry in store_entries(bench.caches):
         entry.write_text("not a cost block\n", encoding="utf-8")
     bench.launch(through_ccache, PLANTED_HIT="1")
-    expect("a hit whose entry holds a text that cost_text() did not write keeps no last cost",
-           bench.record().get("result") == "hit" and "last_cost" not in bench.record())
+    expect(
+        "a hit whose entry holds a text that cost_text() did not write keeps no last cost",
+        bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
+    )
 
 
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     """A compile above the memory limit, and the rows of the ledger that admit it or do not."""
     expect = verdicts.expect
-    bench.table(planted_registry(("compile-memory", 0.0002, "GB")))
+    bench.table(planted_registry(("step-memory", {"compile": 0.0002}, "GB")))
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a compile above the memory limit fails, removes the object and gives a rejected record",
-           result.exit == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
-           and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory"
-           and "no row of" in found_line.message)
-    bench.ledger("compile-memory", "@build/out/source.o | - | 0.05 | - | the test admits it\n")
+    expect(
+        "a compile above the memory limit of the kind compile fails, removes the object and gives a rejected record",
+        result.exit == 1
+        and not bench.object.exists()
+        and bench.record().get("result") == "rejected"
+        and found_line is not None
+        and found_line.level == "error"
+        and found_line.check == "step-memory"
+        and "no row of the kind compile" in found_line.message,
+    )
+    bench.ledger("step-memory", "@build/out/source.o | compile | 0.05 | - | the test admits it\n")
     result = bench.launch(bench.tool)
-    expect("a ledger row with a reason admits the compile, and the launcher prints no line",
-           result.exit == 0 and bench.object.exists() and bench.record().get("result") == "built"
-           and last_finding(result.stderr) is None)
-    bench.ledger("compile-memory", "@build/out/source.o | - | 0.000001 | - | a kept value under the peak\n")
+    expect(
+        "a ledger row of the kind compile with a reason admits the compile, and the launcher prints no line",
+        result.exit == 0
+        and bench.object.exists()
+        and bench.record().get("result") == "built"
+        and last_finding(result.stderr) is None,
+    )
+    bench.ledger("step-memory", "@build/out/source.o | link | 0.05 | - | a row of the kind link\n")
+    result = bench.launch(bench.tool)
+    expect(
+        "a ledger row of the kind link does not admit the compile",
+        result.exit == 1 and last_finding(result.stderr) is not None,
+    )
+    bench.ledger("step-memory", "@build/out/source.o | compile | 0.000001 | - | a kept value under the peak\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a row with a kept value under the peak memory with its noise does not admit the compile",
-           result.exit == 1 and found_line is not None and "keeps it only up to" in found_line.message)
-    bench.ledger("compile-memory", f"@build/out/source.o | {KIND} | 0.05 | - | a row with a kind\n")
+    expect(
+        "a row with a kept value under the peak memory with its noise does not admit the compile",
+        result.exit == 1 and found_line is not None and "keeps it only up to" in found_line.message,
+    )
+    bench.ledger("step-memory", f"@build/out/source.o | {KIND} | 0.05 | - | a row with a build kind\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a row with a KIND does not admit the compile, and the error gives the line of the row",
-           result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
-    bench.ledger("compile-memory", "out/source.o | - | 0.05 | - | not an output of the build directory\n")
+    expect(
+        "a row with a KIND that is no kind of the rule does not admit the compile, and the error gives the line of "
+        "the row",
+        result.exit == 1 and found_line is not None and "step-memory.txt:4: " in found_line.message,
+    )
+    bench.ledger("step-memory", "out/source.o | compile | 0.05 | - | not an output of the build directory\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a row whose PATH does not name an output of the build directory does not admit the compile, and the "
-           "error gives the line of the row",
-           result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
-    bench.ledger("compile-memory", "@build/out/source.o | - | 0.05 | - | -\n")
+    expect(
+        "a row whose PATH does not name an output of the build directory does not admit the compile, and the "
+        "error gives the line of the row",
+        result.exit == 1 and found_line is not None and "step-memory.txt:4: " in found_line.message,
+    )
+    bench.ledger("step-memory", "@build/out/source.o | compile | 0.05 | - | -\n")
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("a row with no reason does not admit the compile, and the error gives the line of the row",
-           result.exit == 1 and found_line is not None and "compile-memory.txt:4: " in found_line.message)
+    expect(
+        "a row with no reason does not admit the compile, and the error gives the line of the row",
+        result.exit == 1 and found_line is not None and "step-memory.txt:4: " in found_line.message,
+    )
     (bench.root / "build-kind.txt").unlink()
     result = bench.launch(bench.tool)
     found_line = last_finding(result.stderr)
-    expect("with no build directory above the output, no row admits the compile",
-           result.exit == 1 and found_line is not None and "build-kind.txt" in found_line.message)
+    expect(
+        "with no build directory above the output, no row admits the compile",
+        result.exit == 1 and found_line is not None and "build-kind.txt" in found_line.message,
+    )
 
 
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
@@ -455,19 +570,31 @@ def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
     started = time.monotonic()
     result = bench.launch_limited(bench.tool, 1, link=True, output=linked, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
-    expect(f"a link that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends at "
-           f"it with an error line of the check {step_meter.LIMIT_CHECK}",
-           result.exit == 1 and time.monotonic() - started < 15 and found_line is not None
-           and found_line.level == "error" and found_line.check == step_meter.LIMIT_CHECK
-           and "hard limit of 1 s" in found_line.message and bench.record(linked).get("result") == "failed")
+    expect(
+        f"a link that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends at "
+        f"it with an error line of the check {step_meter.LIMIT_CHECK}",
+        result.exit == 1
+        and time.monotonic() - started < 15
+        and found_line is not None
+        and found_line.level == "error"
+        and found_line.check == step_meter.LIMIT_CHECK
+        and "hard limit of 1 s" in found_line.message
+        and bench.record(linked).get("result") == "failed",
+    )
     started = time.monotonic()
     result = bench.launch_limited(bench.tool, 1, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
-    expect(f"a compile that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends "
-           f"at it with an error line of the check {step_meter.LIMIT_CHECK}",
-           result.exit == 1 and time.monotonic() - started < 15 and found_line is not None
-           and found_line.level == "error" and found_line.check == step_meter.LIMIT_CHECK
-           and "hard limit of 1 s" in found_line.message and bench.record().get("result") == "failed")
+    expect(
+        f"a compile that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends "
+        f"at it with an error line of the check {step_meter.LIMIT_CHECK}",
+        result.exit == 1
+        and time.monotonic() - started < 15
+        and found_line is not None
+        and found_line.level == "error"
+        and found_line.check == step_meter.LIMIT_CHECK
+        and "hard limit of 1 s" in found_line.message
+        and bench.record().get("result") == "failed",
+    )
 
 
 def run_step_limit(verdicts: Verdicts) -> None:
@@ -483,34 +610,53 @@ def run_step_limit(verdicts: Verdicts) -> None:
         return cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, 1024, 1.0, 1.0, None)
 
     for step, limit in (("compile", step_meter.COMPILE_CPU_LIMIT_S), ("link", step_meter.LINK_CPU_LIMIT_S)):
-        budget = {step_meter.MEMORY_ROWS[step]: 2000.0}
-        expect(f"the CPU limit of a {step} is {limit} s, and no registry row gives it",
-               step_meter.cpu_limit(step)[0] == limit)
+        budget = {step: 2000.0}
+        expect(
+            f"the CPU limit of a {step} is {limit} s, and no registry row gives it",
+            step_meter.cpu_limit(step)[0] == limit,
+        )
         with check_report.github_actions(False):
             result, line = step_meter.judge(step, "out", step_run(limit - 1.0), budget, False)
-            expect(f"a {step} under the hard stop gives no line, however long it ran, because no rule judges its CPU "
-                   f"time", result == "built" and line is None)
+            expect(
+                f"a {step} under the hard stop gives no line, however long it ran, because no rule judges its CPU time",
+                result == "built" and line is None,
+            )
             result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget, False)
-            expect(f"off a CI runner, a {step} past the hard stop with no CPU limit on it is rejected with an error",
-                   result == "rejected" and line is not None and line[0] == "error"
-                   and line[1] == step_meter.LIMIT_CHECK and f"hard limit of {limit} s" in line[2]
-                   and "removed the output" in line[2])
+            expect(
+                f"off a CI runner, a {step} past the hard stop with no CPU limit on it is rejected with an error",
+                result == "rejected"
+                and line is not None
+                and line[0] == "error"
+                and line[1] == step_meter.LIMIT_CHECK
+                and f"hard limit of {limit} s" in line[2]
+                and "removed the output" in line[2],
+            )
         with check_report.github_actions(True):
             result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget, False)
-            expect(f"on a CI runner, a {step} past the hard stop runs to its end, and the line is a demoted warning",
-                   result == "built" and line is not None and line[0] == "warning"
-                   and line[1] == step_meter.LIMIT_CHECK and "demoted" in line[2])
+            expect(
+                f"on a CI runner, a {step} past the hard stop runs to its end, and the line is a demoted warning",
+                result == "built"
+                and line is not None
+                and line[0] == "warning"
+                and line[1] == step_meter.LIMIT_CHECK
+                and "demoted" in line[2],
+            )
 
 
 def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:
     """On a CI runner, a compile above the memory limit still fails."""
-    bench.table(planted_registry(("compile-memory", 0.0002, "GB")))
+    bench.table(planted_registry(("step-memory", {"compile": 0.0002}, "GB")))
     result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
     found_line = last_finding(result.stderr)
-    verdicts.expect("on a CI runner, a compile above the memory limit still fails and removes the object",
-                    result.exit == 1 and not bench.object.exists()
-                    and bench.record().get("result") == "rejected" and found_line is not None
-                    and found_line.level == "error" and found_line.check == "compile-memory")
+    verdicts.expect(
+        "on a CI runner, a compile above the memory limit still fails and removes the object",
+        result.exit == 1
+        and not bench.object.exists()
+        and bench.record().get("result") == "rejected"
+        and found_line is not None
+        and found_line.level == "error"
+        and found_line.check == "step-memory",
+    )
 
 
 def run_link(bench: Bench, verdicts: Verdicts) -> None:
@@ -520,39 +666,56 @@ def run_link(bench: Bench, verdicts: Verdicts) -> None:
     bench.launch(bench.tool)
     result = bench.launch(bench.tool, link=True, output=linked)
     link_record = bench.record(linked)
-    expect("a link gives a built record of step link, with no source and no instruction count",
-           result.exit == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
-           and "source" not in link_record and link_record.get("output") == str(linked)
-           and not any(key.endswith("instructions") for key in link_record["cost"]))
-    bench.table(planted_registry(("link-memory", 0.0002, "GB")))
+    expect(
+        "a link gives a built record of step link, with no source and no instruction count",
+        result.exit == 0
+        and link_record.get("step") == "link"
+        and link_record.get("result") == "built"
+        and "source" not in link_record
+        and link_record.get("output") == str(linked)
+        and not any(key.endswith("instructions") for key in link_record["cost"]),
+    )
+    bench.table(planted_registry(("step-memory", {"compile": 2000, "link": 0.0002}, "GB")))
     result = bench.launch(bench.tool, link=True, output=linked)
     found_line = last_finding(result.stderr)
-    expect("a link above the memory limit fails with a link-memory error",
-           result.exit == 1 and not linked.exists() and found_line is not None
-           and found_line.check == "link-memory")
+    expect(
+        "a link above the memory limit of the kind link fails with a step-memory error",
+        result.exit == 1
+        and not linked.exists()
+        and found_line is not None
+        and found_line.check == "step-memory"
+        and "the kind link" in found_line.message,
+    )
     benched = bench.root / "bench" / "bench_program"
     benched.parent.mkdir()
     result = bench.launch(bench.tool, link=True, output=benched)
-    expect("a link into the directory bench of the build above the memory limit is built with no line, because no "
-           "measured rule judges it",
-           result.exit == 0 and benched.exists() and last_finding(result.stderr) is None
-           and bench.record(benched).get("result") == "built")
+    expect(
+        "a link into the directory bench of the build above the memory limit is built with no line, because no "
+        "measured rule judges it",
+        result.exit == 0
+        and benched.exists()
+        and last_finding(result.stderr) is None
+        and bench.record(benched).get("result") == "built",
+    )
 
 
 def run_interrupt(bench: Bench, verdicts: Verdicts) -> None:
     """An interrupt of the process group makes the launcher end on SIGINT."""
     # assay.core.proc starts the launcher in a process group of its own, and the ID of that group is the pid of the
     # launcher.
-    running = proc.start(proc.Command(bench.argv(bench.tool), timeout_s=LAUNCH_TIMEOUT_S,
-                                      env={**bench.env, "PLANTED_MODE": "sleep"}))
+    running = proc.start(
+        proc.Command(bench.argv(bench.tool), timeout_s=LAUNCH_TIMEOUT_S, env={**bench.env, "PLANTED_MODE": "sleep"})
+    )
     marker = Path(f"{bench.object}.started")
     deadline = time.monotonic() + 20
     while not marker.exists() and time.monotonic() < deadline:
         time.sleep(0.02)
     os.killpg(running.pid, signal.SIGINT)
     interrupted = running.wait()
-    verdicts.expect("an interrupt of the process group makes the launcher end on SIGINT, with no traceback",
-                    interrupted.exit == -signal.SIGINT and b"Traceback" not in interrupted.stderr)
+    verdicts.expect(
+        "an interrupt of the process group makes the launcher end on SIGINT, with no traceback",
+        interrupted.exit == -signal.SIGINT and b"Traceback" not in interrupted.stderr,
+    )
 
 
 def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
@@ -564,27 +727,39 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         bench.object.unlink(missing_ok=True)
         compiled_run = bench.launch([cxx])
         linked_run = bench.launch([cxx], link=True, output=program)
-        expect("the real compiler: a compile and a link give built records",
-               compiled_run.exit == 0 and linked_run.exit == 0
-               and bench.record().get("result") == "built" and bench.record(program).get("result") == "built"
-               and proc.run(proc.Command([str(program)], timeout_s=PROGRAM_TIMEOUT_S, stdout=proc.Output.INHERIT,
-                                         stderr=proc.Output.INHERIT)).exit == 0)
+        expect(
+            "the real compiler: a compile and a link give built records",
+            compiled_run.exit == 0
+            and linked_run.exit == 0
+            and bench.record().get("result") == "built"
+            and bench.record(program).get("result") == "built"
+            and proc.run(
+                proc.Command(
+                    [str(program)], timeout_s=PROGRAM_TIMEOUT_S, stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT
+                )
+            ).exit
+            == 0,
+        )
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
         started = time.monotonic()
         stopped_run = bench.launch_limited([cxx, *SPIN_FLAGS], 1)
         found_line = last_finding(stopped_run.stderr)
-        expect("the real compiler: a compile at the CPU limit ends with status 1 and an error line, and the "
-               "driver reports no internal compiler error",
-               stopped_run.exit == 1 and time.monotonic() - started < 15
-               and b"internal compiler error" not in stopped_run.stderr and found_line is not None
-               and found_line.check == step_meter.LIMIT_CHECK and "hard limit of 1 s" in found_line.message)
+        expect(
+            "the real compiler: a compile at the CPU limit ends with status 1 and an error line, and the "
+            "driver reports no internal compiler error",
+            stopped_run.exit == 1
+            and time.monotonic() - started < 15
+            and b"internal compiler error" not in stopped_run.stderr
+            and found_line is not None
+            and found_line.check == step_meter.LIMIT_CHECK
+            and "hard limit of 1 s" in found_line.message,
+        )
         bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
     if cxx and real_ccache:
         config = bench.root / "ccache.conf"
         config.write_text("", encoding="utf-8")
-        env = {"CCACHE_DIR": str(bench.root / "ccache"), "CCACHE_CONFIGPATH": str(config),
-               "CCACHE_NOHASHDIR": "1"}
+        env = {"CCACHE_DIR": str(bench.root / "ccache"), "CCACHE_CONFIGPATH": str(config), "CCACHE_NOHASHDIR": "1"}
         bench.source.write_text(HEADER_SOURCE, encoding="utf-8")
         bench.object.unlink(missing_ok=True)
         direct_run = bench.launch([cxx])
@@ -599,24 +774,32 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         warm_run = bench.launch([real_ccache, cxx], **env)
         warm = bench.record()
         bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
-        expect("the real ccache: a cold cache gives a built record, and a warm cache a hit",
-               cold_run.exit == 0 and warm_run.exit == 0 and cold.get("result") == "built"
-               and warm.get("result") == "hit" and warm.get("last_cost") == cold.get("cost"))
+        expect(
+            "the real ccache: a cold cache gives a built record, and a warm cache a hit",
+            cold_run.exit == 0
+            and warm_run.exit == 0
+            and cold.get("result") == "built"
+            and warm.get("result") == "hit"
+            and warm.get("last_cost") == cold.get("cost"),
+        )
         if cost_meter.host_gives_counter():
             counts = [record.get("cost", {}).get(cost_record.COMPILER_COUNT_KEY) for record in (direct, disabled, cold)]
             rest = cold.get("cost", {}).get(cost_record.CCACHE_COUNT_KEY)
-            agree = (all(isinstance(count, int) and count > 0 for count in counts)
-                     and all(abs(count - counts[0]) <= COUNT_TOLERANCE * counts[0] for count in counts[1:]))
-            expect(f"the real ccache: a direct compile, a compile with CCACHE_DISABLE and a compile through a cold "
-                   f"cache give counts of the compiler run within {COUNT_TOLERANCE:.1%}, and the miss records the "
-                   f"preprocessor run and ccache apart (counts {counts}, rest {rest})",
-                   direct_run.exit == 0 and disabled_run.exit == 0 and agree
-                   and isinstance(rest, int) and rest > 0)
+            agree = all(isinstance(count, int) and count > 0 for count in counts) and all(
+                abs(count - counts[0]) <= COUNT_TOLERANCE * counts[0] for count in counts[1:]
+            )
+            expect(
+                f"the real ccache: a direct compile, a compile with CCACHE_DISABLE and a compile through a cold "
+                f"cache give counts of the compiler run within {COUNT_TOLERANCE:.1%}, and the miss records the "
+                f"preprocessor run and ccache apart (counts {counts}, rest {rest})",
+                direct_run.exit == 0 and disabled_run.exit == 0 and agree and isinstance(rest, int) and rest > 0,
+            )
         else:
             verdicts.lines.append("  skip the comparison of the counts: the host gives no exact counter")
     else:
-        verdicts.lines.append(f"  skip the real ccache case: compiler {cxx or 'not given'}, ccache "
-                              f"{real_ccache or 'not on PATH'}")
+        verdicts.lines.append(
+            f"  skip the real ccache case: compiler {cxx or 'not given'}, ccache {real_ccache or 'not on PATH'}"
+        )
 
 
 def main(argv: list[str]) -> int:
@@ -632,7 +815,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--cxx", help="the real C++ compiler, for the cases with the real tools")
     arguments = parser.parse_args(argv)
     groups: list[Callable[[Bench, Verdicts], None]] = [
-        run_records, run_cost_store, run_memory_ledger, run_cpu_limit, run_ci_memory, run_link, run_interrupt,
+        run_records,
+        run_cost_store,
+        run_memory_ledger,
+        run_cpu_limit,
+        run_ci_memory,
+        run_link,
+        run_interrupt,
         lambda bench, verdicts: run_real_tools(bench, verdicts, arguments.cxx),
     ]
     verdicts = [Verdicts() for _ in groups]
@@ -644,8 +833,10 @@ def main(argv: list[str]) -> int:
             (Path(scratch) / str(index)).mkdir()
             benches.append(Bench(Path(scratch) / str(index)))
         with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(groups))) as pool:
-            futures = [pool.submit(group, bench, verdict)
-                       for group, bench, verdict in zip(groups, benches, verdicts, strict=True)]
+            futures = [
+                pool.submit(group, bench, verdict)
+                for group, bench, verdict in zip(groups, benches, verdicts, strict=True)
+            ]
             for future in futures:
                 future.result()
     verdicts.insert(0, judged)

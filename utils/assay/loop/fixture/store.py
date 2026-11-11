@@ -357,14 +357,15 @@ judges them, because the CPU time rises with the load of the host.  The entry
 of the store keeps the times and the count, and a result from the store gives
 the cost of the compile that made it.
 
-The measured rule fixture-instructions of utils/registry.txt gives the limit
-of the instruction count.  A count above the limit prints an error in the
-format of utils/assay/core/report.py and fails the test, and the driver does
-not store that result, so the next run measures again.  A count at or below
-the limit gives no output.  A compile with no count has no cost judge.  The
-ledger utils/ledgers/fixture-instructions.txt keeps the fixtures above the
-limit, `- | - | VALUE | FIXTURE | REASON`, with VALUE the count of the compile
-when the row was written, in G.  A row applies to each build.  A kept fixture
+The kind fixture of the measured rule step-cost of utils/registry.txt gives
+the limit of the instruction count.  A count above the limit prints an error
+in the format of utils/assay/core/report.py and fails the test, and the driver
+does not store that result, so the next run measures again.  A count at or
+below the limit gives no output.  A compile with no count has no cost judge.
+The ledger utils/ledgers/step-cost.txt keeps the fixtures above the limit,
+`- | fixture | VALUE | FIXTURE | REASON`, with VALUE the count of the compile
+when the row was written, in G.  A row of a different kind of the rule is for
+a different judge, and the driver skips it.  A row applies to each build.  A kept fixture
 gives no output up to VALUE with the noise of the unit (assay.core.budget, THE
 NOISE).  A count above that gives the error of a fixture with no row.  A
 ledger that does not exist has no row.  A registry that cannot be read stays
@@ -408,9 +409,9 @@ instructions of this process from the start of main() and of each process
 that it started.  A host with no accurate count gives no count
 (assay.core.meter, THE OWN RUN).
 
-The judge holds the measured rules test-memory and test-instructions, with
-the limits of the registry of the launcher (CRUCIBLE_TEST_REGISTRY) and its
-ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails above a
+The judge holds the kind test of the measured rules step-memory and
+step-cost, with the limits of the registry of the launcher
+(CRUCIBLE_TEST_REGISTRY) and its ledgers (CRUCIBLE_TEST_LEDGERS).  A fixture with the status 0 fails above a
 limit that no ledger row keeps.  The driver writes the record
 BUILD_DIR/test-records/NAME.test.cost, with the keys of the record of the
 launcher.  In a run of the test launcher, the environment holds
@@ -1089,7 +1090,7 @@ _DIGESTS_SUFFIX = ".digests"
 # The format of the memo of the budget rows and the ledgers.  It keeps the path of each ledger as a finding names
 # it, the stamp of a ledger that does not exist, the limits of the rules of the test launcher, and the kept value of
 # each ledger row with its reason.  Format 5 keeps one limit for each rule.
-_BUDGET_FORMAT = 5
+_BUDGET_FORMAT = 6
 
 _driver_digest_value: str | None = None
 
@@ -2556,7 +2557,9 @@ _LEDGER_DIRECTORY = _REPO_ROOT / "utils" / "ledgers"
 _REGISTRY = _REPO_ROOT / "utils" / "registry.txt"
 # The master that ctest starts for each fixture.  Its bytes are a part of the key (the module text, item 1).
 _LOOP_MASTER = LOOP
-_INSTRUCTIONS_CHECK = "fixture-instructions"
+_INSTRUCTIONS_CHECK = cost_budget.STEP_COST
+# The kind of the item of the measured rule that the driver judges for a fixture compile.
+_FIXTURE_KIND = cost_budget.FIXTURE_KIND
 # The unit of each check, as utils/registry.txt gives it.  The noise of a ledger row comes from it (assay.core.budget).
 _UNITS = {_INSTRUCTIONS_CHECK: "G"}
 # The variable that names a different ledger for each check, and the ledger of the tree.
@@ -2583,7 +2586,7 @@ class BudgetRow:
 
 
 class CostBudget:
-    """The measured rule fixture-instructions, with its ledger, and the rules of the test launcher.
+    """The kind fixture of the measured rule step-cost, with its ledger, and the rules of the test launcher.
 
     `problems` gives, for each check whose rule or ledger cannot be read, the
     reason.  A budget with a problem fails the test.  `test_rows` gives the
@@ -2643,18 +2646,24 @@ def _shown(path: Path) -> str:
         return str(path)
 
 
-def _read_fixture_ledger(path: Path, check: str) -> tuple[dict[str, tuple[float, str]], str]:
-    """Read one ledger of fixtures, and return the kept value and the reason of each fixture, or the problem.
+def _read_fixture_ledger(path: Path, check: str, kind: str = "") -> tuple[dict[str, tuple[float, str]], str]:
+    """Read the rows of one kind of a ledger of fixtures, and return the kept value and the reason of each fixture.
 
-    A row is `- | - | VALUE | FIXTURE | REASON` (the module text, The reason of
-    the failure and The cost of a compile).  A ledger that does not exist has
-    no row, and the call then imports no module.  The ledger has the policy of
-    the rule of the check in the registry.  A row with the value admit has the
-    kept value 0.
+    A row is `- | KIND | VALUE | FIXTURE | REASON` (the module text, The
+    reason of the failure and The cost of a compile), and KIND is "-" for a
+    rule with no kinds.  A ledger that does not exist has no row, and the call
+    then imports no module.  The ledger has the policy of the rule of the
+    check in the registry.  A row with the value admit has the kept value 0.
+    The call skips a row of a different kind of the rule, because a different
+    judge reads it.
 
     Args:
         path: The ledger
         check: The check, which the row `rule CHECK` of the ledger names
+        kind: The kind of the rows that the driver reads, or "" for a rule with no kinds
+
+    Returns:
+        The kept value and the reason of each fixture, and the first problem of the ledger, or ""
 
     Raises:
         OSError: If the ledger exists and cannot be read, or the registry cannot be read
@@ -2665,49 +2674,52 @@ def _read_fixture_ledger(path: Path, check: str) -> tuple[dict[str, tuple[float,
     from assay.core.registry import Policy
 
     try:
-        ledger = rule_ledger.read(rule_ledger.rule_of(check), file=path)
+        rule = rule_ledger.rule_of(check)
+        ledger = rule_ledger.read(rule, file=path)
     except ValueError as problem:
         return {}, str(problem)
+    kinds = rule.threshold.kinds if rule.threshold is not None else ("",)
     value = rule_ledger.ADMIT_VALUE if ledger.policy == Policy.ADMIT else "VALUE"
     rows: dict[str, tuple[float, str]] = {}
     for key, entry in sorted(ledger.base.items(), key=lambda pair: pair[1].line):
-        if key.path or key.kind or not key.entity:
-            return {}, (f"{path}:{entry.line}: a row is `- | - | {value} | FIXTURE | REASON`, with the name of the "
-                        f"fixture")
+        if key.kind != kind and key.kind in kinds:
+            continue
+        if key.path or key.kind != kind or not key.entity:
+            return {}, (f"{path}:{entry.line}: a row is `- | {kind or '-'} | {value} | FIXTURE | REASON`, with the "
+                        f"name of the fixture")
         rows[key.entity] = (0.0 if isinstance(entry.value, str) else float(entry.value), entry.reason)
     return rows, ""
 
 
 def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_registry: Path) -> CostBudget:
-    """Read the measured rule fixture-instructions of the registry `registry`, its ledger, and the rules of the test
-    launcher of the registry `test_registry`."""
+    """Read the kind fixture of the measured rule step-cost of the registry `registry`, its ledger, and the limits of
+    the kind test of the rules of the test launcher of the registry `test_registry`."""
     from assay.loop import teststep as test_launcher
 
     rows: dict[str, BudgetRow] = {}
     problems: dict[str, str] = {}
     try:
-        test_limits = _cost_meter_module().budget_rows(str(test_registry), test_launcher.ROWS)
-        test_rows = {rule: kinds[""] for rule, kinds in test_limits.items() if "" in kinds}
+        test_rows = test_launcher.test_limits(_cost_meter_module().budget_rows(str(test_registry), test_launcher.ROWS))
     except (OSError, ValueError):
         test_rows = {}
     try:
-        budgets = _report_module().read_budgets(registry)
+        limits = _cost_meter_module().budget_rows(str(registry), tuple(_LEDGERS))
     except (OSError, ValueError) as error:
         return CostBudget({}, {check: f"the budget of {check} cannot be read: {error}" for check in _LEDGERS},
                           test_rows)
     for check, path in ledger_paths.items():
-        row = budgets.get(check)
-        if row is None:
-            problems[check] = f"the registry {registry} has no measured rule {check}"
+        limit = limits.get(check, {}).get(_FIXTURE_KIND)
+        if limit is None:
+            problems[check] = f"the registry {registry} has no limit of the kind {_FIXTURE_KIND} of the rule {check}"
             continue
         try:
-            ledger, problem = _read_fixture_ledger(path, check)
+            ledger, problem = _read_fixture_ledger(path, check, _FIXTURE_KIND)
         except OSError as error:
             ledger, problem = {}, f"the ledger of {check} cannot be read: {error}"
         if problem:
             problems[check] = problem
             continue
-        rows[check] = BudgetRow(check, row.limit, ledger, _shown(path))
+        rows[check] = BudgetRow(check, limit, ledger, _shown(path))
     return CostBudget(rows, problems, test_rows)
 
 
@@ -2735,8 +2747,8 @@ def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
 
 
 def read_cost_budget(memo_dir: Path | None) -> CostBudget:
-    """Read the measured rule fixture-instructions of the registry, its ledger, and the limits of the rules of the
-    test launcher.
+    """Read the kind fixture of the measured rule step-cost of the registry, its ledger, and the limits of the kind
+    test of the rules of the test launcher.
 
     CRUCIBLE_NEG_REGISTRY and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a
     different registry and ledger.  The test launcher reads its rules from
@@ -2801,12 +2813,14 @@ def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: s
         kept, reason = row.ledger[fixture_name]
         noise = cost_budget.noise_of(unit)
         return [report.judged("error", place, 0, row.check,
-                              f"{text}, more than the limit {row.limit:g} {unit} and more than the row of "
-                              f"{row.ledger_shown} keeps: {kept:g} {unit} with the noise {noise:.0%}.  {_ADVICE}  When "
-                              f"the growth is wanted, write the measure into the row with a reason: {reason}")]
+                              f"{text}, more than the limit of the kind {_FIXTURE_KIND} {row.limit:g} {unit} and more "
+                              f"than the row of {row.ledger_shown} keeps: {kept:g} {unit} with the noise {noise:.0%}.  "
+                              f"{_ADVICE}  When the growth is wanted, write the measure into the row with a reason: "
+                              f"{reason}")]
     if verdict == cost_budget.ERROR:
         return [report.judged("error", place, 0, row.check,
-                              f"{text}, more than the limit {row.limit:g} {unit}.  {_ADVICE}")]
+                              f"{text}, more than the limit of the kind {_FIXTURE_KIND} {row.limit:g} {unit}.  "
+                              f"{_ADVICE}")]
     return []
 
 
@@ -2838,8 +2852,8 @@ def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_sto
     A compile with no finding, with a budget with no problem, gives an
     empty list, and the call does not import the report module.  A compile
     with no count gives no finding.  report_cost() reports the findings.  The
-    witness of the rule fixture-instructions judges a planted record of a
-    fixture with this function (assay.guard.engines.buildsys.held).
+    witness of the rule step-cost judges a planted record of a fixture with
+    this function (assay.guard.engines.buildsys.held).
     """
     verdicts: dict[str, str] = {}
     if _INSTRUCTIONS_CHECK in budget.rows and result.instructions is not None:

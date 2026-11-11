@@ -11,10 +11,15 @@ THE HOLDERS
       loop-gauge      judged_record() of assay.loop.gauge for each record of
                       the file GAUGE_RECORDS of the build
       loop-test-step  judge() of assay.loop.teststep for the record of each
-                      test of the build, with the ledgers of the copy
+                      test of the build, with the limits of the kind test and
+                      the ledgers of the copy
       loop-fixture    cost_findings() and own_reason_findings() of
                       assay.loop.fixture.store for each fixture of the build
       a rule ID       the findings of that rule on the plant
+    The rules step-cost and step-memory have a module of their own, and a
+    step meter judges their kinds test and fixture.  The witness of the two
+    rules runs the judges of loop-test-step and loop-fixture of this table
+    on each plant too (judge() of assay.guard.engines.buildsys.cost_budgets).
     The field holder of a held rule names the function of its holder that
     judges it.  The rule rule-implementations makes sure that the judge of the
     holder in HOLDERS calls that function.  For a holder that is a rule ID,
@@ -34,17 +39,11 @@ THE RECORDS OF A FIXTURE
     regexes of the fixture are the words of its test command.
 
 THE WRITE
-    A held rule of the policy max has no module of its own.  `guard write`
-    then calls written() of this module.  WRITERS gives the function that
-    writes the ledger of each such rule.  The function of test-memory and
-    test-instructions is test_written(), which reads the records of the
-    registered tests of the build.  The function of fixture-instructions is
-    fixture_written(), which reads the records of the fixtures of the build,
-    and it refuses a build with a fixture that has no record.  Each function
-    writes a row for each measure above the limit that no row keeps, with
-    the reason of the call (assay.core.budget, THE WRITE).  It removes no
-    row and lowers no kept value.  A held rule with no row in WRITERS has no
-    write, and `guard write` refuses it.
+    `guard write` calls written() of this module for a held rule of the
+    policy max or baseline.  A held rule has no module of its own, so no
+    function writes its ledger, and written() refuses the call.  A measured
+    rule that a step meter judges, such as step-cost, has a module, and the
+    module writes its ledger (assay.guard.engines.buildsys.cost_budgets).
 
 THE FINDINGS
     The witness of a held rule counts each finding of a plant, also a warning
@@ -80,12 +79,6 @@ from assay.readers import ctest as ctest_reader
 GAUGE_RECORDS = "gauge-records.jsonl"
 # The rule of the fixture driver that judges the errors that no regex of a fixture matches.
 OWN_REASON = "fixture-own-reason"
-# The measured rule of the fixture driver (THE WRITE), and the instructions in one G.
-FIXTURE_INSTRUCTIONS = "fixture-instructions"
-GIGA = 1e9
-# The two measured rules of the test launcher with a ledger that names a test (THE WRITE).
-TEST_INSTRUCTIONS = "test-instructions"
-TEST_RULES = ("test-memory", TEST_INSTRUCTIONS)
 
 type Judge = Callable[[rule_registry.Rule, BuildContext], list[check_report.Finding]]
 
@@ -123,7 +116,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     from assay.loop import teststep
 
     build = context.require_build()
-    budget = {row: context.budget(row).limit for row in teststep.ROWS}
+    budget = {row: context.budget(row, cost_budget.TEST_KIND).limit for row in teststep.ROWS}
     ledgers = str(rule_ledger.ledger_path(rule.id, context.root).parent)
     try:
         records = ctest_reader.costs(build)
@@ -219,115 +212,18 @@ HOLDERS: dict[str, Judge] = {
 }
 
 
-def test_measure(rule_id: str, record: cost_record.TestRecord) -> float | None:
-    """Return the measure of the record of a test in the unit of a rule of TEST_RULES, as the judge reads it, or None.
-
-    test-memory reads the peak memory of the run in GB.  test-instructions reads the instruction count of the run in
-    G, and a record with no count gives None.
-    """
-    if rule_id == TEST_INSTRUCTIONS:
-        count = record.cost.test_instructions
-        return None if count is None else count / GIGA
-    return record.cost.peak_rss_kb / cost_meter.KB_PER_GB
-
-
-def test_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of a rule of TEST_RULES with a row for each test of the build that no row keeps (THE WRITE).
-
-    Complexity: linear in the tests, the records and the rows.
-
-    Raises:
-        NotApplicable: If the call gives no build directory
-        rule_ledger.LedgerError: If the ledger is not a ledger of TEST_RULES, the test list or a record does not read,
-            or a test needs a row and the call gives no reason
-    """
-    from assay.loop import teststep
-
-    if ledger.rule not in TEST_RULES:
-        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(TEST_RULES)}")
-    build = context.require_build()
-    budget = context.budget(ledger.rule)
-    try:
-        registered = {test.name for test in ctest_reader.tests(build)}
-        records = ctest_reader.costs(build)
-    except ctest_reader.CtestError as problem:
-        raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
-    measures: list[tuple[str, float, check_report.Budget]] = []
-    for test_name, record in sorted(records.items()):
-        measure = test_measure(ledger.rule, record)
-        program = teststep.program_item(record.program, str(build))
-        if measure is not None and test_name in registered and cost_budget.is_judged(program):
-            measures.append((test_name, measure, budget))
-    return cost_budget.raised_ledger(ledger, cost_meter.ITEM_NAME, measures, reason)
-
-
-def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of fixture-instructions with a row for each fixture of the build that no row keeps (THE WRITE).
-
-    A row is `- | - | VALUE | FIXTURE | REASON`, with VALUE in G.  Complexity: linear in the tests of the build and in
-    the records of the fixtures.
-
-    Raises:
-        NotApplicable: If the call gives no build directory
-        rule_ledger.LedgerError: If the ledger is not the ledger of fixture-instructions, the tests do not read, a
-            fixture has no record that counts, or a fixture needs a row and the call gives no reason
-    """
-    if ledger.rule != FIXTURE_INSTRUCTIONS:
-        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not the ledger of {FIXTURE_INSTRUCTIONS}")
-    build = context.require_build()
-    budget = context.budget(ledger.rule)
-    try:
-        tests = fixture_tests(build)
-    except ctest_reader.CtestError as problem:
-        raise rule_ledger.LedgerError(f"the tests of the build do not read: {problem}") from None
-    measures: list[tuple[str, float, check_report.Budget]] = []
-    unread: list[str] = []
-    for name, _, _ in tests:
-        try:
-            record = cost_record.read_fixture(Path(cost_record.fixture_record_file(build, name)))
-        except cost_record.MissingRecord:
-            unread.append(f"{name} (no record)")
-            continue
-        except cost_record.RecordError as problem:
-            unread.append(f"{name} ({problem})")
-            continue
-        if record.instructions is not None:
-            measures.append((name, record.instructions / GIGA, budget))
-    if unread:
-        raise rule_ledger.LedgerError(
-            f"{len(unread)} fixtures have no record that counts, such as {unread[0]}.  Run each fixture of the build, "
-            f"then the write"
-        )
-    return cost_budget.raised_ledger(ledger, cost_meter.ITEM_NAME, measures, reason)
-
-
-type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]
-
-# The function that writes the ledger of each held rule of the policy max (THE WRITE).
-WRITERS: dict[str, Writer] = {
-    **dict.fromkeys(TEST_RULES, test_written),
-    FIXTURE_INSTRUCTIONS: fixture_written,
-}
-
-
 def written(
     rule: rule_registry.Rule, context: meta_runner.RuleContext, ledger: rule_ledger.Ledger, reason: str | None
 ) -> rule_ledger.Ledger:
-    """Return the new ledger of a held rule from the function of WRITERS (THE WRITE).
+    """Refuse the write of the ledger of a held rule, because no function writes it (THE WRITE).
 
     Raises:
-        rule_ledger.LedgerError: If WRITERS has no function of the rule, or the context is not the context of a build
-        NotApplicable: If the build of the context gives no input of the write
+        rule_ledger.LedgerError: For each call
     """
-    writer = WRITERS.get(rule.id)
-    if writer is None:
-        raise rule_ledger.LedgerError(
-            f"the rule {rule.id} has the holder {rule.held_by}, and no function writes its ledger.  Add the function "
-            f"to WRITERS of assay.guard.engines.buildsys.held"
-        )
-    if not isinstance(context, BuildContext):
-        raise rule_ledger.LedgerError(f"the rule {rule.id} reads a build, and the context of the write has no build")
-    return writer(context, ledger, reason)
+    raise rule_ledger.LedgerError(
+        f"the rule {rule.id} has the holder {rule.held_by}, and no function writes its ledger.  Give the rule a "
+        f"module of its own that writes the ledger, as assay.guard.engines.buildsys.cost_budgets does for step-cost"
+    )
 
 
 def held_findings(rule: rule_registry.Rule, context: meta_runner.RuleContext) -> list[check_report.Finding]:

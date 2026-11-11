@@ -1,5 +1,0 @@
-# A link of a shared library took 1.5 GB of peak memory, more than the limit 1 GB.  The rule gives one error of the
-# kind over-limit.
-format 1
-kind x86_64-debug-asan
-link test/library.so type=SHARED_LIBRARY cpu=6 peak=1.5

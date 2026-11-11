@@ -1,0 +1,7 @@
+# A compile of 5 GB of peak memory has a ledger row with the KIND x86_64-release, which is no kind of the rule.  The
+# row is an error of the kind input, and it keeps nothing: the compile gives an error of the kind over-limit too.  A
+# small link gives the kind link an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/slower.cpp.o src/slower.cpp cpu=1 peak=5
+link test/small_test cpu=1 peak=0.1

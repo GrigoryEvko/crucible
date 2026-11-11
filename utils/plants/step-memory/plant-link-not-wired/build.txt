@@ -1,0 +1,6 @@
+# No linked output of the build has a record, so the build launcher is not wired for the links.  The rule gives one
+# error of the kind not-wired.  The compile has a record, so the kind compile gives no error.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp cpu=1 peak=0.1
+link test/first_test record=no

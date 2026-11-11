@@ -17,19 +17,20 @@ WHAT THE SUBCOMMAND DOES
     approximately 1 ms.  When the command ends on a signal, the subcommand
     ends on the same signal.  A failure to measure or to write the record
     never changes the status and prints nothing.  The rules that read the
-    record, such as compile-instructions, find a missing record, and they
-    fail.  A command with no -o, or a compile with no -c, runs in its own
+    record, such as step-cost, find a missing record, and they fail.  A command with no -o, or a compile with no -c, runs in its own
     place, and the subcommand records nothing.
 
 THE MEASURED RULES
-    A compile reads the measured rule compile-memory of utils/registry.txt,
-    and a link reads the measured rule link-memory.
+    A compile reads the limit of the kind compile of the measured rule
+    step-memory of utils/registry.txt, and a link reads the limit of the
+    kind link (assay.core.budget, THE STEP RULES).
       * The CPU time.  Each process of the step gets RLIMIT_CPU.  The limit
         of a compile is COMPILE_CPU_LIMIT_S, 600 s, and the limit of a link
         is LINK_CPU_LIMIT_S, 150 s.  Each limit is a hard stop for a step
         that does not end, and not a budget.  No rule judges the CPU time of
-        a step, because it changes with the load of the host.  The rule
-        compile-instructions judges the cost of a compile after the build.
+        a step, because it changes with the load of the host.  The kind
+        compile of the rule step-cost judges the cost of a compile after the
+        build.
         A step that reaches its limit ends on SIGKILL, and the subcommand
         prints an error line that says so.  The line names the check
         loop-step, because no rule holds the limit.  The limit counts the
@@ -49,9 +50,10 @@ THE MEASURED RULES
       * The peak memory, which is almost the same on each run of one step.
         Above the limit, the subcommand removes the output, prints an error
         line and exits with status 1, unless a row of the ledger
-        utils/ledgers/<memory rule>.txt admits the output, with a reason:
-        '@build/OUTPUT | - | GB | - | REASON', with OUTPUT relative to the
-        build directory (meter.py, THE REGISTRY AND THE LEDGERS).  The subcommand reads that ledger only for a step above the
+        utils/ledgers/step-memory.txt admits the output, with a reason:
+        '@build/OUTPUT | STEP | GB | - | REASON', with OUTPUT relative to the
+        build directory and STEP compile or link (meter.py, THE REGISTRY AND
+        THE LEDGERS).  The subcommand reads that ledger only for a step above the
         limit.  A step that a row admits prints no line.  The subcommand does
         not judge the memory of an output in the directory bench of the build
         (assay.core.budget, THE SCOPE).
@@ -102,8 +104,8 @@ from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.readers import ccache
 
-# The memory row of each step (THE MEASURED RULES).
-MEMORY_ROWS = {"compile": "compile-memory", "link": "link-memory"}
+# The measured rule of the peak memory of a step.  The kind of a step is its name, compile or link (THE MEASURED RULES).
+MEMORY_RULE = cost_budget.STEP_MEMORY
 # The CPU limit of each process of a compile, in seconds.  This limit is a hard stop for a compile that does not end,
 # and not a budget (THE MEASURED RULES).  On 2026-11-11, the compile of bench/bench_cipher.cpp took 31.5 s of CPU time
 # at 224 jobs and 17.5 s alone.
@@ -165,13 +167,13 @@ def build_item(output: str) -> str:
     return output if build_dir is None else os.path.relpath(output, build_dir)
 
 
-def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
-    """Look for the ledger row that keeps an output above the limit of its memory row.
+def admission(step: str, output: str, peak_gb: float) -> tuple[bool, str]:
+    """Look for the ledger row of the kind of the step that keeps an output above the limit of that kind.
 
     A row keeps the output up to its kept value with the noise of the unit GB (assay.core.budget, THE NOISE).
 
     Args:
-        memory_row: compile-memory or link-memory
+        step: "compile" or "link", the kind of the row
         output: The absolute output path
         peak_gb: The peak memory of the step, in GB
 
@@ -179,16 +181,16 @@ def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
         Whether a row keeps the output, and the words that tell which row or why none does.  A problem of the
         ledger keeps nothing, and the words give its line
     """
-    ledger = cost_meter.ledger_file(memory_row, os.environ.get(LEDGERS_ENV))
+    ledger = cost_meter.ledger_file(MEMORY_RULE, os.environ.get(LEDGERS_ENV))
     shown = cost_meter.shown_ledger(ledger)
     build_dir = cost_meter.build_dir_of(output)
     if build_dir is None:
         return False, (f"no build directory holds the output (no directory above it holds {cost_meter.KIND_FILE}), so "
                        f"no row of {shown} can admit it")
     item = os.path.relpath(output, build_dir)
-    row, shown, problem = cost_budget.row_of(memory_row, "", cost_meter.ITEM_OUTPUT, ledger, item)
+    row, shown, problem = cost_budget.row_of(MEMORY_RULE, step, cost_meter.ITEM_OUTPUT, ledger, item)
     if row is None:
-        words = f"no row of {shown} keeps {item}"
+        words = f"no row of the kind {step} of {shown} keeps {item}"
         if problem:
             words += f", and the ledger has a problem at {shown}:{problem}"
         return False, words
@@ -219,14 +221,13 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         step: "compile" or "link"
         output: The absolute output path
         run: The measurement of the command
-        budget: The limit of the memory row of the step that the registry gives
+        budget: The limit of each kind of the rule step-memory that the registry gives
         hit: Whether ccache gave the output
 
     Returns:
         The result ("built", "failed", "rejected" or "hit"), and the level, the check and the message of the
         line, or None
     """
-    memory_row = MEMORY_ROWS[step]
     if hit:
         return "hit", None
     limit, limit_words = cpu_limit(step)
@@ -236,15 +237,15 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
                               f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
                               f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
         return "failed", None
-    is_over = memory_row in budget and cost_budget.verdict(run.peak_gb, budget[memory_row], None) == cost_budget.ERROR
+    is_over = step in budget and cost_budget.verdict(run.peak_gb, budget[step], None) == cost_budget.ERROR
     if is_over and cost_budget.is_judged(build_item(output)):
-        is_admitted, words = admission(memory_row, output, run.peak_gb)
+        is_admitted, words = admission(step, output, run.peak_gb)
         if is_admitted:
             return "built", None
-        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, above the limit of "
-                   f"{budget[memory_row]:g} GB, and {words}")
-        return "rejected", ("error", memory_row, f"{message}.  The launcher removed the output.  Make the step "
-                                                 f"smaller, or add a row with a reason")
+        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, above the limit of the kind {step} "
+                   f"{budget[step]:g} GB, and {words}")
+        return "rejected", ("error", MEMORY_RULE, f"{message}.  The launcher removed the output.  Make the step "
+                                                  f"smaller, or add a row with a reason")
     if run.cpu_limit_s is None and run.cpu_s > limit:
         # On a GitHub runner, limit_cpu() of meter.py sets no limit, and the step runs to its end (A CI RUNNER).
         message = (f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
@@ -391,8 +392,7 @@ def main(argv: list[str]) -> int:
             sys.exit(127)
     output, source = paths
     try:
-        limits = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (MEMORY_ROWS[step],))
-        budget = {rule: kinds[""] for rule, kinds in limits.items() if "" in kinds}
+        budget = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, (MEMORY_RULE,)).get(MEMORY_RULE, {})
     except (OSError, ValueError):
         budget = {}
     environment = None

@@ -273,8 +273,8 @@ def stale_file_cases(expect: testing.Expect) -> None:
             ("padded-list", None),
             ("gone-rule", None),
             ("gone-rule", "part1"),
-            ("test-memory", "kept_test"),
-            ("fixture-instructions", "neg_one"),
+            ("step-memory", "kept_test"),
+            ("step-cost", "neg_one"),
             ("fixture-own-reason", "neg_one"),
         ):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
@@ -298,8 +298,8 @@ def stale_file_cases(expect: testing.Expect) -> None:
         expect(
             "the files of a measured rule of the policy max go, also the file of one test, and the file of a measured "
             "rule of the policy count and the file of a rule with no limit stay",
-            "because the measured rule test-memory gives no warning" in text
-            and "because the measured rule fixture-instructions gives no warning" in text
+            "because the measured rule step-memory gives no warning" in text
+            and "because the measured rule step-cost gives no warning" in text
             and [path.name for path in sorted(warnings_dir.glob("*.txt"))]
             == ["fixture-own-reason.neg_one.txt", "padded-list.txt", "python-lint.txt"],
         )

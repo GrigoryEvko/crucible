@@ -323,7 +323,6 @@ SUITE = Holding(is_suite=True)
 HOLDERS = {
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),
-    "loop-test-step": SUITE,
 }
 # The items that no entry can run, by their kind and their name.  Each one has the reason, and what a person runs
 # (THE COVERS).

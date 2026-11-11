@@ -165,9 +165,8 @@ LIMITS: dict[str, int] = {
     # approximately 7 blocks of 4 KB.  The limit holds approximately 2,300 full records: four keys of each of the 507
     # tests with a key of the Debug build on 2026-10-14.
     "evidence": 64 << 20,
-    # The rows of the ledgers of the measured rules (THE MEMO OF THE ROWS of assay.core.meter).  An entry of the
-    # ledger test-memory of 78 rows holds 9 KB.  Each change of a ledger or of a module of the parse adds one entry
-    # for each rule.
+    # The rows of the ledgers of the measured rules (THE MEMO OF THE ROWS of assay.core.meter).  An entry of a ledger
+    # of 78 rows holds 9 KB.  Each change of a ledger or of a module of the parse adds one entry for each rule.
     "ledger-rows": 16 << 20,
     # The imports and the shapes of the modules of the package (THE PARSE CACHE of assay.loop.inputs).  Each module has
     # one file of one 4 KB block.  On 2026-10-17, the entries of one tree held 1.6 MB.  Each change of a module adds one

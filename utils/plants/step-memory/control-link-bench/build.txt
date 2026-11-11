@@ -1,0 +1,8 @@
+# A link of the directory bench of the build took 1.5 GB of peak memory, more than the limit 1 GB of the kind link.
+# No measured rule judges an output of bench (THE SCOPE of utils/assay/core/budget.py), and the other link is small,
+# so the rule gives no finding.  A small compile gives the kind compile an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp cpu=1 peak=0.1
+link bench/bench_heavy type=EXECUTABLE cpu=6 peak=1.5
+link test/library.so type=SHARED_LIBRARY cpu=1 peak=0.2

@@ -1,0 +1,7 @@
+# A compile took 5 GB of peak memory, more than the limit 4 GB of the kind compile.  No ledger row admits it, so the
+# rule gives one error of the kind over-limit.  A memory is not a time, so a GitHub runner keeps the error.  A small
+# link gives the kind link an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/slower.cpp.o src/slower.cpp cpu=25 peak=5
+link test/small_test cpu=1 peak=0.1

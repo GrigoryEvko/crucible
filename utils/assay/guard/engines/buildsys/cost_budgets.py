@@ -10,23 +10,36 @@ THE INPUTS
     rule judge each build (THE LEDGERS).
 
 THE RULES OF A STEP
-    compile-instructions, compile-memory and link-memory read the record
-    OUTPUT.cost of each output (assay.core.record).  compile-instructions
-    reads the user instructions of the compiler run, in G (10^9).
-    compile-memory and link-memory read the peak resident memory, in GB of
-    2^30 bytes.  A record of a ccache hit holds no time, and the rule counts
-    the output but does not judge it.  An output
-    with no usable record did not come through the build launcher, and it
-    gives an error of the kind no-record.  A record is not usable when it has
-    a different format or step, or a different number of bytes.  When no
-    output has a usable record, the launcher is not wired, and the rule gives
-    one error of the kind not-wired.
+    step-cost and step-memory read the record OUTPUT.cost of each output of
+    the kinds compile and link (assay.core.record).  step-cost reads the user
+    instructions of the compiler run of a compile, in G (10^9).  step-memory
+    reads the peak resident memory of a compile and of a link, in GB of 2^30
+    bytes.  A record of a ccache hit holds no time, and the rule counts the
+    output but does not judge it.  An output with no usable record did not
+    come through the build launcher, and it gives an error of the kind
+    no-record.  A record is not usable when it has a different format or
+    step, or a different number of bytes.  When no output of a kind has a
+    usable record, the launcher is not wired, and the rule gives one error of
+    the kind not-wired for that kind.
 
     The CPU time of a step increases with the load of the host, and the
     instruction count does not (assay.core.meter, THE INSTRUCTION COUNT).
-    No rule judges the CPU time of a step, and compile-instructions judges
-    the cost of a compile.  compile-instructions does not apply to a build in
-    which no record holds a count.
+    No rule judges the CPU time of a step, and step-cost judges the cost of
+    a compile.  step-cost does not apply to a build in which no record holds
+    a count.
+
+THE KINDS OF A STEP METER
+    The kinds test and fixture of a rule of a step have no records in the
+    build that a check can judge: a step meter judges each test and each
+    fixture while it runs.  `loop test-step` judges the kind test of the two
+    rules, and the fixture driver judges the kind fixture of step-cost and
+    the kind test of the run of a fixture (assay.loop.teststep, THE MEASURED
+    RULES).  A record of an earlier run can be stale, so the module does not
+    judge it again.  METER_KINDS gives these kinds.  The witness of a rule of
+    a step runs the judge of each step meter on each plant too (judge(), with
+    the judges of assay.guard.engines.buildsys.held), and `guard write`
+    reads the records of the tests and the fixtures for the rows of these
+    kinds (THE LEDGERS).
 
 THE RULE object-size
     object-size reads two values of each object, in KB: the largest STT_FUNC
@@ -107,6 +120,7 @@ from assay.core import budget as cost_budget
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
@@ -141,30 +155,42 @@ class Quantity(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class StepRule:
-    """The step of the records that a rule reads, and the value of each record."""
+class StepKind:
+    """The step of the records that a kind of a rule of a step reads, and the value of each record."""
 
     step: cost_record.Step
     quantity: Quantity
 
 
-STEP_RULES = {
-    "compile-instructions": StepRule(cost_record.COMPILE, Quantity.INSTRUCTIONS),
-    "compile-memory": StepRule(cost_record.COMPILE, Quantity.MEMORY),
-    "link-memory": StepRule(cost_record.LINK, Quantity.MEMORY),
+STEP_COST = cost_budget.STEP_COST
+STEP_MEMORY = cost_budget.STEP_MEMORY
+COMPILE_KIND = cost_budget.COMPILE_KIND
+LINK_KIND = cost_budget.LINK_KIND
+FIXTURE_KIND = cost_budget.FIXTURE_KIND
+TEST_KIND = cost_budget.TEST_KIND
+# The kinds of each rule of a step that this module judges from the records of the build (THE RULES OF A STEP).
+STEP_KINDS: dict[str, dict[str, StepKind]] = {
+    STEP_COST: {COMPILE_KIND: StepKind(cost_record.COMPILE, Quantity.INSTRUCTIONS)},
+    STEP_MEMORY: {
+        COMPILE_KIND: StepKind(cost_record.COMPILE, Quantity.MEMORY),
+        LINK_KIND: StepKind(cost_record.LINK, Quantity.MEMORY),
+    },
 }
+# The kinds of each rule of a step that a step meter judges while it runs (THE KINDS OF A STEP METER).
+METER_KINDS: dict[str, tuple[str, ...]] = {STEP_COST: (FIXTURE_KIND, TEST_KIND), STEP_MEMORY: (TEST_KIND,)}
 OBJECT_SIZE = "object-size"
 # The two kinds of object-size: the largest function of an object, and the machine code of the object.
 FUNCTION_KIND = "function"
 OBJECT_KIND = "object"
 HEADER_ALONE = "header-alone"
-# The kinds of the items of each rule with a fixed set of kinds (THE KINDS).  A rule with one limit has the kind "".
+# The kinds of the items of each rule with a fixed set of kinds (THE KINDS).
 RULE_KINDS: dict[str, tuple[str, ...]] = {
-    "compile-instructions": ("",),
-    "compile-memory": ("",),
-    "link-memory": ("",),
+    STEP_COST: (COMPILE_KIND, FIXTURE_KIND, TEST_KIND),
+    STEP_MEMORY: (COMPILE_KIND, LINK_KIND, TEST_KIND),
     OBJECT_SIZE: (FUNCTION_KIND, OBJECT_KIND),
 }
+# The form of the item of a ledger row of each kind of a step meter: the name of a test or of a fixture (THE LEDGERS).
+NAMED_KINDS = frozenset({FIXTURE_KIND, TEST_KIND})
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,11 +347,14 @@ def step_record(output: Output, step: cost_record.Step) -> cost_record.CostRecor
 
 
 def record_problems(
-    context: BuildContext, rule_id: str, outputs: Sequence[Output], problems: Sequence[tuple[Output, str]]
+    context: BuildContext,
+    rule_id: str,
+    step: cost_record.Step,
+    outputs: Sequence[Output],
+    problems: Sequence[tuple[Output, str]],
 ) -> list[check_report.Finding]:
-    """Return one error for each output with no usable record, or one error when no output has one."""
+    """Return one error for each output of a step with no usable record, or one error when no output has one."""
     build = context.require_build()
-    step = STEP_RULES[rule_id].step
     if outputs and len(problems) == len(outputs):
         return [
             check_report.Finding(
@@ -356,16 +385,16 @@ def record_problems(
     return found
 
 
-def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) -> Measured:
-    """Read the instructions or the peak memory of each step from its record (THE RULES OF A STEP).
+def step_values(context: BuildContext, rule_id: str, kind: str, outputs: Sequence[Output]) -> Measured:
+    """Read the instructions or the peak memory of each step of one kind from its record (THE RULES OF A STEP).
 
     Complexity: one read of the record of each output.
 
     Raises:
-        NotApplicable: If the rule reads instructions and no record that holds a cost block holds a count
+        NotApplicable: If the kind reads instructions and no record that holds a cost block holds a count
     """
     build = context.require_build()
-    spec = STEP_RULES[rule_id]
+    spec = STEP_KINDS[rule_id][kind]
     noun = "compile job" if spec.step == cost_record.COMPILE else "link"
     values: list[cost_budget.Measure] = []
     uncounted = 0
@@ -395,14 +424,14 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
         else:
             value = cost.peak_rss_kb / cost_meter.KB_PER_GB
             said = f"the {noun} of {item} took {value:.2f} GB of peak memory"
-        values.append(cost_budget.Measure(item, context.shown(output.source or output.path), value, said))
+        values.append(cost_budget.Measure(item, context.shown(output.source or output.path), value, said, kind))
     if spec.quantity == Quantity.INSTRUCTIONS and not values and uncounted:
         raise meta_runner.NotApplicable(
             f"no record of the {uncounted} compile jobs that ran holds an instruction count, because the host gives no "
             f"exact counter (utils/assay/core/meter.py, THE INSTRUCTION COUNT).  On such a host, no rule judges the CPU "
             f"work of a compile"
         )
-    return Measured(tuple(values), tuple(record_problems(context, rule_id, outputs, problems)))
+    return Measured(tuple(values), tuple(record_problems(context, rule_id, spec.step, outputs, problems)))
 
 
 def object_code(path: Path) -> ObjectCode:
@@ -579,27 +608,44 @@ def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> 
     Raises:
         NotApplicable: If the rule does not apply to the build
     """
-    if rule_id in STEP_RULES and STEP_RULES[rule_id].step == cost_record.LINK:
-        outputs, problems = link_outputs(context, rule_id)
-    else:
-        outputs, problems = compile_outputs(context, rule_id)
     build = context.require_build()
-    outputs = [output for output in outputs if cost_budget.is_judged(build_census.shown(output.path, build))]
+    if rule_id in STEP_KINDS:
+        values: list[cost_budget.Measure] = []
+        problems: list[check_report.Finding] = []
+        for kind, spec in STEP_KINDS[rule_id].items():
+            read = link_outputs if spec.step == cost_record.LINK else compile_outputs
+            outputs, missing = read(context, rule_id)
+            problems += missing
+            outputs = judged_outputs(outputs, build)
+            if outputs:
+                found = step_values(context, rule_id, kind, outputs)
+                values += found.values
+                problems += found.problems
+        return Measured(tuple(values), tuple(problems))
+    outputs, missing = compile_outputs(context, rule_id)
+    outputs = judged_outputs(outputs, build)
     if not outputs:
-        return Measured(problems=tuple(problems))
-    if rule_id in STEP_RULES:
-        found = step_values(context, rule_id, outputs)
-    elif rule_id == HEADER_ALONE:
+        return Measured(problems=tuple(missing))
+    if rule_id == HEADER_ALONE:
         found = header_values(context, rule_id, outputs, kinds)
     else:
         found = object_values(context, rule_id, outputs)
-    return replace(found, problems=(*problems, *found.problems))
+    return replace(found, problems=(*missing, *found.problems))
+
+
+def judged_outputs(outputs: Sequence[Output], build: Path) -> list[Output]:
+    """Return the outputs that the measured rules judge: each output outside the directory bench (THE INPUTS)."""
+    return [output for output in outputs if cost_budget.is_judged(build_census.shown(output.path, build))]
 
 
 def ledger_forms(rule_id: str, kinds: Collection[str]) -> dict[str, str]:
-    """Return the form of the item of a ledger row of each kind of a rule (THE LEDGERS)."""
-    form = cost_meter.ITEM_FILE if rule_id == HEADER_ALONE else cost_meter.ITEM_OUTPUT
-    return dict.fromkeys(kinds, form)
+    """Return the form of the item of a ledger row of each kind of a rule (THE LEDGERS).
+
+    A header of header-alone is a file of the tree, a test or a fixture is a name, and each other item is an output.
+    """
+    if rule_id == HEADER_ALONE:
+        return dict.fromkeys(kinds, cost_meter.ITEM_FILE)
+    return {kind: cost_meter.ITEM_NAME if kind in NAMED_KINDS else cost_meter.ITEM_OUTPUT for kind in kinds}
 
 
 def rows_text(forms: Mapping[str, str]) -> str:
@@ -671,10 +717,110 @@ def budget_written(
         raise rule_ledger.LedgerError(f"{len(errors)} input errors stop the write.  Correct them first")
     forms = ledger_forms(rule_id, budgets)
     measures = [(value.item, value.value, budgets[value.kind]) for value in measured.values]
+    if TEST_KIND in METER_KINDS.get(rule_id, ()):
+        measures += [(name, value, budgets[TEST_KIND]) for name, value in test_measures(context, rule_id)]
+    if FIXTURE_KIND in METER_KINDS.get(rule_id, ()):
+        measures += [(name, value, budgets[FIXTURE_KIND]) for name, value in fixture_measures(context)]
     raised = cost_budget.raised_ledger(ledger, forms, measures, reason)
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, rows=rows_text(forms), unit=units)
     return replace(raised, comment=comment)
+
+
+def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]]:
+    """Return the name and the measure of each registered test of the build, for a row of the kind test.
+
+    step-memory reads the peak memory of the record of the test in GB, and step-cost reads its instruction count in G.
+    A record with no count, and a test of the directory bench, give no measure.  Complexity: linear in the tests and
+    the records.
+
+    Raises:
+        rule_ledger.LedgerError: If the test list or a record does not read
+    """
+    from assay.loop import teststep
+    from assay.readers import ctest as ctest_reader
+
+    build = context.require_build()
+    try:
+        registered = {test.name for test in ctest_reader.tests(build)}
+        records = ctest_reader.costs(build)
+    except ctest_reader.CtestError as problem:
+        raise rule_ledger.LedgerError(f"the records of the tests of the build do not read: {problem}") from None
+    found: list[tuple[str, float]] = []
+    for name, record in sorted(records.items()):
+        count = record.cost.test_instructions
+        if rule_id == STEP_MEMORY:
+            value: float | None = record.cost.peak_rss_kb / cost_meter.KB_PER_GB
+        else:
+            value = None if count is None else count / GIGA
+        if (
+            value is not None
+            and name in registered
+            and cost_budget.is_judged(teststep.program_item(record.program, str(build)))
+        ):
+            found.append((name, value))
+    return found
+
+
+def fixture_measures(context: BuildContext) -> list[tuple[str, float]]:
+    """Return the name and the instruction count of the last compile of each fixture of the build, in G.
+
+    A fixture with no count gives no measure.  Complexity: linear in the tests of the build and in the records of the
+    fixtures.
+
+    Raises:
+        rule_ledger.LedgerError: If the tests do not read, or a fixture has no record that counts
+    """
+    from assay.guard.engines.buildsys import held
+    from assay.readers import ctest as ctest_reader
+
+    build = context.require_build()
+    try:
+        tests = held.fixture_tests(build)
+    except ctest_reader.CtestError as problem:
+        raise rule_ledger.LedgerError(f"the tests of the build do not read: {problem}") from None
+    found: list[tuple[str, float]] = []
+    unread: list[str] = []
+    for name, _, _ in tests:
+        try:
+            record = cost_record.read_fixture(Path(cost_record.fixture_record_file(build, name)))
+        except cost_record.MissingRecord:
+            unread.append(f"{name} (no record)")
+            continue
+        except cost_record.RecordError as problem:
+            unread.append(f"{name} ({problem})")
+            continue
+        if record.instructions is not None:
+            found.append((name, record.instructions / GIGA))
+    if unread:
+        raise rule_ledger.LedgerError(
+            f"{len(unread)} fixtures have no record that counts, such as {unread[0]}.  Run each fixture of the build, "
+            f"then the write"
+        )
+    return found
+
+
+def judge(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
+    """Return the findings of a rule on the planted build of a plant, judged against the ledger of the copy.
+
+    The witness calls this function (module_judged() of assay.guard.engines.meta.runner).  For a rule of a step, the
+    findings also hold the findings of the judge of each step meter of METER_KINDS on the plant (THE KINDS OF A STEP
+    METER).  Complexity: one run of the rule and of each judge of a step meter.
+
+    Raises:
+        NotApplicable: If the rule does not apply to the planted build
+    """
+    found = meta_runner.judged(rule, context.root, context.findings_of(rule))
+    meters = METER_KINDS.get(rule.id, ())
+    if not meters:
+        return found
+    from assay.guard.engines.buildsys import held
+
+    if TEST_KIND in meters:
+        found += [item for item in held.test_step_findings(rule, context) if item.check == rule.id]
+    if FIXTURE_KIND in meters:
+        found += [item for item in held.fixture_findings(rule, context) if item.check == rule.id]
+    return found
 
 
 def budget_member(rule_id: str) -> meta_runner.Member:
@@ -683,9 +829,8 @@ def budget_member(rule_id: str) -> meta_runner.Member:
 
 
 RULES = {
-    "compile-instructions": budget_member("compile-instructions"),
-    "compile-memory": budget_member("compile-memory"),
-    "link-memory": budget_member("link-memory"),
+    "step-cost": budget_member(STEP_COST),
+    "step-memory": budget_member(STEP_MEMORY),
     "object-size": budget_member(OBJECT_SIZE),
-    "header-alone": budget_member("header-alone"),
+    "header-alone": budget_member(HEADER_ALONE),
 }

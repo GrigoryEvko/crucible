@@ -1,0 +1,8 @@
+# The last cold compile of one negative fixture ran 10 G user instructions, under the limit 45 G of the kind fixture.
+# A second fixture took 16 s of user time with no instruction count, and no rule judges it.  The fixture driver gives
+# no finding.  A light compile gives the kind compile an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=1
+fixture neg_light test/neg/light.cpp user=1 system=0 instructions=10
+fixture neg_slow test/neg/slow.cpp user=16 system=0

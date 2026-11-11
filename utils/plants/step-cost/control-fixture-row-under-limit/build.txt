@@ -1,0 +1,7 @@
+# The last cold compile of one negative fixture ran 10 G user instructions, below the limit 45 G of the kind fixture.
+# The planted ledger keeps the fixture up to 50 G.  A row that keeps nothing passes, and the fixture driver gives no
+# finding.  A light compile gives the kind compile an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=1
+fixture neg_heavy test/neg/heavy.cpp user=1 system=0 instructions=10

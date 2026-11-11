@@ -71,6 +71,12 @@ THE WRITE
     or holds it with a lower value, then keeps the row of a different build.
     A person removes a row whose item stays at or below the limit.
 
+THE STEP RULES
+    The rule step-cost has the kinds compile, fixture and test, and the rule
+    step-memory has the kinds compile, link and test.  STEP_COST, STEP_MEMORY
+    and the constants of the kinds give the names to each judge: the module
+    assay.guard.engines.buildsys.cost_budgets and the step meters.
+
 THE STEP METERS
     `loop step`, `loop test-step` and `loop fixture` judge each step with
     verdict() and row_of(), and they give their own messages.  The import
@@ -104,6 +110,13 @@ NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02}
 UNIT_TEXTS = {"G": "G instructions"}
 # The directory of a build whose outputs no measured rule judges (THE SCOPE).
 BENCH_DIRECTORY = "bench"
+# The rules of the cost and of the peak memory of one step, and the kinds of their items (THE STEP RULES).
+STEP_COST = "step-cost"
+STEP_MEMORY = "step-memory"
+COMPILE_KIND = "compile"
+LINK_KIND = "link"
+FIXTURE_KIND = "fixture"
+TEST_KIND = "test"
 
 
 def is_judged(output: str) -> bool:

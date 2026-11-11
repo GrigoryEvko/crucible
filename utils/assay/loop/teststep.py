@@ -111,10 +111,11 @@ CORE DUMPS
         itself has no use.
 
 THE MEASURED RULES
-    The launcher judges two measured rules of utils/registry.txt.
-    test-memory is the peak resident memory of the largest process of the
-    test.  test-instructions is the user instructions of the test and of each
-    process that it starts.
+    The launcher judges the kind test of two measured rules of
+    utils/registry.txt (assay.core.budget, THE STEP RULES).  The kind test of
+    step-memory is the peak resident memory of the largest process of the
+    test.  The kind test of step-cost is the user instructions of the test
+    and of each process that it starts.
       * The two measures are almost the same on each run of a test, so each
         rule reads the run alone.  The user instructions do not change with
         the load of the host (utils/assay/core/meter.py, THE INSTRUCTION
@@ -124,8 +125,8 @@ THE MEASURED RULES
       * A test that waits for a different thread in a loop runs more
         instructions when the host is in use.  On 2026-10-12, with two tests
         for each CPU, the counts of such tests increased up to 21 times, to
-        at most 12.1 G.  That count is much less than the limit of
-        test-instructions, and such a test has no row.
+        at most 12.1 G.  That count is much less than the limit of the kind
+        test of step-cost, and such a test has no row.
       * The record keeps the wall time of the run as a plain fact, and no
         rule judges it.  The wall time increases with the load of the host.
         ccache_wrapper_self_test ran 43.4 s of user time in 7.4 s of wall
@@ -140,9 +141,9 @@ THE MEASURED RULES
         is in the directory bench of the build has no judge (assay.core.budget,
         THE SCOPE).
       * A row of the ledger utils/ledgers/RULE.txt keeps a test above the
-        limit in each build: '- | - | VALUE | TEST | REASON'.  VALUE is the
-        kept value, in the unit of the rule (meter.py, THE REGISTRY AND THE
-        LEDGERS).  A kept test gives no line, up to VALUE with the noise of
+        limit in each build: '- | test | VALUE | TEST | REASON'.  VALUE is
+        the kept value, in the unit of the rule (meter.py, THE REGISTRY AND
+        THE LEDGERS).  A kept test gives no line, up to VALUE with the noise of
         the unit (assay.core.budget, THE NOISE).  A test above that value
         gives an error that names the row.  The
         subcommand reads the ledger only for a measure above the limit.  A
@@ -222,7 +223,9 @@ if TYPE_CHECKING:
 
     from assay.loop.readset import Plan
 
-ROWS = ("test-memory", "test-instructions")
+# The two measured rules of the launcher, and the kind of their items that it judges (THE MEASURED RULES).
+ROWS = (cost_budget.STEP_MEMORY, cost_budget.STEP_COST)
+TEST_KIND = cost_budget.TEST_KIND
 # The instructions in one G.
 GIGA = 1e9
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
@@ -372,7 +375,7 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
 
 
 def ledger_row(row: str, name: str, ledgers: str | None = None) -> tuple[str, str, float] | None:
-    """Return the place, the reason and the kept value of the ledger row that names a test.
+    """Return the place, the reason and the kept value of the ledger row of the kind test that names a test.
 
     Args:
         row: A rule of ROWS
@@ -384,7 +387,7 @@ def ledger_row(row: str, name: str, ledgers: str | None = None) -> tuple[str, st
     """
     directory = ledgers if ledgers is not None else os.environ.get(LEDGERS_ENV)
     ledger = cost_meter.ledger_file(row, directory)
-    found, shown, _ = cost_budget.row_of(row, "", cost_meter.ITEM_NAME, ledger, name)
+    found, shown, _ = cost_budget.row_of(row, TEST_KIND, cost_meter.ITEM_NAME, ledger, name)
     return None if found is None else (f"{shown}:{found.line}", found.reason, found.value)
 
 
@@ -402,10 +405,10 @@ def program_item(program: str, build_dir: str | None) -> str:
 
 def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float],
           ledgers: str | None = None) -> list[tuple[str, str]]:
-    """Compare the measures of one test with its measured rules (THE MEASURED RULES).
+    """Compare the measures of one test with the limits of the kind test of its measured rules (THE MEASURED RULES).
 
-    The witness of test-memory judges the planted record of a test with this
-    function, and with the ledgers of the copy of a plant
+    The witness of step-memory and step-cost judges the planted record of a
+    test with this function, and with the ledgers of the copy of a plant
     (assay.guard.engines.buildsys.held).  A test of the directory bench of
     the build has no judge (assay.core.budget, THE SCOPE).
 
@@ -413,7 +416,7 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
         name: The name of the test
         program: The program of the test relative to the build directory (program_item())
         run: The measurement of the command, with its accurate instruction count or None
-        budget: The limit of each measured rule that the registry gives
+        budget: The limit of the kind test of each rule of ROWS that the registry gives
         ledgers: The directory of the ledgers (ledger_row()), or None
 
     Returns:
@@ -422,17 +425,17 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
     findings: list[tuple[str, str]] = []
     if not cost_budget.is_judged(program):
         return findings
-    measures = [("test-memory", run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
+    measures = [(cost_budget.STEP_MEMORY, run.peak_gb, "GB", f"took {run.peak_gb:.3f} GB of peak memory")]
     if run.instructions is not None:
         giga = run.instructions / GIGA
-        measures.append(("test-instructions", giga, "G", f"ran {giga:.2f} G user instructions"))
+        measures.append((cost_budget.STEP_COST, giga, "G", f"ran {giga:.2f} G user instructions"))
     for row, measure, unit, text in measures:
         if row not in budget or measure <= budget[row]:
             continue
         limit = budget[row]
         admitted = ledger_row(row, name, ledgers)
         kept = None if admitted is None else admitted[2]
-        above = f"the test {name} {text}, above the limit of {limit:g} {unit}"
+        above = f"the test {name} {text}, above the limit of the kind test {limit:g} {unit}"
         noise = cost_budget.noise_of(unit)
         found = cost_budget.verdict(measure, limit, kept, noise)
         if admitted is not None and found == cost_budget.RISEN:
@@ -440,8 +443,8 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
                        f"{noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured value "
                        f"into the row with a reason")
         elif found == cost_budget.ERROR:
-            message = (f"{above}, and no row of utils/ledgers/{row}.txt keeps it.  Make the test smaller, or split it "
-                       f"into tests over disjoint cases")
+            message = (f"{above}, and no row of the kind test of utils/ledgers/{row}.txt keeps it.  Make the test "
+                       f"smaller, or split it into tests over disjoint cases")
         else:
             continue
         findings.append((row, message))
@@ -649,12 +652,17 @@ def launched_program(command: list[str]) -> str | None:
 
 
 def read_budget() -> dict[str, float]:
-    """Read the limit of each rule of the launcher from the registry, or give none when it cannot be read."""
+    """Read the limit of the kind test of each rule of the launcher from the registry, or none when it does not read."""
     try:
         limits = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
     except (OSError, ValueError):
         return {}
-    return {rule: kinds[""] for rule, kinds in limits.items() if "" in kinds}
+    return test_limits(limits)
+
+
+def test_limits(limits: Mapping[str, Mapping[str, float]]) -> dict[str, float]:
+    """Return the limit of the kind test of each rule of ROWS, from the limits of each kind (budget_rows())."""
+    return {rule: kinds[TEST_KIND] for rule, kinds in limits.items() if rule in ROWS and TEST_KIND in kinds}
 
 
 def safely[T](action: Callable[[], T], fallback: T) -> T:

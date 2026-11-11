@@ -358,7 +358,7 @@ THE SHARED STORE
         store holds a result for its key.  A failure of this build directory
         then stays in the output.
       * A skip through the store writes no record of the test into this build
-        directory.  The judges of the budgets, such as the rule test-memory, read
+        directory.  The judges of the budgets, such as the rule step-memory, read
         the records of their own build directory.  A test with no record keeps
         its row.
       * --all runs each test, and it writes the store after each run with the
@@ -1933,8 +1933,9 @@ class SelfTest:
         self.write_tests()
 
     def plant_registry(self, limit: float) -> None:
-        """Write the registry of the fake source tree, with the measured rule test-memory."""
-        self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("test-memory", limit, "GB")]))
+        """Write the registry of the fake source tree, with the measured rule step-memory and a limit of the kind test."""
+        limits = {"compile": 4, "link": 1, "test": limit}
+        self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("step-memory", limits, "GB")]))
 
     def write_tests(self) -> None:
         """Write the CTestTestfile.cmake of the fake build tree."""
@@ -2532,8 +2533,8 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
                fake.skipped() and "exe_ok" in fake.skipped(), output)
         status, output = fake.call()
         expect("the launched test is skipped again after its pass", "exe_launched" in fake.skipped(), output)
-        (fake.source_dir / "utils" / "ledgers" / "test-memory.txt").write_text(
-            "# a planted ledger\nformat 1\nrule test-memory\n- | - | 9 | exe_other | a planted reason\n")
+        (fake.source_dir / "utils" / "ledgers" / "step-memory.txt").write_text(
+            "# a planted ledger\nformat 1\nrule step-memory\n- | test | 9 | exe_other | a planted reason\n")
         status, output = fake.call()
         expect("a new ledger of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)

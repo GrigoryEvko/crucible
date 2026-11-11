@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-cost: a row of the kind fixture of a fixture that is below the limit.
+format 1
+rule step-cost
+- | fixture | 50 | neg_heavy | a planted reason

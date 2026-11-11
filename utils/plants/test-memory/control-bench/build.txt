@@ -1,6 +1,0 @@
-# The record of a test of the directory bench of the build gives a peak memory of 2 GB, above the limit 1.5 GB of
-# test-memory.  No measured rule judges a test of bench (THE SCOPE of utils/assay/core/budget.py), and judge() of
-# `loop test-step` gives no finding.
-format 1
-kind x86_64-debug-asan
-test-record bench_large wall=1 peak=2 program={build}/bench/bench_large

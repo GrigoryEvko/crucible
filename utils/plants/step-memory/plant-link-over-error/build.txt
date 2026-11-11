@@ -1,0 +1,6 @@
+# A link of a shared library took 1.5 GB of peak memory, more than the limit 1 GB of the kind link.  The rule gives
+# one error of the kind over-limit.  A small compile gives the kind compile an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp cpu=1 peak=0.1
+link test/library.so type=SHARED_LIBRARY cpu=6 peak=1.5

@@ -1,0 +1,6 @@
+# The record of one test of the build gives 600 G user instructions, above the limit 500 G of the kind test.  judge()
+# of `loop test-step` gives one error.  A light compile gives the kind compile an input.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=1
+test-record test_heavy wall=1 instructions=600

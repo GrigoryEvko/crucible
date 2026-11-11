@@ -1,0 +1,4 @@
+# A planted ledger of the rule step-memory.
+format 1
+rule step-memory
+@build/CMakeFiles/lib.dir/quick.cpp.o | compile | 5

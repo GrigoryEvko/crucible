@@ -1,4 +1,0 @@
-# A planted ledger of the rule test-memory: a kept value under the measure of the test.
-format 1
-rule test-memory
-- | - | 1.6 | test_grown | a planted reason

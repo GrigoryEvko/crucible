@@ -8,7 +8,7 @@ THE FORMAT
 
     PATH is relative to the repository root when the finding is in the tree.
     LINE is 0 when no line applies.  CHECK is the name of the check, for
-    example link-memory.  An error fails the check, and the exit status is 1.
+    example step-memory.  An error fails the check, and the exit status is 1.
     A warning does not fail the check.  With warnings only, the exit status
     is 0.
 
@@ -454,9 +454,9 @@ def self_test() -> int:
             return
         expect(name, False)
 
-    sample = Finding("warning", "include/fixy/Refined.h", 12, "link-memory", "1.5 GB, 50% over 1 GB")
+    sample = Finding("warning", "include/fixy/Refined.h", 12, "step-memory", "1.5 GB, 50% over 1 GB")
     expect("text has the format", sample.text()
-           == "include/fixy/Refined.h:12: warning: [link-memory] 1.5 GB, 50% over 1 GB")
+           == "include/fixy/Refined.h:12: warning: [step-memory] 1.5 GB, 50% over 1 GB")
     expect("parse_line reads text back", parse_line(sample.text()) == sample)
     expect("parse_line refuses a free line", parse_line("STALE something") is None)
     expect("annotation escapes", Finding("error", "a,b:c.h", 3, "object-size", "100% of x").annotation()
@@ -464,9 +464,9 @@ def self_test() -> int:
     expect("escape_data escapes line breaks", escape_data("a\r\nb") == "a%0D%0Ab")
     expect("annotation omits line 0", "line=" not in Finding("warning", "build/x.o", 0, "object-size", "m")
            .annotation())
-    refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "link-memory", "m"))  # type: ignore[arg-type]
+    refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "step-memory", "m"))  # type: ignore[arg-type]
     refuses("Finding refuses a check name", lambda: Finding("error", "p", 1, "Link_Memory", "m"))
-    refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "link-memory", "a\nb"))
+    refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "step-memory", "a\nb"))
 
     budgets = read_budgets()
     expect("the measured rules of the repository registry read", bool(budgets))
@@ -568,12 +568,12 @@ def self_test() -> int:
     earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
     with github_actions(True):
         expect("on a CI runner, a memory error stays an error",
-               judged("error", "t.cpp", 0, "test-memory", "big") == Finding("error", "t.cpp", 0, "test-memory", "big"))
-        warned = judged("warning", "t.cpp", 0, "test-memory", "w")
+               judged("error", "t.cpp", 0, "step-memory", "big") == Finding("error", "t.cpp", 0, "step-memory", "big"))
+        warned = judged("warning", "t.cpp", 0, "step-memory", "w")
         with contextlib.redirect_stdout(io.StringIO()) as printed:
-            status = emit([warned], "test-memory", None)
+            status = emit([warned], "step-memory", None)
         expect("on a CI runner, a warning gives status 0 and an annotation",
-               status == 0 and "::warning file=t.cpp,title=test-memory::" in printed.getvalue())
+               status == 0 and "::warning file=t.cpp,title=step-memory::" in printed.getvalue())
     expect("github_actions() puts the earlier value back", os.environ.get(cost_meter.GITHUB_ACTIONS_ENV) == earlier)
 
     if failures:

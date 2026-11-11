@@ -1,4 +1,0 @@
-# A planted ledger of the rule compile-instructions.
-format 1
-rule compile-instructions
-@build/CMakeFiles/lib.dir/heavy.cpp.o | - | 120 | - | a planted reason

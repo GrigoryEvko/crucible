@@ -3,8 +3,8 @@
 # `loop test-step` (utils/assay/loop/teststep.py) runs in front of each test of
 # the tree, except a negative fixture.  It runs the test, writes its wall time,
 # CPU time, peak memory and user instructions to
-# BUILD/test-records/NAME.test.cost, holds the measured rules test-memory
-# and test-instructions of utils/registry.txt, and exits with the
+# BUILD/test-records/NAME.test.cost, holds the kind test of the measured rules
+# step-memory and step-cost of utils/registry.txt, and exits with the
 # status of the test (the docstring of the launcher gives the rules).  It
 # gives each test a soft core limit of 1 byte.  A child that aborts then writes
 # no core dump, unless CRUCIBLE_TEST_CORES=keep keeps the cores (CORE DUMPS in

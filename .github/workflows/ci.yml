@@ -401,7 +401,7 @@ jobs:
           --build-dir ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
 
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
-      # The test launcher holds the rules test-memory and test-instructions for each test
+      # The test launcher holds the kind test of the rules step-memory and step-cost for each test
       # (cmake/TestLauncher.cmake), and the fixture driver holds them for each fixture.
       - name: Test
         if: ${{ matrix.run_tests }}

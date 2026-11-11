@@ -26,12 +26,14 @@ GATE = tiers.Tier.GATE
 NIGHTLY = tiers.Tier.NIGHTLY
 # The rows of a planted registry.  One rule has a test, four rules have a holder, one rule is of a step, and one rule
 # runs nowhere.
+GAUGED = (
+    "rule gauged engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-gauge doc=XV | a time | lower it\n"
+)
 REGISTRY = (
     "format 1\n"
     "rule tested engine=meta scope=tracked ledger=none doc=XV | a fault | repair it\n"
-    "rule gauged engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-gauge doc=XV | a time | "
-    "lower it\n"
-    "rule launched engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-fixture doc=XV | a time | "
+    + GAUGED
+    + "rule launched engine=build scope=builddir ledger=max limit=2 unit=s held-by=loop-fixture doc=XV | a time | "
     "lower it\n"
     "rule header-alone engine=build scope=builddir ledger=max limit=2 unit=MB doc=XV | a size | lower it\n"
     "rule alone engine=build scope=builddir ledger=max limit=2 unit=MB held-by=header-alone doc=XV | a size | "
@@ -156,8 +158,11 @@ def problem_cases(expect: testing.Expect) -> None:
     )
     stale, no_class = plan.ProblemKind.STALE_ENTRY, plan.ProblemKind.NO_CLASS
     expect("a holder of a rule with no row of HOLDERS has no class", (no_class, "holder nobody") in found)
-    expect("a row of HOLDERS that names no holder of a rule is a stale row", (stale, "holder loop-test-step") in found)
+    expect("a row of HOLDERS that names a holder of a rule is no problem", (stale, "holder loop-gauge") not in found)
     expect("a step that names a rule of the registry is no problem", (stale, "step gauge") not in found)
+    ungauged = rule_registry.examine(REGISTRY.replace(GAUGED, ""))[0]
+    unheld = {(item.kind, item.entity) for item in plan.step_problems(ungauged, presets, commands)}
+    expect("a row of HOLDERS that names no holder of a rule is a stale row", (stale, "holder loop-gauge") in unheld)
     unclassed = {**commands, "brand-new": True, "hidden-tool": False}
     del unclassed["land"]
     named = {(item.kind, item.entity) for item in plan.command_problems(unclassed)}
