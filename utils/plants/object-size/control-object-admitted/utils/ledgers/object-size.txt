@@ -1,0 +1,4 @@
+# A planted ledger of the rule object-size, with a row of the kind object.
+format 1
+rule object-size
+@build/CMakeFiles/lib.dir/wider.cpp.o | object | 800 | - | a planted reason

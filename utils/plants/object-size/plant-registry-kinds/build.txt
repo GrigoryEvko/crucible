@@ -1,0 +1,5 @@
+# The planted registry gives the rule object-size a limit of the kind function and no limit of the kind object.  The
+# judge of the kind object is then off, so the rule gives one error of the kind input at the registry.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp functions=_Z5smallv:10240

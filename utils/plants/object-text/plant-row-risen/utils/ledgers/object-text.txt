@@ -1,4 +1,0 @@
-# A planted ledger of the rule object-text: a kept value under the measure of the object.
-format 1
-rule object-text
-@build/CMakeFiles/lib.dir/wider.cpp.o | - | 700 | - | a planted reason

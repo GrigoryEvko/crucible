@@ -2540,8 +2540,7 @@ The other rules of the table count findings or facts, and some of them also give
 | `compile-instructions` | The user instructions of the compiler run of one compile job | 110 G | The test `guard_compile_instructions` | Test run |
 | `compile-memory` | The peak memory of one compile job | 4 GB. The launcher fails the job | The build launcher and the test `guard_compile_memory` | Build, test run |
 | `link-memory` | The peak memory of one link | 1 GB. The launcher fails the link | The build launcher and the test `guard_link_memory` | Build, test run |
-| `function-size` | The largest function of one object | 256 KB | The test `guard_function_size` | Test run |
-| `object-text` | The machine code of one object | 768 KB | The test `guard_object_text` | Test run |
+| `object-size` | The machine code of one object: its largest function, and the sum of its executable sections | 256 KB for a function and 768 KB for an object | The test `guard_object_size` | Test run |
 | `header-alone` | The bytes that one header includes alone, with one limit for each layer | 3.5 MB for foundation, 6.5 MB for fixy and 7.35 MB for crucible | The test `guard_header_alone` | Test run |
 | `heavy-include` | The user instructions of a unit that includes only a header outside the source root, for each such header that a file under `include/` includes, as a multiple of those of `<meta>` | More than 1.25. Each ledger row with no reason gives a warning | The test `guard_plugin` | Test run |
 | `header-checks` | The self-test namespaces and the namespace-scope checks of a header (rule 1) and its reflection walks (rule 2) | A new one | The test `guard_header_checks` | Test run |

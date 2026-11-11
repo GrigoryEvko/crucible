@@ -9,8 +9,8 @@ THE READERS
       * The rule artifacts reads the file type, the machine, the dynamic
         section with its run path, the segments and the program properties
         of each linked artifact.
-      * The rules function-size and object-text read the code sections and the
-        function symbols of each object.
+      * The rule object-size reads the code sections and the function symbols
+        of each object.
       * assay.readers.dwarf reads the debug sections, their relocations and
         the symbols of each relocation.  assay.readers.library_bytes reads
         the COMDAT groups of each object.

@@ -1,0 +1,5 @@
+# The object has 300 KB of machine code, which is less than the limit 768 KB of the kind object.  Each of its two
+# functions has 150 KB, which is less than the limit 256 KB of the kind function.  The rule gives no finding.
+format 1
+kind x86_64-debug-asan
+compile CMakeFiles/lib.dir/giant.cpp.o src/giant.cpp functions=_Z1av:153600,_Z1bv:153600

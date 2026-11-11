@@ -28,13 +28,14 @@ THE RULES OF A STEP
     the cost of a compile.  compile-instructions does not apply to a build in
     which no record holds a count.
 
-THE RULES OF AN OBJECT
-    function-size reads the largest STT_FUNC symbol of each object, in KB.
-    object-text reads the sum of the allocated, executable sections of each
-    object, in KB.  The rules read the section headers and the symbols
-    through assay.readers.elf.  The two rules read each object, also a ccache
-    hit, because a hit gives the same machine code as a compile.  An object
-    that the reader refuses gives an error of the kind input.
+THE RULE object-size
+    object-size reads two values of each object, in KB: the largest STT_FUNC
+    symbol, of the kind function, and the sum of the allocated, executable
+    sections, of the kind object.  The rule reads the section headers and the
+    symbols one time for each object, through assay.readers.elf.  It reads
+    each object, also a ccache hit, because a hit gives the same machine code
+    as a compile.  An object that the reader refuses gives an error of the
+    kind input.
 
 THE RULE header-alone
     The sentinels of test/layer/CMakeLists.txt compile each header of include/
@@ -152,15 +153,17 @@ STEP_RULES = {
     "compile-memory": StepRule(cost_record.COMPILE, Quantity.MEMORY),
     "link-memory": StepRule(cost_record.LINK, Quantity.MEMORY),
 }
-OBJECT_RULES = frozenset({"function-size", "object-text"})
+OBJECT_SIZE = "object-size"
+# The two kinds of object-size: the largest function of an object, and the machine code of the object.
+FUNCTION_KIND = "function"
+OBJECT_KIND = "object"
 HEADER_ALONE = "header-alone"
 # The kinds of the items of each rule with a fixed set of kinds (THE KINDS).  A rule with one limit has the kind "".
 RULE_KINDS: dict[str, tuple[str, ...]] = {
     "compile-instructions": ("",),
     "compile-memory": ("",),
     "link-memory": ("",),
-    "function-size": ("",),
-    "object-text": ("",),
+    OBJECT_SIZE: (FUNCTION_KIND, OBJECT_KIND),
 }
 
 
@@ -432,7 +435,7 @@ def readable_names(names: Sequence[str]) -> tuple[tuple[str, str], ...]:
 
 
 def object_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) -> Measured:
-    """Read the machine code of each object for function-size or object-text (THE RULES OF AN OBJECT).
+    """Read the largest function and the machine code of each object, the two kinds of object-size (THE RULE).
 
     Complexity: one read of the section headers and the symbols of each object, and one call of c++filt.
     """
@@ -452,18 +455,18 @@ def object_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
                     item,
                 )
             )
-    names = dict(readable_names([code.largest_name for _, code in codes])) if rule_id == "function-size" else {}
+    names = dict(readable_names([code.largest_name for _, code in codes]))
     values: list[cost_budget.Measure] = []
     for output, code in codes:
         item = build_census.shown(output.path, build)
-        if rule_id == "function-size":
-            value = code.largest_function / KB
-            name = names.get(code.largest_name, code.largest_name)
-            said = f"the largest function of {item}, {name}, has {value:.1f} KB of machine code"
-        else:
-            value = code.text_bytes / KB
-            said = f"the object {item} has {value:.1f} KB of machine code"
-        values.append(cost_budget.Measure(item, context.shown(output.source or output.path), value, said))
+        place = context.shown(output.source or output.path)
+        function = code.largest_function / KB
+        name = names.get(code.largest_name, code.largest_name)
+        said = f"the largest function of {item}, {name}, has {function:.1f} KB of machine code"
+        values.append(cost_budget.Measure(item, place, function, said, FUNCTION_KIND))
+        text = code.text_bytes / KB
+        said = f"the object {item} has {text:.1f} KB of machine code"
+        values.append(cost_budget.Measure(item, place, text, said, OBJECT_KIND))
     return Measured(tuple(values), problems=tuple(problems))
 
 
@@ -683,7 +686,6 @@ RULES = {
     "compile-instructions": budget_member("compile-instructions"),
     "compile-memory": budget_member("compile-memory"),
     "link-memory": budget_member("link-memory"),
-    "function-size": budget_member("function-size"),
-    "object-text": budget_member("object-text"),
+    "object-size": budget_member(OBJECT_SIZE),
     "header-alone": budget_member("header-alone"),
 }

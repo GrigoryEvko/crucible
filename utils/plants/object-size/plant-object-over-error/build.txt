@@ -1,6 +1,6 @@
 # The object has a function of 100 KB and an executable section of 700 KB with no symbol.  The section counts, so
-# the object has 800 KB of machine code, more than the limit 768 KB, and the rule gives one error of the kind
-# over-limit.
+# the object has 800 KB of machine code, more than the limit 768 KB of the kind object.  The function is less than
+# the limit of the kind function, and the rule gives one error of the kind over-limit.
 format 1
 kind x86_64-debug-asan
 compile CMakeFiles/lib.dir/wider.cpp.o src/wider.cpp functions=_Z1cv:102400 text=716800

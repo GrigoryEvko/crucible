@@ -459,10 +459,10 @@ def self_test() -> int:
            == "include/fixy/Refined.h:12: warning: [link-memory] 1.5 GB, 50% over 1 GB")
     expect("parse_line reads text back", parse_line(sample.text()) == sample)
     expect("parse_line refuses a free line", parse_line("STALE something") is None)
-    expect("annotation escapes", Finding("error", "a,b:c.h", 3, "function-size", "100% of x").annotation()
-           == "::error file=a%2Cb%3Ac.h,title=function-size,line=3::100%25 of x")
+    expect("annotation escapes", Finding("error", "a,b:c.h", 3, "object-size", "100% of x").annotation()
+           == "::error file=a%2Cb%3Ac.h,title=object-size,line=3::100%25 of x")
     expect("escape_data escapes line breaks", escape_data("a\r\nb") == "a%0D%0Ab")
-    expect("annotation omits line 0", "line=" not in Finding("warning", "build/x.o", 0, "object-text", "m")
+    expect("annotation omits line 0", "line=" not in Finding("warning", "build/x.o", 0, "object-size", "m")
            .annotation())
     refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "link-memory", "m"))  # type: ignore[arg-type]
     refuses("Finding refuses a check name", lambda: Finding("error", "p", 1, "Link_Memory", "m"))
