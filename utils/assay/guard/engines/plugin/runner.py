@@ -37,6 +37,8 @@ THE CONFIGURATION
 
 THE RULES
     Each finding line has a rule of the engine plugin of utils/registry.txt.
+    A record of the library code has a tag and no rule (assay.readers.sections,
+    THE SECTION), and no rule of the engine reads it.
     A rule is the function findings(context) of its module,
     assay/guard/engines/plugin/ID.py with underscores for the hyphens.  Its
     errors are its violations, and assay.core.ledger judges them against the
