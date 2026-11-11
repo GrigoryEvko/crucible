@@ -136,7 +136,7 @@ def witness_cases(expect: testing.Expect) -> None:
 
 
 def fixture_write_cases(expect: testing.Expect) -> None:
-    """The write of the ledgers of the fixture driver: a row for each measure that the rule judges over its error."""
+    """The write of the ledger of the fixture driver: a row for each instruction count over the error threshold."""
     rows = (
         BUILD_HEAD
         + "fixture neg_slow test/neg/slow.cpp user=19 system=1\n"
@@ -151,25 +151,19 @@ def fixture_write_cases(expect: testing.Expect) -> None:
 
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), rows)
-        cpu, instructions = tree_rule(held.FIXTURE_CPU), tree_rule(held.FIXTURE_INSTRUCTIONS)
-        empty_cpu = rule_ledger.Ledger(cpu.id, rule_registry.Policy.MAX, "")
-        written_cpu = held.written(cpu, context, empty_cpu, "a planted slow fixture")
+        instructions = tree_rule(held.FIXTURE_INSTRUCTIONS)
+        empty = rule_ledger.Ledger(instructions.id, rule_registry.Policy.MAX, "")
+        written = held.written(instructions, context, empty, None)
         expect(
-            "fixture-cpu writes the fixture over 15 s with no instruction count, and no fixture with a count",
-            rows_of(written_cpu) == {"neg_slow": (20.0, "a planted slow fixture")},
+            "fixture-instructions writes the fixture over 45 G with the default reason, and no fixture with no count",
+            rows_of(written) == {"neg_heavy": (50.0, held.FIXTURE_REASON)},
         )
-        empty_instructions = rule_ledger.Ledger(instructions.id, rule_registry.Policy.MAX, "")
-        written_instructions = held.written(instructions, context, empty_instructions, None)
-        expect(
-            "fixture-instructions writes the fixture over 45 G, with the default reason",
-            rows_of(written_instructions) == {"neg_heavy": (50.0, held.FIXTURE_REASON)},
-        )
-        again = held.written(cpu, context, written_cpu, None)
-        expect("a second write keeps the reason of the row", rows_of(again) == rows_of(written_cpu))
+        again = held.written(instructions, context, written, "a different reason")
+        expect("a second write keeps the reason of the row", rows_of(again) == rows_of(written))
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), rows + "fixture neg_unrun test/neg/unrun.cpp record=no\n")
         try:
-            held.written(tree_rule(held.FIXTURE_CPU), context, empty_cpu, None)
+            held.written(instructions, context, empty, None)
             said = ""
         except rule_ledger.LedgerError as problem:
             said = str(problem)

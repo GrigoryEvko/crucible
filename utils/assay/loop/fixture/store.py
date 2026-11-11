@@ -348,45 +348,37 @@ resource use of its child processes.  It runs one compile at a time, so the
 CPU time that its waited children gain during the call is the time of the
 compiler driver, cc1plus and the assembler.  It also counts the user
 instructions of the compile, when the host gives an exact count
-(utils/assay/core/meter.py, THE INSTRUCTION COUNT).  The CPU budget applies to
-the sum of the user time and the system time.  The kernel measures the CPU
-time of a process exactly, and it divides that time between the user time and
-the system time from the samples of the timer tick.  A compile of a few
+(utils/assay/core/meter.py, THE INSTRUCTION COUNT).  The kernel measures the
+CPU time of a process exactly, and it divides that time between the user time
+and the system time from the samples of the timer tick.  A compile of a few
 milliseconds whose samples all fall in the kernel gets a user time of 0 s.
-The finding gives the two times.  The entry of the store keeps the times and
-the count, and a result from the store gives the cost of the compile that
-made it.
+The record of the fixture keeps the two times as a plain fact, and no rule
+judges them, because the CPU time rises with the load of the host.  The entry
+of the store keeps the times and the count, and a result from the store gives
+the cost of the compile that made it.
 
-The measured rules fixture-cpu and fixture-instructions of utils/registry.txt
-give the thresholds.  A measure above the warning threshold of a rule prints a
-warning in the format of utils/assay/core/report.py, and writes it to the
-warnings directory, in a file of this fixture (`fixture-cpu.NAME.txt`,
-`fixture-instructions.NAME.txt`).  The error level belongs to the instruction
-count when the compile has one, because the CPU time rises with the load of the
-host and the count does not.  A CPU time above its error threshold then gives a
-warning only.  With no count, the error level belongs to the CPU time.  A
-measure above the error threshold of the rule that holds the error level fails
-the test, and the driver does not store that result, so the next run measures
-again.  The ledgers utils/ledgers/fixture-cpu.txt and
-utils/ledgers/fixture-instructions.txt keep the fixtures above the warning
-threshold of their rule, `- | - | VALUE | FIXTURE | REASON`, with VALUE the
-measure of the compile when the row was written, in the unit of the rule.  A
-row applies to each build.  A kept fixture gives a warning up to VALUE with the
-noise of the unit (assay.core.budget, THE NOISE).  A measure above that gives
-the level of a fixture with no row.  A kept fixture at or below the
-warning threshold gives no finding, because a value below its row passes
-(THE POLICIES of assay.core.ledger).  A ledger that does not exist has no
-row.  On a GitHub runner, each error of the CPU time is a warning that says
-that it was demoted (utils/assay/core/meter.py, A CI RUNNER), and an error of
-the instruction count stays an error.  A
-registry that cannot be read stays an error.  CRUCIBLE_NEG_REGISTRY,
-CRUCIBLE_NEG_CPU_LEDGER and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different
-registry and different ledgers in the same format, for the tests of the
-driver.
+The measured rule fixture-instructions of utils/registry.txt gives the
+thresholds of the instruction count.  A count above the warning threshold
+prints a warning in the format of utils/assay/core/report.py, and writes it to
+the warnings directory, in a file of this fixture
+(`fixture-instructions.NAME.txt`).  A count above the error threshold fails the
+test, and the driver does not store that result, so the next run measures
+again.  A compile with no count has no cost judge.  The ledger
+utils/ledgers/fixture-instructions.txt keeps the fixtures above the warning
+threshold, `- | - | VALUE | FIXTURE | REASON`, with VALUE the count of the
+compile when the row was written, in G.  A row applies to each build.  A kept
+fixture gives a warning up to VALUE with the noise of the unit
+(assay.core.budget, THE NOISE).  A count above that gives the level of a
+fixture with no row.  A kept fixture at or below the warning threshold gives
+no finding, because a value below its row passes (THE POLICIES of
+assay.core.ledger).  A ledger that does not exist has no row.  A registry that
+cannot be read stays an error.  CRUCIBLE_NEG_REGISTRY and
+CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and a different
+ledger in the same format, for the tests of the driver.
 
-A memo in the store keeps the two measured rules, the two ledgers and the
-thresholds of the rules of the test launcher (The test record).  The memo
-stays while the two registries and the two ledgers have the same stat fields.
+A memo in the store keeps the measured rule, its ledger and the thresholds of
+the rules of the test launcher (The test record).  The memo stays while the
+two registries and the ledger have the same stat fields.
 A ledger that does not exist has the stamp of an absent file, so a new ledger
 replaces the memo.
 The driver writes the memo only when no file changed in the settle period.  A
@@ -2575,19 +2567,15 @@ _LEDGER_DIRECTORY = _REPO_ROOT / "utils" / "ledgers"
 _REGISTRY = _REPO_ROOT / "utils" / "registry.txt"
 # The master that ctest starts for each fixture.  Its bytes are a part of the key (the module text, item 1).
 _LOOP_MASTER = LOOP
-_CPU_CHECK = "fixture-cpu"
 _INSTRUCTIONS_CHECK = "fixture-instructions"
 # The unit of each check, as utils/registry.txt gives it.  The noise of a ledger row comes from it (assay.core.budget).
-_UNITS = {_CPU_CHECK: "s", _INSTRUCTIONS_CHECK: "G"}
+_UNITS = {_INSTRUCTIONS_CHECK: "G"}
 # The variable that names a different ledger for each check, and the ledger of the tree.
 _LEDGERS = {
-    _CPU_CHECK: ("CRUCIBLE_NEG_CPU_LEDGER", _LEDGER_DIRECTORY / f"{_CPU_CHECK}.txt"),
     _INSTRUCTIONS_CHECK: ("CRUCIBLE_NEG_INSTRUCTIONS_LEDGER", _LEDGER_DIRECTORY / f"{_INSTRUCTIONS_CHECK}.txt"),
 }
 _GIGA = 1e9
 _ADVICE = "Include only the header that the fixture attacks, or make the tables that it does not read lazy."
-# The verdict of an error of the CPU time when the instruction count holds the error level (_row_verdict()).
-_DEMOTED = "demoted"
 
 
 class BudgetRow:
@@ -2608,7 +2596,7 @@ class BudgetRow:
 
 
 class CostBudget:
-    """The measured rules fixture-cpu and fixture-instructions, with their ledgers, and the rules of the test launcher.
+    """The measured rule fixture-instructions, with its ledger, and the rules of the test launcher.
 
     `problems` gives, for each check whose rule or ledger cannot be read, the
     reason.  A budget with a problem fails the test.  `test_rows` gives the
@@ -2627,28 +2615,20 @@ class CostBudget:
         self.test_rows = test_rows or {}
 
     def is_over_error(self, fixture_name: str, result: CompileResult) -> bool:
-        """Return True when the measure of the rule that holds the error level fails the test.
+        """Return True when the instruction count of the compile fails the test.
 
-        The instruction count holds the error level when the compile has one,
-        and the CPU time holds it when the compile has no count.  A ledger row
-        keeps the measure up to its kept value with the noise of its unit
+        A compile with no count has no cost judge.  A ledger row keeps the
+        count up to its kept value with the noise of its unit
         (assay.core.budget, THE NOISE).
         """
-        if self.problems:
+        if self.problems or result.instructions is None:
             return False
-        if result.instructions is not None:
-            check, value = _INSTRUCTIONS_CHECK, result.instructions / _GIGA
-        else:
-            check, value = _CPU_CHECK, result.cpu_s
-        found = _row_verdict(self.rows[check], fixture_name, value, True)
+        value = result.instructions / _GIGA
+        found = _row_verdict(self.rows[_INSTRUCTIONS_CHECK], fixture_name, value)
         return found == cost_budget.ERROR or (
-            found == cost_budget.RISEN and cost_budget.risen_level(value, self.rows[check].error) == cost_budget.ERROR
+            found == cost_budget.RISEN
+            and cost_budget.risen_level(value, self.rows[_INSTRUCTIONS_CHECK].error) == cost_budget.ERROR
         )
-
-    @staticmethod
-    def excess_text(result: CompileResult) -> str:
-        """Return the words that tell which measure of a compile holds the error level, for a note."""
-        return "ran more user instructions" if result.instructions is not None else "took more CPU time"
 
 
 def _report_module() -> ModuleType:
@@ -2716,8 +2696,8 @@ def _read_fixture_ledger(path: Path, check: str) -> tuple[dict[str, tuple[float,
 
 
 def _parse_cost_budget(registry: Path, ledger_paths: Mapping[str, Path], test_registry: Path) -> CostBudget:
-    """Read the measured rules fixture-cpu and fixture-instructions of the registry `registry`, the ledgers, and the
-    rules of the test launcher of the registry `test_registry`."""
+    """Read the measured rule fixture-instructions of the registry `registry`, its ledger, and the rules of the test
+    launcher of the registry `test_registry`."""
     from assay.loop import teststep as test_launcher
 
     rows: dict[str, BudgetRow] = {}
@@ -2771,15 +2751,14 @@ def _file_stamps(paths: list[Path]) -> list[list[int]] | None:
 
 
 def read_cost_budget(memo_dir: Path | None) -> CostBudget:
-    """Read the measured rules fixture-cpu and fixture-instructions of the registry, their ledgers, and the
-    thresholds of the rules of the test launcher.
+    """Read the measured rule fixture-instructions of the registry, its ledger, and the thresholds of the rules of the
+    test launcher.
 
-    CRUCIBLE_NEG_REGISTRY, CRUCIBLE_NEG_CPU_LEDGER and
-    CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different registry and ledgers.
-    The test launcher reads its rules from the registry of
-    CRUCIBLE_TEST_REGISTRY, and the driver reads them there too.  A memo in
-    `memo_dir` keeps a budget with no problem while the four files have the
-    same stat fields, and a ledger that does not exist has the empty stamp
+    CRUCIBLE_NEG_REGISTRY and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a
+    different registry and ledger.  The test launcher reads its rules from
+    the registry of CRUCIBLE_TEST_REGISTRY, and the driver reads them there
+    too.  A memo in `memo_dir` keeps a budget with no problem while the three
+    files have the same stat fields, and a ledger that does not exist has the empty stamp
     (the module text, The cost of a compile).  The function writes the memo
     only when no file changed in the settle period and during the read.
     """
@@ -2821,20 +2800,15 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
     return budget
 
 
-def _row_verdict(row: BudgetRow, fixture_name: str, value: float, holds_error: bool) -> str:
+def _row_verdict(row: BudgetRow, fixture_name: str, value: float) -> str:
     """Return the verdict of one measure against one measured rule and its ledger (assay.core.budget, THE VERDICT).
 
-    An error of a rule that does not hold the error level is _DEMOTED, a
-    warning: the CPU time of a compile with an instruction count.  A ledger
-    row keeps the measure up to its kept value with the noise of the unit of
-    the rule (assay.core.budget, THE NOISE).
+    A ledger row keeps the measure up to its kept value with the noise of the unit of the rule (assay.core.budget,
+    THE NOISE).
     """
     kept = row.ledger.get(fixture_name)
-    found = cost_budget.verdict(value, row.warn, row.error, None if kept is None else kept[0],
-                                cost_budget.noise_of(_UNITS[row.check]))
-    is_error = found == cost_budget.ERROR or (
-        found == cost_budget.RISEN and cost_budget.risen_level(value, row.error) == cost_budget.ERROR)
-    return _DEMOTED if is_error and not holds_error else found
+    return cost_budget.verdict(value, row.warn, row.error, None if kept is None else kept[0],
+                               cost_budget.noise_of(_UNITS[row.check]))
 
 
 def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: str, place: str, text: str,
@@ -2852,11 +2826,6 @@ def _judge_row(report: ModuleType, row: BudgetRow, verdict: str, fixture_name: s
                               f"{text}, more than the row of {row.ledger_shown} keeps: {kept:g} {unit} with the "
                               f"noise {noise:.0%}.  {_ADVICE}  When the growth is wanted, write the measure into "
                               f"the row: {reason}")]
-    if verdict == _DEMOTED:
-        return [report.Finding("warning", place, 0, row.check,
-                               f"{text}, more than the error threshold {row.error:g} {unit}.  The compile has an "
-                               f"instruction count, so the rule {_INSTRUCTIONS_CHECK} holds the error level, and the "
-                               f"CPU time, which rises with the load of the host, gives a warning only.")]
     if verdict == cost_budget.ERROR:
         return [report.judged("error", place, 0, row.check,
                               f"{text}, more than the error threshold {row.error:g} {unit}.  {_ADVICE}")]
@@ -2873,7 +2842,7 @@ def _warnings_file(warnings_dir: Path, check: str, fixture_name: str) -> Path:
 
 def report_cost(fixture_name: str, source: Path, result: CompileResult, is_stored: bool, budget: CostBudget,
                 warnings_dir: Path | None) -> int:
-    """Report the CPU time and the instruction count of the compile against the budget, and return 1 when it fails.
+    """Report the instruction count of the compile against the budget, and return 1 when it fails.
 
     The warning lines of each check go to the file of this fixture in the
     warnings directory, so the many fixtures that run at the same time do not
@@ -2894,22 +2863,19 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
 
 def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_stored: bool,
                   budget: CostBudget) -> dict[str, list[object]]:
-    """Return the findings of the CPU time and of the instruction count of the compile against the budget, by check.
+    """Return the findings of the instruction count of the compile against the budget, by check.
 
-    A compile with no finding, with a budget with no problem, gives two
-    empty lists, and the call does not import the report module.
-    report_cost() reports the findings.  The witness of each rule of the
-    driver judges a planted record of a fixture with this function
-    (assay.guard.engines.buildsys.held).
+    A compile with no finding, with a budget with no problem, gives an
+    empty list, and the call does not import the report module.  A compile
+    with no count gives no finding.  report_cost() reports the findings.  The
+    witness of the rule fixture-instructions judges a planted record of a
+    fixture with this function (assay.guard.engines.buildsys.held).
     """
-    has_count = result.instructions is not None
     verdicts: dict[str, str] = {}
-    if _CPU_CHECK in budget.rows:
-        verdicts[_CPU_CHECK] = _row_verdict(budget.rows[_CPU_CHECK], fixture_name, result.cpu_s, not has_count)
     if _INSTRUCTIONS_CHECK in budget.rows and result.instructions is not None:
         verdicts[_INSTRUCTIONS_CHECK] = _row_verdict(budget.rows[_INSTRUCTIONS_CHECK], fixture_name,
-                                                     result.instructions / _GIGA, True)
-    findings: dict[str, list[object]] = {_CPU_CHECK: [], _INSTRUCTIONS_CHECK: []}
+                                                     result.instructions / _GIGA)
+    findings: dict[str, list[object]] = {_INSTRUCTIONS_CHECK: []}
     if not budget.problems and not any(verdicts.values()):
         return findings
     report = _report_module()
@@ -2920,11 +2886,6 @@ def cost_findings(fixture_name: str, source: Path, result: CompileResult, is_sto
     measured = "the stored compile" if is_stored else "the compile"
     for check, problem in budget.problems.items():
         findings[check].append(report.Finding("error", place, 0, check, f"{problem}."))
-    if _CPU_CHECK in verdicts:
-        text = (f"{measured} of the fixture {fixture_name} took {result.cpu_s:.2f} s of CPU time ({result.user_s:.2f} s "
-                f"of user time and {result.system_s:.2f} s of system time)")
-        findings[_CPU_CHECK] += _judge_row(report, budget.rows[_CPU_CHECK], verdicts[_CPU_CHECK], fixture_name,
-                                           place, text, _UNITS[_CPU_CHECK], result.cpu_s)
     if _INSTRUCTIONS_CHECK in verdicts and result.instructions is not None:
         text = f"{measured} of the fixture {fixture_name} ran {result.instructions / _GIGA:.2f} G user instructions"
         findings[_INSTRUCTIONS_CHECK] += _judge_row(report, budget.rows[_INSTRUCTIONS_CHECK],
@@ -3047,7 +3008,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         stored, reason = store.lookup(key, digests, roots)
         digests.save()
         if stored is not None and budget.is_over_error(fixture_name, stored):
-            stored, reason = None, f"the stored compile {budget.excess_text(stored)} than the error threshold"
+            stored, reason = None, "the stored compile ran more user instructions than the error threshold"
         if stored is not None and stored.returncode == 0:
             stored, reason = None, _SUCCEEDED
         stored_failure = internal_error(stored) if stored is not None else ""
@@ -3098,7 +3059,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         elif result.returncode != 1:
             is_stored, why = False, f"the exit code is {result.returncode}"
         elif budget.is_over_error(fixture_name, result):
-            is_stored, why = False, f"the compile {budget.excess_text(result)} than the error threshold"
+            is_stored, why = False, "the compile ran more user instructions than the error threshold"
         elif compile_key(argv, directory, protected, store.memo, env, roots)[0] != key:
             # The compiler, a shared object, a path that the loader tried or a
             # file of the command changed between the key and the compile.

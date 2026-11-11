@@ -69,7 +69,7 @@ USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
 # The prefix of each line that the command writes about the warnings files and the totals.
 PREFIX = "guard warnings:"
 # The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
-TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "test-instructions", "fixture-cpu", "fixture-instructions"})
+TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "test-instructions", "fixture-instructions"})
 
 
 def test_keyed_files(warnings_dir: Path) -> list[tuple[str, str]]:

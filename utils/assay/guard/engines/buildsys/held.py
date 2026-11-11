@@ -28,8 +28,8 @@ THE HOLDERS
 THE RECORDS OF A FIXTURE
     The census (assay.readers.census) gives the CPU time and the instruction
     count of the record of a fixture.  It does not give the user time and the
-    system time apart.  The judge of the CPU time reads their sum, and the
-    witness gives the sum as the user time.  The driver writes the log of
+    system time apart, and the witness gives their sum as the user time.  The
+    judge reads only the instruction count.  The driver writes the log of
     each compile of a fixture to BUILD/neg-compile/NAME/NAME.sarif.  The
     regexes of the fixture are the words of its test command.
 
@@ -40,11 +40,9 @@ THE WRITE
     test-instructions is written() of assay.guard.engines.buildsys.test_time.
     That function writes the ledgers of the rules of the test launcher from
     the records of the tests.  The function of
-    fixture-cpu and fixture-instructions is fixture_written(), which writes
-    their ledgers from the records of the fixtures of the build.  A fixture
-    gets a row when the rule judges its measure at the error level and the
-    measure is over the error threshold.  The rule fixture-cpu judges the CPU
-    time only when the record has no instruction count.  The write refuses a
+    fixture-instructions is fixture_written(), which writes its ledger from
+    the records of the fixtures of the build.  A fixture gets a row when its
+    instruction count is over the error threshold.  The write refuses a
     build with a fixture that has no record.  A held rule with no row in
     WRITERS has no write, and `guard write` refuses it.
 
@@ -84,11 +82,9 @@ from assay.readers import ctest as ctest_reader
 GAUGE_RECORDS = "gauge-records.jsonl"
 # The rule of the fixture driver that judges the errors that no regex of a fixture matches.
 OWN_REASON = "fixture-own-reason"
-# The two measured rules of the fixture driver (THE WRITE).  The reason of a new row of their ledgers when the write
-# gives none, and the instructions in one G, follow.
-FIXTURE_CPU = "fixture-cpu"
+# The measured rule of the fixture driver (THE WRITE).  The reason of a new row of its ledger when the write gives
+# none, and the instructions in one G, follow.
 FIXTURE_INSTRUCTIONS = "fixture-instructions"
-FIXTURE_RULES = (FIXTURE_CPU, FIXTURE_INSTRUCTIONS)
 FIXTURE_REASON = "the measure of one cold fixture compile"
 GIGA = 1e9
 
@@ -226,39 +222,21 @@ HOLDERS: dict[str, Judge] = {
 }
 
 
-def fixture_measure(rule_id: str, cpu_s: float, instructions: int | None) -> float | None:
-    """Return the measure of the record of a fixture that the rule judges at the error level, or None (THE WRITE).
-
-    The rule fixture-instructions judges the instruction count in G.  The rule fixture-cpu judges the CPU time only
-    when the record has no instruction count.  With a count, an error of the CPU time is a warning.
-    """
-    if rule_id == FIXTURE_INSTRUCTIONS:
-        return None if instructions is None else instructions / GIGA
-    return cpu_s if instructions is None else None
-
-
-def fixture_value(rule_id: str, cpu_s: float, instructions: int | None) -> float | None:
-    """Return the measure of the record of a fixture that the rule judges at a level, or None (THE WRITE)."""
-    if rule_id == FIXTURE_INSTRUCTIONS:
-        return None if instructions is None else instructions / GIGA
-    return cpu_s
-
-
 def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of fixture-cpu or fixture-instructions written again from the records of the build (THE WRITE).
+    """Return the ledger of fixture-instructions written again from the records of the build (THE WRITE).
 
-    A fixture with a measure over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`.  A row keeps
-    its fixture over the warning threshold, and its value becomes the measure, rounded up.  The row keeps its earlier
-    reason, else it gets REASON or FIXTURE_REASON.  Each other row goes.  Complexity: linear in the tests of the build
-    and in the records of the fixtures.
+    A fixture with an instruction count over the error threshold gets the row `- | - | VALUE | FIXTURE | REASON`,
+    with VALUE in G.  A row keeps its fixture over the warning threshold, and its value becomes the count, rounded
+    up.  The row keeps its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes, also the row
+    of a fixture with no count.  Complexity: linear in the tests of the build and in the records of the fixtures.
 
     Raises:
         NotApplicable: If the call gives no build directory
-        rule_ledger.LedgerError: If the ledger is not a ledger of the fixture driver, the tests do not read, or a
+        rule_ledger.LedgerError: If the ledger is not the ledger of fixture-instructions, the tests do not read, or a
             fixture has no record that counts
     """
-    if ledger.rule not in FIXTURE_RULES:
-        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(FIXTURE_RULES)}")
+    if ledger.rule != FIXTURE_INSTRUCTIONS:
+        raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not the ledger of {FIXTURE_INSTRUCTIONS}")
     build = context.require_build()
     budget = context.budget(ledger.rule)
     try:
@@ -278,13 +256,9 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
             continue
         key = rule_ledger.Key("", "", name)
         earlier = ledger.base.get(key)
-        if earlier is not None:
-            # A row keeps a fixture over the warning threshold, also a CPU time that gives a warning only.
-            measure = fixture_value(ledger.rule, record.cpu_s, record.instructions)
-            limit = budget.warn
-        else:
-            measure = fixture_measure(ledger.rule, record.cpu_s, record.instructions)
-            limit = budget.error
+        # A row keeps a fixture over the warning threshold.  A fixture with no row gets one over the error threshold.
+        limit = budget.warn if earlier is not None else budget.error
+        measure = None if record.instructions is None else record.instructions / GIGA
         if measure is None or measure <= limit:
             continue
         base[key] = rule_ledger.Entry(
@@ -304,7 +278,6 @@ type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledg
 WRITERS: dict[str, Writer] = {
     "test-memory": test_time.written,
     "test-instructions": test_time.written,
-    FIXTURE_CPU: fixture_written,
     FIXTURE_INSTRUCTIONS: fixture_written,
 }
 

@@ -1,4 +1,4 @@
-"""The test of the writes of the rules of the test launcher, fixture-cpu and header-constexpr-ops (`guard write`).
+"""The test of the writes of the rules of the test launcher, fixture-instructions and header-constexpr-ops.
 
 `guard selftest tests.guard.engines.buildsys.test_ledger_writes` runs the
 test.  Each case makes a planted build with assay.guard.engines.buildsys.planted
@@ -115,24 +115,24 @@ def record_cases(expect: testing.Expect) -> None:
             "written() of test_time refuses the ledger of a rule other than the rules of the test launcher",
             "is not a ledger of" in raised(lambda: test_time.written(context, other, None)),
         )
-        fixture_cpu = registry.rules["fixture-cpu"]
-        writer = held.WRITERS.pop(fixture_cpu.id)
+        fixture_rule = registry.rules["fixture-instructions"]
+        writer = held.WRITERS.pop(fixture_rule.id)
         try:
             expect(
                 "written() of held refuses a held rule with no function in WRITERS, and names the table",
-                "WRITERS" in raised(lambda: held.written(fixture_cpu, context, rule_ledger.empty(fixture_cpu), None)),
+                "WRITERS" in raised(lambda: held.written(fixture_rule, context, rule_ledger.empty(fixture_rule), None)),
             )
-            status, said = run_write(context, "fixture-cpu", "a planted reason")
+            status, said = run_write(context, "fixture-instructions", "a planted reason")
             expect(
                 "guard write refuses a held rule with no function in WRITERS, with status 1",
                 status == 1 and "is not written" in said and "WRITERS" in said,
             )
         finally:
-            held.WRITERS[fixture_cpu.id] = writer
-        status, said = run_write(context, "fixture-cpu", "a planted reason")
+            held.WRITERS[fixture_rule.id] = writer
+        status, said = run_write(context, "fixture-instructions", "a planted reason")
         expect(
-            "guard write writes the ledger of fixture-cpu from the records of the fixtures of the build",
-            status == 0 and "fixture-cpu.txt holds 0 rows" in said,
+            "guard write writes the ledger of fixture-instructions from the records of the fixtures of the build",
+            status == 0 and "fixture-instructions.txt holds 0 rows" in said,
         )
 
 

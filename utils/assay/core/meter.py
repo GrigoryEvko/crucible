@@ -105,8 +105,8 @@ A COMPILE THROUGH CCACHE
     directly, so their counts are counts of the compiler run too.
 
 A CI RUNNER
-    The thresholds of the time rules (TIME_ROWS: test-time and fixture-cpu)
-    and the hard stops of the steps apply to the build host of the tree,
+    The thresholds of the time rules (TIME_ROWS, such as test-time) and the
+    hard stops of the steps apply to the build host of the tree,
     which has 384 hardware threads.  A GitHub runner has 4 slower vCPUs and
     16 GB, and it runs two or three jobs at a time.  A time there can exceed
     an error threshold with no defect in the tree.  When the environment sets
@@ -212,7 +212,7 @@ CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
 # The measured rules of utils/registry.txt whose value is a time.  The self-test
 # of utils/assay/core/report.py holds this set equal to the rules of unit s.
-TIME_ROWS = frozenset({"test-time", "fixture-cpu"})
+TIME_ROWS = frozenset({"test-time"})
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")
