@@ -197,9 +197,6 @@
 //     mint-unconstrained    a mint template with no constraint
 //     mint-unfit-context    a mint that takes a context first, and no constraint
 //                           of which names that context
-//     The rule no-raw-array-member:
-//     array-member          a data member of a C array type
-//     array-alias           an alias or a typedef of a C array type
 //     The rule permission-storage:
 //     permission-member     a data member whose type names a Permission, with no
 //                           [[no_unique_address]]
@@ -660,7 +657,6 @@ enum class Rule : std::uint8_t {
     contract_semantic,
     fast_math_override,
     mint_pattern,
-    no_raw_array_member,
     permission_storage,
     escape_doors,
     stub_discipline,
@@ -779,8 +775,6 @@ enum class Kind : std::uint8_t {
     mint_not_noexcept,
     mint_unconstrained,
     mint_unfit_context,
-    array_member,
-    array_alias,
     permission_member,
     static_permission,
     bare_door,
@@ -867,8 +861,6 @@ inline const char* rule_name(Rule rule) {
             return "fast-math-override";
         case Rule::mint_pattern:
             return "mint-pattern";
-        case Rule::no_raw_array_member:
-            return "no-raw-array-member";
         case Rule::permission_storage:
             return "permission-storage";
         case Rule::escape_doors:
@@ -1009,10 +1001,6 @@ inline const char* kind_name(Kind kind) {
             return "mint-unconstrained";
         case Kind::mint_unfit_context:
             return "mint-unfit-context";
-        case Kind::array_member:
-            return "array-member";
-        case Kind::array_alias:
-            return "array-alias";
         case Kind::permission_member:
             return "permission-member";
         case Kind::static_permission:
@@ -1162,9 +1150,6 @@ inline Rule rule_of(Kind kind) {
         case Kind::mint_unconstrained:
         case Kind::mint_unfit_context:
             return Rule::mint_pattern;
-        case Kind::array_member:
-        case Kind::array_alias:
-            return Rule::no_raw_array_member;
         case Kind::permission_member:
         case Kind::static_permission:
             return Rule::permission_storage;
@@ -1269,7 +1254,6 @@ inline bool is_family_kind(Kind kind) {
     switch (rule_of(kind)) {
         case Rule::door_unit:
         case Rule::mint_pattern:
-        case Rule::no_raw_array_member:
         case Rule::permission_storage:
         case Rule::escape_doors:
         case Rule::stub_discipline:
@@ -1379,8 +1363,6 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"mint-pattern", "mint-not-noexcept"},
     {"mint-pattern", "mint-unconstrained"},
     {"mint-pattern", "mint-unfit-context"},
-    {"no-raw-array-member", "array-member"},
-    {"no-raw-array-member", "array-alias"},
     {"permission-storage", "permission-member"},
     {"permission-storage", "static-permission"},
     {"escape-doors", "bare-door"},

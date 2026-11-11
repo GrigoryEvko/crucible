@@ -20,9 +20,9 @@
 //     such unit, so each base header costs one walk in each build.  The place
 //     of a finding is the expansion point of the declaration
 //     (property_place), so a declaration that a macro writes counts in the
-//     file that expands the macro.  The rules no-raw-array-member and
-//     escape-doors hold the base, and they read only a declaration of a base
-//     file (base_place).  The module of a rule keeps the findings in the scope
+//     file that expands the macro.  The rules escape-doors and witness-roster
+//     hold the base, and they read only a declaration of a base file
+//     (base_place).  The module of a rule keeps the findings in the scope
 //     of its row of utils/registry.txt.
 //
 // THE WALK
@@ -94,13 +94,6 @@
 //     named Ctx, or a template parameter that IsExecCtx constrains), and token
 //     otherwise.  The entity of each line is the qualified name of the mint
 //     with the types of its parameters (function_signature).
-//
-// THE RULE no-raw-array-member (CLAUDE.md section II)
-//     A data member of a C array type, and an alias or a typedef of a C array
-//     type, in a base file.  A namespace whose name ends with _self_test holds
-//     a probe type, and its declarations are none.  A static data member is
-//     no part of the layout of the object, and it is none.  The entity is the
-//     qualified name of the member or of the alias.
 //
 // THE RULE permission-storage (CLAUDE.md section IX)
 //     A data member whose type names the class template Permission, also
@@ -960,7 +953,7 @@ void record_property(Kind kind, const Place& place, const std::string& entity) {
 }
 
 // The place of a declaration of a base file at LOCATION, or an empty place
-// (THE SCOPE): the rules no-raw-array-member and escape-doors hold the base.
+// (THE SCOPE): the rules escape-doors and witness-roster hold the base.
 Place base_place(location_t location) {
     Place place = property_place(location);
     return place.file_class == FileClass::base ? place : Place{};
@@ -1375,47 +1368,6 @@ void check_mint_alias(tree decl, std::unordered_map<tree, bool>& mint_classes) {
     }
     record_property(Kind::mint_alias, place,
                     qualified_name(decl) + " | alias=" + simple_name(decl) + " owner=" + qualified_name(owner));
-}
-
-// ── The rule no-raw-array-member ────────────────────────────────────────
-
-// True when a namespace that holds DECL has a name that ends with _self_test:
-// the probe types of a header self-test use a C array on purpose.
-bool is_in_probe_namespace(tree decl) {
-    constexpr const char kProbeSuffix[] = "_self_test";
-    constexpr std::size_t kProbeLength = sizeof(kProbeSuffix) - 1;
-    tree current = CP_DECL_CONTEXT(decl);
-    for (int depth = 0; current != NULL_TREE && current != global_namespace && depth < kTypeDepth; ++depth) {
-        if (TREE_CODE(current) == NAMESPACE_DECL) {
-            tree name = DECL_NAME(current);
-            if (name != NULL_TREE && IDENTIFIER_LENGTH(name) >= kProbeLength
-                && std::memcmp(IDENTIFIER_POINTER(name) + IDENTIFIER_LENGTH(name) - kProbeLength, kProbeSuffix,
-                               kProbeLength)
-                       == 0) {
-                return true;
-            }
-            current = CP_DECL_CONTEXT(current);
-        } else if (TYPE_P(current)) {
-            current = CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(current));
-        } else if (DECL_P(current)) {
-            current = CP_DECL_CONTEXT(current);
-        } else {
-            break;
-        }
-    }
-    return false;
-}
-
-// A data member or an alias of a C array type (THE RULE no-raw-array-member).
-void check_array_declaration(tree decl, Kind kind) {
-    tree type = TREE_TYPE(decl);
-    if (type == NULL_TREE || TREE_CODE(type) != ARRAY_TYPE) {
-        return;
-    }
-    Place place = base_place(DECL_SOURCE_LOCATION(decl));
-    if (place.file != nullptr && !is_in_probe_namespace(decl)) {
-        record_property(kind, place, qualified_name(decl));
-    }
 }
 
 // ── The rule permission-storage ─────────────────────────────────────────
@@ -2896,7 +2848,6 @@ struct PropertyWalk {
     void alias(tree decl, bool is_pattern) {
         if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
             check_named_alias(decl);
-            check_array_declaration(decl, Kind::array_alias);
             check_mint_alias(decl, mint_classes);
             if (!is_pattern) {
                 check_padded_declaration(decl, Kind::padded_alias, padding);
@@ -2962,7 +2913,6 @@ struct PropertyWalk {
                     if (DECL_NAME(member) == NULL_TREE && ANON_AGGR_TYPE_P(TREE_TYPE(member))) {
                         class_type(TREE_TYPE(member), is_pattern);
                     } else if (!DECL_ARTIFICIAL(member)) {
-                        check_array_declaration(member, Kind::array_member);
                         check_permission_member(member);
                         if (!is_pattern) {
                             check_padded_declaration(member, Kind::padded_member, padding);

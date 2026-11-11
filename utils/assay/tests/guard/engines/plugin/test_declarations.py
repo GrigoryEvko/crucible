@@ -31,7 +31,7 @@ REGISTRY_ROWS = (
         "planted mint rule | give the mint its shape"
     ),
     "rule process-wide-state engine=plugin scope=tracked ledger=admit doc=XV | a planted rule of each file | mark it",
-    "rule no-raw-array-member engine=plugin scope=base ledger=admit doc=II | a planted rule of the base | use it",
+    "rule escape-doors engine=plugin scope=base ledger=admit doc=XVI | a planted rule of the base | use it",
 )
 TABLE_TEXT = "layer base 0 include/fixy/\nquarantine include/crucible/\nquarantine test/\n"
 FACTS = (
@@ -92,7 +92,7 @@ def scope_cases(expect: testing.Expect) -> None:
         "the word tracked holds each file",
         declarations.in_scope(registry.rules["process-wide-state"], "test/test_a.cpp", table),
     )
-    base_rule = registry.rules["no-raw-array-member"]
+    base_rule = registry.rules["escape-doors"]
     expect("the word base holds a file of a layer row", declarations.in_scope(base_rule, "include/fixy/A.h", table))
     expect(
         "the word base does not hold a quarantined file",

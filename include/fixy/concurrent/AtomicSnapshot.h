@@ -38,8 +38,8 @@
 //
 // SnapshotValue also requires ImplicitLifetimeThroughout, because the
 // checked lifetime start refuses any other T.  The payload words and the
-// read buffers are std::array, because the rule no-raw-array-member of the
-// quarantine plugin refuses a C array data member.
+// read buffers are std::array, because a Debug build checks each subscript
+// of a std::array.  No build checks a subscript of a C array data member.
 
 #include <fixy/Mutation.h>
 
