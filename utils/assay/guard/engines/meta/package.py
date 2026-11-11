@@ -10,8 +10,7 @@ THE NAMES
     The name of a file is its dotted path from utils/.  The module
     utils/assay/core/rows.py has the name assay.core.rows, the file
     utils/assay/core/__init__.py has the name assay.core, and the master
-    utils/bin/guard has the name bin.guard.  A job row of the registry names
-    its owners with these names.
+    utils/bin/guard has the name bin.guard.
 
 THE READ
     read_package() reads and parses each file one time.  A file that does not

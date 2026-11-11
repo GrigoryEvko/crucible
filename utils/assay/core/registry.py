@@ -1,12 +1,11 @@
-"""The registry: the rules, the jobs and the permitted paths of the utils system (utils/registry.txt).
+"""The registry: the rules and the permitted paths of the utils system (utils/registry.txt).
 
 THE ROWS
     The registry obeys the rows grammar of assay.core.rows.  It has a head
-    comment, a format row and three row kinds:
+    comment, a format row and two row kinds:
 
         format 1
         rule ID engine=ENGINE scope=SCOPE[,SCOPE...] ledger=POLICY [FIELD=VALUE]... doc=REF | REFUSES | ACTION
-        job ENTITY module=OWNER[,OWNER...] | REASON
         path GLOB | WHAT THE FILES ARE
 
     A rule row has these fields:
@@ -50,11 +49,8 @@ THE ROWS
     too, and the rule rule-implementations holds that field.  Only a rule
     with held-by has the field holder.
 
-    A job row names a Python entity and the modules that can use it.  An
-    owner is a dotted name from utils/: a module of the package, such as
-    assay.core.proc, or a master, such as bin.guard.  A path row gives a glob
-    of tracked paths and what those files are.  The rule layout reads the
-    path rows.
+    A path row gives a glob of tracked paths and what those files are.  The
+    rule layout reads the path rows.
 
 LOAD AND EXAMINE
     load() reads the registry and refuses the first problem.  examine() reads
@@ -95,10 +91,8 @@ RULE_FIELDS = frozenset(
 )
 REQUIRED_FIELDS = ("engine", "scope", "ledger", "doc")
 THRESHOLD_FIELDS = ("warn", "error", "unit")
-JOB_FIELDS = frozenset({"module"})
-# The two prefixes of the name of an owner of a job: a module of the package, and a master of utils/bin/.
+# The prefix of the module of the field holder: a module of the package.
 PACKAGE_OWNER = "assay."
-MASTER_OWNER = "bin."
 SCOPE_WORDS = frozenset({"base", "quarantined", "tracked", "builddir", "package"})
 UNITS = frozenset(
     {
@@ -224,16 +218,6 @@ class Rule:
 
 
 @dataclass(frozen=True, slots=True)
-class Job:
-    """One job row: a Python entity and the modules that can use it."""
-
-    entity: str
-    modules: tuple[str, ...]
-    reason: str
-    line: int
-
-
-@dataclass(frozen=True, slots=True)
 class PathRow:
     """One path row: a glob of tracked paths and what those files are."""
 
@@ -248,7 +232,6 @@ class Registry:
 
     path: str
     rules: Mapping[str, Rule] = field(default_factory=dict)
-    jobs: tuple[Job, ...] = ()
     paths: tuple[PathRow, ...] = ()
 
     def measured(self) -> dict[str, Rule]:
@@ -400,34 +383,6 @@ def parse_holder(text: str) -> Holder | None:
     return Holder(module, function)
 
 
-def parse_job(row: rows_grammar.Row) -> Job:
-    """Read one job row.
-
-    Raises:
-        rows_grammar.RowsError: If the row does not have the form of a job row
-    """
-    if len(row.words) < 3 or len(row.cells) != 1 or not row.cells[0]:
-        raise row.error("a job row is 'job ENTITY module=MODULE[,MODULE...] | REASON'")
-    values = rows_grammar.fields(row, JOB_FIELDS)
-    if "module" not in values:
-        raise row.error(f"the job {row.words[1]} has no field module")
-    modules = tuple(values["module"].split(","))
-    if not all(is_owner_name(module) for module in modules):
-        raise row.error(
-            f"an owner of the job {row.words[1]} is not a module of the package, such as assay.core.proc, "
-            f"or a master, such as bin.guard"
-        )
-    return Job(row.words[1], modules, row.cells[0], row.line)
-
-
-def is_owner_name(text: str) -> bool:
-    """Return True when a text names an owner of a job: assay.MODULE for a module of the package, or bin.NAME."""
-    if text.startswith(PACKAGE_OWNER):
-        return is_module_name(text[len(PACKAGE_OWNER) :])
-    name = text.removeprefix(MASTER_OWNER)
-    return text.startswith(MASTER_OWNER) and name.isidentifier() and name.islower() and "_" not in name
-
-
 def parse_path(row: rows_grammar.Row) -> PathRow:
     """Read one path row.
 
@@ -455,10 +410,8 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
     except rows_grammar.RowsError as problem:
         return Registry(shown), [problem]
     rules: dict[str, Rule] = {}
-    jobs: list[Job] = []
     paths: list[PathRow] = []
     seen_globs: dict[str, int] = {}
-    seen_jobs: dict[str, int] = {}
     if not all_rows or all_rows[0].words != ("format", FORMAT) or all_rows[0].cells:
         problems.append(
             rows_grammar.RowsError(
@@ -473,14 +426,6 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
                 if rule.id in rules:
                     raise row.error(f"the rule {rule.id} has a second row.  The first is at line {rules[rule.id].line}")
                 rules[rule.id] = rule
-            elif kind == "job":
-                job = parse_job(row)
-                if job.entity in seen_jobs:
-                    raise row.error(
-                        f"the job {job.entity} has a second row.  The first is at line {seen_jobs[job.entity]}"
-                    )
-                seen_jobs[job.entity] = row.line
-                jobs.append(job)
             elif kind == "path":
                 path_row = parse_path(row)
                 if path_row.glob in seen_globs:
@@ -490,10 +435,10 @@ def examine(text: str, shown: str = REGISTRY_PATH) -> tuple[Registry, list[rows_
                 seen_globs[path_row.glob] = row.line
                 paths.append(path_row)
             else:
-                raise row.error(f"the row kind {kind!r} is not format, rule, job or path")
+                raise row.error(f"the row kind {kind!r} is not format, rule or path")
         except rows_grammar.RowsError as problem:
             problems.append(problem)
-    return Registry(shown, rules, tuple(jobs), tuple(paths)), problems
+    return Registry(shown, rules, tuple(paths)), problems
 
 
 # The text, the shown name and the registry of the last load() of this process (load()).

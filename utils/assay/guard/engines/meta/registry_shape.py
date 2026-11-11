@@ -4,7 +4,7 @@ THE RULE
     assay.core.registry.examine() reads each row of utils/registry.txt and
     gives each problem:
       - A line that does not obey the rows grammar
-      - A row kind that is not format, rule, job or path
+      - A row kind that is not format, rule or path
       - A missing field, an unknown field, and a second field with the same key
       - An engine or a policy that is not one of its words
       - A measured rule with only some of the fields `warn`, `error` and `unit`

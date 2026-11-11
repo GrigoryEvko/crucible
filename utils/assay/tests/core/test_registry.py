@@ -1,4 +1,4 @@
-"""The test of the registry (assay.core.registry): the rule, job and path rows, and the doc fields.
+"""The test of the registry (assay.core.registry): the rule and path rows, and the doc fields.
 
 `guard selftest tests.core.test_registry` runs the test.  Each case prints
 one line.  Exit 0 when each case holds, else 1.
@@ -130,32 +130,9 @@ def rule_cases(expect: Callable[[str, bool], None]) -> None:
 
 
 def other_row_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check the job rows, the path rows, an unknown row kind and load()."""
-    registry, problems = examined(
-        "job subprocess module=assay.core.git | the one module that runs git", "path utils/registry.txt | the registry"
-    )
-    expect(
-        "a job row and a path row read",
-        not problems
-        and registry.jobs[0].modules == ("assay.core.git",)
-        and registry.paths[0].glob == "utils/registry.txt",
-    )
-    expect(
-        "a job row with a module outside the package is refused",
-        bool(problem_of("job subprocess module=os.path | a reason")),
-    )
-    registry, problems = examined("job sys.path module=bin.guard,assay.core.paths | a reason")
-    expect(
-        "a job row can name a master as an owner",
-        not problems and registry.jobs[0].modules == ("bin.guard", "assay.core.paths"),
-    )
-    expect(
-        "an owner bin.NAME with a capital letter, an underscore or a point is refused",
-        all(
-            problem_of(f"job sys.path module={owner} | a reason")
-            for owner in ("bin.Guard", "bin.g_x", "bin.a.b", "bin.")
-        ),
-    )
+    """Check the path rows, an unknown row kind and load()."""
+    registry, problems = examined("path utils/registry.txt | the registry")
+    expect("a path row reads", not problems and registry.paths[0].glob == "utils/registry.txt")
     expect("a path row that goes up is refused", bool(problem_of("path ../x | a reason")))
     _, problems = examined("path a/b | one", "path a/b | two")
     expect("a second path row with the same glob is refused", len(problems) == 1)

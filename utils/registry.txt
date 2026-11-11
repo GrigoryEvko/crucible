@@ -1,13 +1,10 @@
-# utils/registry.txt — the rules, the jobs and the permitted paths of the utils system.
+# utils/registry.txt — the rules and the permitted paths of the utils system.
 #
 # assay.core.registry reads this file for Python, and cmake/Guards.cmake reads it for CMake.  The rows obey
 # the rows grammar of assay.core.rows: a word is a field KEY=VALUE, and " | " divides the cells.
 #
 #   rule ID engine=ENGINE scope=SCOPE ledger=POLICY [FIELD=VALUE]... doc=REF | WHAT THE RULE REFUSES | THE ACTION
-#   job ENTITY module=OWNER[,OWNER...] | WHY THE JOB HAS ONE OWNER
 #   path GLOB | WHAT THE FILES ARE
-#
-# An owner of a job is a module of the package, such as assay.core.proc, or a master, such as bin.guard.
 #
 # A measured rule has warn, error and unit.  A value over the warning threshold gives a warning, which does not
 # fail.  A value over the error threshold gives an error, which fails.  A value equal to a threshold does not
@@ -117,8 +114,6 @@ rule use-after-move engine=tsast scope=include/,src/,test/,vessel/,utils/tools/ 
 rule walk-units engine=tsast scope=test/layer/ ledger=none inputs=include/,test/layer/walk-checks.txt doc=XV.1 | a check file that walks a namespace and that test/layer/walk-checks.txt does not list, and a listed file that walks none | write the list again with `loop derive walk-units --write`
 rule witness-roster engine=plugin scope=include/foundation/,include/fixy/ ledger=admit kinds=unrostered-witness doc=XXI | a class of the base with a door shape and no witness row of utils/rule-table.txt | add the witness row, and write the fixtures with `loop derive witness-fixtures --write`
 
-job argparse module=assay.core.cli | the import of argparse costs 6.3 ms.  One module imports it, at the first call of a parser
-
 path test/harness/check_output.py | a test of three C++ probes of the product, as a C++ test executable is.  It is outside the utils system
 path utils/admitted-audit.txt | the audit table of the admitted list: one row for each admit row of the rule table and for each candidate of the plan
 path utils/assay/**/*.py | the modules of the package
@@ -128,7 +123,7 @@ path utils/bin/* | the three masters guard, loop and setup: the only commands of
 path utils/ledgers/*.txt | the ledgers of the rules, one file for each rule with rows
 path utils/pins.txt | the pin table: the version and the SHA256 of each tool that the tree downloads, and the base commit of the patched GCC
 path utils/plants/** | the plants and the controls of each rule, one directory for each rule
-path utils/registry.txt | the registry of the rules, the jobs and the permitted paths
+path utils/registry.txt | the registry of the rules and the permitted paths
 path utils/rule-table.txt | the rule table of the base layers and of the quarantine, which the quarantine plugin and assay.core.ruletable read
 path utils/toolchain/gcc/patches/*.patch | the GCC patches
 path utils/tools/*.cpp | the hardware probe and dump_row_hashes, which are C++ tools
