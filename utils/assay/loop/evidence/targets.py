@@ -16,9 +16,9 @@ THE SAMPLED CHECKS
       coverage     the runs of the gate mutants on each header of include/,
                    at the key of that header
     The nightly target is the evidence that the nightly entry gets for each
-    item, and the release target is the evidence that the release entry
-    gets.  The store keeps the evidence of a class under its name
-    (assay.loop.evidence.store), and `loop evidence status` gives each item
+    item.  The release target is the evidence that the release entry gets.
+    The store keeps the evidence of a class with its name
+    (assay.loop.evidence.store).  `loop evidence status` gives each item
     against the two targets (assay.loop.evidence.status).
 
     A row of TARGETS is data only.  assay.loop.evidence.items gives the items
@@ -72,7 +72,7 @@ class Builds(enum.StrEnum):
 class Target:
     """One class of sampled checks: its name, its kind of evidence, its builds, its unit, its two targets and its label.
 
-    The store keeps the evidence of the class under `rule`, its name (THE SAMPLED CHECKS).
+    `rule` is the name of the class, and the store keeps the evidence of the class with it (THE SAMPLED CHECKS).
     """
 
     rule: str
@@ -84,7 +84,7 @@ class Target:
     label: str = ""
 
 
-# The passes of each test of the build of a test preset with the field repeat, at the key of the test.  The nightly
+# The passes of each test of the build of a test preset with the field `repeat`, at the key of the test.  The nightly
 # entry gets 10 passes, and the release entry gets 50.  A failure at a key stays until the key changes.  Run `loop
 # evidence run repetition`, or repair the race of the failure that it keeps.
 STRESS = Target("stress-passes", Kind.REPETITION, Builds.REPEATED, "passes", 10.0, 50.0)
@@ -92,14 +92,15 @@ STRESS = Target("stress-passes", Kind.REPETITION, Builds.REPEATED, "passes", 10.
 # gets 60 s, and the release entry gets 600 s.  A failure at a key stays until the key changes.  Run `loop evidence run
 # search`, or repair the defect that the kept seed shows.
 PROPERTY = Target("property-search", Kind.SEARCH, Builds.FUZZ, "s", 60.0, 600.0, "fuzz_property")
-# The runs that count of each bench target of the build of a configure preset that builds the benches for a
-# measurement, at the key of its program and of the host.  A run counts only on a quiet host and with a small
-# variation.  The nightly entry gets 3 runs, and the release entry gets 10.  A failure at a key stays until the key
-# changes.  Run `loop evidence run measurement` on a quiet host, or repair the defect of the failure that it keeps.
+# The runs that count of each bench target, at the key of its program and of the host.  The build of a configure
+# preset that builds the benches for a measurement gives the targets.  A run counts only on a quiet host and with a
+# small variation.  The nightly entry gets 3 runs, and the release entry gets 10.  A failure at a key stays until the
+# key changes.  Run `loop evidence run measurement` on a quiet host, or repair the defect of the failure that it keeps.
 MEASUREMENT = Target("bench-runs", Kind.MEASUREMENT, Builds.BENCH, "runs", 3.0, 10.0)
 # The runs of the gate mutants on each header of include/ of the build of the preset default, at the key of the
-# header.  One run of each mutant of a header at its key is full evidence, so the two entries get 1 run.  A survivor,
-# or an invalid mutant that no row of ADMITTED_GATES of assay.loop.evidence.items admits, is a failure at the key,
-# which stays until the key changes.  Run `loop evidence run coverage`, or add the test that the kept mutant fails.
+# header.  One run of each mutant of a header at its key is full evidence, and the two entries get 1 run.  A survivor
+# is a failure at the key.  An invalid mutant that no row of ADMITTED_GATES of assay.loop.evidence.items admits is a
+# failure too.  The failure stays until the key changes.  Run `loop evidence run coverage`, or add the test that the
+# kept mutant fails.
 COVERAGE = Target("mutant-runs", Kind.COVERAGE, Builds.MUTANTS, "runs", 1.0, 1.0)
 TARGETS = (STRESS, PROPERTY, MEASUREMENT, COVERAGE)

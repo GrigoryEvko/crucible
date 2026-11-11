@@ -104,7 +104,7 @@ def jobs_cases(expect: testing.Expect) -> None:
 
 
 def row(item: str, value: float, unit_wall_s: float | None, key: str = "key") -> evidence_status.Row:
-    """Return a planted row of stress-passes with a value, the wall time of one unit and a key."""
+    """Return a planted row of `stress-passes` with a value, the wall time of one unit and a key."""
     return evidence_status.Row(
         evidence_targets.STRESS.rule, "repetition", "passes", item, "build", key, "", value, 10.0, 50.0, unit_wall_s
     )

@@ -1,12 +1,13 @@
 """status — the evidence of each item of the sampled checks against its target, and the remaining work.
 
 THE ROWS
-    rows_of() gives one row for each item (assay.loop.evidence.items): the
-    name of its class, its kind of evidence, its unit, its name, its build
-    and its key.  The row also gives the evidence of the record of the item
-    at its key (assay.loop.evidence.store), and the two targets of the class.
-    It gives the wall time of one unit of evidence and the kept failure too.
-    An item with no key gives the reason, and its evidence is 0.
+    rows_of() gives one row for each item (assay.loop.evidence.items).  The
+    row gives the name of its class, its kind of evidence, its unit, its
+    name, its build and its key.  The row also gives the evidence of the
+    record of the item at its key (assay.loop.evidence.store), and the two
+    targets of the class.  It gives the wall time of one unit of evidence and
+    the kept failure too.  An item with no key gives the reason, and its
+    evidence is 0.
 
 THE TARGETS
     Each class has a nightly target and a release target

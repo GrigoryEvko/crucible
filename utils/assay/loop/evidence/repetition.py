@@ -1,7 +1,7 @@
 """repetition — run each test of a build again in a time budget, and add each pass to the evidence of its key.
 
 THE SELECTION
-    run() reads the items of the class stress-passes of one build.  It
+    run() reads the items of the class `stress-passes` of one build.  It
     selects the pending items (assay.loop.evidence.items, THE PENDING ITEMS)
     of the nightly target, or with is_release of the release target.
 

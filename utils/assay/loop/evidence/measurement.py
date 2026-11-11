@@ -1,7 +1,7 @@
 """measurement — run each bench of a build in a time budget, and add each run that counts to its evidence.
 
 THE SELECTION
-    run() reads the items of the class bench-runs of one build: each bench
+    run() reads the items of the class `bench-runs` of one build: each bench
     target of its code model (assay.loop.evidence.items, THE KEYS).  The key
     of a bench holds its program and the host.  run() selects the pending
     items of the nightly target, or with is_release of the release target

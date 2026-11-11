@@ -3,8 +3,8 @@
 `guard selftest tests.loop.evidence.test_status` runs the test.  Each case writes one line.  Exit 0 when each case
 holds, else 1.
 
-The cases hold the rows of planted items with the targets of a planted class, the remaining work, and the judgment of
-each kind of row.  They also hold the JSON output and the table.
+The cases hold the rows of planted items with the targets of a planted class, and the remaining work.  They hold the
+judgment of each kind of row, the JSON output and the table.
 """
 
 import json

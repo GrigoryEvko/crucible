@@ -1,7 +1,7 @@
 """search — run each property test of a build with new seeds in a time budget, and add its CPU seconds to its evidence.
 
 THE SELECTION
-    run() reads the items of the class property-search of one build.  It
+    run() reads the items of the class `property-search` of one build.  It
     selects the pending items (assay.loop.evidence.items, THE PENDING ITEMS)
     of the nightly target, or with is_release of the release target.
 

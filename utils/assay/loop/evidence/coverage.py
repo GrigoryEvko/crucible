@@ -1,7 +1,7 @@
 """coverage — run the gate mutants of each header of include/ in a time budget, and keep each run at its key.
 
 THE SELECTION
-    run() reads the items of the class mutant-runs.  An item is a header of
+    run() reads the items of the class `mutant-runs`.  An item is a header of
     include/ of the source tree of a build.  Its key is the key of THE KEYS
     OF A HEADER of assay.loop.evidence.items.  run() selects the pending items
     of the nightly target, or with is_release of the release target (THE
@@ -9,10 +9,10 @@ THE SELECTION
 
 THE TREE OF THE RUN
     The run of the gate mutants writes each mutant into the source tree of
-    its build, and it puts the header back after each mutant
-    (assay.mutation.run).  Thus the runner does not run the mutants in the
-    tree of this package.  For a build of that tree, the runner uses the
-    warm export EXPORT of the work root
+    its build (assay.mutation.run).  It puts the header back after each
+    mutant.  The runner does not run the mutants in the tree of this package.
+    For a build of that tree, the runner uses the warm export EXPORT of the
+    work root
     (assay.core.cache).  The export is one repository that holds the commit
     of HEAD of that tree, as the warm tree of the gate does (move_tree() of
     assay.loop.gate).  The runner configures the
@@ -28,16 +28,17 @@ THE RUN OF A HEADER
     run_header() of assay.mutation.run runs each mutant of one header with the
     caps of THE JOBS of that module.  The candidates of the mutants come from
     the units of the build, one time for each call.
-      * A run with no survivor and no invalid mutant that the admitted gates
-        do not admit adds one sample of the quantity 1 (THE ADMITTED GATES of
-        assay.loop.evidence.items).  Its facts are the count of the gates and
-        of the mutants that a test killed.
+      * A run adds one sample of the quantity 1 when it has no survivor.  It
+        also must have no invalid mutant that the admitted gates do not admit
+        (THE ADMITTED GATES of assay.loop.evidence.items).  The facts of the
+        sample are the count of the gates and of the mutants that a test
+        killed.
       * Each other run keeps the failure of the key.  The failure gives the
         count of the survivors and of the invalid mutants, the first of each,
         and the command `loop evidence run coverage --build-dir BUILD --item
         HEADER --budget-s SECONDS`, which runs the mutants of the header
-        again.  The budget is twice the time of the run, and at least twice
-        FIRST_HEADER_S, so that the header can start.
+        again.  The budget is two times the larger of FIRST_HEADER_S and the
+        time of the run.  The header can then start.
     A SIGTERM stops the run after the header gets its bytes back.
 
 THE BUDGET
@@ -135,7 +136,7 @@ def judged(outcomes: Sequence[mutation_run.Outcome], ledger: rule_ledger.Ledger 
 def rerun_words(build_dir: Path, header: str, wall_s: float) -> tuple[str, ...]:
     """Return the command that runs the mutants of a header of the build again, after a run of wall_s seconds.
 
-    The budget lets the header start (THE RUN OF A HEADER).
+    The budget of the command lets the header start (THE RUN OF A HEADER).
     """
     loop = paths.LOOP.relative_to(paths.REPO_ROOT).as_posix()
     budget = f"{2 * max(FIRST_HEADER_S, wall_s):.0f}"

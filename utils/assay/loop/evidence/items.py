@@ -4,23 +4,23 @@ THE ITEMS
     tree_items() gives one item for each member of each class of TARGETS of
     assay.loop.evidence.targets.  A member is a test with the label of the
     class in a build of the class (THE ITEMS OF A CLASS of that module):
-      stress-passes    each test of the build of each test preset with the
-                       field `repeat`, when the program of the test is an ELF
-                       file of the build tree (build_program() of
-                       assay.loop.affected)
-      property-search  each test with the label fuzz_property in each build
-                       that builds the fuzzers
-      bench-runs       each bench target of the code model of each build
-                       that builds the benches for a measurement
-                       (assay.loop.bench, bench_targets())
-      mutant-runs      each header of include/ that the source tree of the
-                       build of the preset MUTANT_PRESET holds
+      `stress-passes`    each test of the build of each test preset with
+                         the field `repeat`, when the program of the test is
+                         an ELF file of the build tree (build_program() of
+                         assay.loop.affected)
+      `property-search`  each test with the label fuzz_property in each
+                         build that builds the fuzzers
+      `bench-runs`       each bench target of the code model of each build
+                         that builds the benches for a measurement
+                         (assay.loop.bench, bench_targets())
+      `mutant-runs`      each header of include/ that the source tree of the
+                         build of the preset MUTANT_PRESET holds
     A negative fixture and a disabled test are no items.  A fixture is a
     compile, and the result store of `loop fixture` keeps its one result.
     ctest runs no disabled test.  A repetition looks for a race in a program
     of the tree.  A test of the master guard, a self-test of a module of the
     package and a CMake script run no such program.  Their results come from
-    their inputs only, and such a test is no item of stress-passes.
+    their inputs only, and such a test is no item of `stress-passes`.
     An item gives the name of its class, its name, the build directory that
     gives its key, and its key.  An item with no key gives the reason, and no
     evidence applies to it: no runner can add evidence that a subsequent run
@@ -79,8 +79,8 @@ THE KEYS OF A HEADER
 
 THE ADMITTED GATES
     The file ADMITTED_GATES of the source tree of the build admits the
-    invalid mutant of some gates, in the format of a ledger of the policy
-    admit (assay.core.ledger).  A row is HEADER | GATE KIND | admit | NAME:
+    invalid mutant of some gates.  It has the format of a ledger of the
+    policy admit (assay.core.ledger).  A row is HEADER | GATE KIND | admit | NAME:
     TEXT | REASON.  NAME is the gated entity, and TEXT is the gate text with
     its whitespace squeezed (exemption_row() of assay.mutation.run).  REASON
     tells why no mutant of the gate can parse, or which other test holds the
