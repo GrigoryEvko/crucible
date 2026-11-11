@@ -26,8 +26,8 @@
 # include it.
 #
 # CRUCIBLE_CHECK_WARNINGS_DIR is where a compile-time check writes the
-# warnings that do not fail it (utils/assay/core/report.py).  A check gets it
-# as --warnings-dir.
+# warnings and the plain numbers that do not fail it
+# (utils/assay/core/report.py).  A check gets it as --warnings-dir.
 
 set(CRUCIBLE_CHECK_WARNINGS_DIR "${CMAKE_BINARY_DIR}/check-warnings")
 # An earlier version of this file wrote CTestCustom.cmake, with a command that read the log of each ctest run.  ctest

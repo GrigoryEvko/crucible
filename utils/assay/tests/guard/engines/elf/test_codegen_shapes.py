@@ -8,7 +8,7 @@ THE CASES
       * The verdict of planted pairs: each class of family-only instruction,
         the second tests of the `-fharden-` flags and the locked instructions
       * The count of a probe with no declaration and with longer=N, and the
-        warning of a cost
+        plain line of a cost
       * The flags of the probe unit, the `-fharden-` flags, the probe rows of
         a plant and the command of the compile of the verdict for a target
       * The flags and the refused instructions of the constant-time wrappers
@@ -23,7 +23,7 @@ THE PROBE UNIT OF THE BUILD
     in place of its target words.  The pairs of PROBES must hold.  In a unit
     with a flag of HARDENING_FLAGS, a probe can get a second test into a trap
     on its family side.  The claim of such a probe must name the two flags.
-    The warning of a cost then tells the full cost.  Then the case copies
+    The plain line of a cost then tells the full cost.  Then the case copies
     include/foundation/core/Region.h to a directory that comes first on the
     include path.  It puts a second test of the limits into View::window of
     the copy.  The probes view_window and view_append must then fail for each
@@ -339,14 +339,21 @@ def verdict_cases(expect: testing.Expect) -> None:
         expect(f"the verdict of '{title}' gives {list(wanted) or 'no problem'}", holds)
     functions = {"probe": check, "probe_raw": load}
     found, shown, verdicts = shapes.pair_findings(functions, (fatal,), False, "x86-64")
+    costs = shapes.cost_lines(verdicts, (fatal,), "x86-64")
     expect(
-        "a declared cost of a longer family side gives one warning with the counts, and no error",
-        [item.level for item in found] == ["warning"]
-        and "family side has 5" in found[0].message
+        "a declared cost of a longer family side gives no finding, and one plain line with the counts",
+        not found
         and not shown
-        and verdicts["probe"].is_longer,
+        and verdicts["probe"].is_longer
+        and len(costs) == 1
+        and "probe probe for -march=x86-64: the family side has 5" in costs[0]
+        and "the raw side has 3" in costs[0],
     )
-    found, shown, _ = shapes.pair_findings(functions, (ZERO_COST,), False, "x86-64-v4")
+    found, shown, verdicts = shapes.pair_findings(functions, (ZERO_COST,), False, "x86-64-v4")
+    expect(
+        "a pair with an error gives no cost line",
+        shapes.cost_lines(verdicts, (ZERO_COST,), "x86-64-v4") == [],
+    )
     expect(
         "an undeclared check gives an error and the disassembly of the two functions, and each names the target",
         bool(found)

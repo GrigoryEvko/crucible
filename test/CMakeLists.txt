@@ -4675,15 +4675,17 @@ endif()
 # format of utils/assay/core/report.py.  An error fails the check, and a
 # warning does not.  ctest shows no output of a test that passes, so a check
 # that gets --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR} also writes its
-# warnings there, and `guard warnings` (utils/assay/guard/warnings.py) prints them.
+# warnings and its plain numbers there, and `guard warnings`
+# (utils/assay/guard/warnings.py) prints them.
 # The measured rules of utils/registry.txt give the limits of the checks
 # that measure a quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
 crucible_script_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
 # `guard warnings` also prints the totals of the build as plain numbers.  They
 # are the CPU time of the fixtures, of the executable tests and of the links,
-# and the times of the last configure.  No rule judges a total.  The CI step
-# "Check warnings" runs it after the tests.
+# and the times of the last configure.  No rule judges a total.  Then it prints
+# the plain numbers of the checks, such as the counts of codegen-shapes.  The
+# CI step "Check warnings" runs it after the tests.
 crucible_script_test(NAME guard_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.warnings)
 set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES

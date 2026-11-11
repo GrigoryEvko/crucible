@@ -137,10 +137,13 @@ THE VERDICT
 THE COSTS
     A probe that declares a difference has a known cost on the hot path.
     When its family side has more instructions than its raw side, the run
-    gives a warning with the two counts and the family-only instructions.
-    The cost then stays in the output of each run.  The run also prints the
-    counts of each pair, and the run prints the disassembly of the two
-    functions of a probe with an error.
+    gives a plain line with the two counts and the family-only instructions
+    (cost_lines()).  The line is no finding, and it fails nothing.  A run
+    with --warnings-dir writes these lines to the numbers file of the rule,
+    and `guard warnings` prints them after a test run (assay.core.report,
+    THE NUMBERS FILES).  The cost then stays in the output of each test
+    run.  The run also prints the counts of each pair, and the disassembly
+    of the two functions of a probe with an error.
 
 THE WRAPPERS
     The rule compiles one wrapper for each constant-time primitive of
@@ -416,7 +419,7 @@ class Probe:
 
 # The declarations.  A probe with no declaration claims that its family operation adds no instruction to its raw
 # code.  The claim of a probe with a declaration tells its cost.  When the family side of such a pair is longer, each
-# run gives a warning with the counts of the pair (THE COSTS).
+# run gives a plain line with the counts of the pair (THE COSTS).
 PROBES: tuple[Probe, ...] = (
     Probe("atomic_load", "load_acquire is the acquire load of std::atomic"),
     Probe("atomic_store", "store_release is the release store of std::atomic, with no lock"),
@@ -1147,13 +1150,12 @@ def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened:
 def pair_findings(
     functions: Mapping[str, Code], probes: Iterable[Probe], hardened: bool, target: str
 ) -> tuple[list[check_report.Finding], list[str], dict[str, Verdict]]:
-    """Judge each pair of the probe object of one target (THE VERDICT, THE COSTS).
+    """Judge each pair of the probe object of one target (THE VERDICT).
 
     Each finding and each shown disassembly names the target (THE TARGETS).
 
     Returns:
-        The errors and the warnings of the costs, the disassembly of each probe with an error, and the verdict of
-        each probe
+        The errors, the disassembly of each probe with an error, and the verdict of each probe
     """
     found: list[check_report.Finding] = []
     shown: list[str] = []
@@ -1178,17 +1180,27 @@ def pair_findings(
         ]
         if result.problems:
             shown.append(f"{named}, the family function:\n{family.text()}\n{named}, the raw function:\n{raw.text()}")
-        elif probe.declares_cost and result.is_longer:
-            added = ", ".join(step.text for step in result.added)
-            message = (
-                f"{named}: the family side has {result.family_count} instructions on its returning paths, and the "
-                f"raw side has {result.raw_count}.  The family-only instructions are: {added}.  The claim: "
-                f"{probe.claim}"
-            )
-            found.append(
-                check_report.Finding("warning", PROBE_SOURCE, 0, RULE, message, "cost", f"{probe.name} -march={target}")
-            )
     return found, shown, verdicts
+
+
+def cost_lines(verdicts: Mapping[str, Verdict], probes: Iterable[Probe], target: str) -> list[str]:
+    """Return one plain line for each pair of a target with a declared cost and a longer family side (THE COSTS).
+
+    A pair with a problem has an error, and it has no line.  Complexity: linear in the probes and their family-only
+    instructions.
+    """
+    lines: list[str] = []
+    for probe in probes:
+        result = verdicts.get(probe.name)
+        if result is None or result.problems or not (probe.declares_cost and result.is_longer):
+            continue
+        added = ", ".join(step.text for step in result.added)
+        lines.append(
+            f"{RULE}: probe {probe.name} for -march={target}: the family side has {result.family_count} instructions "
+            f"on its returning paths, and the raw side has {result.raw_count}.  The family-only instructions are: "
+            f"{added}"
+        )
+    return lines
 
 
 # ── The flags ──────────────────────────────────────────────────────
@@ -1364,41 +1376,45 @@ def count_lines(
     return lines
 
 
-def core_findings(context: runner.ElfContext) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the findings of the core part, and the lines that the run prints (THE COMPILES, THE COSTS).
+@dataclass(frozen=True, slots=True)
+class Examination:
+    """The result of one run of the rule (THE PARTS, THE COSTS).
+
+    `found` holds the findings, `shown` the lines that the run prints, and `costs` the plain lines of the pairs with a
+    declared cost and a longer family side (cost_lines()).
+    """
+
+    found: list[check_report.Finding] = field(default_factory=list)
+    shown: list[str] = field(default_factory=list)
+    costs: list[str] = field(default_factory=list)
+
+
+def core_findings(context: runner.ElfContext) -> Examination:
+    """Return the findings of the core part, the lines that the run prints and the cost lines (THE COMPILES).
+
+    THE COSTS gives the lines.
 
     Raises:
         runner.BuildError: If the build cannot be read
     """
     probe = unit_entry(context, PROBE_SOURCE)
     if probe is None:
-        return [
-            check_report.Finding(
-                "error",
-                PROBE_CMAKE,
-                0,
-                RULE,
-                f"the compile database has no compile of {PROBE_SOURCE}.  The rule reads no probe",
-                "unit",
-            )
-        ], []
+        message = f"the compile database has no compile of {PROBE_SOURCE}.  The rule reads no probe"
+        return Examination([check_report.Finding("error", PROBE_CMAKE, 0, RULE, message, "unit")])
     probe_flags = code_flags(probe.argv(), probe.file)
     found = flag_findings(probe_flags, [code_flags(entry.argv(), entry.file) for entry in foundation_entries(context)])
     probes = planted_probes(context) or PROBES
     hardened = is_hardened(probe_flags)
-    shown: list[str] = []
-    for target_found, target_shown in each_at_once(
-        lambda target: target_findings(probe, probes, hardened, target), TARGETS
-    ):
-        found += target_found
-        shown += target_shown
-    return found, shown
+    result = Examination(found)
+    for target_result in each_at_once(lambda target: target_findings(probe, probes, hardened, target), TARGETS):
+        result.found.extend(target_result.found)
+        result.shown.extend(target_result.shown)
+        result.costs.extend(target_result.costs)
+    return result
 
 
-def target_findings(
-    probe: compdb.CompileEntry, probes: Sequence[Probe], hardened: bool, target: str
-) -> tuple[list[check_report.Finding], list[str]]:
-    """Compile the probe unit for one target, and return the findings of its pairs and the lines that the run prints.
+def target_findings(probe: compdb.CompileEntry, probes: Sequence[Probe], hardened: bool, target: str) -> Examination:
+    """Compile the probe unit for one target, and return the findings, the printed lines and the cost lines.
 
     THE TARGETS, THE COMPILES and THE COSTS give the compiles and the lines.
     """
@@ -1406,23 +1422,20 @@ def target_findings(
         functions = compiled_codes(probe, False, target)
         instrumented = compiled_codes(probe, True, target) if has_sanitizer(probe) and target == TARGETS[0] else None
     except CompileFailed as problem:
-        return [check_report.Finding("error", PROBE_SOURCE, 0, RULE, " ".join(str(problem).split()), "compile")], []
+        return Examination(
+            [check_report.Finding("error", PROBE_SOURCE, 0, RULE, " ".join(str(problem).split()), "compile")]
+        )
     missing = [name for item in probes for name in (item.name, item.name + RAW_SUFFIX) if name not in functions]
     if missing:
-        return [
-            check_report.Finding(
-                "error",
-                PROBE_SOURCE,
-                0,
-                RULE,
-                f"the probe object for -march={target} holds no function {missing}.  The compiler gave the function "
-                f"a different name, or {PROBE_SOURCE} does not hold it",
-                "missing",
-                target,
-            )
-        ], []
+        message = (
+            f"the probe object for -march={target} holds no function {missing}.  The compiler gave the function a "
+            f"different name, or {PROBE_SOURCE} does not hold it"
+        )
+        return Examination([check_report.Finding("error", PROBE_SOURCE, 0, RULE, message, "missing", target)])
     pairs, shown, verdicts = pair_findings(functions, probes, hardened, target)
-    return pairs, [*shown, *count_lines(verdicts, instrumented, probes, target)]
+    return Examination(
+        pairs, [*shown, *count_lines(verdicts, instrumented, probes, target)], cost_lines(verdicts, probes, target)
+    )
 
 
 # ── The wrappers ───────────────────────────────────────────────────
@@ -1826,8 +1839,10 @@ def parts_of(context: runner.ElfContext) -> tuple[str, ...]:
     )
 
 
-def examine(context: runner.ElfContext) -> tuple[list[check_report.Finding], list[str]]:
-    """Return the findings of each part of the build, and the lines that the run prints (THE PARTS, THE COSTS).
+def examine(context: runner.ElfContext) -> Examination:
+    """Return the findings of each part of the build, the lines that the run prints and the cost lines (THE PARTS).
+
+    THE COSTS gives the lines.
 
     Raises:
         runner.NotApplicable: If the host is not x86_64, or the call gives no build directory
@@ -1837,18 +1852,15 @@ def examine(context: runner.ElfContext) -> tuple[list[check_report.Finding], lis
     if machine != EXPECTED_MACHINE:
         raise runner.NotApplicable(f"the expectations apply to {EXPECTED_MACHINE}, and this host is {machine}")
     parts = parts_of(context)
-    found: list[check_report.Finding] = []
-    shown: list[str] = []
-    if CORE in parts:
-        found, shown = core_findings(context)
+    result = core_findings(context) if CORE in parts else Examination()
     if CONSTANT_TIME in parts:
-        found += constant_time_findings(context)
-    return found, shown
+        result.found.extend(constant_time_findings(context))
+    return result
 
 
 def findings(context: runner.ElfContext) -> list[check_report.Finding]:
     """Give the findings of each part of the build (THE PARTS)."""
-    return examine(context)[0]
+    return examine(context).found
 
 
 def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_report.Finding]:
@@ -1858,25 +1870,29 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
         runner.NotApplicable: If the rule does not apply to the build
         runner.BuildError: If the build cannot be read
     """
-    return examine(context)[0]
+    return examine(context).found
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
     """Run the rule on the build, write its findings, and print the counts of each pair (THE COSTS).
 
-    The run also prints the disassembly of the two functions of each probe with an error.
+    The run also prints the disassembly of the two functions of each probe with an error, and the cost lines.  With a
+    warnings directory, it writes the cost lines to the numbers file of the rule (assay.core.report, THE NUMBERS
+    FILES).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
     """
     try:
-        found, shown = examine(context)
+        result = examine(context)
     except runner.NotApplicable as reason:
         check_report.write_line(f"{RULE}: {reason}.  The rule does not apply")
         return runner.SKIPPED
-    status = check_report.emit(found, RULE, warnings_dir)
-    for block in shown:
+    status = check_report.emit(result.found, RULE, warnings_dir)
+    for block in [*result.shown, *result.costs]:
         check_report.write_line(block)
+    if warnings_dir is not None:
+        check_report.write_numbers(warnings_dir, RULE, result.costs)
     if status == 0:
         check_report.write_line(
             f"{RULE}: the {len(PROBES)} pairs hold with the flags of this build for {len(TARGETS)} targets, the probe "

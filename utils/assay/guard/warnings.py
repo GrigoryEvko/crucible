@@ -1,4 +1,4 @@
-"""guard warnings — print the warnings that the rules wrote for one build directory, and the totals of the build.
+"""guard warnings — print the warnings and the numbers that the rules wrote for one build directory, and its totals.
 
 A rule that gives warnings and no error writes them to
 <build>/check-warnings/RULE.txt (assay.core.report).  ctest shows no output of
@@ -25,14 +25,21 @@ THE TOTALS
     total gives the count of such units.  When the census or the test
     records cannot be read, one line tells why.
 
-Each writer of a warnings file names a rule of the registry.  No run writes the
-file of a rule again after the rule goes from the registry.  Before it reads the
-files, `guard warnings` removes the file of each rule that the registry does not
-name.  It also removes each file of a measured rule of a policy of
-SILENT_POLICIES, because such a rule gives no warning (assay.core.budget, THE
-VERDICT), and no run writes its file again.  When it cannot read the registry,
-it keeps each file and tells why.  Each line that it writes about the files and
-the totals starts with PREFIX.
+THE NUMBERS OF THE RULES
+    After the totals, the command prints each line of each numbers file of
+    the warnings directory (assay.core.report, THE NUMBERS FILES).  The rule
+    codegen-shapes writes the counts of each pair whose family side is
+    longer there.  A line of a numbers file is a plain number, and no rule
+    judges it.
+
+Each writer of a warnings file or a numbers file names a rule of the registry.
+No run writes the file of a rule again after the rule goes from the registry.
+Before it reads the files, `guard warnings` removes the file of each rule that
+the registry does not name.  It also removes each warnings file of a measured
+rule of a policy of SILENT_POLICIES, because such a rule gives no warning
+(assay.core.budget, THE VERDICT), and no run writes its file again.  When it
+cannot read the registry, it keeps each file and tells why.  Each line that it
+writes about the files, the totals and the numbers starts with PREFIX.
 
     python3 utils/bin/guard warnings BUILD_DIR
     python3 utils/bin/guard selftest guard.warnings
@@ -67,12 +74,13 @@ SILENT_POLICIES = frozenset({rule_registry.Policy.MAX, rule_registry.Policy.BASE
 
 
 def remove_stale_files(warnings_dir: Path, registry_path: Path = rule_registry.REGISTRY) -> None:
-    """Remove the warnings file of each rule that no run writes again, and write one line for each.
+    """Remove the warnings file and the numbers file of each rule that no run writes again, and write one line for each.
 
-    Such a rule is a rule that the registry does not name, or a measured rule of SILENT_POLICIES.  Complexity: one
-    read of the registry when the directory holds a file, and linear in the files.
+    Such a rule is a rule that the registry does not name.  A warnings file of a measured rule of SILENT_POLICIES goes
+    too.  Complexity: one read of the registry when the directory holds a file, and linear in the files.
     """
-    files = sorted(warnings_dir.glob("*.txt")) if warnings_dir.is_dir() else []
+    patterns = ("*.txt", f"*{check_report.NUMBERS_SUFFIX}")
+    files = sorted(path for pattern in patterns for path in warnings_dir.glob(pattern)) if warnings_dir.is_dir() else []
     if not files:
         return
     try:
@@ -85,7 +93,7 @@ def remove_stale_files(warnings_dir: Path, registry_path: Path = rule_registry.R
         rule = rules.get(rule_id)
         if rule is None:
             why = f"the registry names no rule {rule_id}"
-        elif rule.threshold is not None and rule.policy in SILENT_POLICIES:
+        elif path.suffix == ".txt" and rule.threshold is not None and rule.policy in SILENT_POLICIES:
             why = f"the measured rule {rule_id} gives no warning"
         else:
             continue
@@ -198,8 +206,20 @@ def total_lines(build_dir: Path) -> list[str]:
     return [*lines, *build_lines(build_records(build_dir), loop_history.configure_time(build_dir))]
 
 
+def number_lines(warnings_dir: Path) -> list[str]:
+    """Return each line of each numbers file of a warnings directory, or one line that tells why they do not read.
+
+    THE NUMBERS OF THE RULES gives the lines.  Complexity: linear in the lines of the numbers files.
+    """
+    try:
+        numbers = check_report.read_numbers_dir(warnings_dir)
+    except (OSError, UnicodeDecodeError) as problem:
+        return [f"{PREFIX} the numbers files of {warnings_dir} cannot be read: {problem}"]
+    return [f"{PREFIX} {line}" for _, line in numbers]
+
+
 def main(argv: list[str]) -> int:
-    """Print the warnings and the totals of one build directory.
+    """Print the warnings, the totals and the numbers of the rules of one build directory.
 
     Args:
         argv: The words after `guard warnings`: one build directory, or --self-test
@@ -217,6 +237,8 @@ def main(argv: list[str]) -> int:
     remove_stale_files(warnings_dir)
     findings, problems = check_report.read_warnings_dir(warnings_dir)
     for line in total_lines(build_dir):
+        check_report.write_line(line)
+    for line in number_lines(warnings_dir):
         check_report.write_line(line)
     annotate = cost_meter.is_github_actions()
     for found in findings:
@@ -242,10 +264,17 @@ def print_cases(expect: testing.Expect) -> None:
         (warnings_dir / "python-lint.txt").write_text(
             check_report.Finding("warning", "a.h", 1, "python-lint", "m").text() + "\n", encoding="utf-8"
         )
+        check_report.write_numbers(warnings_dir, "codegen-shapes", ["codegen-shapes: probe a: family 5, raw 4"])
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
             "a build with no census prints the warnings and tells why it has no time totals",
             status == 0 and "a.h:1: warning: [python-lint] m" in text and "no time totals" in text,
+        )
+        expect(
+            "each line of a numbers file prints after the totals as a plain line, and it is no warning",
+            "guard warnings: codegen-shapes: probe a: family 5, raw 4" in text
+            and text.index("no time totals") < text.index("probe a: family 5")
+            and "1 warning(s)" in text,
         )
         expect(
             "each line about the totals and the summary starts with the name of the command",
@@ -261,9 +290,10 @@ def print_cases(expect: testing.Expect) -> None:
 
 
 def stale_file_cases(expect: testing.Expect) -> None:
-    """Remove the warnings file of a rule that the registry does not name and of a silent measured rule.
+    """Remove the files of a rule that the registry does not name, and the warnings file of a silent measured rule.
 
-    The file of a rule with warnings stays, also the file of a measured rule of the policy count.
+    The file of a rule with warnings stays, also the file of a measured rule of the policy count.  A numbers file of a
+    rule of the registry stays.
     """
     with tempfile.TemporaryDirectory(prefix="guard-warnings-") as scratch:
         build = Path(scratch)
@@ -279,29 +309,41 @@ def stale_file_cases(expect: testing.Expect) -> None:
         ):
             found = check_report.Finding("warning", "a.h", 1, check, f"{check} {key}")
             check_report.write_warnings(warnings_dir, check, [found], key)
+        for check in ("gone-rule", "step-memory", "codegen-shapes"):
+            check_report.write_numbers(warnings_dir, check, [f"{check}: numbers"])
         broken = build / "registry.txt"
         broken.write_text("format 1\nrule gone-rule\n", encoding="utf-8")
         _, text = testing.captured(lambda: remove_stale_files(warnings_dir, broken))
         expect(
-            "a registry that cannot be read keeps each warnings file, and tells why",
-            "each warnings file stays" in text and len(sorted(warnings_dir.glob("*.txt"))) == 7,
+            "a registry that cannot be read keeps each warnings file and each numbers file, and tells why",
+            "each warnings file stays" in text
+            and len(sorted(warnings_dir.glob("*.txt"))) == 7
+            and len(sorted(warnings_dir.glob(f"*{check_report.NUMBERS_SUFFIX}"))) == 3,
         )
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
-            "the files of a rule that the registry does not name go, and the file of a named rule stays",
+            "the files of a rule that the registry does not name go, also its numbers file, and the file of a named "
+            "rule stays",
             status == 0
             and "because the registry names no rule gone-rule" in text
             and "gone-rule None" not in text
             and "gone-rule part1" not in text
+            and "gone-rule: numbers" not in text
             and "python-lint None" in text,
         )
         expect(
-            "the files of a measured rule of the policy max go, also the file of one test, and the file of a measured "
-            "rule of the policy count and the file of a rule with no limit stay",
+            "the warnings files of a measured rule of the policy max go, also the file of one test, and the file of a "
+            "measured rule of the policy count and the file of a rule with no limit stay",
             "because the measured rule step-memory gives no warning" in text
             and "because the measured rule step-cost gives no warning" in text
             and [path.name for path in sorted(warnings_dir.glob("*.txt"))]
             == ["fixture-own-reason.neg_one.txt", "padded-list.txt", "python-lint.txt"],
+        )
+        expect(
+            "a numbers file of a rule that the registry names stays, also the numbers file of a measured rule",
+            [path.name for path in sorted(warnings_dir.glob(f"*{check_report.NUMBERS_SUFFIX}"))]
+            == ["codegen-shapes.numbers", "step-memory.numbers"]
+            and "guard warnings: codegen-shapes: numbers" in text,
         )
 
 

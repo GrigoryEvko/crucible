@@ -29,6 +29,13 @@ THE WARNINGS DIRECTORY
     between that '.' and the suffix .txt.  ctest permits a '.' in the name of
     a test, such as the name of a program.
 
+THE NUMBERS FILES
+    A measure that cannot fail is a plain number, and not a warning.  A
+    check that gets --warnings-dir writes its plain lines of numbers to
+    DIR/CHECK.numbers (write_numbers()).  It removes that file when it has
+    no such line.  `guard warnings` prints each line of each numbers file
+    after the totals of the build.  A line of a numbers file fails nothing.
+
 GITHUB ANNOTATIONS
     When the environment sets GITHUB_ACTIONS to "true", the check also prints
     each finding as a workflow command.  The CI run then shows the finding as
@@ -69,7 +76,7 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -82,8 +89,9 @@ from assay.core import rows as rows_grammar
 Level = Literal["warning", "error"]
 
 REGISTRY = rule_registry.REGISTRY
-# The name of the warnings directory inside a build directory.
+# The name of the warnings directory inside a build directory, and the suffix of a numbers file in it.
 WARNINGS_SUBDIR = "check-warnings"
+NUMBERS_SUFFIX = ".numbers"
 LEVELS: tuple[Level, ...] = ("warning", "error")
 # A check name is lowercase words with hyphens, so it is also a safe file name.
 CHECK_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
@@ -397,14 +405,60 @@ def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding], key:
     """
     if key is not None and not WRITER_KEY.fullmatch(key):
         raise ValueError(f"the writer key {key!r} of {check} is not {WRITER_KEY_TEXT}")
-    target =warnings_dir / (f"{check}.txt" if key is None else f"{check}.{key}.txt")
-    if not warnings:
+    target = warnings_dir / (f"{check}.txt" if key is None else f"{check}.{key}.txt")
+    replace_lines(target, [found.text() for found in warnings])
+
+
+def replace_lines(target: Path, lines: Sequence[str]) -> None:
+    """Write the lines to a file of the warnings directory, or remove the file when there is no line.
+
+    A reader in another process sees the whole file or no file.
+    """
+    if not lines:
         target.unlink(missing_ok=True)
         return
-    warnings_dir.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    staging.write_text("".join(f"{found.text()}\n" for found in warnings), encoding="utf-8")
+    staging.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
     os.replace(staging, target)
+
+
+def write_numbers(warnings_dir: Path, check: str, lines: Sequence[str]) -> None:
+    """Write the numbers file of one check, or remove it when the check has no line of numbers (THE NUMBERS FILES).
+
+    Args:
+        warnings_dir: The warnings directory
+        check: The name of the check
+        lines: The plain lines of numbers of this run, each with no line break
+
+    Raises:
+        ValueError: If the check name is not lowercase words with hyphens, or a line holds a line break
+    """
+    if not CHECK_NAME.fullmatch(check):
+        raise ValueError(f"the check name {check!r} is not lowercase words with hyphens")
+    if any("\n" in line or "\r" in line for line in lines):
+        raise ValueError(f"a line of numbers of {check} holds a line break")
+    replace_lines(warnings_dir / f"{check}{NUMBERS_SUFFIX}", lines)
+
+
+def read_numbers_dir(warnings_dir: Path) -> list[tuple[str, str]]:
+    """Read each numbers file of one warnings directory (THE NUMBERS FILES).
+
+    Complexity: O(n) in the number of lines of the files.
+
+    Args:
+        warnings_dir: The directory.  It can be missing
+
+    Returns:
+        The check and the text of each line, in the sequence of the file names and then of the lines
+    """
+    if not warnings_dir.is_dir():
+        return []
+    return [
+        (path.name.removesuffix(NUMBERS_SUFFIX), line)
+        for path in sorted(warnings_dir.glob(f"*{NUMBERS_SUFFIX}"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
 
 
 def read_warnings_dir(warnings_dir: Path) -> tuple[list[Finding], list[str]]:
@@ -548,6 +602,22 @@ def self_test() -> int:
         refuses("emit refuses a key that starts with a dot", lambda: emit([first], "alpha", warnings_dir, ".a"))
         refuses("emit refuses a key with a slash", lambda: emit([first], "alpha", warnings_dir, "a/b"))
         refuses("emit refuses an empty key", lambda: emit([first], "alpha", warnings_dir, ""))
+
+        write_numbers(warnings_dir, "beta", ["beta: 3 of 4", "beta: 5 of 6"])
+        write_numbers(warnings_dir, "alpha", ["alpha: 1"])
+        expect("read_numbers_dir gives each line of each numbers file, in the sequence of the file names",
+               read_numbers_dir(warnings_dir) == [("alpha", "alpha: 1"), ("beta", "beta: 3 of 4"),
+                                                  ("beta", "beta: 5 of 6")])
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir does not read a numbers file", not found and not problems)
+        write_numbers(warnings_dir, "beta", [])
+        expect("no line of numbers removes the numbers file, and the file of a different check stays",
+               read_numbers_dir(warnings_dir) == [("alpha", "alpha: 1")])
+        refuses("write_numbers refuses a line with a line break",
+                lambda: write_numbers(warnings_dir, "alpha", ["a\nb"]))
+        refuses("write_numbers refuses a check name that is not a word", lambda: write_numbers(warnings_dir, "A", []))
+        expect("a missing directory reads no numbers", read_numbers_dir(root / "missing") == [])
+        write_numbers(warnings_dir, "alpha", [])
 
     expect("threshold_text writes a whole number with no exponent", threshold_text(33554432.0) == "33554432")
     expect("threshold_text keeps a fraction", threshold_text(1.25) == "1.25")

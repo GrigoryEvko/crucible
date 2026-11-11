@@ -1,5 +1,5 @@
 # The probe next declares longer=1, and its family side has one more plain instruction than its raw side.  The pair
-# has no error, and the run gives a warning with the two counts: the cost stays in the output.
+# has no error.  The run gives no finding, and a plain line with the two counts.
 part core
 unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow
 unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O1 -fPIC -fno-strict-overflow

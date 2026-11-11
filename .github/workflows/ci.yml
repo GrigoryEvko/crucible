@@ -433,11 +433,12 @@ jobs:
           done
           exit "$failed"
 
-      # A compile-time check that passes with warnings writes them to
-      # <build>/check-warnings (utils/assay/core/report.py), because ctest
-      # shows no output of a test that passes.  This step prints each warning
-      # as an annotation of the run, and the totals of the build as plain
-      # numbers.  It fails only on a malformed warnings file.
+      # A compile-time check that passes with warnings or plain numbers
+      # writes them to <build>/check-warnings (utils/assay/core/report.py),
+      # because ctest shows no output of a test that passes.  This step
+      # prints each warning as an annotation of the run, and the totals of
+      # the build and the numbers of the checks as plain lines.  It fails
+      # only on a malformed warnings file.
       - name: Check warnings
         if: always()
         run: >
