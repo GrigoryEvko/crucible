@@ -40,11 +40,11 @@ NO FIXTURE RUN
     its objects only.  A parse build has no fixture run
     (assay.core.configuration.is_parse_build).  The context then lists no
     test and reads no dependency log.  Such a build refuses no row of a
-    directory of fixtures, and it asks for no census.  A reduce takes the
-    largest count over its builds (THE REDUCE of assay.core.ledger), so a
-    reduce in which no build of objects has a fixture run would remove each
-    row of a fixture.  reduce_refusal() refuses such a reduce when the build
-    has fixtures with the plugin.
+    directory of fixtures, and a census is not necessary.  A reduce takes the
+    largest count over its builds (THE REDUCE of assay.core.ledger).  Thus a
+    reduce in which no build of objects has a fixture run removes each row of
+    a fixture.  reduce_refusal() refuses such a reduce when the build has
+    fixtures with the plugin.
 
 THE PROBLEMS
     For each fixture with a compile that loads the plugin, these conditions
@@ -471,7 +471,7 @@ def reduce_refusal(root: Path, builds: Sequence[Path]) -> str:
         if plugged:
             return (
                 f"no build of objects of the reduce has a fixture run, and {build} has {len(plugged)} fixtures with the "
-                f"plugin, such as {build_census.names_text(plugged)}.  The reduce would remove each row of a fixture.  "
+                f"plugin, such as {build_census.names_text(plugged)}.  Such a reduce removes each row of a fixture.  "
                 f"Run the fixtures of the builds first"
             )
     return ""

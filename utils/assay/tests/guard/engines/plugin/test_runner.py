@@ -962,12 +962,13 @@ def fixture_run_cases(expect: testing.Expect, scratch: Scratch) -> None:
     before = scratch.base()
     scratch.add_fixture("neg_a", NEG_A)
     expect(
-        "a build with a fixture with the plugin and no fixture run counts its objects only, and asks for no census",
+        "a build with a fixture with the plugin and no fixture run counts its objects only, and a census is not "
+        "necessary",
         scratch.errors() == [] and scratch.counts() == before,
     )
     status, text = scratch.write(is_complete=True)
     expect(
-        "a reduce in which no build has a fixture run is refused, because it would remove each row of a fixture",
+        "a reduce in which no build has a fixture run is refused, because such a reduce removes each row of a fixture",
         status == 1 and "no build of objects of the reduce has a fixture run" in text and scratch.base() == before,
     )
     scratch.record("neg_a", [VECTOR])
@@ -1041,7 +1042,7 @@ def fixture_problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.configure(BASE_NAME, "Debug", is_parse=True)
     parsed = fixtures.FixtureContext(scratch.root, scratch.build).part()
     expect(
-        "a parse build reads no record, so it gives no fixture finding and asks for no census",
+        "a parse build reads no record, thus it gives no fixture finding and a census is not necessary",
         parsed.fixtures == 0 and not parsed.lines and not parsed.problems,
     )
     scratch.configure(BASE_NAME, "Debug")
