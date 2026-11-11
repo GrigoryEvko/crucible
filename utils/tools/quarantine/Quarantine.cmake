@@ -65,9 +65,9 @@
 # THE KINDS
 #   After each build of the plugin, the plugin writes the kinds of each rule to
 #   ${CMAKE_BINARY_DIR}/quarantine/kinds.txt (the argument kinds of plugin.cpp).
-#   This run also makes sure that cc1plus loads the plugin.  The rule
-#   plugin-kinds compares kinds.txt with the kinds of the rows of the engine
-#   plugin of utils/registry.txt.
+#   This run also makes sure that cc1plus loads the plugin.  The part kinds of
+#   the rule registry compares kinds.txt with the kinds of the rows of the
+#   engine plugin of utils/registry.txt.
 #
 # THE TIME OF THE BUILD
 #   A configure that builds the plugin writes the start and the end of that

@@ -73,8 +73,9 @@
 //
 // THE RULES AND THE KINDS
 //     Each finding has a rule and a kind.  The registry utils/registry.txt
-//     gives each rule of the engine plugin with its kinds, and the rule
-//     plugin-kinds compares those kinds with the table kRuleKinds below.
+//     gives each rule of the engine plugin with its kinds, and the part kinds
+//     of the rule registry compares those kinds with the table kRuleKinds
+//     below.
 //     The rule quarantine:
 //     std-entity            a named reference to a declaration in namespace std.
 //                           A typedef or an alias template of namespace std that

@@ -34,9 +34,9 @@
 //     body.
 //
 // THE ENTITY OF AN OBJECT
-//     The rule quarantine counts each finding line of a build one time, and
-//     the key of its ledger row holds no printed type (THE ENTITY of
-//     utils/assay/guard/engines/plugin/quarantine.py).  GCC prints a type with
+//     The rule quarantine counts the same finding line from two objects one
+//     time (THE FINDINGS of utils/assay/guard/engines/plugin/quarantine.py),
+//     and `guard list` prints the entity of each finding.  GCC prints a type with
 //     the template arguments and the parameter names of the first
 //     specialization that the unit made with the same arguments.  One
 //     declaration of a header then gave std::span<unsigned char> in one unit

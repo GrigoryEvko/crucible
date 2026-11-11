@@ -73,7 +73,8 @@
 //                    the build system compile again
 //     kinds=PATH     write the kinds of each rule (kRuleKinds in plugin.h) to
 //                    PATH, one row `kind RULE KIND`, and do no other work.  The
-//                    rule plugin-kinds compares the file with the registry
+//                    part kinds of the rule registry compares the file with
+//                    the registry
 //     sentinel=PATH  the header of include/, relative to the source root, whose
 //                    sentinel unit this unit is.  The families declaration
 //                    property and expression shape read the declarations and
@@ -324,7 +325,8 @@ bool set_build(const std::string& build_argument) {
 // after an error, when the write fails.
 bool write_kinds(const std::string& path) {
     std::string text = "# The kinds of the quarantine plugin, one row for each kind of each rule.  The plugin writes\n"
-                       "# this file for its argument kinds, and the rule plugin-kinds compares it with the registry.\n";
+                       "# this file for its argument kinds, and the part kinds of the rule registry compares it with the\n"
+                       "# registry.\n";
     for (const RuleKind& rule_kind : kRuleKinds) {
         text += std::string("kind ") + rule_kind.rule + " " + rule_kind.kind + "\n";
     }
