@@ -1,8 +1,0 @@
-# The ledger of the rule determinism: the reviewed reads of a rule module that give no verdict.  A row
-# PATH | KIND | admit | ENTITY | REASON admits each finding of the kind KIND in the function ENTITY of the file PATH.
-# The reason tells why no verdict reads the value.  A reviewer writes each row.  A row that admits no finding passes,
-# and `python3 utils/bin/guard write --rule determinism` removes it.  `python3 utils/bin/guard explain determinism`
-# tells the rule.
-format 1
-rule determinism
-utils/assay/guard/engines/meta/rule_witness.py | listing | admit | findings | The listing gives the names of the entries to any(), and the sequence of the names changes no verdict
