@@ -1,19 +1,12 @@
-# The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of one
-# build.  `python3 utils/bin/guard explain instruction-total` tells the rule, and
-# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the rows of one
-# configuration again.
+# The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of a build
+# of the configuration x86_64-debug-asan, the build of the preset default.
+# `python3 utils/bin/guard explain instruction-total` tells the rule, and
+# `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the two rows again from a
+# build of that configuration.  The rule does not apply to a build of a different configuration.
 #
-# The facts of a configuration:
-#   configuration NAME KEY VALUE
-#   The build kind, the target tier and each cache variable that changes the objects of all, as the
-#   configuration rows of utils/ledgers/quarantine.txt.  The rows of the configuration of a build judge it.
-#   THE POLICY of utils/assay/core/configuration.py judges a build of a configuration that this ledger
-#   does not hold, and a write from such a build needs --add-configuration.
-#   The KIND cell of each row that follows holds the NAME of a configuration.
-#
-# The two rows of a configuration:
-#   - | KIND | INSTRUCTIONS | objects | REASON
-#   - | KIND | INSTRUCTIONS | fixtures | REASON
+# The two rows:
+#   - | x86_64-debug-asan | INSTRUCTIONS | objects | REASON
+#   - | x86_64-debug-asan | INSTRUCTIONS | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the user instructions
 #   of the compile that made it, at the last write.  The record of a ccache hit keeps the count of the
 #   compile that made its object, from the cost store of utils/assay/core/cost_store.py.  A result of the
@@ -23,107 +16,9 @@
 # A growth over the warning threshold of the measured rule instruction-total of utils/registry.txt gives
 # a warning, and over its error threshold an error.  A total less than the baseline gives no finding, and
 # a write with no reason lowers the baseline.  The count covers the template instantiation and the
-# constant evaluation that the bytes of utils/ledgers/parse-total.txt do not see.  To accept a growth,
-# raise the baseline in the same commit with a reason:
+# constant evaluation.  To accept a growth, raise the baseline in the same commit with a reason:
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-configuration x86_64-debug-asan kind x86_64-debug-asan
-configuration x86_64-debug-asan tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-asan CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-asan CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan CRUCIBLE_TSAN off
-configuration x86_64-debug-asan CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan CRUCIBLE_PGO off
-configuration x86_64-debug-asan CRUCIBLE_BENCH off
-configuration x86_64-debug-asan CRUCIBLE_FUZZ off
-configuration x86_64-debug-asan CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan TORCH_DIR unset
-configuration x86_64-release kind x86_64-release
-configuration x86_64-release tier native-x86_64
-configuration x86_64-release CMAKE_BUILD_TYPE Release
-configuration x86_64-release CMAKE_CXX_FLAGS -O1_-march=native_-DNDEBUG_-g
-configuration x86_64-release CRUCIBLE_SANITIZE on
-configuration x86_64-release CRUCIBLE_TSAN off
-configuration x86_64-release CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-release CRUCIBLE_ANALYZER off
-configuration x86_64-release CRUCIBLE_VERIFY off
-configuration x86_64-release CRUCIBLE_PGO off
-configuration x86_64-release CRUCIBLE_BENCH off
-configuration x86_64-release CRUCIBLE_FUZZ off
-configuration x86_64-release CRUCIBLE_EXAMPLES on
-configuration x86_64-release CRUCIBLE_HAVE_BPF on
-configuration x86_64-release CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-release CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-release TORCH_DIR unset
-configuration x86_64-release CRUCIBLE_SYNTAX_ONLY off
-configuration x86_64-debug-tsan kind x86_64-debug-tsan
-configuration x86_64-debug-tsan tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-tsan CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-tsan CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-tsan CRUCIBLE_SANITIZE off
-configuration x86_64-debug-tsan CRUCIBLE_TSAN on
-configuration x86_64-debug-tsan CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-tsan CRUCIBLE_ANALYZER off
-configuration x86_64-debug-tsan CRUCIBLE_VERIFY off
-configuration x86_64-debug-tsan CRUCIBLE_PGO off
-configuration x86_64-debug-tsan CRUCIBLE_BENCH off
-configuration x86_64-debug-tsan CRUCIBLE_FUZZ off
-configuration x86_64-debug-tsan CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-tsan CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-tsan CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-tsan CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-tsan TORCH_DIR unset
-configuration x86_64-debug-tsan CRUCIBLE_SYNTAX_ONLY off
-configuration x86_64-debug-ubsan-strict kind x86_64-debug-ubsan-strict
-configuration x86_64-debug-ubsan-strict tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-ubsan-strict CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-ubsan-strict CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-ubsan-strict CRUCIBLE_SANITIZE off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_TSAN off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_UBSAN_STRICT on
-configuration x86_64-debug-ubsan-strict CRUCIBLE_ANALYZER off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_VERIFY off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_PGO off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_BENCH off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_FUZZ off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-ubsan-strict CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-ubsan-strict CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-ubsan-strict CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-ubsan-strict TORCH_DIR unset
-configuration x86_64-debug-ubsan-strict CRUCIBLE_SYNTAX_ONLY off
-configuration x86_64-debug-asan-bench-fuzz kind x86_64-debug-asan
-configuration x86_64-debug-asan-bench-fuzz tier x86-64-eb53fd1c+native-x86_64
-configuration x86_64-debug-asan-bench-fuzz CMAKE_BUILD_TYPE Debug
-configuration x86_64-debug-asan-bench-fuzz CMAKE_CXX_FLAGS unset
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SANITIZE on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_TSAN off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_UBSAN_STRICT off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_ANALYZER off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VERIFY off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_PGO off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_BENCH on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_FUZZ on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_EXAMPLES on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_HAVE_BPF on
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SENSE_HUB_EXTENDED off
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_VALGRIND_INCLUDE set
-configuration x86_64-debug-asan-bench-fuzz TORCH_DIR unset
-configuration x86_64-debug-asan-bench-fuzz CRUCIBLE_SYNTAX_ONLY off
 - | x86_64-debug-asan | 9072469793734 | fixtures | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
 - | x86_64-debug-asan | 9702967994701 | objects | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
-- | x86_64-debug-asan-bench-fuzz | 9073785138986 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-asan-bench-fuzz | 14335357260672 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-tsan | 9056505457557 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-tsan | 7661989588897 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-ubsan-strict | 9218020075613 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-debug-ubsan-strict | 8162505925256 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-release | 9037279319888 | fixtures | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler
-- | x86_64-release | 8841000389379 | objects | The record of a ccache hit keeps the count of the compile that made its object, from the cost store.  Measured on 2026-10-11 after a build with each compile run by the compiler

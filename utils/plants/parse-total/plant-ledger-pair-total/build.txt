@@ -1,3 +1,0 @@
-# A total row holds BYTES/READERS in place of one whole number: an error at the line of the row.
-format 1
-kind x86_64-debug-asan

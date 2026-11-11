@@ -4913,18 +4913,17 @@ endforeach()
 # witness, and a step of the CI build job runs the check.  The rule
 # gate-mutants runs only on the headers that a call names, so it gets only
 # its witness too.  The test of session-oracle has the label session_oracle
-# of the emitted tests.  The census rules
-# parse-total, header-fanout and instruction-total, and the rule
-# fixture-quarantine, read the record of each negative fixture.  Each fixture
+# of the emitted tests.  The census rule instruction-total and the rule
+# fixture-quarantine read the record of each negative fixture.  Each fixture
 # registration appends its name to the global property
 # CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top directory makes
-# the four tests DEPEND on each fixture.
+# these tests DEPEND on each fixture.
 crucible_build_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR} NO_CHECK reconfigure-noop gate-mutants)
 set_tests_properties(guard_parse_x86_64_v3 guard_parse_aarch64 PROPERTIES FIXTURES_REQUIRED tsast_trees)
 set_property(TEST guard_session_oracle APPEND PROPERTY LABELS session_oracle)
 function(crucible_order_census_checks)
   get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
-  set_tests_properties(guard_parse_total guard_header_fanout guard_instruction_total guard_fixture_quarantine
+  set_tests_properties(guard_instruction_total guard_fixture_quarantine
       DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
 endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
@@ -4938,7 +4937,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # its policy, the run of the cases, the reader
 # and writer of the cost records, the record class of the step meters, the
 # judge of the max rules, the runner and the planted
-# build of the engine build, the configurations of the census totals, the reader
+# build of the engine build, the base configuration of instruction-total, the reader
 # of the compile database, the Python reader, the reader of the reports of
 # mypy and ruff, the package scope, the import closure of the
 # rule test-registration, the counted rules of the

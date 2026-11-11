@@ -45,7 +45,6 @@ FAILURES
 from __future__ import annotations
 
 import os
-from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,20 +102,6 @@ class Census:
     build_dir: Path
     units: list[Unit]
     sizes: dict[str, int]
-
-    def unit_bytes(self, unit: Unit) -> int:
-        """Return the bytes of the files that one unit reads."""
-        return sum(self.sizes[path] for path in unit.files)
-
-    def readers(self) -> Counter[str]:
-        """Return the number of units that read each file.
-
-        Complexity: linear in the total length of the file lists.
-        """
-        counts: Counter[str] = Counter()
-        for unit in self.units:
-            counts.update(unit.files)
-        return counts
 
 
 def shown(path: Path | str, root: Path) -> str:

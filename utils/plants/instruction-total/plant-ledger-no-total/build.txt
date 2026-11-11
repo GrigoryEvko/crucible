@@ -1,0 +1,3 @@
+# The ledger holds no total row: an error that asks to write the rows from the build.
+format 1
+kind x86_64-debug-asan

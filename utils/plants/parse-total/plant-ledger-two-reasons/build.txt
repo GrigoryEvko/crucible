@@ -1,3 +1,0 @@
-# The two total rows of a different configuration give two reasons: an error at the line of the first row.
-format 1
-kind x86_64-debug-asan

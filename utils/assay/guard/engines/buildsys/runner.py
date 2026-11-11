@@ -31,8 +31,8 @@ THE CONFIGURATION
     configuration() gives the configuration of the build
     (assay.core.configuration, THE CONFIGURATION).  The native flags of the
     compile commands of the objects of the target all are part of its tier.
-    A rule with rows that change with the configuration, such as the census
-    totals, holds the rows of each configuration with its facts.  THE POLICY
+    A rule with rows that change with the configuration holds the rows of
+    each configuration with its facts.  THE POLICY
     of that module judges a build and writes its rows.  The member of such a
     rule has `configured` (assay.guard.engines.meta.runner, THE FAMILIES).
     `guard write --add-configuration` then sets add_configuration of the
@@ -126,7 +126,7 @@ class BuildContext:
         self.paths: tuple[str, ...] = tuple(paths)
         self.rule: rule_registry.Rule | None = None
         self.registry = registry
-        self._census: tuple[build_census.Census, bool] | None = None
+        self._census: build_census.Census | None = None
         self._entries: tuple[compdb.CompileEntry, ...] | None = None
         self._model: cmake_reader.CodeModel | None = None
         self._graph: ninja_reader.Graph | None = None
@@ -222,20 +222,20 @@ class BuildContext:
             self._configuration = build_config.read_configuration(build, commands)
         return self._configuration
 
-    def census(self, read_files: bool = True) -> build_census.Census:
-        """Return the census of the build (assay.readers.census), with the files of each unit when read_files.
+    def census(self) -> build_census.Census:
+        """Return the census of the build (assay.readers.census): its units and the cost of each one, with no files.
 
         Raises:
             NotApplicable: If the call gives no build directory, or the census does not apply to the build
             build_census.CensusError: If an input of the census is there and cannot be read
         """
-        if self._census is None or (read_files and not self._census[1]):
+        if self._census is None:
             build = self.require_build()
             try:
-                self._census = (build_census.read_census(build, self.root, read_files), read_files)
+                self._census = build_census.read_census(build, self.root, read_files=False)
             except build_census.NotApplicable as reason:
                 raise meta_runner.NotApplicable(str(reason)) from None
-        return self._census[0]
+        return self._census
 
     def entries(self) -> tuple[compdb.CompileEntry, ...]:
         """Return the rows of the compile database of the build.

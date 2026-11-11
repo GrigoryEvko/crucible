@@ -1,4 +1,0 @@
-# The KIND cell X86 of a row is not the name of a configuration in lowercase words: an error at the line of the
-# row.
-format 1
-kind x86_64-debug-asan

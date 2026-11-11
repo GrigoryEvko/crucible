@@ -29,8 +29,8 @@ THE HEAD COMMENT
     goes at the next write.  Each other write keeps the head of
     the file, and a new ledger gets NEW_COMMENT.  Examples of a writer with
     a head text are the writers of the measured rules
-    (assay.guard.engines.buildsys.cost_budgets) and of the census totals
-    (assay.guard.engines.buildsys.cost_totals).
+    (assay.guard.engines.buildsys.cost_budgets) and of the rule
+    instruction-total (assay.guard.engines.buildsys.cost_totals).
 
 THE POLICIES
     A ledger fails only on a growth.  A value above its row is an error, and a
@@ -564,8 +564,8 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
                     f"with the value {ADMIT_VALUE}, which belongs to no "
                     f"configuration",
                 )
-    # Only a ledger of the policy count has difference rows and counts.  A ledger of a different policy, such as a
-    # baseline ledger of the census totals, holds the facts of its configurations and no count.
+    # Only a ledger of the policy count has difference rows and counts.  A ledger of a different policy holds the
+    # facts of its configurations and no count.
     for item in ordered[1:] if policy == Policy.COUNT else ():
         if any(count < 0 for count in ledger.expected(item.name).values()):
             raise rows_grammar.RowsError(

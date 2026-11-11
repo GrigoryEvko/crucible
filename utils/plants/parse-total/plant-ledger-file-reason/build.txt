@@ -1,3 +1,0 @@
-# A file row has a reason, and a file row has none: an error at the line of the row.
-format 1
-kind x86_64-debug-asan

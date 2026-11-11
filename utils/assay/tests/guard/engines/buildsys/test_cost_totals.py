@@ -1,20 +1,16 @@
-"""The test of the configurations of the census totals (assay.guard.engines.buildsys.cost_totals, THE CONFIGURATION).
+"""The test of the rule instruction-total and its base configuration (assay.guard.engines.buildsys.cost_totals).
 
 `guard selftest tests.guard.engines.buildsys.test_cost_totals` runs the test.
 Each case plants a build with the rows of assay.guard.engines.buildsys.planted
-and a ledger of a census rule in a throwaway tree.  The witness of each rule
-holds the refusals of a ledger.  This test holds what a plant cannot hold:
-  * a build with a configuration that the ledger does not hold, which the
-    largest baseline judges (THE POLICY of assay.core.configuration)
-  * a build of a held name with a different fact
-  * the configuration of a build that is not planted
-  * the configuration rows of a write, and the write of a configuration that
-    the ledger does not hold
-  * the head comment of a write (THE HEAD COMMENT)
-  * the rows of a file of the tree that the tree does not hold, which a
-    write removes
-  * the rows of an external file, which a write keeps in each
-    configuration.
+and a ledger of the rule in a throwaway tree.  The witness of the rule holds
+the refusals of a ledger, and a build of a different kind.  This test holds
+what a plant cannot hold:
+  * a build of the kind of the base with a different name of its
+    configuration, which the rule and the write do not judge
+  * the two rows and the head comment of a write (THE LEDGER)
+  * a fall, which a write with no reason lowers
+  * a growth, which a write refuses with no reason and raises with a reason
+  * the configuration of a build that is not planted.
 Exit 0 when each case holds, else 1.
 """
 
@@ -29,12 +25,10 @@ from assay.core import report as check_report
 from assay.core import testing
 from assay.guard.engines.buildsys import cost_totals, planted
 from assay.guard.engines.buildsys.runner import BuildContext
+from assay.guard.engines.meta import runner as meta_runner
 
-KIND = "x86_64-debug-asan"
-RULES = ("parse-total", "instruction-total", "header-fanout")
-# The two census rules with totals, which give an error for a growth and no finding for a fall.
-TOTAL_RULES = ("parse-total", "instruction-total")
-# A build of two objects and two fixtures, as the control control-unchanged of parse-total plants it.
+KIND = cost_totals.BASE_CONFIGURATION
+# A build of two objects of 2 G instructions and two fixtures of 5 G: 14 G, the total of LEDGER_ROWS.
 BUILD_ROWS = f"""\
 format 1
 kind {KIND}
@@ -50,44 +44,14 @@ deps CMakeFiles/b.o | src/b.cpp include/Base.h
 fixture neg_one neg/neg_one.cpp instructions=5 | neg/neg_one.cpp include/Base.h
 fixture neg_two neg/neg_two.cpp instructions=5 | neg/neg_two.cpp include/Base.h
 """
-# The same build with a header and compiles of two times the cost: a growth of each total.
-GROWN_ROWS = BUILD_ROWS.replace("size=1000", "size=2000").replace("instructions=2", "instructions=4")
-# The same build with a header and compiles of less cost: a fall of each total.
-FALLEN_ROWS = BUILD_ROWS.replace("size=1000", "size=400").replace("instructions=5", "instructions=1")
-# The rows of each ledger that hold the planted build: its configuration and its totals.
-LEDGER_ROWS = {
-    "parse-total": f"""\
-configuration {KIND} kind {KIND}
-- | {KIND} | 2100 | fixtures | the measure of the planted build
-- | {KIND} | 2200 | objects | the measure of the planted build
-""",
-    "instruction-total": f"""\
-configuration {KIND} kind {KIND}
-- | {KIND} | 10000000000 | fixtures | the measure of the planted build
-- | {KIND} | 4000000000 | objects | the measure of the planted build
-""",
-    "header-fanout": f"""\
-configuration {KIND} kind {KIND}
-include/Base.h | {KIND} | 1000/4 | - | -
-""",
-}
-# A file of the build directory, its name and the name of a system header, as assay.readers.census.file_key gives them.
-BUILD_FILE = "generated/Table.h"
-BUILD_NAME = f"{cost_totals.CENSUS_BUILD_NAME}{BUILD_FILE}"
-SYSTEM_NAME = "<system>/c++/16.2.1/tuple"
-# The rows of the ledger of parse-total with a second configuration, its facts and its totals.  The second configuration
-# also holds three file rows: a system header, a file of the build directory and a removed file of the tree.
-BENCH_LEDGER_ROWS = f"""\
-configuration {KIND} kind {KIND}
-configuration {KIND}-bench kind {KIND}
-configuration {KIND}-bench CRUCIBLE_BENCH on
-- | {KIND} | 2100 | fixtures | the measure of the planted build
-- | {KIND} | 2200 | objects | the measure of the planted build
-- | {KIND}-bench | 2100 | fixtures | the measure of the planted build
-- | {KIND}-bench | 2200 | objects | the measure of the planted build
-- | {KIND}-bench | 900/2 | {SYSTEM_NAME} | -
-{cost_totals.CENSUS_BUILD_PATH}{BUILD_FILE} | {KIND}-bench | 300/2 | - | -
-include/Divided.h | {KIND}-bench | 200/2 | - | -
+# The same build with objects of 4 G: 18 G, a growth over the error threshold.
+GROWN_ROWS = BUILD_ROWS.replace("instructions=2", "instructions=4")
+# The same build with fixtures of 1 G: 6 G, a fall.
+FALLEN_ROWS = BUILD_ROWS.replace("instructions=5", "instructions=1")
+LEDGER_REASON = "the measure of the planted build"
+LEDGER_ROWS = f"""\
+- | {KIND} | 10000000000 | fixtures | {LEDGER_REASON}
+- | {KIND} | 4000000000 | objects | {LEDGER_REASON}
 """
 # A head comment that a different writer wrote, with an incorrect fact.
 STALE_HEAD = "# The rows count the last real compile of each unit.\n"
@@ -109,20 +73,20 @@ compile CMakeFiles/c.o src/c.cpp all=no | c++ -O3 -march=native -c src/c.cpp
 """
 
 
-def rule_of(rule_id: str) -> rule_registry.Rule:
-    """Return the rule of the registry of this tree."""
-    return rule_registry.load().rules[rule_id]
+def rule_of() -> rule_registry.Rule:
+    """Return the rule instruction-total of the registry of this tree."""
+    return rule_registry.load().rules[cost_totals.INSTRUCTION_RULE]
 
 
-def plant(root: Path, rows: str, rule_id: str, ledger_rows: str) -> Path:
-    """Write the planted build of the rows and the ledger of a rule in a tree, and return the build directory."""
+def plant(root: Path, rows: str, ledger_rows: str) -> Path:
+    """Write the planted build of the rows and the ledger of the rule in a tree, and return the build directory."""
     build = root / planted.BUILD
     (root / planted.BUILD_FILE).parent.mkdir(parents=True, exist_ok=True)
     (root / planted.BUILD_FILE).write_text(rows, encoding="utf-8")
     planted.write_build(planted.read_rows(root / planted.BUILD_FILE, root, build), root, build)
-    ledger = rule_ledger.ledger_path(rule_id, root)
+    ledger = rule_ledger.ledger_path(cost_totals.INSTRUCTION_RULE, root)
     ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text(f"format 1\nrule {rule_id}\n{ledger_rows}", encoding="utf-8")
+    ledger.write_text(f"format 1\nrule {cost_totals.INSTRUCTION_RULE}\n{ledger_rows}", encoding="utf-8")
     return build
 
 
@@ -142,184 +106,157 @@ def plant_compiler(root: Path, exit_status: int = 0) -> None:
     compiler.chmod(0o755)
 
 
+def configuration_of(name: str) -> build_config.BuildConfiguration:
+    """Return a planted configuration of a name with the build kind KIND, as planted.plant_context() gives it."""
+    return build_config.BuildConfiguration(name, ((build_config.KIND_KEY, KIND),))
+
+
 def judged_of(
-    root: Path, rows: str, rule_id: str, configuration: build_config.BuildConfiguration
-) -> tuple[list[check_report.Finding], str]:
-    """Plant a build of the rows and the ledger of a rule, and return the findings of the rule and its output."""
-    build = plant(root, rows, rule_id, LEDGER_ROWS[rule_id])
+    root: Path, rows: str, configuration: build_config.BuildConfiguration
+) -> tuple[list[check_report.Finding] | str, str]:
+    """Plant a build of the rows and the ledger, and return the findings of the rule and its output.
+
+    The result is the reason of the rule in place of the findings when the rule does not apply to the build.
+    """
+    build = plant(root, rows, LEDGER_ROWS)
     context = BuildContext(root, build, configuration=configuration)
-    return testing.captured(lambda: context.findings_of(rule_of(rule_id)))
+
+    def findings() -> list[check_report.Finding] | str:
+        """Return the findings of the rule, or the reason when it does not apply."""
+        try:
+            return context.findings_of(rule_of())
+        except meta_runner.NotApplicable as reason:
+            return str(reason)
+
+    return testing.captured(findings)
 
 
-def kinds_of(found: list[check_report.Finding]) -> list[tuple[str, str]]:
-    """Return the level and the kind of each finding."""
-    return [(item.level, item.kind) for item in found]
-
-
-def policy_cases(expect: testing.Expect) -> None:
-    """Each build is judged: the rows of its name, or the largest baseline for a name that the ledger does not hold."""
-    bench = build_config.BuildConfiguration(f"{KIND}-bench", ((build_config.KIND_KEY, KIND),))
-    other_kind = build_config.BuildConfiguration(KIND, ((build_config.KIND_KEY, "aarch64-debug-asan"),))
-    for rule_id in RULES:
-        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-            root = Path(scratch)
-            found, text = judged_of(root, BUILD_ROWS, rule_id, bench)
-            expect(
-                f"{rule_id}: a build of a name that the ledger does not hold is judged against the largest baseline, "
-                f"and the summary line names it",
-                [item for item in found if item.level == "error"] == []
-                and f"because the ledger holds no configuration {KIND}-bench" in text,
-            )
-            found, text = judged_of(root, BUILD_ROWS, rule_id, other_kind)
-            expect(
-                f"{rule_id}: a build of a held name with a different fact is judged against its rows, and a line "
-                f"names the different fact",
-                [item for item in found if item.level == "error"] == []
-                and f"kind is aarch64-debug-asan in the build and {KIND} in the ledger" in text,
-            )
-            found, _ = judged_of(root, FALLEN_ROWS, rule_id, bench)
-            expect(
-                f"{rule_id}: a build of a name that the ledger does not hold gives no fall",
-                [item for item in found if item.kind in ("fall", "no-sentinel")] == [],
-            )
-            if rule_id not in TOTAL_RULES:
-                found, _ = judged_of(root, FALLEN_ROWS, rule_id, planted_configuration())
-                expect(
-                    f"{rule_id}: a build of a held configuration gives the fall warnings of its rows",
-                    any(item.kind in ("fall", "no-sentinel") for item in found)
-                    and all(item.level == "warning" for item in found),
-                )
-    for rule_id in TOTAL_RULES:
-        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-            found, _ = judged_of(Path(scratch), GROWN_ROWS, rule_id, bench)
-            expect(
-                f"{rule_id}: a growth over the largest baseline is an error, also in a build of a name that the ledger "
-                f"does not hold",
-                ("error", "growth") in kinds_of(found),
-            )
-
-
-def planted_configuration() -> build_config.BuildConfiguration:
-    """Return the configuration that a planted build of the kind KIND gives (planted.plant_context())."""
-    return build_config.BuildConfiguration(KIND, ((build_config.KIND_KEY, KIND),))
-
-
-def written_text(
-    rule_id: str, root: Path, configuration: build_config.BuildConfiguration, add_configuration: bool = False
-) -> str:
-    """Write the ledger of a rule from the planted build of a tree with a configuration, and return its text.
+def written_text(root: Path, configuration: build_config.BuildConfiguration, reason: str | None = None) -> str:
+    """Write the ledger of the rule from the planted build of a tree, and return its text.
 
     Raises:
-        LedgerError: If the write refuses the configuration of the build
+        LedgerError: If the write refuses the build
+        NotApplicable: If the rule does not apply to the build
     """
     context = BuildContext(root, root / planted.BUILD, configuration=configuration)
-    context.rule = rule_of(rule_id)
-    context.add_configuration = add_configuration
-    member = cost_totals.RULES[rule_id]
-    ledger = rule_ledger.read(rule_of(rule_id), root)
-    written = member.written(context, ledger, None) if member.written is not None else ledger
+    context.rule = rule_of()
+    member = cost_totals.RULES[cost_totals.INSTRUCTION_RULE]
+    if member.written is None:
+        raise rule_ledger.LedgerError("the member of the rule writes no ledger")
+    written = member.written(context, rule_ledger.read(rule_of(), root), reason)
     text = rule_ledger.render(written)
-    rule_ledger.ledger_path(rule_id, root).write_text(text, encoding="utf-8")
+    rule_ledger.ledger_path(cost_totals.INSTRUCTION_RULE, root).write_text(text, encoding="utf-8")
     return text
 
 
-def refused_write(rule_id: str, root: Path, configuration: build_config.BuildConfiguration) -> str:
-    """Return the refusal of a write of a configuration with no --add-configuration, or an empty text."""
+def refused_write(root: Path, configuration: build_config.BuildConfiguration, reason: str | None = None) -> str:
+    """Return the refusal of a write as text, or an empty text when the write writes the ledger."""
     try:
-        written_text(rule_id, root, configuration)
-    except rule_ledger.LedgerError as problem:
+        written_text(root, configuration, reason)
+    except (rule_ledger.LedgerError, meta_runner.NotApplicable) as problem:
         return str(problem)
     return ""
+
+
+def total_of(root: Path) -> tuple[int, str]:
+    """Return the sum of the two total rows of the ledger of a tree, and their reason."""
+    base = rule_ledger.read(rule_of(), root).base
+    entries = [base[rule_ledger.Key("", KIND, part)] for part in cost_totals.CENSUS_PARTS]
+    return sum(int(entry.value) for entry in entries), entries[0].reason
+
+
+def configuration_cases(expect: testing.Expect) -> None:
+    """A build of the kind of the base with a different name of its configuration gets no verdict and no write."""
+    bench = configuration_of(f"{KIND}-bench")
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        found, _ = judged_of(root, GROWN_ROWS, bench)
+        expect(
+            "a build of the configuration KIND-bench with a growth gives no finding, because the rule judges only "
+            "the base",
+            isinstance(found, str) and f"the build has the configuration {KIND}-bench" in found,
+        )
+        before = rule_ledger.ledger_path(cost_totals.INSTRUCTION_RULE, root).read_text(encoding="utf-8")
+        refusal = refused_write(root, bench)
+        expect(
+            "a write from a build of the configuration KIND-bench writes nothing, and names no --add-configuration",
+            f"configuration {KIND}" in refusal
+            and "--add-configuration" not in refusal
+            and rule_ledger.ledger_path(cost_totals.INSTRUCTION_RULE, root).read_text(encoding="utf-8") == before,
+        )
+        found, _ = judged_of(root, GROWN_ROWS, configuration_of(KIND))
+        expect(
+            "a build of the base with the same growth gives an error of the kind growth",
+            not isinstance(found, str) and [(item.level, item.kind) for item in found] == [("error", "growth")],
+        )
 
 
 def write_cases(expect: testing.Expect) -> None:
-    """A write gives the configuration rows of the build, and only --add-configuration adds a configuration."""
-    bench = build_config.BuildConfiguration(f"{KIND}-bench", ((build_config.KIND_KEY, KIND), ("CRUCIBLE_BENCH", "on")))
-    for rule_id in RULES:
-        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-            root = Path(scratch)
-            plant(root, BUILD_ROWS, rule_id, "")
-            first = written_text(rule_id, root, planted_configuration())
-            expect(
-                f"{rule_id}: a write into an empty ledger gives the configuration row of the build",
-                f"configuration {KIND} kind {KIND}\n" in first,
-            )
-            refusal = refused_write(rule_id, root, bench)
-            expect(
-                f"{rule_id}: a write of a configuration that the ledger does not hold writes nothing, and names "
-                f"--add-configuration",
-                "--add-configuration" in refusal
-                and rule_ledger.ledger_path(rule_id, root).read_text(encoding="utf-8") == first,
-            )
-            second = written_text(rule_id, root, bench, add_configuration=True)
-            expect(
-                f"{rule_id}: --add-configuration keeps the first configuration before the new one, with its facts",
-                second.index(f"configuration {KIND} kind {KIND}\n")
-                < second.index(f"configuration {KIND}-bench kind {KIND}\n")
-                and f"configuration {KIND}-bench CRUCIBLE_BENCH on\n" in second,
-            )
-            changed = build_config.BuildConfiguration(KIND, ((build_config.KIND_KEY, "aarch64-debug-asan"),))
-            expect(
-                f"{rule_id}: a write of the base name with other facts writes nothing, also with "
-                f"--add-configuration, which tells how to make the ledger again",
-                "--add-configuration" in refused_write(rule_id, root, changed)
-                and "base configuration" in add_refused(rule_id, root, changed),
-            )
-
-
-def total_of(rule_id: str, root: Path) -> int:
-    """Return the sum of the two total rows of the configuration KIND in the ledger of a rule of a tree."""
-    base = rule_ledger.read(rule_of(rule_id), root).base
-    return sum(int(base[rule_ledger.Key("", KIND, part)].value) for part in cost_totals.CENSUS_PARTS)
+    """A write gives the head comment of the module and the two rows of the base, and no configuration row."""
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        plant(root, BUILD_ROWS, "")
+        first = written_text(root, configuration_of(KIND))
+        rows = [line for line in first.splitlines() if not line.startswith("#")]
+        expect(
+            "a write into an empty ledger gives the head of the module, the two rows of the base and the default "
+            "reason",
+            first.startswith(cost_totals.INSTRUCTION_LEDGER_COMMENT)
+            and rows
+            == [
+                "format 1",
+                f"rule {cost_totals.INSTRUCTION_RULE}",
+                f"- | {KIND} | 10000000000 | fixtures | {cost_totals.CENSUS_DEFAULT_REASON}",
+                f"- | {KIND} | 4000000000 | objects | {cost_totals.CENSUS_DEFAULT_REASON}",
+            ],
+        )
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        plant(root, BUILD_ROWS, LEDGER_ROWS)
+        path = rule_ledger.ledger_path(cost_totals.INSTRUCTION_RULE, root)
+        path.write_text(f"{STALE_HEAD}{path.read_text(encoding='utf-8')}", encoding="utf-8")
+        text = written_text(root, configuration_of(KIND))
+        expect(
+            "a write replaces a head comment that a different writer wrote with the head of the module",
+            text.startswith(cost_totals.INSTRUCTION_LEDGER_COMMENT) and STALE_HEAD not in text,
+        )
 
 
 def fall_cases(expect: testing.Expect) -> None:
-    """A total less than its row gives no finding, and a write with no reason lowers the row (THE RULE parse-total)."""
-    for rule_id in TOTAL_RULES:
-        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-            root = Path(scratch)
-            found, text = judged_of(root, FALLEN_ROWS, rule_id, planted_configuration())
-            before = total_of(rule_id, root)
-            written_text(rule_id, root, planted_configuration())
-            after = total_of(rule_id, root)
-            expect(
-                f"{rule_id}: a total less than the rows of a held configuration gives no finding, and the summary "
-                f"line gives the fall",
-                found == [] and f"{cost_totals.census_change_text(after, before)}:" in text,
-            )
-            expect(
-                f"{rule_id}: a write with no reason lowers the baseline to the total of the build after a fall",
-                after < before,
-            )
+    """A total less than its rows gives no finding, and a write with no reason lowers the rows (THE FINDINGS)."""
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        found, text = judged_of(root, FALLEN_ROWS, configuration_of(KIND))
+        before, _ = total_of(root)
+        written_text(root, configuration_of(KIND))
+        after, reason = total_of(root)
+        expect(
+            "a total less than the rows gives no finding, and the summary line gives the fall",
+            found == [] and f"{cost_totals.census_change_text(after, before)}" in text,
+        )
+        expect(
+            "a write with no reason lowers the rows to the total of the build, and keeps the last reason",
+            after < before and reason == LEDGER_REASON,
+        )
 
 
-def head_cases(expect: testing.Expect) -> None:
-    """A write gives the ledger the head comment that the module owns, and a different head goes (THE HEAD COMMENT)."""
-    owned = {
-        "parse-total": cost_totals.PARSE_LEDGER_COMMENT,
-        "instruction-total": cost_totals.INSTRUCTION_LEDGER_COMMENT,
-        "header-fanout": cost_totals.FANOUT_LEDGER_COMMENT,
-    }
-    for rule_id in RULES:
-        with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-            root = Path(scratch)
-            plant(root, BUILD_ROWS, rule_id, LEDGER_ROWS[rule_id])
-            path = rule_ledger.ledger_path(rule_id, root)
-            path.write_text(f"{STALE_HEAD}{path.read_text(encoding='utf-8')}", encoding="utf-8")
-            text = written_text(rule_id, root, planted_configuration())
-            expect(
-                f"{rule_id}: a write replaces a head comment that a different writer wrote with the head of the rule",
-                text.startswith(owned[rule_id]) and STALE_HEAD not in text,
-            )
-
-
-def add_refused(rule_id: str, root: Path, configuration: build_config.BuildConfiguration) -> str:
-    """Return the refusal of a write of a configuration with --add-configuration, or an empty text."""
-    try:
-        written_text(rule_id, root, configuration, add_configuration=True)
-    except rule_ledger.LedgerError as problem:
-        return str(problem)
-    return ""
+def growth_cases(expect: testing.Expect) -> None:
+    """A write refuses a growth over the warning threshold with no reason, and raises the rows with a reason."""
+    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
+        root = Path(scratch)
+        plant(root, GROWN_ROWS, LEDGER_ROWS)
+        before, _ = total_of(root)
+        refusal = refused_write(root, configuration_of(KIND))
+        expect(
+            "a write with no reason refuses a growth over the warning threshold, and names --reason",
+            "--reason TEXT" in refusal and total_of(root)[0] == before,
+        )
+        written_text(root, configuration_of(KIND), "a planted growth")
+        after, reason = total_of(root)
+        expect(
+            "a write with a reason raises the rows, and gives the two rows that reason",
+            after > before and reason == "a planted growth",
+        )
 
 
 def real_cases(expect: testing.Expect) -> None:
@@ -327,7 +264,7 @@ def real_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
         plant_compiler(root)
-        build = plant(root, NATIVE_ROWS, "parse-total", LEDGER_ROWS["parse-total"])
+        build = plant(root, NATIVE_ROWS, LEDGER_ROWS)
         configuration = BuildContext(root, build).configuration()
         tier = dict(configuration.facts).get(build_config.TIER_KEY, "")
         expect(
@@ -345,46 +282,12 @@ def real_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
         plant_compiler(root, 1)
-        build = plant(root, NATIVE_ROWS, "parse-total", LEDGER_ROWS["parse-total"])
+        build = plant(root, NATIVE_ROWS, LEDGER_ROWS)
         context = BuildContext(root, build)
-        found, _ = testing.captured(lambda: context.findings_of(rule_of("parse-total")))
+        found, _ = testing.captured(lambda: context.findings_of(rule_of()))
         expect(
             "a compiler that does not print its target gives one error of the kind configuration",
             [(item.level, item.kind) for item in found] == [("error", "configuration")],
-        )
-
-
-def held_cases(expect: testing.Expect) -> None:
-    """A write keeps the rows of each file that the tree holds, and of each external file."""
-    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-        root = Path(scratch)
-        (root / "include").mkdir()
-        (root / "include" / "Kept.h").write_text("#pragma once\n", encoding="utf-8")
-        outside = {
-            BUILD_NAME: 3,
-            SYSTEM_NAME: 4,
-            str(root.parent / "test-cost-totals-away" / "lib.h"): 5,
-        }
-        rows = {"include/Kept.h": 1, "include/Divided.h": 2, **outside}
-        expect(
-            "a row of a file of the tree that the tree does not hold goes, and the rows of a file of the build "
-            "directory, of a system header and of an absolute path stay",
-            cost_totals.held_rows(root, rows) == {"include/Kept.h": 1, **outside},
-        )
-
-
-def held_write_cases(expect: testing.Expect) -> None:
-    """A write of one configuration keeps the rows of the external files of each other configuration."""
-    with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
-        root = Path(scratch)
-        plant(root, BUILD_ROWS, "parse-total", BENCH_LEDGER_ROWS)
-        text = written_text("parse-total", root, planted_configuration())
-        expect(
-            "a write of the base keeps the rows of a system header and of a file of the build directory of a "
-            "different configuration, and it removes the row of a file of the tree that the tree does not hold",
-            f"| {SYSTEM_NAME} |" in text
-            and f"{cost_totals.CENSUS_BUILD_PATH}{BUILD_FILE} | {KIND}-bench |" in text
-            and "include/Divided.h" not in text,
         )
 
 
@@ -393,5 +296,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (policy_cases, fall_cases, write_cases, head_cases, real_cases, held_cases, held_write_cases),
+        (configuration_cases, write_cases, fall_cases, growth_cases, real_cases),
     )

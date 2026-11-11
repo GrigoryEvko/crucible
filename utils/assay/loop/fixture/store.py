@@ -402,8 +402,8 @@ count, and each file that the compile read.  The list is the dependency file
 of GCC, the list of the `-M -MG` pass after a fatal error, or the list of the
 stored result, with the path of `realpath()` of each file (real_inputs).  A
 header that the compile opened through a link of layer-roots/ then has the
-path of the file of the tree.  The rule parse-total (`guard check --rule
-parse-total`) adds the bytes of these files for each fixture.  The record
+path of the file of the tree.  The rule fixture-quarantine reads these
+files for each fixture.  The record
 also holds the census of the fixture and the stamp argument of the plugin
 (The quarantine plugin).
 
@@ -2991,9 +2991,9 @@ def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, 
 
     The record is BUILD_DIR/neg-compile/NAME/NAME.inputs (assay.core.record,
     THE RECORDS).  It names each file by the path of `realpath()` in
-    `directory`, the directory of the compile (real_inputs).  The rules parse-total,
-    header-fanout and instruction-total read it, and the rule
-    fixture-quarantine reads the census of fixture_census().  A failure to
+    `directory`, the directory of the compile (real_inputs).  The rule
+    instruction-total reads its cost, and the rule fixture-quarantine reads
+    its files and the census of fixture_census().  A failure to
     write changes no verdict.
     """
     stamp, findings = census if census is not None else (None, None)

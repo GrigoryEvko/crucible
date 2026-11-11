@@ -55,9 +55,8 @@ its module (assay.guard.engines.elf.runner), which reads the build of
 configuration of the build with its rows.  --add-configuration and --import
 LOG apply to it as to a rule of the engine plugin.
 
-A rule of a family module of the engine build with `configured`, such as
-the census totals, holds the rows of each configuration.
---add-configuration applies to it.  A module of the engine build that judges
+A rule of a family module of the engine build with `configured` holds the
+rows of each configuration.  --add-configuration applies to it.  A module of the engine build that judges
 its ledger itself gives write(rule, request), with the WriteRequest of
 assay.guard.engines.plugin.runner (assay.guard.engines.buildsys.runner, THE
 MODULES THAT JUDGE THEIR LEDGER).  --add-configuration and --import LOG apply
