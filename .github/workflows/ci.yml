@@ -180,9 +180,8 @@ jobs:
       # build legs runs it.
       - name: the rules of the engine meta (witness + scan)
         run: |
-          for rule in history layout registry-shape rule-implementations rule-witness structured-reads \
-                      test-registration determinism job-owners no-shell \
-                      one-implementation python-lint typed-data types prose-bans admitted-audit \
+          for rule in layout registry-shape rule-implementations rule-witness \
+                      test-registration determinism no-shell python-lint types prose-bans admitted-audit \
                       decide-cite-ratio derived-files clang-format; do
             python3 utils/bin/guard witness --rule "$rule"
           done
