@@ -10,8 +10,8 @@ does not change the verdict.  The change that removes a cite or adds a
 procedure gets the error.
 
 THE COUNTS
-    The module of the rule contract-cites reads the catalog and the cite count
-    of each procedure from the parse trees of include/ and src/
+    The reader assay.guard.engines.tsast.contract_cites reads the catalog and
+    the cite count of each procedure from the parse trees of include/ and src/
     (contract_cites.scan()).  The rule reads the catalog of the work tree.
 
 THE KINDS
@@ -47,7 +47,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         tsast.KitMissing: If the pinned kit is not installed
     """
     try:
-        counts = contract_cites.scan(context.root).procedures
+        counts = contract_cites.scan(context.root)
     except (contract_cites.AuditError, tsast.ParseError) as problem:
         shown_problem = " ".join(str(problem).split())
         message = f"the rule cannot count the cites of the procedures: {shown_problem}.  Correct the file"

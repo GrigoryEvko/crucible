@@ -1,8 +1,8 @@
 """The decide:: catalog, read from the parse of Decide.h.
 
 A decide:: procedure is a function definition inside a namespace whose last
-name is `decide`.  The two contract audits read the catalog through this
-module, so they agree on what a procedure is.  A comment or a string that
+name is `decide`.  The count of the cites (contract_cites.py) reads the
+catalog through this module.  A comment or a string that
 names a procedure is not a definition node, so it never counts.
 """
 
