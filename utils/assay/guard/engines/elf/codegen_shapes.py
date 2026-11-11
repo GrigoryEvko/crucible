@@ -461,8 +461,9 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "view_append",
         "the append path is the bounds compare of the window and one memmove.  The copy into the window does no test "
-        "of the lengths.  In a Release build, the family side has two more register moves than the raw side.  The "
-        "memmove takes the place of the memcpy of the raw form, and on x86_64 glibc resolves the two to one function.  "
+        "of the lengths.  In a Release build, the family side has at most two more register moves than the raw "
+        "side.  The memmove takes the place of the memcpy of the raw form, and on x86_64 glibc resolves the two to "
+        "one function.  "
         "At -O1, the loop over the Option of the window keeps the test of its niche",
         branches=True,
         calls=("memmove",),
