@@ -156,7 +156,7 @@ Every unit obeys these instructions. The brief of each unit repeats them.
 - **Run every command in the foreground.** A command must block until it ends. Use a timeout of up to 600,000 ms, and split a long step into several calls. Never start a Monitor. Never end the turn while a command runs. Each stop sends the owner a notification.
 - Report only once, in the final report. Send an interim message only for a question that blocks the unit.
 - Run `free -g` before each heavy command. Wait while the available memory is below the level of section 20.2.
-- Build with the job count that the stage gives. The default is 224 compile jobs and 128 link jobs for each unit, and one heavy unit runs at a time (section 20.2).
+- Build with the job count that the stage gives. The default is one compile job for each logical core of the host and half as many link jobs for each unit, and one heavy unit runs at a time (section 20.2).
 - Never `nice` a ctest run.
 
 ### 5.4 Checks before landing
@@ -2316,11 +2316,11 @@ From 2026-10-16 the host is a virtual machine on an EPYC 9754: 256 vCPUs and 127
 
 | Situation | Units at the same time | Jobs for each unit |
 |---|---|---|
-| one unit alone on the host | 1 | 224 compile jobs and 128 link jobs |
-| a wave of heavy units | 1 at a time, under one shared lock | 224 compile jobs and 128 link jobs for a build, and 224 jobs for ctest. The owner set 224 compile jobs on 2026-10-17. The default was 128 from 2026-10-16, on the new host, 16 from 2026-10-09, when large virtual machines shared the old host, and 96 from 2026-10-02 |
+| one unit alone on the host | 1 | one compile job for each logical core of the host, and half as many link jobs |
+| a wave of heavy units | 1 at a time, under one shared lock | one compile job for each logical core of the host and half as many link jobs for a build, and one job for each processor for ctest. The owner set 224 compile jobs on 2026-10-17, and the host count on 2026-11-11. The default was 128 from 2026-10-16, on the new host, 16 from 2026-10-09, when large virtual machines shared the old host, and 96 from 2026-10-02 |
 | a wave with read-only units | the heavy limit plus any number of read-only units | read-only units run no build |
 
-The error thresholds of the rules `compile-jobs` and `link-jobs` of `utils/registry.txt` hold the default: 224 compile jobs and 128 link jobs. `cmake/JobPools.cmake` gives each build a Ninja pool of each depth, and Ninja runs no more edges of a pool at one time, also with a larger `-j`. The rule `compile-jobs` holds `DEFAULT_JOBS` of `utils/assay/core/proc.py` and the presets of `CMakePresets.json` equal to its count. From 2026-10-17, each link of the tree uses mold 3.0.0 with the threads of the rule `link-threads`, in place of GNU ld. Before each heavy command, run `free -g`. Wait while the "available" column is below 64 GB. On 2026-10-16 a cold Debug build at 128 jobs used at most 56.4 GB at one time. On 2026-10-17 the cold builds at 224 compile jobs used at most 60.7 GB at one time.
+The host gives each job count. `cmake/JobPools.cmake` gives each build a Ninja pool compile with one job for each logical core of the host, and a pool link with half of them. Ninja runs no more edges of a pool at one time, also with a larger `-j`. `DEFAULT_JOBS` of `utils/assay/core/proc.py` is the CPU count of the process, and the presets of `CMakePresets.json` take the host count. The rule `compile-jobs` refuses a literal job count. From 2026-10-17, each link of the tree uses mold 3.0.0 with the threads of the rule `link-threads`, in place of GNU ld. Before each heavy command, run `free -g`. Wait while the "available" column is below 64 GB. On 2026-10-16 a cold Debug build at 128 jobs used at most 56.4 GB at one time. On 2026-10-17 the cold builds at 224 compile jobs used at most 60.7 GB at one time.
 
 ### 20.3 What can run together
 

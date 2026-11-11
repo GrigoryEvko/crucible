@@ -344,13 +344,15 @@ class TestPreset:
 class PresetJobs:
     """The job count of one build preset or one test preset: its kind, its name and its jobs.
 
-    `kind` is "build" or "test".  `jobs` is the integer of the preset, or
-    None when the preset gives no integer there.
+    `kind` is "build" or "test".  `jobs` is the integer or the text of the
+    field jobs of the preset, or None when the preset gives no integer and no
+    text there.  The empty text of a test preset is ctest --parallel with no
+    count, one test for each processor of the host.
     """
 
     __slots__ = ("jobs", "kind", "name")
 
-    def __init__(self, kind: str, name: str, jobs: int | None) -> None:
+    def __init__(self, kind: str, name: str, jobs: int | str | None) -> None:
         """Hold the parts of one job count."""
         self.kind = kind
         self.name = name
@@ -796,8 +798,8 @@ def _test_presets(document: Mapping[str, object]) -> tuple[TestPreset, ...]:
 def _preset_jobs(document: Mapping[str, object]) -> tuple[PresetJobs, ...] | str:
     """Return the job count of each build preset and each test preset with a name, or the problem of a list.
 
-    A job count is an integer that is not a boolean.  Complexity: linear in
-    the build presets and the test presets.
+    A job count is an integer that is not a boolean, or a text.  Complexity:
+    linear in the build presets and the test presets.
     """
     found: list[PresetJobs] = []
     for kind, key in (("build", "buildPresets"), ("test", "testPresets")):
@@ -810,7 +812,7 @@ def _preset_jobs(document: Mapping[str, object]) -> tuple[PresetJobs, ...] | str
                 continue
             execution = item.get("execution") if kind == "test" else item
             value = execution.get("jobs") if isinstance(execution, dict) else None
-            found.append(PresetJobs(kind, name, value if type(value) is int else None))
+            found.append(PresetJobs(kind, name, value if type(value) is int or isinstance(value, str) else None))
     return tuple(found)
 
 

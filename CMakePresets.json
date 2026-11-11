@@ -1,6 +1,6 @@
 {
-  "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 27, "patch": 0 },
+  "version": 11,
+  "cmakeMinimumRequired": { "major": 4, "minor": 3, "patch": 0 },
   "configurePresets": [
     {
       "name": "default",
@@ -183,55 +183,55 @@
     }
   ],
   "buildPresets": [
-    { "name": "default", "configurePreset": "default", "jobs": 224 },
-    { "name": "analyzer", "configurePreset": "analyzer", "jobs": 224 },
-    { "name": "release", "configurePreset": "release", "jobs": 224 },
-    { "name": "bench",   "configurePreset": "bench", "jobs": 224 },
-    { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 224 },
-    { "name": "pgo",     "configurePreset": "pgo",   "jobs": 224 },
-    { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 224 },
-    { "name": "tsan",    "configurePreset": "tsan", "jobs": 224 },
-    { "name": "no-bpf", "configurePreset": "no-bpf", "jobs": 224 },
-    { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 224 },
-    { "name": "bench-fuzz", "configurePreset": "bench-fuzz", "jobs": 224 },
-    { "name": "verify",  "configurePreset": "verify", "jobs": 224 }
+    { "name": "default", "configurePreset": "default" },
+    { "name": "analyzer", "configurePreset": "analyzer" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "bench",   "configurePreset": "bench" },
+    { "name": "pgo-generate", "configurePreset": "pgo-generate" },
+    { "name": "pgo",     "configurePreset": "pgo" },
+    { "name": "pgo-release", "configurePreset": "pgo-release" },
+    { "name": "tsan",    "configurePreset": "tsan" },
+    { "name": "no-bpf", "configurePreset": "no-bpf" },
+    { "name": "ubsan-strict", "configurePreset": "ubsan-strict" },
+    { "name": "bench-fuzz", "configurePreset": "bench-fuzz" },
+    { "name": "verify",  "configurePreset": "verify" }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "release",
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "pgo",
       "configurePreset": "pgo",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "pgo-release",
       "configurePreset": "pgo-release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "analyzer",
       "configurePreset": "analyzer",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "tsan",
       "configurePreset": "tsan",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 600 }
+      "execution": { "jobs": "", "timeout": 600 }
     },
     {
       "name": "no-bpf",
@@ -240,7 +240,7 @@
       "vendor": { "crucible": { "tier": "nightly" } },
       "output": { "outputOnFailure": true },
       "filter": { "exclude": { "name": "^guard_(plugin|artifact_symbols|artifact_links)$" } },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "aarch64",
@@ -249,25 +249,25 @@
       "vendor": { "crucible": { "tier": "release" } },
       "output": { "outputOnFailure": true },
       "filter": { "exclude": { "label": "ci_guard" } },
-      "execution": { "jobs": 224,"timeout": 900 }
+      "execution": { "jobs": "", "timeout": 900 }
     },
     {
       "name": "ubsan-strict",
       "configurePreset": "ubsan-strict",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 600 }
+      "execution": { "jobs": "", "timeout": 600 }
     },
     {
       "name": "bench-fuzz",
       "configurePreset": "bench-fuzz",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "verify",
       "configurePreset": "verify",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 224,"timeout": 300 }
+      "execution": { "jobs": "", "timeout": 300 }
     },
     {
       "name": "stress",
@@ -276,7 +276,7 @@
       "vendor": { "crucible": { "tier": "nightly" } },
       "output": { "outputOnFailure": true },
       "execution": {
-        "jobs": 224,
+        "jobs": "",
         "timeout": 300,
         "repeat": { "mode": "until-fail", "count": 50 }
       }

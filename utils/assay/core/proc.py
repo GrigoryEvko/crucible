@@ -135,16 +135,13 @@ THE THREE STARTS OUTSIDE THIS MODULE
 THE JOB COUNT
     DEFAULT_JOBS is the one default count of the parallel work of the package.
     That work is a build, a test run, a parse build and the compiles of a
-    measure.  The error threshold of the rule compile-jobs of
-    utils/registry.txt is the count of compile jobs at one time.  That rule
-    holds DEFAULT_JOBS, and the jobs of each build preset and each test preset
-    of CMakePresets.json, equal to it.  This module does not read the
-    registry, because each run of `loop fixture` imports it.  The count is low,
-    because large virtual machines share the build host with the tree.  On
-    2026-10-09 the host held 22 GB of available memory with no build, and a
-    compile of the tree can take 1.3 GB.  A build runs no more compiles than
-    the depth of the Ninja pool compile (cmake/JobPools.cmake), also with a
-    larger -j N.
+    measure.  The count is the number of CPUs that the process can use
+    (os.process_cpu_count()), or 1 when Python cannot read it.  The rule
+    compile-jobs of utils/registry.txt refuses a literal integer here, and a
+    literal job count in a module of the package or in CMakePresets.json.  A
+    build runs no more compiles than the depth of the Ninja pool compile
+    (cmake/JobPools.cmake), also with a larger -j N.  A heavy step of a gate
+    or an entry decreases its jobs to the free memory (assay.loop.heavy).
 
 WHY THE MODULE IMPORTS LITTLE
     loop fixture runs for each negative fixture of each test run, and it
@@ -179,9 +176,9 @@ if TYPE_CHECKING:
             """Return a descriptor that select(2) calls readable when a slot can be free."""
 
 
-# The default count of parallel jobs of a build, a test run or a measure (THE JOB COUNT).  The rule compile-jobs holds
-# it equal to the error threshold of its row in utils/registry.txt.
-DEFAULT_JOBS = 224
+# The default count of parallel jobs of a build, a test run or a measure: one for each CPU of the process (THE JOB
+# COUNT).
+DEFAULT_JOBS = os.process_cpu_count() or 1
 # The time limits of three classes of work, in seconds (THE TIME LIMIT).
 QUICK_S = 120.0
 TOOL_S = 900.0

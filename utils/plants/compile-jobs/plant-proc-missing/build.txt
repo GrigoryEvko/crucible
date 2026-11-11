@@ -1,0 +1,2 @@
+# proc.py has no assignment to DEFAULT_JOBS at the top level.  The rule gives the error input.
+format 1

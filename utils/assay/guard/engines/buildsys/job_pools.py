@@ -1,28 +1,27 @@
 """job-pools — the compile jobs and the link jobs at one time, the Ninja pools that hold them, and the linker of a link.
 
 THE COUNTS
-    The error threshold of the measured rule compile-jobs of
-    utils/registry.txt is the number of compile jobs at one time.  The error
-    threshold of the rule link-jobs is the number of link jobs at one time.
-    The two rows are the one home of the two counts.  cmake/JobPools.cmake
-    reads them, and it gives Ninja the pool compile and the pool link with
-    these depths.  Each compile, and each custom command that compiles an
-    object, is in the pool compile.  Each link and each archive is in the
-    pool link.  Ninja runs at most the depth of a pool of its edges at one
-    time, also with a larger -j.  On 2026-10-11, a scratch project with 24
-    compiles and a pool of the depth 2 built at -j 64.  It ran at most 2
-    compiles at one time.  Each program that builds the tree then runs no
-    more compiles and links than the two counts.
+    The host gives each job count.  cmake/JobPools.cmake gives Ninja the
+    pool compile with one job for each logical core of the host, and the
+    pool link with half of them.  Each compile, and each custom command that
+    compiles an object, is in the pool compile.  Each link and each archive
+    is in the pool link.  Ninja runs at most the depth of a pool of its edges
+    at one time, also with a larger -j.  On 2026-10-11, a scratch project
+    with 24 compiles and a pool of the depth 2 built at -j 64.  It ran at
+    most 2 compiles at one time.
 
     A program of the tree that starts compiles with no build.ninja reads
-    DEFAULT_JOBS of assay.core.proc, and ctest reads the jobs of a test
-    preset.  The rule compile-jobs holds these counts equal to its count.
-    proc.py does not read the registry, because each run of `loop fixture`
-    imports it (THE JOB COUNT of that module).
+    DEFAULT_JOBS of assay.core.proc, one job for each CPU of the process.  A
+    build preset gives no jobs, so Ninja runs its default count.  A test
+    preset gives execution.jobs the empty text, and ctest then runs one test
+    for each processor of the host.  With no jobs, ctest runs one test at a
+    time.  The rule compile-jobs refuses a literal count in each of these
+    places, because a change of host makes it wrong.  The rule does not
+    compare a count with the host, because a verdict reads only the tree.
 
 THE LITERAL JOB COUNTS
     A program can give a build or a test run a job count of its own.  That
-    count is a second home of the count.  The rule reads each module of
+    count does not change with the host.  The rule reads each module of
     utils/assay of the tree, other than the tests in utils/assay/tests/.  A
     test gives the -j option of a parser literal values, such as 0, to check
     the parser, and it starts no build.  A job count is literal when it is one
@@ -44,7 +43,7 @@ THE LITERAL JOB COUNTS
 
 THE WORKER POOLS
     A pool of threads or processes that starts compilers or other heavy
-    processes is a second home of the count too.  The rule reads each call
+    processes has a job count too.  The rule reads each call
     of ThreadPoolExecutor or ProcessPoolExecutor in each module of utils/assay
     of the tree, also in the tests.  The count of workers is the keyword
     max_workers, or the first argument.  The count is bounded when the rule
@@ -60,9 +59,9 @@ THE WORKER POOLS
       * max() with bounded arguments and integers of at most 1
       * A bounded count // a positive integer.
     A literal, the length of a list and each other attribute are not bounded.
-    A call with no count gets the default of Python, which is more than
-    DEFAULT_JOBS on this host.  Give such a count min(proc.DEFAULT_JOBS,
-    COUNT).
+    A call with no count gets the default of Python.  A pool of threads then
+    gets min(32, DEFAULT_JOBS + 4) workers, which can be more than
+    DEFAULT_JOBS.  Give such a count min(proc.DEFAULT_JOBS, COUNT).
 
     The rule follows a parameter to each call of its function in the same
     module.  A plain call f(X) calls a function, and self.f(X) or cls.f(X) a
@@ -78,32 +77,32 @@ THE RULE compile-jobs
     The rule reads build.ninja and each file that it includes, through
     assay.readers.ninja.  It gives:
       `no-pool`       no file of the graph has the pool compile
-      `pool-depth`    the depth of the pool compile is not the count of the
-                      rule
       `outside-pool`  a compile, or a custom command with a first output that
                       ends with .o (custom_objects() of
                       assay.guard.engines.buildsys.build_graph), is not in the
                       pool compile.  One finding gives the number of such
                       edges for each kind of edge and each pool, and the first
                       edge
-      `program-jobs`  DEFAULT_JOBS of utils/assay/core/proc.py, or the jobs of a
-                      build preset or a test preset of CMakePresets.json, is
-                      not the count of the rule
+      `program-jobs`  DEFAULT_JOBS of utils/assay/core/proc.py is a literal
+                      count (THE LITERAL JOB COUNTS), or a build preset or a
+                      test preset of CMakePresets.json gives an integer of
+                      jobs.  A test preset that does not give execution.jobs
+                      the empty text is an error too
       `literal-jobs`  a module of the package gives a build or a test run a
                       literal job count (THE LITERAL JOB COUNTS)
       `pool-workers`  a pool of a module of the package or of its tests has a
                       count of workers that is not bounded (THE WORKER POOLS)
       `input`         the rule cannot read a file of the graph, proc.py, a
-                      module of the package or CMakePresets.json.  Or the
-                      threshold of the rule is not an integer above 0
+                      module of the package or CMakePresets.json.  Or proc.py
+                      has no assignment to DEFAULT_JOBS at the top level
     The rule reads proc.py, the modules of the package and CMakePresets.json
     of the tree that it checks, and not the modules that run it.  CMakeUserPresets.json is a file of one
     user, and the tree does not hold it.  The rule does not read it.
 
 THE RULE link-jobs
-    The rule gives the findings `no-pool`, `pool-depth`, `outside-pool` and
-    `input` for the pool link, each link and each archive.  No program of the tree
-    has a count of links of its own.  The rule then gives no program-jobs.
+    The rule gives the findings `no-pool`, `outside-pool` and `input` for the
+    pool link, each link and each archive.  No program of the tree has a
+    count of links of its own.  The rule then gives no program-jobs.
 
 THE RULE link-threads
     Each link of the tree runs mold (cmake/Linker.cmake).  The compiler gets
@@ -135,17 +134,10 @@ THE RULE link-threads
     The configure step refuses a mold of a different version.  For that
     reason, the rule does not run ld.mold.
 
-A DIFFERENT DEPTH
-    The cache variables CRUCIBLE_COMPILE_JOBS and CRUCIBLE_LINK_JOBS can give
-    a build a different depth (cmake/JobPools.cmake).  The rules then give
-    `pool-depth`, and the change is not silent.  `loop gauge --jobs 192` runs at
-    most the depth of the pool compile of its copy at one time.
-
 THE PLANTS
     The plants of each rule start from the tree of its control
     control-pooled.  That tree holds a planted build with the two pools,
-    proc.py and CMakePresets.json.  Its planted registry gives the count 4 for
-    compile-jobs and 2 for link-jobs.  plant_context() copies that tree first,
+    proc.py and CMakePresets.json.  plant_context() copies that tree first,
     and then the files of the plant over it.  A plant then holds only the
     files that it changes.  The control control-pooled of link-threads holds
     a planted build.  Each link of that build gives the flags of
@@ -181,6 +173,8 @@ BASE_CONTROL = "control-pooled"
 PROC_MODULE = "utils/assay/core/proc.py"
 PROC_CONSTANT = "DEFAULT_JOBS"
 PRESETS_FILE = "CMakePresets.json"
+# The jobs of a test preset that give ctest --parallel with no count: one test for each processor of the host.
+HOST_JOBS = ""
 # The word of an edge with no pool, in a finding.
 NO_POOL = "no pool"
 # The modules of the package and its tests, relative to the root of the tree (THE LITERAL JOB COUNTS).
@@ -248,7 +242,7 @@ THREADS_REPAIR = (
 
 @dataclass(frozen=True, slots=True)
 class PoolRule:
-    """One rule of the module: its ID, its pool, the cache variable of the depth, its edges and the repair of an edge.
+    """One rule of the module: its ID, its pool, its edges and the repair of an edge.
 
     `kinds` are the edge kinds of assay.readers.ninja in the pool.  With
     `has_programs`, the pool also holds each custom command that compiles an
@@ -257,7 +251,6 @@ class PoolRule:
 
     rule_id: str
     pool: str
-    variable: str
     kinds: frozenset[str]
     has_programs: bool
     repair: str
@@ -266,7 +259,6 @@ class PoolRule:
 COMPILE = PoolRule(
     COMPILE_RULE,
     "compile",
-    "CRUCIBLE_COMPILE_JOBS",
     frozenset({"compile"}),
     True,
     "Create the target after cmake/JobPools.cmake, or give the custom command JOB_POOL ${CRUCIBLE_COMPILE_POOL}",
@@ -274,7 +266,6 @@ COMPILE = PoolRule(
 LINK = PoolRule(
     LINK_RULE,
     "link",
-    "CRUCIBLE_LINK_JOBS",
     frozenset({"link", "archive"}),
     False,
     "Create the target after cmake/JobPools.cmake, which gives each link and each archive the pool link",
@@ -292,7 +283,7 @@ def count_of(context: BuildContext, rule_id: str, meaning: str) -> int | check_r
     Args:
         context: The context of the run
         rule_id: The ID of the measured rule
-        meaning: What the count is, for the message of the error, such as "the number of jobs at one time"
+        meaning: What the count is, for the message of the error, such as "the number of threads of one link"
 
     Raises:
         NotApplicable: If the registry has no measured rule with that ID
@@ -328,8 +319,8 @@ def pooled_edges(graph: ninja_reader.Graph, rule: PoolRule) -> list[tuple[str, i
     return sorted(found, key=lambda item: item[1])
 
 
-def pool_findings(context: BuildContext, rule: PoolRule, count: int) -> list[check_report.Finding]:
-    """Give the errors of the pool of a rule: no pool, a depth that is not the count, and an edge not in the pool.
+def pool_findings(context: BuildContext, rule: PoolRule) -> list[check_report.Finding]:
+    """Give the errors of the pool of a rule: no pool, and an edge that is not in the pool.
 
     Raises:
         NotApplicable: If the call gives no build directory, or a generator other than Ninja made the build
@@ -337,33 +328,17 @@ def pool_findings(context: BuildContext, rule: PoolRule, count: int) -> list[che
     graph = build_graph.graph_or_error(context, rule.rule_id)
     if isinstance(graph, check_report.Finding):
         return [graph]
-    build = context.require_build()
     shown = build_graph.graph_file_shown(context)
     found: list[check_report.Finding] = []
-    pool = graph.pools.get(rule.pool)
-    if pool is None:
+    if rule.pool not in graph.pools:
         found.append(
             error(
                 rule,
                 shown,
                 0,
                 f"build.ninja and the files that it includes have no pool {rule.pool}.  Configure the build again: "
-                f"cmake/JobPools.cmake gives the pool the depth of the rule {rule.rule_id}",
+                f"cmake/JobPools.cmake gives the pool a depth from the host",
                 "no-pool",
-                rule.pool,
-            )
-        )
-    elif pool.depth != count:
-        depth = "a depth that is not an integer" if pool.depth is None else f"the depth {pool.depth}"
-        found.append(
-            error(
-                rule,
-                context.shown(build / pool.file),
-                pool.line,
-                f"the pool {rule.pool} has {depth}, and the rule {rule.rule_id} of utils/registry.txt gives {count} "
-                f"jobs.  Configure the build again with an empty {rule.variable}, or raise the error threshold of the "
-                f"rule with a measurement of the memory of the build",
-                "pool-depth",
                 rule.pool,
             )
         )
@@ -380,33 +355,13 @@ def pool_findings(context: BuildContext, rule: PoolRule, count: int) -> list[che
                 rule,
                 shown,
                 first.line,
-                f"{len(edge_ids)} {kind} edge(s) are in {place} and not in the pool {rule.pool}, and the count of the "
-                f"rule {rule.rule_id} does not limit them.  The first writes {first.outputs[0]}.  {rule.repair}",
+                f"{len(edge_ids)} {kind} edge(s) are in {place} and not in the pool {rule.pool}, and the depth of the "
+                f"pool does not limit them.  The first writes {first.outputs[0]}.  {rule.repair}",
                 "outside-pool",
                 f"{kind} in {place}",
             )
         )
     return found
-
-
-def default_jobs(root: Path) -> tuple[int, int] | str:
-    """Return the value and the line of DEFAULT_JOBS in proc.py of a tree, or the problem of its read.
-
-    Complexity: linear in the length of proc.py.
-    """
-    try:
-        source = python_reader.read(root / PROC_MODULE, PROC_MODULE)
-    except (OSError, UnicodeDecodeError, python_reader.PythonError) as problem:
-        return f"{PROC_MODULE} cannot be read: {problem}"
-    for node in source.tree.body:
-        if (
-            isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == PROC_CONSTANT for target in node.targets)
-            and isinstance(node.value, ast.Constant)
-            and type(node.value.value) is int
-        ):
-            return node.value.value, node.lineno
-    return f"{PROC_MODULE} has no assignment of an integer to {PROC_CONSTANT} at the top level"
 
 
 FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
@@ -827,7 +782,7 @@ class PoolWorkers(ScopedVisitor):
         self.generic_visit(node)
 
 
-def module_findings(root: Path, rule: PoolRule, count: int) -> list[check_report.Finding]:
+def module_findings(root: Path, rule: PoolRule) -> list[check_report.Finding]:
     """Give one error for each literal job count and each pool that is not bounded of a module of the package.
 
     THE LITERAL JOB COUNTS do not read the tests, and THE WORKER POOLS read them.  Complexity: one read of each
@@ -864,9 +819,9 @@ def module_findings(root: Path, rule: PoolRule, count: int) -> list[check_report
                     rule,
                     shown,
                     line,
-                    f"{shown} gives a build or a test run the literal job count {literal}, a count of its own, and "
-                    f"the rule {rule.rule_id} of utils/registry.txt gives {count} jobs.  Give it proc.DEFAULT_JOBS, "
-                    f"or a parameter that its caller gives",
+                    f"{shown} gives a build or a test run the literal job count {literal}, and a change of host makes "
+                    f"it wrong.  Give it proc.DEFAULT_JOBS, one job for each CPU of the process, or a parameter that "
+                    f"its caller gives",
                     "literal-jobs",
                     f"{shown}:{line}",
                 )
@@ -877,8 +832,8 @@ def module_findings(root: Path, rule: PoolRule, count: int) -> list[check_report
                     rule,
                     shown,
                     line,
-                    f"{shown} starts a pool {described}, and the rule cannot prove that the count is at most the "
-                    f"{count} jobs of the rule {rule.rule_id} of utils/registry.txt.  Give the pool "
+                    f"{shown} starts a pool {described}, and the rule cannot prove that the count is at most "
+                    f"proc.DEFAULT_JOBS, one job for each CPU of the process.  Give the pool "
                     f"min(proc.DEFAULT_JOBS, COUNT), proc.DEFAULT_JOBS, or a parameter that its caller gives",
                     "pool-workers",
                     f"{shown}:{line}",
@@ -887,24 +842,64 @@ def module_findings(root: Path, rule: PoolRule, count: int) -> list[check_report
     return found
 
 
-def program_findings(context: BuildContext, rule: PoolRule, count: int) -> list[check_report.Finding]:
-    """Give one error for DEFAULT_JOBS, a literal job count of a module and a preset when its jobs are not the count."""
-    found = module_findings(context.root, rule, count)
-    jobs = default_jobs(context.root)
-    if isinstance(jobs, str):
-        found.append(error(rule, PROC_MODULE, 0, jobs, "input", PROC_CONSTANT))
-    elif jobs[0] != count:
-        found.append(
-            error(
-                rule,
-                PROC_MODULE,
-                jobs[1],
-                f"{PROC_CONSTANT} is {jobs[0]}, and the rule {rule.rule_id} of utils/registry.txt gives {count} jobs.  "
-                f"Give {PROC_CONSTANT} the count of the rule",
-                "program-jobs",
-                PROC_CONSTANT,
-            )
+def default_jobs_findings(root: Path, rule: PoolRule) -> list[check_report.Finding]:
+    """Give the error of DEFAULT_JOBS in proc.py of a tree: no assignment at the top level, or a literal count.
+
+    Complexity: linear in the length of proc.py.
+    """
+    try:
+        source = python_reader.read(root / PROC_MODULE, PROC_MODULE)
+    except (OSError, UnicodeDecodeError, python_reader.PythonError) as problem:
+        return [error(rule, PROC_MODULE, 0, f"{PROC_MODULE} cannot be read: {problem}", "input", PROC_CONSTANT)]
+    literals = LiteralJobs(source.tree)
+    for node in source.tree.body:
+        targets: Sequence[ast.expr] = ()
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets, value = (node.target,), node.value
+        if value is None or not any(isinstance(target, ast.Name) and target.id == PROC_CONSTANT for target in targets):
+            continue
+        if not literals.is_literal(value):
+            return []
+        message = (
+            f"{PROC_CONSTANT} is the literal job count {ast.unparse(value)}, and a change of host makes it wrong.  "
+            f"Give it os.process_cpu_count() or 1, one job for each CPU of the process"
         )
+        return [error(rule, PROC_MODULE, node.lineno, message, "program-jobs", PROC_CONSTANT)]
+    message = f"{PROC_MODULE} has no assignment to {PROC_CONSTANT} at the top level"
+    return [error(rule, PROC_MODULE, 0, message, "input", PROC_CONSTANT)]
+
+
+def preset_message(preset: cmake_reader.PresetJobs) -> str | None:
+    """Return the error of the jobs of one build preset or test preset, or None when the preset takes the host count.
+
+    A build preset with no integer of jobs runs the default count of Ninja.  A test preset takes the host count only
+    with the empty text of execution.jobs.
+    """
+    if type(preset.jobs) is int:
+        repair = (
+            'Give it "jobs": "", one test for each processor of the host'
+            if preset.kind == "test"
+            else "Remove the field jobs: Ninja then runs its default count, and the pools limit the compiles and links"
+        )
+        return (
+            f"the {preset.kind} preset {preset.name} gives the literal job count {preset.jobs}, and a change of host "
+            f"makes it wrong.  {repair}"
+        )
+    if preset.kind == "test" and preset.jobs != HOST_JOBS:
+        given = "no jobs" if preset.jobs is None else f"the jobs {preset.jobs!r}"
+        return (
+            f"the test preset {preset.name} gives {given}, and not the empty text of execution.jobs.  ctest with no "
+            f'jobs runs one test at a time.  Give it "jobs": "", one test for each processor of the host'
+        )
+    return None
+
+
+def program_findings(context: BuildContext, rule: PoolRule) -> list[check_report.Finding]:
+    """Give one error for a literal DEFAULT_JOBS, a literal job count of a module and a preset with no host count."""
+    found = [*module_findings(context.root, rule), *default_jobs_findings(context.root, rule)]
     presets = next((item for item in cmake_reader.presets(context.root) if item.path.name == PRESETS_FILE), None)
     if presets is None:
         return found
@@ -912,19 +907,9 @@ def program_findings(context: BuildContext, rule: PoolRule, count: int) -> list[
         problem = f"the rule cannot read {PRESETS_FILE}: {presets.problem}"
         return [*found, error(rule, PRESETS_FILE, 0, problem, "input", PRESETS_FILE)]
     for preset in presets.jobs:
-        if preset.jobs != count:
-            given = "no integer of jobs" if preset.jobs is None else f"{preset.jobs} jobs"
-            found.append(
-                error(
-                    rule,
-                    PRESETS_FILE,
-                    0,
-                    f"the {preset.kind} preset {preset.name} gives {given}, and the rule {rule.rule_id} of "
-                    f"utils/registry.txt gives {count}.  Give the preset the count of the rule",
-                    "program-jobs",
-                    f"{preset.kind} {preset.name}",
-                )
-            )
+        message = preset_message(preset)
+        if message is not None:
+            found.append(error(rule, PRESETS_FILE, 0, message, "program-jobs", f"{preset.kind} {preset.name}"))
     return found
 
 
@@ -932,16 +917,12 @@ def findings_of(context: BuildContext, rule: PoolRule) -> list[check_report.Find
     """Give the errors of one rule of the module (THE RULE compile-jobs, THE RULE link-jobs).
 
     Raises:
-        NotApplicable: If the call gives no build directory, or a generator other than Ninja made the build.  Also
-            if the registry has no measured rule with the ID
+        NotApplicable: If the call gives no build directory, or a generator other than Ninja made the build
     """
     context.require_build()
-    count = count_of(context, rule.rule_id, "the number of jobs at one time")
-    if isinstance(count, check_report.Finding):
-        return [count]
-    found = pool_findings(context, rule, count)
+    found = pool_findings(context, rule)
     if rule.has_programs:
-        found += program_findings(context, rule, count)
+        found += program_findings(context, rule)
     return found
 
 

@@ -114,7 +114,7 @@ OPS_ERROR = "evaluation operation count exceeds limit"
 WRITE_FLAGS_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 WRITE_FLAGS = frozenset({"-c", "-MD", "-MMD", "-MP"})
 TEXT_FLAGS = ("-fdiagnostics-color=never", "-fno-diagnostics-show-caret")
-# The compiles that run at the same time: the count of the rule compile-jobs (assay.core.proc, THE JOB COUNT).
+# The compiles that run at the same time: one for each CPU of the process (assay.core.proc, THE JOB COUNT).
 JOBS = proc.DEFAULT_JOBS
 # The largest limit that a row of the list can give.
 LIMIT_MAXIMUM = 10**12

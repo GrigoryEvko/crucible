@@ -230,13 +230,14 @@ def preset_cases(expect: testing.Expect) -> None:
             )
         (root / "CMakeUserPresets.json").write_text(
             '{"buildPresets": [{"name": "b", "jobs": 16}, {"name": "flag", "jobs": true}, {"jobs": 4}], '
-            '"testPresets": [{"name": "t", "execution": {"jobs": 8}}, {"name": "none"}, {"name": "x", "jobs": 3}]}',
+            '"testPresets": [{"name": "t", "execution": {"jobs": 8}}, {"name": "none"}, {"name": "x", "jobs": 3}, '
+            '{"name": "host", "execution": {"jobs": ""}}, {"name": "list", "execution": {"jobs": [2]}}]}',
             encoding="utf-8",
         )
         counted = cmake.presets(root)[1]
         expect(
-            "a build preset gives its jobs, a test preset gives the jobs of execution, and a count that is not an "
-            "integer or no field gives None",
+            "a build preset gives its jobs, a test preset gives the jobs of execution, a text stays a text, and a "
+            "count that is no integer and no text, or no field, gives None",
             counted.problem is None
             and [(item.kind, item.name, item.jobs) for item in counted.jobs]
             == [
@@ -245,6 +246,8 @@ def preset_cases(expect: testing.Expect) -> None:
                 ("test", "t", 8),
                 ("test", "none", None),
                 ("test", "x", None),
+                ("test", "host", ""),
+                ("test", "list", None),
             ],
         )
         (root / "CMakeUserPresets.json").write_text('{"testPresets": {}}', encoding="utf-8")

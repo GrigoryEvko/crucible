@@ -1,5 +1,0 @@
-pool compile
-  depth = 16
-
-pool link
-  depth = 2

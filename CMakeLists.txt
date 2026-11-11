@@ -267,10 +267,9 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   endif()
 endif()
 
-# The Ninja pools of the compiles and the links, with the depths of the rules
-# compile-jobs and link-jobs of utils/registry.txt.  A target reads the pool of
-# its compiles and of its link when it is created, so the file comes before the
-# first target.
+# The Ninja pools of the compiles and the links, with depths from the host.  A
+# target reads the pool of its compiles and of its link when it is created, so
+# the file comes before the first target.
 include(cmake/JobPools.cmake)
 
 # Each link of the tree runs the pinned mold with the thread count of the rule
