@@ -24,8 +24,7 @@ THE PATHS
 
 THE KIND
     kind() gives the build kind of BUILD_DIR/build-kind.txt
-    (assay.core.meter).  A ledger row of a measured rule applies only to a
-    build of its kind.
+    (assay.core.meter).
 
 THE CONFIGURATION
     configuration() gives the name of the configuration of the build

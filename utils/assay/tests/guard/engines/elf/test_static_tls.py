@@ -154,18 +154,18 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     found = static_tls.judge(planted_rule(limit=1024), scratch.planted())
     expect("a value at or below the limit gives no finding", found == [])
-    scratch.ledger(f"@build/libcrucible.a(header.cpp.o) | {KIND} | 512 | - | a planted buffer\n")
+    scratch.ledger("@build/libcrucible.a(header.cpp.o) | - | 512 | - | a planted buffer\n")
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
-        "a row of the kind keeps a member above the limit up to its kept value, with no finding",
+        "a row keeps a member above the limit up to its kept value, with no finding",
         errors_of(found) == [] and warnings_of(found) == [],
     )
-    scratch.ledger("@build/libcrucible.a(header.cpp.o) | other-kind | 512 | - | a row of a different kind\n")
+    scratch.ledger(f"@build/libcrucible.a(header.cpp.o) | {KIND} | 512 | - | a row with a kind\n")
     expect(
-        "a row of a different kind admits nothing in this build",
-        len(errors_of(static_tls.judge(planted_rule(), scratch.planted()))) == 1,
+        "a row with a KIND is an error, and it admits nothing",
+        len(errors_of(static_tls.judge(planted_rule(), scratch.planted()))) == 2,
     )
-    scratch.ledger(f"@build/libfoundation.a(counter.cpp.o) | {KIND} | 512 | - | a row that admits nothing\n")
+    scratch.ledger("@build/libfoundation.a(counter.cpp.o) | - | 512 | - | a row that admits nothing\n")
     found = static_tls.judge(planted_rule(), scratch.planted())
     expect(
         "a row of a member under the limit gives no finding, because a ledger fails only on a growth",
@@ -189,7 +189,7 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the write of the rows of the kind of a build directory (THE LEDGER)."""
+    """Hold the write of a build directory: a new row only with a reason, and no removed row (THE LEDGER)."""
     rule = planted_rule()
     scratch.archive("foundation", ["counter", "plain"])
     scratch.archive("crucible", ["header", "plain"])
@@ -199,10 +199,10 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     status, _ = scratch.write(rule, "a planted buffer")
     ledger = rule_ledger.read(rule, scratch.root)
     expect(
-        "a write with a reason writes the row of the member, with its value and its reason",
+        "a write with a reason writes the row of the member, with an empty KIND, its value and its reason",
         status == 0
         and [(key.path, key.kind, entry.value, entry.reason) for key, entry in ledger.base.items()]
-        == [("@build/libcrucible.a(header.cpp.o)", KIND, 512, "a planted buffer")],
+        == [("@build/libcrucible.a(header.cpp.o)", "", 512, "a planted buffer")],
     )
     status, text = scratch.write(rule)
     expect(
@@ -213,10 +213,10 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     scratch.archive("crucible", ["plain"])
     scratch.directory()
-    status, _ = scratch.write(rule)
+    status, text = scratch.write(rule)
     expect(
-        "a write removes the row of a member under the threshold",
-        status == 0 and not rule_ledger.read(rule, scratch.root).base,
+        "a write from a build that does not hold the member keeps its row",
+        status == 0 and len(rule_ledger.read(rule, scratch.root).base) == 1 and "with no change" in text,
     )
     request = runner.WriteRequest(scratch.root, scratch.build, rule_ledger.WriteMode.RAISE)
     status, _ = quiet(lambda: static_tls.write(rule, request))
@@ -227,36 +227,29 @@ def written_cases(expect: testing.Expect) -> None:
     """Hold the ledger that written() gives from the members of a build, with no build (THE LEDGER)."""
     budget = static_tls.budget_of(planted_rule())
     item = "libcrucible.a(header.cpp.o)"
-    other = rule_ledger.Key("@build/libfixy.a(slot.cpp.o)", "other-kind", "")
-    gone = rule_ledger.Key("@build/libfixy.a(old.cpp.o)", KIND, "")
+    gone = rule_ledger.Key("@build/libfixy.a(old.cpp.o)", "", "")
     ledger = rule_ledger.Ledger(
         RULE,
         rule_registry.Policy.MAX,
         "",
-        base={
-            other: rule_ledger.Entry(other, 300, "a row of a different kind"),
-            gone: rule_ledger.Entry(gone, 300, "a row of a member that went"),
-        },
+        base={gone: rule_ledger.Entry(gone, 300, "a row of a member that this build does not hold")},
     )
     big = static_tls.MemberTls(item, 512, ("_ZN10foundation6bufferE",))
     small = static_tls.MemberTls("libfoundation.a(counter.cpp.o)", 4, ("counter",))
-    new = static_tls.written(budget, KIND, (big, small), ledger, "a planted buffer")
+    new = static_tls.written(budget, (big, small), ledger, "a planted buffer")
     rows = {key.path: (key.kind, entry.value, entry.reason) for key, entry in new.base.items()}
     expect(
-        "written() keeps a row of a different kind, writes the member above the limit, and removes the rest",
+        "written() writes the member above the limit, and keeps the row of a member that the build does not hold",
         rows
         == {
-            other.path: ("other-kind", 300, "a row of a different kind"),
-            f"@build/{item}": (KIND, 512, "a planted buffer"),
+            gone.path: ("", 300, "a row of a member that this build does not hold"),
+            f"@build/{item}": ("", 512, "a planted buffer"),
         },
     )
-    kept = static_tls.written(budget, KIND, (big,), new, None)
-    expect(
-        "written() keeps the reason of an earlier row when the call gives none",
-        [entry.reason for key, entry in kept.base.items() if key.kind == KIND] == ["a planted buffer"],
-    )
+    kept = static_tls.written(budget, (big,), new, None)
+    expect("written() keeps a row that keeps its member, with no reason", kept.base == new.base)
     try:
-        static_tls.written(budget, KIND, (big,), ledger, None)
+        static_tls.written(budget, (big,), ledger, None)
         said = ""
     except rule_ledger.LedgerError as problem:
         said = str(problem)

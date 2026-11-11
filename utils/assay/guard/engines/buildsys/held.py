@@ -35,19 +35,16 @@ THE RECORDS OF A FIXTURE
 
 THE WRITE
     A held rule of the policy max has no module of its own.  `guard write`
-    then calls written() of this module.  WRITERS gives the function that writes
-    the ledger of each such rule.  The function of test-memory and
-    test-instructions is test_written(), which writes the rows of the
-    configuration of the build again from the records of its tests.  A
-    registered test gets a row when its measure is over the limit.  A row
-    keeps its test over the limit, and its value becomes the measure.  A test with no record, or with no measure of the rule,
-    keeps its row.  A row of a different name stays, and a row of the build
-    kind keeps a test of a build with options.  The function of
-    fixture-instructions is fixture_written(), which writes its ledger from
-    the records of the fixtures of the build.  A fixture gets a row when its
-    instruction count is over the limit.  The write refuses a
-    build with a fixture that has no record.  A held rule with no row in
-    WRITERS has no write, and `guard write` refuses it.
+    then calls written() of this module.  WRITERS gives the function that
+    writes the ledger of each such rule.  The function of test-memory and
+    test-instructions is test_written(), which reads the records of the
+    registered tests of the build.  The function of fixture-instructions is
+    fixture_written(), which reads the records of the fixtures of the build,
+    and it refuses a build with a fixture that has no record.  Each function
+    writes a row for each measure above the limit that no row keeps, with
+    the reason of the call (assay.core.budget, THE WRITE).  It removes no
+    row and lowers no kept value.  A held rule with no row in WRITERS has no
+    write, and `guard write` refuses it.
 
 THE FINDINGS
     The witness of a held rule counts each finding of a plant, also a warning
@@ -64,7 +61,6 @@ import contextlib
 import io
 import sys
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 
 from assay.core import budget as cost_budget
@@ -84,16 +80,12 @@ from assay.readers import ctest as ctest_reader
 GAUGE_RECORDS = "gauge-records.jsonl"
 # The rule of the fixture driver that judges the errors that no regex of a fixture matches.
 OWN_REASON = "fixture-own-reason"
-# The measured rule of the fixture driver (THE WRITE).  The reason of a new row of its ledger when the write gives
-# none, and the instructions in one G, follow.
+# The measured rule of the fixture driver (THE WRITE), and the instructions in one G.
 FIXTURE_INSTRUCTIONS = "fixture-instructions"
-FIXTURE_REASON = "the measure of one cold fixture compile"
 GIGA = 1e9
-# The two measured rules of the test launcher with a ledger that names a test, and the reason of a new row of their
-# ledgers when the write gives none (THE WRITE).
+# The two measured rules of the test launcher with a ledger that names a test (THE WRITE).
 TEST_INSTRUCTIONS = "test-instructions"
 TEST_RULES = ("test-memory", TEST_INSTRUCTIONS)
-TEST_REASON = "the measure of one ctest run"
 
 type Judge = Callable[[rule_registry.Rule, BuildContext], list[check_report.Finding]]
 
@@ -126,13 +118,11 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     Complexity: linear in the records of the tests.
 
     Raises:
-        NotApplicable: If the plant has no build directory or no build kind, or a record does not read
+        NotApplicable: If the plant has no build directory, or a record does not read
     """
     from assay.loop import teststep
 
     build = context.require_build()
-    kind = context.kind()
-    configuration = cost_meter.read_configuration(str(build))
     budget = {row: context.budget(row).limit for row in teststep.ROWS}
     ledgers = str(rule_ledger.ledger_path(rule.id, context.root).parent)
     try:
@@ -155,7 +145,7 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
         )
         place = context.shown(cost_record.test_record_file(build, name))
         program = teststep.program_item(record.program, str(build))
-        for level, row, message in teststep.judge(name, program, run, budget, kind, ledgers, configuration):
+        for level, row, message in teststep.judge(name, program, run, budget, ledgers):
             shown_level: check_report.Level = "error" if level == "error" else "warning"
             found.append(check_report.Finding(shown_level, place, 0, row, message))
     return found
@@ -243,67 +233,45 @@ def test_measure(rule_id: str, record: cost_record.TestRecord) -> float | None:
 
 
 def test_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of a rule of TEST_RULES with the rows of the configuration written again (THE WRITE).
+    """Return the ledger of a rule of TEST_RULES with a row for each test of the build that no row keeps (THE WRITE).
 
-    A new row takes REASON or TEST_REASON.  Complexity: linear in the tests, the records and the rows.
+    Complexity: linear in the tests, the records and the rows.
 
     Raises:
         NotApplicable: If the call gives no build directory
-        rule_ledger.LedgerError: If the ledger is not a ledger of TEST_RULES, or an input does not read.  An input is
-            the build kind, the name of the configuration, the test list or a record
+        rule_ledger.LedgerError: If the ledger is not a ledger of TEST_RULES, the test list or a record does not read,
+            or a test needs a row and the call gives no reason
     """
+    from assay.loop import teststep
+
     if ledger.rule not in TEST_RULES:
         raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not a ledger of {' or '.join(TEST_RULES)}")
     build = context.require_build()
-    try:
-        kind = context.kind()
-    except meta_runner.NotApplicable as problem:
-        raise rule_ledger.LedgerError(f"the write cannot read its input: {problem}") from None
-    name = cost_meter.read_configuration(str(build))
-    if name is None:
-        raise rule_ledger.LedgerError(
-            f"the build has no {cost_meter.CONFIGURATION_FILE}, which cmake/BuildLauncher.cmake writes at each "
-            f"configure.  Configure the build again"
-        )
     budget = context.budget(ledger.rule)
     try:
         registered = {test.name for test in ctest_reader.tests(build)}
         records = ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
         raise rule_ledger.LedgerError(f"the records of the build do not read: {problem}") from None
-    # A record with no measure of the rule, such as a run with no instruction count, keeps the row of its test.
-    measures = {test_name: test_measure(ledger.rule, record) for test_name, record in records.items()}
-    base = {
-        key: entry
-        for key, entry in ledger.base.items()
-        if key.kind != name or (key.entity in registered and measures.get(key.entity) is None)
-    }
-    for test_name in sorted(records):
-        measure = measures[test_name]
-        if measure is None or test_name not in registered:
-            continue
-        key = rule_ledger.Key("", name, test_name)
-        earlier = ledger.base.get(key)
-        level = check_report.classify(measure, budget)
-        has_kind_row = name != kind and rule_ledger.Key("", kind, test_name) in ledger.base
-        if level is None or (earlier is None and has_kind_row):
-            continue
-        kept = earlier.reason if earlier is not None else reason or TEST_REASON
-        base[key] = rule_ledger.Entry(key, cost_budget.kept_value(measure), kept)
-    return replace(ledger, base=base)
+    measures: list[tuple[str, float, check_report.Budget]] = []
+    for test_name, record in sorted(records.items()):
+        measure = test_measure(ledger.rule, record)
+        program = teststep.program_item(record.program, str(build))
+        if measure is not None and test_name in registered and cost_budget.is_judged(program):
+            measures.append((test_name, measure, budget))
+    return cost_budget.raised_ledger(ledger, cost_meter.ITEM_NAME, measures, reason)
 
 
 def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Return the ledger of fixture-instructions written again from the records of the build (THE WRITE).
+    """Return the ledger of fixture-instructions with a row for each fixture of the build that no row keeps (THE WRITE).
 
-    A fixture with an instruction count over the limit gets the row `- | - | VALUE | FIXTURE | REASON`, with VALUE
-    in G, and its value is the count, rounded up.  The row keeps its earlier reason, else it gets REASON or FIXTURE_REASON.  Each other row goes, also the row
-    of a fixture with no count.  Complexity: linear in the tests of the build and in the records of the fixtures.
+    A row is `- | - | VALUE | FIXTURE | REASON`, with VALUE in G.  Complexity: linear in the tests of the build and in
+    the records of the fixtures.
 
     Raises:
         NotApplicable: If the call gives no build directory
-        rule_ledger.LedgerError: If the ledger is not the ledger of fixture-instructions, the tests do not read, or a
-            fixture has no record that counts
+        rule_ledger.LedgerError: If the ledger is not the ledger of fixture-instructions, the tests do not read, a
+            fixture has no record that counts, or a fixture needs a row and the call gives no reason
     """
     if ledger.rule != FIXTURE_INSTRUCTIONS:
         raise rule_ledger.LedgerError(f"the ledger of {ledger.rule} is not the ledger of {FIXTURE_INSTRUCTIONS}")
@@ -313,7 +281,7 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
         tests = fixture_tests(build)
     except ctest_reader.CtestError as problem:
         raise rule_ledger.LedgerError(f"the tests of the build do not read: {problem}") from None
-    base: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    measures: list[tuple[str, float, check_report.Budget]] = []
     unread: list[str] = []
     for name, _, _ in tests:
         try:
@@ -324,20 +292,14 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
         except cost_record.RecordError as problem:
             unread.append(f"{name} ({problem})")
             continue
-        key = rule_ledger.Key("", "", name)
-        earlier = ledger.base.get(key)
-        measure = None if record.instructions is None else record.instructions / GIGA
-        if measure is None or measure <= budget.limit:
-            continue
-        base[key] = rule_ledger.Entry(
-            key, cost_budget.kept_value(measure), earlier.reason if earlier is not None else reason or FIXTURE_REASON
-        )
+        if record.instructions is not None:
+            measures.append((name, record.instructions / GIGA, budget))
     if unread:
         raise rule_ledger.LedgerError(
             f"{len(unread)} fixtures have no record that counts, such as {unread[0]}.  Run each fixture of the build, "
             f"then the write"
         )
-    return replace(ledger, base=base)
+    return cost_budget.raised_ledger(ledger, cost_meter.ITEM_NAME, measures, reason)
 
 
 type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]

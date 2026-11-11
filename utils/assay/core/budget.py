@@ -52,16 +52,21 @@ THE SCOPE
     judged.
 
 THE ROWS
-    The ledger of a rule of the policy max holds one row for each item and
-    each build kind or configuration.  THE REGISTRY AND THE LEDGERS of
-    assay.core.meter gives the row.  The name of a configuration is the build kind with the words of
-    its options (assay.core.configuration, THE CONFIGURATION).  read_rows()
-    gives the rows that judge one build.  They are the rows of the name of its
-    configuration, and the rows of its build kind for each other item.
-    row_of() gives the row of one item in the same sequence, with no finding.
-    A build with no option has the build kind as the name of its
-    configuration.  A row whose item the build does not hold gives no
-    finding.
+    The ledger of a rule of the policy max holds at most one row for each
+    item, and each row judges each build of the tree.  THE REGISTRY AND THE
+    LEDGERS of assay.core.meter gives the row.  read_rows() gives the rows
+    of a ledger, and row_of() gives the row of one item, with no finding.  A
+    row whose item a build does not hold gives no finding.
+
+THE WRITE
+    raised_ledger() gives the new ledger of `guard write` from the measures
+    of a build.  It writes a row only for an item above the limit that no
+    row keeps: a new row, or a higher kept value of a row whose item rose
+    above it with its noise (THE VERDICT).  Such a row needs the reason of
+    the call, and a call with no reason writes nothing.  The write removes
+    no row and lowers no kept value.  A build that does not hold an item,
+    or holds it with a lower value, then keeps the row of a different build.
+    A person removes a row whose item stays at or below the limit.
 
 THE STEP METERS
     `loop step`, `loop test-step` and `loop fixture` judge each step with
@@ -79,9 +84,10 @@ from assay.core.value import Value
 # The names are only for the types, and a step meter does not pay their imports.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
+    from assay.core import ledger as rule_ledger
     from assay.core import report as check_report
 
 # The verdicts of one value (THE VERDICT).
@@ -146,33 +152,18 @@ class Admission(Value):
 
 
 class Rows(Value):
-    """The ledger rows of one rule of the policy max that judge one build (THE ROWS).
+    """The ledger rows of one rule of the policy max (THE ROWS).  `admitted` holds the row of each item that a row keeps."""
 
-    `kind` is the name of the configuration of the build.  `admitted` holds the
-    row of each item that a row keeps.  `own` holds each item of a row of that
-    name, which unused() reads.
-    """
-
-    __match_args__ = ("shown", "kind", "admitted", "problems", "own")
+    __match_args__ = ("shown", "admitted", "problems")
     shown: str
-    kind: str
     admitted: Mapping[str, Admission]
     problems: tuple[check_report.Finding, ...]
-    own: frozenset[str]
 
     def __init__(
-        self,
-        shown: str,
-        kind: str,
-        admitted: Mapping[str, Admission],
-        problems: tuple[check_report.Finding, ...] = (),
-        own: frozenset[str] | None = None,
+        self, shown: str, admitted: Mapping[str, Admission], problems: tuple[check_report.Finding, ...] = ()
     ) -> None:
-        """Hold the shown ledger, the name, the row of each item, the problems of the file and the items of the name.
-
-        `own` None makes each item of `admitted` an item of the name.
-        """
-        super().__init__(shown, kind, admitted, problems, frozenset(admitted) if own is None else own)
+        """Hold the shown ledger, the row of each item and the problems of the file."""
+        super().__init__(shown, admitted, problems)
 
 
 def noise_of(unit: str) -> float:
@@ -208,29 +199,14 @@ def verdict(value: float, limit: float, kept: float | None, noise: float = 0.0) 
     return ADMITTED if value <= kept * (1.0 + noise) else RISEN
 
 
-def lookup(
-    rows: Mapping[tuple[str, str], tuple[int, float, str]], kind: str, item: str, configuration: str | None
-) -> tuple[int, float, str] | None:
-    """Return the row of one item: of the name of the configuration, else of the build kind (THE ROWS)."""
-    if configuration:
-        found = rows.get((configuration, item))
-        if found is not None:
-            return found
-    return rows.get((kind, item))
-
-
-def row_of(
-    rule_id: str, shape: str, ledger: str, kind: str, item: str, configuration: str | None = None
-) -> tuple[Admission | None, str, str]:
-    """Return the row of one item that judges a build, from the ledger of a rule of the policy max (THE ROWS).
+def row_of(rule_id: str, shape: str, ledger: str, item: str) -> tuple[Admission | None, str, str]:
+    """Return the row of one item from the ledger of a rule of the policy max (THE ROWS).
 
     Args:
         rule_id: The ID of the rule
         shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
         ledger: The file of the ledger.  The file is not there when the rule has no row
-        kind: The kind of the build
         item: The item
-        configuration: The name of the configuration of the build, or None for the build kind
 
     Returns:
         The row or None, the ledger as a message shows it, and the first problem of the ledger as `LINE: TEXT`, or an
@@ -239,16 +215,16 @@ def row_of(
     from assay.core import meter as cost_meter
 
     try:
-        rows, problems, shown = cost_meter.read_kind_rows(rule_id, shape, ledger)
+        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, shape, ledger)
     except OSError as error:
         return None, cost_meter.shown_ledger(ledger), f"0: the ledger cannot be read ({error})"
-    found = lookup(rows, kind, item, configuration)
+    found = rows.get(item)
     problem = f"{problems[0][0]}: {problems[0][1]}" if problems else ""
     return (None if found is None else Admission(*found)), shown, problem
 
 
-def read_rows(rule_id: str, shape: str, ledger: Path, kind: str, configuration: str | None = None) -> Rows:
-    """Read the rows that judge one build from the ledger of a rule of the policy max (THE ROWS).
+def read_rows(rule_id: str, shape: str, ledger: Path) -> Rows:
+    """Read the rows of the ledger of a rule of the policy max (THE ROWS).
 
     Complexity: linear in the rows.
 
@@ -256,38 +232,68 @@ def read_rows(rule_id: str, shape: str, ledger: Path, kind: str, configuration: 
         rule_id: The ID of the rule
         shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
         ledger: The file of the ledger.  The file is not there when the rule has no row
-        kind: The kind of the build
-        configuration: The name of the configuration of the build, or None for the build kind
 
     Returns:
-        The rows of the build.  Also an error for each row that does not have the shape of the rule, and an error for
-        a file that cannot be read
+        The rows.  Also an error for each row that does not have the shape of the rule, and an error for a file that
+        cannot be read
     """
     from assay.core import meter as cost_meter
     from assay.core import report as check_report
 
-    name = configuration or kind
     try:
-        rows, problems, shown = cost_meter.read_kind_rows(rule_id, shape, str(ledger))
+        rows, problems, shown = cost_meter.read_ledger_rows(rule_id, shape, str(ledger))
     except OSError as problem:
         shown = cost_meter.shown_ledger(str(ledger))
-        return Rows(
-            shown,
-            name,
-            {},
-            (check_report.Finding("error", shown, 0, rule_id, f"the ledger cannot be read ({problem})"),),
-        )
-    admitted = {
-        item: Admission(line, value, reason)
-        for (row_kind, item), (line, value, reason) in rows.items()
-        if row_kind == name
-    }
-    own = frozenset(admitted)
-    for (row_kind, item), (line, value, reason) in rows.items():
-        if row_kind == kind and item not in admitted:
-            admitted[item] = Admission(line, value, reason)
+        unread = check_report.Finding("error", shown, 0, rule_id, f"the ledger cannot be read ({problem})")
+        return Rows(shown, {}, (unread,))
+    admitted = {item: Admission(line, value, reason) for item, (line, value, reason) in rows.items()}
     errors = tuple(check_report.Finding("error", shown, line, rule_id, text) for line, text in problems)
-    return Rows(shown, name, admitted, errors, own)
+    return Rows(shown, admitted, errors)
+
+
+def raised_ledger(
+    ledger: rule_ledger.Ledger,
+    shape: str,
+    measures: Iterable[tuple[str, float, check_report.Budget]],
+    reason: str | None,
+) -> rule_ledger.Ledger:
+    """Return the ledger of a rule of the policy max with a row for each measure that no row keeps (THE WRITE).
+
+    Complexity: linear in the measures and the rows.
+
+    Args:
+        ledger: The ledger at this time
+        shape: The shape of the item of a row: ITEM_OUTPUT, ITEM_FILE or ITEM_NAME of assay.core.meter
+        measures: The item, the value and the limit of each measure of the build
+        reason: The reason of each new row and each higher kept value, or None
+
+    Raises:
+        rule_ledger.LedgerError: If a measure needs a row and the call gives no reason
+    """
+    from dataclasses import replace
+
+    from assay.core import ledger as rule_ledger
+    from assay.core import meter as cost_meter
+
+    base = dict(ledger.base)
+    unexplained: list[str] = []
+    for item, value, budget in measures:
+        path, entity = cost_meter.item_cells(item, shape)
+        key = rule_ledger.Key(path, "", entity)
+        earlier = base.get(key)
+        kept = None if earlier is None else float(earlier.value)
+        if verdict(value, budget.limit, kept, noise_of(budget.unit)) not in (ERROR, RISEN):
+            continue
+        if not reason:
+            unexplained.append(item)
+            continue
+        base[key] = rule_ledger.Entry(key, max(kept or 0.0, kept_value(value)), reason)
+    if unexplained:
+        raise rule_ledger.LedgerError(
+            f"{len(unexplained)} items are more than the limit, and no row keeps them up to their values, such as "
+            f"{unexplained[0]}.  Give the reason of their rows with --reason"
+        )
+    return replace(ledger, base=base)
 
 
 def judge(rule_id: str, budget: check_report.Budget, measure: Measure, rows: Rows) -> check_report.Finding | None:

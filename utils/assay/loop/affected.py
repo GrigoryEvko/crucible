@@ -31,9 +31,8 @@ THE EXECUTABLE TEST
       named file of the source tree with a C or C++ suffix is the text of a
       diagnostic, for example from __FILE__, and it is not an input.
     - For a test behind the test launcher: the bytes of the master loop, of
-      each module of the import closure of assay.loop.teststep, of the
-      ledger utils/ledgers/RULE.txt of each rule of the launcher, and of
-      build-kind.txt and build-configuration.txt in the build tree.  Also
+      each module of the import closure of assay.loop.teststep, and of the
+      ledger utils/ledgers/RULE.txt of each rule of the launcher.  Also
       the text of the row of each rule of the launcher in
       utils/registry.txt.  The launcher reads these files and rows, and the
       result of a test changes with them.  A ledger that the tree does not
@@ -345,9 +344,7 @@ THE SHARED STORE
       * The shared key is the fingerprint with ROOT_MARK for the source root
         and BUILD_MARK for the build directory.  The marks replace the roots
         in each word of the record, each path and each text (relocated() of
-        assay.core.cost_store).  The files build-kind.txt and
-        build-configuration.txt are not in the key, because only the judge of
-        the budget of the launcher reads them.
+        assay.core.cost_store).
       * An entry is the file KEY in the directory of the first two digits of
         KEY.  It holds the format, the verdict and the SHA-256 of the record of
         the run (assay.core.record).  The script writes an entry only after a
@@ -464,8 +461,6 @@ GUARD_MASTER = "guard"
 LAUNCHER_MODULE = "assay.loop.teststep"
 FIXTURE_MODULE = "assay.loop.fixture.store"
 FIXTURE_HOLDER = "loop-fixture"
-# The files of the build tree that the judge of the launcher reads: the build kind and the name of the configuration.
-JUDGE_FILES = (cost_meter.KIND_FILE, cost_meter.CONFIGURATION_FILE)
 # The start of the text of the environment of a test in its fingerprint (environment_text()).
 ENVIRONMENT_TEXT = "environment"
 ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANUP", "REQUIRED_FILES")
@@ -972,7 +967,6 @@ class Planner:
         # The roots of the shared key, the longest first.  A build directory in the source tree then gets its own mark.
         given = ((trees.build_root, cost_store.BUILD_MARK), (trees.source_root, cost_store.ROOT_MARK))
         self.marks = tuple(sorted(given, key=lambda item: -len(item[0])))
-        self.judge_files = frozenset(os.path.join(trees.build_root, name) for name in JUDGE_FILES)
 
     def forget(self) -> None:
         """Forget each digest of this call and each changed fact of a tree.  The next decision compares each input again.
@@ -1185,8 +1179,7 @@ class Planner:
         """Return the files and the texts that the test launcher reads.
 
         The files are the inputs of the launcher (assay.loop.inputs, THE
-        METERS OF A TEST), build-kind.txt and build-configuration.txt.  The
-        texts are the rows of the rules of the launcher in the registry, and
+        METERS OF A TEST).  The texts are the rows of the rules of the launcher in the registry, and
         the clean environment of the test (environment_text()).  A change of
         a different row then changes no input.  One time for each call of the
         script.
@@ -1194,7 +1187,7 @@ class Planner:
         if launcher not in self.launcher_files:
             root = os.path.dirname(os.path.dirname(os.path.dirname(real(launcher))))
             meter = self.deriver(root).meter_inputs(LAUNCHER_MODULE, test_launcher.ROWS)
-            files = [*meter.files, *(os.path.join(self.trees.build_root, name) for name in JUDGE_FILES)]
+            files = list(meter.files)
             texts = (*meter.texts, environment_text(is_launched=True))
             self.launcher_files[launcher] = (files, texts)
         return self.launcher_files[launcher]
@@ -1262,7 +1255,7 @@ class Planner:
         shared = json.dumps([
             STORE_FORMAT,
             json.dumps(shared_record, sort_keys=True),
-            sorted((self.moved(path), digest) for path, digest in digests if path not in self.judge_files),
+            sorted((self.moved(path), digest) for path, digest in digests),
             sorted(self.moved(directory) for directory in directories),
             sorted(cost_store.relocated(text, self.marks) for text in texts),
             None if read_parts is None else sorted((kind, self.moved(path), value) for kind, path, value in read_parts),
@@ -2502,7 +2495,7 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         status, output = fake.call()
         expect("the launched test is skipped again after its pass", "exe_launched" in fake.skipped(), output)
         (fake.source_dir / "utils" / "ledgers" / "test-memory.txt").write_text(
-            "# a planted ledger\nformat 1\nrule test-memory\n- | x86_64-debug-asan | 9 | exe_other | a planted reason\n")
+            "# a planted ledger\nformat 1\nrule test-memory\n- | - | 9 | exe_other | a planted reason\n")
         status, output = fake.call()
         expect("a new ledger of the test launcher makes a launched test run", "exe_launched" not in
                fake.skipped() and "exe_ok" in fake.skipped(), output)

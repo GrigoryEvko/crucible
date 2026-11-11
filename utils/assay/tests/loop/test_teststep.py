@@ -394,10 +394,10 @@ class Planted:
             expect("the record of a counted test keeps its count", False)
             return
         giga = measured / test_launcher.GIGA
-        self.ledger("test-instructions", f"- | x86_64-debug-asan | {giga * 2:.6f} | test_working | a planted reason\n")
+        self.ledger("test-instructions", f"- | - | {giga * 2:.6f} | test_working | a planted reason\n")
         status, said = self.launch(worker)
         expect("a ledger row keeps a test up to its kept value, with no line", status == 0 and "[test-" not in said)
-        self.ledger("test-instructions", f"- | x86_64-debug-asan | {giga / 2:.6f} | test_working | a planted reason\n")
+        self.ledger("test-instructions", f"- | - | {giga / 2:.6f} | test_working | a planted reason\n")
         status, said = self.launch(worker)
         expect(
             "a test that does more work than its row keeps fails again",
@@ -409,31 +409,25 @@ class Planted:
         """Check the rows of a ledger, and a test that cannot start."""
         program = self.program
         self.budget(0)
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a planted reason\n")
+        self.ledger("test-memory", "- | - | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
-        expect("a ledger row of the kind admits the test, with no line", status == 0 and "[test-" not in said)
+        expect("a ledger row admits the test, with no line", status == 0 and "[test-" not in said)
         self.ledger("test-memory", "- | x86_64-release | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
-        expect("a ledger row of another kind admits nothing", status == 1)
-        self.ledger("test-memory", "@build/test/test_planted | x86_64-debug-asan | 0.05 | - | a planted reason\n")
+        expect("a ledger row with a KIND admits nothing", status == 1)
+        self.ledger("test-memory", "@build/test/test_planted | - | 0.05 | - | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row that names a file and not a test admits nothing", status == 1)
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.000001 | test_planted | a planted reason\n")
+        self.ledger("test-memory", "- | - | 0.000001 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect(
             "a test over the kept value of its row with the noise of the unit fails again",
             status == 1 and ": error: [test-memory] " in said and "more than the row" in said,
         )
         (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
-        self.ledger("test-memory", "- | x86_64-debug-asan-bench | 0.05 | test_planted | a row of the bench build\n")
+        self.ledger("test-memory", "- | - | 0.05 | test_planted | a row of each build\n")
         status, said = self.launch(program)
-        expect("a ledger row of the name of the configuration keeps the test", status == 0 and "[test-" not in said)
-        self.ledger("test-memory", "- | x86_64-debug-asan | 0.05 | test_planted | a row of the build kind\n")
-        status, said = self.launch(program)
-        expect(
-            "a ledger row of the build kind keeps the test of a build with options",
-            status == 0 and "[test-" not in said,
-        )
+        expect("a ledger row keeps the test of a build with options too", status == 0 and "[test-" not in said)
         (self.build / cost_meter.CONFIGURATION_FILE).unlink()
         self.budget(2000)
         status, said = self.launch(program)
@@ -511,12 +505,11 @@ def fallen_row_cases(expect: testing.Expect) -> None:
     """Check that a run below the limit gives no finding for the row that keeps the test."""
     budget = {"test-memory": 1.5}
     run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 50 * 1024, 1.0, 0.0, None)
-    kind = "x86_64-debug-asan"
     with tempfile.TemporaryDirectory(prefix="test-step-rows-") as directory:
         Path(cost_meter.ledger_file("test-memory", directory)).write_text(
-            f"format 1\nrule test-memory\n- | {kind} | 0.6 | test_planted | a planted row\n", encoding="utf-8"
+            "format 1\nrule test-memory\n- | - | 0.6 | test_planted | a planted row\n", encoding="utf-8"
         )
-        measured = test_launcher.judge("test_planted", "test/test_planted", run, budget, kind, directory)
+        measured = test_launcher.judge("test_planted", "test/test_planted", run, budget, directory)
     expect(
         "a run under the limit gives no finding for the row that keeps the test, because a ledger fails only on a "
         "growth",
@@ -537,14 +530,14 @@ def bench_scope_cases(expect: testing.Expect) -> None:
         )
         expect(
             "a test of the directory bench above the limit has no finding",
-            test_launcher.judge("bench_heavy", bench, run, budget, "x86_64-debug-asan", directory) == [],
+            test_launcher.judge("bench_heavy", bench, run, budget, directory) == [],
         )
-        judged = test_launcher.judge("test_heavy", "test/test_heavy", run, budget, "x86_64-debug-asan", directory)
+        judged = test_launcher.judge("test_heavy", "test/test_heavy", run, budget, directory)
         expect(
             "a test of a different directory above the limit has an error",
             [row for _, row, _ in judged] == ["test-memory"],
         )
-        outside = test_launcher.judge("test_away", "/elsewhere/bench/x", run, budget, "x86_64-debug-asan", directory)
+        outside = test_launcher.judge("test_away", "/elsewhere/bench/x", run, budget, directory)
         expect(
             "a program outside the build directory is judged, also in a directory with the name bench",
             [row for _, row, _ in outside] == ["test-memory"],

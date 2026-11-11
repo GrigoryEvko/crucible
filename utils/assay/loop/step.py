@@ -49,10 +49,9 @@ THE MEASURED RULES
       * The peak memory, which is almost the same on each run of one step.
         Above the limit, the subcommand removes the output, prints an error
         line and exits with status 1, unless a row of the ledger
-        utils/ledgers/<memory rule>.txt admits the output for the kind of the
-        build, with a reason: '@build/OUTPUT | KIND | GB | - | REASON', with
-        OUTPUT relative to the build directory (meter.py, THE REGISTRY AND THE
-        LEDGERS).  The subcommand reads that ledger only for a step above the
+        utils/ledgers/<memory rule>.txt admits the output, with a reason:
+        '@build/OUTPUT | - | GB | - | REASON', with OUTPUT relative to the
+        build directory (meter.py, THE REGISTRY AND THE LEDGERS).  The subcommand reads that ledger only for a step above the
         limit.  A step that a row admits prints no line.  The subcommand does
         not judge the memory of an output in the directory bench of the build
         (assay.core.budget, THE SCOPE).
@@ -183,15 +182,13 @@ def admission(memory_row: str, output: str, peak_gb: float) -> tuple[bool, str]:
     ledger = cost_meter.ledger_file(memory_row, os.environ.get(LEDGERS_ENV))
     shown = cost_meter.shown_ledger(ledger)
     build_dir = cost_meter.build_dir_of(output)
-    kind = cost_meter.read_kind(build_dir) if build_dir else None
-    if build_dir is None or kind is None:
-        return False, (f"the build kind is not known ({cost_meter.KIND_FILE} of the build directory), so no row of "
-                       f"{shown} can admit it")
+    if build_dir is None:
+        return False, (f"no build directory holds the output (no directory above it holds {cost_meter.KIND_FILE}), so "
+                       f"no row of {shown} can admit it")
     item = os.path.relpath(output, build_dir)
-    configuration = cost_meter.read_configuration(build_dir)
-    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, kind, item, configuration)
+    row, shown, problem = cost_budget.row_of(memory_row, cost_meter.ITEM_OUTPUT, ledger, item)
     if row is None:
-        words = f"no row of {shown} keeps {item} for {configuration or kind}"
+        words = f"no row of {shown} keeps {item}"
         if problem:
             words += f", and the ledger has a problem at {shown}:{problem}"
         return False, words

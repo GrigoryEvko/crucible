@@ -7,10 +7,12 @@ holds, else 1.
 
 import os
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import budget as cost_budget
 from assay.core import cache, cache_root, testing
+from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
@@ -20,10 +22,9 @@ UNSETTLED_NS = 3_600_000_000_000
 
 
 def rows_of(admitted: dict[str, float]) -> cost_budget.Rows:
-    """Return planted rows of the kind k, each with its value, at the lines that start at line 3."""
+    """Return planted rows, each with its value, at the lines that start at line 3."""
     return cost_budget.Rows(
         "utils/ledgers/compile-memory.txt",
-        "k",
         {
             item: cost_budget.Admission(line, value, "a planted reason")
             for line, (item, value) in enumerate(admitted.items(), start=3)
@@ -75,7 +76,7 @@ def verdict_cases(expect: testing.Expect) -> None:
         )
         counted = check_report.read_budgets(table)["compile-instructions"]
     count_rows = cost_budget.Rows(
-        "utils/ledgers/compile-instructions.txt", "k", {"u": cost_budget.Admission(3, 165.712, "r")}
+        "utils/ledgers/compile-instructions.txt", {"u": cost_budget.Admission(3, 165.712, "r")}
     )
     grown, drifted = (
         cost_budget.judge("compile-instructions", counted, cost_budget.Measure("u", "u", value, "said"), count_rows)
@@ -96,31 +97,35 @@ def verdict_cases(expect: testing.Expect) -> None:
 
 
 def row_cases(expect: testing.Expect) -> None:
-    """Give the row of one item and kind, the shown ledger and the first problem of the ledger (THE ROWS)."""
+    """Give the row of one item, the shown ledger and the first problem of the ledger (THE ROWS)."""
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = str(Path(scratch) / "compile-memory.txt")
-        found, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
+        found, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "unit.o")
         expect("a ledger that is not there gives no row and no problem", found is None and not problem)
-        cost_meter.write_kind_rows(
+        cost_meter.write_ledger_rows(
             "compile-memory",
             cost_meter.ITEM_OUTPUT,
             ledger,
-            {("k", "unit.o"): (5.0, "a planted reason")},
+            {"unit.o": (5.0, "a planted reason")},
             "# a planted ledger\n",
         )
-        found, shown, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
         expect(
-            "row_of() gives the row of the item and the kind, and the ledger as a message shows it",
+            "write_ledger_rows() gives each row an empty KIND cell",
+            "@build/unit.o | - | 5 | - | a planted reason" in Path(ledger).read_text(encoding="utf-8"),
+        )
+        found, shown, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "unit.o")
+        expect(
+            "row_of() gives the row of the item, and the ledger as a message shows it",
             found is not None
             and (found.value, found.reason) == (5.0, "a planted reason")
             and shown.endswith("compile-memory.txt")
             and not problem,
         )
-        other, _, _ = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "other", "unit.o")
-        expect("row_of() gives no row of a different kind", other is None)
+        other, _, _ = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "other.o")
+        expect("row_of() gives no row of a different item", other is None)
         with open(ledger, "a", encoding="utf-8") as handle:
-            handle.write("- | k | 1.0 | - | a row with no item\n")
-        _, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "unit.o")
+            handle.write("- | - | 1.0 | - | a row with no item\n")
+        _, _, problem = cost_budget.row_of("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "unit.o")
         expect("row_of() gives the first problem of the ledger with its line", problem.split(":")[0].isdigit())
 
 
@@ -181,52 +186,84 @@ def judge_cases(expect: testing.Expect) -> None:
 
 
 def rows_cases(expect: testing.Expect) -> None:
-    """Read the rows of one kind (THE ROWS)."""
+    """Read the rows of a ledger, and refuse a row with a KIND (THE ROWS)."""
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = Path(scratch) / "compile-memory.txt"
-        rows = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k")
+        rows = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger)
         expect("a ledger that does not exist has no row and no problem", not rows.admitted and not rows.problems)
-        cost_meter.write_kind_rows(
+        cost_meter.write_ledger_rows(
             "compile-memory",
             cost_meter.ITEM_OUTPUT,
             str(ledger),
-            {("k", "unit.o"): (5.0, "a planted reason"), ("other", "unit.o"): (6.0, "other")},
+            {"unit.o": (5.0, "a planted reason"), "base.o": (4.5, "a second row")},
             "# a planted ledger\n",
         )
-        rows = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k")
+        rows = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger)
         expect(
-            "read_rows() gives only the rows of the kind",
-            list(rows.admitted) == ["unit.o"] and rows.admitted["unit.o"].value == 5.0,
+            "read_rows() gives the row of each item",
+            set(rows.admitted) == {"unit.o", "base.o"} and rows.admitted["unit.o"].value == 5.0 and not rows.problems,
         )
-        cost_meter.write_kind_rows(
-            "compile-memory",
-            cost_meter.ITEM_OUTPUT,
-            str(ledger),
-            {
-                ("k", "unit.o"): (5.0, "a planted reason"),
-                ("k", "base.o"): (4.5, "a row of the build kind"),
-                ("k-bench", "unit.o"): (7.0, "a row of the bench configuration"),
-                ("k-bench", "bench.o"): (8.0, "a bench object"),
-            },
-            "# a planted ledger\n",
+        ledger.write_text(
+            "# a planted ledger\nformat 1\nrule compile-memory\n@build/unit.o | x86_64-debug-asan | 5 | - | a kind\n",
+            encoding="utf-8",
         )
-        bench = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "k-bench")
+        kinded = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger)
         expect(
-            "the rows of the name of the configuration come first, then the rows of the build kind for other items",
-            bench.kind == "k-bench"
-            and bench.admitted["unit.o"].value == 7.0
-            and bench.admitted["base.o"].value == 4.5
-            and bench.own == frozenset({"unit.o", "bench.o"}),
+            "a row with a KIND is an error at its line, and it keeps nothing",
+            not kinded.admitted
+            and [problem.line for problem in kinded.problems] == [4]
+            and "@build/OUTPUT | - | VALUE | - | REASON" in kinded.problems[0].message,
         )
-        plain = cost_budget.read_rows("compile-memory", cost_meter.ITEM_OUTPUT, ledger, "k", "k")
-        expect(
-            "a build with no option reads only the rows of its build kind",
-            set(plain.admitted) == {"unit.o", "base.o"},
-        )
-        found, _, _ = cost_budget.row_of(
-            "compile-memory", cost_meter.ITEM_OUTPUT, str(ledger), "k", "unit.o", "k-bench"
-        )
-        expect("row_of() gives the row of the configuration first", found is not None and found.value == 7.0)
+
+
+def write_cases(expect: testing.Expect) -> None:
+    """Write a row only for an item above the limit that no row keeps, and remove and lower no row (THE WRITE)."""
+    kept_key = rule_ledger.Key("@build/kept.o", "", "")
+    gone_key = rule_ledger.Key("@build/gone.o", "", "")
+    ledger = replace(
+        rule_ledger.empty(rule_ledger.rule_of("compile-memory")),
+        base={
+            kept_key: rule_ledger.Entry(kept_key, 6.0, "a kept row"),
+            gone_key: rule_ledger.Entry(gone_key, 7.0, "an item that this build does not hold"),
+        },
+    )
+    measures = [
+        ("small.o", 1.0, BUDGET),
+        ("kept.o", 5.0, BUDGET),
+        ("noisy.o", 4.0, BUDGET),
+    ]
+    written = cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, measures, None)
+    expect(
+        "a write with no item that needs a row and no reason keeps each row, also the row of an item that the build "
+        "does not hold, and lowers no kept value",
+        written.base == ledger.base,
+    )
+    try:
+        cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, [("new.o", 5.0, BUDGET)], None)
+        refused = False
+    except rule_ledger.LedgerError as problem:
+        refused = "--reason" in str(problem)
+    expect("a new row with no reason is refused, and the message names --reason", refused)
+    try:
+        cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, [("kept.o", 7.0, BUDGET)], None)
+        risen_refused = False
+    except rule_ledger.LedgerError:
+        risen_refused = True
+    expect("a higher kept value with no reason is refused", risen_refused)
+    raised = cost_budget.raised_ledger(
+        ledger, cost_meter.ITEM_OUTPUT, [("kept.o", 7.0, BUDGET), ("new.o", 5.0001, BUDGET)], "a planted reason"
+    )
+    new_key = rule_ledger.Key("@build/new.o", "", "")
+    expect(
+        "a write with a reason gives a new row and a higher kept value the reason, rounds the value up, and keeps "
+        "each other row",
+        raised.base[kept_key].value == 7.0
+        and raised.base[kept_key].reason == "a planted reason"
+        and raised.base[new_key].value == 5.001
+        and raised.base[gone_key] == ledger.base[gone_key],
+    )
+    lower = cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, [("kept.o", 4.5, BUDGET)], "a reason")
+    expect("a measure under the kept value lowers no row", lower.base[kept_key].value == 6.0)
 
 
 def memo_cases(expect: testing.Expect) -> None:
@@ -234,40 +271,40 @@ def memo_cases(expect: testing.Expect) -> None:
     rule, form = "compile-memory", cost_meter.ITEM_OUTPUT
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = str(Path(scratch) / "compile-memory.txt")
-        cost_meter.write_kind_rows(rule, form, ledger, {("k", "unit.o"): (5.0, "a planted reason")}, "# planted\n")
+        cost_meter.write_ledger_rows(rule, form, ledger, {"unit.o": (5.0, "a planted reason")}, "# planted\n")
         with cache.scratch_root():
             memo = cost_meter.rows_memo(rule, form, ledger, UNSETTLED_NS)
-            first, _, _ = cost_meter.read_kind_rows(rule, form, ledger, UNSETTLED_NS)
+            first, _, _ = cost_meter.read_ledger_rows(rule, form, ledger, UNSETTLED_NS)
             expect(
                 "a ledger that changed in the settle period gives its rows, and no entry.  The case gives a settle "
                 "period of an hour, so that the load of the host cannot settle the ledger before the read",
                 memo is not None
                 and not memo[1]
-                and first == {("k", "unit.o"): (4, 5.0, "a planted reason")}
+                and first == {"unit.o": (4, 5.0, "a planted reason")}
                 and not os.path.exists(memo[0]),
             )
             settled = testing.wait_until(lambda: (cost_meter.rows_memo(rule, form, ledger) or ("", False))[1], 2.0)
             entry, _ = cost_meter.rows_memo(rule, form, ledger) or ("", False)
-            cost_meter.read_kind_rows(rule, form, ledger)
+            cost_meter.read_ledger_rows(rule, form, ledger)
             expect("a settled ledger gets an entry of its rows", settled and os.path.isfile(entry))
             rows_cache = cache.cache_root(cost_meter.ROWS_CACHE)
             expect(
                 "the entry is in the cache that loop test holds in its limit",
                 rows_cache is not None and Path(entry).is_relative_to(rows_cache),
             )
-            lined = {("z", "first.o"): (4, 1.0, "the first line"), ("a", "second.o"): (5, 2.0, "the second line")}
-            cost_meter.write_rows_memo(entry, lined, [])
+            lined = {"first.o": (4, 1.0, "the first line"), "second.o": (5, 2.0, "the second line")}
+            cost_meter.write_rows_memo(entry, {"second.o": lined["second.o"], "first.o": lined["first.o"]}, [])
             kept = cost_meter.read_rows_memo(entry)
             expect(
                 "an entry keeps the rows in the sequence of their lines, as the parse gives them",
-                kept is not None and list(kept[0]) == [("z", "first.o"), ("a", "second.o")],
+                kept is not None and list(kept[0]) == ["first.o", "second.o"],
             )
-            cost_meter.write_rows_memo(entry, {("k", "unit.o"): (3, 9.0, "the planted entry")}, [])
-            held, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
-            expect("a read takes the rows of the entry with no parse", held[("k", "unit.o")][1] == 9.0)
-            cost_meter.write_kind_rows(rule, form, ledger, {("k", "unit.o"): (6.0, "a new reason")}, "# planted\n")
-            fresh, _, _ = cost_meter.read_kind_rows(rule, form, ledger)
-            expect("a changed ledger gets a new key, and its rows", fresh[("k", "unit.o")][1:] == (6.0, "a new reason"))
+            cost_meter.write_rows_memo(entry, {"unit.o": (3, 9.0, "the planted entry")}, [])
+            held, _, _ = cost_meter.read_ledger_rows(rule, form, ledger)
+            expect("a read takes the rows of the entry with no parse", held["unit.o"][1] == 9.0)
+            cost_meter.write_ledger_rows(rule, form, ledger, {"unit.o": (6.0, "a new reason")}, "# planted\n")
+            fresh, _, _ = cost_meter.read_ledger_rows(rule, form, ledger)
+            expect("a changed ledger gets a new key, and its rows", fresh["unit.o"][1:] == (6.0, "a new reason"))
         with testing.environment_variable(cache_root.ROOT_VARIABLE, cache_root.OFF):
             expect("with the caches off, no entry", cost_meter.rows_memo(rule, form, ledger) is None)
 
@@ -292,5 +329,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (verdict_cases, row_cases, judge_cases, rows_cases, memo_cases, scope_cases),
+        (verdict_cases, row_cases, judge_cases, rows_cases, write_cases, memo_cases, scope_cases),
     )

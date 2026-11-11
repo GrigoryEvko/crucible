@@ -1,4 +1,4 @@
 # A planted ledger: a row that admits the buffer of a member over the limit.
 format 1
 rule static-tls
-@build/libfoundation.a(buffer.cpp.o) | planted | 1024 | - | a planted buffer that the row admits
+@build/libfoundation.a(buffer.cpp.o) | - | 1024 | - | a planted buffer that the row admits

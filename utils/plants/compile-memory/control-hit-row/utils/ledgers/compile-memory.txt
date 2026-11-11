@@ -1,4 +1,4 @@
 # A planted ledger of the rule compile-memory.
 format 1
 rule compile-memory
-@build/CMakeFiles/lib.dir/cached.cpp.o | x86_64-debug-asan | 5 | - | a planted reason
+@build/CMakeFiles/lib.dir/cached.cpp.o | - | 5 | - | a planted reason

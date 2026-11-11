@@ -5,15 +5,9 @@ THE INPUTS
     The code model of the CMake file API names each linked output: an
     executable, a shared library or a module.  A rule reads only the outputs
     that are there, and no output of the directory bench of the build
-    (assay.core.budget, THE SCOPE).  A target that the build does not make, such as a
-    negative fixture, has no output to read.  The kind of the build and the
-    name of its configuration give the ledger rows that apply
-    (assay.core.meter).  The kind is the one line of BUILD_DIR/build-kind.txt,
-    and the name is the one line of BUILD_DIR/build-configuration.txt.  A
-    build with no kind or no name gives one error of the kind input.  A kind
-    that is not lowercase words with hyphens gives the same error.  A name
-    that the options of the CMake cache do not give also gives it
-    (build_names()).
+    (assay.core.budget, THE SCOPE).  A target that the build does not make,
+    such as a negative fixture, has no output to read.  The ledger rows of a
+    rule judge each build (THE LEDGERS).
 
 THE RULES OF A STEP
     compile-instructions, compile-memory and link-memory read the record
@@ -58,7 +52,7 @@ THE RULE header-alone
 
 THE JUDGE
     assay.core.budget judges each value against the limit and the ledger rows
-    that judge the build (assay.core.budget, THE VERDICT and THE ROWS).  Each
+    of the rule (assay.core.budget, THE VERDICT and THE ROWS).  Each
     finding is an error.  The kinds of the findings:
       over-limit         a value above the limit, with no ledger row
       risen              a value above the limit and above the kept value of
@@ -74,24 +68,19 @@ THE JUDGE
     build does not hold gives no finding either.
 
 THE LEDGERS
-    utils/ledgers/RULE.txt holds one row for each item and each build kind or
-    configuration, with the reason (assay.core.meter, THE REGISTRY AND THE
-    LEDGERS):
+    utils/ledgers/RULE.txt holds at most one row for each item, with the
+    reason, and each row judges each build (assay.core.meter, THE REGISTRY
+    AND THE LEDGERS):
 
-        @build/OUTPUT | KIND | VALUE | - | REASON     an output of a step or an object
-        HEADER | KIND | VALUE | - | REASON            a header, for header-alone
+        @build/OUTPUT | - | VALUE | - | REASON     an output of a step or an object
+        HEADER | - | VALUE | - | REASON            a header, for header-alone
 
-    `guard write --rule RULE --build-dir DIR [--reason TEXT]` writes the rows
-    of the name of the configuration of the build again, through the member
-    function written of the rule.  It writes the measured value of each item
-    with a row over the limit.  It removes each row of an item at or below
-    the limit.  It keeps the rows of the other names and the rows of a
-    ccache hit.  It keeps the reason of each item that keeps its row.  It
-    gives the ledger the head comment LEDGER_COMMENT (assay.core.ledger, THE
-    HEAD COMMENT).  An item over the limit with no row gets a new row with
-    the reason of --reason.  A row of the build kind keeps an item of a
-    build with options.  The write then gives such an item no row of its own.
-    A ledger with no row has no file.
+    `guard write --rule RULE --build-dir DIR --reason TEXT` writes a row for
+    each item of the build above the limit that no row keeps, through the
+    member function written of the rule (assay.core.budget, THE WRITE).  It
+    removes no row and lowers no kept value.  It gives the ledger the head
+    comment LEDGER_COMMENT (assay.core.ledger, THE HEAD COMMENT).  A ledger
+    with no row has no file.
 
 
 Complexity: one read of the compile database, the code model and the records of the outputs that a rule reads.
@@ -105,7 +94,6 @@ from functools import partial
 from pathlib import Path
 
 from assay.core import budget as cost_budget
-from assay.core import configuration as build_config
 from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
@@ -135,11 +123,10 @@ LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 # The head comment that the member function written gives each ledger.  ROW is the row of the item of the rule.
 LEDGER_COMMENT = (
     "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the limit of the rule,\n"
-    "# one row for each item and build kind or configuration.  A row is '{row}'.\n"
-    "# KIND is the build kind of BUILD_DIR/build-kind.txt or the name of BUILD_DIR/build-configuration.txt, and\n"
-    "# VALUE is the value at the last write, in {unit}.  A row keeps its item up to VALUE with the noise of its\n"
-    "# unit (THE NOISE of utils/assay/core/budget.py).  `python3 utils/bin/guard explain {rule}` tells the rule,\n"
-    "# and `python3 utils/bin/guard write --rule {rule} --build-dir DIR [--reason TEXT]` writes this file.\n"
+    "# one row for each item, and each row judges each build.  A row is '{row}'.  VALUE is the kept value, in\n"
+    "# {unit}.  A row keeps its item up to VALUE with the noise of its unit (THE NOISE of utils/assay/core/budget.py).\n"
+    "# `python3 utils/bin/guard explain {rule}` tells the rule, and `python3 utils/bin/guard write --rule {rule}\n"
+    "# --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.\n"
 )
 
 
@@ -177,14 +164,9 @@ class Output:
 
 @dataclass(frozen=True, slots=True)
 class Measured:
-    """The values of the items of one rule.
-
-    `held` holds each item that the build holds and the rule does not judge,
-    such as a ccache hit.
-    """
+    """The values of the items of one rule, and the errors of its inputs."""
 
     values: tuple[cost_budget.Measure, ...] = ()
-    held: frozenset[str] = frozenset()
     problems: tuple[check_report.Finding, ...] = ()
 
 
@@ -200,73 +182,6 @@ class ObjectCode:
 def input_error(rule_id: str, path: str, message: str, entity: str = "", line: int = 0) -> check_report.Finding:
     """Return an error of the kind input: an input that the rule cannot read."""
     return check_report.Finding("error", path, line, rule_id, message, "input", entity)
-
-
-def build_kind(context: BuildContext, rule_id: str) -> tuple[str, check_report.Finding | None]:
-    """Return the kind of the build, or an empty kind and the error of a build with no valid kind (THE INPUTS).
-
-    Raises:
-        NotApplicable: If the call gives no build directory
-    """
-    build = context.require_build()
-    kind = cost_meter.read_kind(str(build))
-    shown = context.shown(build / cost_meter.KIND_FILE)
-    if kind is None:
-        return "", input_error(
-            rule_id,
-            shown,
-            "the build has no build kind.  cmake/BuildLauncher.cmake writes it at each configure.  Configure the "
-            "build again",
-        )
-    if not cost_meter.is_build_kind(kind):
-        return "", input_error(rule_id, shown, f"the kind {kind!r} is not lowercase words with hyphens")
-    return kind, None
-
-
-def build_names(context: BuildContext, rule_id: str) -> tuple[str, str, check_report.Finding | None]:
-    """Return the build kind and the name of the configuration of the build, or the error of a build with no names.
-
-    The name comes from build-configuration.txt (assay.core.meter).  When the
-    CMake cache of the build can be read, its options of NAME_OPTIONS must
-    give the same name (assay.core.configuration, THE CONFIGURATION).
-
-    Raises:
-        NotApplicable: If the call gives no build directory
-    """
-    kind, problem = build_kind(context, rule_id)
-    if problem is not None:
-        return "", "", problem
-    build = context.require_build()
-    name = cost_meter.read_configuration(str(build))
-    shown = context.shown(build / cost_meter.CONFIGURATION_FILE)
-    if name is None:
-        missing = (
-            "the build has no name of its configuration.  cmake/BuildLauncher.cmake writes it at each configure.  "
-            "Configure the build again"
-        )
-        return kind, "", input_error(rule_id, shown, missing)
-    wanted = cached_name(build, kind)
-    if wanted is not None and name != wanted:
-        differs = (
-            f"the file names the configuration {name}, and the options of the CMake cache give {wanted}.  "
-            f"cmake/BuildLauncher.cmake and NAME_OPTIONS of assay.core.configuration must give the same words"
-        )
-        return kind, "", input_error(rule_id, shown, differs)
-    return kind, name, None
-
-
-def cached_name(build: Path, kind: str) -> str | None:
-    """Return the name of the configuration that the CMake cache of a build gives, or None for no cache to read."""
-    try:
-        entries = cmake_reader.cache(build)
-    except cmake_reader.CmakeError:
-        return None
-    words = [
-        word
-        for word, key in build_config.NAME_OPTIONS
-        if key in entries and build_config.normalized(entries[key].type_name, entries[key].value) == "on"
-    ]
-    return "-".join([kind, *words])
 
 
 def threshold_rules(rule_id: str) -> tuple[str, ...]:
@@ -422,7 +337,6 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
     spec = STEP_RULES[rule_id]
     noun = "compile job" if spec.step == cost_record.COMPILE else "link"
     values: list[cost_budget.Measure] = []
-    held: set[str] = set()
     uncounted = 0
     problems: list[tuple[Output, str]] = []
     for output in outputs:
@@ -436,7 +350,6 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
             problems.append((output, str(problem)))
             continue
         if found.is_hit or found.cost is None:
-            held.add(item)
             continue
         cost = found.cost
         if spec.quantity == Quantity.INSTRUCTIONS:
@@ -458,7 +371,7 @@ def step_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) 
             f"exact counter (utils/assay/core/meter.py, THE INSTRUCTION COUNT).  On such a host, no rule judges the CPU "
             f"work of a compile"
         )
-    return Measured(tuple(values), frozenset(held), tuple(record_problems(context, rule_id, outputs, problems)))
+    return Measured(tuple(values), tuple(record_problems(context, rule_id, outputs, problems)))
 
 
 def object_code(path: Path) -> ObjectCode:
@@ -677,80 +590,43 @@ def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Fi
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
     """
-    kind, name, problem = build_names(context, rule_id)
-    if problem is not None:
-        return [problem]
     budgets, missing = budgets_of(context, rule_id)
     if missing:
         return missing
     measured = measured_of(context, rule_id)
-    rows = ledger_rows(context, rule_id, kind, name)
+    rows = ledger_rows(context, rule_id)
     return [*measured.problems, *rows.problems, *judged_values(rule_id, budgets, measured, rows)]
 
 
-def ledger_rows(context: BuildContext, rule_id: str, kind: str, name: str) -> cost_budget.Rows:
-    """Return the ledger rows that judge the build, with each problem of the ledger as an error of the kind input.
-
-    The rows of the name of the configuration come first, then the rows of the build kind (assay.core.budget, THE
-    ROWS).
-    """
-    rows = cost_budget.read_rows(
-        rule_id, ledger_shape(rule_id), rule_ledger.ledger_path(rule_id, context.root), kind, name
-    )
+def ledger_rows(context: BuildContext, rule_id: str) -> cost_budget.Rows:
+    """Return the ledger rows of a rule, with each problem of the ledger as an error of the kind input (THE LEDGERS)."""
+    rows = cost_budget.read_rows(rule_id, ledger_shape(rule_id), rule_ledger.ledger_path(rule_id, context.root))
     return rows.replaced(problems=tuple(replace(problem, kind="input") for problem in rows.problems))
 
 
 def budget_written(
     rule_id: str, context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None
 ) -> rule_ledger.Ledger:
-    """Return the ledger of a rule with the rows of the configuration of the build written again (THE LEDGERS).
+    """Return the ledger of a rule with a row for each item of the build that no row keeps (THE LEDGERS).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
         rule_ledger.LedgerError: If an input or the ledger cannot be read, or a new row has no reason
     """
-    kind, name, problem = build_names(context, rule_id)
     budgets, missing = budgets_of(context, rule_id)
-    measured = measured_of(context, rule_id) if problem is None and not missing else Measured()
-    rows = ledger_rows(context, rule_id, kind, name)
-    errors = [
-        found for found in (problem, *missing, *measured.problems, *rows.problems) if found and found.level == "error"
-    ]
+    measured = measured_of(context, rule_id) if not missing else Measured()
+    rows = ledger_rows(context, rule_id)
+    errors = [found for found in (*missing, *measured.problems, *rows.problems) if found.level == "error"]
     if errors:
         for found in errors:
             check_report.write_line(found.text(), is_error=True)
         raise rule_ledger.LedgerError(f"{len(errors)} input errors stop the write.  Correct them first")
     shape = ledger_shape(rule_id)
-    base = {
-        key: entry
-        for key, entry in ledger.base.items()
-        if key.kind != name or cost_meter.item_of(key.path, key.entity, shape) in measured.held
-    }
-    unexplained: list[str] = []
-    for value in measured.values:
-        budget = budgets[value.threshold_rule or rule_id]
-        path, entity = cost_meter.item_cells(value.item, shape)
-        key = rule_ledger.Key(path, name, entity)
-        earlier = ledger.base.get(key)
-        if value.value <= budget.limit:
-            base.pop(key, None)
-            continue
-        if earlier is None and rule_ledger.Key(path, kind, entity) in ledger.base:
-            # A row of the build kind keeps the item.
-            continue
-        why = earlier.reason if earlier is not None else reason
-        if not why:
-            unexplained.append(value.item)
-            continue
-        base[key] = rule_ledger.Entry(key, cost_budget.kept_value(value.value), why)
-    if unexplained:
-        raise rule_ledger.LedgerError(
-            f"these items are more than the limit and have no row.  Give the reason of their rows with --reason: "
-            f"{', '.join(unexplained)}"
-        )
+    measures = [(value.item, value.value, budgets[value.threshold_rule or rule_id]) for value in measured.values]
+    raised = cost_budget.raised_ledger(ledger, shape, measures, reason)
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, row=cost_meter.ITEM_ROWS[shape], unit=units)
-    return replace(ledger, base=base, comment=comment)
+    return replace(raised, comment=comment)
 
 
 def budget_member(rule_id: str) -> meta_runner.Member:

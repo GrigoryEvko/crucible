@@ -10,6 +10,7 @@ import contextlib
 import io
 import tempfile
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from assay.core import ledger as rule_ledger
@@ -152,13 +153,26 @@ def fixture_write_cases(expect: testing.Expect) -> None:
         context = context_of(Path(scratch), rows)
         instructions = tree_rule(held.FIXTURE_INSTRUCTIONS)
         empty = rule_ledger.Ledger(instructions.id, rule_registry.Policy.MAX, "")
-        written = held.written(instructions, context, empty, None)
+        try:
+            held.written(instructions, context, empty, None)
+            refused = ""
+        except rule_ledger.LedgerError as problem:
+            refused = str(problem)
+        expect("a new row with no reason is refused, and the message names --reason", "--reason" in refused)
+        written = held.written(instructions, context, empty, "a planted reason")
         expect(
-            "fixture-instructions writes the fixture over 45 G with the default reason, and no fixture with no count",
-            rows_of(written) == {"neg_heavy": (50.0, held.FIXTURE_REASON)},
+            "fixture-instructions writes the fixture over 45 G with the reason, and no fixture with no count",
+            rows_of(written) == {"neg_heavy": (50.0, "a planted reason")},
         )
         again = held.written(instructions, context, written, "a different reason")
-        expect("a second write keeps the reason of the row", rows_of(again) == rows_of(written))
+        expect("a second write keeps the row of a fixture that the row keeps", rows_of(again) == rows_of(written))
+        gone_key = rule_ledger.Key("", "", "neg_gone")
+        with_gone = replace(written, base={**written.base, gone_key: rule_ledger.Entry(gone_key, 60.0, "a row")})
+        kept = held.written(instructions, context, with_gone, None)
+        expect(
+            "a write from a build with no such fixture keeps its row",
+            rows_of(kept) == {"neg_heavy": (50.0, "a planted reason"), "neg_gone": (60.0, "a row")},
+        )
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), rows + "fixture neg_unrun test/neg/unrun.cpp record=no\n")
         try:

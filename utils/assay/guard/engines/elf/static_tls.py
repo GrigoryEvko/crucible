@@ -27,20 +27,20 @@ THE RULE
 
 THE JUDGE
     assay.core.budget judges the value of each member against the limit of
-    the measured rule, with the ledger rows of the kind of the build.  A
-    member above the limit that no row keeps is an error.  A member with no
-    base thread-local variable gets no finding.
+    the measured rule, with the ledger rows.  A member above the limit that
+    no row keeps is an error.  A member with no base thread-local variable
+    gets no finding.
 
 THE LEDGER
     utils/ledgers/static-tls.txt has the policy max.  A row keeps one member
-    in the builds of one kind, up to VALUE (assay.core.budget, THE VERDICT):
-        @build/ARCHIVE(MEMBER) | KIND | VALUE | - | REASON
-    `guard write --rule static-tls --build-dir DIR --reason TEXT` writes the
-    rows of the kind of the build.  A row keeps its reason, and the write
-    removes each row of the kind with a member that is not more than the
-    limit.  written() gives the new ledger from the members and the
-    ledger, and it reads no build.  write() reads the build and stores the
-    ledger, and it tells when the ledger has no change.
+    in each build, up to VALUE (assay.core.budget, THE VERDICT):
+        @build/ARCHIVE(MEMBER) | - | VALUE | - | REASON
+    `guard write --rule static-tls --build-dir DIR --reason TEXT` writes a
+    row for each member above the limit that no row keeps (assay.core.budget,
+    THE WRITE).  It removes no row and lowers no kept value.  written() gives
+    the new ledger from the members and the ledger, and it reads no build.
+    write() reads the build and stores the ledger, and it tells when the
+    ledger has no change.
 
 THE ERRORS
     The rule fails closed.  These builds are errors, because the rule cannot
@@ -51,8 +51,8 @@ THE ERRORS
         member is then not unique.
 
 NOT APPLICABLE
-    The rule does not apply (exit 77) to a build with no build-kind.txt, and
-    to a build that has not made each library.
+    The rule does not apply (exit 77) to a build that has not made each
+    library.
 
 Complexity: linear in the symbols of the members of the libraries.
 """
@@ -82,11 +82,10 @@ REQUIRED_LIBRARY = "foundation"
 # The head comment that each write gives the ledger (assay.core.ledger, THE HEAD COMMENT).
 LEDGER_COMMENT = (
     "# The ledger of the rule static-tls of utils/registry.txt: the members of the static libraries with base\n"
-    "# thread-local variables that can be more than the limit, one row for each member and build kind.\n"
-    "# A row is '@build/ARCHIVE(MEMBER) | KIND | VALUE | - | REASON'.  KIND is the build kind of\n"
-    "# BUILD_DIR/build-kind.txt, and VALUE is the value at the last write, in bytes.  `python3 utils/bin/guard\n"
-    "# explain static-tls` tells the rule, and `python3 utils/bin/guard write --rule static-tls --build-dir DIR\n"
-    "# --reason TEXT` writes this file.\n"
+    "# thread-local variables that can be more than the limit, one row for each member, and each row judges each\n"
+    "# build.  A row is '@build/ARCHIVE(MEMBER) | - | VALUE | - | REASON', and VALUE is the kept value, in bytes.\n"
+    "# `python3 utils/bin/guard explain static-tls` tells the rule, and `python3 utils/bin/guard write --rule\n"
+    "# static-tls --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.\n"
 )
 
 
@@ -188,7 +187,7 @@ def said_of(member: MemberTls) -> str:
 def examine(
     rule: rule_registry.Rule, context: runner.ElfContext
 ) -> tuple[list[check_report.Finding], tuple[MemberTls, ...]]:
-    """Return the findings of the build judged against the limit and the ledger rows of its kind (THE JUDGE).
+    """Return the findings of the build judged against the limit and the ledger rows (THE JUDGE).
 
     The second part is each member with a base thread-local variable.
 
@@ -196,10 +195,9 @@ def examine(
         runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
         runner.BuildError: If the build cannot be read (THE ERRORS)
     """
-    kind = context.kind()
     budget = budget_of(rule)
     members = measured(context)
-    rows = cost_budget.read_rows(rule.id, cost_meter.ITEM_OUTPUT, rule_ledger.ledger_path(rule.id, context.root), kind)
+    rows = cost_budget.read_rows(rule.id, cost_meter.ITEM_OUTPUT, rule_ledger.ledger_path(rule.id, context.root))
     found: list[check_report.Finding] = list(rows.problems)
     for member in members:
         measure = cost_budget.Measure(
@@ -212,7 +210,7 @@ def examine(
 
 
 def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the limit and the ledger rows of its kind (THE JUDGE).
+    """Return the findings of the build judged against the limit and the ledger rows (THE JUDGE).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
@@ -251,42 +249,21 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 
 
 def written(
-    budget: check_report.Budget,
-    kind: str,
-    members: Sequence[MemberTls],
-    ledger: rule_ledger.Ledger,
-    reason: str | None,
+    budget: check_report.Budget, members: Sequence[MemberTls], ledger: rule_ledger.Ledger, reason: str | None
 ) -> rule_ledger.Ledger:
-    """Return the ledger with the rows of the build kind KIND written again from the members of the build (THE LEDGER).
+    """Return the ledger with a row for each member of the build above the limit that no row keeps (THE LEDGER).
 
-    Each row of a different kind stays.  A member over the limit gets a row with its value, and the reason
-    of its earlier row or REASON.  Each other row of the kind goes.  Complexity: linear in the members and the rows.
+    Each row stays, with its kept value.  Complexity: linear in the members and the rows.
 
     Raises:
-        rule_ledger.LedgerError: If a member over the limit has no row and the call gives no reason
+        rule_ledger.LedgerError: If a member needs a row and the call gives no reason
     """
-    base = {key: entry for key, entry in ledger.base.items() if key.kind != kind}
-    unexplained: list[str] = []
-    for member in members:
-        if member.value <= budget.limit:
-            continue
-        path, entity = cost_meter.item_cells(member.item, cost_meter.ITEM_OUTPUT)
-        key = rule_ledger.Key(path, kind, entity)
-        earlier = ledger.base.get(key)
-        why = earlier.reason if earlier is not None else reason
-        if not why:
-            unexplained.append(member.item)
-            continue
-        base[key] = rule_ledger.Entry(key, member.value, why)
-    if unexplained:
-        raise rule_ledger.LedgerError(
-            f"{', '.join(unexplained)} is more than the limit and has no row.  Give the reason of its row with --reason"
-        )
-    return replace(ledger, base=base)
+    measures = [(member.item, float(member.value), budget) for member in members]
+    return cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, measures, reason)
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the rows of the kind of the build (THE LEDGER).
+    """Write a row for each member of the build above the limit that no row keeps (THE LEDGER).
 
     Returns:
         0 when the ledger is written.  1 when the build cannot be read or a new row has no reason.  2 for a mode
@@ -294,16 +271,15 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
     """
     if request.more_builds or request.mode == rule_ledger.WriteMode.RAISE:
         check_report.write_line(
-            f"guard write: the rule {RULE} has the policy max, and its rows hold the build kind.  Give --reason TEXT "
-            f"for a row, one --build-dir DIR and no --raise",
+            f"guard write: the rule {RULE} has the policy max, and each row judges each build.  Give --reason TEXT "
+            f"for a new row or a higher value, one --build-dir DIR and no --raise",
             is_error=True,
         )
         return 2
     context = runner.ElfContext(request.root, request.build_dir)
     try:
-        kind = context.kind()
         ledger = rule_ledger.read(rule, request.root)
-        new = written(budget_of(rule), kind, measured(context), ledger, request.reason)
+        new = written(budget_of(rule), measured(context), ledger, request.reason)
     except runner.NotApplicable as reason:
         check_report.write_line(f"guard write: the rule {RULE} does not apply: {reason}", is_error=True)
         return runner.SKIPPED
@@ -311,7 +287,7 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
         check_report.write_line(f"guard write: the ledger of {RULE} is not written: {problem}", is_error=True)
         return 1
     if not new.base and not rule_ledger.ledger_path(RULE, request.root).is_file():
-        told = f"no member of {kind} is over the limit, and {RULE} has no rows"
+        told = f"no member is over the limit, and {RULE} has no rows"
         check_report.write_line(f"guard write: {told}")
         return 0
     new = replace(new, comment=LEDGER_COMMENT)

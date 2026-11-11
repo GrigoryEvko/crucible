@@ -140,12 +140,11 @@ THE MEASURED RULES
         is in the directory bench of the build has no judge (assay.core.budget,
         THE SCOPE).
       * A row of the ledger utils/ledgers/RULE.txt keeps a test above the
-        limit: '- | KIND | VALUE | TEST | REASON'.  KIND is the name of the
-        configuration of the build or its build kind, and VALUE is the
-        measure when the row was written, in the unit of the rule (meter.py,
-        THE REGISTRY AND THE LEDGERS).  A kept test gives no line, up to
-        VALUE with the noise of the unit (assay.core.budget, THE NOISE).  A
-        test above that value gives the error of a test with no row.  The
+        limit in each build: '- | - | VALUE | TEST | REASON'.  VALUE is the
+        kept value, in the unit of the rule (meter.py, THE REGISTRY AND THE
+        LEDGERS).  A kept test gives no line, up to VALUE with the noise of
+        the unit (assay.core.budget, THE NOISE).  A test above that value
+        gives an error that names the row.  The
         subcommand reads the ledger only for a measure above the limit.  A
         ledger that does not exist has no row, and the subcommand then
         imports no ledger module.
@@ -372,25 +371,20 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
     return tuple(sorted(kept.items()))
 
 
-def ledger_row(row: str, name: str, kind: str | None, ledgers: str | None = None,
-               configuration: str | None = None) -> tuple[str, str, float] | None:
-    """Return the place, the reason and the kept value of the ledger row that names a test for the build.
+def ledger_row(row: str, name: str, ledgers: str | None = None) -> tuple[str, str, float] | None:
+    """Return the place, the reason and the kept value of the ledger row that names a test.
 
     Args:
         row: A rule of ROWS
         name: The name of the test
-        kind: The kind of the build, or None when it is not known
         ledgers: The directory of the ledgers, or None for the directory of CRUCIBLE_TEST_LEDGERS, else of the tree
-        configuration: The name of the configuration of the build, or None for the build kind
 
     Returns:
         The place of the row (path:line), its reason and its kept value, or None
     """
-    if kind is None:
-        return None
     directory = ledgers if ledgers is not None else os.environ.get(LEDGERS_ENV)
     ledger = cost_meter.ledger_file(row, directory)
-    found, shown, _ = cost_budget.row_of(row, cost_meter.ITEM_NAME, ledger, kind, name, configuration)
+    found, shown, _ = cost_budget.row_of(row, cost_meter.ITEM_NAME, ledger, name)
     return None if found is None else (f"{shown}:{found.line}", found.reason, found.value)
 
 
@@ -407,8 +401,7 @@ def program_item(program: str, build_dir: str | None) -> str:
 
 
 def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float],
-          kind: str | None, ledgers: str | None = None,
-          configuration: str | None = None) -> list[tuple[str, str, str]]:
+          ledgers: str | None = None) -> list[tuple[str, str, str]]:
     """Compare the measures of one test with its measured rules (THE MEASURED RULES).
 
     The witness of test-memory judges the planted record of a test with this
@@ -421,9 +414,7 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
         program: The program of the test relative to the build directory (program_item())
         run: The measurement of the command, with its accurate instruction count or None
         budget: The limit of each measured rule that the registry gives
-        kind: The kind of the build, or None
         ledgers: The directory of the ledgers (ledger_row()), or None
-        configuration: The name of the configuration of the build, or None for the build kind
 
     Returns:
         One (level, rule, message) for each rule with a finding
@@ -439,7 +430,7 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
         if row not in budget or measure <= budget[row]:
             continue
         limit = budget[row]
-        admitted = ledger_row(row, name, kind, ledgers, configuration)
+        admitted = ledger_row(row, name, ledgers)
         kept = None if admitted is None else admitted[2]
         above = f"the test {name} {text}, above the limit of {limit:g} {unit}"
         noise = cost_budget.noise_of(unit)
@@ -449,8 +440,8 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
                        f"{noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured value "
                        f"into the row with a reason")
         elif found == cost_budget.ERROR:
-            message = (f"{above}, and no row of utils/ledgers/{row}.txt keeps it for {configuration or kind}.  Make "
-                       f"the test smaller, or split it into tests over disjoint cases")
+            message = (f"{above}, and no row of utils/ledgers/{row}.txt keeps it.  Make the test smaller, or split it "
+                       f"into tests over disjoint cases")
         else:
             continue
         findings.append(("error", row, message))
@@ -704,7 +695,7 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
         name: The name of the test
         program: The program of the test, for the record
         finding_path: The path that a finding names
-        build_dir: The build directory, or None for no record and no build kind
+        build_dir: The build directory, or None for no record
         run: The measurement of the test, with its status
         warnings_dir: The warnings directory, or None
         budget: The limit of each rule, or None to read them from the registry (read_budget())
@@ -715,11 +706,9 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     status = run.exit_code
     result = "passed" if status == 0 else "failed"
     thresholds = read_budget() if budget is None else budget
-    kind = cost_meter.read_kind(build_dir) if build_dir else None
-    configuration = cost_meter.read_configuration(build_dir) if build_dir else None
     no_findings: list[tuple[str, str, str]] = []
     item = program_item(program, build_dir)
-    findings = safely(lambda: judge(name, item, run, thresholds, kind, configuration=configuration), no_findings)
+    findings = safely(lambda: judge(name, item, run, thresholds), no_findings)
     if status == 0 and any(level == "error" for level, _, _ in findings):
         status, result = 1, "rejected"
     safely(lambda: report(name, finding_path, findings, warnings_dir), None)
