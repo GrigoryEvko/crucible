@@ -329,12 +329,10 @@ STEPS = (
 SUITE = Holding(is_suite=True)
 HOLDERS = {
     "cmake": SUITE,
-    "guard-warnings": SUITE,
     "header-alone": Holding(rule="header-alone"),
     "loop-evidence": Holding(step="evidence"),
     "loop-fixture": SUITE,
     "loop-gauge": Holding(step="gauge"),
-    "loop-history": SUITE,
     "loop-test-step": SUITE,
 }
 # The sampled items with no class of assay.loop.evidence.targets: a kind, and a name or "" for each item of the kind

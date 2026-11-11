@@ -4,9 +4,26 @@ A rule that gives warnings and no error writes them to
 <build>/check-warnings/RULE.txt (assay.core.report).  ctest shows no output of
 a test with no error.  `guard warnings` prints those warnings after a build or
 a test run.  In a GitHub workflow it also prints each one as an annotation.
-After the warnings, it prints the time totals and the build totals of the build
-directory, which assay.guard.engines.buildsys.cost_budgets adds (THE TOTALS of
-that module).
+
+THE TOTALS
+    Before the warnings, the command prints the totals of the build
+    directory.  Each total is a plain number with its unit.  No rule judges a
+    total, because a CPU time and a wall time change with the load of the
+    host.  The totals:
+      * the CPU time of the last real compile of each negative fixture, from
+        the census of assay.readers.census
+      * the CPU time of each executable test in its last run, from the
+        records of the test launcher.  A script test has no part
+      * the link records of the build launcher and their CPU time
+      * the largest sum of the peak memory of the compiles and the links
+        whose wall times overlap, an upper bound (assay.loop.history, THE COST
+        RECORDS)
+      * the wall time of the last configure less its plugin build, and the
+        plugin build (assay.loop.history, THE CONFIGURE TIME and THE PLUGIN
+        BUILD).
+    A unit with no time has no part in a time total, and the line of the
+    total gives the count of such units.  When the census or the test
+    records cannot be read, one line tells why.
 
 The test launcher and the fixture driver write one file for each test:
 CHECK.TEST.txt for each check of TEST_KEYED_CHECKS.  No run writes the file of
@@ -19,7 +36,7 @@ Each writer of a warnings file names a rule of the registry.  No run writes the
 file of a rule again after the rule goes from the registry.  `guard warnings`
 also removes the file of each rule that the registry does not name.  When it
 cannot read the registry, it keeps each file and tells why.  Each line that it
-writes about the files and the totals starts with cost_budgets.TOTAL_PREFIX.
+writes about the files and the totals starts with PREFIX.
 
     python3 utils/bin/guard warnings BUILD_DIR
     python3 utils/bin/guard selftest guard.warnings
@@ -29,9 +46,11 @@ The exit status is 0 when each file has the format, also with warnings.  It is
 case of the self-test does not hold, and it is 2 for a usage error.
 """
 
+import os
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import meter as cost_meter
@@ -42,14 +61,13 @@ from assay.core import rows as rows_grammar
 from assay.core import testing
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.buildsys import cost_budgets
-from assay.guard.engines.buildsys.runner import BuildContext
 from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 
 USAGE = "usage: guard warnings BUILD_DIR | guard selftest guard.warnings"
-PREFIX = cost_budgets.TOTAL_PREFIX
+# The prefix of each line that the command writes about the warnings files and the totals.
+PREFIX = "guard warnings:"
 # The checks that use the name of one test as the writer key (assay.core.report, THE WARNINGS DIRECTORY).
 TEST_KEYED_CHECKS = frozenset({"test-time", "test-memory", "test-instructions", "fixture-cpu", "fixture-instructions"})
 
@@ -109,6 +127,111 @@ def remove_gone_rules(warnings_dir: Path, registry_path: Path = rule_registry.RE
             check_report.write_line(f"{PREFIX} removed {path}, because the registry names no rule {rule_id}")
 
 
+def test_times(build_dir: Path) -> list[float | None]:
+    """Return the CPU time of the record of each executable test of a build directory: a program in the directory.
+
+    Complexity: linear in the records of the build directory.
+
+    Raises:
+        CtestError: If a record cannot be read
+    """
+    build = build_dir.resolve()
+    return [
+        record.cost.cpu_s
+        for record in ctest_reader.costs(build_dir).values()
+        if os.path.isabs(record.program) and Path(record.program).resolve().is_relative_to(build)
+    ]
+
+
+def build_records(build_dir: Path) -> list[cost_record.CostRecord]:
+    """Return each record of a compile or a link of the build launcher in a build directory.
+
+    A record that cannot be read, and the record of a test, have no part.
+    Complexity: linear in the files of the build directory.
+    """
+    records: list[cost_record.CostRecord] = []
+    for path in sorted(build_dir.rglob(f"*{cost_record.SUFFIX}")):
+        if path.name.endswith(cost_record.TEST_SUFFIX):
+            continue
+        try:
+            records.append(cost_record.read(path))
+        except cost_record.RecordError:
+            continue
+    return records
+
+
+def time_lines(census: build_census.Census, times: Sequence[float | None]) -> list[str]:
+    """Return the line of each time total: the CPU time of the fixtures and of the executable tests (THE TOTALS).
+
+    Complexity: linear in the units and the tests.
+    """
+    groups = (
+        ("the negative fixtures", [unit.cost.cpu_s for unit in census.units if unit.kind == "fixture"]),
+        ("the executable tests", list(times)),
+    )
+    lines: list[str] = []
+    for what, values in groups:
+        known = [value for value in values if value is not None]
+        missing = len(values) - len(known)
+        unknown = f", {missing} with no time" if missing else ""
+        lines.append(f"{PREFIX} {what} took {sum(known):.0f} s of CPU time in {len(known)} units{unknown}")
+    return lines
+
+
+def build_lines(records: Sequence[cost_record.CostRecord], configure: Mapping[str, object] | None) -> list[str]:
+    """Return the lines of the build totals of the records of a build directory and of its last configure (THE TOTALS).
+
+    Args:
+        records: The records of the compiles and the links of the build directory
+        configure: The times of the last configure (assay.loop.history.configure_time()), or None
+    """
+    from assay.loop import history as loop_history
+
+    links = [record for record in records if record.step == cost_record.LINK]
+    link_cpu = sum(record.cost.cpu_s for record in links if record.cost is not None)
+    peak = loop_history.peak_concurrent_gb([record.cost for record in records if record.cost is not None])
+    lines = [f"{PREFIX} the build directory holds {len(links)} link records, which took {link_cpu:.1f} s of CPU time"]
+    if peak is None:
+        lines.append(f"{PREFIX} no record of a compile or a link holds a peak memory")
+    else:
+        lines.append(f"{PREFIX} the compiles and the links whose wall times overlap took at most {peak:g} GB of memory")
+    if configure is None:
+        lines.append(f"{PREFIX} the last configure of the build directory has no record of its time")
+        return lines
+    lines.append(
+        f"{PREFIX} the last configure took {configure['total_s']} s less its plugin build (configure "
+        f"{configure['configure_s']} s, generate {configure['generate_s']} s, reply of the file API "
+        f"{configure['file_api_s']} s, at {configure['start']})"
+    )
+    plugin_s = loop_history.number(configure, "plugin_build_s")
+    if plugin_s:
+        lines.append(f"{PREFIX} the plugin build of the last configure took {plugin_s:g} s")
+    else:
+        lines.append(f"{PREFIX} the last configure built no plugin")
+    return lines
+
+
+def total_lines(build_dir: Path) -> list[str]:
+    """Return the line of each total of a build directory (THE TOTALS).
+
+    Complexity: linear in the files of the build directory.
+    """
+    from assay.loop import history as loop_history
+
+    try:
+        census = build_census.read_census(build_dir, REPO_ROOT, read_files=False)
+        lines = time_lines(census, test_times(build_dir))
+    except (
+        build_census.NotApplicable,
+        build_census.CensusError,
+        ctest_reader.CtestError,
+        OSError,
+        ValueError,
+    ) as reason:
+        lines = [f"{PREFIX} no time totals: {reason}"]
+    return [*lines, *build_lines(build_records(build_dir), loop_history.configure_time(build_dir))]
+
+
 def main(argv: list[str]) -> int:
     """Print the warnings and the totals of one build directory.
 
@@ -128,9 +251,8 @@ def main(argv: list[str]) -> int:
     remove_gone_tests(build_dir, warnings_dir)
     remove_gone_rules(warnings_dir)
     findings, problems = check_report.read_warnings_dir(warnings_dir)
-    context = BuildContext(REPO_ROOT, build_dir)
-    findings += cost_budgets.total_report_totals(context)
-    findings += cost_budgets.total_report_build(context)
+    for line in total_lines(build_dir):
+        check_report.write_line(line)
     annotate = cost_meter.is_github_actions()
     for found in findings:
         check_report.write_line(found.text())
@@ -141,7 +263,7 @@ def main(argv: list[str]) -> int:
     counts = Counter(found.check for found in findings)
     summary = ", ".join(f"{check} {count}" for check, count in sorted(counts.items()))
     check_report.write_line(
-        f"{PREFIX} {len(findings)} warning(s) in {warnings_dir} and the totals" + (f": {summary}" if summary else "")
+        f"{PREFIX} {len(findings)} warning(s) in {warnings_dir}" + (f": {summary}" if summary else "")
     )
     return ExitCode.FINDINGS if problems else ExitCode.OK
 
@@ -157,7 +279,7 @@ def print_cases(expect: testing.Expect) -> None:
         )
         status, text = testing.captured(lambda: main([str(build)]))
         expect(
-            "a build with no census prints the warnings and tells why it has no totals",
+            "a build with no census prints the warnings and tells why it has no time totals",
             status == 0 and "a.h:1: warning: [python-lint] m" in text and "no time totals" in text,
         )
         expect(
@@ -248,80 +370,32 @@ def planted_unit(kind: str, cpu: float | None) -> build_census.Unit:
     return build_census.Unit(kind, f"{kind}-{cpu}", "src/x.cpp", build_census.Cost(cpu, None))
 
 
-def planted_baselines(rows: dict[str, float], is_bound: bool = False) -> cost_budgets.BaselineOf:
-    """Return a function that gives the planted baseline row of each total of `rows`, and refuses each other total."""
-
-    def baseline_of(rule_id: str) -> cost_budgets.TotalBaseline:
-        """Return the planted row of a total, or refuse a total with no row."""
-        if rule_id not in rows:
-            raise cost_budgets.TotalRefusal(f"the plant holds no row of {rule_id}", "ledger", 0, "no-baseline")
-        return cost_budgets.TotalBaseline("planted", rows[rule_id], "ledger", 3, is_bound, "")
-
-    return baseline_of
-
-
-def time_total_cases(expect: testing.Expect) -> None:
-    """Add the two time totals of a planted census, and compare each one with planted baselines."""
-    budgets = {
-        rule_id: check_report.Budget(rule_id, 100.0, 100.0, "%", "m") for rule_id, _, _ in cost_budgets.TOTAL_TIMES
-    }
+def time_line_cases(expect: testing.Expect) -> None:
+    """Add the two time totals of a planted census and planted tests, and give each one as a plain number."""
     units = [
         planted_unit("object", 60.0),
         planted_unit("fixture", 20.0),
         planted_unit("fixture", 10.0),
     ]
     census = build_census.Census(Path("/b"), units, {})
-    measures = cost_budgets.total_time_measures(census, [4.0, 5.0])
+    lines = time_lines(census, [4.0, 5.0])
     expect(
         "the two time totals add the CPU time of their units, and an object of all is in neither",
-        [(item.rule_id, item.value, item.missing) for item in measures]
-        == [("total-fixture-cpu", 30.0, 0), ("total-test-cpu", 9.0, 0)],
-    )
-    baselines = planted_baselines({"total-fixture-cpu": 30.0, "total-test-cpu": 30.0})
-    found, lines = cost_budgets.judged_totals(measures, budgets, "build", baselines)
-    expect(
-        "a baseline more than two times the total gives a fall warning, and a total equal to its baseline gives nothing",
-        [(item.check, item.kind, item.level) for item in found] == [("total-test-cpu", "fall", "warning")]
-        and len(lines) == 2
-        and "total-fixture-cpu 30 s CPU in 2 units, +0.0% against the baseline of the configuration planted"
-        in lines[0],
-    )
-    lower = planted_baselines({"total-fixture-cpu": 10.0, "total-test-cpu": 9.0})
-    found, _ = cost_budgets.judged_totals(measures, budgets, "build", lower)
-    expect(
-        "a total more than two times its baseline gives a growth warning",
-        [(item.check, item.kind, item.level) for item in found] == [("total-fixture-cpu", "growth", "warning")],
-    )
-    bound = planted_baselines({"total-fixture-cpu": 10.0, "total-test-cpu": 30.0}, True)
-    found, _ = cost_budgets.judged_totals(measures, budgets, "build", bound)
-    expect(
-        "the largest baseline judges a growth and no fall of a build of a configuration that the ledger does not hold",
-        [(item.check, item.kind) for item in found] == [("total-fixture-cpu", "growth")]
-        and "--add-configuration" in found[0].message,
-    )
-    zero = planted_baselines({"total-fixture-cpu": 0.0, "total-test-cpu": 9.0})
-    found, _ = cost_budgets.judged_totals(measures, budgets, "build", zero)
-    expect(
-        "a total above 0 with a baseline of 0 gives a warning",
-        [(item.check, item.kind) for item in found] == [("total-fixture-cpu", "zero-baseline")],
+        lines
+        == [
+            "guard warnings: the negative fixtures took 30 s of CPU time in 2 units",
+            "guard warnings: the executable tests took 9 s of CPU time in 2 units",
+        ],
     )
     census.units.append(planted_unit("fixture", None))
-    found, lines = cost_budgets.judged_totals(
-        cost_budgets.total_time_measures(census, [4.0, 5.0]), budgets, "build", baselines
-    )
+    lines = time_lines(census, [4.0, None])
     expect(
-        "a time total with a unit that has no time gives a warning that tells to run each unit",
-        "1 with no time, 1 units with no time" in lines[0]
-        and [(item.check, item.kind) for item in found]
-        == [("total-fixture-cpu", "no-time"), ("total-test-cpu", "fall")]
-        and "Run each unit" in found[0].message,
-    )
-    found, lines = cost_budgets.judged_totals(measures, {}, "build", baselines)
-    expect("a total with no measured rule gives no warning and tells so", not found and "no measured rule" in lines[0])
-    registry = check_report.read_budgets()
-    expect(
-        "the registry has a measured rule in percent for each time total",
-        all(rule_id in registry and registry[rule_id].unit == "%" for rule_id, _, _ in cost_budgets.TOTAL_TIMES),
+        "a unit with no time has no part in a total, and the line gives the count of such units",
+        lines
+        == [
+            "guard warnings: the negative fixtures took 30 s of CPU time in 2 units, 1 with no time",
+            "guard warnings: the executable tests took 4 s of CPU time in 1 units, 1 with no time",
+        ],
     )
 
 
@@ -333,67 +407,50 @@ def planted_record(
     return cost_record.CostRecord(step, "built", None, None, None, 0, cost, None)
 
 
-def build_total_cases(expect: testing.Expect) -> None:
-    """Give the five build totals of planted records and a planted configure, and judge each one."""
+def build_line_cases(expect: testing.Expect) -> None:
+    """Give the build totals of planted records and a planted configure as plain numbers with their units."""
     records = [
         planted_record(cost_record.LINK, 2.0, 10.0, 4.0, 2.0),
         planted_record(cost_record.COMPILE, 5.0, 9.0, 5.0, 3.0),
         cost_record.CostRecord(cost_record.COMPILE, cost_record.HIT, None, None, None, 0, None, None),
     ]
-    budgets = {
-        rule_id: check_report.Budget(rule_id, limit, limit, unit, "m")
-        for rule_id, limit, unit in (
-            ("link-count", 2.0, "%"),
-            ("total-link-cpu", 100.0, "%"),
-            ("build-peak-memory", 4.0, "GB"),
-            ("configure-time", 10.0, "s"),
-            ("plugin-build-time", 6.0, "s"),
-        )
-    }
     configure = {
         "start": "2026-10-02T00:00:00Z",
         "configure_s": 9.0,
         "generate_s": 3.0,
-        "total_s": 12.0,
+        "file_api_s": 0.5,
+        "total_s": 12.5,
         "plugin_build_s": 7.0,
     }
-    measures = cost_budgets.total_build_measures(records, configure)
-    found, lines = cost_budgets.judged_totals(
-        measures, budgets, "build", planted_baselines({"link-count": 1.0, "total-link-cpu": 0.5})
-    )
+    lines = build_lines(records, configure)
     expect(
-        "the build totals warn on a growth of the link CPU over its baseline, and on the peak memory of the steps "
-        "that overlap, the configure and the plugin build over their thresholds.  A link count equal to its baseline "
-        "gives nothing",
-        sorted((item.check, item.kind) for item in found)
-        == [("build-peak-memory", ""), ("configure-time", ""), ("plugin-build-time", ""), ("total-link-cpu", "growth")]
-        and all(item.level == "warning" for item in found)
-        and any("5 GB" in item.message for item in found),
+        "the build totals give the links and their CPU time, the peak memory of the steps that overlap, the configure "
+        "less its plugin build with its parts, and the plugin build",
+        lines
+        == [
+            "guard warnings: the build directory holds 1 link records, which took 2.0 s of CPU time",
+            "guard warnings: the compiles and the links whose wall times overlap took at most 5 GB of memory",
+            (
+                "guard warnings: the last configure took 12.5 s less its plugin build (configure 9.0 s, generate "
+                "3.0 s, reply of the file API 0.5 s, at 2026-10-02T00:00:00Z)"
+            ),
+            "guard warnings: the plugin build of the last configure took 7 s",
+        ],
     )
+    no_plugin = build_lines([], {**configure, "plugin_build_s": 0.0})
     expect(
-        "the build totals give one line for each total, with the parts of the configure and its plugin build",
-        len(lines) == 5
-        and "link-count 1 links" in lines[0]
-        and "(configure 9.0 s, generate 3.0 s" in lines[3]
-        and "less a plugin build of 7.0 s" in lines[3]
-        and "plugin-build-time 7 s" in lines[4],
+        "a last configure that built no plugin gives a line that tells so", no_plugin[-1].endswith("built no plugin")
     )
-    no_plugin = cost_budgets.total_build_measures([], {**configure, "plugin_build_s": 0.0})
-    found, _ = cost_budgets.judged_totals(no_plugin, budgets, "build", planted_baselines({}))
+    empty = build_lines([], None)
     expect(
-        "a last configure that built no plugin gives plugin-build-time no value and no warning",
-        "plugin-build-time" not in {item.check for item in found},
+        "a build directory with no record and no configure gives a line for each total that tells so",
+        empty
+        == [
+            "guard warnings: the build directory holds 0 link records, which took 0.0 s of CPU time",
+            "guard warnings: no record of a compile or a link holds a peak memory",
+            "guard warnings: the last configure of the build directory has no record of its time",
+        ],
     )
-    found, lines = cost_budgets.judged_totals(
-        cost_budgets.total_build_measures([], None), budgets, "build", planted_baselines({})
-    )
-    expect(
-        "the build totals give no warning with no record and no configure, and no baseline judges a total with no "
-        "value",
-        not found and "no value" in lines[0] and "no value" in lines[3] and "no value" in lines[4],
-    )
-    registry = check_report.read_budgets()
-    expect("the registry has a measured rule for each build total", all(rule_id in registry for rule_id in budgets))
 
 
 def record_cases(expect: testing.Expect) -> None:
@@ -412,7 +469,7 @@ def record_cases(expect: testing.Expect) -> None:
             cost_record.write(cost_record.test_record_file(build, name), record)
         expect(
             "the record of an executable test gives its CPU time, and the record of a script test has no part",
-            cost_budgets.total_test_times(build) == [2.5],
+            test_times(build) == [2.5],
         )
         run = cost_meter.Measurement(0, 2.0, 0.0, 4.0, 2048, 1.0, 10.0, None)
         steps: list[tuple[cost_record.Step, Path, str | None]] = [
@@ -424,7 +481,7 @@ def record_cases(expect: testing.Expect) -> None:
             cost_record.write(cost_record.record_file(output), built)
         expect(
             "the build records are the records of the links and the compiles, and no record of a test",
-            sorted(str(item.step) for item in cost_budgets.total_build_records(build)) == ["compile", "link"],
+            sorted(str(item.step) for item in build_records(build)) == ["compile", "link"],
         )
 
 
@@ -433,5 +490,5 @@ def self_test() -> int:
     return testing.run(
         "guard.warnings",
         [],
-        (print_cases, gone_test_cases, gone_rule_cases, time_total_cases, build_total_cases, record_cases),
+        (print_cases, gone_test_cases, gone_rule_cases, time_line_cases, build_line_cases, record_cases),
     )

@@ -150,7 +150,7 @@ def problem_cases(expect: testing.Expect) -> None:
     )
     stale, no_class = plan.ProblemKind.STALE_ENTRY, plan.ProblemKind.NO_CLASS
     expect("a holder of a rule with no row of HOLDERS has no class", (no_class, "holder nobody") in found)
-    expect("a row of HOLDERS that names no holder of a rule is a stale row", (stale, "holder loop-history") in found)
+    expect("a row of HOLDERS that names no holder of a rule is a stale row", (stale, "holder loop-test-step") in found)
     expect("a step that names a rule of the registry is no problem", (stale, "step gauge") not in found)
     unclassed = {**commands, "brand-new": True, "hidden-tool": False}
     del unclassed["land"]

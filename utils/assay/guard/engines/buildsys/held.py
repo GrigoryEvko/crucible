@@ -8,11 +8,6 @@ THE HOLDERS
     utils/plants/RULE/ (assay.guard.engines.buildsys.planted).  The judge reads
     the planted input with the reader of the holder, and the thresholds of the
     registry of the copy of the plant (BuildContext.budget()):
-      guard-warnings  time_totals() and build_totals() of
-                      assay.guard.engines.buildsys.cost_budgets, which `guard
-                      warnings` prints (THE TOTALS of that module)
-      loop-history    judge_line() of assay.loop.history for each line of the
-                      loop history of the build
       loop-gauge      judged_record() of assay.loop.gauge for each record of
                       the file GAUGE_RECORDS of the build
       loop-test-step  judge() of assay.loop.teststep for the record of each
@@ -53,12 +48,8 @@ THE WRITE
     gets a row when the rule judges its measure at the error level and the
     measure is over the error threshold.  The rule fixture-cpu judges the CPU
     time only when the record has no instruction count.  The write refuses a
-    build with a fixture that has no record.  The function of each total of
-    BASELINE_TOTALS is total_written() of
-    assay.guard.engines.buildsys.cost_budgets (THE TOTALS of that module).  Its
-    ledger holds the rows of each configuration, and is_configured() lets
-    `guard write --add-configuration` add the configuration of a build.  A
-    held rule with no row in WRITERS has no write, and `guard write` refuses it.
+    build with a fixture that has no record.  A held rule with no row in
+    WRITERS has no write, and `guard write` refuses it.
 
 THE FINDINGS
     A measured rule with two equal thresholds gives a warning only.  The
@@ -86,7 +77,7 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.buildsys import cost_budgets, planted, test_time
+from assay.guard.engines.buildsys import planted, test_time
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -110,33 +101,6 @@ type Judge = Callable[[rule_registry.Rule, BuildContext], list[check_report.Find
 def unreadable(what: str, problem: object) -> meta_runner.NotApplicable:
     """Return the reason of a plant with an input that the holder cannot read (THE FINDINGS)."""
     return meta_runner.NotApplicable(f"the holder cannot read {what}: {problem}")
-
-
-def warnings_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
-    """Return the warnings of the time totals and of the build totals of the planted build, as `guard warnings`.
-
-    Raises:
-        NotApplicable: If the plant has no build directory
-    """
-    context.require_build()
-    budgets = context.budgets()
-    time_found, _ = cost_budgets.time_totals(context, budgets)
-    build_found, _ = cost_budgets.build_totals(context, budgets)
-    return [*time_found, *build_found]
-
-
-def history_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
-    """Return the warnings of each line of the loop history of the planted build, as `loop history` and `loop test`.
-
-    Raises:
-        NotApplicable: If the plant has no build directory
-    """
-    from assay.loop import history as loop_history
-
-    build = context.require_build()
-    budgets = context.budgets()
-    place = context.shown(loop_history.history_path(build))
-    return [item for line in loop_history.read_lines(build) for item in loop_history.judge_line(line, budgets, place)]
 
 
 def gauge_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
@@ -276,8 +240,6 @@ def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[ch
 
 
 HOLDERS: dict[str, Judge] = {
-    "guard-warnings": warnings_findings,
-    "loop-history": history_findings,
     "loop-gauge": gauge_findings,
     "loop-test-step": test_step_findings,
     "loop-fixture": fixture_findings,
@@ -359,19 +321,13 @@ def fixture_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: s
 
 type Writer = Callable[[BuildContext, rule_ledger.Ledger, str | None], rule_ledger.Ledger]
 
-# The function that writes the ledger of each held rule of the policy max or baseline (THE WRITE).
+# The function that writes the ledger of each held rule of the policy max (THE WRITE).
 WRITERS: dict[str, Writer] = {
     "test-memory": test_time.written,
     "test-instructions": test_time.written,
     FIXTURE_CPU: fixture_written,
     FIXTURE_INSTRUCTIONS: fixture_written,
-    **dict.fromkeys(cost_budgets.BASELINE_TOTALS, cost_budgets.total_written),
 }
-
-
-def is_configured(rule: rule_registry.Rule) -> bool:
-    """Return True when the ledger of a held rule holds the rows of each configuration of a build (THE WRITE)."""
-    return rule.id in cost_budgets.BASELINE_TOTALS
 
 
 def written(

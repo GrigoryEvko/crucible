@@ -71,15 +71,6 @@ THE HOST LOAD
     step.  A wall time is comparable with another one only when others_pct
     is small for the two.
 
-THE WARNINGS OF A LINE
-    judge_line() compares one line with four measured rules of
-    utils/registry.txt, and each finding is a warning: noop-build-time for the
-    wall time of a build that ran no edge but the glob check, build-peak-memory
-    for the peak concurrent memory of the build, configure-time for a CMake
-    run inside the build less its plugin build, and plugin-build-time for that
-    plugin build.  `loop test` prints the warnings of its line, and the table
-    prints the warnings of each line that it shows.
-
 THE CONFIGURE TIME
     The root CMakeLists.txt writes the start and the end of each configure to
     BUILD_DIR/configure-time.txt, and CMake then writes build.ninja.  When a
@@ -93,18 +84,18 @@ THE PLUGIN BUILD
     A configure that builds the quarantine plugin writes the start and the
     end of that build to PLUGIN_BUILD_TIME_FILE of the build directory.
     utils/tools/quarantine/Quarantine.cmake writes the file (THE TIME OF THE
-    BUILD).  The rule plugin-build-time judges that wall time, and
-    configure_time() gives it as plugin_build_s.
+    BUILD).  configure_time() gives that wall time as plugin_build_s.
 
     The configure and the sum of configure_time() do not hold the plugin
-    build.  The rule configure-time then judges the configure less the
-    plugin build.  A plugin build counts for one configure only when its
-    start and its end are in that configure.  plugin_build_since() gives the
-    plugin build of a CMake run in a build or of a step of the gauge.
+    build.  A plugin build counts for one configure only when its start and
+    its end are in that configure.  plugin_build_since() gives the plugin
+    build of a CMake run in a build or of a step of the gauge.
 
 THE TABLE
     `loop history BUILD_DIR [-n N]` prints the last N lines (20 by default)
-    as a table.
+    as a table.  Each measure is a plain number with its unit, and no rule
+    judges it.  Examples are the wall time of the build, the CMake run in it,
+    its plugin build and the peak concurrent memory.
 
     `guard selftest loop.history` does a test of the module.
 
@@ -129,7 +120,6 @@ from assay.core import git
 from assay.core import meter as cost_meter
 from assay.core import proc
 from assay.core import record as cost_record
-from assay.core import report as check_report
 from assay.readers import ninja as ninja_files
 
 CONFIGURE_TIME_FILE = "configure-time.txt"
@@ -161,7 +151,7 @@ WORKDIR_PREFIX = "{cmake_ninja_workdir}"
 BUSY_FIELDS = (1, 2, 3, 6, 7, 8)
 KB_PER_GB = 1024 * 1024
 # A host is quiet in a step when other processes used at most this share of its CPU time, in percent
-# (others_share()).  `loop gauge` judges a wall time, and `loop evidence` counts a measurement, only on a quiet host.
+# (others_share()).  `loop evidence` counts a measurement only on a quiet host.
 QUIET_OTHERS_PCT = 10.0
 
 
@@ -630,60 +620,6 @@ def configure_time(build: Path) -> dict[str, object] | None:
             "total_s": round(replied - start - plugin_s, 2), "plugin_build_s": round(plugin_s, 2)}
 
 
-def warning_over(budgets: dict[str, check_report.Budget], row: str, value: float | None, unit: str, what: str,
-                 place: str) -> list[check_report.Finding]:
-    """Return a warning when a value is over the warning threshold of its measured rule, else no finding.
-
-    Args:
-        budgets: The measured rules of the registry
-        row: The ID of the measured rule
-        value: The value, or None for no value
-        unit: The unit of the value
-        what: The words that name the value
-        place: The path that the finding names
-
-    Returns:
-        The warning, or an empty list
-    """
-    budget = budgets.get(row)
-    if budget is None or value is None or value <= budget.warn:
-        return []
-    return [check_report.Finding("warning", place, 0, row, f"{what} took {value:g} {unit}, over the warning threshold "
-                                                           f"of {budget.warn:g} {unit} of the rule {row}")]
-
-
-def judge_line(line: dict[str, object], budgets: dict[str, check_report.Budget],
-               place: str) -> list[check_report.Finding]:
-    """Return the warnings of one history line (THE WARNINGS OF A LINE).
-
-    Args:
-        line: The line
-        budgets: The measured rules of the registry
-        place: The path that a finding names
-
-    Returns:
-        The warnings
-    """
-    build = line.get("build")
-    if not isinstance(build, dict):
-        return []
-    findings: list[check_report.Finding] = []
-    did_nothing = build.get("status") == 0 and build.get("edges") == 0 and "reconfigure_s" not in build
-    if did_nothing:
-        findings += warning_over(budgets, "noop-build-time", number(build, "wall_s"), "s",
-                                 "the build with no edge to run", place)
-    findings += warning_over(budgets, "build-peak-memory", number(build, "peak_memory_gb"), "GB",
-                             "the compiles and links of the build together", place)
-    reconfigure_s = number(build, "reconfigure_s")
-    plugin_s = number(build, "plugin_build_s")
-    configured_s = None if reconfigure_s is None else round(reconfigure_s - (plugin_s or 0.0), 2)
-    findings += warning_over(budgets, "configure-time", configured_s, "s",
-                             "the CMake run inside the build, less its plugin build,", place)
-    findings += warning_over(budgets, "plugin-build-time", plugin_s, "s",
-                             "the plugin build of the CMake run inside the build", place)
-    return findings
-
-
 # ── The source tree ────────────────────────────────────────────────────────
 
 
@@ -877,14 +813,15 @@ def row_cells(line: dict[str, object]) -> list[str]:
     when = str(line.get("time", "-")).replace("T", " ").rstrip("Z")[:16]
     return [when, (str(commit)[:9] if commit else "-"), cell(line.get("tree")), cell(jobs), cell(line.get("load")),
             others, cell(number(build, "wall_s")), cell(number(build, "reconfigure_s")),
-            cell(number(build, "critical_path_s")), cell(cpu_bound),
+            cell(number(build, "plugin_build_s")), cell(number(build, "critical_path_s")), cell(cpu_bound),
             cell(cpu, 0), cell(kinds.get("compile")), cell(build.get("ccache_hits")), cell(kinds.get("link")),
             cell(number(build, "peak_memory_gb")), cell(number(tests, "wall_s")), cell(number(tests, "cpu_s"), 0),
             cell(tests.get("selected")), cell(tests.get("failed"))]
 
 
-TABLE_HEADER = ("when (UTC)", "commit", "tree", "jobs", "load", "others %", "build s", "cmake s", "path s", "CPU/jobs s",
-                "build CPU s", "compiles", "hits", "links", "peak GB", "tests s", "test CPU s", "tests", "failed")
+TABLE_HEADER = ("when (UTC)", "commit", "tree", "jobs", "load", "others %", "build s", "cmake s", "plugin s", "path s",
+                "CPU/jobs s", "build CPU s", "compiles", "hits", "links", "peak GB", "tests s", "test CPU s", "tests",
+                "failed")
 
 
 def table(lines: list[dict[str, object]]) -> str:
@@ -913,15 +850,12 @@ def show(build: Path, count: int) -> int:
         return 2
     shown = lines[-count:]
     print(table(shown))
-    budgets = check_report.read_budgets()
     for line in shown:
         build_part = line.get("build")
         if isinstance(build_part, dict) and build_part.get("critical_path"):
             path = build_part["critical_path"]
             assert isinstance(path, list)
             print(f"{line.get('time')}: critical path {' -> '.join(str(item) for item in path)}")
-        for finding in judge_line(line, budgets, str(history_path(build))):
-            print(f"{line.get('time')}: {finding.text()}")
         for problem in line.get("problems") or []:
             print(f"{line.get('time')}: problem of the history: {problem}")
     return 0
@@ -1072,24 +1006,6 @@ def self_test() -> int:
         (build / CONFIGURE_TIME_FILE).write_text(f"{written + 1.0} {written + 3.0}\n", encoding="ascii")
         expect("configure_time gives nothing when the last configure wrote no build.ninja after its end",
                configure_time(build) is None)
-        budgets = {row: check_report.Budget(row, limit, limit, "u", "m")
-                   for row, limit in (("noop-build-time", 0.5), ("build-peak-memory", 100.0), ("configure-time", 10.0),
-                                      ("plugin-build-time", 6.0))}
-        idle = {"build": {"status": 0, "wall_s": 0.9, "edges": 0, "peak_memory_gb": None}}
-        expect("judge_line warns on a slow build that ran no edge",
-               [(found.check, found.level) for found in judge_line(idle, budgets, "h")]
-               == [("noop-build-time", "warning")])
-        busy = {"build": {"status": 0, "wall_s": 90.0, "edges": 900, "peak_memory_gb": 150.0, "reconfigure_s": 12.0}}
-        expect("judge_line warns on the peak memory and on a slow CMake run, and not on the time of a build with work",
-               sorted(found.check for found in judge_line(busy, budgets, "h")) == ["build-peak-memory",
-                                                                                    "configure-time"])
-        rebuilt: dict[str, object] = {"build": {"status": 0, "wall_s": 20.0, "edges": 9, "reconfigure_s": 14.0,
-                                                "plugin_build_s": 7.0}}
-        expect("judge_line judges a CMake run less its plugin build, and the plugin build on its own rule",
-               [found.check for found in judge_line(rebuilt, budgets, "h")] == ["plugin-build-time"])
-        expect("judge_line gives no warning for a line with no build or with values under the thresholds",
-               judge_line({"build": None}, budgets, "h") == []
-               and judge_line({"build": {"status": 0, "wall_s": 0.2, "edges": 0}}, budgets, "h") == [])
 
         expect("read_lines gives no line for a build with no history", read_lines(build) == [])
         recorder = Recorder(build, build, 4)
@@ -1113,6 +1029,9 @@ def self_test() -> int:
         printed = table(read_lines(build))
         expect("table gives a header and one row for each line", len(printed.splitlines()) == 2
                and printed.splitlines()[0].startswith("when (UTC)"))
+        cells = dict(zip(TABLE_HEADER, row_cells({"build": {"reconfigure_s": 9.0, "plugin_build_s": 3.5}}), strict=True))
+        expect("the table gives the CMake run inside a build and its plugin build as plain numbers",
+               cells["cmake s"] == "9.0" and cells["plugin s"] == "3.5")
         filler = json.dumps({"format": LINE_FORMAT, "time": "x", "pad": "y" * 1000}) + "\n"
         with history_path(build).open("a", encoding="utf-8") as handle:
             handle.write(filler * (TRIM_BYTES // len(filler) + 10))

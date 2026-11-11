@@ -34,11 +34,10 @@ THE ROWS
                    divided by commas
       held-by      the rule or the command that reads the thresholds of a
                    measured rule that has no module of its own: a rule ID,
-                   or guard-warnings, loop-gauge, loop-history, loop-step,
-                   loop-test-step, loop-fixture, `loop-evidence` or cmake.  A
-                   step meter (loop-step, loop-test-step or loop-fixture) can
-                   also hold a rule with no thresholds, which it judges for
-                   each step
+                   or loop-gauge, loop-step, loop-test-step, loop-fixture,
+                   `loop-evidence` or cmake.  A step meter (loop-step,
+                   loop-test-step or loop-fixture) can also hold a rule with
+                   no thresholds, which it judges for each step
       holder       the function of the holder that judges a rule with
                    held-by, as MODULE:FUNCTION, such as
                    assay.loop.gauge:judged_record.  MODULE is a module of the
@@ -125,9 +124,7 @@ UNITS = frozenset(
 # The commands that read the thresholds of a measured rule with no module of its own.
 HOLDING_COMMANDS = frozenset(
     {
-        "guard-warnings",
         "loop-gauge",
-        "loop-history",
         "loop-step",
         "loop-test-step",
         "loop-fixture",

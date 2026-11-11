@@ -4679,11 +4679,10 @@ endif()
 # that measure a quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
 crucible_script_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest core.report)
-# `guard warnings` also prints the time totals of the build: the CPU time
-# of the fixtures and of the executable tests, against the baselines of the
-# rules total-fixture-cpu and total-test-cpu
-# (utils/assay/guard/engines/buildsys/cost_budgets.py).  A total gives a
-# warning only.  The CI step "Check warnings" runs it after the tests.
+# `guard warnings` also prints the totals of the build as plain numbers.  They
+# are the CPU time of the fixtures, of the executable tests and of the links,
+# and the times of the last configure.  No rule judges a total.  The CI step
+# "Check warnings" runs it after the tests.
 crucible_script_test(NAME guard_warnings_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest guard.warnings)
 set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
@@ -4777,7 +4776,7 @@ crucible_script_test(NAME loop_history_self_test
 set_tests_properties(affected_tests_self_test loop_history_self_test PROPERTIES LABELS "ci_guard")
 # edit_loop_gauge_self_test — `loop gauge` (utils/assay/loop/gauge.py) measures the
 # build and the full test run after one code edit of a base header, in a
-# clone of the tree, against the rules edit-build-* and edit-test-* of
+# clone of the tree, against the rule edit-build-instructions of
 # utils/registry.txt.  The measurement takes minutes, so the owner runs
 # it before each stage gate, and only its self-test is a test.
 crucible_script_test(NAME edit_loop_gauge_self_test

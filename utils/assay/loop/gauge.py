@@ -50,8 +50,8 @@ THE MEASUREMENT
     the host CPU time that other processes used (utils/assay/loop/history.py,
     THE HOST LOAD), and the user instructions of each process of the step,
     from one counter that each process inherits (utils/assay/core/meter.py,
-    THE INSTRUCTION COUNT).  The judged value of each measured rule is the
-    median over the runs.
+    THE INSTRUCTION COUNT).  The rule edit-build-instructions judges the
+    median over the runs (THE MEASURED RULE).
 
 THE EDIT
     The edit writes the shape that the .clang-format of the tree gives.  The
@@ -76,25 +76,21 @@ THE TESTS WITH A FAILURE
     the gauge prints each such step again, and it exits with 1.  A failure in
     the warm test run is a failure of the commit before the edit.
 
-THE MEASURED RULES
-    edit-build-instructions and edit-test-instructions hold the error level.
-    The instruction count of the build does not change with the load of the
-    host.  A test that spins runs more instructions on a busy host, so the
-    count of the tests changes by a few percent.
-    edit-build-cpu and edit-test-cpu give a warning only when the step has an
-    exact instruction count, and an error otherwise.  edit-build-wall and
-    edit-test-wall hold the gate at the job count of compile-jobs
-    (gate_jobs()), so they are judged only in a measurement at that count.
-    They are judged only when the host
-    was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
-    the host CPU time in the step, in each run (assay.loop.history).  Else the report gives the
-    wall time and the reason, and no finding.
-    Four rules give warnings only: configure-time for the first and the
-    second configure less the plugin build of each, plugin-build-time for
-    that plugin build (utils/assay/loop/history.py, THE PLUGIN BUILD),
-    noop-build-time for the build with nothing to do, and build-peak-memory
-    for the median of the peak concurrent memory of the edit builds.  For
-    each build step, the report also gives the critical path
+THE MEASURED RULE
+    edit-build-instructions judges the median of the instruction counts of
+    the edit builds.  That count does not change with the load of the host.
+    When an edit build has no exact instruction count, the gauge judges
+    nothing and gives a note.  The gauge prints each other measure as a plain
+    number with its unit, and no rule judges it:
+      * the wall time and the CPU time of each step, and their medians
+      * the instruction count of each test run, and its median.  A test that
+        spins runs more instructions on a busy host
+      * the wall time of each configure step and of its plugin build
+        (utils/assay/loop/history.py, THE PLUGIN BUILD)
+      * the wall time of the build with nothing to do
+      * the peak concurrent memory of each build, and its median for the
+        edit builds.
+    For each build step, the report also gives the critical path
     (utils/assay/loop/history.py, THE CRITICAL PATH).
 
 THE REPORT
@@ -104,7 +100,7 @@ THE REPORT
     result as one JSON line to FILE.  The gauge judges that record with
     judged_record().  A record of a different run then gives the same
     findings.  read_records() reads the lines of such a file, and the witness
-    of each measured rule of the gauge judges planted records with the two
+    of the rule edit-build-instructions judges planted records with the two
     functions (assay.guard.engines.buildsys.held).
 
 Usage
@@ -155,23 +151,22 @@ MARK_BITS = 62
 LONGEST_MARK = (1 << MARK_BITS) - 1
 # The IndentWidth of the .clang-format of the tree: the indent step of a statement in its block.
 INDENT_WIDTH = 4
-# The measured rule that gives the job count of the gate in its error threshold (gate_jobs()).  The wall rules hold the
-# wall times of a measurement at this job count.  The rule compile-jobs holds DEFAULT_JOBS equal to that count.  A run
-# with the default --jobs is then a measurement of the gate.
-GATE_JOBS_RULE = "compile-jobs"
 DEFAULT_JOBS = proc.DEFAULT_JOBS
 DEFAULT_RUNS = 3
 DEFAULT_TIMEOUT_S = 600
 DEFAULT_MIN_FREE_GB = 64.0
 GIGA = 1e9
-# For each judged step: the measured rule of its instructions, of its CPU time and of its wall time.
-STEP_ROWS = {"build": ("edit-build-instructions", "edit-build-cpu", "edit-build-wall"),
-             "tests": ("edit-test-instructions", "edit-test-cpu", "edit-test-wall")}
+# The steps of each edit run.  A record holds the median of each step over the runs.
+EDIT_STEPS = ("build", "tests")
+# The measured rule that judges the median of the instruction counts of the edit builds (THE MEASURED RULE).
+BUILD_RULE = "edit-build-instructions"
+# The prefix of the name of each edit build, whose peak memory gives a median (median_peak()).
+EDIT_BUILD_PREFIX = "edit-build-"
 NOT_RUNNABLE = 3
 # The rule that configures the build again and refuses a compile after it, and the master of the copy that runs it.
 RECONFIGURE_RULE = "reconfigure-noop"
 GUARD_MASTER = Path("utils/bin/guard")
-# The steps that configure the copy.  Each one can build the quarantine plugin (THE REPORT, judge_others()).
+# The steps that configure the copy.  Each one can build the quarantine plugin (THE MEASURED RULE).
 CONFIGURE_STEPS = frozenset({"configure", "reconfigure"})
 # The step that runs its compiles with no ccache, and the variable of ccache that turns ccache off (THE MEASUREMENT).
 UNCACHED_STEP = "warm-build"
@@ -490,98 +485,36 @@ def median_of(results: list[StepResult]) -> Median:
                   None if None in shares else max(share for share in shares if share is not None))
 
 
-def gate_jobs(budgets: Mapping[str, check_report.Budget]) -> int:
-    """Return the job count of the gate: the error threshold of the rule compile-jobs of the registry.
-
-    Raises:
-        GaugeError: If the registry has no such rule, or if its error threshold is not an integer above 0
-    """
-    budget = budgets.get(GATE_JOBS_RULE)
-    if budget is None or not budget.error.is_integer() or budget.error < 1:
-        raise GaugeError(f"the registry gives no job count of the gate: the rule {GATE_JOBS_RULE} must have an error "
-                         "threshold that is an integer above 0")
-    return int(budget.error)
+def median_peak(results: list[StepResult]) -> float | None:
+    """Return the median of the peak concurrent memory of the edit builds, or None when no edit build has one."""
+    peaks = [result.peak_memory_gb for result in results
+             if result.name.startswith(EDIT_BUILD_PREFIX) and result.peak_memory_gb is not None]
+    return statistics.median(peaks) if peaks else None
 
 
-def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], place: str, jobs: int) -> tuple[
+def judge(medians: Mapping[str, Median], budgets: Mapping[str, check_report.Budget], place: str) -> tuple[
         list[check_report.Finding], list[str]]:
-    """Compare the medians of the build and the tests with their measured rules.
+    """Compare the median of the instruction counts of the edit builds with its measured rule (THE MEASURED RULE).
 
     Args:
         medians: The median of the build and of the tests
         budgets: The measured rules of the registry
         place: The path that a finding names
-        jobs: The job count of the measurement
 
     Returns:
-        The findings, and one note for each value that the gauge did not judge
+        The findings, and a note when the build step has no exact instruction count
     """
-    findings: list[check_report.Finding] = []
-    notes: list[str] = []
-    wall_jobs = gate_jobs(budgets)
-
-    def compare(row: str, value: float, unit: str, cap_to_warning: str = "") -> None:
-        budget = budgets[row]
-        level = check_report.classify(value, budget)
-        if level is None:
-            return
-        threshold = budget.error if level == "error" else budget.warn
-        message = f"the median of the runs is {value:g} {unit}, over the {level} threshold of {threshold:g} {unit}"
-        if level == "error" and cap_to_warning:
-            level, message = "warning", f"{message}.  {cap_to_warning}"
-        findings.append(check_report.judged(level, place, 0, row, message))
-
-    for step, (instruction_row, cpu_row, wall_row) in STEP_ROWS.items():
-        median = medians[step]
-        if median.instructions_g is not None:
-            compare(instruction_row, median.instructions_g, "G instructions")
-            compare(cpu_row, median.cpu_s, "s", f"The rule {instruction_row} holds the error level, because the step "
-                                                f"has an exact instruction count")
-        else:
-            notes.append(f"the {step} step has no exact instruction count, so {cpu_row} holds the error level")
-            compare(cpu_row, median.cpu_s, "s")
-        share = median.worst_others_pct
-        if jobs != wall_jobs:
-            notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: the measurement ran {jobs} jobs, and "
-                         f"{wall_row} holds the gate at the {wall_jobs} jobs of the rule {GATE_JOBS_RULE}")
-        elif share is not None and share <= loop_history.QUIET_OTHERS_PCT:
-            compare(wall_row, median.wall_s, "s")
-        else:
-            shown = "an unknown share" if share is None else f"{share:g} %"
-            notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: other processes used {shown} of the "
-                         f"host CPU time in one run, more than {loop_history.QUIET_OTHERS_PCT:g} %")
-    return findings, notes
-
-
-def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budget],
-                 place: str) -> list[check_report.Finding]:
-    """Return the warnings of the configure steps, their plugin builds, the build with nothing to do and the memory.
-
-    Args:
-        results: The measures of each step
-        budgets: The measured rules of the registry
-        place: The path that a finding names
-
-    Returns:
-        The warnings
-    """
-    findings: list[check_report.Finding] = []
-    for result in results:
-        if result.name in CONFIGURE_STEPS:
-            plugin_s = result.plugin_build_s or 0.0
-            findings += loop_history.warning_over(budgets, "configure-time", round(result.wall_s - plugin_s, 2), "s",
-                                                  f"the step {result.name}, less its plugin build,", place)
-            findings += loop_history.warning_over(budgets, "plugin-build-time", result.plugin_build_s, "s",
-                                                  f"the plugin build of the step {result.name}", place)
-        elif result.name == "noop-build":
-            findings += loop_history.warning_over(budgets, "noop-build-time", result.wall_s, "s",
-                                                  "the build with no edge to run", place)
-    peaks = [result.peak_memory_gb for result in results
-             if result.name.startswith("edit-build-") and result.peak_memory_gb is not None]
-    if peaks:
-        findings += loop_history.warning_over(budgets, "build-peak-memory", statistics.median(peaks), "GB",
-                                              "the median of the edit builds", place)
-    return findings
+    count = medians["build"].instructions_g
+    if count is None:
+        return [], [f"the build step has no exact instruction count, so the gauge does not judge {BUILD_RULE}"]
+    budget = budgets[BUILD_RULE]
+    level = check_report.classify(count, budget)
+    if level is None:
+        return [], []
+    threshold = budget.error if level == "error" else budget.warn
+    message = (f"the median of the runs is {count:g} G instructions, over the {level} threshold of {threshold:g} G "
+               f"instructions")
+    return [check_report.judged(level, place, 0, BUILD_RULE, message)], []
 
 
 # ── The record ─────────────────────────────────────────────────────────────
@@ -666,22 +599,22 @@ def parsed_record(value: object, where: str) -> GaugeRecord:
     if not isinstance(jobs, int) or isinstance(jobs, bool) or not isinstance(steps, list) \
             or not isinstance(medians, dict):
         raise GaugeError(f"{where} has no whole jobs, no list steps or no object medians")
-    missing = sorted(set(STEP_ROWS) - set(medians))
+    missing = sorted(set(EDIT_STEPS) - set(medians))
     if missing:
         raise GaugeError(f"{where} has no median of the step {', '.join(missing)}")
     return GaugeRecord(
         jobs,
         tuple(record_step(item, f"the step {index} of {where}") for index, item in enumerate(steps)),
-        {name: record_median(medians[name], f"the median {name} of {where}") for name in STEP_ROWS},
+        {name: record_median(medians[name], f"the median {name} of {where}") for name in EDIT_STEPS},
     )
 
 
-def judged_record(record: GaugeRecord, budgets: dict[str, check_report.Budget],
+def judged_record(record: GaugeRecord, budgets: Mapping[str, check_report.Budget],
                   position: str) -> tuple[list[check_report.Finding], list[str]]:
-    """Judge one record of the gauge: the medians of the edit runs (judge()) and the other steps (judge_others()).
+    """Judge one record of the gauge with the rule edit-build-instructions (judge(), THE MEASURED RULE).
 
-    measure() judges its own record with this function, and the witness of each measured rule of the gauge
-    judges a planted record with it (assay.guard.engines.buildsys.held).
+    measure() judges its own record with this function, and the witness of the rule judges a planted record with it
+    (assay.guard.engines.buildsys.held).
 
     Args:
         record: The record
@@ -689,21 +622,23 @@ def judged_record(record: GaugeRecord, budgets: dict[str, check_report.Budget],
         position: The path that a finding names
 
     Returns:
-        The findings, and one note for each value that the gauge did not judge
+        The findings, and a note when the gauge did not judge the rule
     """
-    findings, notes = judge(dict(record.medians), budgets, position, record.jobs)
-    return findings + judge_others(list(record.steps), budgets, position), notes
+    return judge(record.medians, budgets, position)
 
 
 def table(results: list[StepResult], medians: dict[str, Median]) -> str:
-    """Return the measures of each step and the medians as a table."""
-    rows = [("step", "status", "wall s", "CPU s", "system s", "others %", "G instr")]
+    """Return the measures of each step and the medians as a table, each a plain number with its unit."""
+    rows = [("step", "status", "wall s", "CPU s", "system s", "others %", "G instr", "peak GB", "plugin s")]
     for result in results:
         rows.append((result.name, str(result.status), f"{result.wall_s:.1f}", f"{result.cpu_s:.0f}",
-                     f"{result.system_s:.0f}", loop_history.cell(result.others_pct), loop_history.cell(result.instructions_g)))
+                     f"{result.system_s:.0f}", loop_history.cell(result.others_pct), loop_history.cell(result.instructions_g),
+                     loop_history.cell(result.peak_memory_gb), loop_history.cell(result.plugin_build_s)))
     for step, median in medians.items():
+        peak = median_peak(results) if step == "build" else None
         rows.append((f"median edit {step}", "", f"{median.wall_s:.1f}", f"{median.cpu_s:.0f}", "",
-                     loop_history.cell(median.worst_others_pct), loop_history.cell(median.instructions_g)))
+                     loop_history.cell(median.worst_others_pct), loop_history.cell(median.instructions_g),
+                     loop_history.cell(peak), ""))
     widths = [max(len(row[index]) for row in rows) for index in range(len(rows[0]))]
     return "\n".join("  ".join(text.ljust(width) if index == 0 else text.rjust(width)
                                for index, (text, width) in enumerate(zip(row, widths, strict=True))) for row in rows)
@@ -784,6 +719,9 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
                           build if name in CONFIGURE_STEPS else None)
         results.append(result)
         path = ""
+        if result.plugin_build_s is not None:
+            path = (f", {result.wall_s - result.plugin_build_s:.1f} s less its plugin build of "
+                    f"{result.plugin_build_s:g} s")
         if result.critical_path:
             path = (f", peak {loop_history.cell(result.peak_memory_gb)} GB, critical path {result.critical_path_s:g} s: "
                     f"{' -> '.join(result.critical_path)}")
@@ -832,7 +770,7 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         note = check_edit_format(tree)
         if note is not None and run == 1:
             check_report.write_line(f"edit-loop-gauge: {note}")
-        built = step(f"edit-build-{run}", build_command)
+        built = step(f"{EDIT_BUILD_PREFIX}{run}", build_command)
         runs["build"].append(built)
         if built.status != 0:
             failed = True
@@ -1083,87 +1021,51 @@ def self_test() -> int:
     expect("median_of gives no instruction count when one run has none",
            median_of([result("b", 1, 1, 1, 5), result("b", 1, 1, 1, None)]).instructions_g is None)
 
-    # A planted job count of the gate that is not the count of the tree.  Each case then reads it from its rows.
     planted_jobs = 24
-
-    def rows(warn: float, error: float) -> dict[str, check_report.Budget]:
-        names = [name for triple in STEP_ROWS.values() for name in triple]
-        gate = check_report.Budget(GATE_JOBS_RULE, planted_jobs, planted_jobs, "jobs", "m")
-        return {**{name: check_report.Budget(name, warn, error, "u", "m") for name in names}, GATE_JOBS_RULE: gate}
-
-    with check_report.github_actions(False):
-        quiet = {"build": Median(20, 200, 60, 1), "tests": Median(20, 200, 60, 1)}
-        tree_gate = check_report.read_budgets()[GATE_JOBS_RULE]
-        found, notes = judge(quiet, {**rows(10, 100), GATE_JOBS_RULE: tree_gate}, "h", DEFAULT_JOBS)
-        expect("a run with the default --jobs judges the wall times, at the job count of compile-jobs of the registry",
-               {"edit-build-wall", "edit-test-wall"} <= {f.check for f in found} and not notes)
-        for name, budgets in (("no rule compile-jobs", {}),
-                              ("a job count that is not an integer",
-                               {GATE_JOBS_RULE: check_report.Budget(GATE_JOBS_RULE, 1.5, 1.5, "jobs", "m")})):
-            try:
-                gate_jobs(budgets)
-                expect(f"a registry with {name} is refused", False)
-            except GaugeError:
-                expect(f"a registry with {name} is refused", True)
-        found, notes = judge(quiet, rows(10, 100), "h", planted_jobs)
-        expect("on a quiet host, each value over the warning threshold gives a warning, also the wall time",
-               sorted((f.check, f.level) for f in found) == sorted((name, "warning") for triple in STEP_ROWS.values()
-                                                                   for name in triple) and not notes)
-        found, _ = judge(quiet, rows(10, 50), "h", planted_jobs)
-        levels = {f.check: f.level for f in found}
-        expect("an instruction count over the error threshold is an error, and the CPU time is a warning that says why",
-               levels["edit-build-instructions"] == "error" and levels["edit-build-cpu"] == "warning"
-               and any("holds the error level" in f.message for f in found if f.check == "edit-build-cpu"))
-        no_count = {"build": Median(20, 200, None, 1), "tests": Median(20, 200, 60, 1)}
-        found, notes = judge(no_count, rows(10, 50), "h", planted_jobs)
-        expect("with no instruction count, the CPU time holds the error level",
-               {f.check: f.level for f in found}["edit-build-cpu"] == "error"
-               and any("no exact instruction count" in note for note in notes))
-        busy = {"build": Median(20, 1, 1, 25), "tests": Median(20, 1, 1, None)}
-        found, notes = judge(busy, rows(10, 15), "h", planted_jobs)
-        expect("on a busy host, the wall time gives no finding and a note",
-               not found and len([note for note in notes if "is not judged" in note]) == 2)
-        found, notes = judge(quiet, rows(10, 15), "h", planted_jobs // 8)
-        expect("at another job count, the wall time gives no finding and a note that names the job count",
-               not any(f.check.endswith("-wall") for f in found)
-               and len([note for note in notes if f"{planted_jobs // 8} jobs" in note]) == 2)
-        other_rows = {row: check_report.Budget(row, limit, limit, "u", "m")
-                      for row, limit in (("configure-time", 10.0), ("noop-build-time", 0.5),
-                                         ("build-peak-memory", 100.0), ("plugin-build-time", 6.0))}
-        rebuilt = result("configure", 15.0, 1, 1, None)
-        rebuilt.plugin_build_s = 7.0
-        expect("judge_others judges a configure less its plugin build, and the plugin build on its own rule",
-               [f.check for f in judge_others([rebuilt], other_rows, "h")] == ["plugin-build-time"])
-        steps = [result("configure", 12.0, 1, 1, None), result("noop-build", 0.3, 0, 1, None),
-                 result("reconfigure", 6.0, 1, 1, None)]
-        steps[2].plugin_build_s = 2.0
-        for name, peak in (("edit-build-1", 90.0), ("edit-build-2", 120.0), ("edit-build-3", 130.0)):
-            steps.append(result(name, 20, 200, 1, 60))
-            steps[-1].peak_memory_gb = peak
-        found = judge_others(steps, other_rows, "h")
-        expect("judge_others warns on a slow configure and on the median peak memory of the edit builds, and not on a "
-               "fast build with nothing to do",
-               sorted(f.check for f in found) == ["build-peak-memory", "configure-time"]
-               and all(f.level == "warning" for f in found) and any("120 GB" in f.message for f in found))
-        record = {"jobs": planted_jobs, "steps": [asdict(step) for step in steps],
-                  "medians": {name: asdict(median) for name, median in quiet.items()}}
-        parsed = parsed_record(json.loads(json.dumps(record)), "the record")
-        found, notes = judged_record(parsed, {**rows(10, 100), **other_rows}, "h")
-        expect("judged_record judges the medians and the other steps of a record that went through JSON",
-               sorted(f.check for f in found) == sorted(["build-peak-memory", "configure-time",
-                                                         *(name for triple in STEP_ROWS.values() for name in triple)])
-               and not notes)
-        direct, _ = judged_record(GaugeRecord(planted_jobs, tuple(steps), quiet), {**rows(10, 100), **other_rows}, "h")
-        expect("a record that went through JSON gives the findings of the record of the run",
-               [item.text() for item in found] == [item.text() for item in direct])
-        for name, broken in (("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
-                             ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
-                             ("a jobs that is no whole number", {**record, "jobs": "many"})):
-            try:
-                parsed_record(broken, "the record")
-                expect(f"parsed_record refuses a record with {name}", False)
-            except GaugeError:
-                expect(f"parsed_record refuses a record with {name}", True)
+    budgets = {BUILD_RULE: check_report.Budget(BUILD_RULE, 10, 50, "G", "m")}
+    quiet = {"build": Median(20, 200, 30, 1), "tests": Median(20, 200, 9999, 1)}
+    found, notes = judge(quiet, budgets, "h")
+    expect("an instruction count of the build over the warning threshold gives a warning of edit-build-instructions, "
+           "and the count of the tests gives no finding",
+           [(f.check, f.level) for f in found] == [(BUILD_RULE, "warning")] and not notes)
+    found, _ = judge({**quiet, "build": Median(20, 200, 60, 1)}, budgets, "h")
+    expect("an instruction count of the build over the error threshold is an error",
+           [(f.check, f.level) for f in found] == [(BUILD_RULE, "error")])
+    found, notes = judge({**quiet, "build": Median(20, 9999, None, 90)}, budgets, "h")
+    expect("with no exact instruction count of the build, the gauge judges nothing and gives a note",
+           not found and any("no exact instruction count" in note for note in notes))
+    found, notes = judge({"build": Median(9999, 9999, 5, 90), "tests": Median(9999, 9999, 5, 90)}, budgets, "h")
+    expect("a slow build and a slow test run on a busy host give no finding, because no rule judges a time",
+           not found and not notes)
+    steps = [result("configure", 12.0, 1, 1, None), result("noop-build", 0.3, 0, 1, None),
+             result("reconfigure", 6.0, 1, 1, None)]
+    steps[2].plugin_build_s = 2.0
+    for name, peak in (("edit-build-1", 90.0), ("edit-build-2", 120.0), ("edit-build-3", 130.0)):
+        steps.append(result(name, 20, 200, 1, 30))
+        steps[-1].peak_memory_gb = peak
+    expect("median_peak gives the median of the peak memory of the edit builds", median_peak(steps) == 120.0)
+    printed = table(steps, quiet).splitlines()
+    expect("the table gives the peak memory and the plugin build of each step, and the median peak of the edit builds",
+           printed[0].split()[-4:] == ["peak", "GB", "plugin", "s"]
+           and printed[3].split()[-1] == "2.0"
+           and any(line.startswith("median edit build") and "120.0" in line for line in printed))
+    record = {"jobs": planted_jobs, "steps": [asdict(step) for step in steps],
+              "medians": {name: asdict(median) for name, median in quiet.items()}}
+    parsed = parsed_record(json.loads(json.dumps(record)), "the record")
+    found, notes = judged_record(parsed, budgets, "h")
+    expect("judged_record judges the median of the build of a record that went through JSON",
+           [f.check for f in found] == [BUILD_RULE] and not notes)
+    direct, _ = judged_record(GaugeRecord(planted_jobs, tuple(steps), quiet), budgets, "h")
+    expect("a record that went through JSON gives the findings of the record of the run",
+           [item.text() for item in found] == [item.text() for item in direct])
+    for name, broken in (("no median of the tests", {**record, "medians": {"build": asdict(quiet["build"])}}),
+                         ("a step with no wall time", {**record, "steps": [{"name": "configure", "status": 0}]}),
+                         ("a jobs that is no whole number", {**record, "jobs": "many"})):
+        try:
+            parsed_record(broken, "the record")
+            expect(f"parsed_record refuses a record with {name}", False)
+        except GaugeError:
+            expect(f"parsed_record refuses a record with {name}", True)
     with tempfile.TemporaryDirectory(prefix="edit-loop-gauge-") as work:
         records = Path(work) / "records.jsonl"
         line = json.dumps(record)

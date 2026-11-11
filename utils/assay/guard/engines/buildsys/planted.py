@@ -31,7 +31,6 @@ THE FILE
                                           a registered test and its command
         test-record NAME [FIELD=VALUE]... the record of the last run of a test
         file PATH size=BYTES              a file of the tree with that number of bytes
-        configure seconds=SECONDS         a last configure that ends SECONDS after its start
 
     The fields of a compile:
       * result: `built`, `hit` or `failed`
@@ -53,13 +52,6 @@ THE FILE
     the files of the compile.  The fields of a test: line (of its
     registration in test/CMakeLists.txt) and labels.  The fields of a record
     of a test: result, cpu, wall, peak, instructions (in G) and program.
-
-    A configure row writes build.ninja after each other file of the build.
-    It also writes the file configure-time.txt of a configure of SECONDS
-    (assay.loop.history, THE CONFIGURE TIME).  With plugin=SECONDS, it writes
-    the record of a plugin build of those seconds at the start of the
-    configure (assay.loop.history, THE PLUGIN BUILD).  The times of a
-    configure come from the clock.  A file of a plant cannot hold them.
 
     A word or a cell can hold {root}, {build}, {cxx} (the patched compiler
     of assay.core.testing) and {python}.  A FILE of a list is a path of the
@@ -130,7 +122,6 @@ TEST_FIELDS = frozenset({"line", "labels"})
 RECORD_FIELDS = frozenset({"result", "cpu", "wall", "peak", "instructions", "program"})
 SIZE_FIELDS = frozenset({"size"})
 CACHE_FIELDS = frozenset({"type"})
-CONFIGURE_FIELDS = frozenset({"seconds", "plugin"})
 # The planted ninja: it prints the inputs of the target all and the lists of the dependency log from ninja.json.
 NINJA_TOOL = """\
 import json
@@ -180,7 +171,6 @@ class Planted:
     tests: list[Mapping[str, object]] = field(default_factory=list)
     cache: MutableMapping[str, str | tuple[str, str]] = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)
-    configures: list[tuple[float, float]] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
 
     @property
@@ -192,11 +182,6 @@ class Planted:
     def configuration_name(self) -> str | None:
         """The name of the last configuration row, else the build kind, or None when build.txt has no such row."""
         return self.names[-1] if self.names else self.kind
-
-    @property
-    def configure(self) -> tuple[float, float] | None:
-        """The seconds of the configure and of its plugin build of the last configure row, or None with no such row."""
-        return self.configures[-1] if self.configures else None
 
 
 def expanded(text: str, root: Path, build: Path) -> str:
@@ -605,15 +590,6 @@ def read_rows(plant_file_path: Path, root: Path, build: Path) -> Planted:
                 plant_test_record(row, root, build)
             elif kind == "file":
                 plant_file(row, root)
-            elif kind == "configure" and len(row.words) in (2, 3):
-                fields = rows_grammar.fields(row, CONFIGURE_FIELDS, start=1)
-                if "seconds" not in fields:
-                    raise row.error("a configure row is 'configure seconds=SECONDS [plugin=SECONDS]'")
-                seconds = rows_grammar.decimal(fields["seconds"], row, "seconds")
-                plugin = rows_grammar.decimal(fields.get("plugin", "0"), row, "plugin")
-                if plugin > seconds:
-                    raise row.error("the plugin build of a configure row is longer than the configure")
-                planted.configures.append((seconds, plugin))
             else:
                 raise row.error(f"the row kind {kind!r} or its words do not have a shape of {BUILD_FILE}")
     except rows_grammar.RowsError as problem:
@@ -648,30 +624,6 @@ def write_build(planted: Planted, root: Path, build: Path) -> None:
     }
     cache.update(planted.cache)
     cmake_reader.plant(build, cache=cache, targets=planted.targets, source=str(root), build=str(build))
-    if planted.configure is not None:
-        write_configure(build, *planted.configure)
-
-
-def write_configure(build: Path, seconds: float, plugin: float) -> None:
-    """Write build.ninja again, and configure-time.txt of a configure that ends at that write (THE FILE).
-
-    build.ninja keeps its bytes.  Its write comes after each other file of
-    the build.  The reply of the file API is then not newer than it.  The
-    configure takes SECONDS from its start to its end
-    (assay.loop.history.configure_time()).  A plugin build of more than 0 s
-    starts with the configure, and its record goes into the build directory.
-    """
-    from assay.loop import history as loop_history
-
-    graph = ninja_reader.graph_file(build)
-    graph.write_bytes(graph.read_bytes() if graph.is_file() else b"")
-    written = graph.stat().st_mtime
-    start = written - seconds
-    (build / loop_history.CONFIGURE_TIME_FILE).write_text(f"{start!r} {written!r}\n", encoding="ascii")
-    if plugin > 0:
-        record = build / loop_history.PLUGIN_BUILD_TIME_FILE
-        record.parent.mkdir(parents=True, exist_ok=True)
-        record.write_text(f"{start!r} {start + plugin!r}\n", encoding="ascii")
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:

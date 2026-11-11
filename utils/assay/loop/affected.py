@@ -1763,13 +1763,6 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
             parts.append(f"{name} {part['wall_s']:.1f} s with {part['cpu_s']:.0f} s CPU{path}")
     if parts:
         print(f"loop test: {'; '.join(parts)}.  `loop history {build_dir}` prints the history.")
-    try:
-        budgets = check_report.read_budgets()
-        for finding in loop_history.judge_line(recorder.line, budgets, str(loop_history.history_path(build_dir))):
-            print(finding.text())
-    except (OSError, ValueError) as problem:
-        print(f"loop test: the registry cannot be read, so the line of the loop history has no "
-              f"warnings: {problem}")
 
 
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,

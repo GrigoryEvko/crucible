@@ -73,8 +73,8 @@
 #   A configure that builds the plugin writes the start and the end of that
 #   build to ${CMAKE_BINARY_DIR}/quarantine/plugin-build-time.txt, in seconds
 #   since the epoch.  The span holds the compiles, the link and the run that
-#   writes kinds.txt.  The rule plugin-build-time judges the span, and the rule
-#   configure-time judges the configure less the span
+#   writes kinds.txt.  `guard warnings`, the loop history and `loop gauge`
+#   print the span, and the configure less the span, as plain numbers
 #   (utils/assay/loop/history.py, THE PLUGIN BUILD).  A configure that builds
 #   no plugin writes no such file.
 #
