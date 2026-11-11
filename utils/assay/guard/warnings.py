@@ -377,7 +377,7 @@ def time_line_cases(expect: testing.Expect) -> None:
         planted_unit("fixture", 20.0),
         planted_unit("fixture", 10.0),
     ]
-    census = build_census.Census(Path("/b"), units, {})
+    census = build_census.Census(Path("/b"), units)
     lines = time_lines(census, [4.0, 5.0])
     expect(
         "the two time totals add the CPU time of their units, and an object of all is in neither",

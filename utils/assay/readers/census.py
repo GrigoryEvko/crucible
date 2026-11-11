@@ -97,11 +97,10 @@ class Unit:
 
 @dataclass(slots=True)
 class Census:
-    """The units of one build, and the size of each file that a unit reads."""
+    """The units of one build."""
 
     build_dir: Path
     units: list[Unit]
-    sizes: dict[str, int]
 
 
 def shown(path: Path | str, root: Path) -> str:
@@ -268,10 +267,10 @@ def read_fixture(
 
 
 def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
-    """Read the units of one build, and with read_files the real path and the size of each file that they read.
+    """Read the units of one build, and with read_files the real path of each file that they read.
 
-    Complexity: linear in the total length of the file lists, with one realpath and one stat for each distinct
-    name.
+    A stat of each real path makes sure that the file is there.  Complexity: linear in the total length of the file
+    lists, with one realpath and one stat for each distinct name.
 
     Raises:
         NotApplicable: If an input does not exist by the design of the build
@@ -307,9 +306,9 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
         )
     if problems:
         raise CensusError(f"{len(problems)} fixture records cannot count.  The first: {problems[0]}")
-    sizes: dict[str, int] = {}
     if read_files:
         resolved: dict[str, str] = {}
+        stated: set[str] = set()
         for unit, unit_names in zip(units, names_of, strict=True):
             files: dict[str, None] = {}
             for name in unit_names:
@@ -317,9 +316,10 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
                 if real is None:
                     real = os.path.realpath(name if os.path.isabs(name) else os.path.join(build_dir, name))
                     resolved[name] = real
-                    if real not in sizes:
+                    if real not in stated:
                         try:
-                            sizes[real] = os.stat(real).st_size
+                            os.stat(real)
+                            stated.add(real)
                         except OSError as problem:
                             raise CensusError(
                                 f"the file {real}, which the compile of {unit.item} read, cannot be "
@@ -327,7 +327,7 @@ def read_census(build_dir: Path, root: Path, read_files: bool = True) -> Census:
                             ) from None
                 files[real] = None
             unit.files = list(files)
-    return Census(build_dir, units, sizes)
+    return Census(build_dir, units)
 
 
 def file_key(real: str, root: Path, build_dir: Path) -> str:
