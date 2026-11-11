@@ -6,9 +6,7 @@
 // run, and it pins the atoms that the active build selects.
 //
 // The rows below hold each hardware-axis block to the axes it states.
-// The rule hw-axis-rows (utils/assay/guard/engines/tsast/hw_axis_rows.py)
-// reads them from the parse tree, and every `*_hw` namespace under include/
-// and src/ needs a row here.
+// Give each `*_hw` namespace of include/ and src/ a row here.
 
 #include "fixy/hw_axis_pins.h"
 
