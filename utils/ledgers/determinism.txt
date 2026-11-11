@@ -5,9 +5,6 @@
 # tells the rule.
 format 1
 rule determinism
-utils/assay/guard/engines/buildsys/gate_mutants.py | host | admit | <module> | JOBS is the number of the compiles of the mutants at one time, and no verdict reads it
-utils/assay/guard/engines/buildsys/vessel_acceptance.py | clock | admit | run_tests | The time of each test is only in the printed line, and the verdict is the exit status of the test
-utils/assay/guard/engines/elf/configured.py | history | admit | write_inspection | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
 utils/assay/guard/engines/meta/rule_witness.py | listing | admit | findings | The listing gives the names of the entries to any(), and the sequence of the names changes no verdict
 utils/assay/guard/engines/plugin/counted.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
 utils/assay/guard/engines/plugin/home.py | history | admit | write | The ledger write reads the moves of the change and the ledger at the base of the change, and no verdict reads them
