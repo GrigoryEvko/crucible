@@ -12,6 +12,16 @@ THE PARTS
     the rule does not apply (exit 77).  A plant gives its parts with rows
     "part NAME" of its plant.txt.
 
+THE TARGETS
+    The rule compiles each unit for each target of TARGETS: the x86-64
+    baseline, x86-64-v3 and x86-64-v4.  It removes each word of the command
+    that starts with TARGET_WORDS, and it adds the word -march=TARGET.  A
+    word such as -march=native names the processor of the host, and a
+    different host then gives different code.  Thus each host gives the
+    same verdict for the same tree.  Each finding and each count names its
+    target.  The walk and the normalization read the instructions of x86-64
+    only.
+
 THE PAIRS
     test/shape/core_shapes.cpp holds two functions for each probe of PROBES.
     The function NAME does one hot operation of a family of
@@ -24,31 +34,34 @@ THE PAIRS
       * std::unreachable.
     test/shape/CMakeLists.txt compiles the unit with the flags of the
     foundation library of the build.  Each build then compares the two
-    functions of a pair with its own level, target, `-fharden-` flags and
-    contract semantic.  A probe declares the differences that its family
-    side can add (THE VERDICT).  A plant gives its probes with rows of its
-    plant.txt, and PROBES does not apply to it:
+    functions of a pair with its own level, `-fharden-` flags and contract
+    semantic, for each target (THE TARGETS).  A probe declares the
+    differences that its family side can add (THE VERDICT).  A plant gives
+    its probes with rows of its plant.txt, and PROBES does not apply to it:
 
-        probe NAME [check=KIND[,KIND...]] [branch=yes] [calls=NAME[,NAME...]] | CLAIM
+        probe NAME [check=KIND[,KIND...]] [branch=yes] [calls=NAME[,NAME...]] [longer=N] | CLAIM
 
 THE FLAGS OF THE PAIRS
     The probe unit must have the code words of each unit of the target
     foundation, and no other code word.  A code word is a word of the compile
-    command that changes the code.  The level, the target, a sanitizer, a
-    `-fharden-` flag and the contract semantic count too.  Each foundation
-    unit must have the same code words.  A word that does not change the
-    code, such as a warning, an include directory or the debug information,
-    is no code word.
+    command that changes the code.  The level, a sanitizer, a `-fharden-`
+    flag and the contract semantic count too.  A word that starts with
+    TARGET_WORDS does not count, because each compile of the rule replaces
+    it (THE TARGETS).  Each foundation unit must have the same code words.
+    A word that does not change the code, such as a warning, an include
+    directory or the debug information, is no code word.
 
 THE COMPILES
-    The rule compiles the probe unit again into a scratch directory, with
-    the command of the compile database less each word that starts with
-    SANITIZER_WORDS.  A sanitizer adds a test to each memory access, and the
-    test is not a part of the code of an operation.  The verdict reads this
-    compile.  When the command holds a sanitizer word, the rule also compiles
-    the command as it is.  The run then prints the counts of each pair with
-    the sanitizer, and it gives no verdict for them.  A run after a change of
-    a header of the base reads the code of the change.
+    The rule compiles the probe unit again into a scratch directory, one
+    time for each target, with the command of the compile database less each
+    word that starts with SANITIZER_WORDS.  A sanitizer adds a test to each
+    memory access, and the test is not a part of the code of an operation.
+    The verdict reads these compiles.  When the command holds a sanitizer
+    word, the rule also compiles the command with its sanitizer words for
+    the first target.  The run then prints the counts of each pair with the
+    sanitizer, and it gives no verdict for them.  The compiles of the
+    targets run at the same time.  A run after a change of a header of the
+    base reads the code of the change.
 
 THE WALK
     The rule disassembles the object with assay.readers.objdump.  A function
@@ -76,10 +89,12 @@ THE NORMALIZATION
         difference only in the allocation of their registers then give the
         same texts.
       - A jump in the function becomes the kind of its target: "->" for code
-        that returns, "<-" for an earlier instruction of the same part (the
-        edge of a loop), and "!KIND" for a failure path of the kind KIND.  A
-        conditional jump with one returning edge and one failure path names
-        the failure path.
+        that returns, "<-" for the edge of a loop, and "!KIND" for a failure
+        path of the kind KIND.  The edge of a loop goes to an earlier
+        instruction of the same part, and a path from that instruction comes
+        back to the jump.  A jump back to code that does not come back, such
+        as an entry block after a tail, is "->".  A conditional jump with one
+        returning edge and one failure path names the failure path.
       - A relocation replaces its address with its symbol.  A call and a tail
         jump name their callee.  A local constant .LC12 becomes .LC, and a
         different section symbol, such as a switch table, keeps only the
@@ -106,16 +121,18 @@ THE VERDICT
       - A call of a callee that the probe does not declare with calls=NAME.
       - A division, and an indexed load.
       - An instruction in a loop of NAME, when the probe does not declare
-        branch=yes.  A loop is the instructions from the target of a jump "<-"
-        to that jump.
+        branch=yes.  A loop is the instructions on a path from the target of
+        a jump "<-" back to that jump.
     An instruction of the two functions with an operand that the reader gives
     as `Opaque` is an error, because its class is not known.
     The two functions must hold the same locked instructions (a lock prefix,
     or xchg with a memory operand).  The family side then does the same atomic
-    work.  A probe that declares nothing must give NAME at most the count of
-    instructions of NAME_raw.  The raw side can do more work, such as a spill
-    to the stack.  The family side can also do the same work with different
-    plain instructions.
+    work.  A probe that declares no check, branch and call must give NAME at
+    most the count of instructions of NAME_raw, plus N when it declares
+    longer=N.  longer=N gives no other permission: a family-only check,
+    branch, call or instruction in a loop stays an error.  The raw side can
+    do more work, such as a spill to the stack.  The family side can also do
+    the same work with different plain instructions.
 
 THE COSTS
     A probe that declares a difference has a known cost on the hot path.
@@ -129,9 +146,8 @@ THE WRAPPERS
     The rule compiles one wrapper for each constant-time primitive of
     fixy::ct and each unsigned width.  It also compiles one wrapper of the
     eq of a static extent for each length of STATIC_EQ_LENGTHS.  It compiles
-    them with the flags of each variant of a kind of build, for
-    -march=native, x86-64-v3 and the x86-64 baseline.  In the disassembly of
-    each wrapper it refuses:
+    them with the flags of each variant of a kind of build, for each target
+    (THE TARGETS).  In the disassembly of each wrapper it refuses:
       - a conditional branch (each jcc, jrcxz and loop): its direction shows
         the operand that it tests
       - a call, or a jump to a different function: the rule cannot see the
@@ -172,8 +188,8 @@ THE CENSUSES
     with such a name must have its cases in CTCRYPTO_CASES.  The map is
     empty, because no production function states the grade.
 
-Complexity: one or two compiles of the probe unit, and for each pair one longest subsequence, quadratic in its
-instructions.  Twelve compiles of the wrapper unit, and one load of each parse tree.
+Complexity: one or two compiles of the probe unit for each target, and for each pair and target one longest
+subsequence, quadratic in its instructions.  Twelve compiles of the wrapper unit, and one load of each parse tree.
 """
 
 import os
@@ -181,7 +197,7 @@ import platform
 import shlex
 import tempfile
 from bisect import bisect_left
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -204,6 +220,9 @@ PROBE_CMAKE = "test/shape/CMakeLists.txt"
 RELEASE_SOURCE = "test/ct/dudect.cpp"
 CT_CMAKE = "test/ct/CMakeLists.txt"
 CT_HEADER = "include/fixy/ConstantTime.h"
+# The targets of each compile of the rule, and the words of a compile command that select a target (THE TARGETS).
+TARGETS = ("x86-64", "x86-64-v3", "x86-64-v4")
+TARGET_WORDS = ("-march=", "-mtune=", "-mcpu=")
 
 # ── The constants of the core part ─────────────────────────────────
 
@@ -271,7 +290,7 @@ HIGH_BYTE_REGISTERS = ("a", "b", "c", "d")
 INDEX_REGISTERS = ("si", "di")
 VECTOR_CLASSES = (("xmm", "v128"), ("ymm", "v256"), ("zmm", "v512"))
 MASK_CLASS = "k"
-PROBE_KEYS = frozenset({"check", "branch", "calls"})
+PROBE_KEYS = frozenset({"check", "branch", "calls", "longer"})
 YES = "yes"
 LIST_SEPARATOR = ","
 # The words of a compile command that do not change the code.  An option of SEPARATE_VALUE takes the next word as
@@ -304,7 +323,6 @@ CT_NAMESPACE = "::fixy::ct"
 # 8 is the tag length of include/fixy/SipHash.h.  12 has bytes after its last word of eight bytes.  16 fills a
 # vector of SSE, and 32 fills a vector of AVX.
 STATIC_EQ_LENGTHS = (8, 12, 16, 32)
-MARCHES = ("native", "x86-64-v3", "x86-64")
 DEBUG_FLAGS = ("-D_GLIBCXX_ASSERTIONS=1", "-D_GLIBCXX_SANITIZE_VECTOR=1")
 OBSERVE = "-fcontract-evaluation-semantic=observe"
 ENFORCE = "-fcontract-evaluation-semantic=enforce"
@@ -324,8 +342,8 @@ PER_BUILD = (
     "-D_GLIBCXX_ASSERTIONS",
     "-D_GLIBCXX_SANITIZE_VECTOR",
 )
-# The flags of PER_BUILD that the rule replaces with each level of a variant and each target of MARCHES.
-SWEPT = ("-O", "-march=", "-mtune=", "-mcpu=")
+# The flags of PER_BUILD that the rule replaces with each level of a variant and each target of TARGETS.
+SWEPT = ("-O", *TARGET_WORDS)
 # The flags that no variant holds: the sanitizers, the profile flags, the analyzer and the macro of the quarantine
 # plugin.
 DROPPED = (
@@ -374,6 +392,8 @@ class Probe:
 
     `checks` holds the kinds of the failure paths that the family side can add a check into, `branches` lets the
     family side add a branch and work in a loop, and `calls` holds the callees that the family side can add.
+    `longer` gives the number of instructions that the family side can add outside its loops, with no check, branch
+    or call.
     """
 
     name: str
@@ -381,10 +401,16 @@ class Probe:
     checks: tuple[str, ...] = ()
     branches: bool = False
     calls: tuple[str, ...] = ()
+    longer: int = 0
 
     @property
     def declares_cost(self) -> bool:
         """True when the probe declares a difference that its family side can add."""
+        return bool(self.checks or self.branches or self.calls or self.longer)
+
+    @property
+    def declares_structure(self) -> bool:
+        """True when the probe declares a check, a branch or a call, and the count of its family side has no limit."""
         return bool(self.checks or self.branches or self.calls)
 
 
@@ -425,7 +451,11 @@ PROBES: tuple[Probe, ...] = (
     Probe("tally_read", "Tally::read is the load of a relaxed std::atomic counter"),
     Probe(
         "view_sum",
-        "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the cursor",
+        "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the "
+        "cursor.  Outside the loops, the family side compares the end pointer with the start, and the raw side "
+        f"tests the byte count.  {HARDENED_BUILDS}.  At x86-64-v3 and x86-64-v4, the second test of the empty "
+        "range that these flags add then gives the family side one more instruction outside the loops",
+        longer=1,
     ),
     Probe("view_window", "window gives its Option with no test of the niche of the Option"),
     Probe(
@@ -494,7 +524,10 @@ def probe_of_row(row: rows_grammar.Row) -> Probe:
     checks = names("check")
     if values.get("branch", YES) != YES or not set(checks) <= CHECK_KINDS:
         raise row.error(f"branch has the value {YES}, and each kind of check is one of {sorted(CHECK_KINDS)}")
-    return Probe(row.words[1], row.cells[0], checks, "branch" in values, names("calls"))
+    longer = values.get("longer")
+    if longer is not None and (not longer.isdigit() or int(longer) < 1):
+        raise row.error("longer has a positive number of instructions as its value")
+    return Probe(row.words[1], row.cells[0], checks, "branch" in values, names("calls"), int(longer or 0))
 
 
 # ── The disassembly ────────────────────────────────────────────────
@@ -770,17 +803,22 @@ def reachable(edges: Mapping[Place, Sequence[Place]], starts: Iterable[Place]) -
     return found
 
 
+def predecessors_of(successors: Mapping[Place, tuple[Place, ...]]) -> dict[Place, list[Place]]:
+    """Return the positions that go to each position: the reverse of the edges.  Complexity: linear in the edges."""
+    predecessors: dict[Place, list[Place]] = {}
+    for place, targets in successors.items():
+        for target in targets:
+            predecessors.setdefault(target, []).append(place)
+    return predecessors
+
+
 def returning_places(successors: Mapping[Place, tuple[Place, ...]], exits: Iterable[Place]) -> frozenset[Place]:
     """Return each position on a path from the entry of the hot part to an exit (THE WALK).
 
     Complexity: linear in the edges.
     """
-    predecessors: dict[Place, list[Place]] = {}
-    for place, targets in successors.items():
-        for target in targets:
-            predecessors.setdefault(target, []).append(place)
     entry = [ENTRY] if ENTRY in successors else []
-    return frozenset(reachable(predecessors, exits) & reachable(successors, entry))
+    return frozenset(reachable(predecessors_of(successors), exits) & reachable(successors, entry))
 
 
 def flow_of(code: Code) -> Flow:
@@ -909,7 +947,8 @@ def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str,
     The fourth value is the target of a loop edge, or None.
 
     A conditional jump with a returning edge and a failure edge is a check of the failure path.  A jump into an
-    earlier instruction of its own part is the edge of a loop.
+    earlier instruction of its own part is the edge of a loop, when a path from that instruction comes back to the
+    jump (is_loop_edge()).
     """
     head = instruction.head
     callee = flow.callees.get(place)
@@ -923,7 +962,7 @@ def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str,
             kind = failure_kind(flow, failures[0])
             return f"{head} !{kind}", StepClass.CHECK, kind, None
         taken = returning[-1] if returning else None
-        loop = taken if taken is not None and taken[0] == place[0] and taken[1] <= place[1] else None
+        loop = taken if taken is not None and is_loop_edge(flow, place, taken) else None
         return f"{head} {'->' if loop is None else '<-'}", StepClass.BRANCH, "", loop
     text = f"{head} {normalized_operands(instruction.operands)}".strip() + symbol_text(instruction)
     if instruction.mnemonic in DIVISIONS:
@@ -935,10 +974,20 @@ def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str,
     return text, StepClass.PLAIN, "", None
 
 
+def is_loop_edge(flow: Flow, place: Place, target: Place) -> bool:
+    """True when a jump goes to an earlier instruction of its own part, and a path from that target comes back to it.
+
+    A jump back in the sequence of the addresses can also go into code that does not go round, such as an entry block
+    that the compiler puts after a tail.  Such a jump is no loop edge.  Complexity: linear in the edges.
+    """
+    return target[0] == place[0] and target[1] <= place[1] and place in reachable(flow.successors, [target])
+
+
 def steps_of(code: Code) -> tuple[Step, ...]:
     """Return the instructions of a function on its returning paths, in sequence (THE WALK, THE NORMALIZATION).
 
-    Complexity: linear in the instructions of the function, and quadratic in the instructions of its loops.
+    The instructions of a loop are the instructions on a path from the target of a loop edge back to that edge.
+    Complexity: linear in the instructions of the function, and linear in the edges for each loop edge.
     """
     flow = flow_of(code)
     places = [
@@ -948,13 +997,15 @@ def steps_of(code: Code) -> tuple[Step, ...]:
         if (part, index) in flow.returning
     ]
     position = {place: number for number, place in enumerate(places)}
+    predecessors = predecessors_of(flow.successors)
     in_loop: set[int] = set()
     drafts: list[tuple[str, StepClass, str, Instruction]] = []
     for number, place in enumerate(places):
         instruction = flow.parts[place[0]][place[1]]
         text, kind, detail, loop = classified(flow, place, instruction)
-        if loop is not None and loop in position:
-            in_loop.update(range(position[loop], number + 1))
+        if loop is not None:
+            body = reachable(flow.successors, [loop]) & reachable(predecessors, [place])
+            in_loop.update(position[item] for item in body if item in position)
         drafts.append((text, kind, detail, instruction))
     return tuple(
         Step(
@@ -1083,18 +1134,21 @@ def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened:
             f"the family side holds the locked instructions {family_locks}, and the raw side holds {raw_locks}.  The "
             f"two sides do not do the same atomic work"
         )
-    if not probe.declares_cost and len(family) > len(raw):
+    if not probe.declares_structure and len(family) > len(raw) + probe.longer:
+        limit = f"declares at most {probe.longer} more" if probe.longer else "declares no cost"
         problems.append(
             f"the family side has {len(family)} instructions on its returning paths, and the raw side has "
-            f"{len(raw)}.  The probe declares no cost"
+            f"{len(raw)}.  The probe {limit}"
         )
     return Verdict(tuple(problems), tuple(added), len(family), len(raw))
 
 
 def pair_findings(
-    functions: Mapping[str, Code], probes: Iterable[Probe], hardened: bool
+    functions: Mapping[str, Code], probes: Iterable[Probe], hardened: bool, target: str
 ) -> tuple[list[check_report.Finding], list[str], dict[str, Verdict]]:
-    """Judge each pair of the probe object (THE VERDICT, THE COSTS).
+    """Judge each pair of the probe object of one target (THE VERDICT, THE COSTS).
+
+    Each finding and each shown disassembly names the target (THE TARGETS).
 
     Returns:
         The errors and the warnings of the costs, the disassembly of each probe with an error, and the verdict of
@@ -1108,31 +1162,31 @@ def pair_findings(
         raw = functions.get(probe.name + RAW_SUFFIX, Code(probe.name + RAW_SUFFIX))
         result = verdict(probe, steps_of(family), steps_of(raw), hardened)
         verdicts[probe.name] = result
+        named = f"probe {probe.name} for -march={target}"
         found += [
             check_report.Finding(
                 "error",
                 PROBE_SOURCE,
                 0,
                 RULE,
-                f"probe {probe.name}: {problem}.  The claim: {probe.claim}",
+                f"{named}: {problem}.  The claim: {probe.claim}",
                 "shape",
-                probe.name,
+                f"{probe.name} -march={target}",
             )
             for problem in result.problems
         ]
         if result.problems:
-            shown.append(
-                f"probe {probe.name}, the family function:\n{family.text()}\n"
-                f"probe {probe.name}, the raw function:\n{raw.text()}"
-            )
+            shown.append(f"{named}, the family function:\n{family.text()}\n{named}, the raw function:\n{raw.text()}")
         elif probe.declares_cost and result.is_longer:
             added = ", ".join(step.text for step in result.added)
             message = (
-                f"probe {probe.name}: the family side has {result.family_count} instructions on its returning paths, "
-                f"and the raw side has {result.raw_count}.  The family-only instructions are: {added}.  The claim: "
+                f"{named}: the family side has {result.family_count} instructions on its returning paths, and the "
+                f"raw side has {result.raw_count}.  The family-only instructions are: {added}.  The claim: "
                 f"{probe.claim}"
             )
-            found.append(check_report.Finding("warning", PROBE_SOURCE, 0, RULE, message, "cost", probe.name))
+            found.append(
+                check_report.Finding("warning", PROBE_SOURCE, 0, RULE, message, "cost", f"{probe.name} -march={target}")
+            )
     return found, shown, verdicts
 
 
@@ -1155,16 +1209,21 @@ def code_flags(words: Sequence[str], source: str) -> list[str]:
     return flags
 
 
+def without_target(flags: Iterable[str]) -> set[str]:
+    """Return the code words with no word that starts with TARGET_WORDS, which each compile replaces (THE TARGETS)."""
+    return {flag for flag in flags if not flag.startswith(TARGET_WORDS)}
+
+
 def flag_findings(probe_flags: Sequence[str], base_flags: Sequence[Sequence[str]]) -> list[check_report.Finding]:
     """Compare the code words of the probe unit with those of the foundation units (THE FLAGS OF THE PAIRS)."""
     messages: list[str] = []
-    base_sets = [set(flags) for flags in base_flags]
+    base_sets = [without_target(flags) for flags in base_flags]
     if not base_sets:
         messages.append("the compile database has no unit of the target foundation.  The rule cannot compare the flags")
     for other in base_sets[1:]:
         if other != base_sets[0]:
             messages.append(f"the foundation units do not have the same code flags: {sorted(other ^ base_sets[0])}")
-    probe_set = set(probe_flags)
+    probe_set = without_target(probe_flags)
     base_set = base_sets[0] if base_sets else probe_set
     messages += [
         f"each foundation unit compiles with {flag}, and the probe unit does not.  Give the probe unit of "
@@ -1187,10 +1246,12 @@ def has_sanitizer(entry: compdb.CompileEntry) -> bool:
     return any(word.startswith(SANITIZER_WORDS) for word in entry.argv())
 
 
-def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool) -> list[str]:
+def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool, target: str | None = None) -> list[str]:
     """Return the compile command of a row with a different object (THE COMPILES).
 
-    The command has no sanitizer word when `with_sanitizers` is False.
+    The command has no sanitizer word when `with_sanitizers` is False.  With a target, the command has no word that
+    starts with TARGET_WORDS, and it ends with -march=TARGET (THE TARGETS).  With no target, the command keeps the
+    target of the build.
     """
     words: list[str] = []
     arguments = list(entry.argv())
@@ -1201,35 +1262,49 @@ def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool) 
         if word == "-o" and index < len(arguments):
             words += [word, str(obj)]
             index += 1
+        elif target is not None and word.startswith(TARGET_WORDS):
+            continue
         elif with_sanitizers or not word.startswith(SANITIZER_WORDS):
             words.append(word)
-    return words
+    return words if target is None else [*words, f"-march={target}"]
 
 
-def compiled_functions(entry: compdb.CompileEntry, with_sanitizers: bool) -> tuple[objdump.Function, ...]:
+def compiled_functions(
+    entry: compdb.CompileEntry, with_sanitizers: bool, target: str | None = None
+) -> tuple[objdump.Function, ...]:
     """Compile the unit of a row of the compile database into a scratch object, and return each of its functions.
 
-    The quarantine plugin writes only the section of the object, because the command gives it no report directory.
+    command_words() gives the command for the target.  The quarantine plugin writes only the section of the object,
+    because the command gives it no report directory.
 
     Raises:
         CompileFailed: If the compile or the disassembly fails
     """
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-") as scratch:
         obj = Path(scratch) / "core_shapes.o"
-        words = command_words(entry, obj, with_sanitizers)
+        words = command_words(entry, obj, with_sanitizers, target)
         result = proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory)))
         if result.exit != 0:
-            raise CompileFailed(f"the compile of {entry.file} fails:\n{result.err[-2000:]}")
+            named = "" if target is None else f" for -march={target}"
+            raise CompileFailed(f"the compile of {entry.file}{named} fails:\n{result.err[-2000:]}")
         return disassembled(obj)
 
 
-def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool) -> dict[str, Code]:
-    """Compile the unit of a row of the compile database, and return the code of each function (compiled_functions()).
+def compiled_codes(entry: compdb.CompileEntry, with_sanitizers: bool, target: str) -> dict[str, Code]:
+    """Compile the unit of a row for a target, and return the code of each function (compiled_functions()).
 
     Raises:
         CompileFailed: If the compile or the disassembly fails
     """
-    return codes_of(compiled_functions(entry, with_sanitizers))
+    return codes_of(compiled_functions(entry, with_sanitizers, target))
+
+
+def each_at_once[Item, Result](work: Callable[[Item], Result], items: Sequence[Item]) -> list[Result]:
+    """Do the work for each item at the same time, one thread for each item, and return the results in sequence."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, max(1, len(items)))) as pool:
+        return list(pool.map(work, items))
 
 
 def disassembled(obj: Path) -> tuple[objdump.Function, ...]:
@@ -1273,13 +1348,13 @@ def planted_probes(context: runner.ElfContext) -> tuple[Probe, ...] | None:
 
 
 def count_lines(
-    verdicts: Mapping[str, Verdict], instrumented: Mapping[str, Code] | None, probes: Iterable[Probe]
+    verdicts: Mapping[str, Verdict], instrumented: Mapping[str, Code] | None, probes: Iterable[Probe], target: str
 ) -> list[str]:
-    """Return one line with the counts of each pair, and the counts with the sanitizer of the build (THE COSTS)."""
+    """Return one line with the counts of each pair of a target, and the counts with the sanitizer (THE COSTS)."""
     lines: list[str] = []
     for probe in probes:
         result = verdicts[probe.name]
-        line = f"{RULE}: probe {probe.name}: family {result.family_count}, raw {result.raw_count}"
+        line = f"{RULE}: probe {probe.name} for -march={target}: family {result.family_count}, raw {result.raw_count}"
         if instrumented is not None:
             family = len(steps_of(instrumented.get(probe.name, Code(probe.name))))
             raw = len(steps_of(instrumented.get(probe.name + RAW_SUFFIX, Code(probe.name + RAW_SUFFIX))))
@@ -1309,30 +1384,44 @@ def core_findings(context: runner.ElfContext) -> tuple[list[check_report.Finding
     probe_flags = code_flags(probe.argv(), probe.file)
     found = flag_findings(probe_flags, [code_flags(entry.argv(), entry.file) for entry in foundation_entries(context)])
     probes = planted_probes(context) or PROBES
+    hardened = is_hardened(probe_flags)
+    shown: list[str] = []
+    for target_found, target_shown in each_at_once(
+        lambda target: target_findings(probe, probes, hardened, target), TARGETS
+    ):
+        found += target_found
+        shown += target_shown
+    return found, shown
+
+
+def target_findings(
+    probe: compdb.CompileEntry, probes: Sequence[Probe], hardened: bool, target: str
+) -> tuple[list[check_report.Finding], list[str]]:
+    """Compile the probe unit for one target, and return the findings of its pairs and the lines that the run prints.
+
+    THE TARGETS, THE COMPILES and THE COSTS give the compiles and the lines.
+    """
     try:
-        functions = compiled_codes(probe, with_sanitizers=False)
-        instrumented = compiled_codes(probe, with_sanitizers=True) if has_sanitizer(probe) else None
+        functions = compiled_codes(probe, False, target)
+        instrumented = compiled_codes(probe, True, target) if has_sanitizer(probe) and target == TARGETS[0] else None
     except CompileFailed as problem:
-        return [
-            *found,
-            check_report.Finding("error", PROBE_SOURCE, 0, RULE, " ".join(str(problem).split()), "compile"),
-        ], []
+        return [check_report.Finding("error", PROBE_SOURCE, 0, RULE, " ".join(str(problem).split()), "compile")], []
     missing = [name for item in probes for name in (item.name, item.name + RAW_SUFFIX) if name not in functions]
     if missing:
         return [
-            *found,
             check_report.Finding(
                 "error",
                 PROBE_SOURCE,
                 0,
                 RULE,
-                f"the probe object holds no function {missing}.  The compiler gave the function a different "
-                f"name, or {PROBE_SOURCE} does not hold it",
+                f"the probe object for -march={target} holds no function {missing}.  The compiler gave the function "
+                f"a different name, or {PROBE_SOURCE} does not hold it",
                 "missing",
-            ),
+                target,
+            )
         ], []
-    pairs, shown, verdicts = pair_findings(functions, probes, is_hardened(probe_flags))
-    return [*found, *pairs], [*shown, *count_lines(verdicts, instrumented, probes)]
+    pairs, shown, verdicts = pair_findings(functions, probes, hardened, target)
+    return pairs, [*shown, *count_lines(verdicts, instrumented, probes, target)]
 
 
 # ── The wrappers ───────────────────────────────────────────────────
@@ -1356,13 +1445,13 @@ class Plan:
     variants: tuple[Variant, ...] = field(default_factory=tuple)
 
     def targets(self) -> Iterator[tuple[str, list[str]]]:
-        """Yield the name and the words of each compile: each level of each variant, for each target."""
+        """Yield the name and the words of each compile: each level of each variant, for each target of TARGETS."""
         for variant in self.variants:
             for level in variant.levels:
-                for march in MARCHES:
+                for target in TARGETS:
                     yield (
-                        f"{variant.name} -march={march} {level}",
-                        [*self.base, *variant.flags, level, f"-march={march}"],
+                        f"{variant.name} -march={target} {level}",
+                        [*self.base, *variant.flags, level, f"-march={target}"],
                     )
 
 
@@ -1522,8 +1611,6 @@ def wrapper_results(plan: Plan, source: Path, expected: Mapping[str, bool], incl
     Raises:
         CompileFailed: If a compile or objdump fails, or a target gives no code for a wrapper
     """
-    from concurrent.futures import ThreadPoolExecutor
-
     targets = list(plan.targets())
 
     def one_target(index: int) -> list[str]:
@@ -1555,8 +1642,7 @@ def wrapper_results(plan: Plan, source: Path, expected: Mapping[str, bool], incl
             for problem in wrapper_problems(name, functions[name], takes_pointers)
         ]
 
-    with ThreadPoolExecutor(max_workers=min(proc.DEFAULT_JOBS, len(targets))) as pool:
-        return [problem for found in pool.map(one_target, range(len(targets))) for problem in found]
+    return [problem for found in each_at_once(one_target, range(len(targets))) for problem in found]
 
 
 # ── The census of the grade ────────────────────────────────────────
@@ -1792,8 +1878,8 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
         check_report.write_line(block)
     if status == 0:
         check_report.write_line(
-            f"{RULE}: the {len(PROBES)} pairs hold with the flags of this build, the probe unit has the flags of the "
-            f"foundation library, and {len(wrapper_source(CTCRYPTO_CASES)[1])} wrappers have no refused instruction "
-            f"for {len(MARCHES) * 4} targets"
+            f"{RULE}: the {len(PROBES)} pairs hold with the flags of this build for {len(TARGETS)} targets, the probe "
+            f"unit has the flags of the foundation library, and {len(wrapper_source(CTCRYPTO_CASES)[1])} wrappers have "
+            f"no refused instruction in {len(TARGETS) * 4} compiles"
         )
     return status

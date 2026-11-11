@@ -1,0 +1,6 @@
+# The probe unit and the foundation unit differ only in their target words.  The rule compiles each unit for each
+# target of its list, so the target words of the build do not count.
+part core
+unit core_shape_probes test/shape/core_shapes.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=native -mtune=native -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+unit foundation src/foundation/unit.cpp | -std=c++26 -fcontracts -fno-plt -O3 -march=x86-64-v3 -DNDEBUG -fPIC -fno-strict-overflow -fcontract-evaluation-semantic=observe
+probe load | a load is the load of a raw pointer

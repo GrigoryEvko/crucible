@@ -1092,8 +1092,10 @@ build. The probe unit of `test/shape` links `crucible_dialect` and is
 position-independent, as the foundation library is. It then compiles with the
 flags of the foundation library in each build type. The rule `codegen-shapes`
 refuses a probe unit with code flags that are not those of the foundation
-library. It reads the flags of `test/ct/dudect.cpp` from the compile database
-(§XXII R12).
+library, other than the target words such as `-march=native`. The rule compiles
+each unit for the fixed targets `x86-64`, `x86-64-v3` and `x86-64-v4` in place
+of those words. It reads the flags of `test/ct/dudect.cpp` from the compile
+database (§XXII R12).
 
 In each preset, `cmake/BuildLauncher.cmake` puts `loop step` (`utils/assay/loop/step.py`)
 in front of each compile command and in front of ccache. It also puts the
@@ -3295,11 +3297,11 @@ On 2026-10-09, the census held 1620 findings in 1180 rows of 771 of the 2159 fix
 
 ### Hot path and compile time (R12 to R17)
 
-A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each pair of `test/shape/core_shapes.cpp`: a family operation, and the raw code that it replaces in an `ORACLE` opt-out region. The two functions of a pair compile in one unit with the flags of the foundation library of the build. Each build type then compares them with its own level, target, hardening flags and contract semantic. The compile of the verdict has no sanitizer flag, because a sanitizer adds a test to each memory access. In a build with a sanitizer, the run also prints the counts of each pair with the sanitizer.
+A family operation on the hot path compiles to the same instructions as the code that it replaces (R12). The rule `codegen-shapes` (`utils/assay/guard/engines/elf/codegen_shapes.py`, the test `guard_codegen_shapes`) holds R12 for each pair of `test/shape/core_shapes.cpp`: a family operation, and the raw code that it replaces in an `ORACLE` opt-out region. The two functions of a pair compile in one unit with the flags of the foundation library of the build. Each build type then compares them with its own level, hardening flags and contract semantic, for each of the fixed targets `x86-64`, `x86-64-v3` and `x86-64-v4`. The rule removes the target words of the build, such as `-march=native`, so each host gives the same verdict. The compile of the verdict has no sanitizer flag, because a sanitizer adds a test to each memory access. In a build with a sanitizer, the run also prints the counts of each pair with the sanitizer for the first target.
 
-The rule reads the instructions on the paths that return, and it normalizes them: a register becomes its class and its width, a jump becomes its kind of target, and a relocation becomes its symbol. Then it finds the instructions that only the family side has. It refuses each such instruction that is a check, a branch or a call, unless the pair declares that difference. It always refuses a division and a load with an index register. It refuses each such instruction in a loop, unless the pair declares a branch. In a unit with the hardening flags, a declared check or branch can have the second test that the hardening puts on each of its two edges. The two sides must hold the same locked instructions. A pair that declares no difference must give the family side no more instructions than the raw side.
+The rule reads the instructions on the paths that return, and it normalizes them: a register becomes its class and its width, a jump becomes its kind of target, and a relocation becomes its symbol. Then it finds the instructions that only the family side has. It refuses each such instruction that is a check, a branch or a call, unless the pair declares that difference. It always refuses a division and a load with an index register. It refuses each such instruction in a loop, unless the pair declares a branch. A loop is the instructions on a path from the target of a backward jump back to that jump. In a unit with the hardening flags, a declared check or branch can have the second test that the hardening puts on each of its two edges. The two sides must hold the same locked instructions. A pair that declares no check, branch or call must give the family side no more instructions than the raw side. The declaration `longer=N` adds N to that limit, and it permits no check, branch, call or instruction in a loop.
 
-A declared difference is a cost on the hot path. When the family side of such a pair is longer, each run gives a warning with the counts of the pair. In the Release build of 2026-10-11, those pairs were `box_get`, `option_expect`, `option_expect_niche`, `switch_unreachable` and `view_append`.
+A declared difference is a cost on the hot path. When the family side of such a pair is longer, each run gives a warning with the counts of the pair. In the Release build of 2026-11-11, those pairs were `box_get`, `option_expect`, `option_expect_niche`, `switch_unreachable` and `view_append` at each target, and `view_sum` at `x86-64-v3` and `x86-64-v4`.
 
 The command `python3 utils/bin/guard asm-compare` (`utils/assay/guard/asm_compare.py`) compares the code of each function of a list in two objects, two builds, or a git revision and the tree. It prints the instructions that only one side holds, and it normalizes them as the rule `codegen-shapes` does.
 

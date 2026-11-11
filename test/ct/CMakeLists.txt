@@ -9,7 +9,7 @@
 # The tests build with release optimization, because the optimizer is
 # what turns arithmetic into a branch.  They build for x86-64-v3, the
 # widest ISA that valgrind decodes: valgrind 3.27 stops on AVX-512 with an
-# illegal opcode.  The rule codegen-shapes covers the -march=native code
+# illegal opcode.  The rule codegen-shapes covers the x86-64-v4 code
 # instead.  The tests link no library from the tree: the code under test is
 # header-only, and a sanitizer flag inherited from a library target would
 # stop valgrind.  -fno-sanitize=all removes a sanitizer flag that a preset
@@ -56,7 +56,8 @@ endif()
 
 # The rule codegen-shapes (utils/assay/guard/engines/elf/codegen_shapes.py)
 # compiles each constant-time primitive with the flags of each kind of build:
-# the Debug, Release and verify flags, at their levels, for three ISA levels.
+# the Debug, Release and verify flags, at their levels, for the ISA levels
+# x86-64, x86-64-v3 and x86-64-v4.
 # It refuses a conditional branch, a call, a division or a data-dependent load
 # in the body of a primitive.  The compile of ct_dudect gives the rule the
 # flags of a Release build in each build type.

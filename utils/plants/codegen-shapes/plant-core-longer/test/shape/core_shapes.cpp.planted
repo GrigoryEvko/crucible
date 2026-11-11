@@ -1,0 +1,6 @@
+namespace {
+
+[[gnu::used, gnu::noinline]] int mixed(const int* pointer) { return (*pointer + 1) ^ 0x55; }
+[[gnu::used, gnu::noinline]] int mixed_raw(const int* pointer) { return *pointer; }
+
+}  // namespace

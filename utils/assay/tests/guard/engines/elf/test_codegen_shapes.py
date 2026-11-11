@@ -7,9 +7,10 @@ THE CASES
         paths and their kinds, and the loops
       * The verdict of planted pairs: each class of family-only instruction,
         the second tests of the `-fharden-` flags and the locked instructions
-      * The count of a probe with no declaration, and the warning of a cost
+      * The count of a probe with no declaration and with longer=N, and the
+        warning of a cost
       * The flags of the probe unit, the `-fharden-` flags, the probe rows of
-        a plant and the command of the compile of the verdict
+        a plant and the command of the compile of the verdict for a target
       * The flags and the refused instructions of the constant-time wrappers
       * The reflection census and the census of the grade.
     The compile cases use the compiler that ASSAY_TEST_CXX names.
@@ -17,15 +18,16 @@ THE CASES
 THE PROBE UNIT OF THE BUILD
     ASSAY_TEST_BUILD_DIR names the build directory, and the registration of
     the test in test/CMakeLists.txt gives it.  The case compiles the probe
-    unit with the command of the verdict: the command of the compile database
-    with no sanitizer word.  The pairs of PROBES must hold.  In a unit with
-    a flag of HARDENING_FLAGS, a probe can get a second test into a trap on
-    its family side.  The claim of such a probe must name the two flags.  The
-    warning of a cost then tells the full cost.  Then the case
-    copies include/foundation/core/Region.h to a directory that comes first on
-    the include path.  It puts a second test of the limits into View::window
-    of the copy.  The probes view_window and view_append must then fail, and
-    no other probe.  The case applies only on an x86_64 host.
+    unit for each target with the command of the verdict: the command of the
+    compile database with no sanitizer word, and with the word -march=TARGET
+    in place of its target words.  The pairs of PROBES must hold.  In a unit
+    with a flag of HARDENING_FLAGS, a probe can get a second test into a trap
+    on its family side.  The claim of such a probe must name the two flags.
+    The warning of a cost then tells the full cost.  Then the case copies
+    include/foundation/core/Region.h to a directory that comes first on the
+    include path.  It puts a second test of the limits into View::window of
+    the copy.  The probes view_window and view_append must then fail for each
+    target, and no other probe.  The case applies only on an x86_64 host.
 """
 
 import os
@@ -218,6 +220,15 @@ def walk_cases(expect: testing.Expect) -> None:
     )
     marks = [step.is_in_loop for step in shapes.steps_of(loop)]
     expect("a jump into an earlier instruction marks the loop", marks == [False, False, True, True, True, True, False])
+    entry_after_tail = code_of(
+        "probe",
+        plain("endbr64", "test rdi,rdi", "je @5", "mov eax,DWORD PTR [rdi]", "ret", "mov eax,0x1", "jmp @3"),
+    )
+    steps = shapes.steps_of(entry_after_tail)
+    expect(
+        "a jump back to code that does not come back to the jump is no loop edge, and it marks no loop",
+        steps[-1].text == "jmp ->" and not any(step.is_in_loop for step in steps),
+    )
     padded = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "xchg ax,ax", "nop", "ret"))
     expect("a nop that aligns the code is no step", len(shapes.steps_of(padded)) == 3)
     tls = code_of(
@@ -253,6 +264,10 @@ def verdict_cases(expect: testing.Expect) -> None:
         + plain("pop rbp", "ret"),
     )
     longer = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "lea rax,[rax+rax*2+0x1]", "ret"))
+    two_longer = code_of(
+        "probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "lea rax,[rax+rax*2+0x1]", "add rax,0x1", "ret")
+    )
+    one_more = shapes.Probe("probe", "c", longer=1)
     swapped = code_of("probe", plain("endbr64", "lea rax,[rdi+rsi*4]", "mov eax,DWORD PTR [rax]", "ret"))
     swapped_raw = code_of("probe", plain("endbr64", "shl rsi,0x2", "mov eax,DWORD PTR [rdi+rsi*1]", "ret"))
     branch = code_of(
@@ -297,6 +312,10 @@ def verdict_cases(expect: testing.Expect) -> None:
         ("a pair that differs only in its registers", ZERO_COST, load_other, load, False, ()),
         ("a raw side with a spill to the stack", ZERO_COST, load, spill, False, ()),
         ("a family side with more plain instructions", ZERO_COST, longer, load, False, ("declares no cost",)),
+        ("one more plain instruction with longer=1", one_more, longer, load, False, ()),
+        ("two more plain instructions with longer=1", one_more, two_longer, load, False, ("at most 1 more",)),
+        ("a family-only branch with longer=1", one_more, branch, load, False, ("adds a branch",)),
+        ("family-only work in a loop with longer=1", one_more, loop_work, loop_raw, False, ("work to a loop",)),
         ("plain instructions of the same count", ZERO_COST, swapped, swapped_raw, False, ()),
         ("a family-only branch", ZERO_COST, branch, load, False, ("adds a branch",)),
         ("a declared branch", shapes.Probe("probe", "c", branches=True), branch, load, False, ()),
@@ -319,7 +338,7 @@ def verdict_cases(expect: testing.Expect) -> None:
         holds = all(any(part in problem for problem in problems) for part in wanted) if wanted else not problems
         expect(f"the verdict of '{title}' gives {list(wanted) or 'no problem'}", holds)
     functions = {"probe": check, "probe_raw": load}
-    found, shown, verdicts = shapes.pair_findings(functions, (fatal,), False)
+    found, shown, verdicts = shapes.pair_findings(functions, (fatal,), False, "x86-64")
     expect(
         "a declared cost of a longer family side gives one warning with the counts, and no error",
         [item.level for item in found] == ["warning"]
@@ -327,10 +346,13 @@ def verdict_cases(expect: testing.Expect) -> None:
         and not shown
         and verdicts["probe"].is_longer,
     )
-    found, shown, _ = shapes.pair_findings(functions, (ZERO_COST,), False)
+    found, shown, _ = shapes.pair_findings(functions, (ZERO_COST,), False, "x86-64-v4")
     expect(
-        "an undeclared check gives an error and the disassembly of the two functions",
-        bool(found) and all(item.level == "error" for item in found) and len(shown) == 1,
+        "an undeclared check gives an error and the disassembly of the two functions, and each names the target",
+        bool(found)
+        and all(item.level == "error" and "-march=x86-64-v4" in item.message for item in found)
+        and len(shown) == 1
+        and "-march=x86-64-v4" in shown[0],
     )
 
 
@@ -364,6 +386,11 @@ def flag_cases(expect: testing.Expect) -> None:
         "foundation units with different code flags give a finding",
         any("do not have the same code flags" in item.message for item in found),
     )
+    found = shapes.flag_findings(
+        shapes.code_flags([*probe_words, "-march=native", "-mtune=native"], "p.cpp"),
+        [shapes.code_flags([*base, "-march=x86-64-v3"], "u.cpp")],
+    )
+    expect("a probe unit and a foundation unit that differ only in their target give no finding", not found)
     hardening = (
         (["-O3", "-fharden-compares"], True),
         (["-fharden-conditional-branches", "-fno-harden-conditional-branches"], False),
@@ -387,6 +414,18 @@ def flag_cases(expect: testing.Expect) -> None:
         shapes.command_words(entry, Path("/s/x.o"), with_sanitizers=True)[2:4]
         == ["-fsanitize=address", "-fno-sanitize-recover=all"],
     )
+    native = compdb.CompileEntry(
+        "p.cpp", "/b", "/b/p.o", "g++ -O3 -march=native -mtune=native -mcpu=native -o /b/p.o -c p.cpp"
+    )
+    expect(
+        "the compile of a target has no target word of the build, and it ends with the word of its target",
+        shapes.command_words(native, Path("/s/x.o"), with_sanitizers=False, target="x86-64-v4")
+        == ["g++", "-O3", "-o", "/s/x.o", "-c", "p.cpp", "-march=x86-64-v4"],
+    )
+    expect(
+        "the compile with no target keeps the target of the build",
+        "-march=native" in shapes.command_words(native, Path("/s/x.o"), with_sanitizers=False),
+    )
 
 
 def probe_row_cases(expect: testing.Expect) -> None:
@@ -394,9 +433,12 @@ def probe_row_cases(expect: testing.Expect) -> None:
     rows = rows_grammar.parse(
         "probe load check=fatal,trap branch=yes calls=memmove,memset | claim\n"
         "probe plain | a planted claim\n"
+        "probe wide longer=2 | a planted claim\n"
         "probe bad branch=no | a planted claim\n"
         "probe bad check=other | a planted claim\n"
         "probe bad relation=same | a planted claim\n"
+        "probe bad longer=0 | a planted claim\n"
+        "probe bad longer=more | a planted claim\n"
         "probe bad check=fatal\n",
         "plant.txt",
     )
@@ -405,7 +447,12 @@ def probe_row_cases(expect: testing.Expect) -> None:
         shapes.probe_of_row(rows[0]) == shapes.Probe("load", "claim", ("fatal", "trap"), True, ("memmove", "memset")),
     )
     expect("a probe row with no field declares no cost", not shapes.probe_of_row(rows[1]).declares_cost)
-    for row in rows[2:]:
+    wide = shapes.probe_of_row(rows[2])
+    expect(
+        "a probe row with longer=2 declares a cost of two instructions and no check, branch or call",
+        wide.longer == 2 and wide.declares_cost and not wide.declares_structure,
+    )
+    for row in rows[3:]:
         try:
             shapes.probe_of_row(row)
             is_refused = False
@@ -611,12 +658,13 @@ def plant_window(header: Path) -> str:
     return (data[:position] + plant.encode() + data[position:]).decode()
 
 
-def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None) -> list[str]:
-    """Return the command of the verdict for a row, with the object `obj`, and with the directory `include` first.
+def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None, target: str) -> list[str]:
+    """Return the command of the verdict for a row and a target, with the object `obj`, and the directory `include`.
 
-    With a directory, the command does not hold the words of the quarantine plugin.
+    The directory comes first on the include path.  With a directory, the command does not hold the words of the
+    quarantine plugin.
     """
-    words = shapes.command_words(entry, obj, with_sanitizers=False)
+    words = shapes.command_words(entry, obj, with_sanitizers=False, target=target)
     kept = [
         word for word in words[1:] if include is None or not (word.startswith(PLUGIN_WORDS) or word == PLUGIN_MACRO)
     ]
@@ -624,9 +672,9 @@ def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None) -
 
 
 def judged_probes(
-    entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe]
+    entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe], target: str
 ) -> tuple[set[str], dict[str, shapes.Verdict], bool]:
-    """Compile the probe unit of a row with the command of the verdict, and judge each pair.
+    """Compile the probe unit of a row for a target with the command of the verdict, and judge each pair.
 
     Returns:
         The name of each probe with an error, the verdict of each probe, and True when the unit has a flag of
@@ -637,12 +685,12 @@ def judged_probes(
     """
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-probe-") as scratch:
         obj = Path(scratch) / "core_shapes.o"
-        command = proc.Command(compile_words(entry, obj, include), timeout_s=proc.TOOL_S, cwd=Path(entry.directory))
-        proc.require(proc.run(command))
+        words = compile_words(entry, obj, include, target)
+        proc.require(proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory))))
         functions = shapes.codes_of(shapes.disassembled(obj))
     hardened = shapes.is_hardened(shapes.code_flags(entry.argv(), entry.file))
-    found, _, verdicts = shapes.pair_findings(functions, probes, hardened)
-    return {item.entity for item in found if item.level == "error"}, verdicts, hardened
+    _, _, verdicts = shapes.pair_findings(functions, probes, hardened, target)
+    return {name for name, result in verdicts.items() if result.problems}, verdicts, hardened
 
 
 def hardening_unexplained(verdicts: dict[str, shapes.Verdict], hardened: bool) -> list[str]:
@@ -679,24 +727,31 @@ def build_probe_cases(expect: testing.Expect) -> None:
     expect("the compile database of the build compiles the probe unit", entry is not None)
     if entry is None:
         return
-    failed, verdicts, hardened = judged_probes(entry, None, shapes.PROBES)
-    expect("each pair of PROBES holds on the probe unit of the build", failed == set())
-    unexplained = hardening_unexplained(verdicts, hardened)
-    expect(
-        "in a unit with the -fharden- flags, the claim of each probe with a second test into a trap on its family side "
-        f"names the two flags: {', '.join(unexplained) or 'each claim names them'}",
-        not unexplained,
-    )
+    for target in shapes.TARGETS:
+        failed, verdicts, hardened = judged_probes(entry, None, shapes.PROBES, target)
+        expect(
+            f"each pair of PROBES holds on the probe unit of the build for -march={target}: "
+            f"{', '.join(sorted(failed)) or 'each pair holds'}",
+            failed == set(),
+        )
+        unexplained = hardening_unexplained(verdicts, hardened)
+        expect(
+            f"for -march={target} in a unit with the -fharden- flags, the claim of each probe with a second test into "
+            f"a trap on its family side names the two flags: {', '.join(unexplained) or 'each claim names them'}",
+            not unexplained,
+        )
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-plant-") as scratch:
         include = Path(scratch) / "include"
         planted_header = include / PLANT_HEADER.relative_to("include")
         planted_header.parent.mkdir(parents=True)
         planted_header.write_text(plant_window(REPO_ROOT / PLANT_HEADER), encoding="utf-8")
-        failed, _, _ = judged_probes(entry, include, shapes.PROBES)
-    expect(
-        "a second test of the limits in View::window fails the probes view_window and view_append, and no other",
-        failed == {"view_window", "view_append"},
-    )
+        for target in shapes.TARGETS:
+            failed, _, _ = judged_probes(entry, include, shapes.PROBES, target)
+            expect(
+                f"for -march={target}, a second test of the limits in View::window fails the probes view_window and "
+                f"view_append, and no other: {', '.join(sorted(failed)) or 'no probe fails'}",
+                failed == {"view_window", "view_append"},
+            )
 
 
 def main(argv: list[str]) -> int:

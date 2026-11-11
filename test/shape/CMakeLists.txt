@@ -12,10 +12,12 @@
 # links crucible_dialect, and the root CMakeLists.txt makes each library of
 # the tree position-independent.
 # Each preset then compiles the two functions of a pair with its own level,
-# target, sanitizer, hardening flags and contract semantic, and the rule
-# compares the pair with the flags of that build.  The rule refuses a probe
-# object with code flags that are not the code flags of the units of the
-# foundation library.
+# sanitizer, hardening flags and contract semantic, and the rule compares the
+# pair with the flags of that build.  The rule replaces the target words of
+# the build, such as -march=native, with each target of a fixed list:
+# x86-64, x86-64-v3 and x86-64-v4.  Thus each host gives the same verdict.
+# The rule refuses a probe object with code flags that are not the code flags
+# of the units of the foundation library, other than the target words.
 #
 # The expectations are for x86_64.  On another architecture, the directory
 # builds no object, and the rule does not apply.

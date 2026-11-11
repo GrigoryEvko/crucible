@@ -1,0 +1,6 @@
+namespace {
+
+[[gnu::used, gnu::noinline]] int next(const int* pointer) { return *pointer + 1; }
+[[gnu::used, gnu::noinline]] int next_raw(const int* pointer) { return *pointer; }
+
+}  // namespace
