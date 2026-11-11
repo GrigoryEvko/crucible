@@ -1,14 +1,15 @@
-"""The test of the lock of the heavy steps and of the memory wait (assay.loop.heavy).
+"""The test of the lock of the heavy steps and of the job count that the memory gives a step (assay.loop.heavy).
 
 `guard selftest tests.loop.test_heavy` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
 
-The cases read a planted file of the memory.  They give the wait a planted
-reader and a pause that does not sleep.  They make sure that a linked work
-tree of a planted repository finds the lock of the main work tree.  They also
-make sure that the lock is exclusive while a step holds it.  A session of the
-gate must let a step of the gate go first.  A different step must wait for
-the session, also when it gets the lock after the session starts.
+The cases read a planted file of the memory.  They give the job count a
+planted reader, and a step must read it one time and must not wait.  They
+make sure that a linked work tree of a planted repository finds the lock of
+the main work tree.  They also make sure that the lock is exclusive while a
+step holds it.  A session of the gate must let a step of the gate go first.
+A different step must wait for the session, also when it gets the lock after
+the session starts.
 """
 
 import fcntl
@@ -39,7 +40,7 @@ def reader(values: list[float | None]) -> heavy.Reader:
 
 
 def memory_cases(expect: testing.Expect) -> None:
-    """Hold the read of the available memory and the wait for a level."""
+    """Hold the read of the available memory and the job count that the memory gives."""
     with tempfile.TemporaryDirectory(prefix="heavy-memory-") as scratch_text:
         scratch = Path(scratch_text)
         planted = scratch / "meminfo"
@@ -50,30 +51,48 @@ def memory_cases(expect: testing.Expect) -> None:
             "a file with no field MemAvailable, and a file that does not exist, give no value",
             heavy.available_gb(planted) is None and heavy.available_gb(scratch / "missing") is None,
         )
-    pauses: list[float] = []
-    waited, value = heavy.wait_for_memory(16.0, reader([20.0]), pauses.append)
+    counts = [
+        heavy.jobs_for_memory(224, reader([14.0])),
+        heavy.jobs_for_memory(224, reader([191.0])),
+        heavy.jobs_for_memory(8, reader([14.0])),
+        heavy.jobs_for_memory(224, reader([None])),
+        heavy.jobs_for_memory(224, reader([1.0])),
+    ]
     expect(
-        "with the level from the first sample, the step does not wait, and the wait gives the value",
-        waited == 0.0 and value == 20.0 and not pauses,
+        f"the memory less RESERVE_GB gives one job for each GB_PER_JOB, with the count of the caller as the maximum, "
+        f"no value gives the count of the caller, and memory below the reserve gives one job: {counts}",
+        counts == [24, 224, 8, 224, 1],
     )
-    waited, value = heavy.wait_for_memory(16.0, reader([5.0, 20.0]), pauses.append)
-    expect(
-        "after a first sample below the level, the wait takes the samples of the rule and gives the last value",
-        waited == heavy.SAMPLES * heavy.INTERVAL_S and value == 20.0 and len(pauses) == heavy.SAMPLES,
-    )
-    pauses.clear()
-    waited, value = heavy.wait_for_memory(16.0, reader([5.0, 20.0, 5.0, 20.0]), pauses.append)
-    expect(
-        "a sample below the level starts the count again",
-        waited == (heavy.SAMPLES + 2) * heavy.INTERVAL_S and value == 20.0,
-    )
-    waited, value = heavy.wait_for_memory(16.0, reader([None]), pauses.append)
-    expect("a reader with no value ends the wait at once", waited == 0.0 and value is None)
-    waited, value = heavy.wait_for_memory(16.0, reader([5.0, None]), pauses.append)
-    expect(
-        "a reader that gives no value after a sample below the level ends the wait",
-        waited == heavy.INTERVAL_S and value is None,
-    )
+
+
+def step_cases(expect: testing.Expect) -> None:
+    """Hold the job count of a heavy step: one read of the memory, no wait, and one line of the memory."""
+    with tempfile.TemporaryDirectory(prefix="heavy-step-") as root_text:
+        root = Path(root_text)
+        cases = (
+            (14.0, 24, "memory: available 14.0 GB, 24 of 224 jobs"),
+            (191.0, 224, "memory: available 191.0 GB, 224 of 224 jobs"),
+            (None, 224, "so the step keeps 224 jobs"),
+        )
+        for value, expected, line in cases:
+            reads: list[float | None] = []
+
+            def read(value: float | None = value, reads: list[float | None] = reads) -> float | None:
+                """Give the planted value, and keep each read."""
+                reads.append(value)
+                return value
+
+            def step(read: heavy.Reader = read) -> int:
+                """Run a heavy step with 224 jobs of the caller, and give the job count of the step."""
+                with heavy.heavy_step(root, 224, read) as jobs:
+                    return jobs
+
+            jobs, printed = testing.captured(step)
+            expect(
+                f"with {value} GB of available memory and 224 jobs, the step reads the memory one time, does not "
+                f"wait, and gives {expected} jobs: {jobs} jobs after {len(reads)} reads, {printed.strip()!r}",
+                jobs == expected and len(reads) == 1 and printed.count("memory: ") == 1 and line in printed,
+            )
 
 
 def lock_cases(expect: testing.Expect) -> None:
@@ -103,7 +122,7 @@ def lock_cases(expect: testing.Expect) -> None:
         )
         held: list[bool] = []
         with (
-            heavy.heavy_step(16.0, linked, reader([32.0]), lambda _seconds: None),
+            heavy.heavy_step(linked, 1, reader([32.0])),
             open(expected, "a", encoding="ascii") as other,
         ):
             try:
@@ -159,9 +178,6 @@ def gate_cases(expect: testing.Expect) -> None:
         # The check after the lock found a session: the step held the lock of the heavy steps at that time.
         found_session = threading.Event()
 
-        def no_pause(_seconds: float) -> None:
-            """A pause that does not wait."""
-
         def is_session(gate_handle: IO[str]) -> bool:
             """Tell if a session runs, as the step does after it gets the lock, and mark a session that runs."""
             is_running = heavy.is_gate_running(gate_handle)
@@ -171,11 +187,11 @@ def gate_cases(expect: testing.Expect) -> None:
 
         def other_step() -> None:
             """Run a heavy step that is not a step of the gate, and mark the entry into its block."""
-            with heavy.heavy_step(16.0, root, reader([32.0]), no_pause, is_session=is_session):
+            with heavy.heavy_step(root, 1, reader([32.0]), is_session=is_session):
                 entered.set()
 
         with heavy.gate_session(root):
-            with heavy.heavy_step(16.0, root, reader([32.0]), no_pause, is_gate_step=True):
+            with heavy.heavy_step(root, 1, reader([32.0]), is_gate_step=True):
                 expect("a step of the gate takes the lock while its session runs", not is_free(heavy.lock_path(root)))
             worker = threading.Thread(target=other_step, daemon=True)
             worker.start()
@@ -231,4 +247,6 @@ def exit_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
-    return testing.run(__name__.removeprefix("assay."), argv, (memory_cases, lock_cases, gate_cases, exit_cases))
+    return testing.run(
+        __name__.removeprefix("assay."), argv, (memory_cases, step_cases, lock_cases, gate_cases, exit_cases)
+    )

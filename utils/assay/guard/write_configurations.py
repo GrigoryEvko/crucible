@@ -24,10 +24,10 @@ THE STEPS
       2. A configuration of objects builds the target all, and a parse
          configuration runs `loop syntax`.  The configure and the build run
          in one heavy step of assay.loop.heavy.  That step takes the shared
-         lock of the heavy steps and waits for the memory.  Do not run the
-         command with that lock, for example through flock(1).  --no-build
-         does no configure and no build.  Each build directory must then
-         have its graph.
+         lock of the heavy steps, and the memory gives the jobs of the build
+         (THE MEMORY of that module).  Do not run the command with that
+         lock, for example through flock(1).  --no-build does no configure
+         and no build.  Each build directory must then have its graph.
       3. `guard write --rule ID --build-dir BUILD` of each chosen rule with a
          ledger that holds the configuration (holding() of assay.loop.gate),
          in the mode lower.  That write refuses a count above its row and a
@@ -87,15 +87,15 @@ def build_configuration(root: Path, configuration: gate.Configuration, jobs: int
     from assay.loop import syntax
 
     build = gate.build_directory(root, configuration)
-    with heavy.heavy_step(heavy.FULL_LEVEL_GB, root):
+    with heavy.heavy_step(root, jobs) as step_jobs:
         if not ninja_reader.graph_file(build).is_file():
             status = run_words(gate.configure_words(root, configuration), root)
             if status != 0:
                 return status
         if configuration.is_parse:
-            return syntax.run(build, root, jobs)
+            return syntax.run(build, root, step_jobs)
         try:
-            words = gate.build_words(root, configuration, jobs)
+            words = gate.build_words(root, configuration, step_jobs)
         except gate.GateError as problem:
             check_report.write_line(f"guard write: {problem}", is_error=True)
             return ExitCode.TOOL_FAILED

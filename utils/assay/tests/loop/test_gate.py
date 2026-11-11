@@ -229,8 +229,11 @@ PLANTED = {
     "utils/bin/guard": GUARD_MASTER,
     BUILD_RULE_MODULE: "VALUE = 1\n",
 }
-# A memory reader with much memory, and a pause that does not wait, for the heavy step of a run.
+# The available memory of the heavy step of a run.  With much memory, the step gets the jobs of the gate.  With a small
+# memory, the step gets (3.0 - RESERVE_GB) / GB_PER_JOB = 2 jobs (THE MEMORY of assay.loop.heavy).
 MUCH_MEMORY_GB = 1e6
+SMALL_MEMORY_GB = 3.0
+SMALL_MEMORY_JOBS = 2
 # The row of the rule history and the ledgers of the repository of the checks before the builds.  Its registry also
 # holds a measured rule with a ledger.
 HISTORY_RULE = (
@@ -577,7 +580,7 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
     """
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
-    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB, pause=lambda _seconds: None)
+    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB)
 
 
 def run_cases(expect: testing.Expect) -> None:
@@ -959,7 +962,7 @@ def touched_cases(expect: testing.Expect) -> None:
             last = lines[-1] if lines else ""
             if last.startswith("-j 1 --only ") and only.is_file():
                 last = f"--only {only.read_text(encoding='utf-8').strip()}"
-            steps = printed.count("memwait: ")
+            steps = printed.count("memory: ")
             holds = verdict.is_accepted and verdict.configurations == expected and last == shown and steps == 1
             label_text = (
                 f"a change of {label} runs in {expected} with the words {shown!r} in the bench and fuzz build, in one "
@@ -1003,10 +1006,10 @@ def thread_cases(expect: testing.Expect) -> None:
         )
         expect(
             f"the configurations of the full suite and the other configurations run at the same time, in one heavy "
-            f"step: {len(spans)} runs, {printed.count('memwait: ')} memory waits",
+            f"step: {len(spans)} runs, {printed.count('memory: ')} reads of the memory",
             len(spans) == len(builds)
             and max(first for first, _ in spans) < min(last for _, last in spans)
-            and printed.count("memwait: ") == 1,
+            and printed.count("memory: ") == 1,
         )
         rule_commit = commit_change(root, BUILD_RULE_MODULE, "VALUE = 3\n", "Change the rule")
         early = replace(planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "clean")), jobs=8)
@@ -1028,6 +1031,33 @@ def thread_cases(expect: testing.Expect) -> None:
         label = (
             "the touched tests of the other configurations start when the build of ALWAYS holds its configure, before "
             f"the run of ALWAYS ends: the targets {regenerated}, the run of default {always} and of bench-fuzz {bench}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
+def memory_cases(expect: testing.Expect) -> None:
+    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the job count of the heavy step."""
+    with tempfile.TemporaryDirectory(prefix="gate-memory-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "notes.txt", "a change of the notes\n")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = replace(planted_gate(work, root, tree, "clean"), jobs=8, read=lambda: SMALL_MEMORY_GB)
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("notes.txt",)), False))
+        build = tree / "build"
+        flags = (build / "makeflags.txt").read_text(encoding="utf-8")
+        words = (build / "words.txt").read_text(encoding="utf-8").splitlines()
+        holds = (
+            verdict.is_accepted
+            and flags.startswith(f"-j{SMALL_MEMORY_JOBS} --jobserver-auth=fifo:")
+            and words[-1:] == [f"-j {SMALL_MEMORY_JOBS} --all"]
+            and f"memory: available {SMALL_MEMORY_GB:.1f} GB, {SMALL_MEMORY_JOBS} of 8 jobs" in printed
+        )
+        label = (
+            f"with {SMALL_MEMORY_GB} GB of available memory and 8 jobs of the gate, the jobserver and `loop test` get "
+            f"{SMALL_MEMORY_JOBS} jobs: MAKEFLAGS {flags!r} and the words {words[-1:]}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
@@ -1076,7 +1106,7 @@ def masked_error_cases(expect: testing.Expect) -> None:
         work = Path(work_text)
         planted = gate.Gate(work, work / "land", 2, False)
         with jobserver.connected(server.path) as client:
-            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, {}, False)
+            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, {}, client, 2, {}, False)
 
             def work_of(index: int) -> int:
                 """Wait for the stop in the first item and give Stopped, and give an error in the second item."""
@@ -1182,7 +1212,7 @@ def base_run_cases(expect: testing.Expect) -> None:
             and base_verdict.problems == batch_verdict.problems
             and base_verdict.final == head
             and not base_verdict.ledgers
-            and printed.count("memwait: ") == 1
+            and printed.count("memory: ") == 1
         )
         label = (
             f"the run of the base runs the red tests of the focus with --only, a configuration with no red test in the "
@@ -1244,6 +1274,7 @@ def main(argv: list[str]) -> int:
             changed_tests_cases,
             touched_cases,
             thread_cases,
+            memory_cases,
             stop_cases,
             masked_error_cases,
             rule_lock_cases,

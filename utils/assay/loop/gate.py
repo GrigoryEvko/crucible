@@ -143,9 +143,10 @@ THE RUN OF A CONFIGURATION
     to the commit that the composition started from.  `loop
     syntax --changed` gets the variable too.  Each check of the gate runs in
     one heavy step (assay.loop.heavy), with the lock of the repository of
-    the landing.  The step waits for the memory one time.  The landing holds
-    the session of the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).
-    The step of the gate then does not wait for it.  In the heavy step, each
+    the landing.  The step reads the memory one time, and the memory gives
+    the jobs of the step (THE JOBSERVER).  The landing holds the session of
+    the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).  The step of
+    the gate then does not wait for it.  In the heavy step, each
     configuration runs in a thread of its own (THE THREADS):
       1. A build directory with no graph of Ninja gets its configure:
          `cmake --preset PRESET -B BUILD`.
@@ -176,16 +177,19 @@ THE RUN OF A CONFIGURATION
     configuration with a problem stops the others (THE STOP).
 
 THE JOBSERVER
-    The heavy step makes one jobserver of the jobs of the gate
-    (assay.core.jobserver).  Each command of the step gets the variable
+    The heavy step gives the jobs of the gate, or a smaller count when the
+    available memory is small (THE MEMORY of assay.loop.heavy).  It makes
+    one jobserver of these jobs (assay.core.jobserver).  Each command of the
+    step gets the variable
     MAKEFLAGS of that jobserver.  The gate holds one slot of the jobserver
     for each command that it runs: its implicit slot, or one token.  The
     command then runs its first job on that slot.  ninja, ctest and `loop
     syntax` take one token for each other job.  `loop test` gives its build
     no -j with the jobserver, because ninja obeys the jobserver only with no
     -j (assay.loop.affected).  ctest and the pool of `loop syntax` get -j
-    JOBS too.  The jobs of all the configurations together are then at
-    most the jobs of the gate, and the memory stays that of one build.
+    with the jobs of the step too.  The jobs of all the configurations
+    together are then at most the jobs of the step, and the memory stays
+    that of one build.
     Each check makes a new jobserver.  A token that a stopped command did
     not give back then does not make the next check smaller.
 
@@ -516,8 +520,8 @@ class Candidate:
 class Verdict:
     """The result of the gate: the configurations that ran, each problem, and the wall times in seconds.
 
-    `seconds` holds the waits for the lock and for the memory.  `step_seconds` gives the time of each configuration in
-    its heavy step after the waits, in the sequence of `configurations`.  `final` is the commit that the gate judged
+    `seconds` holds the wait for the lock.  `step_seconds` gives the time of each configuration in its heavy step after
+    the wait, in the sequence of `configurations`.  `final` is the commit that the gate judged
     last, and `ledgers` holds each ledger that THE FALLS folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `kept` gives each row that a rule of `--keep` raised
     (THE KEPT ROWS).  `focus` gives each configuration with a problem (THE VERDICT).
@@ -770,10 +774,11 @@ def build_words(tree: Path, configuration: Configuration, jobs: int) -> list[str
 
 @dataclass(frozen=True, slots=True)
 class Gate:
-    """The gate of one session: the repository, the work directory, the jobs, --all-configurations, and the memory wait.
+    """The gate of one session: the repository, the work directory, the jobs, --all-configurations, and the memory.
 
-    `read` and `pause` are the reader of the available memory and the pause of the memory wait (assay.loop.heavy).
-    `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).
+    `jobs` is the most jobs of a heavy step.  `read` is the reader of the available memory, which gives the jobs of the
+    heavy step (THE MEMORY of assay.loop.heavy).  `run` names the directory of the logs of one run in LOGS, or it is ""
+    for LOGS itself (THE LOGS).
     """
 
     root: Path
@@ -781,7 +786,6 @@ class Gate:
     jobs: int
     is_every: bool
     read: heavy.Reader = heavy.available_gb
-    pause: heavy.Pause = time.sleep
     run: str = ""
 
     @property
@@ -958,12 +962,14 @@ class Gate:
             )
         try:
             with (
-                heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root, read=self.read, pause=self.pause, is_gate_step=True),
-                jobserver.serving(self.jobs) as server,
+                heavy.heavy_step(self.root, self.jobs, read=self.read, is_gate_step=True) as jobs,
+                jobserver.serving(jobs) as server,
                 jobserver.connected(server.path) as client,
             ):
                 flags = {jobserver.VARIABLE: server.makeflags}
-                step = Step(self, candidate, {**environment, **flags}, {**based, **flags}, client, counted, is_stacked)
+                step = Step(
+                    self, candidate, {**environment, **flags}, {**based, **flags}, client, jobs, counted, is_stacked
+                )
                 if is_each:
                     step.always_ready.set()
 
@@ -1014,8 +1020,9 @@ class Step:
     """The work of one heavy step of a check: its commands, its threads, its stop event and the locks of its rules.
 
     `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER), and `based` adds
-    the base of the change (THE RUN OF A CONFIGURATION).  `always_ready` tells that the build of ALWAYS holds the
-    configure of the change (THE THREADS).  `kept` receives each row that a rule of `--keep` raised (THE KEPT ROWS).
+    the base of the change (THE RUN OF A CONFIGURATION).  `jobs` is the job count of the heavy step and of its
+    jobserver.  `always_ready` tells that the build of ALWAYS holds the configure of the change (THE THREADS).  `kept`
+    receives each row that a rule of `--keep` raised (THE KEPT ROWS).
     """
 
     __slots__ = (
@@ -1030,6 +1037,7 @@ class Step:
         "environment",
         "gate",
         "is_stacked",
+        "jobs",
         "kept",
         "stop",
     )
@@ -1041,15 +1049,17 @@ class Step:
         environment: Mapping[str, str],
         based: Mapping[str, str],
         client: jobserver.Client,
+        jobs: int,
         counted: Mapping[str, Sequence[str]],
         is_stacked: bool,
     ) -> None:
-        """Keep the gate, the candidate, the two environments, the client of the jobserver and the counted rules."""
+        """Keep the gate, the candidate, the environments, the jobserver client, the jobs and the counted rules."""
         self.gate = gate
         self.candidate = candidate
         self.environment = dict(environment)
         self.based = dict(based)
         self.client = client
+        self.jobs = jobs
         self.counted = counted
         self.is_stacked = is_stacked
         self.stop = threading.Event()
@@ -1303,7 +1313,7 @@ class Step:
             return [problem]
         build = build_directory(self.gate.tree, configuration)
         log = f"{configuration.name}.syntax.log"
-        command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.gate.jobs)]
+        command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.jobs)]
         if self.run_logged(command, log, self.environment, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
         return self.checked_falls(configuration, COUNTED_RULES, counted)
@@ -1389,7 +1399,7 @@ class Step:
         report.unlink(missing_ok=True)
         logs = self.gate.logs
         log = f"{configuration.name}.test.log"
-        command = [*self.gate.master("loop"), "test", str(build), "-j", str(self.gate.jobs), *words]
+        command = [*self.gate.master("loop"), "test", str(build), "-j", str(self.jobs), *words]
         status = self.run_logged(command, log, self.environment, TEST_RUN_S)
         statuses: dict[str, ctest_reader.TestStatus] = {}
         if report.is_file():

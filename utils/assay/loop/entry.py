@@ -38,7 +38,11 @@ THE WORK
          evidence than the target of the tier (THE BUDGET).
     Each job runs as one heavy step of assay.loop.heavy.  A session of the
     gate then goes before it, and the other heavy steps of the host wait for
-    it.  A job that fails stops no other job.
+    it.  A job of a preset and a runner of evidence get the jobs that the
+    memory gives the step (THE MEMORY of assay.loop.heavy).  A campaign gets
+    one CPU for each job of its step (THE CAMPAIGN).  A different step of
+    STEPS holds only the lock, because its command gives its own job count.
+    A job that fails stops no other job.
 
 THE BUDGET
     --budget-s gives the wall time of the run, or DEFAULT_BUDGET_S of the
@@ -56,10 +60,14 @@ THE CAMPAIGN
     assay.loop.fuzz.  With no afl-fuzz, the job of each harness is blocked,
     and the report gives the reason.  Else the job runs `loop fuzz BUILD OUT
     HARNESS CPUS SECONDS`.  BUILD is CAMPAIGN_BUILD in the tree, and OUT is a
-    directory of the harness in it.  CPUS are at most CAMPAIGN_CORES CPUs of
-    this process that are not reserved CPUs of the host (reserved_cpus() of
-    assay.loop.fuzz, which reads them as `loop bench` does).  SECONDS is an
-    equal part of the remaining time for each remaining campaign.
+    directory of the harness in it.
+
+    CPUS are at most CAMPAIGN_CORES CPUs of this process that are not
+    reserved CPUs of the host (reserved_cpus() of assay.loop.fuzz, which
+    reads them as `loop bench` does).  The campaign gives its heavy step one
+    job for each of these CPUs.  CPUS then keeps one CPU for each job that
+    the memory gives the step (THE MEMORY of assay.loop.heavy).  SECONDS is
+    an equal part of the remaining time for each remaining campaign.
 
 THE REPORT
     Each run writes the directory TIER-TIME in REPORTS of the build directory
@@ -402,9 +410,12 @@ class Runner:
             outcome = self.evidence(job, prefix, deadline)
         elif job.kind is JobKind.STEP and job.step is not None and job.step.command[:2] == FUZZ_WORDS and job.item:
             outcome = self.campaign(job, prefix, deadline)
+        elif job.kind is JobKind.STEP:
+            with heavy.heavy_lock(self.root):
+                outcome = self.step(job, prefix, deadline)
         else:
-            with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root):
-                outcome = self.heavy_job(job, prefix, deadline)
+            with heavy.heavy_step(self.root, self.jobs) as step_jobs:
+                outcome = self.preset_job(job, prefix, deadline, step_jobs)
         return Outcome(
             outcome.job,
             outcome.state,
@@ -415,10 +426,8 @@ class Runner:
             outcome.reruns,
         )
 
-    def heavy_job(self, job: Job, prefix: Path, deadline: float) -> Outcome:
-        """Run a job of a preset or of a step in the heavy step of the caller."""
-        if job.kind is JobKind.STEP:
-            return self.step(job, prefix, deadline)
+    def preset_job(self, job: Job, prefix: Path, deadline: float, jobs: int) -> Outcome:
+        """Run a job of a preset in the heavy step of the caller, with the job count of that step."""
         build = job.build or self.root
         if not ninja_reader.graph_file(build).is_file():
             words = ["cmake", "--preset", job.name]
@@ -426,10 +435,10 @@ class Runner:
             if status != 0:
                 return self.ended(job, status, words, Path(f"{prefix}.configure.log"))
         if job.kind is JobKind.PARSE:
-            return self.parse(job, build, prefix, deadline)
+            return self.parse(job, build, prefix, deadline, jobs)
         if job.kind is JobKind.TESTS:
-            return self.tests(job, build, prefix, deadline)
-        return self.preset_tests(job, build, prefix, deadline)
+            return self.tests(job, build, prefix, deadline, jobs)
+        return self.preset_tests(job, build, prefix, deadline, jobs)
 
     def ended(self, job: Job, status: int | None, words: Sequence[str], log: Path) -> Outcome:
         """Return the outcome of a job when a command does not give the exit 0: stopped, or a failure with its command."""
@@ -437,9 +446,9 @@ class Runner:
             return Outcome(job, State.STOPPED, f"the budget ended during `{words[0]}`, see {log}")
         return Outcome(job, State.FAILED, f"a command exits {status}, see {log}", reruns=(" ".join(words),))
 
-    def parse(self, job: Job, build: Path, prefix: Path, deadline: float) -> Outcome:
+    def parse(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
         """Parse each unit of a parse build, and check the counted rules on its reports (THE WORK, 1)."""
-        commands = [[*self.master("loop"), "syntax", str(build), "-j", str(self.jobs)]]
+        commands = [[*self.master("loop"), "syntax", str(build), "-j", str(jobs)]]
         commands += [
             [*self.master("guard"), "check", "--rule", rule, "--build-dir", str(build)] for rule in COUNTED_RULES
         ]
@@ -450,10 +459,10 @@ class Runner:
                 return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, f"each unit parses, and the rules {', '.join(COUNTED_RULES)} hold")
 
-    def tests(self, job: Job, build: Path, prefix: Path, deadline: float) -> Outcome:
+    def tests(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
         """Build a build and run each test with no current pass through `loop test` (THE WORK, 2)."""
         before = len(loop_history.read_lines(build))
-        words = [*self.master("loop"), "test", str(build), "-j", str(self.jobs)]
+        words = [*self.master("loop"), "test", str(build), "-j", str(jobs)]
         log = Path(f"{prefix}.log")
         status = self.logged(words, log, deadline)
         lines = loop_history.read_lines(build)
@@ -470,11 +479,11 @@ class Runner:
         reruns = tuple(f"{ctest} --test-dir {build} -R '^{name}$' --output-on-failure" for name in names)
         return Outcome(job, State.FAILED, f"{failed} tests failed, see {log}", 0, ran, stored, reruns)
 
-    def preset_tests(self, job: Job, build: Path, prefix: Path, deadline: float) -> Outcome:
+    def preset_tests(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
         """Build a build and run each filtered test preset of it with ctest (THE WORK, 2)."""
         cmake = cmake_pin.configured_program(build, "cmake")
         ctest = cmake_pin.configured_program(build, "ctest")
-        words = [cmake, "--build", str(build), "-j", str(self.jobs)]
+        words = [cmake, "--build", str(build), "-j", str(jobs)]
         log = Path(f"{prefix}.build.log")
         status = self.logged(words, log, deadline)
         if status != 0:
@@ -538,14 +547,15 @@ class Runner:
         if not cpus or seconds < MINIMUM_RUNNER_S:
             return Outcome(job, State.NOT_RUN, "no free CPU, or no time for a campaign")
         build = self.root / CAMPAIGN_BUILD
-        words = [*self.master("loop"), "fuzz", str(build), str(build / "campaigns" / job.item), job.item]
-        words += [",".join(str(cpu) for cpu in cpus), str(seconds)]
         log = Path(f"{prefix}.log")
-        with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root):
+        with heavy.heavy_step(self.root, len(cpus)) as step_jobs:
+            used = cpus[:step_jobs]
+            words = [*self.master("loop"), "fuzz", str(build), str(build / "campaigns" / job.item), job.item]
+            words += [",".join(str(cpu) for cpu in used), str(seconds)]
             status = self.logged(words, log, deadline)
         if status != 0:
             return self.ended(job, status, words, log)
-        return Outcome(job, State.PASSED, f"a campaign of {seconds} s on {len(cpus)} CPUs")
+        return Outcome(job, State.PASSED, f"a campaign of {seconds} s on {len(used)} CPUs")
 
     def evidence_rows(self) -> list[evidence_status.Row]:
         """Return the rows of the evidence of the tree, and read them one time for the runners of a run."""
@@ -564,10 +574,10 @@ class Runner:
             text = f"no item of {target.rule} needs more evidence for the {self.tier} target"
             return Outcome(job, State.PASSED, text)
         budget_s = evidence_budget(rows, is_release, deadline - time.monotonic(), classes_left)
-        words = [*self.master("loop"), "evidence", "run", job.name, "--budget-s", f"{budget_s:.0f}"]
-        words += ["-j", str(self.jobs), *(["--release"] if is_release else [])]
         log = Path(f"{prefix}.log")
-        with heavy.heavy_step(heavy.FULL_LEVEL_GB, self.root):
+        with heavy.heavy_step(self.root, self.jobs) as step_jobs:
+            words = [*self.master("loop"), "evidence", "run", job.name, "--budget-s", f"{budget_s:.0f}"]
+            words += ["-j", str(step_jobs), *(["--release"] if is_release else [])]
             status = self.logged(words, log, deadline, budget_s + RUNNER_GRACE_S)
         if status == 0:
             return Outcome(job, State.PASSED, f"the runner added evidence in a budget of {budget_s:.0f} s")

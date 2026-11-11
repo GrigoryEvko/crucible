@@ -1,4 +1,4 @@
-"""heavy — the one lock of the heavy steps of the build host, and the wait for the memory of a heavy step.
+"""heavy — the one lock of the heavy steps of the build host, and the job count that the memory gives a heavy step.
 
 THE LOCK
     The work trees of one repository share the build host, and a large
@@ -40,18 +40,22 @@ THE COMMAND OF A STEP
     (assay.loop.land, THE LOCK OF A HEAVY STEP).
 
 THE MEMORY
-    While the step holds the lock, it reads the memory that the host keeps
-    available.  When the first sample gives the level, the step does not
-    wait.  After a sample below the level, the step waits until SAMPLES
-    samples in sequence, INTERVAL_S seconds apart, give the level.  A sample
-    below the level starts the count again.  The available memory is the
-    field MemAvailable of /proc/meminfo.  A step of a small number of named
-    targets or tests waits for NAMED_LEVEL_GB, and each other heavy step waits
-    for FULL_LEVEL_GB.  When the file cannot be read, the step does not wait,
-    and it writes a note.
+    While heavy_step() holds the lock, it reads one time the memory that the
+    host keeps available.  The available memory is the field
+    MemAvailable of /proc/meminfo.  The step keeps RESERVE_GB for the host,
+    and it gives GB_PER_JOB of the remaining memory to each job.  The job
+    count is the smaller of the count of the caller and the count of the
+    memory, with a minimum of one (jobs_for_memory()).  The step writes the
+    available memory and the two counts.  When the step cannot read the
+    file, it gives the job count of the caller, and it writes a note.
+
+    The step does not wait for the memory.  A wait for a level of the memory
+    does not make the memory of a build smaller, but a smaller job count
+    does.  `loop heavy` holds only the lock and reads no memory
+    (heavy_lock()), because its command gives its own job count.
 
 Usage
-    loop heavy [--memory-gb N] [-C DIR] -- COMMAND [ARGUMENT]...
+    loop heavy [-C DIR] -- COMMAND [ARGUMENT]...
 
     `loop heavy` runs one command as a heavy step, in the directory DIR, and
     it exits with the exit of the command.  A command that ends on a signal
@@ -61,7 +65,7 @@ Usage
 
 import contextlib
 import fcntl
-import time
+import math
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO
@@ -75,11 +79,12 @@ from assay.core.paths import REPO_ROOT
 LOCK_FILE = Path(".worktrees/.grun/heavy.lock")
 # The lock file of a session of the gate, relative to the main work tree of the repository (THE PRIORITY OF THE GATE).
 GATE_FILE = Path(".worktrees/.grun/gate.lock")
-# The levels of the available memory, in GB, and the samples of the wait (THE MEMORY).
-NAMED_LEVEL_GB = 8.0
-FULL_LEVEL_GB = 16.0
-SAMPLES = 3
-INTERVAL_S = 1.0
+# The memory of one job, in GB (THE MEMORY).  On 2026-11-11, 1030 compile records of the Debug build gave a mean peak
+# memory of 0.23 GB and a 90th percentile of 0.40 GB.  The 99th percentile was 0.51 GB, and the largest peak was
+# 0.76 GB.  GB_PER_JOB is approximately that 99th percentile.
+GB_PER_JOB = 0.5
+# The memory that a heavy step keeps for the host, in GB (THE MEMORY).
+RESERVE_GB = 2.0
 MEMORY_FILE = Path("/proc/meminfo")
 MEMORY_FIELD = "MemAvailable:"
 KB_PER_GB = 1024 * 1024
@@ -90,6 +95,7 @@ STEP_VARIABLE = "CRUCIBLE_HEAVY_STEP"
 STEP_VALUE = "1"
 
 type Reader = Callable[[], float | None]
+# A function that waits a number of seconds (assay.loop.land).
 type Pause = Callable[[float], None]
 # The check after the lock: it takes the open file of GATE_FILE, and it tells if a session of the gate runs.
 type SessionCheck = Callable[[IO[str]], bool]
@@ -177,57 +183,31 @@ def wait_for_gate(handle: IO[str]) -> None:
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def wait_for_memory(
-    level_gb: float, read: Reader = available_gb, pause: Pause = time.sleep
-) -> tuple[float, float | None]:
-    """Wait for the level of the available memory (THE MEMORY).
-
-    A first sample at the level or more ends the wait immediately.  After a first sample below the level, the wait ends
-    when SAMPLES samples in sequence give the level.
+def jobs_for_memory(requested: int, read: Reader = available_gb) -> int:
+    """Return the job count that the available memory holds, with a minimum of 1 (THE MEMORY).
 
     Args:
-        level_gb: The level of the available memory, in GB
+        requested: The job count of the caller, which is the maximum
         read: The reader of the available memory, which gives None when it cannot read it
-        pause: The function that waits one interval
 
     Returns:
-        The seconds of the wait, and the available memory of the last sample, or None when the reader cannot read it
-
-    Complexity: one sample for each interval of the wait, plus the first sample.
+        The count of the caller when the reader gives None.  Else the smaller of that count and the count of GB_PER_JOB
+        in the available memory less RESERVE_GB, with a minimum of 1
     """
     value = read()
-    if value is None or value >= level_gb:
-        return 0.0, value
-    waited = 0.0
-    good = 0
-    while good < SAMPLES:
-        pause(INTERVAL_S)
-        waited += INTERVAL_S
-        value = read()
-        if value is None:
-            return waited, None
-        good = good + 1 if value >= level_gb else 0
-    return waited, value
+    if value is None:
+        return requested
+    return max(1, min(requested, math.floor((value - RESERVE_GB) / GB_PER_JOB)))
 
 
 @contextlib.contextmanager
-def heavy_step(
-    level_gb: float,
-    root: Path = REPO_ROOT,
-    read: Reader = available_gb,
-    pause: Pause = time.sleep,
-    is_gate_step: bool = False,
-    is_session: SessionCheck = is_gate_running,
-) -> Iterator[None]:
-    """Hold the lock of the heavy steps for the block, and wait for the memory first (THE LOCK, THE MEMORY).
+def heavy_lock(root: Path, is_gate_step: bool = False, is_session: SessionCheck = is_gate_running) -> Iterator[None]:
+    """Hold the lock of the heavy steps for the block, and read no memory (THE LOCK).
 
     A step that is not a step of the gate also waits while a session of the gate runs (THE PRIORITY OF THE GATE).
 
     Args:
-        level_gb: The level of the available memory, in GB
         root: A tree of the repository
-        read: The reader of the available memory
-        pause: The function that waits one interval
         is_gate_step: True for a step of the gate, which does not wait for a session of the gate
         is_session: The check after the lock, which tells if a session of the gate started.  A step of the gate
             does not call it
@@ -243,14 +223,42 @@ def heavy_step(
                 break
             fcntl.flock(handle, fcntl.LOCK_UN)
         try:
-            waited, value = wait_for_memory(level_gb, read, pause)
-            if value is None:
-                check_report.write_line(f"memwait: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the step does not wait")
-            else:
-                check_report.write_line(f"memwait: available {value:.0f} GB after {waited:.0f} s")
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def heavy_step(
+    root: Path,
+    jobs: int,
+    read: Reader = available_gb,
+    is_gate_step: bool = False,
+    is_session: SessionCheck = is_gate_running,
+) -> Iterator[int]:
+    """Hold the lock of the heavy steps for the block, and give the block the job count of the memory (THE MEMORY).
+
+    The step reads the memory one time, after it gets the lock, and it does not wait for the memory (heavy_lock()).
+
+    Args:
+        root: A tree of the repository
+        jobs: The job count of the caller, which is the maximum of the step
+        read: The reader of the available memory, which gives None when it cannot read it
+        is_gate_step: True for a step of the gate, which does not wait for a session of the gate
+        is_session: The check after the lock, which tells if a session of the gate started.  A step of the gate
+            does not call it
+
+    Yields:
+        The job count of the step (jobs_for_memory())
+    """
+    with heavy_lock(root, is_gate_step, is_session):
+        value = read()
+        step_jobs = jobs_for_memory(jobs, lambda: value)
+        if value is None:
+            check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the step keeps {jobs} jobs")
+        else:
+            check_report.write_line(f"memory: available {value:.1f} GB, {step_jobs} of {jobs} jobs")
+        yield step_jobs
 
 
 def exit_of(completed: proc.Completed) -> int:
@@ -271,20 +279,14 @@ def main(argv: list[str]) -> int:
         check_report.write_line("loop heavy: put -- before the command", is_error=True)
         return ExitCode.USAGE
     split = argv.index("--")
-    parser = cli.parser("loop heavy", "Run one command under the lock of the heavy steps, after the memory wait.")
-    parser.add_argument(
-        "--memory-gb",
-        type=float,
-        default=FULL_LEVEL_GB,
-        help=f"the level of the available memory, {NAMED_LEVEL_GB:g} for a small number of named targets or tests",
-    )
+    parser = cli.parser("loop heavy", "Run one command under the lock of the heavy steps.")
     parser.add_argument("-C", dest="directory", type=Path, default=Path.cwd(), help="the directory of the command")
     options = parser.parse_args(argv[:split])
     command = argv[split + 1 :]
     if not command:
         check_report.write_line("loop heavy: give a command after --", is_error=True)
         return ExitCode.USAGE
-    with heavy_step(options.memory_gb, options.directory.resolve()):
+    with heavy_lock(options.directory.resolve()):
         try:
             completed = proc.run(
                 proc.Command(
