@@ -117,7 +117,6 @@ from assay.core import ledger as rule_ledger
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.core import report as check_report
-from assay.core import rows as rows_grammar
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
@@ -776,8 +775,6 @@ def budget_written(
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, row=cost_meter.ITEM_ROWS[shape], unit=units)
     return replace(ledger, base=base, comment=comment)
-
-
 
 
 def budget_member(rule_id: str) -> meta_runner.Member:
