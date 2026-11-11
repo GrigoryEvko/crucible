@@ -515,8 +515,8 @@ def self_test() -> int:
     expect("threshold_text writes a whole number with no exponent", threshold_text(33554432.0) == "33554432")
     expect("threshold_text keeps a fraction", threshold_text(1.25) == "1.25")
     with contextlib.redirect_stdout(io.StringIO()) as printed:
-        found_row = print_error_threshold("constexpr-ops")
-    expect("--error-threshold prints the rule constexpr-ops of the repository registry",
+        found_row = print_error_threshold("header-constexpr-ops")
+    expect("--error-threshold prints the rule header-constexpr-ops of the repository registry",
            found_row == 0 and printed.getvalue().strip().isdigit())
     with contextlib.redirect_stderr(io.StringIO()):
         expect("--error-threshold fails for a missing rule", print_error_threshold("no-such-check") == 1)

@@ -1465,14 +1465,16 @@ def runtime_flags(cxx: str, build_dir: Path) -> list[str]:
 def cxx_flags(include: Path) -> list[str]:
     """Return the flags of each compile of an emitted test or a measured program, with ``include`` as the include tree.
 
-    The operation limit is the limit of the build, the measured rule
-    constexpr-ops of utils/registry.txt.  An emitted test then compiles where
-    the build compiles it.  The code is position-independent.  The link line
-    of a program can make a position-independent executable (THE LINK OF A
-    PROGRAM).  A position-independent object links into each kind of
-    executable.
+    The operation limit is the limit of the build, which the root
+    CMakeLists.txt sets (assay.oracle.probe.constexpr_ops_limit()).  An
+    emitted test then compiles where the build compiles it.  The code is
+    position-independent.  The link line of a program can make a
+    position-independent executable (THE LINK OF A PROGRAM).  A
+    position-independent object links into each kind of executable.
     """
-    ops_limit = check_report.threshold_text(check_report.read_budgets()["constexpr-ops"].error)
+    from assay.oracle.probe import constexpr_ops_limit
+
+    ops_limit = constexpr_ops_limit()
     return ["-std=c++26", "-freflection", "-fcontracts", f"-fconstexpr-ops-limit={ops_limit}", "-fPIE",
             f"-I{include}", f"-I{TEST_DIR}", "-fdiagnostics-color=never"]
 

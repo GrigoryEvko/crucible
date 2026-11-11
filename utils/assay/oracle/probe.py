@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import proc
-from assay.core import report as check_report
+from assay.core.paths import REPO_ROOT
 from assay.oracle.model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
 from assay.readers import sarif
 
@@ -69,11 +69,30 @@ HEADS = {
     "semantics": "#include <fixy/session/CrashAssociation.h>\n#include <fixy/session/Semantics.h>\n"
                  "#include <type_traits>\n",
 }
-# The constexpr budget is the one that the project build passes, the measured
-# rule constexpr-ops of utils/registry.txt, so a probe answers where the build
-# answers.
+# The root CMakeLists.txt sets the operation limit of one constant evaluation of each compile of the tree, on one
+# line of its own.  A probe and an emitted test compile at that limit, so they answer where the build answers.
+OPS_LIMIT_FILE = "CMakeLists.txt"
+_OPS_LIMIT_LINE = re.compile(r"^set\(CRUCIBLE_CONSTEXPR_OPS_LIMIT ([1-9][0-9]*)\)$", re.MULTILINE)
+
+
+def constexpr_ops_limit(root: Path = REPO_ROOT) -> int:
+    """Return the operation limit of one constant evaluation of the build, from the root CMakeLists.txt of a tree.
+
+    Raises:
+        RuntimeError: If the file does not set CRUCIBLE_CONSTEXPR_OPS_LIMIT to a whole number on exactly one line
+    """
+    path = root / OPS_LIMIT_FILE
+    found = _OPS_LIMIT_LINE.findall(path.read_text(encoding="utf-8"))
+    if len(found) != 1:
+        raise RuntimeError(
+            f"{path} sets CRUCIBLE_CONSTEXPR_OPS_LIMIT on {len(found)} lines, and the oracle needs one line "
+            f"`set(CRUCIBLE_CONSTEXPR_OPS_LIMIT N)` with a whole number N"
+        )
+    return int(found[0])
+
+
 _FLAGS = ("-std=c++26", "-freflection", "-fcontracts", "-fdiagnostics-color=never",
-          f"-fconstexpr-ops-limit={check_report.threshold_text(check_report.read_budgets()['constexpr-ops'].error)}")
+          f"-fconstexpr-ops-limit={constexpr_ops_limit()}")
 
 
 @contextlib.contextmanager

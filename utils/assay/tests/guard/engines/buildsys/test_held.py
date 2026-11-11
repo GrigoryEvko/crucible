@@ -123,16 +123,6 @@ def rule_holder_cases(expect: testing.Expect) -> None:
         )
 
 
-def cmake_cases(expect: testing.Expect) -> None:
-    """The holder cmake refuses a threshold that is not an integer number of operations."""
-    row = rule_registry.measured_rule("constexpr-ops", 1000.5, 1000.5, "operations")
-    registry_text = rule_registry.planted([row])
-    rule = rule_registry.planted_rules([row])["constexpr-ops"]
-    with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
-        context = context_of(Path(scratch), BUILD_HEAD, [(str(rule_registry.REGISTRY_PATH), registry_text)])
-        expect("a threshold of 1000.5 operations is refused", is_refused(rule, context))
-
-
 def witness_cases(expect: testing.Expect) -> None:
     """The witness holds only when the plant gives a finding and the control gives none."""
     rule = tree_rule("total-link-cpu")
@@ -261,7 +251,6 @@ def main(argv: list[str]) -> int:
             gauge_cases,
             routing_cases,
             rule_holder_cases,
-            cmake_cases,
             witness_cases,
             fixture_write_cases,
             total_write_cases,

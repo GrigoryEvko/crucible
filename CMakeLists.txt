@@ -1089,16 +1089,18 @@ endif()
 # SECTION 2: GCC 16 — MAXIMUM PARANOIA
 #            220+ individual warning / hardening flags
 # ═══════════════════════════════════════════════════════════════
-# The operation limit of one constant evaluation is the error threshold of
-# the rule constexpr-ops in utils/registry.txt, and flag 201 below
-# applies it to each translation unit and, through the compile database,
-# to each negative fixture.  An evaluation of more operations stops the
-# compile.  A translation unit that needs more takes a source-file
-# COMPILE_OPTIONS property -fconstexpr-ops-limit=N beside this comment,
-# with its reason.  A source property comes last on the compile line, so
-# its limit wins.  No translation unit needs more at this time.
+# The operation limit of one constant evaluation is
+# CRUCIBLE_CONSTEXPR_OPS_LIMIT, the GCC default, and flag 201 below applies
+# it to each translation unit and, through the compile database, to each
+# negative fixture.  The session oracle reads the value from the line of
+# the set() below (utils/assay/oracle/probe.py), so keep that line in its
+# shape.  An evaluation of more operations stops the compile.  A
+# translation unit that needs more takes a source-file COMPILE_OPTIONS
+# property -fconstexpr-ops-limit=N beside this comment, with its reason.  A
+# source property comes last on the compile line, so its limit wins.  No
+# translation unit needs more at this time.
 include(cmake/Guards.cmake)
-crucible_rule_limit(constexpr-ops CRUCIBLE_CONSTEXPR_OPS_LIMIT)
+set(CRUCIBLE_CONSTEXPR_OPS_LIMIT 33554432)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(crucible_dialect INTERFACE
@@ -1245,7 +1247,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     "$<$<NOT:$<CONFIG:Debug>>:${CRUCIBLE_RELEASE_CODE_FLAGS}>"  # 196, 197  cmake/CodeFlags.cmake
     -fdiagnostics-color=always          # 199  colored output
     -ftemplate-backtrace-limit=0        # 200  full template errors
-    -fconstexpr-ops-limit=${CRUCIBLE_CONSTEXPR_OPS_LIMIT}  # 201  the rule constexpr-ops of the registry
+    -fconstexpr-ops-limit=${CRUCIBLE_CONSTEXPR_OPS_LIMIT}  # 201  the operation limit of section 2
     -Wvolatile                          # 204  deprecated volatile use
     -Wvla-larger-than=0                 # 205  reject ALL VLAs
 

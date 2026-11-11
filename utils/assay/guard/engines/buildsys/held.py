@@ -22,12 +22,6 @@ THE HOLDERS
       loop-evidence   judged() of assay.loop.evidence.status for the rows of
                       the file STATUS_FILE of that module in the build, in
                       the shape that `loop evidence status --json` prints
-      cmake           compile_alone() of
-                      assay.guard.engines.buildsys.header_constexpr for each
-                      unit of the compile database, at the error threshold of
-                      the rule.  crucible_rule_limit() of cmake/Guards.cmake
-                      gives each compile of the tree that threshold as its
-                      -fconstexpr-ops-limit
       a rule ID       the findings of that rule on the plant
     The field holder of a held rule names the function of its holder that
     judges it.  The rule rule-implementations makes sure that the judge of the
@@ -75,8 +69,7 @@ THE FINDINGS
 
 `guard selftest tests.guard.engines.buildsys.test_held` does a test of the module.
 
-Complexity: one read of the planted inputs of the holder for each plant, and one compile of each unit for the holder
-cmake.
+Complexity: one read of the planted inputs of the holder for each plant.
 """
 
 import contextlib
@@ -93,17 +86,14 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import REPO_ROOT
-from assay.guard.engines.buildsys import cost_budgets, header_constexpr, planted, test_time
+from assay.guard.engines.buildsys import cost_budgets, planted, test_time
 from assay.guard.engines.buildsys.runner import BuildContext
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import census as build_census
-from assay.readers import compdb
 from assay.readers import ctest as ctest_reader
 
 # The file of the planted records of the gauge in a planted build, one record of `loop gauge --record` on each line.
 GAUGE_RECORDS = "gauge-records.jsonl"
-# The kind of the finding of an evaluation over the operation limit, for the holder cmake.
-OVER_LIMIT = "over-limit"
 # The rule of the fixture driver that judges the errors that no regex of a fixture matches.
 OWN_REASON = "fixture-own-reason"
 # The two measured rules of the fixture driver (THE WRITE).  The reason of a new row of their ledgers when the write
@@ -285,47 +275,6 @@ def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[ch
     return [item for item in found if isinstance(item, check_report.Finding)]
 
 
-def cmake_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
-    """Return an error for each constant evaluation of a unit of the planted build over the limit of the rule.
-
-    Complexity: one compile of each unit of the compile database.
-
-    Raises:
-        NotApplicable: If the threshold is not an integer, the compile database does not read, or a unit fails for a
-            cause other than the limit
-    """
-    budget = context.budget(rule.id)
-    if budget.error != int(budget.error) or budget.error < 1:
-        raise unreadable(
-            f"the error threshold {budget.error:g} of {rule.id}", "it is not an integer number of operations"
-        )
-    limit = int(budget.error)
-    try:
-        entries = context.entries()
-    except compdb.CompdbError as problem:
-        raise unreadable("the compile database", problem) from None
-    found: list[check_report.Finding] = []
-    for entry in entries:
-        outcome = header_constexpr.compile_alone(entry, limit, context.root)
-        if outcome.others:
-            raise unreadable(
-                f"the compile of {entry.file}", f"it fails for a cause other than the limit: {outcome.others[0]}"
-            )
-        found += [
-            check_report.Finding(
-                "error",
-                context.shown(entry.file),
-                0,
-                rule.id,
-                f"the constant evaluation at {owner} runs more than {limit} operations, and the compile stops",
-                OVER_LIMIT,
-                owner,
-            )
-            for owner in outcome.owners
-        ]
-    return found
-
-
 HOLDERS: dict[str, Judge] = {
     "guard-warnings": warnings_findings,
     "loop-history": history_findings,
@@ -333,7 +282,6 @@ HOLDERS: dict[str, Judge] = {
     "loop-test-step": test_step_findings,
     "loop-fixture": fixture_findings,
     "loop-evidence": evidence_findings,
-    "cmake": cmake_findings,
 }
 
 
