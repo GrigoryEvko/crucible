@@ -29,12 +29,12 @@ THE LEDGER
     utils/ledgers/heavy-include.txt counts the includes of each file and
     header (assay.guard.engines.plugin.counted, THE COUNTED RULES).  The count
     of a key is its largest count over the configurations of the landing gate.
-    A row with no reason is an include that the tree holds at this time, and
-    each run gives one warning for it.  A row with a reason is a header that
-    owns the heavy header on purpose, such as the one door of a system header.
-    Such a row gives no warning.  `guard write --rule heavy-include --admit
-    --reason TEXT` writes such a row.  A reason row of a prefix also gives the
-    reason of a row (assay.core.ledger, THE REASON OF A PREFIX).
+    A row with no reason is an include that the tree holds at this time.  A
+    row with a reason is a header that owns the heavy header on purpose, such
+    as the one door of a system header.  `guard write --rule heavy-include
+    --admit --reason TEXT` writes such a row.  A reason row of a prefix also
+    gives the reason of a row (assay.core.ledger, THE REASON OF A PREFIX).
+    A row gives no output, with a reason or with none.
 
 THE VERDICT
     * A count more than its ledger count is an error: a new include of a heavy
@@ -43,8 +43,6 @@ THE VERDICT
       assay.core.ledger).  The landing gate writes the lower count.
     * An include of an unmeasured header is an error in each case: measure the
       header.  The plugin then gives `heavy-include` or no finding.
-    * Each row with no reason of its own or of a prefix that the build holds
-      gives a warning.
     * A heavy or a light row is an error when its kind does not agree with
       its measure and the threshold of this rule (cost_problems).  A rule
       table with no such row is an error too.  The plugin reads the kinds
@@ -162,18 +160,6 @@ def evaluate(
                     f"alone than <meta> times the threshold of the rule {RULE}, and each translation unit that includes "
                     f"{key.path} pays it.  {ADVICE}.  A header that owns {header} on purpose gets a row with its reason: "
                     f"`{command} --admit --reason TEXT`",
-                )
-            )
-        elif measured > 0 and not ledger.kept_reason(key):
-            found.append(
-                check_report.Finding(
-                    "warning",
-                    shown,
-                    line,
-                    RULE,
-                    f"{key.path} includes {header}, which costs more alone than <meta> times the threshold of the rule "
-                    f"{RULE}.  Each translation unit that includes {key.path} pays it.  {ADVICE}, and write the ledger "
-                    f"again",
                 )
             )
     return found

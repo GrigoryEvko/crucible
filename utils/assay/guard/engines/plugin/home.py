@@ -81,8 +81,9 @@ THE LEDGER
     federation-outside-home and owner-outside-home (REFUSED_KINDS): such a
     finding is an error in each build, and a write refuses it.  The row of an
     open read of a gate of include/crucible/ gives its reason, and a row with
-    no reason is an error.  Each such read gives a warning, and the debt then
-    stays in the output.
+    no reason is an error.  A row with its reason gives no output, as each
+    other row of the ledger does.  `guard list --path FILE` prints the rows
+    of a file.
 
 Usage
     guard check --rule home --build-dir DIR [--warnings-dir DIR]
@@ -355,9 +356,9 @@ def is_crucible_gate(path: str) -> bool:
 def crucible_reads(
     rule: rule_registry.Rule, root: Path, found: Sequence[check_report.Finding]
 ) -> list[check_report.Finding]:
-    """Give an error for each open read of a crucible gate with a row with no reason, and a warning for each other.
+    """Give an error for each open read of a crucible gate whose row gives no reason (THE LEDGER).
 
-    Complexity: linear in the findings, with one read of the ledger.
+    A row with its reason gives no finding.  Complexity: linear in the findings, with one read of the ledger.
     """
     try:
         ledger = rule_ledger.read(rule, root)
@@ -368,30 +369,18 @@ def crucible_reads(
         if item.kind != Kind.OPEN_READ or not is_crucible_gate(item.path):
             continue
         entry = ledger.base.get(rule_ledger.key_of(item))
-        if entry is None:
+        if entry is None or entry.reason:
             continue
-        if not entry.reason:
-            result.append(
-                check_report.Finding(
-                    "error",
-                    rule_ledger.shown_path(RULE),
-                    entry.line,
-                    RULE,
-                    f"a gate of {CRUCIBLE_TREE} reads the open template {item.entity} at {item.path}:{item.line}, "
-                    f"and its row gives no reason.  Give the reason in the REASON cell of its row",
-                )
+        result.append(
+            check_report.Finding(
+                "error",
+                rule_ledger.shown_path(RULE),
+                entry.line,
+                RULE,
+                f"a gate of {CRUCIBLE_TREE} reads the open template {item.entity} at {item.path}:{item.line}, "
+                f"and its row gives no reason.  Give the reason in the REASON cell of its row",
             )
-        else:
-            result.append(
-                check_report.Finding(
-                    "warning",
-                    item.path,
-                    item.line,
-                    RULE,
-                    f"the gate reads the open template {item.entity}, and a unit can specialize it.  The ledger holds "
-                    f"the read as debt: {entry.reason}",
-                )
-            )
+        )
     return result
 
 

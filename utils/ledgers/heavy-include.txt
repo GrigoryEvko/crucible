@@ -9,11 +9,12 @@
 # rows judges each build, and the count of a key is its largest count over the configurations of the
 # landing gate:
 #   PATH | heavy-include | COUNT | <header> | -
-#     The includes that the tree holds today.  Each run gives a warning for the row.  A landing that
-#     builds each configuration of the gate lowers the row when the include goes.
+#     The includes that the tree holds today.  A landing that builds each configuration of the gate
+#     lowers the row when the include goes.
 #   PATH | heavy-include | COUNT | <header> | REASON
 #     A header that owns a heavy header on purpose, for example the one door of a system facility.  The
-#     reason makes the row a keep row, and the row gives no warning.
+#     reason makes the row a keep row.
+# A row gives no output, with a reason or with none.
 format 1
 rule heavy-include
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof

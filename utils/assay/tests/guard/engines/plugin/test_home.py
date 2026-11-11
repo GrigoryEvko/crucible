@@ -254,17 +254,9 @@ def judge_cases(expect: testing.Expect) -> None:
 
         judged = judged_with("a planted runtime read", [FORGED, AT_HOME, DOOR_AT_HOME, OPEN_READ])
         expect(
-            "the rows admit each finding, and a row of a file that the build does not compile is not judged",
-            not [item for item in judged if item.level == "error"],
-        )
-        expect(
-            "a crucible read that a row admits gives one warning with its reason",
-            [
-                item.message.endswith("a planted runtime read")
-                for item in judged
-                if item.level == "warning" and item.path == OPEN_READ.file
-            ]
-            == [True],
+            "the rows admit each finding, a crucible read whose row gives its reason gives no finding, and a row of a "
+            "file that the build does not compile is not judged",
+            judged == [],
         )
         judged = judged_with("", [FORGED, AT_HOME, DOOR_AT_HOME, OPEN_READ])
         expect(

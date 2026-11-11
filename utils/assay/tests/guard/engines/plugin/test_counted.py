@@ -77,7 +77,7 @@ def key_cases(expect: testing.Expect) -> None:
 
 
 def verdict_cases(expect: testing.Expect) -> None:
-    """Check the verdict of the rule heavy-include: each count against its row, and the warnings."""
+    """Check the verdict of the rule heavy-include: each count against its row, with no output for a row."""
     with tempfile.TemporaryDirectory(prefix="counted-") as work:
         root = Path(work)
         plant_tree(root, "a.h | heavy-include | 2 | <chrono> | -\nb.h | heavy-include | 1 | <thread> | a door\n")
@@ -89,8 +89,8 @@ def verdict_cases(expect: testing.Expect) -> None:
         ]
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, base_found), None))
         expect(
-            "a count equal to its row passes, with a warning for a row with no reason and none for a keep row",
-            status == 0 and "a.h includes <chrono>" in text and "b.h includes" not in text,
+            "a count equal to its row passes, and a row gives no finding, with a reason or with none",
+            status == 0 and "a.h includes" not in text and "b.h includes" not in text and ": warning:" not in text,
         )
         more = [*base_found, finding("c.h", 4, KIND, "<chrono>")]
         status, text = testing.captured(lambda: heavy_include.run(rule, context_of(root, more), None))

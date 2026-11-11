@@ -5,7 +5,7 @@
 #                                                 refuses it
 #   PATH | open-read | N | TEMPLATE | REASON      N gates of PATH that read TEMPLATE, which a unit can
 #                                                 specialize.  The row of a gate of include/crucible/ gives
-#                                                 its reason, and each such read gives a warning
+#                                                 its reason, and a row with no reason is an error
 #   PATH | second-body | admit | ENTITY | REASON  a reviewed second body of combine_ids, with its reason
 # Each count only falls.  No row admits a finding of the kinds federation-outside-home and owner-outside-home.
 # `python3 utils/bin/guard explain home` tells the rule, and
