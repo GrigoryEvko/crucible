@@ -128,7 +128,7 @@ def tree_cases(expect: Callable[[str, bool], None]) -> None:
         "the pin table of the tree reads, and each tool of an install has a row for linux-x86_64",
         all(
             pin_table.find(pins, name, "linux-x86_64") is not None
-            for name in ("tree-sitter-kit", "ast-grep", "cmake", "gcc", "python")
+            for name in ("tree-sitter-kit", "cmake", "gcc", "python")
         ),
     )
     python = pin_table.find(pins, "python", "")

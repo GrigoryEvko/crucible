@@ -3,7 +3,7 @@
 Each check of a property also runs against a stand-in for the behavior that
 the property forbids, and the check must reject that stand-in.  An install of
 a planted tool runs with no network: a planted pin table names the SHA-256 of
-a planted zip, and the fetch copies the zip.
+a planted archive, and the fetch copies the archive.
 
 `guard selftest tests.setup.test_install` runs the test.  Each case prints one
 line.  Exit 0 when each case holds, else 1.
@@ -193,19 +193,13 @@ def check_cases(expect: Expect, work: Path) -> None:
            refused(lambda: install.check_fork_parse("(argument_list (preproc_ifdef) (ERROR))"), 2))
     expect("the parse check rejects an output with no conditional",
            refused(lambda: install.check_fork_parse("(argument_list (number_literal))"), 2))
-    ast_grep = install.TOOLS["ast-grep"]
-    ast_grep_pin = install.pin_of(ast_grep, table, "linux-x86_64")
-    expect("the version check of ast-grep accepts the pinned version",
-           not refused(lambda: install.check_named_version("ast-grep", f"ast-grep {ast_grep_pin.version}",
-                                                           ast_grep_pin.version)))
-    expect("the version check of ast-grep rejects another version",
-           refused(lambda: install.check_named_version("ast-grep", "ast-grep 0.1.0", ast_grep_pin.version), 2))
+    ruff_pin = install.pin_of(install.TOOLS["ruff"], table, "linux-x86_64")
+    expect("the version check of ruff accepts the pinned version",
+           not refused(lambda: install.check_named_version("ruff", f"ruff {ruff_pin.version}", ruff_pin.version)))
+    expect("the version check of ruff rejects another version",
+           refused(lambda: install.check_named_version("ruff", "ruff 0.1.0", ruff_pin.version), 2))
     expect("the version check rejects the line of a different program",
-           refused(lambda: install.check_named_version("ruff", f"ast-grep {ast_grep_pin.version}",
-                                                       ast_grep_pin.version), 2))
-    expect("the fixture check accepts the one real command", not refused(lambda: install.check_fixture_lines("0")))
-    for lines, what in (("0,2", "a match in the heredoc body"), ("0,4", "a match in the comment"), ("", "no match")):
-        expect(f"the fixture check rejects {what}", refused(lambda: install.check_fixture_lines(lines), 2))
+           refused(lambda: install.check_named_version("ruff", f"mypy {ruff_pin.version}", ruff_pin.version), 2))
     cmake = install.TOOLS["cmake"]
     cmake_pin = install.pin_of(cmake, table, "linux-x86_64")
     version = cmake_pin.version
@@ -232,19 +226,19 @@ def check_cases(expect: Expect, work: Path) -> None:
                                                           mold_pin.version), 2)
            and refused(lambda: install.check_mold_version(f"GNU ld (GNU Binutils) {mold_pin.version}",
                                                           mold_pin.version), 2))
-    expect("each tool resolves linux-x86_64, and ast-grep, the kit and clang-format resolve darwin-aarch64",
+    expect("each tool resolves linux-x86_64, and the kit and clang-format resolve darwin-aarch64",
            all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
                for name in install.TOOLS)
            and all(install.pin_of(install.TOOLS[name], table, "darwin-aarch64").platform == "darwin-aarch64"
-                   for name in ("tree-sitter", "ast-grep", "clang-format")))
+                   for name in ("tree-sitter", "clang-format")))
     expect("a platform with no pin is rejected with the status 4",
            refused(lambda: install.pin_of(install.TOOLS["tree-sitter"], table, "windows-i686"), 4)
            and refused(lambda: install.pin_of(cmake, table, "darwin-aarch64"), 4))
     expect("the wheel of x86_64 is the manylinux2014 wheel", PurePosixPath(cmake_pin.source).name
            == f"cmake-{version}-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl")
     root = work / "tools"
-    for name, slug in (("tree-sitter", "linux-x64"), ("ast-grep", "x86_64-unknown-linux-gnu"), ("cmake", "x86_64"),
-                       ("mold", "x86_64"), ("clang-format", "x86_64")):
+    for name, slug in (("tree-sitter", "linux-x64"), ("cmake", "x86_64"), ("mold", "x86_64"),
+                       ("clang-format", "x86_64")):
         tool = install.TOOLS[name]
         pin = install.pin_of(tool, table, "linux-x86_64")
         directory = install.directory_of(tool, pin, root, table)
@@ -273,19 +267,8 @@ def check_cases(expect: Expect, work: Path) -> None:
 # ── An install with no network ─────────────────────────────────────
 
 
-def planted_zip(path: Path, version: str, lines: str) -> Path:
-    """Write a zip of a stand-in ast-grep that gives VERSION and matches the fixture on LINES."""
-    matches = ",".join(f'{{"range":{{"start":{{"line":{line}}}}}}}' for line in lines.split(",") if line)
-    script = (f'#!/bin/sh\nif [ "$1" = --version ]; then echo "ast-grep {version}"; exit 0; fi\n'
-              f"echo '[{matches}]'\n")
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("ast-grep", script)
-    return path
-
-
-def planted_table(source: Path, digest: str, name: str = "ast-grep", via: str = "archive",
-                  version: str = "9.9.9") -> install.Pins:
-    """Return a pin table with one pin of this host, with the source and the digest, by default an ast-grep."""
+def planted_table(source: Path, digest: str, name: str, via: str = "archive", version: str = "9.9.9") -> install.Pins:
+    """Return a pin table with one pin of the tool NAME for this host, with the source and the digest."""
     return pin_table.parse(f"# a planted pin table\nformat 1\npin {name} via={via} version={version} "
                            f"platform={pin_table.host_platform()} source=file://{source} sha256={digest} | a stand-in\n",
                            "planted")
@@ -300,36 +283,6 @@ def leftovers(root: Path) -> list[str]:
     """Return the staging and retired directories that an install left in the tools directory."""
     return sorted(child.name for child in root.iterdir() if child.name.startswith((install.STAGING_PREFIX,
                                                                                   install.RETIRED_PREFIX)))
-
-
-def install_cases(expect: Expect, work: Path) -> None:
-    """Install a planted tool, and refuse a download with another digest, and a tool that fails its check."""
-    if pin_table.host_platform() not in install.TOOLS["ast-grep"].slugs:
-        expect("the install cases need a host platform of ast-grep", True)
-        return
-    good = planted_zip(work / "good.zip", "9.9.9", "0")
-    table = planted_table(good, install.sha256_of(good))
-    root = work / "install"
-    directory = install.install("ast-grep", root, copy_fetch, table)
-    expect("an install of a planted tool unpacks, checks and stamps it",
-           (directory / "ast-grep").is_file() and (directory / install.STAMP).read_text().startswith("9.9.9 ")
-           and leftovers(root) == [])
-    expect("the installed tool is found, and a second install keeps it",
-           install.installed("ast-grep", root, table) == directory
-           and install.install("ast-grep", root, copy_fetch, table) == directory)
-    other_root = work / "wrong-digest"
-    wrong = planted_table(good, "0" * 64)
-    expect("an install refuses a download whose SHA-256 is not the digest of its pin, with the status 2",
-           refused(lambda: install.install("ast-grep", other_root, copy_fetch, wrong), 2))
-    expect("the refused download installs nothing and leaves no staging directory",
-           [child.name for child in other_root.iterdir()] == [])
-    bad = planted_zip(work / "bad.zip", "9.9.9", "0,2")
-    bad_root = work / "bad-fixture"
-    expect("an install refuses a tool that reads the heredoc body as a command, with the status 2",
-           refused(lambda: install.install("ast-grep", bad_root, copy_fetch, planted_table(bad, install.sha256_of(bad))),
-                   2) and [child.name for child in bad_root.iterdir()] == [])
-    expect("a tool that is absent is not installed, with the status 3",
-           refused(lambda: install.installed("ast-grep", work / "nothing", table), 3))
 
 
 # ── A program of a wheel with no network ───────────────────────────
@@ -416,7 +369,11 @@ def planted_mold_table(source: Path) -> install.Pins:
 
 
 def tarball_cases(expect: Expect, work: Path) -> None:
-    """Install a planted tarball of mold, and refuse a tarball with no ld.mold and a mold of a different version."""
+    """Install a planted tarball of mold and find it again.
+
+    Then refuse a download with a different digest, a tarball with no
+    ld.mold, a mold of a different version and a mold that is missing.
+    """
     if pin_table.host_platform() not in install.TOOLS["mold"].slugs:
         expect("the install cases of mold need a host platform of mold", True)
         return
@@ -432,7 +389,19 @@ def tarball_cases(expect: Expect, work: Path) -> None:
     )
     expect("--print-bin prints the bin directory that holds ld.mold",
            install.program("mold", root, table) == directory / "bin")
-    unlinked = planted_mold_tarball(work / "unlinked", "9.9.9", has_link=False)
+    expect("the installed tool is found, and a second install keeps it",
+           install.installed("mold", root, table) == directory
+           and install.install("mold", root, copy_fetch, table) == directory)
+    wrong_root = work / "wrong-digest"
+    expect(
+        "an install refuses a download whose SHA-256 is not the digest of its pin, with the status 2, and installs "
+        "nothing and leaves no staging directory",
+        refused(lambda: install.install("mold", wrong_root, copy_fetch, planted_table(good, "0" * 64, "mold")), 2)
+        and sorted(child.name for child in wrong_root.iterdir()) == [],
+    )
+    expect("a tool that is absent is not installed, with the status 3",
+           refused(lambda: install.installed("mold", work / "nothing", table), 3))
+    unlinked =planted_mold_tarball(work / "unlinked", "9.9.9", has_link=False)
     unlinked_root = work / "no-link"
     expect(
         "an install refuses a tarball with no ld.mold, with the status 2, and adds nothing",
@@ -536,8 +505,8 @@ def main(argv: list[str]) -> int:
 
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
-        for group, cases in (("directories", directory_cases), ("checks", check_cases), ("installs", install_cases),
-                             ("wheels", wheel_cases), ("tarballs", tarball_cases), ("pip", pip_cases)):
+        for group, cases in (("directories", directory_cases), ("checks", check_cases), ("wheels", wheel_cases),
+                             ("tarballs", tarball_cases), ("pip", pip_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:

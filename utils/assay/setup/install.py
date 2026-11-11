@@ -1,7 +1,7 @@
 """setup install — install each pinned tool, and find the program of an installed tool.
 
 usage:
-    setup install [TOOL]...           install each TOOL, by default tree-sitter, ast-grep, cmake and mold
+    setup install [TOOL]...           install each TOOL, by default tree-sitter, cmake and mold
     setup install --print-bin TOOL    print the program of an installed TOOL.  No network
     setup install --print-dir TOOL    print the install directory of TOOL, also when it is absent.  No network
 
@@ -13,9 +13,7 @@ THE TOOLS
                  runtime loads such a grammar.  So the CLI of the kit is the
                  only program that can read the grammar, and each AST gate
                  calls it.  --print-bin prints bin/tree-sitter of the kit.
-    ast-grep     ast-grep (the pin ast-grep), which reads each shell script
-                 with its bash grammar.  --print-bin prints the binary.
-    cmake        The cmake and the ctest of the pin cmake: the CMake prefix
+    cmake       The cmake and the ctest of the pin cmake: the CMake prefix
                  of the manylinux wheel of CMake on PyPI.  A wheel is a zip
                  file, so the install needs no pip.  --print-bin prints the
                  bin directory.
@@ -57,9 +55,8 @@ FAIL-CLOSED PINNING
     a SHA256SUMS file of a release: a release that uploads an asset again
     uploads its SHA256SUMS again, so the file shows only that the two agree.
     After the unpack, the kit must give the pinned lineage in MANIFEST.txt
-    and parse a fixture that only the fork parses, ast-grep must give its
-    pinned version and read a fixture as the guards need, and cmake and
-    ctest must give their pinned version.  mold and its link ld.mold must give
+    and parse a fixture that only the fork parses, and cmake and ctest must
+    give their pinned version.  mold and its link ld.mold must give
     the pinned version.  mypy must give its pinned version
     and the word that its compiled wheel gives, and ruff and clang-format must
     give their pinned version.  A failure at each step installs nothing.
@@ -100,7 +97,6 @@ is absent.
 
 import functools
 import hashlib
-import json
 import os
 import shutil
 import sys
@@ -134,17 +130,12 @@ STAMP = ".crucible-pin"
 LAST_USE = ".last-use"
 STAGING_PREFIX = ".staging."
 RETIRED_PREFIX = ".retired."
-DEFAULT_TOOLS = ("tree-sitter", "ast-grep", "cmake", "mold")
+DEFAULT_TOOLS = ("tree-sitter", "cmake", "mold")
 INSTALL_COMMAND = "python3 utils/bin/setup install"
 
 # The fixture that only the fork of the kit parses: a conditional inside an argument list.  The upstream
 # grammar reports an error node there, and the fork reports the conditional.
 KIT_FIXTURE = "void g(int);\nvoid f() {\n    g(\n#ifdef A\n        1\n#else\n        2\n#endif\n    );\n}\n"
-# The fixture of ast-grep: a git command, the same text in a heredoc body, and the same text in a comment.  The
-# guards need exactly the command on line 0.
-AST_GREP_FIXTURE = ('git -C "$tmp" commit -q -m x\ncat > note <<EOF\ngit commit -m fixture\nEOF\n'
-                    '# git commit -m example\n')
-AST_GREP_PATTERN = "git $$$ARGS"
 # The options of pip for a tool of via=pip (THE PIP TOOLS): no configuration file and no environment of pip, no index,
 # a hash for each package, wheels only, no cache, and no warning about the packages of the Python that runs pip.
 PIP_OPTIONS = ("--isolated", "--no-index", "--require-hashes", "--only-binary", ":all:", "--no-cache-dir",
@@ -538,41 +529,11 @@ def kit_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pin
     return None
 
 
-# ast-grep.
-
-
-def verify_ast_grep(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
-    """Make sure that the binary of a directory gives the pinned version and reads the fixture as the guards need.
-
-    Raises:
-        InstallError: If a check fails
-    """
-    binary = directory / "ast-grep"
-    if not is_executable(binary):
-        raise InstallError(f"{binary} is missing or not executable.", NOT_PINNED)
-    status, output = run_program([str(binary), "--version"], with_errors=True)
-    if status != 0:
-        raise InstallError(f"{binary} --version fails.", NOT_PINNED)
-    check_named_version("ast-grep", output.rstrip("\n"), pin.version)
-    with tempfile.TemporaryDirectory(prefix="setup-ast-grep-") as scratch:
-        fixture = Path(scratch) / "fixture.sh"
-        fixture.write_text(AST_GREP_FIXTURE, encoding="utf-8")
-        try:
-            completed = proc.run(proc.Command([str(binary), "run", "--lang", "bash", "-p", AST_GREP_PATTERN,
-                                               "--json=compact", str(fixture)], timeout_s=PROGRAM_TIMEOUT_S))
-        except proc.ToolFailed as problem:
-            raise InstallError(f"the fixture run fails.\n{problem}", NOT_PINNED) from None
-    if completed.exit != 0:
-        raise InstallError(f"the fixture run fails.\n{completed.out}{completed.err}", NOT_PINNED)
-    try:
-        matches = json.loads(completed.out)
-    except json.JSONDecodeError:
-        raise InstallError("the output of the fixture run is not JSON.", NOT_PINNED) from None
-    check_fixture_lines(",".join(str(match["range"]["start"]["line"]) for match in matches))
+# The version line of ruff, and the stamp of cmake, mold and clang-format.
 
 
 def check_named_version(name: str, line: str, version: str) -> None:
-    """Make sure that the output of `NAME --version` of ast-grep or ruff is the name and the pinned version.
+    """Make sure that the output of `NAME --version` of ruff is the name and the pinned version.
 
     Raises:
         InstallError: If it names a different program or a different version
@@ -581,39 +542,13 @@ def check_named_version(name: str, line: str, version: str) -> None:
         raise InstallError(f"the binary reports {line!r}, the pin says {name} {version}.", NOT_PINNED)
 
 
-def check_fixture_lines(lines: str) -> None:
-    """Make sure that the fixture rule matches exactly the command on line 0.
-
-    A match on line 2 is the heredoc body, and a match on line 4 is the comment.
-
-    Raises:
-        InstallError: If the lines differ
-    """
-    if lines != "0":
-        raise InstallError(f"the fixture matches on the lines [{lines}], and the guards need exactly [0].",
-                           NOT_PINNED)
-
-
-def unpack_zip(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
-    """Unpack the zip of ast-grep into staging/out, give the binary its mode bit, and return staging/out."""
-    import zipfile
-
-    out = staging / "out"
-    with zipfile.ZipFile(download_path) as archive:
-        archive.extractall(out)
-    binary = out / "ast-grep"
-    if binary.is_file():
-        binary.chmod(binary.stat().st_mode | 0o111)
-    return out
-
-
 def version_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
-    """Return the stamp of ast-grep, cmake, mold or clang-format: the version and the SHA-256."""
+    """Return the stamp of cmake, mold or clang-format: the version and the SHA-256."""
     return f"{pin.version} {pin.digest}\n"
 
 
 def version_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
-    """Return why the stamp of ast-grep, cmake, mold or clang-format does not name the pin, or None."""
+    """Return why the stamp of cmake, mold or clang-format does not name the pin, or None."""
     try:
         found = (directory / STAMP).read_text(encoding="utf-8").strip()
     except OSError:
@@ -847,12 +782,6 @@ TOOLS: dict[str, Tool] = {
         {"linux-x86_64": "linux-x64", "linux-aarch64": "linux-arm64", "darwin-aarch64": "macos-arm64"},
         verify_kit, unpack_tarball, kit_stamp, kit_stamp_matches, lambda directory: directory / "bin" / "tree-sitter",
         True),
-    "ast-grep": Tool(
-        "ast-grep", "ast-grep", "ast-grep-",
-        {"linux-x86_64": "x86_64-unknown-linux-gnu", "linux-aarch64": "aarch64-unknown-linux-gnu",
-         "darwin-aarch64": "aarch64-apple-darwin"},
-        verify_ast_grep, unpack_zip, version_stamp, version_stamp_matches, lambda directory: directory / "ast-grep",
-        False),
     "cmake": Tool(
         "cmake", "cmake", "cmake-", {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64"},
         verify_cmake, functools.partial(unpack_wheel, "cmake"), version_stamp, version_stamp_matches,

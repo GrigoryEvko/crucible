@@ -11,7 +11,7 @@ THE ROOT
     "neg".
 
 THE TOOLS
-    The pinned tools (the tree-sitter kit, ast-grep and cmake) live in the
+    The pinned tools (the tree-sitter kit and cmake) live in the
     tools subdirectory of the default root, tools_root(), and
     utils/assay/setup/install.py owns them.  $CRUCIBLE_CACHE_DIR does not
     move them, because a self-test points it at a scratch directory and
