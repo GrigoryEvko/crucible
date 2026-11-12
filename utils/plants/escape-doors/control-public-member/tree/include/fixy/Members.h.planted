@@ -1,0 +1,54 @@
+#pragma once
+
+namespace control {
+
+// A record is an aggregate with no door, and its parts are its interface.
+struct Record {
+    int first = 0;
+    int second = 0;
+};
+
+// A record whose operators return the record itself guards nothing.
+struct Accumulator {
+    int total = 0;
+
+    Accumulator& operator+=(int value) noexcept {
+        total += value;
+        return *this;
+    }
+};
+
+// A record through a public base of a record.
+struct DerivedRecord : Record {
+    int third = 0;
+};
+
+// A static data member is no part of an object.
+class Counter {
+public:
+    explicit Counter(int seed) noexcept : count_(seed) {}
+
+    static constexpr int limit = 8;
+
+    [[nodiscard]] int count() const noexcept { return count_; }
+
+private:
+    int count_ = 0;
+};
+
+// A protected data member is no part of the surface, also through a public
+// base.
+class Guarded {
+public:
+    explicit Guarded(int seed) noexcept : guarded(seed) {}
+
+protected:
+    int guarded = 0;
+};
+
+class OverGuarded : public Guarded {
+public:
+    explicit OverGuarded(int seed) noexcept : Guarded(seed) {}
+};
+
+}  // namespace control

@@ -1,0 +1,13 @@
+# The accessors of a public base, an accessor that a using-declaration makes
+# public, a public function of a dependent base through a member alias, a
+# protected using-declaration, a private base that a template parameter
+# gives, an inherited constructor, and a public base outside the base headers
+# with no door give no finding of the rule escape-doors.  The include of the
+# outside header and the names of its classes are findings of the rule
+# quarantine only.
+compile report surface.cpp
+flag report -I ../outside -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Surface.h
+exit report pass
+finding report quarantine layer-header include/fixy/Surface.h:3:0 | <Library.h> in the layer low
+finding report quarantine base-std-entity include/fixy/Surface.h:77:7 | library::Accessors
+finding report quarantine base-std-entity include/fixy/Surface.h:80:8 | library::Constant

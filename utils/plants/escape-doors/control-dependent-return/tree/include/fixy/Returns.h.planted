@@ -1,0 +1,33 @@
+#pragma once
+
+namespace control {
+
+template <class T>
+struct Identity {
+    using type = T;
+};
+
+// A return that a member type of a template keeps a value, a template
+// parameter and a member type of a template parameter: the argument decides
+// each one, and the declaration names no reference.
+template <class T>
+class LateValue {
+    T value_{};
+
+public:
+    [[nodiscard]] typename Identity<T>::type copy_late() const noexcept { return value_; }
+    [[nodiscard]] T copy() const noexcept { return value_; }
+    [[nodiscard]] typename T::value_type copy_member() const noexcept { return {}; }
+    [[nodiscard]] auto copy_declared() const noexcept -> decltype(value_) { return value_; }
+};
+
+// A decltype of a name with no parentheses names the declared type of the
+// name, here a value of a template parameter.
+template <auto Value>
+struct Pinned {
+    using value_type = decltype(Value);
+
+    [[nodiscard]] constexpr operator value_type() const noexcept { return Value; }
+};
+
+}  // namespace control

@@ -1,0 +1,54 @@
+#pragma once
+
+#include <Library.h>
+
+namespace plant {
+
+// A protected door that a public using-declaration makes public.
+class GuardedBase {
+protected:
+    int* hidden_door() noexcept { return &value_; }
+
+private:
+    int value_ = 0;
+};
+
+class ReExportsProtected : public GuardedBase {
+public:
+    using GuardedBase::hidden_door;
+};
+
+// The same through a dependent base.
+template <class T>
+class DependentBase {
+protected:
+    T* dependent_door() noexcept { return &value_; }
+
+private:
+    T value_{};
+};
+
+template <class T>
+class ReExportsDependent : private DependentBase<T> {
+public:
+    using DependentBase<T>::dependent_door;
+};
+
+// A public base outside the base files: its door, its hatch and its data
+// member.
+class FromLibrary : public library::LibraryBase {
+public:
+    FromLibrary() noexcept = default;
+};
+
+// A public base and a using-declaration that a template parameter gives.
+template <class Base>
+class Mixin : public Base {};
+
+template <class Base>
+class Exporter : private Base {
+public:
+    using Base::exported;
+};
+
+}  // namespace plant

@@ -7,7 +7,6 @@ struct Value {
 };
 
 struct Holder {
-    int raw = 0;
     // A getter of the accessor names and an operator are accessors.
     int& data() { return raw; }
     int const* begin() const { return &raw; }
@@ -22,6 +21,7 @@ struct Holder {
     friend int& elsewhere(Holder& holder);
 
 private:
+    int raw = 0;
     // A private member is no door.
     int& hidden() { return raw; }
 };

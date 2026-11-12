@@ -1,0 +1,21 @@
+#pragma once
+
+namespace plant {
+
+template <class T>
+struct AddReference {
+    using type = T&;
+};
+
+// A return that a member type of a template makes a reference, and a
+// decltype of an expression, which can name a reference.
+template <class T>
+class LateReference {
+    T value_{};
+
+public:
+    typename AddReference<T>::type steal_late() noexcept { return value_; }
+    auto steal_decltype() noexcept -> decltype((value_)) { return value_; }
+};
+
+}  // namespace plant

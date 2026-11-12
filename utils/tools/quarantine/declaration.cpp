@@ -108,13 +108,41 @@
 //
 // THE RULE escape-doors (CLAUDE.md section XVI)
 //     A public function of a base file that returns a reference or a raw
-//     pointer, or can through decltype(auto), is a door.  An operator other
-//     than a conversion and a getter of kAccessors are accessors, and a mint
-//     is a door of its own rule.  A hatch of kHatches is the kind hatch, and
-//     each other door is the kind bare-door.  A deleted function, a friend
-//     with no body, a private or protected member and a name that ends with an
-//     underscore are no door.  The entity is the function_signature of the
-//     door.
+//     pointer is a door.  A return of decltype(auto), of a dependent decltype
+//     or of a member type of a template that names a reference or a pointer
+//     can be one, and it is a door too.  An operator other than a conversion
+//     and a getter of kAccessors are accessors, and a mint is a door of its
+//     own rule.  A hatch of kHatches is the kind hatch, and each other door is
+//     the kind bare-door.  A deleted function, a friend with no body, a
+//     private or protected member and a name that ends with an underscore are
+//     no door.  The entity is the function_signature of the door.
+//
+// THE SURFACE
+//     A caller names each member of the surface of a class through the
+//     class: its public members, the public members of each public base at
+//     each depth, and the targets of each public using-declaration.  A class
+//     guards its storage when it is no aggregate, or when it declares a
+//     public member function that hands out a raw reference or pointer to
+//     something other than the class itself.  An aggregate with no such
+//     function is a named record, and its parts are its interface.  For each
+//     class of a base file:
+//       public-member    a public data member on the surface of a class that
+//                        guards its storage.  A caller takes its address, and
+//                        no door names it.  A data member of a public
+//                        anonymous member counts
+//       bare-door, hatch a door of a public base outside the base files, and a
+//                        door that a public using-declaration gives when its
+//                        target is not a public function of a base file.  The
+//                        rule reads each other door at its own declaration
+//       unread-surface   a public base, or the scope of a public
+//                        using-declaration, whose members the rule cannot
+//                        read, such as a template parameter
+//     A dependent base or scope is read through the pattern of its template
+//     and of each specialization of it (member_classes).  The entity of a
+//     member of the class itself is its qualified name.  The entity of a
+//     member that a base or a using-declaration gives is CLASS via ENTITY,
+//     at the class or at the using-declaration.  The entity of an unread base
+//     is CLASS : TYPE, and of an unread using-declaration CLASS using NAME.
 //
 // THE RULE stub-discipline (CLAUDE.md section XVIII)
 //     An honesty marker is a constexpr bool with the value false whose name
@@ -1451,14 +1479,123 @@ bool is_one_of(const std::string& name, const char* const* names, std::size_t co
     return false;
 }
 
+// The most links of a chain of member types, bases and using-declarations
+// that the rule follows (THE SURFACE).  A longer chain is unread.
+constexpr int kSurfaceDepth = 64;
+
+const FileEntry* expansion_file(location_t location);
+
+// The classes whose members a caller names through TYPE (THE SURFACE): TYPE
+// when it names no template parameter, or else the pattern of its template,
+// of each partial specialization and of each explicit specialization.  A pack
+// expansion gives its pattern, and a typename type gives the member type of
+// that name in the classes of its scope.  An empty list tells that the rule
+// cannot read the members, as for a template parameter.
+// Complexity: O(specializations of the template), times the links of a chain.
+std::vector<tree> member_classes(tree type, int depth) {
+    std::vector<tree> classes;
+    if (type != NULL_TREE && TREE_CODE(type) == TYPE_PACK_EXPANSION) {
+        type = PACK_EXPANSION_PATTERN(type);
+    }
+    if (type == NULL_TREE || depth > kSurfaceDepth) {
+        return classes;
+    }
+    if (TREE_CODE(type) == TYPENAME_TYPE) {
+        for (tree scope : member_classes(TYPE_CONTEXT(type), depth + 1)) {
+            for (tree member = TYPE_FIELDS(scope); member != NULL_TREE; member = DECL_CHAIN(member)) {
+                if (TREE_CODE(member) == TYPE_DECL && DECL_NAME(member) == TYPE_IDENTIFIER(type)) {
+                    std::vector<tree> named = member_classes(TREE_TYPE(member), depth + 1);
+                    classes.insert(classes.end(), named.begin(), named.end());
+                }
+            }
+        }
+        return classes;
+    }
+    if (!CLASS_TYPE_P(type)) {
+        return classes;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree general = info != NULL_TREE && TI_TEMPLATE(info) != NULL_TREE && TREE_CODE(TI_TEMPLATE(info)) == TEMPLATE_DECL
+                     ? most_general_template(TI_TEMPLATE(info))
+                     : NULL_TREE;
+    if (!uses_template_parms(type) || general == NULL_TREE || TREE_CODE(general) != TEMPLATE_DECL) {
+        if (COMPLETE_TYPE_P(type)) {
+            classes.push_back(type);
+        }
+        return classes;
+    }
+    auto add = [&classes](tree pattern) {
+        if (pattern != NULL_TREE && CLASS_TYPE_P(pattern) && COMPLETE_TYPE_P(pattern)) {
+            classes.push_back(TYPE_MAIN_VARIANT(pattern));
+        }
+    };
+    add(TREE_TYPE(DECL_TEMPLATE_RESULT(general)));
+    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree partial = TREE_VALUE(entry);
+        if (partial != NULL_TREE && TREE_CODE(partial) == TEMPLATE_DECL) {
+            add(TREE_TYPE(DECL_TEMPLATE_RESULT(partial)));
+        }
+    }
+    for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree specialization = TREE_VALUE(entry);
+        if (specialization != NULL_TREE && CLASS_TYPE_P(specialization)
+            && CLASSTYPE_TEMPLATE_SPECIALIZATION(specialization)) {
+            add(specialization);
+        }
+    }
+    return classes;
+}
+
+// True when TYPE can name a reference or a raw pointer: a reference or a
+// pointer type, a dependent decltype of an expression, or a typename type
+// whose member type of that name can, in a class of its scope.  A decltype
+// of a name with no parentheses names the declared type of the name.  A type
+// that only an argument of the template gives, such as T or typename
+// T::type, cannot, because the argument decides it.
+// Complexity: O(members of the classes on the chain).
+bool can_name_raw(tree type, int depth) {
+    if (type == NULL_TREE || depth > kSurfaceDepth) {
+        return false;
+    }
+    switch (TREE_CODE(type)) {
+        case REFERENCE_TYPE:
+        case POINTER_TYPE:
+            return true;
+        case DECLTYPE_TYPE: {
+            tree expression = DECLTYPE_TYPE_EXPR(type);
+            if (!DECLTYPE_TYPE_ID_EXPR_OR_MEMBER_ACCESS_P(type) || expression == NULL_TREE) {
+                return true;
+            }
+            if (TREE_CODE(expression) == COMPONENT_REF) {
+                expression = TREE_OPERAND(expression, 1);
+            }
+            return TREE_TYPE(expression) != NULL_TREE && can_name_raw(TREE_TYPE(expression), depth + 1);
+        }
+        case TYPENAME_TYPE:
+            break;
+        default:
+            return false;
+    }
+    for (tree scope : member_classes(TYPE_CONTEXT(type), depth + 1)) {
+        for (tree member = TYPE_FIELDS(scope); member != NULL_TREE; member = DECL_CHAIN(member)) {
+            if (TREE_CODE(member) == TYPE_DECL && DECL_NAME(member) == TYPE_IDENTIFIER(type)
+                && can_name_raw(TREE_TYPE(member), depth + 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // True when FUNCTION returns a reference or a raw pointer, or can through
-// decltype(auto).
+// decltype(auto), a dependent decltype or a member type of a template.
 bool returns_raw(tree function) {
     tree type = TREE_TYPE(TREE_TYPE(function));
     if (type == NULL_TREE) {
         return false;
     }
-    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE) {
+    if (can_name_raw(type, 0)) {
         return true;
     }
     if (is_auto(type) && AUTO_IS_DECLTYPE(type)) {
@@ -1470,45 +1607,274 @@ bool returns_raw(tree function) {
     return saved != NULL_TREE && is_auto(saved) && AUTO_IS_DECLTYPE(saved);
 }
 
+// True when FUNCTION can hand out a raw reference or pointer: it returns
+// one, and it is no constructor, no destructor, no deleted function and no
+// function that the compiler declares.
+bool can_hand_out(tree function) {
+    return !DECL_ARTIFICIAL(function) && !DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function)
+        && (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_DELETED_FN(function)) && returns_raw(function);
+}
+
+// The kind and the entity of a door.  An empty entity tells that the function
+// is no door.
+struct Door {
+    Kind kind = Kind::bare_door;
+    std::string entity;
+};
+
+// The door of FUNCTION, which can hand out a raw reference or pointer (THE
+// RULE escape-doors).  An operator other than a conversion, a mint, a getter
+// whose name kAccessors holds and a name that ends with an underscore are no
+// door.  A hatch of kHatches is the kind hatch.
+Door door_of(tree function) {
+    Door door;
+    if (DECL_CONV_FN_P(function)) {
+        tree owner = DECL_CONTEXT(function);
+        door.entity = (owner != NULL_TREE ? qualified_name(owner) + "::" : std::string{}) + "operator "
+                    + type_text(TREE_TYPE(TREE_TYPE(function))) + "()";
+        return door;
+    }
+    if (DECL_OVERLOADED_OPERATOR_P(function) || is_mint(function)) {
+        return door;
+    }
+    std::string name = identifier_text(DECL_NAME(function));
+    if (name.empty() || name.back() == '_' || is_one_of(name, kAccessors, sizeof(kAccessors) / sizeof(kAccessors[0]))) {
+        return door;
+    }
+    if (is_one_of(name, kHatches, sizeof(kHatches) / sizeof(kHatches[0]))) {
+        door.kind = Kind::hatch;
+    }
+    door.entity = function_signature(function);
+    return door;
+}
+
 // A public function that hands out a raw reference or pointer (THE RULE
-// escape-doors).  A private or protected member, a deleted function, a
-// friend with no body and a name that ends with an underscore are no door.
-// An operator other than a conversion is an accessor, and so is a getter
-// whose name kAccessors holds.  A mint is a door of its own rule.
+// escape-doors).  A private or protected member and a friend with no body
+// are no door.
 void check_escape(tree function, bool is_defined) {
-    if (DECL_ARTIFICIAL(function) || DECL_CONSTRUCTOR_P(function) || DECL_DESTRUCTOR_P(function)
-        || !returns_raw(function) || TREE_PRIVATE(function) || TREE_PROTECTED(function)) {
+    if (!can_hand_out(function) || TREE_PRIVATE(function) || TREE_PROTECTED(function)) {
         return;
     }
-    if (DECL_LANG_SPECIFIC(function) != nullptr
-        && (DECL_DELETED_FN(function) || (DECL_UNIQUE_FRIEND_P(function) && !is_defined))) {
+    if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_UNIQUE_FRIEND_P(function) && !is_defined) {
         return;
     }
     Place place = base_place(DECL_SOURCE_LOCATION(function));
-    if (place.file == nullptr) {
+    Door door = door_of(function);
+    if (place.file != nullptr && !door.entity.empty()) {
+        record_property(door.kind, place, door.entity);
+    }
+}
+
+bool is_public_member(tree decl) { return !TREE_PRIVATE(decl) && !TREE_PROTECTED(decl); }
+
+// True when a base file holds the declaration DECL.  The rule reads each
+// public function of a class of a base file at its own declaration.
+bool in_base_file(tree decl) {
+    const FileEntry* file = decl != NULL_TREE ? expansion_file(DECL_SOURCE_LOCATION(decl)) : nullptr;
+    return file != nullptr && file->file_class == FileClass::base;
+}
+
+// The function of the member MEMBER when it is a function or a function
+// template, or null.
+tree member_function(tree member) {
+    if (member != NULL_TREE && TREE_CODE(member) == TEMPLATE_DECL) {
+        member = DECL_TEMPLATE_RESULT(member);
+    }
+    return member != NULL_TREE && TREE_CODE(member) == FUNCTION_DECL ? member : NULL_TREE;
+}
+
+// True when CLASS_TYPE guards its storage (THE SURFACE): it is no aggregate,
+// or it declares a public member function that hands out a raw reference or
+// pointer to something other than the class itself.  An aggregate with no
+// such function is a named record, and its parts are its interface.
+bool guards_storage(tree class_type) {
+    if (!CP_AGGREGATE_TYPE_P(class_type)) {
+        return true;
+    }
+    for (tree member = TYPE_FIELDS(class_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        tree function = member_function(member);
+        if (function == NULL_TREE || !is_public_member(function) || !DECL_OBJECT_MEMBER_FUNCTION_P(function)
+            || !can_hand_out(function)) {
+            continue;
+        }
+        tree result = TREE_TYPE(TREE_TYPE(function));
+        bool is_self = result != NULL_TREE && INDIRECT_TYPE_P(result) && TREE_TYPE(result) != NULL_TREE
+                    && TYPE_MAIN_VARIANT(TREE_TYPE(result)) == TYPE_MAIN_VARIANT(class_type);
+        if (!is_self) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Each public non-static data member of CLASS_TYPE, and each data member of
+// a public anonymous member at each depth.
+template <class Visit>
+void each_public_field(tree class_type, Visit visit, int depth) {
+    for (tree member = TYPE_FIELDS(class_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) != FIELD_DECL || DECL_ARTIFICIAL(member) || !is_public_member(member)) {
+            continue;
+        }
+        if (DECL_NAME(member) != NULL_TREE) {
+            visit(member);
+        } else if (ANON_AGGR_TYPE_P(TREE_TYPE(member)) && depth < kSurfaceDepth) {
+            each_public_field(TREE_TYPE(member), visit, depth + 1);
+        }
+    }
+}
+
+// The declarations that the using-declaration USING names (THE SURFACE): the
+// declarations that the front end gives, or for a dependent scope each member
+// of that name in the classes of the scope, and else in their bases.  An
+// empty list tells that the rule cannot read them.
+// Complexity: O(members of the classes on the chain).
+void named_members(tree scope, tree name, std::vector<tree>& found, int depth);
+
+std::vector<tree> using_targets(tree using_decl, int depth) {
+    std::vector<tree> found;
+    if (!DECL_DEPENDENT_P(using_decl)) {
+        for (lkp_iterator target(USING_DECL_DECLS(using_decl)); target; ++target) {
+            found.push_back(*target);
+        }
+        return found;
+    }
+    named_members(USING_DECL_SCOPE(using_decl), DECL_NAME(using_decl), found, depth + 1);
+    return found;
+}
+
+void named_members(tree scope, tree name, std::vector<tree>& found, int depth) {
+    if (depth > kSurfaceDepth) {
         return;
     }
-    Kind kind = Kind::bare_door;
-    std::string entity;
-    if (DECL_CONV_FN_P(function)) {
-        tree owner = DECL_CONTEXT(function);
-        entity = (owner != NULL_TREE ? qualified_name(owner) + "::" : std::string{}) + "operator "
-               + type_text(TREE_TYPE(TREE_TYPE(function))) + "()";
-    } else {
-        if (DECL_OVERLOADED_OPERATOR_P(function) || is_mint(function)) {
-            return;
+    for (tree holder : member_classes(scope, depth + 1)) {
+        std::size_t before = found.size();
+        for (tree member = TYPE_FIELDS(holder); member != NULL_TREE; member = DECL_CHAIN(member)) {
+            if (DECL_NAME(member) != name) {
+                continue;
+            }
+            if (TREE_CODE(member) == USING_DECL) {
+                std::vector<tree> targets = using_targets(member, depth + 1);
+                found.insert(found.end(), targets.begin(), targets.end());
+            } else {
+                found.push_back(member);
+            }
         }
-        std::string name = identifier_text(DECL_NAME(function));
-        if (name.empty() || name.back() == '_'
-            || is_one_of(name, kAccessors, sizeof(kAccessors) / sizeof(kAccessors[0]))) {
-            return;
+        tree binfo = TYPE_BINFO(holder);
+        for (unsigned index = 0; found.size() == before && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo);
+             ++index) {
+            named_members(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), name, found, depth + 1);
         }
-        if (is_one_of(name, kHatches, sizeof(kHatches) / sizeof(kHatches[0]))) {
-            kind = Kind::hatch;
-        }
-        entity = function_signature(function);
     }
-    record_property(kind, place, entity);
+}
+
+// The surface of a class CLASS_TYPE of a base file (THE SURFACE): its public
+// data members when it guards its storage, the members of each public base
+// at each depth, and the targets of each public using-declaration.  A public
+// function of a class of a base file is read at its own declaration, and a
+// data member of a class that guards its storage too.
+void check_surface(tree class_type) {
+    tree decl = TYPE_MAIN_DECL(class_type);
+    Place place = decl != NULL_TREE ? base_place(DECL_SOURCE_LOCATION(decl)) : Place{};
+    if (place.file == nullptr || ANON_AGGR_TYPE_P(class_type)) {
+        return;
+    }
+    std::string owner = qualified_name(class_type);
+    bool is_guarded = guards_storage(class_type);
+    if (is_guarded) {
+        each_public_field(
+            class_type,
+            [](tree field) {
+                record_property(Kind::public_member, base_place(DECL_SOURCE_LOCATION(field)), qualified_name(field));
+            },
+            0);
+    }
+    // Each class is read one time, and each base edge on the path is public.
+    // The check of a class of a base file reports the doors and the unread
+    // bases beyond it, and also its data members when it guards its storage.
+    // Past such a class, the walk then reads only the data members of a
+    // record, for a class that guards its storage.
+    struct Pending {
+        tree type;
+        bool is_past_base_class;
+    };
+    std::vector<Pending> pending{{class_type, false}};
+    std::unordered_set<tree> read{class_type};
+    for (std::size_t next = 0; next < pending.size() && next < static_cast<std::size_t>(kSurfaceDepth); ++next) {
+        tree binfo = TYPE_BINFO(pending[next].type);
+        bool is_past_base_class = pending[next].is_past_base_class;
+        for (unsigned index = 0; binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (BINFO_BASE_ACCESS(binfo, index) != access_public_node) {
+                continue;
+            }
+            tree base = BINFO_TYPE(BINFO_BASE_BINFO(binfo, index));
+            std::vector<tree> bases = member_classes(base, 0);
+            if (bases.empty() && !is_past_base_class) {
+                record_property(Kind::unread_surface, place, owner + " : " + type_text(base));
+            }
+            for (tree holder : bases) {
+                if (!read.insert(holder).second) {
+                    continue;
+                }
+                bool is_base_class = in_base_file(TYPE_MAIN_DECL(holder));
+                bool is_guarded_base = is_base_class && guards_storage(holder);
+                if (!is_guarded_base && (is_guarded || !(is_past_base_class || is_base_class))) {
+                    pending.push_back({holder, is_past_base_class || is_base_class});
+                }
+                for (tree member = TYPE_FIELDS(holder); !is_base_class && !is_past_base_class && member != NULL_TREE;
+                     member = DECL_CHAIN(member)) {
+                    tree function = member_function(member);
+                    if (function != NULL_TREE && is_public_member(function) && can_hand_out(function)) {
+                        Door door = door_of(function);
+                        if (!door.entity.empty()) {
+                            record_property(door.kind, place, owner + " via " + door.entity);
+                        }
+                    }
+                }
+                if (is_guarded && !is_guarded_base) {
+                    each_public_field(
+                        holder,
+                        [&place, &owner](tree field) {
+                            record_property(Kind::public_member, place, owner + " via " + qualified_name(field));
+                        },
+                        0);
+                }
+            }
+        }
+    }
+    for (tree member = TYPE_FIELDS(class_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        bool is_member_using = TREE_CODE(member) == USING_DECL && !DECL_ARTIFICIAL(member) && is_public_member(member)
+                            && !USING_DECL_TYPENAME_P(member) && DECL_NAME(member) != NULL_TREE
+                            && DECL_NAME(member) != ctor_identifier;
+        if (!is_member_using) {
+            continue;
+        }
+        Place using_place = base_place(DECL_SOURCE_LOCATION(member));
+        std::vector<tree> targets = using_targets(member, 0);
+        if (targets.empty()) {
+            record_property(Kind::unread_surface, using_place, owner + " using " + identifier_text(DECL_NAME(member)));
+        }
+        for (tree target : targets) {
+            tree function = member_function(target);
+            if (function != NULL_TREE) {
+                Door door = can_hand_out(function) && !(is_public_member(function) && in_base_file(function))
+                              ? door_of(function)
+                              : Door{};
+                if (!door.entity.empty()) {
+                    record_property(door.kind, using_place, owner + " via " + door.entity);
+                }
+                continue;
+            }
+            if (TREE_CODE(target) != FIELD_DECL || DECL_ARTIFICIAL(target) || !is_guarded) {
+                continue;
+            }
+            tree holder = DECL_CONTEXT(target);
+            bool is_read_at_holder = is_public_member(target) && in_base_file(target) && holder != NULL_TREE
+                                  && CLASS_TYPE_P(holder) && guards_storage(holder);
+            if (!is_read_at_holder) {
+                record_property(Kind::public_member, using_place, owner + " via " + qualified_name(target));
+            }
+        }
+    }
 }
 
 // ── The rule witness-roster ─────────────────────────────────────────────
@@ -2908,6 +3274,7 @@ struct PropertyWalk {
         }
         check_witness(main_type);
         check_named_class(main_type);
+        check_surface(main_type);
         for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
             switch (TREE_CODE(member)) {
                 case FIELD_DECL:

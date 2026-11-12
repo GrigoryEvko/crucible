@@ -1,0 +1,13 @@
+# A return that a member type of a template makes a reference, and a return
+# of a decltype of an expression, are doors of the rule escape-doors, because
+# the declaration can name a reference.  In the mode error each finding is an
+# error.
+compile report returns.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Returns.h
+exit report pass
+finding report escape-doors bare-door include/fixy/Returns.h:17:36 | plant::LateReference::steal_late()
+finding report escape-doors bare-door include/fixy/Returns.h:18:10 | plant::LateReference::steal_decltype()
+
+compile error returns.cpp mode=error findings=report errors=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Returns.h
+exit error fail

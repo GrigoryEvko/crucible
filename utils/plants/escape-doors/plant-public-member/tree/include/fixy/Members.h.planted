@@ -1,0 +1,67 @@
+#pragma once
+
+namespace plant {
+
+// An aggregate that hands out a reference to a part guards its storage, so a
+// public data member beside the getter is a raw escape.
+class ExposesStorage {
+public:
+    [[nodiscard]] int const& value() const noexcept { return count; }
+
+    int count = 0;
+};
+
+// A class with a constructor is no aggregate, so it guards its storage.
+class WithConstructor {
+public:
+    explicit WithConstructor(int seed) noexcept : open(seed) {}
+
+    int open = 0;
+};
+
+// A private data member makes a class template no aggregate.
+template <class T>
+class MixedTemplate {
+public:
+    T open{};
+
+private:
+    T closed{};
+};
+
+// A data member of a public anonymous member is a member of the class.
+class WithAnonymous {
+public:
+    explicit WithAnonymous(int seed) noexcept : first(seed) {}
+
+    union {
+        int first;
+        float second;
+    };
+};
+
+// A data member of a record, through a public base of a class that guards
+// its storage.
+struct PlainRecord {
+    int field = 0;
+};
+
+class OverRecord : public PlainRecord {
+public:
+    explicit OverRecord(int seed) noexcept : PlainRecord{seed} {}
+};
+
+// A protected data member that a public using-declaration makes public.
+class Hidden {
+protected:
+    int guarded = 0;
+};
+
+class ReExportsField : private Hidden {
+public:
+    explicit ReExportsField(int seed) noexcept { guarded = seed; }
+
+    using Hidden::guarded;
+};
+
+}  // namespace plant

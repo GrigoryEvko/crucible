@@ -49,6 +49,8 @@ struct Span {
     constexpr explicit Span(T (&array CRUCIBLE_LIFETIMEBOUND)[N]) noexcept : size{N} { (void)array; }
     template <class R>
     explicit Span(R&&) = delete;
+
+private:
     unsigned size;
 };
 

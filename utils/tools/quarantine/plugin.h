@@ -207,6 +207,10 @@
 //     bare-door             a public function that returns a reference or a raw
 //                           pointer, and is no accessor, no mint and no hatch
 //     hatch                 such a function that is a hatch, such as into_raw
+//     public-member         a public data member on the surface of a class
+//                           that guards its storage
+//     unread-surface        a public base or a using-declaration whose members
+//                           the rule cannot read
 //     The rule stub-discipline:
 //     marker-without-stub   a file with an honesty marker and no deprecation
 //                           CRUCIBLE_STUB, at its first marker
@@ -844,6 +848,8 @@ enum class Kind : std::uint8_t {
     static_permission,
     bare_door,
     hatch,
+    public_member,
+    unread_surface,
     marker_without_stub,
     stub_without_marker,
     unmarked_static,
@@ -1064,6 +1070,10 @@ inline const char* kind_name(Kind kind) {
             return "bare-door";
         case Kind::hatch:
             return "hatch";
+        case Kind::public_member:
+            return "public-member";
+        case Kind::unread_surface:
+            return "unread-surface";
         case Kind::marker_without_stub:
             return "marker-without-stub";
         case Kind::stub_without_marker:
@@ -1230,6 +1240,8 @@ inline Rule rule_of(Kind kind) {
             return Rule::permission_storage;
         case Kind::bare_door:
         case Kind::hatch:
+        case Kind::public_member:
+        case Kind::unread_surface:
             return Rule::escape_doors;
         case Kind::marker_without_stub:
         case Kind::stub_without_marker:
@@ -1434,6 +1446,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"permission-storage", "static-permission"},
     {"escape-doors", "bare-door"},
     {"escape-doors", "hatch"},
+    {"escape-doors", "public-member"},
+    {"escape-doors", "unread-surface"},
     {"stub-discipline", "marker-without-stub"},
     {"stub-discipline", "stub-without-marker"},
     {"process-wide-state", "unmarked-static"},

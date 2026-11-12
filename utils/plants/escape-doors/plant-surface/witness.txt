@@ -1,0 +1,23 @@
+# The surface of a class holds the members that a public base or a public
+# using-declaration gives.  The rule escape-doors refuses a protected door that
+# a public using-declaration makes public, also through a dependent base.  It
+# refuses the door, the hatch and the data member of a public base outside
+# the base headers.  A public base or a using-declaration that a template
+# parameter gives is the kind unread-surface.  In the mode error each finding
+# is an error.
+compile report surface.cpp
+flag report -I ../outside -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Surface.h
+exit report pass
+finding report quarantine layer-header include/fixy/Surface.h:3:0 | <Library.h> in the layer low
+finding report escape-doors bare-door include/fixy/Surface.h:18:24 | plant::ReExportsProtected via plant::GuardedBase::hidden_door()
+finding report escape-doors bare-door include/fixy/Surface.h:34:29 | plant::ReExportsDependent via plant::DependentBase::dependent_door()
+finding report quarantine base-std-entity include/fixy/Surface.h:39:7 | library::LibraryBase
+finding report escape-doors bare-door include/fixy/Surface.h:39:7 | plant::FromLibrary via library::LibraryBase::grab()
+finding report escape-doors hatch include/fixy/Surface.h:39:7 | plant::FromLibrary via library::LibraryBase::release()
+finding report escape-doors public-member include/fixy/Surface.h:39:7 | plant::FromLibrary via library::LibraryBase::field
+finding report escape-doors unread-surface include/fixy/Surface.h:46:7 | plant::Mixin : T0_0
+finding report escape-doors unread-surface include/fixy/Surface.h:51:17 | plant::Exporter using exported
+
+compile error surface.cpp mode=error findings=report errors=report
+flag error -I ../outside -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Surface.h
+exit error fail

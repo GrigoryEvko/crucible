@@ -1,0 +1,7 @@
+# A record, a record whose operator returns the record itself, a record
+# through a public base of a record, a static data member and a protected
+# data member give no finding of the rule escape-doors, and the unit
+# compiles in the mode error.
+compile error members.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Members.h
+exit error pass

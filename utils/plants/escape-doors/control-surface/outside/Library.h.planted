@@ -1,0 +1,20 @@
+#pragma once
+
+namespace library {
+
+class Accessors {
+public:
+    int& data() noexcept { return field_; }
+
+private:
+    int field_ = 0;
+};
+
+template <class T, T Value>
+struct Constant {
+    static constexpr T value = Value;
+
+    constexpr operator T() const noexcept { return Value; }
+};
+
+}  // namespace library

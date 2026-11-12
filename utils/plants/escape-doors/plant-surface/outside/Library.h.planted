@@ -1,0 +1,12 @@
+#pragma once
+
+namespace library {
+
+struct LibraryBase {
+    int& grab() noexcept { return field; }
+    int* release() noexcept { return &field; }
+
+    int field = 0;
+};
+
+}  // namespace library

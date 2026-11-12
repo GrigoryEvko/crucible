@@ -1,0 +1,82 @@
+#pragma once
+
+#include <Library.h>
+
+namespace control {
+
+// The accessors of a public base of a base file.
+class Getters {
+public:
+    [[nodiscard]] int& data() noexcept { return value_; }
+    [[nodiscard]] int& operator[](int index) noexcept { return (&value_)[index]; }
+
+private:
+    int value_ = 0;
+};
+
+class InheritsGetters : public Getters {};
+
+// A public accessor of a private base that a using-declaration makes public.
+class ReExportsGetter : private Getters {
+public:
+    using Getters::data;
+};
+
+// A public function of a dependent base, through a member alias of the base,
+// as Computation names the members of Graded.
+template <class T>
+class Carrier {
+public:
+    [[nodiscard]] T grade() const noexcept { return value_; }
+
+private:
+    T value_{};
+};
+
+template <class T>
+class Computation : private Carrier<T> {
+    using base = Carrier<T>;
+
+public:
+    using base::grade;
+};
+
+// A protected door that a protected using-declaration keeps protected, and a
+// template parameter that a private base gives.
+class GuardedBase {
+protected:
+    int* hidden_door() noexcept { return &value_; }
+
+private:
+    int value_ = 0;
+};
+
+class KeepsProtected : public GuardedBase {
+protected:
+    using GuardedBase::hidden_door;
+};
+
+template <class Base>
+class Hides : private Base {};
+
+// An inherited constructor.
+class Seeded {
+public:
+    explicit Seeded(int seed) noexcept : seed_(seed) {}
+
+private:
+    int seed_ = 0;
+};
+
+class InheritsSeed : public Seeded {
+public:
+    using Seeded::Seeded;
+};
+
+// A public base outside the base files with no door, also a dependent one.
+class FromAccessors : public library::Accessors {};
+
+template <bool Value>
+struct Flag : library::Constant<bool, Value> {};
+
+}  // namespace control

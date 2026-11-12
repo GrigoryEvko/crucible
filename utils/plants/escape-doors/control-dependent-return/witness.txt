@@ -1,0 +1,7 @@
+# A return that a member type of a template keeps a value, a template
+# parameter, a member type of a template parameter and a decltype of a name
+# with no parentheses give no finding of the rule escape-doors, and the unit
+# compiles in the mode error.
+compile error returns.cpp mode=error
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Returns.h
+exit error pass
