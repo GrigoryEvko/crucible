@@ -39,6 +39,7 @@
 #include <crucible/mimic/CogMimic.h>
 #include <fixy/Bits.h>
 #include <fixy/Ctx.h>
+#include <fixy/FixedArray.h>
 #include <fixy/os/Path.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -240,9 +241,21 @@ inline void copy_into(std::span<char> destination, std::string_view source) noex
 // the store can print it without owning a heap. Variable-length material
 // (the NUMA distance matrix, the isolated-CPU list, the governor strings)
 // is folded into a digest field at probe time rather than carried whole.
+// The sockets sit in a fixed array with one entry for each package that
+// the topology can give.
 
 inline constexpr std::size_t kVendorBytes = 32;
 inline constexpr std::size_t kModelBytes = 96;
+inline constexpr std::size_t kSocketCapacity = ::fixy::topology::Topology::package_capacity;
+
+// The counts of one socket: one package of the topology.  Each count has 16
+// bits, so the struct has no padding byte.
+struct SocketFacts {
+    std::uint16_t core_count = 0;
+    std::uint16_t thread_count = 0;
+    std::uint16_t l3_instance_count = 0;
+    std::uint16_t numa_node_count = 0;
+};
 
 struct HostFacts {
     // ── Stable: silicon identity ──
@@ -265,6 +278,13 @@ struct HostFacts {
     std::uint8_t numa_node_count = 0;
     std::uint64_t numa_distance_digest = 0;
     std::uint32_t page_size_bytes = 0;
+
+    // ── Stable: the sockets ──
+    // The first socket_count entries, in ascending order of the package id.
+    // A host whose topology gives no package reads as one socket with the
+    // counts of the host.
+    ::fixy::FixedArray<SocketFacts, kSocketCapacity> sockets{};
+    std::uint16_t socket_count = 0;
 
     // Implementation-defined between 128 and 2048 bits and different on
     // Graviton 3, Graviton 4 and A64FX, so two arm64 hosts that agree on
@@ -397,6 +417,24 @@ template <::foundation::effects::IsExecCtx Ctx>
     facts.page_size_bytes = static_cast<std::uint32_t>(topology.page_size_bytes);
     facts.l3_instance_count = static_cast<std::uint16_t>(machine.l3_groups().size());
     facts.was_probed_from_sysfs = (topology.source == Topology::Source::Sysfs);
+
+    // The counts of each package, in the order of the topology.  The
+    // topology gives at most kSocketCapacity packages.
+    for (Topology::Package const& package : machine.packages()) {
+        SocketFacts& socket = facts.sockets[facts.socket_count];
+        socket.core_count = static_cast<std::uint16_t>(package.cores);
+        socket.thread_count = static_cast<std::uint16_t>(package.threads);
+        socket.l3_instance_count = static_cast<std::uint16_t>(package.l3_groups);
+        socket.numa_node_count = static_cast<std::uint16_t>(package.numa_nodes);
+        ++facts.socket_count;
+    }
+    if (facts.socket_count == 0u) {
+        facts.sockets[0] = SocketFacts{.core_count = facts.physical_core_count,
+                                       .thread_count = facts.hw_thread_count,
+                                       .l3_instance_count = facts.l3_instance_count,
+                                       .numa_node_count = facts.numa_node_count};
+        facts.socket_count = 1u;
+    }
 
     // The full matrix, not just the node count: two hosts with four nodes
     // each can have different hop costs, and a verdict about a remote
@@ -532,7 +570,9 @@ template <::foundation::effects::IsExecCtx Ctx>
 // already speaks, so the stable fold can call the projection CogMimic
 // uses rather than inventing a second one over the same fields.
 
-[[nodiscard]] inline cog::CpuSocketTargetCaps to_socket_caps(HostFacts const& facts) noexcept {
+// The caps of each core.  The probe reads the caches of one CPU, so each
+// core of the host has these caps.
+[[nodiscard]] inline cog::CpuCoreTargetCaps to_core_caps(HostFacts const& facts) noexcept {
     cog::CpuCoreTargetCaps core{};
     core.base_clock_mhz = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(
         static_cast<std::uint32_t>(facts.scaling_min_freq_khz / 1000u));
@@ -542,22 +582,26 @@ template <::foundation::effects::IsExecCtx Ctx>
     core.l1i_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l1i_bytes);
     core.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l2_bytes);
     core.features = facts.isa_features;
+    return core;
+}
 
-    // The projection reads the host as one socket: the core count, the
-    // thread count and the NUMA node count are each of the full host.  The
-    // L3 bytes are thus the bytes of each L3 instance of the host.  A host
-    // whose sysfs names no L3 group reads as one instance, as the topology
-    // does.
-    const std::uint64_t l3_instances = facts.l3_instance_count == 0u ? 1u : facts.l3_instance_count;
-    cog::CpuSocketTargetCaps socket{};
-    socket.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.physical_core_count);
-    socket.thread_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.hw_thread_count);
-    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
+// The caps of one socket.  The core count, the thread count and the NUMA
+// node count are the counts of the socket.  The L3 bytes are the bytes of
+// each L3 instance of the socket, saturated.  A socket with no L3 group
+// reads as one instance, as the topology reads a host with no L3 group.
+[[nodiscard]] inline cog::CpuSocketTargetCaps to_socket_caps(HostFacts const& facts,
+                                                             SocketFacts const& socket) noexcept {
+    const std::uint64_t l3_instances = socket.l3_instance_count == 0u ? 1u : socket.l3_instance_count;
+    cog::CpuSocketTargetCaps caps{};
+    caps.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(socket.core_count);
+    caps.thread_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(socket.thread_count);
+    caps.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
         ::foundation::sat::mul_sat(facts.l3_instance_bytes, l3_instances));
-    socket.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(facts.numa_node_count);
-    socket.representative_core = core;
-    socket.features = facts.isa_features;
-    return socket;
+    caps.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(
+        static_cast<std::uint8_t>(socket.numa_node_count));
+    caps.representative_core = to_core_caps(facts);
+    caps.features = facts.isa_features;
+    return caps;
 }
 
 // ── The folds ─────────────────────────────────────────────────────────
@@ -565,14 +609,20 @@ template <::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] inline HardwareDigest fold_hardware(HostFacts const& facts) noexcept {
     namespace probe = fingerprint_detail;
 
-    const cog::CpuSocketTargetCaps socket = to_socket_caps(facts);
-
     // The two projections CogMimic already publishes, called rather than
     // re-derived. Anything CogMimic treats as binary-compatibility-relevant
-    // is verdict-relevant by construction.
-    std::uint64_t accumulator = mimic::detail::caps_class_projection<cog::CogKind::CpuSocket>::fold(socket);
-    accumulator = probe::mix(
-        accumulator, mimic::detail::caps_class_projection<cog::CogKind::CpuCore>::fold(socket.representative_core));
+    // is verdict-relevant by construction.  The socket projection folds
+    // each socket in its order, with the two counts of the socket that the
+    // projection leaves out.
+    std::uint64_t accumulator = mimic::detail::caps_class_projection<cog::CogKind::CpuCore>::fold(to_core_caps(facts));
+    accumulator = probe::mix(accumulator, static_cast<std::uint64_t>(facts.socket_count));
+    for (std::size_t index = 0; index < facts.socket_count && index < kSocketCapacity; ++index) {
+        SocketFacts const& socket = facts.sockets[index];
+        accumulator = probe::mix(accumulator, mimic::detail::caps_class_projection<cog::CogKind::CpuSocket>::fold(
+                                                  to_socket_caps(facts, socket)));
+        accumulator = probe::mix(accumulator, static_cast<std::uint64_t>(socket.thread_count));
+        accumulator = probe::mix(accumulator, static_cast<std::uint64_t>(socket.numa_node_count));
+    }
 
     // Fields the caps projection deliberately leaves out because they do
     // not split a compiled binary, but that do split a measurement.

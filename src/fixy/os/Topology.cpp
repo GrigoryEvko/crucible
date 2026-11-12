@@ -51,6 +51,21 @@
 //   The parsers below read a number as std::from_chars reads it: an optional
 //   minus sign for a signed number and one or more decimal digits, with no
 //   other sign.  A number that leaves the range of its type is no number.
+//
+// THE PACKAGES
+//   A package is a socket.  sysfs gives each CPU the id of its package in
+//   topology/physical_package_id.  A CPU with no such file, or with a
+//   negative id, is in the package 0, as on a kernel with no package
+//   topology.  The count of the cores gives each package its threads and its
+//   cores.  The first CPU of an L3 group gives the package of the group, and
+//   the probe reads the package of each other CPU of the group too.  A NUMA
+//   node counts one time for each package that one of its CPUs names.  A
+//   tree that names no NUMA node reads as one node, so each package then has
+//   one node.  These facts refuse the packages: a CPU with no core id, more
+//   than package_capacity packages, an L3 group whose CPUs name two
+//   packages, and a CPU of a group or of a node whose package no CPU of the
+//   probe names.  A refused probe gives no package, so a caller never reads
+//   the facts of a socket that sysfs does not give.
 
 namespace fixy::topology {
 
@@ -533,6 +548,35 @@ struct CacheGeometry {
     }));
 }
 
+// The packages that the probe fills, in ascending order of id (THE PACKAGES).
+// The first count slots hold the packages.  The root is the root of the
+// sysfs tree of the probe.
+struct PackageTable {
+    Topology::Package (&slots)[Topology::package_capacity];
+    PathBuilder const& root;
+    std::size_t count = 0;
+    bool is_refused = false;
+};
+
+// The id of the package of a CPU (THE PACKAGES).
+[[nodiscard]] std::size_t package_of_cpu_(PackageTable const& table, int cpu) noexcept {
+    Value const package_text = read_value(
+        PathBuilder{table.root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/topology/physical_package_id"));
+    ParsedInt const package = parse_leading_int(package_text.text());
+    return package.is_number && package.value > 0 ? static_cast<std::size_t>(package.value) : 0;
+}
+
+// The position of the package with the id in the table, or the count of the
+// table when the table holds no such package.  Complexity: linear in the
+// packages.
+[[nodiscard]] std::size_t package_position_(PackageTable const& table, std::size_t id) noexcept {
+    std::size_t position = 0;
+    while (position < table.count && table.slots[position].id != id) {
+        ++position;
+    }
+    return position;
+}
+
 // Hardware threads on one core report the same core id, so the number of
 // distinct ids is the number of physical cores, WITHIN ONE PACKAGE.
 // `core_id` is unique per package, not per machine: every socket numbers its
@@ -546,42 +590,89 @@ struct CacheGeometry {
 // SMT4 one, a number plausible enough to pass the sanity test in
 // test_topology.cpp, which is why it went unnoticed.
 //
-// The pairs go into one sorted vector of keys, and the count of distinct
-// keys is the count of the cores.  Zero when no CPU gives a core id.
-// Complexity: n log n in the CPUs.
-[[nodiscard, gnu::noinline]] std::size_t count_physical_cores_(std::string_view sysfs_root,
-                                                               std::vector<int> const& cpus) noexcept {
+// The pairs go into one sorted vector of keys, one key for each CPU, and the
+// count of distinct keys is the count of the cores.  The keys of one package
+// are adjacent, so the same walk gives each package its threads and its
+// cores (THE PACKAGES).  Zero when no CPU gives a core id.  Complexity: n
+// log n in the CPUs.
+[[nodiscard, gnu::noinline]] std::size_t
+count_cores_and_packages_(std::string_view sysfs_root, std::vector<int> const& cpus, PackageTable& table) noexcept {
     std::vector<std::uint64_t> keys;
-    for (int const cpu : cpus) {
-        PathBuilder const topology_dir =
-            PathBuilder{sysfs_root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/topology/");
-        Value const core_text = read_value(PathBuilder{topology_dir}.add("core_id"));
+    for (int const cpu : base_core::detail::view_over_(cpus.data(), cpus.size())) {
+        Value const core_text =
+            read_value(PathBuilder{sysfs_root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/topology/core_id"));
         ParsedInt const core = parse_leading_int(core_text.text());
-        int const core_id = core.is_number ? core.value : -1;
-        if (core_id < 0) continue;
-
+        if (!core.is_number || core.value < 0) {
+            table.is_refused = true;
+            continue;
+        }
         // A single-socket kernel, or one without package topology, ships no
         // physical_package_id.  Package 0 for all is then correct, and it
         // reduces this count to the count of one package.
-        Value const package_text = read_value(PathBuilder{topology_dir}.add("physical_package_id"));
-        ParsedInt const package = parse_leading_int(package_text.text());
-        int const package_id = package.is_number ? package.value : 0;
-
-        keys.push_back((static_cast<std::uint64_t>(static_cast<std::uint32_t>(package_id)) << 32)
-                       | static_cast<std::uint32_t>(core_id));
+        std::uint64_t const package_id = package_of_cpu_(table, cpu);
+        keys.push_back((package_id << 32) | static_cast<std::uint32_t>(core.value));
     }
     std::sort(keys.begin(), keys.end());
-    return static_cast<std::size_t>(std::unique(keys.begin(), keys.end()) - keys.begin());
+    std::size_t cores = 0;
+    std::uint64_t previous = ~std::uint64_t{0};
+    for (std::uint64_t const key : base_core::detail::view_over_(keys.data(), keys.size())) {
+        bool const is_new_core = key != previous;
+        previous = key;
+        if (is_new_core) ++cores;
+        std::size_t const package_id = key >> 32;
+        bool const is_new_package = table.count == 0 || table.slots[table.count - 1].id != package_id;
+        if (is_new_package && table.count == Topology::package_capacity) table.is_refused = true;
+        if (table.is_refused) continue;
+        if (is_new_package) {
+            table.slots[table.count] = Topology::Package{.id = package_id};
+            ++table.count;
+        }
+        Topology::Package& package = table.slots[table.count - 1];
+        ++package.threads;
+        if (is_new_core) ++package.cores;
+    }
+    return cores;
+}
+
+// Counts the L3 group of one CPU for the package of the group (THE PACKAGES).
+// The first CPU of the group gives the package, and the CPU must name the
+// same package.  A new group counts one time.
+void place_l3_group_(int cpu, int first_cpu, bool is_new, PackageTable& table) noexcept {
+    if (table.is_refused) return;
+    std::size_t const package_id = package_of_cpu_(table, first_cpu);
+    std::size_t const position = package_position_(table, package_id);
+    if (position == table.count || package_of_cpu_(table, cpu) != package_id) {
+        table.is_refused = true;
+        return;
+    }
+    if (is_new) ++table.slots[position].l3_groups;
+}
+
+// Counts one NUMA node for each package that one of its CPUs names (THE
+// PACKAGES).  Complexity: linear in the CPUs of the node times the packages.
+void place_numa_node_(base_core::View<int const> cpus_on_node, PackageTable& table) noexcept {
+    if (table.is_refused) return;
+    bool is_counted[Topology::package_capacity]{};
+    for (int const cpu : cpus_on_node) {
+        std::size_t const position = package_position_(table, package_of_cpu_(table, cpu));
+        if (position == table.count) {
+            table.is_refused = true;
+            return;
+        }
+        if (is_counted[position]) continue;
+        is_counted[position] = true;
+        ++table.slots[position].numa_nodes;
+    }
 }
 
 // Every CPU that shares one L3 reports the same set in shared_cpu_list, so
 // the sorted set of each CPU, with each repeat dropped, leaves one entry for
 // each L3.  The groups keep the order in which a CPU first reports them.
 //
-// No group when no CPU gives an L3.  Complexity: linear in the CPUs times
-// the groups.
-[[nodiscard, gnu::noinline]] std::vector<std::vector<int>> probe_l3_groups_(std::string_view sysfs_root,
-                                                                            std::vector<int> const& cpus) noexcept {
+// No group when no CPU gives an L3.  Each CPU also places its group in a
+// package (THE PACKAGES).  Complexity: linear in the CPUs times the groups.
+[[nodiscard, gnu::noinline]] std::vector<std::vector<int>>
+probe_l3_groups_(std::string_view sysfs_root, std::vector<int> const& cpus, PackageTable& table) noexcept {
     std::vector<std::vector<int>> all_groups;
     for (int const cpu : cpus) {
         PathBuilder const cache_dir =
@@ -600,9 +691,9 @@ struct CacheGeometry {
             std::vector<int> group = parse_cpu_list_(shared_text.text());
             std::sort(group.begin(), group.end());
             if (group.empty()) return os_door::Visit::proceed;
-            if (std::find(all_groups.begin(), all_groups.end(), group) == all_groups.end()) {
-                all_groups.push_back(std::move(group));
-            }
+            bool const is_new = std::find(all_groups.begin(), all_groups.end(), group) == all_groups.end();
+            place_l3_group_(cpu, group.front(), is_new, table);
+            if (is_new) all_groups.push_back(std::move(group));
             return os_door::Visit::stop;  // one L3 for each CPU
         }));
     }
@@ -618,8 +709,9 @@ struct NumaTables {
 };
 
 // The node ids in ascending order.  They are ids, not positions: a host with
-// node0 and node2 gives {0, 2}.  No node when sysfs names none.
-[[nodiscard, gnu::noinline]] NumaTables probe_numa_tables_(std::string_view sysfs_root) noexcept {
+// node0 and node2 gives {0, 2}.  No node when sysfs names none.  Each node
+// also counts for its packages (THE PACKAGES).
+[[nodiscard, gnu::noinline]] NumaTables probe_numa_tables_(std::string_view sysfs_root, PackageTable& table) noexcept {
     NumaTables tables{};
     std::vector<int> nodes = numbered_entries(PathBuilder{sysfs_root}.add("/devices/system/node"), "node");
     if (nodes.empty()) return tables;
@@ -633,6 +725,7 @@ struct NumaTables {
         Value const cpulist_text = read_value(PathBuilder{node_dir}.add("/cpulist"));
         std::vector<int> cpus_on_node = parse_cpu_list_(cpulist_text.text());
         std::sort(cpus_on_node.begin(), cpus_on_node.end());
+        place_numa_node_(base_core::detail::view_over_(cpus_on_node.data(), cpus_on_node.size()), table);
         new_cores_on_node[position] = std::move(cpus_on_node);
 
         // A row with one entry per node indexes by position.  A missing row,
@@ -748,22 +841,30 @@ void Topology::probe_linux_(std::string_view sysfs_root) noexcept {
     l3_ = geometry.l3;
     line_ = geometry.line;
 
-    const std::size_t physical_cores = count_physical_cores_(sysfs_root, cpus);
+    PathBuilder const root{sysfs_root};
+    PackageTable table{.slots = packages_, .root = root};
+    const std::size_t physical_cores = count_cores_and_packages_(sysfs_root, cpus, table);
     if (physical_cores != 0) {
         cores_ = physical_cores;
     }
 
-    auto all_groups = probe_l3_groups_(sysfs_root, cpus);
+    auto all_groups = probe_l3_groups_(sysfs_root, cpus, table);
     if (!all_groups.empty()) {
         l3_groups_ = std::move(all_groups);
     }
 
-    NumaTables numa = probe_numa_tables_(sysfs_root);
+    NumaTables numa = probe_numa_tables_(sysfs_root, table);
     if (!numa.node_ids.empty()) {
         numa_node_ids_ = std::move(numa.node_ids);
         cores_on_node_ = std::move(numa.cores_on_node);
         numa_distance_ = std::move(numa.distance);
+    } else {
+        // The tree names no node, and the topology then holds one node.
+        for (std::size_t position = 0; position < table.count; ++position) {
+            table.slots[position].numa_nodes = 1;
+        }
     }
+    package_count_ = table.is_refused ? 0 : table.count;
 
     source_ = Source::Sysfs;
 }

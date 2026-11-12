@@ -456,6 +456,59 @@ void test_missing_cache_directory_still_reads_nodes() {
     CRUCIBLE_TEST_REQUIRE(topo.largest_l3_group_cpus() == 2);
 }
 
+// The packages of this host, when the probe gives them, hold each thread and
+// each core of the host one time, and each package holds a thread and a core.
+// The count of the packages is not fixed.
+void test_packages_cover_the_host() {
+    auto& t = Topology::instance();
+    std::size_t threads = 0;
+    std::size_t cores = 0;
+    for (Topology::Package const& package : t.packages()) {
+        assert(package.threads > 0 && package.cores > 0 && package.cores <= package.threads);
+        threads += package.threads;
+        cores += package.cores;
+    }
+    assert(t.packages().size() == 0 || (threads == t.num_smt_threads() && cores == t.num_cores()));
+}
+
+// Whether a package holds the counts that a planted tree gives it.
+[[nodiscard]] bool is_package(Topology::Package const& package, std::size_t id, std::size_t threads, std::size_t cores,
+                              std::size_t l3_groups, std::size_t numa_nodes) {
+    return package.id == id && package.threads == threads && package.cores == cores && package.l3_groups == l3_groups
+        && package.numa_nodes == numa_nodes;
+}
+
+// A host of two sockets that are not the same (test/CMakeLists.txt plants the
+// tree).  Each package keeps its own counts: the package 0 has four threads
+// on two cores, two L3 groups and two nodes, and the package 2 has two
+// threads on two cores, one L3 group and one node.  The core ids of the
+// package 2 number from 0 again, and they are not the cores of the package 0.
+void test_packages_of_two_sockets() {
+    const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
+    const auto topo = Topology::probe_tree(ctx, TWO_PACKAGE_SYSFS_ROOT);
+
+    assert(topo.num_cores() == 4 && topo.num_smt_threads() == 6);
+    assert(topo.numa_nodes() == 3 && topo.packages().size() == 2);
+    std::size_t position = 0;
+    for (Topology::Package const& package : topo.packages()) {
+        assert(position != 0 || is_package(package, 0, 4, 2, 2, 2));
+        assert(position != 1 || is_package(package, 2, 2, 2, 1, 1));
+        ++position;
+    }
+}
+
+// An L3 group whose two CPUs name the packages 0 and 1 is a fact that the
+// probe refuses (test/fixy/CMakeLists.txt plants the tree).  The topology
+// then gives no package, and its other facts stay.
+void test_split_l3_group_refuses_the_packages() {
+    const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
+    const auto topo = Topology::probe_tree(ctx, SPLIT_L3_SYSFS_ROOT);
+
+    assert(topo.source() == Topology::Source::Sysfs);
+    assert(topo.num_cores() == 2 && topo.largest_l3_group_cpus() == 2);
+    assert(topo.packages().size() == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -484,6 +537,9 @@ int main() {
     run_test("test_sparse_numa_node_ids", test_sparse_numa_node_ids);
     run_test("test_malformed_distance_row_reads_conventional", test_malformed_distance_row_reads_conventional);
     run_test("test_missing_cache_directory_still_reads_nodes", test_missing_cache_directory_still_reads_nodes);
+    run_test("test_packages_cover_the_host", test_packages_cover_the_host);
+    run_test("test_packages_of_two_sockets", test_packages_of_two_sockets);
+    run_test("test_split_l3_group_refuses_the_packages", test_split_l3_group_refuses_the_packages);
 
     crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

@@ -393,7 +393,7 @@ src/cntp/_wip/ | std-entity | 23 | - | -
 src/cntp/_wip/ | std-object | 14 | - | -
 src/cog/ | std-entity | 33 | - | -
 src/cog/ | std-object | 19 | - | -
-src/fixy/os/ | base-std-entity | 158 | - | -
+src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 src/fixy/os/ | replace-pending:<string> | 1 | - | -
@@ -424,7 +424,7 @@ src/topology/ | replace-pending:<limits> | 3 | - | -
 src/topology/ | std-entity | 311 | - | -
 src/topology/ | std-object | 109 | - | -
 test/ | c-array-object | 463 | - | -
-test/ | c-library-call | 983 | - | -
+test/ | c-library-call | 981 | - | -
 test/ | c-library-object | 16 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 25 | - | -
@@ -435,8 +435,8 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 678 | - | -
 test/ | replace-pending:<limits> | 14 | - | -
 test/ | replace-pending:std::bit_cast | 104 | - | -
-test/ | std-entity | 5596 | - | -
-test/ | std-object | 1882 | - | -
+test/ | std-entity | 5575 | - | -
+test/ | std-object | 1874 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -722,7 +722,7 @@ test/tsan/ | std-object | 15 | - | -
 test/types_neg/ | raw-function-pointer | 1 | - | -
 test/vessel_neg/ | c-array-object | 1 | - | -
 test/vigil_neg/ | c-array-object | 1 | - | -
-test/vigil_neg/ | raw-pointer-object | 6 | - | -
+test/vigil_neg/ | raw-pointer-object | 5 | - | -
 test/vigil_neg/ | std-entity | 1 | - | -
 utils/tools/ | c-array-object | 3 | - | -
 utils/tools/ | c-library-call | 40 | - | -

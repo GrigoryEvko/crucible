@@ -524,20 +524,40 @@ target_include_directories(test_permission_row_roster PRIVATE "${CMAKE_CURRENT_B
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_ledger)
-# A sysfs tree of one socket with two L3 instances of 32 MB: cpu0 and cpu1
-# have the package 0, and each CPU has an L3 of its own.  test_ledger reads
-# the tree through Topology::probe_tree.
+# Writes the files of one CPU of a planted sysfs tree under ROOT: the id of
+# its package, its core id and an L3 of 32 MB that the CPUs of SHARED share.
+# A test reads such a tree through Topology::probe_tree.
+function(crucible_planted_sysfs_cpu root cpu package core shared)
+  set(cpu_dir "${root}/devices/system/cpu/cpu${cpu}")
+  file(CONFIGURE OUTPUT "${cpu_dir}/cache/index3/level" CONTENT "3\n")
+  file(CONFIGURE OUTPUT "${cpu_dir}/cache/index3/type" CONTENT "Unified\n")
+  file(CONFIGURE OUTPUT "${cpu_dir}/cache/index3/size" CONTENT "32768K\n")
+  file(CONFIGURE OUTPUT "${cpu_dir}/cache/index3/shared_cpu_list" CONTENT "${shared}\n")
+  file(CONFIGURE OUTPUT "${cpu_dir}/topology/core_id" CONTENT "${core}\n")
+  file(CONFIGURE OUTPUT "${cpu_dir}/topology/physical_package_id" CONTENT "${package}\n")
+endfunction()
+# A sysfs tree of one socket with two L3 instances: cpu0 and cpu1 have the
+# package 0, and each CPU has an L3 of its own.
 set(_two_l3_root "${CMAKE_CURRENT_BINARY_DIR}/sysfs_two_l3_one_socket")
-foreach(_cpu 0 1)
-  set(_cpu_dir "${_two_l3_root}/devices/system/cpu/cpu${_cpu}")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/level" CONTENT "3\n")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/type" CONTENT "Unified\n")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/size" CONTENT "32768K\n")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/shared_cpu_list" CONTENT "${_cpu}\n")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/topology/core_id" CONTENT "${_cpu}\n")
-  file(CONFIGURE OUTPUT "${_cpu_dir}/topology/physical_package_id" CONTENT "0\n")
-endforeach()
-target_compile_definitions(test_ledger PRIVATE TWO_L3_SYSFS_ROOT="${_two_l3_root}")
+crucible_planted_sysfs_cpu("${_two_l3_root}" 0 0 0 0)
+crucible_planted_sysfs_cpu("${_two_l3_root}" 1 0 1 1)
+# A sysfs tree of two sockets that are not the same, with the package ids 0
+# and 2.  The package 0 has cpu0 to cpu3: two cores with two threads each, an
+# L3 for each core and the NUMA nodes 0 and 1.  The package 2 has cpu4 and
+# cpu5: two cores that number from 0 again, one L3 and the node 3.  The
+# Topology test (test/fixy) reads the tree too.
+set(CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT "${CMAKE_CURRENT_BINARY_DIR}/sysfs_two_packages")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 0 0 0 "0,2")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 1 0 1 "1,3")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 2 0 0 "0,2")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 3 0 1 "1,3")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 4 2 0 "4-5")
+crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 5 2 1 "4-5")
+file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node0/cpulist" CONTENT "0-1\n")
+file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node1/cpulist" CONTENT "2-3\n")
+file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node3/cpulist" CONTENT "4-5\n")
+target_compile_definitions(test_ledger PRIVATE TWO_L3_SYSFS_ROOT="${_two_l3_root}"
+                                               TWO_PACKAGE_SYSFS_ROOT="${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}")
 # The probes time through bench/bench_harness.h rather than carrying their
 # own rig — the harness already reports the quantiles, the within-run
 # coefficient of variation and the drift check a ledger evidence record

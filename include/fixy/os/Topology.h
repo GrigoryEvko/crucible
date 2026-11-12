@@ -1,7 +1,8 @@
 #pragma once
 
-// What the machine is: its caches, its cores, its NUMA nodes and its
-// page size, read once from sysfs and held for the life of the process.
+// What the machine is: its caches, its cores, its packages, its NUMA
+// nodes and its page size, read once from sysfs and held for the life of
+// the process.
 // Every figure a caller cannot read is a fallback that stands in for a
 // measurement, deliberately above the conservative floors in
 // WorkingSet.h, so an unmeasured host never reads as the smallest one.
@@ -211,6 +212,33 @@ public:
 
     [[nodiscard]] Source source() const noexcept { return source_; }
 
+    // One physical package of the host: a socket.  The id is the
+    // physical_package_id that sysfs gives each CPU of the package, and the
+    // ids can be sparse.  Each count is a count of the package alone.
+    struct Package {
+        std::size_t id = 0;
+        // The online hardware threads of the package.
+        std::size_t threads = 0;
+        // The physical cores: the distinct core ids of the package.
+        std::size_t cores = 0;
+        // The L3 groups whose CPUs are CPUs of the package.
+        std::size_t l3_groups = 0;
+        // The NUMA nodes with at least one CPU of the package.
+        std::size_t numa_nodes = 0;
+    };
+
+    // The largest count of packages that the probe reads.
+    static constexpr std::size_t package_capacity = 64;
+
+    // The packages in ascending order of id (THE PACKAGES in
+    // src/fixy/os/Topology.cpp).  Empty when sysfs names no CPU, and when
+    // the probe refuses the facts of the packages: an L3 group or a NUMA
+    // node with the CPUs of a package that the CPUs do not name, or more
+    // than package_capacity packages.
+    [[nodiscard]] View<Package const> packages() const noexcept {
+        return ::foundation::core::detail::view_over_(static_cast<Package const*>(packages_), package_count_);
+    }
+
     // The capacity of the text of the summary.  The summary of each host
     // fits it, and a report writes a text of this size with one system call.
     static constexpr std::size_t summary_capacity = 512;
@@ -269,6 +297,10 @@ private:
     std::vector<std::vector<int>> cores_on_node_;
     std::vector<std::vector<int>> numa_distance_;
     Source source_ = Source::Fallback;
+
+    // The packages of packages(): the first package_count_ slots.
+    Package packages_[package_capacity]{};
+    std::size_t package_count_ = 0;
 
     // The position of a node id.  Complexity: logarithmic in the node
     // count, because the ids are sorted.

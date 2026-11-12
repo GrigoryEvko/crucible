@@ -4012,6 +4012,14 @@ fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
 # affinity.  The machine under test is unknown, so every assertion is
 # structural: it bounds a value or relates two, and never pins a number.
 fixy_test(test_topology)
+# The planted sysfs trees of the packages.  test/CMakeLists.txt plants the
+# tree of two sockets.  The tree of one L3 group whose two CPUs name the
+# packages 0 and 1 holds facts that the probe refuses.
+set(_split_l3_root "${CMAKE_CURRENT_BINARY_DIR}/sysfs_split_l3_group")
+crucible_planted_sysfs_cpu("${_split_l3_root}" 0 0 0 "0-1")
+crucible_planted_sysfs_cpu("${_split_l3_root}" 1 1 0 "0-1")
+target_compile_definitions(test_topology PRIVATE TWO_PACKAGE_SYSFS_ROOT="${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}"
+                                                 SPLIT_L3_SYSFS_ROOT="${_split_l3_root}")
 
 # Topology::probe_tree reads a sysfs tree under another root, and only a
 # context that owns the Test capability reaches it.

@@ -139,7 +139,7 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     // did not, two Cogs that CogMimic considers binary-incompatible could
     // share ledger entries, which is the drift this reuse exists to stop.
     const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx);
-    const cog::CpuSocketTargetCaps socket = ledger::to_socket_caps(facts);
+    const cog::CpuSocketTargetCaps socket = ledger::to_socket_caps(facts, facts.sockets[0]);
 
     cog::CpuSocketTargetCaps other = socket;
     other.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(socket.l3_bytes.value() * 2u);
@@ -164,20 +164,50 @@ void test_socket_caps_hold_each_l3_instance() {
     const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx, machine);
     assert(facts.l3_instance_count == 2u);
     assert(facts.l3_instance_bytes == kInstanceBytes);
-    assert(ledger::to_socket_caps(facts).l3_bytes.value() == 2u * kInstanceBytes);
+    assert(facts.socket_count == 1u && facts.sockets[0].l3_instance_count == 2u);
+    assert(ledger::to_socket_caps(facts, facts.sockets[0]).l3_bytes.value() == 2u * kInstanceBytes);
 
-    // A host whose sysfs names no L3 group reads as one instance, as the
-    // topology does, so its socket caps hold the bytes of the instance.
+    // A socket with no L3 group reads as one instance, as the topology reads
+    // a host with no L3 group, so its caps hold the bytes of the instance.
     ledger::HostFacts ungrouped = facts;
-    ungrouped.l3_instance_count = 0u;
-    assert(ledger::to_socket_caps(ungrouped).l3_bytes.value() == kInstanceBytes);
+    ungrouped.sockets[0].l3_instance_count = 0u;
+    assert(ledger::to_socket_caps(ungrouped, ungrouped.sockets[0]).l3_bytes.value() == kInstanceBytes);
 
     // A product past 64 bits saturates and does not wrap.
     ledger::HostFacts oversized = facts;
     oversized.l3_instance_bytes = ~std::uint64_t{0};
-    assert(ledger::to_socket_caps(oversized).l3_bytes.value() == ~std::uint64_t{0});
+    assert(ledger::to_socket_caps(oversized, oversized.sockets[0]).l3_bytes.value() == ~std::uint64_t{0});
 
     crucible::test::pass("  test_socket_caps_hold_each_l3_instance:    PASSED\n");
+}
+
+// Whether the caps of a socket hold the counts of its package.
+[[nodiscard]] bool has_socket_caps(cog::CpuSocketTargetCaps const& caps, std::uint16_t cores, std::uint16_t threads,
+                                   std::uint64_t l3_bytes, std::uint8_t numa_nodes) noexcept {
+    return caps.core_count.value() == cores && caps.thread_count.value() == threads && caps.l3_bytes.value() == l3_bytes
+        && caps.numa_node_count.value() == numa_nodes;
+}
+
+// A host of two sockets that are not the same.  test/CMakeLists.txt plants
+// the sysfs tree: the package 0 has two cores with two threads each, two L3
+// instances and two nodes, and the package 2 has two cores with one thread
+// each, one L3 instance and one node.  Each socket gets the caps of its own
+// package, and no socket gets the counts of the host.  The fingerprint then
+// changes when one socket changes.
+void test_socket_caps_of_each_package() {
+    constexpr std::uint64_t kInstanceBytes = std::uint64_t{32} * 1024u * 1024u;
+    const auto machine = ::fixy::topology::Topology::probe_tree(probe_ctx, TWO_PACKAGE_SYSFS_ROOT);
+    const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx, machine);
+    assert(facts.physical_core_count == 4u && facts.hw_thread_count == 6u && facts.l3_instance_count == 3u);
+    assert(facts.socket_count == 2u);
+    assert(has_socket_caps(ledger::to_socket_caps(facts, facts.sockets[0]), 2u, 4u, 2u * kInstanceBytes, 2u));
+    assert(has_socket_caps(ledger::to_socket_caps(facts, facts.sockets[1]), 2u, 2u, kInstanceBytes, 1u));
+
+    ledger::HostFacts rewired = facts;
+    rewired.sockets[1].numa_node_count = 2u;
+    assert(ledger::fold_hardware(rewired) != ledger::fold_hardware(facts));
+
+    crucible::test::pass("  test_socket_caps_of_each_package:          PASSED\n");
 }
 
 // ── Competence ────────────────────────────────────────────────────────
@@ -817,6 +847,7 @@ int main() {
     test_fingerprint_halves_are_independent();
     test_fingerprint_reuses_the_cogmimic_projection();
     test_socket_caps_hold_each_l3_instance();
+    test_socket_caps_of_each_package();
     test_competence_names_every_defect();
     test_competence_load_uses_machine_capacity();
     test_competence_accepts_a_pinned_floor_under_any_governor();
