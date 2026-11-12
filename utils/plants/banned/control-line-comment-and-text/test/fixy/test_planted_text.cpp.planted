@@ -1,0 +1,13 @@
+// A comment that names #line 10 "include/fixy/atoms/Os.h" is no directive.
+/* # 12 "include/fixy/atoms/Os.h" 1 is no line marker in a comment. */
+char const* text = "#line 10 \"include/fixy/atoms/Os.h\"";
+char const* raw = R"(
+#line 4 "include/fixy/Atom.h"
+# 7 "include/fixy/atoms/Os.h"
+)";
+
+#define PLANTED_LINE_TEXT "#line"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic pop
+
+int main() { return text[0] == raw[0] ? 0 : 1; }

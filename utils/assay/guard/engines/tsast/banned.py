@@ -1,6 +1,6 @@
-"""banned — no reserve call on a std container, no file stream or process start, and no reinterpret_cast.
+"""banned — no reserve call on a std container, no file stream or process start, no reinterpret_cast, no line directive.
 
-THE FOUR KINDS
+THE FIVE KINDS
     vector-reserve  CLAUDE.md section IV bans `std::vector::reserve`.  The
                     kind reads each call with a member access named `reserve`
                     as its callee: `v.reserve(n)`, `p->reserve(n)`,
@@ -46,17 +46,34 @@ THE FOUR KINDS
                     finding.  The kind finds a cast on more than one line,
                     and a cast with a space before its `<`.  It reads
                     include/, src/ and vessel/.
+    line-directive  A `#line` directive or a GNU line marker, such as
+                    `# 12 "include/fixy/atoms/Os.h"`, changes the file that
+                    the compiler gives each declaration after it.  The
+                    concept IsAtom of fixy/Atom.h reads that file through
+                    source_location_of: the seal of an atom family must be in
+                    the header of the family, and each atom must be in the
+                    file of its seal.  A directive that names a family header
+                    forges that seal check, and no property of a type can
+                    refuse it.  The kind reads each preprocessor directive of
+                    the parse tree whose name after `#` is `line` or starts
+                    with a digit.  A comment and a string literal are nodes of
+                    their own, so a text `#line` in them gives no finding.  A
+                    macro body cannot hold a directive.  The kind reads each
+                    C++ file of the tree, also under test/, bench/ and fuzz/.
+                    A file that the build writes is not in the tree, and the
+                    rule does not read it.
     The rule quarantine counts the calls of the first three kinds in a
     quarantined file that a counted configuration compiles.  But its ledger
     admits each count of the tree, it gives a reserve call no kind of its
     own, and no counted configuration compiles vessel/torch.  For these three
     reasons, this rule also reads the quarantined files of its scope.
 
-THE REFUSED KIND
-    No ledger row admits a cast.  REFUSED_KINDS names the kind
-    reinterpret-cast (assay.guard.engines.meta.runner, THE REFUSED KINDS), so
-    a row of that kind admits no finding, and a write of the rule refuses
-    each cast.  A row of each other kind admits its sites.
+THE REFUSED KINDS
+    No ledger row admits a cast or a line directive.  REFUSED_KINDS names the
+    kinds reinterpret-cast and line-directive (assay.guard.engines.meta.runner,
+    THE REFUSED KINDS), so a row of such a kind admits no finding, and a write
+    of the rule refuses each such site.  A row of each other kind admits its
+    sites.
 
 THE MACRO BODIES
     The rule reads the parse of each macro body (`tsast.macro_bodies`) with
@@ -103,7 +120,9 @@ THE ENTITY
     The entity of a finding is `HOLDER: CALLEE` for vector-reserve,
     `HOLDER: NAME` for file-stream and process-start, and
     `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast, with the spelling
-    of the source (`tsast.spelled()`).  An include of `<fstream>` has the
+    of the source (`tsast.spelled()`).  It is `HOLDER: DIRECTIVE` for
+    line-directive, with the directive and its argument as the source spells
+    them.  An include of `<fstream>` has the
     name `#include <fstream>`.  When the tree shows no target type of a cast,
     as in a body that does not parse, the entity has `reinterpret_cast`
     alone.  HOLDER is the signature of the function that holds the site
@@ -112,8 +131,12 @@ THE ENTITY
     site in a macro body, HOLDER is `#define NAME`.
 
 THE SCOPE
-    The files of the scope of the registry in the directories of each kind,
-    less each directory test, examples, third_party, external and vendor.
+    The scope of the registry is tracked: each C++ file of the tree
+    (assay.guard.engines.tsast.runner, THE SCOPE).  The kind line-directive
+    reads each file of that scope.  Each other kind reads the files in its
+    directories, less each directory test, examples, third_party, external
+    and vendor.  The rule keeps only the trees of those files, and it reads
+    the macro bodies of those files only.
 
 Complexity: linear in the bytes of the scope and of its macro bodies, plus a walk of the scopes around each reserve call.
 """
@@ -135,9 +158,15 @@ RESERVE_KIND = "vector-reserve"
 STREAM_KIND = "file-stream"
 START_KIND = "process-start"
 CAST_KIND = "reinterpret-cast"
-# The kinds that no ledger row admits (THE REFUSED KIND).
-REFUSED_KINDS = frozenset({CAST_KIND})
+LINE_KIND = "line-directive"
+# The kinds that no ledger row admits (THE REFUSED KINDS).
+REFUSED_KINDS = frozenset({CAST_KIND, LINE_KIND})
 CAST_KEYWORD = "reinterpret_cast"
+# The name of a #line directive after `#`.  A GNU line marker has a number in place of the name.
+LINE_NAME = "line"
+DIGITS = frozenset("0123456789")
+# The line splice of the preprocessor, which a directive name can hold.
+LINE_SPLICE = "\\\n"
 EXCLUDED_DIRECTORIES = frozenset({"test", "examples", "third_party", "external", "vendor"})
 # The directories that each kind reads, in the scope of the registry.
 RESERVE_ROOTS = ("include/", "src/", "bench/")
@@ -246,6 +275,12 @@ STREAM_MESSAGE = (
 CAST_MESSAGE = (
     "`{entity}` spells the keyword reinterpret_cast, which CLAUDE.md section III bans.  Use std::bit_cast with "
     "the limits of section IV, or std::start_lifetime_as for the objects of an arena.  No ledger row admits a cast"
+)
+LINE_MESSAGE = (
+    "`{entity}` is a line directive.  It changes the file that the compiler gives each declaration after it.  The "
+    "concept IsAtom of fixy/Atom.h reads that file through source_location_of: the seal of an atom family must be in "
+    "the header of the family, and each atom must be in the file of its seal.  A directive that names a family "
+    "header forges that seal check, and no type can refuse it.  Remove the directive.  No ledger row admits it"
 )
 TOKEN_RESERVE_WHY = "the macro body does not parse, so the parse tree does not show the type of the receiver"
 
@@ -856,6 +891,28 @@ def cast_references(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
         yield node, cast_of(node)
 
 
+def is_line_directive(directive: str) -> bool:
+    """Return True when the text of a directive is `#line` or a GNU line marker, with or without a space or a splice.
+
+    The name of the directive is the text after `#` with no space, no tab and no line splice.
+    """
+    name = "".join(directive.removeprefix("#").replace(LINE_SPLICE, "").split())
+    return name == LINE_NAME or (bool(name) and name[0] in DIGITS)
+
+
+def line_directives(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
+    """Yield each line directive of a root and its spelling, in the sequence of the source (line-directive).
+
+    Complexity: linear in the nodes of the root.
+    """
+    for node in root.descendants("preproc_call"):
+        directive = node.child_by_field("directive")
+        if directive is None or not is_line_directive(directive.text):
+            continue
+        argument = node.child_by_field("argument")
+        yield node, directive.text if argument is None else f"{directive.text} {argument.text.strip()}"
+
+
 def holds(roots: tuple[str, ...], path: str, others: tuple[str, ...] = ()) -> bool:
     """Return True when a file is in one of the roots of a kind, and in none of the other directories."""
     return path.startswith(roots) and not path.startswith(others)
@@ -885,13 +942,14 @@ def finding(kind: str, path: str, line: int, entity: str, why: str = "") -> chec
         STREAM_KIND: STREAM_MESSAGE,
         START_KIND: START_MESSAGE,
         CAST_KIND: CAST_MESSAGE,
+        LINE_KIND: LINE_MESSAGE,
     }[kind]
     return check_report.Finding("error", path, line, RULE, message.format(entity=entity, why=why), kind, entity)
 
 
 @dataclass(frozen=True, slots=True)
 class Kinds:
-    """The kinds that read one file."""
+    """The kinds other than line-directive that read one file.  The kind line-directive reads each file."""
 
     reserve: bool
     stream: bool
@@ -900,13 +958,20 @@ class Kinds:
 
     @classmethod
     def of(cls, path: str) -> Self:
-        """Return the kinds with directories that hold a file."""
+        """Return the kinds with directories that hold a file, or no kind for a file in a directory that none reads."""
+        if has_directory(path, EXCLUDED_DIRECTORIES):
+            return cls(False, False, False, False)
         return cls(
             holds(RESERVE_ROOTS, path),
             holds(RUNTIME_DIRECTORIES, path),
             holds(START_ROOTS, path, START_EXCLUDED),
             holds(CAST_ROOTS, path),
         )
+
+    @property
+    def reads_sites(self) -> bool:
+        """Return True when one of the kinds reads the file, so the rule keeps its tree and reads its macro bodies."""
+        return self.reserve or self.stream or self.start or self.cast
 
 
 def file_findings(tree: tsast.Tree, kinds: Kinds, types: TypeIndex) -> Iterator[check_report.Finding]:
@@ -962,15 +1027,22 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each site of each kind in the files of its directories (THE FOUR KINDS)."""
-    trees = list(
-        context.trees([path for path in context.scope_files() if not has_directory(path, EXCLUDED_DIRECTORIES)])
-    )
-    kinds = {tree.path.as_posix(): Kinds.of(tree.path.as_posix()) for tree in trees}
-    types = TypeIndex([tree for tree in trees if kinds[tree.path.as_posix()].reserve])
+    """Give an error for each line directive of the scope, and for each site of each other kind in the files of its
+    directories (THE FIVE KINDS, THE SCOPE)."""
     found: list[check_report.Finding] = []
-    for tree in trees:
+    kept: list[tsast.Tree] = []
+    for tree in context.trees(context.scope_files()):
+        path = tree.path.as_posix()
+        found += [
+            finding(LINE_KIND, path, node.line, f"{holder_of(node)}: {spelling}")
+            for node, spelling in line_directives(tree.root)
+        ]
+        if Kinds.of(path).reads_sites:
+            kept.append(tree)
+    kinds = {tree.path.as_posix(): Kinds.of(tree.path.as_posix()) for tree in kept}
+    types = TypeIndex([tree for tree in kept if kinds[tree.path.as_posix()].reserve])
+    for tree in kept:
         found += file_findings(tree, kinds[tree.path.as_posix()], types)
-    for body in context.macro_bodies(trees):
+    for body in context.macro_bodies(kept):
         found += body_findings(body, kinds[PurePosixPath(body.define.tree.path).as_posix()], types)
     return found

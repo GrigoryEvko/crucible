@@ -1,0 +1,12 @@
+// A test that forges the file of an atom family with a GNU line marker, the
+// form that the preprocessor writes into its output.
+#include <fixy/Atom.h>
+
+namespace fixy::atom::fs {
+
+# 12 "include/fixy/atoms/Os.h" 1
+struct planted_atom final {};
+
+}  // namespace fixy::atom::fs
+
+int main() { return 0; }

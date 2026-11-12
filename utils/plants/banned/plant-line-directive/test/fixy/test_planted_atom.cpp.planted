@@ -1,0 +1,12 @@
+// A test that forges the file of an atom family: the declarations after the
+// directive have the file of the header that seals the family io.
+#include <fixy/Atom.h>
+
+#line 40 "include/fixy/atoms/Os.h"
+namespace fixy::atom::io {
+
+inline constexpr atom_seal planted_seal{};
+
+}  // namespace fixy::atom::io
+
+int main() { return 0; }
