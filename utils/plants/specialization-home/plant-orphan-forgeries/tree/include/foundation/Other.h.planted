@@ -1,0 +1,14 @@
+#pragma once
+
+#include <foundation/Sealed.h>
+
+namespace foundation::plant {
+
+// A base file that specializes the extension point for a type of a
+// different base file.
+template <>
+struct niche<Sealed> {
+    static constexpr Sealed empty(niche_key<Sealed> const&) noexcept { return Sealed{nullptr}; }
+};
+
+}  // namespace foundation::plant

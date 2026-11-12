@@ -11,7 +11,12 @@ THE RULE
       specialization    an explicit or partial specialization, or an explicit
                         specialization of a member of an instance, outside the
                         home of a template with no open mark
-      foreign-primary   a template of the namespace foundation or fixy that a
+      orphan            such a site of a template with the open mark, in a
+                        file that does not define each top-level template
+                        argument.  The mark opens a template to each file for
+                        its own types only, as the orphan rule of Rust does
+                        (THE COHERENCE of specialization.cpp)
+      foreign-primary  a template of the namespace foundation or fixy that a
                         file outside the base declares first.  A forward
                         declaration before the header moves the home of a
                         template that no unit defines
@@ -21,13 +26,14 @@ THE RULE
                         declaration as the home, also after the definition
       open-extension    a record: a template with the annotation
                         foundation::open_extension, at its home
-    A template with the open mark is open to each file.  GCC merges the mark
+    A template with the open mark is open to each file for the types that the
+    file defines.  GCC merges the mark
     of a second declaration into the template, so a file can add the mark to
     a template of a different file.  The rule then judges each record
     open-extension as a finding, and only a ledger row admits it: the ledger
     is the roster of the open templates.
 
-    The plugin makes each line of the first three kinds a compile error in
+    The plugin makes each line of the first four kinds a compile error in
     each build and each mode (THE ERRORS of specialization.cpp), so no object
     holds such a line.  A test of a forged specialization puts it in an
     opt-out region of the reason class PROBE:, and the rule quarantine counts
@@ -56,6 +62,9 @@ ACTIONS = {
     "specialization": "is specialized here, outside the file that defines it.  A specialization changes what each "
     "gate that reads the template admits.  Move the specialization into the home of the template, or give the "
     "template the annotation foundation::open_extension with its reason and a ledger row",
+    "orphan": "carries the open mark, and this file specializes it for a type that a different file defines.  The "
+    "specialization gets the authority that the template gives that type.  Specialize the template in the file that "
+    "defines each of its arguments, or in its home",
     "foreign-primary": "is a template of the base that this file declares first, so the home of the template moves "
     "here.  Include the header of the template and remove the declaration, or move the template into the base",
     "forward-declaration": "is declared here with extern before its definition, so its home moves here and a "

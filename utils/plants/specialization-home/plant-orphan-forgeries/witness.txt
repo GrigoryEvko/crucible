@@ -1,0 +1,33 @@
+# The open mark opens a template to each file for its own types only.  A
+# test file that specializes an extension point for a type of the base gets
+# the authority that the template gives that type: the friend route through
+# a friend declaration of niche, the key route through a hidden friend that
+# the key opens, and a new body of a member of the niche of the base.  Each
+# such site is an orphan, and so are a partial specialization over a
+# template of the base, a nested class that the test defines in a class of
+# the base, a const type of the base, a pointer, a fundamental type and a
+# family of the base.  A base file that specializes the extension point for
+# a type of a different base file is an orphan too.  Each orphan is a compile
+# error in each mode, and the module of the rule refuses each line.
+compile forge test/forge.cpp specialization-home=on errors=forge
+exit forge fail
+finding forge specialization-home open-extension include/foundation/Niche.h:19:102 | foundation::plant::niche
+finding forge specialization-home open-extension include/foundation/Niche.h:23:98 | foundation::plant::family_width
+finding forge specialization-home orphan test/forge.cpp:9:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:15:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:23:25 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:29:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:34:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:39:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:41:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:43:12 | foundation::plant::niche
+finding forge specialization-home orphan test/forge.cpp:45:12 | foundation::plant::family_width
+judge forge
+compile forge_error test/forge.cpp mode=error specialization-home=on findings=forge errors=forge
+exit forge_error fail
+compile base test/base.cpp specialization-home=on errors=base
+exit base fail
+finding base specialization-home open-extension include/foundation/Niche.h:19:102 | foundation::plant::niche
+finding base specialization-home open-extension include/foundation/Niche.h:23:98 | foundation::plant::family_width
+finding base specialization-home orphan include/foundation/Other.h:10:8 | foundation::plant::niche
+judge base

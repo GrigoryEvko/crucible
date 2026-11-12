@@ -118,7 +118,6 @@ test/fixy/test_armed_roster.cpp | outside-home | 15 | foundation::contracts::arm
 test/fixy/test_cheat_probe.cpp | outside-home | 1 | foundation::algebra::is_graded_specialization | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
 test/fixy/test_machine.cpp | outside-home | 2 | fixy::machine::admitted_transitions | the test of the machine admits the edges of its own planted machine
 test/fixy/test_pipeline_dispatch.cpp | outside-home | 4 | fixy::concurrent::is_stage_inline_safe | the dispatch test claims inline dispatch for its planted stages
-test/foundation/test_core_choice.cpp | outside-home | 1 | foundation::core::niche | the test gives its planted payload an empty value, to test the storage form of an Option with a niche
 test/foundation/test_diag.cpp | outside-home | 3 | foundation::diag::insight_provider | the test expands the insight macros for its planted diagnostic tags
 test/foundation/test_permissions_compile.cpp | outside-home | 3 | foundation::permissions::permission_rows | the compile test states the rows of its planted tags
 test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::mint_band | -
@@ -134,7 +133,7 @@ test/layer/checks/fixy/os/OwnedFile.cpp | open-read | 2 | fixy::OwnedFile::relea
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::alternative_of_ | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::element_at_ | a gate over a sealed template reads this function template through get of a View, and only the base calls the door in namespace detail
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::option_form_for | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
-test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::niche | the check reads the storage form of an Option through a sealed template, and the trait row of niche admits a specialization in each header of include/foundation/.  A niche selects only the storage form of an Option
+test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::niche | the check reads the storage form of an Option through a sealed template, and niche carries the open mark, so each file can specialize it for its own types.  A niche selects only the storage form of an Option
 test/layer/checks/fixy/os/Path.cpp | open-read | 1 | fixy::sanitize::path_traversal::sanitize_path_no_dotdot | -
 test/layer/checks/fixy/session/Witnessed.cpp | open-read | 1 | fixy::session::mint_witnessed_under | -
 test/layer/checks/foundation/AlignedBuffer.cpp | open-read | 2 | foundation::detail::aligned_allocation_bytes | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization

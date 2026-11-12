@@ -1,0 +1,42 @@
+#pragma once
+
+#include <foundation/Niche.h>
+
+namespace foundation::plant {
+
+// A pointer that is never null, with its niche beside it.
+class Owned {
+    int* object_ = nullptr;
+    constexpr explicit Owned(int* object) noexcept : object_{object} {}
+    friend struct niche<Owned>;
+
+public:
+    static constexpr Owned to(int& object) noexcept { return Owned{&object}; }
+    constexpr bool holds_null() const noexcept { return object_ == nullptr; }
+};
+
+template <>
+struct niche<Owned> {
+    static constexpr Owned empty(niche_key<Owned> const&) noexcept { return Owned{nullptr}; }
+};
+
+// A class template with its partial niche and its family width beside it.
+template <class T>
+struct OwnedBox {
+    T* object = nullptr;
+};
+
+template <class T>
+struct niche<OwnedBox<T>> {
+    static constexpr OwnedBox<T> empty(niche_key<OwnedBox<T>> const&) noexcept { return OwnedBox<T>{}; }
+};
+
+template <>
+struct family_width<OwnedBox> {};
+
+// A type whose niche the check file of this header states.
+struct Spare {
+    int value = 0;
+};
+
+}  // namespace foundation::plant

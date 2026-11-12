@@ -382,7 +382,10 @@
 //     specialization        a specialization of a template of the tree outside
 //                           the home of the template, when the template has no
 //                           open mark
-//     foreign-primary       the primary declaration of a template of the
+//     orphan                a specialization of a template with the open mark
+//                           outside its home, in a file that does not define
+//                           each of its arguments
+//     foreign-primary      the primary declaration of a template of the
 //                           namespace foundation or fixy outside the base
 //     forward-declaration   a variable template that a unit declares with
 //                           extern before its definition, at that declaration
@@ -966,6 +969,7 @@ enum class Kind : std::uint8_t {
     brand_reentry,
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
+    specialization_orphan,
     specialization_foreign_primary,
     specialization_forward_declaration,
     specialization_open_extension,
@@ -1288,6 +1292,8 @@ inline const char* kind_name(Kind kind) {
             return "reentry";
         case Kind::specialization_outside_home:
             return "specialization";
+        case Kind::specialization_orphan:
+            return "orphan";
         case Kind::specialization_foreign_primary:
             return "foreign-primary";
         case Kind::specialization_forward_declaration:
@@ -1434,6 +1440,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::brand_reentry:
             return Rule::brand_reentry;
         case Kind::specialization_outside_home:
+        case Kind::specialization_orphan:
         case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
         case Kind::specialization_open_extension:
@@ -1459,6 +1466,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::contract_semantic:
         case Kind::fast_math_override:
         case Kind::specialization_outside_home:
+        case Kind::specialization_orphan:
         case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
             return true;
@@ -1668,6 +1676,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"brand-escape", "escaped-alias"},
     {"brand-reentry", "reentry"},
     {"specialization-home", "specialization"},
+    {"specialization-home", "orphan"},
     {"specialization-home", "foreign-primary"},
     {"specialization-home", "forward-declaration"},
     {"specialization-home", "open-extension"},
@@ -1696,6 +1705,7 @@ inline bool is_name_kind(Kind kind) {
         case Kind::contract_semantic:
         case Kind::fast_math_override:
         case Kind::specialization_outside_home:
+        case Kind::specialization_orphan:
         case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
             return true;
@@ -2598,13 +2608,16 @@ location_t defining_location(tree template_decl);
 // specialization.cpp: the family specialization home, the rule
 // specialization-home.  The family home gives it each template that no home
 // row governs (home.cpp, THE SITES).  read_template_home() is true when the
-// rule reads the sites of the template, and note_template_site() judges one
-// site of such a template.  report_specialization() gives the error of one
-// finding of the rule that no region opts out (THE ERRORS).
+// rule seals the template, reads_template_sites() is true when the rule
+// reads its sites, also of a template with the open mark, and
+// note_template_site() judges one site with its template arguments.
+// report_specialization() gives the error of one finding of the rule that no
+// region opts out (THE ERRORS).
 void register_specialization_home(const char* plugin_name);
 bool is_specialization_home_active();
 bool read_template_home(tree template_decl);
-void note_template_site(tree template_decl, location_t location);
+bool reads_template_sites(tree template_decl);
+void note_template_site(tree template_decl, tree arguments, location_t location);
 void report_specialization(const Finding& finding);
 
 // body.cpp: the family library code, the pass that reads the instructions of

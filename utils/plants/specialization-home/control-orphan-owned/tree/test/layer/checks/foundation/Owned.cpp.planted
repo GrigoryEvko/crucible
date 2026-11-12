@@ -1,0 +1,13 @@
+#include <foundation/Owned.h>
+
+// The check file of Owned.h stands where Owned.h stands, so it can state the
+// niche of a type of the header.
+template <>
+struct foundation::plant::niche<foundation::plant::Spare> {
+    static constexpr foundation::plant::Spare empty(foundation::plant::niche_key<foundation::plant::Spare> const&) noexcept {
+        return foundation::plant::Spare{-1};
+    }
+};
+
+static_assert(foundation::plant::NicheRead<foundation::plant::Spare>::empty().value == -1);
+static_assert(foundation::plant::NicheRead<foundation::plant::Owned>::empty().holds_null());

@@ -1,0 +1,49 @@
+#include <foundation/Sealed.h>
+
+namespace fp = ::foundation::plant;
+
+struct Evil {};
+
+// The friend route: niche<Sealed> is a friend of Sealed.
+template <>
+struct fp::niche<fp::Sealed> {
+    static constexpr fp::Sealed empty(fp::niche_key<fp::Sealed> const&) noexcept { return fp::Sealed{nullptr}; }
+};
+
+// The key route: the key of Keyed<Evil> opens the hidden friend of Keyed.
+template <>
+struct fp::niche<fp::Keyed<Evil>> {
+    static constexpr fp::Keyed<Evil> empty(fp::niche_key<fp::Keyed<Evil>> const& key) noexcept {
+        return niche_null_(key);
+    }
+};
+
+// A member of the niche of the base that the test gives a new body.
+template <>
+constexpr fp::Box<Evil> fp::niche<fp::Box<Evil>>::empty(fp::niche_key<fp::Box<Evil>> const&) noexcept {
+    return fp::Box<Evil>{nullptr};
+}
+
+// A partial specialization over a template of the base.
+template <class T>
+struct fp::niche<fp::Box<T*>> {};
+
+// A nested class that the test defines in a class of the base.
+struct fp::Holder::Inner {};
+template <>
+struct fp::niche<fp::Holder::Inner> {};
+
+// A const type of the base, a pointer, a fundamental type, and a family of
+// the base.
+template <>
+struct fp::niche<fp::Sealed const> {};
+template <class T>
+struct fp::niche<T*> {};
+template <>
+struct fp::niche<int> {};
+template <>
+struct fp::family_width<fp::Box> {};
+
+static_assert(fp::NicheRead<fp::Sealed>::empty().holds_null());
+static_assert(fp::NicheRead<fp::Keyed<Evil>>::empty().holds_null());
+static_assert(fp::NicheRead<fp::Box<Evil>>::empty().holds_null());

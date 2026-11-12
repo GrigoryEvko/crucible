@@ -1,8 +1,9 @@
-// A file outside Ref.h can specialize the niche of a Ref for a type of its
-// own.  Ref grants no friend to a niche, so such a specialization cannot call
-// the private constructor of Ref.  A null Ref comes only from a hidden friend
-// of Ref, which takes the niche key.
+// The rule specialization-home refuses a niche of a Ref outside Ref.h, and
+// this probe forges one in an opt-out region.  Ref grants no friend to a
+// niche, so such a specialization cannot call the private constructor of Ref.
+// A null Ref comes only from a hidden friend of Ref, which takes the niche key.
 
+#include <foundation/Quarantine.h>
 #include <foundation/core/Ref.h>
 
 struct Forged {
@@ -11,12 +12,14 @@ struct Forged {
 
 struct ForgeBrand {};
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend")
 template <>
 struct foundation::core::niche<foundation::core::Ref<Forged, ForgeBrand>> {
     [[nodiscard]] static foundation::core::Ref<Forged, ForgeBrand> forge() noexcept {
         return foundation::core::Ref<Forged, ForgeBrand>{static_cast<Forged*>(nullptr)};
     }
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     foundation::core::Ref<Forged, ForgeBrand> const forged =

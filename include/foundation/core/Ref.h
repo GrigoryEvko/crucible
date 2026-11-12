@@ -128,8 +128,9 @@ class Ref {
 
     // The null value of an Option of a Ref, and its test.  Each one takes the
     // key that only the storage of an Option builds, and the storage gives
-    // the key only to the niche that it calls.  A niche gets no friend,
-    // because a file outside this header can specialize the niche of a Ref.
+    // the key only to the niche that it calls.  A niche gets no friend, so
+    // the niche of a Ref reaches the null value only through these two doors.
+    // The rule specialization-home refuses a niche of a Ref outside this header.
     [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept {
         return Ref{static_cast<T*>(nullptr)};
     }

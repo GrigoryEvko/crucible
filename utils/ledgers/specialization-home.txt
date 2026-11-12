@@ -2,5 +2,6 @@
 # and `python3 utils/bin/guard write --rule specialization-home` writes this file.
 format 1
 rule specialization-home
+include/foundation/core/Choice.h | open-extension | admit | foundation::core::niche | a payload type states its empty value beside its own definition, and the orphan rule keeps each niche in the file that defines its payload
 test/layer/checks/foundation/OpenExtension.cpp | open-extension | admit | foundation::open_extension_checks::open_flag | the check of the header plants an open variable template, to prove that reflection reads the mark from an instance
 test/layer/checks/foundation/OpenExtension.cpp | open-extension | admit | foundation::open_extension_checks::open_trait | the check of the header plants an open class template, to prove that reflection reads the mark from an instance

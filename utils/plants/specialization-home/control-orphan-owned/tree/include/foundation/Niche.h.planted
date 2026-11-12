@@ -1,0 +1,32 @@
+#pragma once
+
+#include <foundation/OpenExtension.h>
+
+namespace foundation::plant {
+
+template <class T>
+class NicheRead;
+
+// The key of the niche protocol.  Only the reader builds one.
+template <class T>
+class niche_key final {
+    friend class NicheRead<T>;
+    constexpr niche_key() noexcept {}
+};
+
+// An extension point: a type states its empty value beside its definition.
+template <class T>
+struct [[= ::foundation::open_extension{"a type states its empty value beside its own definition"}]] niche {};
+
+// An extension point over a family of types.
+template <template <class> class Family>
+struct [[= ::foundation::open_extension{"a family states its width beside its own definition"}]] family_width {};
+
+// The reader gives the empty value of a type, with a key.
+template <class T>
+class NicheRead final {
+public:
+    static constexpr T empty() noexcept { return niche<T>::empty(niche_key<T>{}); }
+};
+
+}  // namespace foundation::plant

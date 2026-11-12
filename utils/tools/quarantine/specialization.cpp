@@ -34,13 +34,35 @@
 //     A template that the design opens to each file carries the P3394
 //     annotation foundation::open_extension of
 //     include/foundation/OpenExtension.h on its primary declaration, with its
-//     reason.  A specialization of a marked template is no finding.  GCC
+//     reason.  A coherent specialization of a marked template is no finding
+//     (THE COHERENCE).  GCC
 //     merges the annotation of a redeclaration into the template, and an
 //     annotation keeps no location, so a second declaration in a different
 //     file can add the mark.  Thus each marked template gives the record
 //     open-extension at its home, and the module of the rule refuses a record
 //     that no ledger row admits.  The ledger is the roster of the open
 //     templates, and a mark that a unit adds gives a record with no row.
+//
+// THE COHERENCE
+//     The open mark opens a template to each file for the types of that file
+//     only, as the orphan rule of Rust does.  A marked template gives each
+//     argument type its protocol, such as the key of the niche of a type.  A
+//     specialization for a type of a different file then gets that authority,
+//     and a door of the type can build a value that no valid value holds.  So
+//     a site of a marked template outside its home is coherent only when the
+//     file of the site defines each top-level template argument.  The head of
+//     an argument is the class at namespace scope that holds it: the class
+//     itself, its outermost enclosing class, or the primary template of an
+//     instance.  An argument is owned when the file that defines its head
+//     is the file of the site, and an enumeration is owned in the same way.  A
+//     template template argument is owned where its template is defined, and
+//     a pack when each element is owned.  Each other argument is owned by no
+//     file: a fundamental type, a pointer, a reference, an array, a function
+//     type, a template parameter, a lambda, a class that the unit only
+//     declares, and a value.  The paths compare with read_as(), so a check
+//     file counts as its header.  The base has no exemption: a base file that
+//     specializes a marked template for a type of a different file is an
+//     orphan too.
 //
 // THE FORWARD DECLARATION
 //     A unit can declare a template before the header that declares it.  The
@@ -66,6 +88,9 @@
 // THE KINDS
 //     specialization     a site outside the home of a template with no open
 //                        mark.  Its entity is the template
+//     orphan             a site outside the home of a template with the open
+//                        mark that is not coherent (THE COHERENCE).  Its
+//                        entity is the template
 //     foreign-primary    the home of a template of a base root outside the
 //                        base.  Its entity is the template
 //     forward-declaration
@@ -74,7 +99,7 @@
 //     open-extension     a record: a template with the open mark, at its home
 //
 // THE ERRORS
-//     Each finding of the first three kinds is a compile error in each build
+//     Each finding of the first four kinds is a compile error in each build
 //     and each mode (is_each_mode_kind of plugin.h), so a forged
 //     specialization does not compile.  The record open-extension is no
 //     error, and the module of the rule judges it against the ledger.  The
@@ -247,6 +272,82 @@ tree general_of(tree template_decl) {
     return general != NULL_TREE ? general : template_decl;
 }
 
+// The path that defines the head of the template argument ARGUMENT, or an
+// empty path for an argument that no file owns (THE COHERENCE).
+std::string head_path(tree argument) {
+    if (argument == NULL_TREE) {
+        return {};
+    }
+    if (TREE_CODE(argument) == TEMPLATE_DECL) {
+        const FileEntry* file = file_at(defining_location(general_of(argument)));
+        return file != nullptr ? read_as(file->relative) : std::string{};
+    }
+    if (!TYPE_P(argument)) {
+        return {};
+    }
+    tree type = TYPE_MAIN_VARIANT(argument);
+    if (TREE_CODE(type) != ENUMERAL_TYPE && (!CLASS_TYPE_P(type) || LAMBDA_TYPE_P(type))) {
+        return {};
+    }
+    // The outermost class that holds the type: a nested class of a class of
+    // a different file belongs to that file.
+    for (int depth = 0; depth < kTypeDepth; ++depth) {
+        tree context = CP_TYPE_CONTEXT(type);
+        if (context == NULL_TREE || !TYPE_P(context)) {
+            break;
+        }
+        type = TYPE_MAIN_VARIANT(context);
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    if (decl == NULL_TREE || DECL_FUNCTION_SCOPE_P(decl)) {
+        return {};
+    }
+    location_t location = UNKNOWN_LOCATION;
+    if (CLASS_TYPE_P(type) && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE
+        && TREE_CODE(CLASSTYPE_TI_TEMPLATE(type)) == TEMPLATE_DECL) {
+        tree general = general_of(CLASSTYPE_TI_TEMPLATE(type));
+        tree pattern = DECL_TEMPLATE_RESULT(general);
+        if (pattern == NULL_TREE || !COMPLETE_TYPE_P(TREE_TYPE(pattern))) {
+            return {};
+        }
+        location = defining_location(general);
+    } else if (COMPLETE_TYPE_P(type) && !uses_template_parms(type)) {
+        location = DECL_SOURCE_LOCATION(decl);
+    }
+    const FileEntry* file = file_at(location);
+    return file != nullptr ? read_as(file->relative) : std::string{};
+}
+
+// True when the file PATH owns ARGUMENT, or each element of a pack.
+bool owns_argument(tree argument, const std::string& path) {
+    if (argument != NULL_TREE && ARGUMENT_PACK_P(argument)) {
+        tree elements = ARGUMENT_PACK_ARGS(argument);
+        for (int index = 0; index < TREE_VEC_LENGTH(elements); ++index) {
+            if (!owns_argument(TREE_VEC_ELT(elements, index), path)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return head_path(argument) == path;
+}
+
+// True when the file PATH owns each top-level argument of ARGUMENTS (THE
+// COHERENCE).  A site with no argument is no coherent site.  Complexity:
+// linear in the arguments and the depth of their scopes.
+bool owns_arguments(tree arguments, const std::string& path) {
+    tree inner = arguments != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(arguments) : NULL_TREE;
+    if (inner == NULL_TREE || TREE_CODE(inner) != TREE_VEC || TREE_VEC_LENGTH(inner) == 0) {
+        return false;
+    }
+    for (int index = 0; index < TREE_VEC_LENGTH(inner); ++index) {
+        if (!owns_argument(TREE_VEC_ELT(inner, index), path)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void on_collection(void*, void*) { homes_by_template.clear(); }
 
 }  // namespace
@@ -261,19 +362,34 @@ bool read_template_home(tree template_decl) {
     return home.is_tree && !home.is_open;
 }
 
-void note_template_site(tree template_decl, location_t location) {
+bool reads_template_sites(tree template_decl) {
+    if (!is_active || template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
+        return false;
+    }
+    return home_of(general_of(template_decl)).is_tree;
+}
+
+void note_template_site(tree template_decl, tree arguments, location_t location) {
     if (!is_active) {
         return;
     }
     const TemplateHome& home = home_of(general_of(template_decl));
-    if (!home.is_tree || home.is_open) {
+    if (!home.is_tree) {
         return;
     }
     Place place = site_place(location);
-    if (place.file == nullptr || read_as(place.file->relative) == home.path) {
+    if (place.file == nullptr) {
         return;
     }
-    add_finding(Kind::specialization_outside_home, nullptr, place, home.entity);
+    std::string path = read_as(place.file->relative);
+    if (path == home.path) {
+        return;
+    }
+    if (!home.is_open) {
+        add_finding(Kind::specialization_outside_home, nullptr, place, home.entity);
+    } else if (!owns_arguments(arguments, path)) {
+        add_finding(Kind::specialization_orphan, nullptr, place, home.entity);
+    }
 }
 
 void report_specialization(const Finding& finding) {
@@ -290,6 +406,18 @@ void report_specialization(const Finding& finding) {
                    "move the specialization into %qs, or give the template the annotation "
                    "%<foundation::open_extension%> with its reason and a row of the rule specialization-home",
                    home);
+            break;
+        }
+        case Kind::specialization_orphan: {
+            auto found = home_paths_by_entity.find(finding.entity);
+            const char* home = found != home_paths_by_entity.end() ? found->second.c_str() : "";
+            error_at(finding.spelling,
+                     "this file specializes the extension point %qs for a type that a different file defines", entity);
+            inform(finding.spelling,
+                   "the open mark opens a template to each file for its own types only, so a specialization for a "
+                   "type of a different file gets the authority that the template gives that type");
+            inform(finding.spelling,
+                   "specialize the template in the file that defines each of its arguments, or in its home %qs", home);
             break;
         }
         case Kind::specialization_foreign_primary:

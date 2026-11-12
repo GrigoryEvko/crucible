@@ -1,0 +1,17 @@
+# A file can specialize an extension point for each type that it defines: a
+# class, an enumeration, a class template, a nested class of its own class
+# and a family.  A base file can specialize it beside its own types, and the
+# check file of a header can specialize it for a type of that header.  No
+# compile gives an orphan, and each marked template gives only its record.
+compile own test/own.cpp specialization-home=on
+exit own pass
+finding own specialization-home open-extension include/foundation/Niche.h:19:102 | foundation::plant::niche
+finding own specialization-home open-extension include/foundation/Niche.h:23:98 | foundation::plant::family_width
+judge own
+compile own_error test/own.cpp mode=error specialization-home=on findings=own
+exit own_error pass
+compile check test/layer/checks/foundation/Owned.cpp specialization-home=on
+exit check pass
+finding check specialization-home open-extension include/foundation/Niche.h:19:102 | foundation::plant::niche
+finding check specialization-home open-extension include/foundation/Niche.h:23:98 | foundation::plant::family_width
+judge check

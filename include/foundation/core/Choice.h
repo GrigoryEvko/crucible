@@ -58,6 +58,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/OpenExtension.h>
 #include <foundation/core/Report.h>
 #include <foundation/reflect/Instance.h>
 
@@ -147,8 +148,12 @@ public:
 // move constructors and a trivial destructor, so the ABI passes the Option
 // in registers.  Its assignment can be user-provided, as the assignment of a
 // type that holds a byte seal is.
+//
+// niche carries the open mark: only the file that defines a type can
+// specialize niche for it (the rule specialization-home).
 template <class T>
-struct[[= detail::UndeclaredNiche{}]] niche {};
+struct[[= detail::UndeclaredNiche{}]]
+      [[= ::foundation::open_extension{"a payload type states its empty value beside its own definition"}]] niche {};
 
 namespace detail {
 

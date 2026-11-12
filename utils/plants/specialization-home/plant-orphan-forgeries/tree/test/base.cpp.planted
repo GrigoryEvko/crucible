@@ -1,0 +1,3 @@
+#include <foundation/Other.h>
+
+static_assert(foundation::plant::NicheRead<foundation::plant::Sealed>::empty().holds_null());

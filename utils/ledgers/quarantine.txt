@@ -593,6 +593,7 @@ test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges relation_state_
 test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of an IO tag with a copy of a pure cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/neg/ | opted-out | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | raw-pointer-object | 18 | - | -
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges ExecCtx with a row that its source does not permit | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges ExecCtx with no capability source | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -602,6 +603,7 @@ test/foundation/neg/ | region | 1 | PROBE: the fixture forges relation_state_at 
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an IO tag with a copy of a pure cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | std-entity | 75 | - | -
 test/foundation/neg/ | std-object | 51 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -

@@ -52,8 +52,9 @@
 //
 // THE TEMPLATES WITH NO ROW
 //     A class template or a variable template that no row governs is a
-//     template of the rule specialization-home (specialization.cpp).  The
-//     family reads its sites, as THE SITES tells, and gives each site to that
+//     template of the rule specialization-home (specialization.cpp), also
+//     when it carries the open mark.  The family reads its sites, as THE
+//     SITES tells, and gives each site with its template arguments to that
 //     rule.  A row of the template replaces that rule for the template.
 //
 // THE PLACE
@@ -475,14 +476,14 @@ bool is_beside_arguments(tree arguments, location_t location) {
     return true;
 }
 
-// One site of TEMPLATE_DECL at LOCATION: a site of its row, or a site of the
-// rule specialization-home for a template with no row (THE TEMPLATES WITH NO
-// ROW).
-void record_template_site(const Home& home, tree template_decl, location_t location, bool is_beside) {
+// One site of TEMPLATE_DECL with the template arguments ARGUMENTS at
+// LOCATION: a site of its row, or a site of the rule specialization-home for
+// a template with no row (THE TEMPLATES WITH NO ROW).
+void record_template_site(const Home& home, tree template_decl, tree arguments, location_t location) {
     if (home.is_set()) {
-        record_site(home, location, is_beside);
+        record_site(home, location, home.row->is_args && is_beside_arguments(arguments, location));
     } else {
-        note_template_site(template_decl, location);
+        note_template_site(template_decl, arguments, location);
     }
 }
 
@@ -492,18 +493,15 @@ void read_specializations(tree template_decl) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (home.is_set() ? home.home_class == HomeClass::combine : !read_template_home(template_decl)) {
+    if (home.is_set() ? home.home_class == HomeClass::combine : !reads_template_sites(template_decl)) {
         return;
     }
-    bool is_args = home.row != nullptr && home.row->is_args;
     for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
         tree partial = TREE_VALUE(entry);
         if (partial == NULL_TREE || TREE_CODE(partial) != TEMPLATE_DECL) {
             continue;
         }
-        location_t location = defining_location(partial);
-        record_template_site(home, template_decl, location,
-                             is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
+        record_template_site(home, template_decl, TREE_PURPOSE(entry), defining_location(partial));
     }
     bool is_class = is_class_template(template_decl);
     for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
@@ -517,9 +515,8 @@ void read_specializations(tree template_decl) {
         if (!is_explicit || uses_template_parms(value)) {
             continue;
         }
-        location_t location = DECL_SOURCE_LOCATION(is_class ? TYPE_MAIN_DECL(value) : value);
-        record_template_site(home, template_decl, location,
-                             is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
+        record_template_site(home, template_decl, TREE_PURPOSE(entry),
+                             DECL_SOURCE_LOCATION(is_class ? TYPE_MAIN_DECL(value) : value));
     }
 }
 
@@ -551,13 +548,10 @@ void read_member_specialization(tree decl) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (home.is_set() ? home.home_class == HomeClass::combine : !read_template_home(template_decl)) {
+    if (home.is_set() ? home.home_class == HomeClass::combine : !reads_template_sites(template_decl)) {
         return;
     }
-    location_t location = DECL_SOURCE_LOCATION(decl);
-    bool is_args = home.row != nullptr && home.row->is_args;
-    record_template_site(home, template_decl, location,
-                         is_args && is_beside_arguments(CLASSTYPE_TI_ARGS(context), location));
+    record_template_site(home, template_decl, CLASSTYPE_TI_ARGS(context), DECL_SOURCE_LOCATION(decl));
 }
 
 // ── The names of combine_ids ────────────────────────────────────────────

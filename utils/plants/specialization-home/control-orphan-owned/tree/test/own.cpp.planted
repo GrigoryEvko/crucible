@@ -1,0 +1,53 @@
+#include <foundation/Owned.h>
+
+namespace fp = ::foundation::plant;
+
+// Each type of the test file: a class, an enumeration, a class template, a
+// nested class of a class of the test, and a family of the test.
+struct Slot {
+    unsigned raw = 0;
+};
+
+enum class Color : unsigned char { red, blue, none };
+
+template <class T>
+struct Holder {
+    T value{};
+};
+
+struct Outer {
+    struct Inner {
+        int raw = 0;
+    };
+};
+
+template <class T>
+struct Family {};
+
+template <>
+struct fp::niche<Slot> {
+    static constexpr Slot empty(fp::niche_key<Slot> const&) noexcept { return Slot{~0u}; }
+};
+
+template <>
+struct fp::niche<Color> {
+    static constexpr Color empty(fp::niche_key<Color> const&) noexcept { return Color::none; }
+};
+
+template <class T>
+struct fp::niche<Holder<T>> {
+    static constexpr Holder<T> empty(fp::niche_key<Holder<T>> const&) noexcept { return Holder<T>{}; }
+};
+
+template <>
+struct fp::niche<Outer::Inner> {
+    static constexpr Outer::Inner empty(fp::niche_key<Outer::Inner> const&) noexcept { return Outer::Inner{-1}; }
+};
+
+template <>
+struct fp::family_width<Family> {};
+
+static_assert(fp::NicheRead<Slot>::empty().raw == ~0u);
+static_assert(fp::NicheRead<Color>::empty() == Color::none);
+static_assert(fp::NicheRead<Outer::Inner>::empty().raw == -1);
+static_assert(fp::NicheRead<fp::Owned>::empty().holds_null());

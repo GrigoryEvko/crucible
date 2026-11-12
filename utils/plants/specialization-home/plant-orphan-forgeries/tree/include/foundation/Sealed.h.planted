@@ -1,0 +1,59 @@
+#pragma once
+
+#include <foundation/Niche.h>
+
+namespace foundation::plant {
+
+// A pointer that is never null.  niche of the class is its friend, so a
+// specialization of niche builds the null pointer: the friend route.
+class Sealed {
+    int* object_ = nullptr;
+    constexpr explicit Sealed(int* object) noexcept : object_{object} {}
+    friend struct niche<Sealed>;
+
+public:
+    static constexpr Sealed to(int& object) noexcept { return Sealed{&object}; }
+    constexpr bool holds_null() const noexcept { return object_ == nullptr; }
+};
+
+// The same pointer as a class template, with its niche beside it.
+template <class T>
+class Box {
+    T* object_ = nullptr;
+    constexpr explicit Box(T* object) noexcept : object_{object} {}
+    friend struct niche<Box>;
+
+public:
+    static constexpr Box to(T& object) noexcept { return Box{&object}; }
+    constexpr bool holds_null() const noexcept { return object_ == nullptr; }
+};
+
+template <class T>
+struct niche<Box<T>> {
+    static constexpr Box<T> empty(niche_key<Box<T>> const&) noexcept { return Box<T>{nullptr}; }
+};
+
+// The same pointer with a hidden friend that the key of the class opens,
+// through argument-dependent lookup: the key route.
+template <class T>
+class Keyed {
+    T* object_ = nullptr;
+    constexpr explicit Keyed(T* object) noexcept : object_{object} {}
+    friend constexpr Keyed niche_null_(niche_key<Keyed> const&) noexcept { return Keyed{nullptr}; }
+
+public:
+    static constexpr Keyed to(T& object) noexcept { return Keyed{&object}; }
+    constexpr bool holds_null() const noexcept { return object_ == nullptr; }
+};
+
+template <class T>
+struct niche<Keyed<T>> {
+    static constexpr Keyed<T> empty(niche_key<Keyed<T>> const& key) noexcept { return niche_null_(key); }
+};
+
+// A class with a nested class that it only declares.
+struct Holder {
+    struct Inner;
+};
+
+}  // namespace foundation::plant

@@ -1,0 +1,4 @@
+format 1
+rule specialization-home
+include/foundation/Niche.h | open-extension | admit | foundation::plant::family_width | a family of the plant states its width beside its own definition
+include/foundation/Niche.h | open-extension | admit | foundation::plant::niche | a type of the plant states its empty value beside its own definition

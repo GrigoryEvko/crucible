@@ -445,7 +445,6 @@ home trait foundation::contracts::armed_instances include/foundation/ include/fi
 home trait foundation::diag::row_hash_contribution include/foundation/ include/fixy/ | an extension point: a carrier states its row identity beside its definition.  A fold outside the two layers can make two carriers share one cache key
 home trait foundation::diag::lattice_canonical_id include/fixy/ | an extension point: a lattice states its canonical identity beside its definition, for the row hash
 home trait foundation::diag::insight_provider include/foundation/ include/fixy/ | an extension point: the diagnostic text of a category.  It changes a message and gives no authority
-home trait foundation::core::niche include/foundation/ | an extension point: a payload type states its empty value beside its definition.  The niche selects only the storage form of an Option
 home trait fixy::concurrent::is_stage_inline_safe bench/ | an extension point: a stage author claims inline dispatch beside the stage.  Pipeline.h refuses the claim unless the stage states its working set
 
 # The hashing path: content_hash and merkle_hash, the IR whose shape the hashes
