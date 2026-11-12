@@ -93,7 +93,9 @@ class HoldFactory;
 
 // The payload and the token of a marker are private.  A transport reads the
 // payload through peek() to write it to the wire, and only the door of a
-// hold takes the payload and the token out of the marker together.
+// hold takes the payload and the token out of the marker together.  peek()
+// of a temporary marker is deleted, because the reference dangles at the
+// end of the full expression.
 template <class T, class Tag>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     using payload_type = T;
@@ -114,6 +116,7 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     ~Transferable() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    T const& peek() const&& = delete("a reference into a temporary marker dangles at the end of the full expression");
 
 private:
     friend class HoldFactory;
@@ -140,6 +143,7 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
     ~Returned() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    T const& peek() const&& = delete("a reference into a temporary marker dangles at the end of the full expression");
 
 private:
     friend class HoldFactory;
@@ -171,6 +175,7 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     ~Borrowed() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    T const& peek() const&& = delete("a reference into a temporary marker dangles at the end of the full expression");
 
 private:
     friend class HoldFactory;
@@ -200,6 +205,7 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     ~Released() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    T const& peek() const&& = delete("a reference into a temporary marker dangles at the end of the full expression");
 
 private:
     friend class HoldFactory;

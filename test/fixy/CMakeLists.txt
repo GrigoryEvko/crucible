@@ -3720,6 +3720,12 @@ fixy_neg_compile_test(neg_session_released_without_loan
   "no matching function for call to .fixy::session::Released<int, .anonymous.::Region>::Released\\("
   "candidate expects 2 arguments, 1 provided")
 
+# A borrow of the payload of a temporary marker.  The reference would
+# dangle at the end of the full expression, so peek() of an rvalue is deleted.
+fixy_neg_compile_test(neg_session_marker_peek_of_temporary
+  "use of deleted function .const T& fixy::session::Transferable<T, Tag>::peek\\(\\) const &&"
+  "a reference into a temporary marker dangles at the end of the full expression")
+
 # A classified value travels only in DeclassifyOnSend under an admitted
 # policy, and a constant-time value only in CTPayload, which has no ==.
 fixy_neg_compile_test(neg_session_payload_secret_bare
