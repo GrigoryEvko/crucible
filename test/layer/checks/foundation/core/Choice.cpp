@@ -130,6 +130,42 @@ static_assert(std::is_same_v<SumSlot<NoPayload, std::uint32_t>, SumSlotOf<true, 
 static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);
 static_assert(sizeof(Option<std::uint8_t>) == 2);
 
+// A large plain payload.  The empty marker writes zero words over the full
+// storage.  The depth of their instantiation is the binary logarithm of the
+// word count, so a storage of more than 900 words stays below the template
+// depth limit of the compiler.
+template <class Word, std::size_t Count>
+struct PackedWords {
+    PackedWords<Word, Count / 2> low{};
+    PackedWords<Word, Count / 2> high{};
+};
+template <class Word>
+struct PackedWords<Word, 1> {
+    Word value = 0;
+};
+using FourKilobytes = PackedWords<std::uint8_t, 4096>;
+using EightKilobytes = PackedWords<std::uint64_t, 1024>;
+static_assert(sizeof(FourKilobytes) == 4096 && alignof(FourKilobytes) == 1);
+static_assert(sizeof(EightKilobytes) == 8192 && alignof(EightKilobytes) == 8);
+static_assert(option_form_of<FourKilobytes> == OptionForm::plain);
+static_assert(option_form_of<EightKilobytes> == OptionForm::plain);
+static_assert(sizeof(Option<FourKilobytes>) == 4097 && sizeof(Option<EightKilobytes>) == 8200);
+static_assert(Option<FourKilobytes>{}.is_none() && Option<EightKilobytes>{}.is_none());
+static_assert(Option<EightKilobytes>::some(EightKilobytes{}).is_some());
+
+// An odd word count: the two halves of each level of the tree are different.
+struct ThreeBytes {
+    std::uint8_t first = 0;
+    std::uint8_t second = 0;
+    std::uint8_t third = 0;
+};
+struct OddKilobytes {
+    FourKilobytes body{};
+    ThreeBytes tail{};
+};
+static_assert(sizeof(Option<ThreeBytes>) == 4 && sizeof(Option<OddKilobytes>) == 4100);
+static_assert(Option<ThreeBytes>{}.is_none() && Option<OddKilobytes>{}.is_none());
+
 // No dereference and no conversion to bool.
 template <class O>
 concept Dereferences = requires(O option) { *option; };

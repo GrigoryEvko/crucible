@@ -654,12 +654,15 @@ struct WordOf<8> {
 
 // Count zero words.  The words are members and not an array, because
 // -fstack-protector-strong puts a canary on each frame that holds an array,
-// and a sum with a canary stays in memory and not in registers.  Complexity:
-// one instantiation for each count up to Count.
+// and a sum with a canary stays in memory and not in registers.  The words
+// make a balanced tree of two halves, so the depth of the instantiation is
+// the binary logarithm of Count, and a large storage stays below the
+// template depth limit of the compiler.  Complexity: at most two
+// instantiations for each level of the tree, O(log Count).
 template <class Word, std::size_t Count>
 struct ZeroWords {
-    Word first_ = 0;
-    ZeroWords<Word, Count - 1> rest_{};
+    ZeroWords<Word, Count / 2> low_{};
+    ZeroWords<Word, Count - Count / 2> high_{};
 };
 
 template <class Word>
