@@ -575,6 +575,11 @@ def version_unit_cases(expect: testing.Expect) -> None:
             str(module) in test_launcher.command_files(command)
             and str(cached) not in test_launcher.command_files(command),
         )
+        doubled = [sys.executable, "-S", f"{utils}//bin/guard", "selftest"]
+        expect(
+            "a path of a master that is not in its normal form also gives each module of the package",
+            str(module) in test_launcher.command_files(doubled),
+        )
         cached.write_bytes(b"planted again")
         expect("a change of the byte code keeps the version", version() == first)
         module.write_text("SIZE = 22\n")
@@ -700,6 +705,12 @@ def environment_unit_cases(expect: testing.Expect) -> None:
             derived([*master, "check", "--rule", "x"])
             and derived([*master, "witness", "--engine", "plugin"])
             and derived([*master, "selftest", "sample", "--part", "0/2"]),
+        )
+        doubled = [sys.executable, "-S", f"{scratch}/utils//bin/./guard"]
+        expect(
+            "a path of the master guard that is not in its normal form, as a CMake path that ends in '..' gives, also "
+            "names the master guard",
+            derived([*doubled, "witness", "--engine", "plugin"]) and derived([*doubled, "selftest", "sample"]),
         )
         expect(
             "the test of one module, a name that is no group, a different master and an empty command get the trace",

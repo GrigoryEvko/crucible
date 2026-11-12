@@ -165,14 +165,17 @@ THE VERSION
       * each word of the command that names a file, and the VALUE of each word
         NAME=VALUE that names a file
       * for a word that names a master of utils/bin/, each module of the
-        package assay, because the master runs them.
+        package assay, because the master runs them.  The launcher reads
+        the normal form of the word (os.path.normpath), so the word
+        /ROOT/utils//bin/guard also names the master guard.
     The version holds no other input of a test, such as a data file that the
     test opens.  The read set holds such a file (THE READ SET).
 
 THE READ SET
     The launcher can trace the system calls of each test with a build
     directory (assay.loop.tracer).  A rule test and a group test of the
-    master guard get no trace (has_derived_inputs()).  `loop test` gives
+    master guard get no trace (has_derived_inputs()).  The launcher reads
+    the normal form of the path of the master, as for THE VERSION.  `loop test` gives
     such a test the inputs of its rule or its group, and it reads no read
     set of it.  The test of one module, `guard selftest MODULE`, gets the
     trace.  A module can import a module by name from a listing, and it can
@@ -482,26 +485,27 @@ def command_files(command: Sequence[str]) -> list[str]:
         _, equals, value = word.partition("=")
         if equals and value:
             paths.append(value)
-        if word.endswith(MASTERS):
-            paths.extend(package_modules(os.path.dirname(os.path.dirname(word))))
+        script = os.path.normpath(word)
+        if script.endswith(MASTERS):
+            paths.extend(package_modules(os.path.dirname(os.path.dirname(script))))
     return paths
 
 
 def has_derived_inputs(command: Sequence[str]) -> bool:
     """Tell if a command runs the master guard with words that `loop test` gives the inputs of (THE READ SET).
 
-    The script is the first word after the options of the interpreter.  The words are a rule test, `guard check` or
-    `guard witness`, or a group test, `guard selftest GROUP` (assay.loop.inputs, THE TESTS).  GROUP names a group as
-    the subcommand selftest reads it: a name with no dot, and a directory of TEST_GROUPS in the root of the master.
-    The test of one module, `guard selftest MODULE`, gets no such inputs.  Complexity: linear in the options, and one
-    stat for a group test.
+    The script is the first word after the options of the interpreter, in its normal form.  The words are a rule
+    test, `guard check` or `guard witness`, or a group test, `guard selftest GROUP` (assay.loop.inputs, THE TESTS).
+    GROUP names a group as the subcommand selftest reads it: a name with no dot, and a directory of TEST_GROUPS in the
+    root of the master.  The test of one module, `guard selftest MODULE`, gets no such inputs.  Complexity: linear in
+    the options, and one stat for a group test.
     """
     if not command or not os.path.basename(command[0]).startswith("python"):
         return False
     index = 1
     while index < len(command) and command[index].startswith("-"):
         index += 1
-    if index >= len(command) or not command[index].endswith(GUARD_MASTER):
+    if index >= len(command) or not os.path.normpath(command[index]).endswith(GUARD_MASTER):
         return False
     words = command[index + 1:]
     if words[:1] in (["check"], ["witness"]):
