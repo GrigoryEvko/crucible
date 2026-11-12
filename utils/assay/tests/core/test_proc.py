@@ -1,17 +1,35 @@
 """The test of the process module (assay.core.proc): the run, the limit, the environment, the streams and the import.
 
 `guard selftest tests.core.test_proc` runs the test.  Each case prints one
-line.  Exit 0 when each case holds, else 1.  The commands are sh, cat and
-the Python of this process, so the test needs no tool of the tree.
+line.  Exit 0 when each case holds, else 1.  The commands are sh, sleep,
+cat, true and the Python of this process, so the test needs no tool of the
+tree.
+
+THE START OF A CHILD
+    On a host under load, a child can start seconds late.  No case lets a
+    limit or a timer of the test count against the start of a child:
+      * The loop of a run applies the limit of the command, and nothing
+        else does.  A case that needs the child in a state before the limit,
+        such as a trap that it set or a line that it wrote, waits for the
+        ready file of the child before it enters the loop.  The limit then
+        applies after that state.
+      * A case that needs an interrupt before the limit starts a command that
+        needs no start work: the test ignores the signals itself when it
+        starts the command, and an exec keeps an ignored signal.
+      * The case of the bound of forked() makes each action wait for a second
+        action, so the overlap does not depend on the time of a fork.
+      * A time bound of a case counts from the moment that the child is
+        ready, and not from the start.
 """
 
+import contextlib
 import os
 import signal
 import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from assay.core import jobserver, proc, testing
@@ -21,6 +39,11 @@ PYTHON = sys.executable
 UTILS = str(Path(__file__).resolve().parents[3])
 # A limit that no case of this test reaches when the host works, in seconds.
 SAFE_S = 60.0
+# The actions of the case of the bound of forked(), the time that an action looks for a third action after it saw a
+# second one, and the interval of its look, in seconds (paired_action()).
+PAIRED_ACTIONS = 6
+PAIR_LOOK_S = 0.05
+PAIR_STEP_S = 0.005
 
 
 def python(code: str) -> list[str]:
@@ -122,11 +145,17 @@ def start_failure_cases(expect: Callable[[str, bool], None]) -> None:
         expect(f"the module refuses {name}", refuses(action, ValueError) is not None)
 
 
-def limit_cases(expect: Callable[[str, bool], None]) -> None:
+def limit_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     """Check the limit: SIGTERM to the group, SIGKILL after the grace, and no process of the group after it."""
-    started = time.monotonic()
-    command = proc.Command(["sh", "-c", "sleep 60 & echo $!; wait"], timeout_s=0.2, grace_s=0.2)
-    problem = refuses(lambda: proc.run(command), proc.TimedOut)
+    # The shell writes the pid of its child and then its ready file.  The wait starts after the ready file, so the
+    # limit counts after the output (THE START OF A CHILD).
+    ready = scratch / "limit-ready"
+    running = proc.start(
+        proc.Command(["sh", "-c", 'sleep 60 & echo $!; : > "$0"; wait', str(ready)], timeout_s=0.2, grace_s=0.2)
+    )
+    is_ready = wait_for_file(ready)
+    waited = time.monotonic()
+    problem = refuses(running.wait, proc.TimedOut)
     child_pid = (
         int(problem.completed.out.split()[0])
         if isinstance(problem, proc.TimedOut) and problem.completed and problem.completed.out.split()
@@ -134,20 +163,24 @@ def limit_cases(expect: Callable[[str, bool], None]) -> None:
     )
     expect(
         "a command past its limit gives TimedOut with the output that it gave, soon after the limit",
-        isinstance(problem, proc.TimedOut) and child_pid > 0 and time.monotonic() - started < 10,
+        is_ready and isinstance(problem, proc.TimedOut) and child_pid > 0 and time.monotonic() - waited < 10,
     )
     expect("no process of the group runs after the limit", child_pid > 0 and testing.is_gone(child_pid))
-    started = time.monotonic()
-    # sh sets the trap in about 1 ms.  A short limit then gets to the child after the trap, and sleep keeps the
-    # ignored signal across the exec.
-    stubborn = proc.Command(["sh", "-c", "trap '' TERM; exec sleep 60"], timeout_s=0.2, grace_s=0.1)
-    problem = refuses(lambda: proc.run(stubborn), proc.TimedOut)
+    # The ready file comes after the trap, and sleep keeps the ignored signal across the exec.
+    ready = scratch / "stubborn-ready"
+    stubborn = proc.start(
+        proc.Command(["sh", "-c", "trap '' TERM; : > \"$0\"; exec sleep 60", str(ready)], timeout_s=0.2, grace_s=0.1)
+    )
+    is_ready = wait_for_file(ready)
+    waited = time.monotonic()
+    problem = refuses(stubborn.wait, proc.TimedOut)
     expect(
         "a command that ignores SIGTERM gets SIGKILL after the grace",
-        isinstance(problem, proc.TimedOut)
+        is_ready
+        and isinstance(problem, proc.TimedOut)
         and problem.completed is not None
         and problem.completed.exit == -signal.SIGKILL
-        and time.monotonic() - started < 10,
+        and time.monotonic() - waited < 10,
     )
 
     class Interrupt(Exception):
@@ -206,17 +239,23 @@ def poll_cases(expect: Callable[[str, bool], None]) -> None:
     )
 
 
-def interrupted(action: Callable[[], object], first_s: float, interval_s: float = 0.0) -> bool:
+def interrupted(action: Callable[[], object], interval_s: float, count: int = 1) -> bool:
     """Run an action while a timer raises KeyboardInterrupt, as Ctrl-C does, and return whether it reached the caller.
 
-    The timer fires first after first_s, and then each interval_s when interval_s is more than 0.
+    The timer fires count times, one time after each interval_s.  The last firing stops the timer before it raises,
+    so no firing comes after the action ends.
     """
+    fired = 0
 
     def interrupt(_number: int, _frame: object) -> None:
+        nonlocal fired
+        fired += 1
+        if fired >= count:
+            signal.setitimer(signal.ITIMER_REAL, 0)
         raise KeyboardInterrupt
 
     previous = signal.signal(signal.SIGALRM, interrupt)
-    signal.setitimer(signal.ITIMER_REAL, first_s, interval_s)
+    signal.setitimer(signal.ITIMER_REAL, interval_s, interval_s if count > 1 else 0.0)
     try:
         action()
     except KeyboardInterrupt:
@@ -227,7 +266,21 @@ def interrupted(action: Callable[[], object], first_s: float, interval_s: float 
     return False
 
 
-def wait_for_file(path: Path, wait_s: float = 10.0) -> bool:
+@contextlib.contextmanager
+def ignored(*numbers: int) -> Iterator[None]:
+    """Ignore the signals in this process for the block, and give each one its earlier handler after it.
+
+    A child that the block starts keeps each ignored signal across its exec (THE START OF A CHILD).
+    """
+    previous = [(number, signal.signal(number, signal.SIG_IGN)) for number in numbers]
+    try:
+        yield
+    finally:
+        for number, handler in previous:
+            signal.signal(number, handler)
+
+
+def wait_for_file(path: Path, wait_s: float = SAFE_S) -> bool:
     """Whether a file exists within a time."""
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
@@ -253,8 +306,8 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         "time.sleep(60)"
     )
     running = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=SAFE_S))
-    started = time.monotonic()
     is_ready = wait_for_file(ready)
+    started = time.monotonic()
     reached = interrupted(running.wait, 0.1)
     expect(
         "an interrupt of the wait sends SIGINT to the group, waits for the end of the command, and then goes on",
@@ -289,21 +342,16 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     )
     next(deaf)
     started = time.monotonic()
-    reached = interrupted(deaf.wait, 0.1, 0.1)
+    reached = interrupted(deaf.wait, 0.1, count=2)
     expect(
         "a second interrupt sends SIGKILL to a group that ignores SIGINT, and then goes on",
         reached and testing.is_gone(deaf.pid) and time.monotonic() - started < 10,
     )
+    # sleep ignores the two signals from its exec, so the interrupt comes before the limit, also when the start of
+    # the child is slow (THE START OF A CHILD).
+    with ignored(signal.SIGINT, signal.SIGTERM):
+        late = proc.start(proc.Command(["sleep", "60"], timeout_s=0.5, grace_s=0.1))
     started = time.monotonic()
-    late = proc.start(
-        proc.Command(
-            ["sh", "-c", "trap '' INT TERM; echo ready; exec sleep 60"],
-            timeout_s=0.3,
-            grace_s=0.1,
-            stdout=proc.Output.STREAM,
-        )
-    )
-    next(late)
     reached = interrupted(late.wait, 0.1)
     expect(
         "after one interrupt, the limit still stops a command that ignores SIGINT and SIGTERM",
@@ -320,9 +368,9 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     )
     summary.unlink(missing_ok=True)
     ready.unlink(missing_ok=True)
-    started = time.monotonic()
     timed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=0.5, stop=proc.Stop.INTERRUPT))
     is_ready = wait_for_file(ready)
+    started = time.monotonic()
     problem = refuses(timed.wait, proc.TimedOut)
     expect(
         "the limit of a command with the stop word interrupt sends SIGINT first, and the command ends in its own way",
@@ -400,19 +448,27 @@ def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     expect("the result of a stream that the loop read to its end holds no output", running.wait().stdout == b"")
     unread = proc.start(proc.Command(["sh", "-c", "printf 'a\\nb\\n'"], timeout_s=SAFE_S, stdout=proc.Output.STREAM))
     expect("the result of a stream holds the lines that the loop did not give", unread.wait().stdout == b"a\nb\n")
+    # The shell writes its line and then its ready file.  The loop starts after the ready file, so the line is in
+    # the pipe when the limit counts (THE START OF A CHILD).
+    ready = scratch / "stream-ready"
     slow = proc.start(
-        proc.Command(["sh", "-c", "echo first; sleep 60"], timeout_s=0.2, grace_s=0.1, stdout=proc.Output.STREAM)
+        proc.Command(
+            ["sh", "-c", 'echo first; : > "$0"; sleep 60', str(ready)],
+            timeout_s=0.2,
+            grace_s=0.1,
+            stdout=proc.Output.STREAM,
+        )
     )
+    is_ready = wait_for_file(ready)
     first = next(slow)
     expect(
         "the limit counts while the caller reads the lines of a stream",
-        first == "first\n" and refuses(lambda: list(slow), proc.TimedOut) is not None,
+        is_ready and first == "first\n" and refuses(lambda: list(slow), proc.TimedOut) is not None,
     )
     expect(
         "a loop over a run with no stream is refused",
         refuses(lambda: iter(proc.start(proc.Command(["true"], timeout_s=SAFE_S))), ValueError) is not None,
     )
-    started = time.monotonic()
     many = proc.start(
         proc.Command(
             python("import sys\nfor index in range(200000):\n    print(index)"),
@@ -420,7 +476,10 @@ def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
             stdout=proc.Output.STREAM,
         )
     )
-    count = sum(1 for _line in many)
+    # The time counts from the first line, after the start of the child.
+    count = 0 if next(many, None) is None else 1
+    started = time.monotonic()
+    count += sum(1 for _line in many)
     expect(
         "a stream of 200,000 lines gives each line, in a time that is linear in the lines",
         count == 200000 and many.wait().exit == 0 and time.monotonic() - started < 10,
@@ -516,14 +575,40 @@ def forked_child() -> int:
     return ExitCode.OK
 
 
-def max_overlap(spans: list[tuple[float, float]]) -> int:
-    """Return the largest number of spans that run at one time.  Complexity: O(n log n) for n spans."""
-    events = sorted([(start, 1) for start, _ in spans] + [(end, -1) for _, end in spans])
-    running = largest = 0
-    for _, step in events:
-        running += step
-        largest = max(largest, running)
-    return largest
+def paired_action(scratch: Path, action_count: int) -> Callable[[], int]:
+    """Return a forked action that waits for a second action that runs at the same time (THE START OF A CHILD).
+
+    The action puts a mark of its pid into the directory running, and one into the directory started.  It looks at
+    the count of the marks of running until it sees a second mark, and then for PAIR_LOOK_S more, so a third action
+    at the same time is visible too.  The last action of the call has no partner, so it stops when each action
+    started.  The action writes the largest count that it saw to the file seen.txt, and it removes its mark before
+    it returns.  forked() gives its slot back only after that, so no action sees the mark of an action that ended.
+    """
+    running = scratch / "running"
+    started = scratch / "started"
+
+    def action() -> int:
+        mark = running / str(os.getpid())
+        mark.touch()
+        (started / str(os.getpid())).touch()
+        largest = 0
+        partner_at: float | None = None
+        deadline = time.monotonic() + SAFE_S
+        while time.monotonic() < deadline:
+            largest = max(largest, len(os.listdir(running)))
+            if largest >= 2 and partner_at is None:
+                partner_at = time.monotonic()
+            if partner_at is not None and time.monotonic() - partner_at >= PAIR_LOOK_S:
+                break
+            if partner_at is None and len(os.listdir(started)) == action_count:
+                break
+            time.sleep(PAIR_STEP_S)
+        with (scratch / "seen.txt").open("a", encoding="utf-8") as stream:
+            stream.write(f"{largest}\n")
+        mark.unlink()
+        return ExitCode.OK
+
+    return action
 
 
 def forked_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
@@ -558,20 +643,13 @@ def forked_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
             "a child ends with os._exit, so the temporary directory of the parent stays",
             scratch.is_dir(),
         )
-        log = scratch / "spans.txt"
-
-        def span() -> int:
-            started = time.monotonic()
-            time.sleep(0.2)
-            with log.open("a", encoding="utf-8") as stream:
-                stream.write(f"{started} {time.monotonic()}\n")
-            return ExitCode.OK
-
-        proc.forked([span] * 6, client)
-        spans = [(float(start), float(end)) for start, end in (line.split() for line in log.read_text().splitlines())]
+        (scratch / "running").mkdir()
+        (scratch / "started").mkdir()
+        proc.forked([paired_action(scratch, PAIRED_ACTIONS)] * PAIRED_ACTIONS, client)
+        seen = [int(line) for line in (scratch / "seen.txt").read_text(encoding="utf-8").splitlines()]
         expect(
-            f"with 2 jobs, 6 actions run two at a time and never more: {max_overlap(spans)} at the most",
-            len(spans) == 6 and max_overlap(spans) == 2,
+            f"with 2 jobs, {PAIRED_ACTIONS} actions run two at a time and never more: {max(seen, default=0)} at the most",
+            len(seen) == PAIRED_ACTIONS and max(seen) == 2,
         )
         slots = [client.try_take(), client.try_take(), client.try_take()]
         expect(
@@ -639,8 +717,8 @@ def main(argv: list[str]) -> int:
 
     run_cases(expect)
     start_failure_cases(expect)
-    limit_cases(expect)
     with tempfile.TemporaryDirectory(prefix="assay-proc-") as scratch:
+        limit_cases(expect, Path(scratch))
         stream_cases(expect, Path(scratch))
         interrupt_cases(expect, Path(scratch))
         forked_cases(expect, Path(scratch))
