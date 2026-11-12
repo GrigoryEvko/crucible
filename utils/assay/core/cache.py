@@ -152,10 +152,11 @@ LIMITS: dict[str, int] = {
     "mypy": 128 << 20,
     # The compiled modules of the package (THE COMPILED MODULES): about 6 MB for each checkout or work tree.
     "pycache": 256 << 20,
-    # The cost blocks of the compiles through ccache (utils/assay/core/cost_store.py), one file of one 4 KB block for
-    # each object and command.  A cold Debug build of all wrote 1054 entries, 4.1 MB, on 2026-10-10.  The limit holds
-    # approximately 250 such builds.
-    "compile-cost": 1 << 30,
+    # The cost blocks of the compiles through ccache (utils/assay/core/cost_store.py), one file of one block of
+    # ENTRY_BYTES for each object and command.  An entry that the store drops while ccache keeps its object costs one
+    # more compile (A HIT WITH NO COST of assay.loop.step).  So the limit holds an entry for each result that ccache
+    # holds at its limit, also after an eviction to EVICT_TO (CCACHE_RESULTS).
+    "compile-cost": 4 << 30,
     # The results of the runs of `loop test` with the status 0 (utils/assay/loop/affected.py, THE SHARED STORE).  Each
     # test and set of inputs has one file of one 4 KB block.  The limit holds 32,768 results: 64 sets of inputs of each
     # of the 506 tests with a key of the Debug build on 2026-10-14.
@@ -173,6 +174,13 @@ LIMITS: dict[str, int] = {
     # entry.
     "python-shapes": 64 << 20,
 }
+# The bytes on the disk of one entry of the cost store.  An entry holds approximately 200 bytes, and the file system
+# gives each file one block of 4 KB.
+ENTRY_BYTES = 4096
+# The results that ccache holds at its limit on the build host, for the row compile-cost of LIMITS.  On 2026-11-12,
+# ccache held 116,916 results in 21.0 GB, 179.6 KB for each result with its manifests, and its limit was 100 GB: about
+# 557,000 results.  The cost store then held 231,471 entries in 904 MB, a mean of 204 bytes in each block of 4 KB.
+CCACHE_RESULTS = 557_000
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = root_rule.COMPILED_CACHE
 # The suffix of a compiled module of the package.
@@ -792,6 +800,10 @@ def self_test() -> int:
             and (tool / "CACHEDIR.TAG").exists(),
         )
     expect("each row of LIMITS is a positive size", all(limit > 0 for limit in LIMITS.values()))
+    expect(
+        "after an eviction, the cost store holds an entry of one block for each result that ccache holds at its limit",
+        int(EVICT_TO * LIMITS["compile-cost"]) // ENTRY_BYTES >= CCACHE_RESULTS,
+    )
     saved = os.environ.get(root_rule.ROOT_VARIABLE)
     os.environ[root_rule.ROOT_VARIABLE] = root_rule.OFF
     try:
