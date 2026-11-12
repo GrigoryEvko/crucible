@@ -211,6 +211,10 @@ template <typename Tag, typename... Args>
 
 }  // namespace foundation::diag
 
-// A condition holding a comma, such as a template argument list, must be
-// parenthesised whole, or the preprocessor splits it across the parameters.
-#define CRUCIBLE_DIAG_ASSERT(cond, tag, msg) static_assert(cond, "foundation::diag [" #tag "]: " msg)
+// The tag must name an enumerator of Category, which is the closed set of
+// the catalog tags.  So a name outside the catalog does not compile, as a
+// class without tag_base does not compile in mint_diagnostic.  A condition
+// holding a comma, such as a template argument list, must be parenthesised
+// whole, or the preprocessor splits it across the parameters.
+#define CRUCIBLE_DIAG_ASSERT(cond, tag, msg) \
+    static_assert((static_cast<void>(::foundation::diag::Category::tag), (cond)), "foundation::diag [" #tag "]: " msg)

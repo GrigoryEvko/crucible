@@ -1,10 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // An explicit specialization of a global Branch gives its next member a
-// continuation that its template argument does not give.  The walks of
-// fixy/session/Global.h match the argument, and the projection reads the
-// member, so the projection would be wrong with no error.  The projection
-// refuses the node whose member disagrees with its argument.
+// continuation that its template argument does not give.  The projection
+// of this transmission reads the template arguments.  continuation_of of
+// fixy/session/Global.h reads the members label and next, and the walks
+// of an en-route node call it, so such a walk would be wrong with no error.
+// The projection refuses the node whose member disagrees with its argument.
 //
 // Expected diagnostic: Projection_Specialized_Global_Node.
 #include <fixy/session/Projection.h>

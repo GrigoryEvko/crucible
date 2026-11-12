@@ -1597,6 +1597,12 @@ foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_a_class_without_the
 foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_the_tag_base_itself
   "no matching function for call to .mint_diagnostic<foundation::diag::tag_base>\\(\\)."
   "the expression .is_diagnostic_class_v<Tag> \\[with Tag = foundation::diag::tag_base\\]. evaluated to .false.")
+# CRUCIBLE_DIAG_ASSERT names its tag through an enumerator of Category, the
+# closed set of the catalog, so a tag class outside the catalog does not
+# compile, also when the condition holds.
+foundation_neg_compile_test(neg_diag_assert_refuses_a_tag_outside_the_catalog
+  ".LooksLikeACatalogTag. is not a member of .foundation::diag::Category."
+  "neg_diag_assert_refuses_a_tag_outside_the_catalog\\.cpp:12:[0-9]+: error:")
 
 # A tag accessor over a plain type, and category_of_v over a tag that the
 # closed Catalog does not hold, each reach a static_assert in the header.

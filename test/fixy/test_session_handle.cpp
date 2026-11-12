@@ -332,8 +332,8 @@ using OnceHead = decltype(s::mint_session_handle<Once, ValueWire>(std::declval<V
 static_assert(std::is_same_v<typename OnceHead::protocol, Once>);
 static_assert(std::is_same_v<typename OnceHead::loop_ctx, void>);
 
-// A reference to a Pinned resource is admitted; the handle stores the
-// reference and the caller keeps the object alive.
+// A reference to a Pinned resource is admitted.  The handle stores the
+// reference, and the caller keeps the object alive.
 static_assert(s::SessionResource<PinnedWire&>);
 static_assert(s::SessionResource<ValueWire>);
 static_assert(!s::SessionResource<ValueWire&>);

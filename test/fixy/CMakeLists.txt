@@ -2963,7 +2963,7 @@ fixy_neg_compile_test(neg_sess_crash_delegation_declared_class
   "In instantiation of .struct fixy::session::detail::delegation_readable_gate<.anonymous.::Frame>.")
 fixy_neg_compile_test(neg_sess_crash_delegation_specialized_after_query
   "specialization of ..anonymous.::Frame<int>. after instantiation"
-  "redefinition of .struct .anonymous.::Frame<int>.")
+  "neg_sess_crash_delegation_specialized_after_query\\.cpp:20:[0-9]+: error:")
 
 # ── Checkpoint and rollback ───────────────────────────────────────────
 #
