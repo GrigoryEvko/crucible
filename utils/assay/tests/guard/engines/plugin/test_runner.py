@@ -1029,16 +1029,34 @@ def fixture_problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.add_fixture("neg_b", NEG_B)
     found = scratch.errors()
     expect(
-        "a build with the record of one fixture and no record of a different fixture is an error",
-        len(found) == 1 and "1 of the 2 fixtures with the plugin have no record" in found[0],
+        "a build with the record of one fixture and no record of a different fixture is an error, and loop test "
+        "runs that fixture",
+        len(found) == 1
+        and "1 of the 2 fixtures with the plugin have no record" in found[0]
+        and fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset({"neg_b"}),
     )
     scratch.record("neg_b", [], stamp="ffff")
     expect(
-        "a census with a stamp that is not the stamp of the compile command is an error, and the write refuses it",
-        any("has the stamp ffff" in item for item in scratch.errors()) and scratch.write()[0] == 1,
+        "a census with a stamp that is not the stamp of the compile command is an error, the write refuses it, and "
+        "loop test runs that fixture",
+        any("has the stamp ffff" in item for item in scratch.errors())
+        and scratch.write()[0] == 1
+        and fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset({"neg_b"}),
     )
     scratch.record("neg_b", [])
-    expect("a fixture with an empty census passes", scratch.errors() == [])
+    expect(
+        "a fixture with an empty census passes, and loop test runs no fixture for the census",
+        scratch.errors() == [] and fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset(),
+    )
+    sources = {name: source for name, (source, _stamp) in scratch.fixtures.items()}
+    for name, source in sources.items():
+        scratch.add_fixture(name, source, stamp="eeee")
+    expect(
+        "after a configure that gives each compile command a new stamp, loop test runs each fixture",
+        fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset(sources),
+    )
+    for name, source in sources.items():
+        scratch.add_fixture(name, source)
     scratch.configure(BASE_NAME, "Debug", is_parse=True)
     parsed = fixtures.FixtureContext(scratch.root, scratch.build).part()
     expect(

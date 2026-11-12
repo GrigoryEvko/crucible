@@ -402,6 +402,25 @@ def problem_of(item: FixtureFacts, build_shown: str) -> str:
     return ""
 
 
+def unsettled_fixtures(build_dir: Path, root: Path) -> frozenset[str]:
+    """Return the name of each fixture with the plugin whose record census_of() refuses (THE PROBLEMS).
+
+    A run of such a fixture writes its record again with the stamp of its compile command.  The problems are a census
+    of a different stamp, a record with no census, and a record that does not read.  When the build holds the record
+    of a fixture with the plugin, a fixture with no record is a problem too (NO FIXTURE RUN).  `loop test` runs each
+    such fixture also with --only (assay.loop.affected).  Complexity: the cost of read_fixtures().
+
+    Raises:
+        runner.BuildError: If the test list or the compile database cannot be read
+    """
+    facts, _ = read_fixtures(build_dir, root)
+    counted = [item for item in facts if item.stamp is not None]
+    missing = [item.name for item in counted if item.problem == MISSING]
+    if len(missing) == len(counted):
+        return frozenset()
+    return frozenset(item.name for item in counted if item.problem == MISSING or problem_of(item, ""))
+
+
 def census_of(
     fixtures: Sequence[FixtureFacts], kinds: frozenset[str], build_shown: str, source_root: Path
 ) -> FixturePart:

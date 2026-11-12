@@ -145,6 +145,14 @@ THE TESTS THAT READ THE BUILD
 
     `--only FILE` selects only the tests that FILE names, one name on each
     line.  The script skips each other test with no change to its record.
+    It also selects each fixture whose record the census check of the rule
+    quarantine refuses, such as a census with the stamp of an earlier
+    compile command (unsettled_fixtures() of
+    assay.guard.engines.plugin.fixtures).  The build can configure again and
+    give each fixture a new stamp, and a named test such as guard_plugin
+    then reads the census.  When the census cannot be read, the script
+    selects each fixture.  A call with no --only runs each fixture anyway.
+    So a run of `loop test` leaves no census of an earlier stamp.
 
     `--build-only` skips each test of the kind KIND_GUARD: a test of the
     master guard with known inputs that reads no build.  It also skips each
@@ -512,6 +520,7 @@ REASON_STORE = "the shared store holds a pass with the same inputs"
 REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
 REASON_FAILED = "the test failed in this build directory with the same inputs"
 REASON_UNNAMED = "--only does not name the test"
+REASON_UNSETTLED = "the census check of the rule quarantine refuses the record of the fixture"
 REASON_BUILD_FREE = "the test reads no build, and the configuration default of the gate runs it (--build-only)"
 REASON_READS = "the read set of the last traced run is not usable, and the launcher traces the test again"
 
@@ -1273,21 +1282,26 @@ class Planner:
         return path
 
     def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool,
-               only: frozenset[str] | None = None, is_build_only: bool = False) -> list[Decision]:
+               only: frozenset[str] | None = None, is_build_only: bool = False,
+               unsettled: frozenset[str] = frozenset()) -> list[Decision]:
         """Return the decision for each test (THE RECORD, THE SHARED STORE).
 
         With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (THE TESTS
-        THAT READ THE BUILD).  Complexity: classify() for each test that `only` names.  For each test of FINGERPRINTED
-        with no record of its own, one open of one entry of the store.
+        THAT READ THE BUILD).  A fixture of `unsettled` runs also when `only` does not name it.  Complexity: classify()
+        for each test that `only` names.  For each test of FINGERPRINTED with no record of its own, one open of one
+        entry of the store.
         """
         passed, failed = self.state["passed"], self.state["failed"]
         assert isinstance(passed, dict) and isinstance(failed, dict)
         decisions: list[Decision] = []
         for test in tests:
-            if only is not None and test.name not in only:
+            is_unsettled = test.name in unsettled and is_fixture(test.command)
+            if only is not None and test.name not in only and not is_unsettled:
                 decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
                 continue
             decision = self.classify(test)
+            if only is not None and test.name not in only:
+                decision.reason = REASON_UNSETTLED
             if is_build_only and (decision.kind == KIND_GUARD or decision.is_build_free):
                 decision.reason = REASON_BUILD_FREE
                 decision.is_skipped = True
@@ -1774,6 +1788,24 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
         print(f"loop test: {'; '.join(parts)}.  `loop history {build_dir}` prints the history.")
 
 
+def unsettled_fixtures(build_dir: Path, source_root: Path,
+                       tests: tuple[ctest_reader.TestEntry, ...]) -> frozenset[str]:
+    """Return each fixture that --only must run, because the census check refuses its record (THE TESTS THAT READ THE
+    BUILD).
+
+    A census that cannot be read gives each fixture of the build.  Complexity: the cost of unsettled_fixtures() of
+    assay.guard.engines.plugin.fixtures.
+    """
+    from assay.guard.engines.plugin import fixtures as plugin_fixtures
+    from assay.guard.engines.plugin import runner as plugin_runner
+
+    try:
+        return plugin_fixtures.unsettled_fixtures(build_dir, source_root)
+    except plugin_runner.BuildError as problem:
+        check_report.write_line(f"loop test: the census of the fixtures cannot be read: {problem}.  Each fixture runs.")
+        return frozenset(test.name for test in tests if is_fixture(test.command))
+
+
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,
         ctest_arguments: list[str], only: frozenset[str] | None = None, is_build_only: bool = False) -> int:
     """Build, decide, run and record.  Return the exit code of the script.
@@ -1815,7 +1847,8 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
         warmer.join()
-        decisions = planner.decide(tests, run_all, only, is_build_only)
+        unsettled = unsettled_fixtures(build_dir, Path(trees.source_root), tests) if only is not None else frozenset()
+        decisions = planner.decide(tests, run_all, only, is_build_only, unsettled)
         unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
         build_free = sum(decision.reason == REASON_BUILD_FREE for decision in decisions)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
@@ -2476,6 +2509,14 @@ def unit_cases(expect: DetailedExpect) -> None:
            is_fixture(("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", FIXTURE_SUBCOMMAND, "/s/b"))
            and not is_fixture(launched))
     expect("source_paths_in ignores the build tree", source_paths_in("/s/b/x /s/y", trees) == ["/s/y"])
+    driver = ("/usr/bin/python3", f"/s/utils/bin/{LOOP_MASTER}", FIXTURE_SUBCOMMAND, "/s/b")
+    stale = ctest_reader.TestEntry("neg_stale", (*driver, "/s/neg_stale.cpp", "neg_stale"))
+    settled = ctest_reader.TestEntry("neg_settled", (*driver, "/s/neg_settled.cpp", "neg_settled"))
+    planner = Planner(trees, empty_state(trees), ResultStore())
+    decided = planner.decide((stale, settled), False, frozenset({"guard_named"}), False, frozenset({"neg_stale"}))
+    expect("--only also runs each fixture whose record the census check refuses, and skips each other fixture",
+           [(item.test.name, item.is_skipped, item.reason) for item in decided]
+           == [("neg_stale", False, REASON_UNSETTLED), ("neg_settled", True, REASON_UNNAMED)])
     layer_cases(expect)
     shard_cases(expect)
     jobserver_cases(expect)
