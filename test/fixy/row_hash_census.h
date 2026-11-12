@@ -868,6 +868,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Fmt,
      "the text of a report and its place: the argument of a fatal exit, never a value in a kernel signature"},
     {^^::foundation::core::niche, kMetafunction},
+    {^^::foundation::core::niche_key,
+     "the proof that the storage of an Option reads a niche: it lives for one call, and holds nothing"},
     {^^::foundation::core::OptionCursor,
      "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::Box,

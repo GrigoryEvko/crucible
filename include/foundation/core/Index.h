@@ -129,10 +129,12 @@ public:
 // holds.
 template <std::size_t Count>
 struct niche<Index<Count>> {
-    [[nodiscard]] static constexpr Index<Count> empty() noexcept {
+    [[nodiscard]] static constexpr Index<Count> empty(niche_key<Index<Count>> const&) noexcept {
         return Index<Count>{static_cast<detail::IndexWord<Count>>(Count)};
     }
-    [[nodiscard]] static constexpr bool is_empty(Index<Count> const& index) noexcept { return index.value_ == Count; }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<Index<Count>> const&, Index<Count> const& index) noexcept {
+        return index.value_ == Count;
+    }
 };
 
 // The position of a loop over an IndexRange.  It holds the next index, or

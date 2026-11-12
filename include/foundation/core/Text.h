@@ -49,10 +49,14 @@ namespace foundation::core {
 class TextView;
 class CText;
 
-// The niche protocol of the Choice family.  This header gives the niche of
-// a TextView, so an Option of a window has the size of a TextView.
+// The niche protocol of the Choice family and its key.  This header gives
+// the niche of a TextView, so an Option of a window has the size of a
+// TextView.
 template <class T>
 struct niche;
+
+template <class T>
+class niche_key;
 
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -149,8 +153,10 @@ public:
 // of a TextView sees it.
 template <>
 struct niche<TextView> {
-    [[nodiscard]] static constexpr TextView empty() noexcept { return TextView{nullptr, ~std::size_t{0}}; }
-    [[nodiscard]] static constexpr bool is_empty(TextView const& text) noexcept {
+    [[nodiscard]] static constexpr TextView empty(niche_key<TextView> const&) noexcept {
+        return TextView{nullptr, ~std::size_t{0}};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<TextView> const&, TextView const& text) noexcept {
         return text.size_ == ~std::size_t{0};
     }
 };

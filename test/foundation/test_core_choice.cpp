@@ -70,8 +70,13 @@ struct SlotNumber {
 
 template <>
 struct foundation::core::niche<SlotNumber> {
-    [[nodiscard]] static constexpr SlotNumber empty() noexcept { return SlotNumber{0xFFFFFFFFu}; }
-    [[nodiscard]] static constexpr bool is_empty(SlotNumber const& slot) noexcept { return slot.raw == 0xFFFFFFFFu; }
+    [[nodiscard]] static constexpr SlotNumber empty(foundation::core::niche_key<SlotNumber> const&) noexcept {
+        return SlotNumber{0xFFFFFFFFu};
+    }
+    [[nodiscard]] static constexpr bool is_empty(foundation::core::niche_key<SlotNumber> const&,
+                                                 SlotNumber const& slot) noexcept {
+        return slot.raw == 0xFFFFFFFFu;
+    }
 };
 
 namespace {
@@ -263,8 +268,12 @@ void test_niche_empty_value_aborts() {
 // empty value through its own members.
 struct MemberSlot {
     std::uint32_t raw = 0;
-    [[nodiscard]] static constexpr MemberSlot niche_empty() noexcept { return MemberSlot{0xFFFFFFFFu}; }
-    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0xFFFFFFFFu; }
+    [[nodiscard]] static constexpr MemberSlot niche_empty(::foundation::core::niche_key<MemberSlot> const&) noexcept {
+        return MemberSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<MemberSlot> const&) const noexcept {
+        return raw == 0xFFFFFFFFu;
+    }
 };
 
 void test_member_niche_payload() {

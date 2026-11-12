@@ -327,14 +327,15 @@ public:
 // than max_view_count elements.
 template <class T, std::size_t Extent>
 struct niche<View<T, Extent>> {
-    [[nodiscard]] static constexpr View<T, Extent> empty() noexcept {
+    [[nodiscard]] static constexpr View<T, Extent> empty(niche_key<View<T, Extent>> const&) noexcept {
         if constexpr (Extent == dynamic_extent) {
             return View<T, Extent>{nullptr, dynamic_extent};
         } else {
             return View<T, Extent>{static_cast<T*>(nullptr)};
         }
     }
-    [[nodiscard]] static constexpr bool is_empty(View<T, Extent> const& view) noexcept {
+    [[nodiscard]] static constexpr bool is_empty(niche_key<View<T, Extent>> const&,
+                                                 View<T, Extent> const& view) noexcept {
         if constexpr (Extent == dynamic_extent) {
             return view.count_.count == dynamic_extent;
         } else {

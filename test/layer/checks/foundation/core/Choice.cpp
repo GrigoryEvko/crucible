@@ -37,10 +37,12 @@ struct Owner {
 
 template <>
 struct niche<detail::choice_checks::SlotNumber> {
-    [[nodiscard]] static constexpr detail::choice_checks::SlotNumber empty() noexcept {
+    [[nodiscard]] static constexpr detail::choice_checks::SlotNumber
+    empty(niche_key<detail::choice_checks::SlotNumber> const&) noexcept {
         return detail::choice_checks::SlotNumber{0xFFFFFFFFu};
     }
-    [[nodiscard]] static constexpr bool is_empty(detail::choice_checks::SlotNumber const& slot) noexcept {
+    [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::SlotNumber> const&,
+                                                 detail::choice_checks::SlotNumber const& slot) noexcept {
         return slot.raw == 0xFFFFFFFFu;
     }
 };
@@ -82,20 +84,47 @@ static_assert(!ChoicePayload<NoValue>);
 // refuses the payload.  A class can give the niche through its own members.
 struct MemberSlot {
     std::uint32_t raw = 0;
-    [[nodiscard]] static constexpr MemberSlot niche_empty() noexcept { return MemberSlot{0xFFFFFFFFu}; }
-    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0xFFFFFFFFu; }
+    [[nodiscard]] static constexpr MemberSlot niche_empty(niche_key<MemberSlot> const&) noexcept {
+        return MemberSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<MemberSlot> const&) const noexcept {
+        return raw == 0xFFFFFFFFu;
+    }
 };
 
 struct HalfMemberSlot {
     std::uint32_t raw = 0;
-    [[nodiscard]] static constexpr HalfMemberSlot niche_empty() noexcept { return HalfMemberSlot{0xFFFFFFFFu}; }
+    [[nodiscard]] static constexpr HalfMemberSlot niche_empty(niche_key<HalfMemberSlot> const&) noexcept {
+        return HalfMemberSlot{0xFFFFFFFFu};
+    }
 };
 
 // A niche whose empty value is_empty does not see.
 struct BlindSlot {
     std::uint32_t raw = 0;
-    [[nodiscard]] static constexpr BlindSlot niche_empty() noexcept { return BlindSlot{0xFFFFFFFFu}; }
-    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0; }
+    [[nodiscard]] static constexpr BlindSlot niche_empty(niche_key<BlindSlot> const&) noexcept {
+        return BlindSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<BlindSlot> const&) const noexcept { return raw == 0; }
+};
+
+// A niche whose members take no key.  Each caller could then get the empty
+// value, so the gate refuses it.
+struct KeylessSlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr KeylessSlot niche_empty() noexcept { return KeylessSlot{0xFFFFFFFFu}; }
+    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0xFFFFFFFFu; }
+};
+
+// A niche whose members take the key of a different type.
+struct BorrowedKeySlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr BorrowedKeySlot niche_empty(niche_key<MemberSlot> const&) noexcept {
+        return BorrowedKeySlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<MemberSlot> const&) const noexcept {
+        return raw == 0xFFFFFFFFu;
+    }
 };
 
 static_assert(WellFormedNiche<int> && option_form_of<int> == OptionForm::plain);
@@ -103,6 +132,20 @@ static_assert(WellFormedNiche<SlotNumber> && option_form_of<SlotNumber> == Optio
 static_assert(WellFormedNiche<MemberSlot>);
 static_assert(!WellFormedNiche<HalfMemberSlot> && !ChoicePayload<HalfMemberSlot>);
 static_assert(!WellFormedNiche<BlindSlot> && !ChoicePayload<BlindSlot>);
+static_assert(!WellFormedNiche<KeylessSlot> && !ChoicePayload<KeylessSlot>);
+static_assert(!WellFormedNiche<BorrowedKeySlot> && !ChoicePayload<BorrowedKeySlot>);
+
+// Only the reader of a niche builds its key: the constructors are private,
+// the key is not trivially copyable and has no trivial constructor, and an
+// assignment of a key is deleted.  So no caller, no std::bit_cast and no
+// lifetime start over bytes makes a key, and no caller reads an empty value.
+// The fixtures neg_core_niche_* show each refusal of a call.
+static_assert(!std::is_default_constructible_v<niche_key<SlotNumber>>);
+static_assert(!std::is_copy_constructible_v<niche_key<SlotNumber>>);
+static_assert(!std::is_copy_assignable_v<niche_key<SlotNumber>>);
+static_assert(!std::is_trivially_copyable_v<niche_key<SlotNumber>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<niche_key<SlotNumber>>);
+static_assert(detail::NicheRead<SlotNumber>::holds_its_empty() && detail::NicheRead<MemberSlot>::holds_its_empty());
 static_assert(option_form_of<MemberSlot> == OptionForm::niche);
 static_assert(sizeof(Option<MemberSlot>) == sizeof(MemberSlot));
 static_assert(Option<MemberSlot>{}.is_none());
@@ -111,8 +154,10 @@ static_assert(Option<MemberSlot>::some(MemberSlot{2}).expect("a constant slot").
 // A count that is never zero: the empty value of its niche has zero bytes.
 struct NonZeroCount {
     std::uint32_t raw = 1;
-    [[nodiscard]] static constexpr NonZeroCount niche_empty() noexcept { return NonZeroCount{0}; }
-    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0; }
+    [[nodiscard]] static constexpr NonZeroCount niche_empty(niche_key<NonZeroCount> const&) noexcept {
+        return NonZeroCount{0};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<NonZeroCount> const&) const noexcept { return raw == 0; }
 };
 
 // A lifetime start over bytes.  Zero bytes are an empty plain Option and an
@@ -536,6 +581,7 @@ CRUCIBLE_CLOSED_SURFACE(choice_names, Unit);
 CRUCIBLE_CLOSED_SURFACE(choice_names, NoValue);
 CRUCIBLE_CLOSED_SURFACE(choice_names, niche<int>);
 CRUCIBLE_CLOSED_SURFACE(choice_names, niche<MemberSlot>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, niche_key<MemberSlot>);
 
 // The cursor of a loop over an Option takes the cursor protocol, and no
 // other type of the family takes a dereference.

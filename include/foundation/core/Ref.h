@@ -136,8 +136,12 @@ template <RefTarget T>
 // holds.  Option<Ref<T>> then has the size of one pointer.
 template <RefTarget T>
 struct niche<Ref<T>> {
-    [[nodiscard]] static constexpr Ref<T> empty() noexcept { return Ref<T>{static_cast<T*>(nullptr)}; }
-    [[nodiscard]] static constexpr bool is_empty(Ref<T> const& ref) noexcept { return ref.object_ == nullptr; }
+    [[nodiscard]] static constexpr Ref<T> empty(niche_key<Ref<T>> const&) noexcept {
+        return Ref<T>{static_cast<T*>(nullptr)};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<Ref<T>> const&, Ref<T> const& ref) noexcept {
+        return ref.object_ == nullptr;
+    }
 };
 
 // The object of a Box: a complete object type that is not an array, not

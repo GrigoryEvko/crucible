@@ -13,8 +13,12 @@ struct SlotNumber {
 
 template <>
 struct foundation::core::niche<SlotNumber> {
-    [[nodiscard]] static constexpr SlotNumber empty() noexcept { return SlotNumber{0xFFFFFFFFu}; }
-    [[nodiscard]] static constexpr bool is_empty(SlotNumber const& slot) noexcept { return slot.raw == 0xFFFFFFFFu; }
+    [[nodiscard]] static constexpr SlotNumber empty(niche_key<SlotNumber> const&) noexcept {
+        return SlotNumber{0xFFFFFFFFu};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<SlotNumber> const&, SlotNumber const& slot) noexcept {
+        return slot.raw == 0xFFFFFFFFu;
+    }
 };
 
 int main() {

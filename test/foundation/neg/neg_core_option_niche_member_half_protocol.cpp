@@ -9,7 +9,9 @@
 struct SlotNumber {
     std::uint32_t raw = 0;
 
-    [[nodiscard]] static constexpr SlotNumber niche_empty() noexcept { return SlotNumber{0xFFFFFFFFu}; }
+    [[nodiscard]] static constexpr SlotNumber niche_empty(::foundation::core::niche_key<SlotNumber> const&) noexcept {
+        return SlotNumber{0xFFFFFFFFu};
+    }
 };
 
 int main() { return sizeof(::foundation::core::Option<SlotNumber>) > 0 ? 0 : 1; }

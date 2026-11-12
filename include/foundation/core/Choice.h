@@ -90,25 +90,62 @@ concept ErrMark = std::is_class_v<T> && ::foundation::linear::carries_annotation
 // not carry it, so its absence tells that a type declares a niche.
 struct UndeclaredNiche final {};
 
+enum class OptionForm : unsigned char {
+    niche,
+    plain,
+    owning,
+};
+
+// The storage of each Option, and the one reader of the niche of T.
+template <class T, OptionForm Form>
+class OptionSlot;
+
+template <class T>
+class NicheRead;
+
 }  // namespace detail
+
+// The key of the niche protocol.  The empty value of a niche is a value that
+// no valid T holds, such as a Ref that holds the null pointer, so only the
+// storage of an Option reads it.  Each member of the protocol takes the key,
+// and only detail::NicheRead<T> builds a niche_key<T>.  A key opens the niche
+// of its own payload type only.  So the niche of a type gets a key that
+// cannot read the niche of a different type.
+//
+// The protocol takes the key by reference, so nothing copies one.  Both
+// constructors are user-provided and private, so std::bit_cast and a
+// lifetime start over bytes build no key, for the reasons that grade_key of
+// foundation/algebra/Graded.h gives.
+template <class T>
+class [[nodiscard]] niche_key final {
+    friend class detail::NicheRead<T>;
+
+    constexpr niche_key() noexcept {}
+    constexpr niche_key(niche_key const&) noexcept {}
+
+public:
+    niche_key& operator=(niche_key const&) = delete("a niche key lives for one call of the niche protocol");
+};
 
 // The niche protocol.  A payload type T with an empty value that no valid
 // T holds can specialize niche<T> with two static members:
 //
-//   static constexpr T empty() noexcept;              the empty value
-//   static constexpr bool is_empty(T const&) noexcept;
+//   static constexpr T empty(niche_key<T> const&) noexcept;    the empty value
+//   static constexpr bool is_empty(niche_key<T> const&, T const&) noexcept;
 //
 // A class can also give the two members itself, which a class in a
 // namespace that cannot specialize niche needs:
 //
-//   static constexpr T niche_empty() noexcept;        the empty value
-//   constexpr bool is_niche_empty() const noexcept;
+//   static constexpr T niche_empty(niche_key<T> const&) noexcept;
+//   constexpr bool is_niche_empty(niche_key<T> const&) const noexcept;
 //
-// The members must be public.  The primary template declares no niche, so a
-// type with no specialization and no member of the protocol has no niche.
-// A niche payload has trivial copy and move constructors and a trivial
-// destructor, so the ABI passes the Option in registers.  Its assignment can
-// be user-provided, as the assignment of a type that holds a byte seal is.
+// The members must be public.  The key is the proof that the storage of an
+// Option calls them, so no other code gets the empty value.  The primary
+// template declares no niche, so a type with no specialization and no
+// member of the protocol has no niche.  A niche payload has trivial copy and
+// move constructors and a trivial destructor, so the ABI passes the Option
+// in registers.  Its assignment can be user-provided, as the assignment of a
+// type that holds a byte seal is.
 template <class T>
 struct[[= detail::UndeclaredNiche{}]] niche {};
 
@@ -130,39 +167,91 @@ concept NamesMemberNiche = requires { &T::niche_empty; } || requires { &T::is_ni
 template <class T>
     requires detail::NamesMemberNiche<T>
 struct niche<T> {
-    [[nodiscard]] static constexpr T empty() noexcept
-        requires requires {
-            { T::niche_empty() } noexcept -> std::same_as<T>;
+    [[nodiscard]] static constexpr T empty(niche_key<T> const& key) noexcept
+        requires requires(niche_key<T> const& held_key) {
+            { T::niche_empty(held_key) } noexcept -> std::same_as<T>;
         }
     {
-        return T::niche_empty();
+        return T::niche_empty(key);
     }
 
-    [[nodiscard]] static constexpr bool is_empty(T const& value) noexcept
-        requires requires(T const& held) {
-            { held.is_niche_empty() } noexcept -> std::same_as<bool>;
+    [[nodiscard]] static constexpr bool is_empty(niche_key<T> const& key, T const& value) noexcept
+        requires requires(niche_key<T> const& held_key, T const& held) {
+            { held.is_niche_empty(held_key) } noexcept -> std::same_as<bool>;
         }
     {
-        return value.is_niche_empty();
+        return value.is_niche_empty(key);
     }
 };
+
+namespace detail {
+
+// The one reader of the niche of T, and the one class that builds a
+// niche_key<T>.  The storage of a niche Option reads the empty value
+// through its private members.  The gate and the lifetime mark read only
+// its two facts, which are constants of type bool, so no other code gets an
+// empty value or a key.
+template <class T>
+class NicheRead final {
+    friend class OptionSlot<T, OptionForm::niche>;
+
+    [[nodiscard]] static constexpr T empty_() noexcept { return niche<T>::empty(niche_key<T>{}); }
+    [[nodiscard]] static constexpr bool is_empty_(T const& value) noexcept {
+        return niche<T>::is_empty(niche_key<T>{}, value);
+    }
+
+    // True when each byte of the empty value is zero.  A constant
+    // evaluation reads the bytes.  A payload that is not trivially copyable
+    // gives false.
+    [[nodiscard]] static consteval bool empty_bytes_are_zero_() noexcept {
+        if constexpr (!std::is_trivially_copyable_v<T>) {
+            return false;
+        } else {
+            struct Image {
+                unsigned char byte[sizeof(T)];
+            };
+            Image const image = __builtin_bit_cast(Image, empty_());
+            for (unsigned char const byte : image.byte) {
+                if (byte != 0) return false;
+            }
+            return true;
+        }
+    }
+
+public:
+    // True when is_empty gives true for the empty value.
+    [[nodiscard]] static consteval bool holds_its_empty() noexcept { return is_empty_(empty_()); }
+
+    // True when each byte of the empty value is zero, and false when a
+    // constant evaluation cannot read the bytes, such as the bytes of a
+    // pointer.  So the answer fails closed.
+    [[nodiscard]] static consteval bool empty_has_zero_bytes() noexcept {
+        if constexpr (requires { typename std::bool_constant<empty_bytes_are_zero_()>; }) {
+            return empty_bytes_are_zero_();
+        } else {
+            return false;
+        }
+    }
+};
+
+}  // namespace detail
 
 // The type declares no niche, or its niche is well formed.  A type declares
 // a niche when niche<T> is a specialization.  A well formed niche has the
 // trivial copy, move and destructor of the protocol, and its two members
-// have the types of the protocol and do not throw.  Its empty value is a
-// constant, and is_empty gives true for it.  A malformed niche would give
-// the plain or the owning form with no message, so the payload gate refuses
-// it.  This gate is the one gate that reads niche<T>.
+// take the key, have the types of the protocol and do not throw.  Its empty
+// value is a constant, and is_empty gives true for it.  A malformed niche
+// would give the plain or the owning form with no message, so the payload
+// gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
-concept WellFormedNiche =
-    detail::UndeclaredNicheOf<T>
-    || (std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
-        && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T> && requires(T const& value) {
-               { niche<T>::empty() } noexcept -> std::same_as<T>;
-               { niche<T>::is_empty(value) } noexcept -> std::same_as<bool>;
-               typename std::bool_constant<niche<T>::is_empty(niche<T>::empty())>;
-           } && niche<T>::is_empty(niche<T>::empty()));
+concept WellFormedNiche = detail::UndeclaredNicheOf<T>
+                       || (std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
+                           && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T>
+                           && requires(T const& value, niche_key<T> const& key) {
+                                  { niche<T>::empty(key) } noexcept -> std::same_as<T>;
+                                  { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
+                                  typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
+                              } && detail::NicheRead<T>::holds_its_empty());
 
 // The payload of an Option: an object type that is not an array, not
 // cv-qualified, not the empty marker itself and not the mark of an error.
@@ -249,12 +338,6 @@ struct SomeTag final {
     explicit constexpr SomeTag() noexcept = default;
 };
 
-enum class OptionForm : unsigned char {
-    niche,
-    plain,
-    owning,
-};
-
 // A payload that declares a niche takes the niche form.  The payload gate
 // holds WellFormedNiche<T>, so its niche is well formed.  A niche payload
 // copies, so it is never linear.  A linear payload takes the owning form
@@ -275,36 +358,6 @@ consteval OptionForm option_form_for() noexcept {
 
 template <class T>
 inline constexpr OptionForm option_form_of = option_form_for<T>();
-
-// True when each byte of the empty value of the niche of T is zero.  A
-// constant evaluation reads the bytes.  A payload that is not trivially
-// copyable gives false.
-template <class T>
-[[nodiscard]] consteval bool niche_empty_bytes_are_zero_() noexcept {
-    if constexpr (!std::is_trivially_copyable_v<T>) {
-        return false;
-    } else {
-        struct Image {
-            unsigned char byte[sizeof(T)];
-        };
-        Image const image = __builtin_bit_cast(Image, niche<T>::empty());
-        for (unsigned char const byte : image.byte) {
-            if (byte != 0) return false;
-        }
-        return true;
-    }
-}
-
-// The same answer, and false when a constant evaluation cannot read the
-// bytes, such as the bytes of a pointer.  So the answer fails closed.
-template <class T>
-[[nodiscard]] consteval bool niche_empty_is_zero_bytes_() noexcept {
-    if constexpr (requires { typename std::bool_constant<niche_empty_bytes_are_zero_<T>()>; }) {
-        return niche_empty_bytes_are_zero_<T>();
-    } else {
-        return false;
-    }
-}
 
 // The mark of a niche Option against a lifetime start over bytes.  Zero
 // bytes are the empty value of a niche whose empty value has zero bytes.
@@ -330,16 +383,16 @@ template <class T, OptionForm Form = option_form_of<T>>
 class OptionSlot;
 
 template <class T>
-class OptionSlot<T, OptionForm::niche> : NicheLifetime<niche_empty_is_zero_bytes_<T>()> {
-    T value_ = niche<T>::empty();
+class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_zero_bytes()> {
+    T value_ = NicheRead<T>::empty_();
 
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return !niche<T>::is_empty(value_); }
+    [[nodiscard]] constexpr bool holds_() const noexcept { return !NicheRead<T>::is_empty_(value_); }
     [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
-    constexpr void clear_() noexcept { value_ = niche<T>::empty(); }
+    constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
 
 public:
     constexpr OptionSlot() noexcept = default;
@@ -350,7 +403,7 @@ public:
         // A payload equal to the empty value would read as no value.  A
         // payload that cannot hold the empty value, such as a View that its
         // door bounds, gives the optimizer what it needs to remove the check.
-        if (niche<T>::is_empty(value_)) [[unlikely]] {
+        if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
             fatal("Option::some got the empty value of the niche of its payload");
         }
     }

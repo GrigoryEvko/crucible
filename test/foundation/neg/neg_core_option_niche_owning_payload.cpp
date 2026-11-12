@@ -15,8 +15,10 @@ struct Handle {
 
 template <>
 struct foundation::core::niche<Handle> {
-    [[nodiscard]] static constexpr Handle empty() noexcept { return Handle{}; }
-    [[nodiscard]] static constexpr bool is_empty(Handle const& handle) noexcept { return handle.descriptor < 0; }
+    [[nodiscard]] static constexpr Handle empty(niche_key<Handle> const&) noexcept { return Handle{}; }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<Handle> const&, Handle const& handle) noexcept {
+        return handle.descriptor < 0;
+    }
 };
 
 int main() { return sizeof(::foundation::core::Option<Handle>) > 0 ? 0 : 1; }

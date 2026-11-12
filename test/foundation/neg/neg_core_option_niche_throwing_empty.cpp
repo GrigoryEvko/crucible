@@ -12,8 +12,10 @@ struct SlotNumber {
 
 template <>
 struct foundation::core::niche<SlotNumber> {
-    [[nodiscard]] static constexpr SlotNumber empty() { return SlotNumber{0xFFFFFFFFu}; }
-    [[nodiscard]] static constexpr bool is_empty(SlotNumber const& slot) noexcept { return slot.raw == 0xFFFFFFFFu; }
+    [[nodiscard]] static constexpr SlotNumber empty(niche_key<SlotNumber> const&) { return SlotNumber{0xFFFFFFFFu}; }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<SlotNumber> const&, SlotNumber const& slot) noexcept {
+        return slot.raw == 0xFFFFFFFFu;
+    }
 };
 
 int main() { return sizeof(::foundation::core::Option<SlotNumber>) > 0 ? 0 : 1; }

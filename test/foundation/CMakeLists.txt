@@ -1984,6 +1984,18 @@ foundation_neg_compile_test(neg_core_option_niche_member_half_protocol
 foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+foundation_neg_compile_test(neg_core_niche_ref_forge
+  "no matching function for call to .foundation::core::niche<foundation::core::Ref<int> >::empty\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_core_niche_ref_brace_key
+  ".constexpr foundation::core::niche_key<T>::niche_key\\(\\) \\[with T = foundation::core::Ref<int>\\]. is private within this context"
+  "foundation/core/Choice.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_niche_member_no_key
+  "no matching function for call to .SlotNumber::niche_empty\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_core_niche_key_of_other_type
+  "cannot convert .const foundation::core::niche_key<SlotNumber>. to .const foundation::core::niche_key<foundation::core::Ref<int> >&."
+  "initializing argument 1 of .static constexpr foundation::core::Ref<[A-Za-z]+> foundation::core::niche<foundation::core::Ref<T> >::empty\\(")
 foundation_neg_compile_test(neg_core_option_niche_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Option<SlotNumber> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<SlotNumber>\\]")

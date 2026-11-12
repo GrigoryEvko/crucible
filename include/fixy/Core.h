@@ -51,6 +51,7 @@ using ::foundation::core::CText;
 using ::foundation::core::FixedText;
 using ::foundation::core::TextView;
 
+using ::foundation::core::niche_key;
 using ::foundation::core::none;
 using ::foundation::core::NoValue;
 using ::foundation::core::Option;
