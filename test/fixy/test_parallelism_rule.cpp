@@ -277,8 +277,7 @@ int main() {
 
     // The summary comes first because every result below depends on the
     // host topology and cannot be read without it.
-    Topology::instance().log_summary(stderr);
-    std::fprintf(stderr, "\n");
+    Topology::instance().log_summary();
 
     run_test("classify boundaries", test_classify_boundaries);
     run_test("core-resident boundary", test_core_resident_boundary);

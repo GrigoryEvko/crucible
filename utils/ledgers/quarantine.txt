@@ -209,8 +209,8 @@ include/crucible/warden/ | replace-pending:std::bit_cast | 5 | - | -
 include/crucible/warden/ | std-entity | 149 | - | -
 include/crucible/warden/ | std-object | 54 | - | -
 include/fixy/ | base-c-library-call | 5 | - | -
-include/fixy/ | base-std-entity | 401 | - | -
-include/fixy/ | base-std-object | 220 | - | -
+include/fixy/ | base-std-entity | 398 | - | -
+include/fixy/ | base-std-object | 219 | - | -
 include/fixy/ | replace-pending:<array> | 7 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 4 | - | -
@@ -274,8 +274,8 @@ include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
-include/fixy/os/ | base-c-library-call | 16 | - | -
-include/fixy/os/ | base-c-library-object | 12 | - | -
+include/fixy/os/ | base-c-library-call | 15 | - | -
+include/fixy/os/ | base-c-library-object | 11 | - | -
 include/fixy/os/ | base-std-entity | 276 | - | -
 include/fixy/os/ | base-std-object | 131 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -283,7 +283,7 @@ include/fixy/os/ | replace-pending:<array> | 2 | - | -
 include/fixy/os/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/os/ | replace-pending:<cerrno> | 3 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
-include/fixy/os/ | replace-pending:<cstdio> | 2 | - | -
+include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
 include/fixy/os/ | replace-pending:<expected> | 12 | - | -
 include/fixy/os/ | replace-pending:<filesystem> | 1 | - | -
@@ -396,12 +396,9 @@ src/cntp/_wip/ | std-entity | 23 | - | -
 src/cntp/_wip/ | std-object | 14 | - | -
 src/cog/ | std-entity | 33 | - | -
 src/cog/ | std-object | 19 | - | -
-src/fixy/os/ | base-c-library-call | 1 | - | -
-src/fixy/os/ | base-c-library-object | 1 | - | -
 src/fixy/os/ | base-std-entity | 158 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
-src/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 src/fixy/os/ | replace-pending:<string> | 1 | - | -
 src/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 src/fixy/os/ | replace-pending:<vector> | 1 | - | -
@@ -465,7 +462,7 @@ test/dag_neg/ | raw-pointer-object | 7 | - | -
 test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 102 | - | -
-test/fixy/ | c-library-call | 1530 | - | -
+test/fixy/ | c-library-call | 1522 | - | -
 test/fixy/ | c-library-object | 10 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -480,7 +477,7 @@ test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the fut
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 20 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3374 | - | -
+test/fixy/ | std-entity | 3373 | - | -
 test/fixy/ | std-object | 1269 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 253 | - | -
@@ -492,8 +489,8 @@ test/fixy/neg/ | raw-new-delete | 1 | - | -
 test/fixy/neg/ | raw-pointer-object | 41 | - | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 6 | - | -
-test/fixy/neg/ | std-entity | 217 | - | -
-test/fixy/neg/ | std-object | 125 | - | -
+test/fixy/neg/ | std-entity | 216 | - | -
+test/fixy/neg/ | std-object | 124 | - | -
 test/foundation/ | c-array-object | 59 | - | -
 test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -
@@ -572,7 +569,7 @@ test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
 test/layer/checks/fixy/ | replace-pending:<limits> | 10 | - | -
-test/layer/checks/fixy/ | std-entity | 157 | - | -
+test/layer/checks/fixy/ | std-entity | 156 | - | -
 test/layer/checks/fixy/ | std-object | 15 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 11 | - | -

@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -688,19 +687,40 @@ Topology::Topology(std::string_view sysfs_root) noexcept {
     probe_linux_(sysfs_root);
 }
 
-void Topology::log_summary(FILE* out) const noexcept {
-    std::fprintf(out,
-                 "fixy::Topology(source=%s):\n"
-                 "  CPU:    vendor=\"%s\" model=\"%s\"\n"
-                 "  Cores:  physical=%zu smt_threads=%zu smt_factor=%zu process_allowed=%zu\n"
-                 "  Caches: l1d=%zu KB l1i=%zu KB l2=%zu KB l3=%zu MB line=%zu\n"
-                 "  Groups: l3_clusters=%zu cores_per_socket=%zu\n"
-                 "  NUMA:   nodes=%zu\n"
-                 "  Memory: page_size=%zu B hugepage_2mb=%s\n",
-                 (source_ == Source::Sysfs ? "Sysfs" : "Fallback"), cpu_vendor_.empty() ? "?" : cpu_vendor_.c_str(),
-                 cpu_model_.empty() ? "?" : cpu_model_.c_str(), cores_, threads_, smt_factor(), process_cpus_,
-                 l1d_ / 1024, l1i_ / 1024, l2_ / 1024, l3_ / (1024 * 1024), line_, l3_groups_.size(),
-                 cores_per_socket(), numa_nodes(), page_size_, (hugepage_2mb_ ? "yes" : "no"));
+namespace {
+
+// The size characters at first of a probed text of the topology, or "?"
+// when the probe read none.  The caller gives the characters of a
+// std::string, which keeps a zero after its last character.
+[[nodiscard]] TextView probed_text(char const* first, std::size_t size) noexcept {
+    if (size == 0) return TextView{"?"};
+    return ::foundation::core::detail::c_text_over_(first, size).view();
+}
+
+}  // namespace
+
+Result<TextView, Truncated> Topology::format_summary(FixedText<summary_capacity>& out) const noexcept {
+    return format(out,
+                  "fixy::Topology(source={}):\n"
+                  "  CPU:    vendor=\"{}\" model=\"{}\"\n"
+                  "  Cores:  physical={} smt_threads={} smt_factor={} process_allowed={}\n"
+                  "  Caches: l1d={} KB l1i={} KB l2={} KB l3={} MB line={}\n"
+                  "  Groups: l3_clusters={} cores_per_socket={}\n"
+                  "  NUMA:   nodes={}\n"
+                  "  Memory: page_size={} B hugepage_2mb={}\n",
+                  source_ == Source::Sysfs ? TextView{"Sysfs"} : TextView{"Fallback"},
+                  probed_text(cpu_vendor_.c_str(), cpu_vendor_.size()),
+                  probed_text(cpu_model_.c_str(), cpu_model_.size()), cores_, threads_, smt_factor(), process_cpus_,
+                  l1d_ / 1024, l1i_ / 1024, l2_ / 1024, l3_ / (1024 * 1024), line_, l3_groups_.size(),
+                  cores_per_socket(), numa_nodes(), page_size_, hugepage_2mb_ ? TextView{"yes"} : TextView{"no"});
+}
+
+void Topology::log_summary() const noexcept {
+    // A truncated summary keeps its first characters in the text, and the
+    // report writes them.
+    FixedText<summary_capacity> text{};
+    static_cast<void>(format_summary(text));
+    report(Sink::Err, "{}", text.view());
 }
 
 void Topology::probe_linux_(std::string_view sysfs_root) noexcept {

@@ -330,7 +330,6 @@ rule artifact-symbols
 @build/libfixy.a | libc-allow | 1 | sigaction | -
 @build/libfixy.a | libc-allow | 1 | sigaltstack | -
 @build/libfixy.a | libc-allow | 1 | sigemptyset | -
-@build/libfixy.a | libc-ratchet | 1 | __fprintf_chk | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | libc-ratchet | 1 | memchr | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | ratchet | 1 | _ZNSt20bad_array_new_lengthD1Ev | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | ratchet | 1 | _ZNSt9bad_allocD1Ev | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import

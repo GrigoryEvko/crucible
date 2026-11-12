@@ -194,11 +194,14 @@ void test_cache_clusters_alias() {
     CRUCIBLE_TEST_REQUIRE(t.cache_clusters().size() == t.l3_groups().size());
 }
 
+// The summary fits its capacity and holds text, and the log writes it to
+// standard error and returns.
 void test_log_summary_emits() {
     auto& t = Topology::instance();
-    std::fprintf(stderr, "\n      log_summary() output ↓\n");
-    t.log_summary(stderr);
-    std::fprintf(stderr, "      log_summary() output ↑\n      ");
+    ::fixy::FixedText<Topology::summary_capacity> text{};
+    CRUCIBLE_TEST_REQUIRE(t.format_summary(text).is_ok());
+    CRUCIBLE_TEST_REQUIRE(text.size() > 0 && text.size() < Topology::summary_capacity);
+    t.log_summary();
 }
 
 void test_cache_hierarchy_monotonic() {

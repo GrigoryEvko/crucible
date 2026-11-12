@@ -24,7 +24,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <optional>
 #include <span>
 #include <string>
@@ -209,8 +208,20 @@ public:
 
     [[nodiscard]] Source source() const noexcept { return source_; }
 
-    // Concurrent callers can interleave, but each line arrives whole.
-    void log_summary(FILE* out = stderr) const noexcept;
+    // The capacity of the text of the summary.  The summary of each host
+    // fits it, and a report writes a text of this size with one system call.
+    static constexpr std::size_t summary_capacity = 512;
+
+    // Writes the summary of the topology into out, from its start: the
+    // source, the CPU, the cores, the caches, the L3 groups, the NUMA nodes
+    // and the memory, one subject on each line.  The view of the text, or
+    // Truncated with the first characters of the text in out.
+    [[nodiscard]] Result<TextView, Truncated> format_summary(FixedText<summary_capacity>& out) const noexcept;
+
+    // Writes the summary to standard error through the sink write of the
+    // Report family, with one system call, so the summary of one call
+    // arrives whole when other threads write at the same time.
+    void log_summary() const noexcept;
 
 private:
     // These stand in for a measurement the probe could not take.  They
