@@ -1872,7 +1872,9 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 # expect() is a text of a report.  A cursor of a temporary and a copy of an
 # owning Option are refused.  The error of a Result is a scoped enum or a
 # small trivially copyable class.  An Err is neither a payload nor an error,
-# and a niche that a payload declares must be well formed.
+# and a niche that a payload declares must be well formed.  An Err of a
+# different error converts only through an implicit conversion that does not
+# throw, and an Option and a Result do not convert to each other.
 foundation_test(test_core_choice)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
@@ -1938,6 +1940,24 @@ foundation_neg_compile_test(neg_core_option_niche_lifetime_start
 foundation_neg_compile_test(neg_core_result_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Result<unsigned int, Code> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Result<unsigned int, Code>\\]")
+foundation_neg_compile_test(neg_core_result_error_unrelated
+  "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::Err<F>\\) \\[with F = Other. T = int. E = Code\\]."
+  "the error type does not convert to the error type of this Result: give E a noexcept implicit constructor from F, or map the error with match")
+foundation_neg_compile_test(neg_core_result_error_explicit_conversion
+  "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::Err<F>\\) \\[with F = Code. T = int. E = NetError\\]."
+  "the error type does not convert to the error type of this Result")
+foundation_neg_compile_test(neg_core_result_error_throwing_conversion
+  "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::Err<F>\\) \\[with F = Code. T = int. E = NetError\\]."
+  "give E a noexcept implicit constructor from F")
+foundation_neg_compile_test(neg_core_option_from_err
+  "use of deleted function .foundation::core::Option<T>::Option\\(foundation::core::Err<F>\\) \\[with F = Code. T = int\\]."
+  "a Result carries an error that an Option drops: write std::move\\(result\\).ok\\(\\)")
+foundation_neg_compile_test(neg_core_result_from_none
+  "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::NoValue\\) \\[with T = int. E = Code\\]."
+  "an empty Option has no error for a Result: write std::move\\(option\\).ok_or\\(error\\)")
+foundation_neg_compile_test(neg_core_option_ok_or_integer_error
+  "no matching function for call to .foundation::core::Option<int>::ok_or\\(int\\)."
+  "required for the satisfaction of .ErrorValue<E>. \\[with E = int\\]")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #

@@ -498,6 +498,32 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "option_match",
+        "the match of an Option is one test of the tag, as the raw form is",
+    ),
+    Probe(
+        "option_loop",
+        "a loop over an Option is one test of the tag.  The optimizer removes the check of the cursor, because the loop "
+        "reads the cursor only after a compare with the end",
+    ),
+    Probe(
+        "option_value_or",
+        "value_or of an Option is one test of the tag.  The family form branches on no value and the raw form "
+        "branches on a value, so the targets of the branches are different.  The family side has no more "
+        f"instructions than the raw side.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a "
+        "branch to a trap",
+        branches=True,
+    ),
+    Probe(
+        "option_ok_or",
+        "ok_or of an Option is one test of the tag and one branch, as the raw form is.  The two forms put the return of "
+        "the value and of the error in a different order, so the targets of their branches are different.  At -O3, GCC "
+        "builds the tag and the value of the Result in two registers and then merges them with a shift and an or, and "
+        "the raw form sets the tag with one bts, so the family side is longer.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
         "result_expect",
         "Result::expect adds one test and one branch to a call of the fatal exit.  The value is the low word of the "
         "register and the tag is bit 32, as in std::expected, so the test of the tag takes a shift.  "

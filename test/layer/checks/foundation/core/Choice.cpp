@@ -318,6 +318,43 @@ static_assert(FormsResult<int, Code>);
 static_assert(!FormsResult<Err<Code>, Code>);
 static_assert(!FormsResult<int, int>);
 
+// An Err of a different error converts when the error converts with no
+// explicit constructor and no throw.
+struct NetError {
+    Code code = Code::closed;
+    constexpr NetError(Code from) noexcept : code{from} {}
+};
+
+struct ExplicitNetError {
+    Code code = Code::closed;
+    explicit constexpr ExplicitNetError(Code from) noexcept : code{from} {}
+};
+
+static_assert(ErrorValue<NetError> && ErrorValue<ExplicitNetError>);
+static_assert(ErrorConvertsTo<Code, NetError> && !ErrorConvertsTo<Code, Code>);
+static_assert(!ErrorConvertsTo<Code, ExplicitNetError> && !ErrorConvertsTo<NetError, Code>);
+static_assert(std::is_convertible_v<Err<Code>, Result<int, NetError>>);
+static_assert(!std::is_convertible_v<Err<Code>, Result<int, ExplicitNetError>>);
+static_assert(!std::is_constructible_v<Result<int, ExplicitNetError>, Err<Code>>);
+
+// An Option and a Result do not convert to each other.
+static_assert(!std::is_constructible_v<Result<int, Code>, NoValue>);
+static_assert(!std::is_constructible_v<Option<int>, Err<Code>>);
+static_assert(!std::is_constructible_v<Option<int>, Result<int, Code>>);
+
+[[nodiscard]] consteval Result<int, NetError> checked_quarter(int value) noexcept {
+    if (value % 4 != 0) return err(Code::closed);
+    return value / 4;
+}
+static_assert(checked_quarter(8).expect("a multiple of four has a quarter") == 2);
+static_assert(checked_quarter(5).err().expect("a different value is refused").code == Code::closed);
+
+// ok_or makes the crossing from an Option, and some() deduces the payload.
+static_assert(some(4).ok_or(Code::closed).expect("a full Option gives its value") == 4);
+static_assert(Option<int>{none}.ok_or(Code::closed).err().expect("an empty Option gives the error") == Code::closed);
+static_assert(std::is_same_v<decltype(some(SlotNumber{3})), Option<SlotNumber>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<int>>().ok_or(Code::closed)), Result<int, Code>>);
+
 // The roads in a constant evaluation.
 [[nodiscard]] consteval Result<int, Code> checked_half(int value) noexcept {
     if (value % 2 != 0) return err(Code::closed);

@@ -10,11 +10,13 @@
 // most 16 bytes, so an error never allocates.  An error can also be a
 // linear class, so a failed operation can give a resource back.  Err<E>
 // marks an error, so `return err(Code::full);` and `return value;` both
-// convert to the Result.
+// convert to the Result.  An Err<F> converts to a Result with the error E
+// when F converts to E with no throw.  An Option and a Result do not convert
+// to each other: ok() and ok_or() make the crossing.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
-// loop of zero or one turns, the total match(), value_or(), and expect(),
-// the fatal unwrap with a reason.  The type has no operator* and no
+// loop of zero or one turns, the total match(), value_or(), ok_or(), and
+// expect(), the fatal unwrap with a reason.  The type has no operator* and no
 // operator->, so a read of an empty Option is not possible.  The whole
 // type is [[nodiscard]].
 //
@@ -180,8 +182,53 @@ concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::lin
 template <class T>
 concept PlainPayload = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && DroppablePayload<T>;
 
+// The value of a Result of an operation that gives no value.
+struct Unit final {
+    [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
+};
+
+// An error: a scoped enum, a trivially copyable and assignable class of at
+// most 16 bytes, or a linear class.  A plain integer is refused, because
+// its meaning is not in its type.  A copyable class that owns memory is
+// refused, because an error never allocates.  A class with a reference
+// member is refused, because the reference cannot be assigned and can
+// outlive its object.  A linear error gives a resource back to the caller
+// of a failed operation.  It moves and ends with no throw, and only a
+// consumer of the Result gives it out.  An Err marks a return, so it is
+// not an error value itself.
+template <class E>
+concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::ErrMark<E>
+                  && (std::is_scoped_enum_v<E>
+                      || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
+                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16)
+                      || (::foundation::linear::is_linear_type(^^E)
+                          && std::is_nothrow_move_constructible_v<E> && std::is_nothrow_destructible_v<E>));
+
+// An error F that a Result with the error E takes from an Err<F>: a
+// different error type, with an implicit conversion to E that does not
+// throw.  An explicit conversion is refused, because the return of an Err
+// shows no conversion.
+template <class F, class E>
+concept ErrorConvertsTo = ErrorValue<F> && ErrorValue<E> && !std::same_as<F, E> && std::is_nothrow_convertible_v<F, E>;
+
+// The mark of an error, so that an error and a value of the same type
+// never meet in one conversion.
+template <ErrorValue E>
+struct Err final {
+    using mark_kind = detail::ErrorMarkKind;
+
+    E error;
+};
+
+[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept {
+    return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
+}
+
 template <ChoicePayload T>
 class Option;
+
+template <ChoicePayload T, ErrorValue E>
+class Result;
 
 namespace detail {
 
@@ -362,6 +409,9 @@ public:
     constexpr Option() noexcept = default;
     constexpr Option(NoValue) noexcept {}
 
+    template <class F>
+    Option(Err<F>) = delete("a Result carries an error that an Option drops: write std::move(result).ok()");
+
     template <class U>
         requires std::constructible_from<T, U&&>
     [[nodiscard]] static constexpr Option some(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
@@ -394,6 +444,18 @@ public:
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return taken;
+    }
+
+    // The payload as a Result, or the error when the Option is empty.  The
+    // Option is empty after the call.  A full Option drops the error, so a
+    // linear error has no ok_or().  The call costs one branch.
+    template <class E>
+        requires ErrorValue<E> && DroppablePayload<E>
+    [[nodiscard]] constexpr Result<T, E> ok_or(E error) && noexcept {
+        if (!slot_.holds_()) return Result<T, E>{Err<E>{static_cast<E&&>(error)}};
+        T taken(static_cast<T&&>(slot_.payload_()));
+        slot_.clear_();
+        return Result<T, E>{static_cast<T&&>(taken)};
     }
 
     // The total match.  on_some gets the payload, or on_none runs, and
@@ -455,39 +517,13 @@ public:
     void end() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
 };
 
-// The value of a Result of an operation that gives no value.
-struct Unit final {
-    [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
-};
-
-// An error: a scoped enum, a trivially copyable and assignable class of at
-// most 16 bytes, or a linear class.  A plain integer is refused, because
-// its meaning is not in its type.  A copyable class that owns memory is
-// refused, because an error never allocates.  A class with a reference
-// member is refused, because the reference cannot be assigned and can
-// outlive its object.  A linear error gives a resource back to the caller
-// of a failed operation.  It moves and ends with no throw, and only a
-// consumer of the Result gives it out.  An Err marks a return, so it is
-// not an error value itself.
-template <class E>
-concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::ErrMark<E>
-                  && (std::is_scoped_enum_v<E>
-                      || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
-                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16)
-                      || (::foundation::linear::is_linear_type(^^E)
-                          && std::is_nothrow_move_constructible_v<E> && std::is_nothrow_destructible_v<E>));
-
-// The mark of an error, so that an error and a value of the same type
-// never meet in one conversion.
-template <ErrorValue E>
-struct Err final {
-    using mark_kind = detail::ErrorMarkKind;
-
-    E error;
-};
-
-[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept {
-    return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
+// A full Option of the type of the value, with no conversion:
+// `return some(slot);` gives an Option<SlotId> for a SlotId.
+template <class V>
+    requires ChoicePayload<std::remove_cvref_t<V>> && std::constructible_from<std::remove_cvref_t<V>, V&&>
+[[nodiscard]] constexpr Option<std::remove_cvref_t<V>>
+some(V&& value) noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<V>, V&&>) {
+    return Option<std::remove_cvref_t<V>>::some(static_cast<V&&>(value));
 }
 
 namespace detail {
@@ -830,12 +866,34 @@ template <ChoicePayload T, ErrorValue E>
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     detail::ResultSlot<T, E> slot_;
 
+    // The return is a copy-initialization, so only an implicit conversion
+    // builds the error.
+    template <class F>
+    [[nodiscard]] static constexpr E converted_error_(F&& error) noexcept {
+        return static_cast<F&&>(error);
+    }
+
 public:
     using value_type = T;
     using error_type = E;
 
     constexpr Result(T value) noexcept : slot_{detail::AlternativeAt<1>{}, static_cast<T&&>(value)} {}
     constexpr Result(Err<E> error) noexcept : slot_{detail::AlternativeAt<0>{}, static_cast<E&&>(error.error)} {}
+
+    // The error of a callee converts to the error of the caller, so
+    // `return err(net_error);` and a propagated error need no match.  The
+    // conversion is implicit and does not throw.
+    template <ErrorValue F>
+        requires ErrorConvertsTo<F, E>
+    constexpr Result(Err<F> error) noexcept
+        : slot_{detail::AlternativeAt<0>{}, converted_error_<F>(static_cast<F&&>(error.error))} {}
+
+    template <class F>
+    Result(Err<F>) = delete(
+        "the error type does not convert to the error type of this Result: give E a noexcept implicit constructor "
+        "from F, or map the error with match");
+
+    Result(NoValue) = delete("an empty Option has no error for a Result: write std::move(option).ok_or(error)");
 
     [[nodiscard]] constexpr bool is_ok() const noexcept { return slot_.holds_(); }
     [[nodiscard]] constexpr bool is_err() const noexcept { return !slot_.holds_(); }

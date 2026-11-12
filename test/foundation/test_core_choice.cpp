@@ -1,6 +1,6 @@
-// Tests of foundation/core/Choice.h: Option, none, expect, value_or, match
-// and the loop of zero or one turns, also for a linear payload and a
-// linear error.
+// Tests of foundation/core/Choice.h: Option, none, expect, value_or, match,
+// ok_or, some, the loop of zero or one turns and the conversion of an
+// error, also for a linear payload and a linear error.
 
 #include <foundation/core/Choice.h>
 
@@ -421,6 +421,63 @@ void test_result_agrees_with_plain_model() {
     }
 }
 
+// ok_or gives the payload as a Result, or the error.  An owning or linear
+// payload moves into the Result one time, and the Option destroys its
+// moved-from payload, so the count of live objects is one.
+void test_ok_or() {
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(5).ok_or(Refusal::full).expect("a full Option gives its value") == 5);
+    CRUCIBLE_FATAL_INVARIANT(Option<int>{none}.ok_or(Refusal::full).err().expect("an empty Option gives the error")
+                             == Refusal::full);
+    {
+        Option<CountedOwner> held = Option<CountedOwner>::some(CountedOwner{17});
+        Result<CountedOwner, Refusal> const moved = static_cast<Option<CountedOwner>&&>(held).ok_or(Refusal::closed);
+        CRUCIBLE_FATAL_INVARIANT(moved.is_ok() && live_owners == 1);
+        int const read_handle = moved.match([](CountedOwner const& owner) noexcept { return owner.handle(); },
+                                            [](Refusal const&) noexcept { return 0; });
+        CRUCIBLE_FATAL_INVARIANT(read_handle == 17);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+    {
+        Option<CountedToken> held = Option<CountedToken>::some(CountedToken{23});
+        Result<CountedToken, Refusal> moved = static_cast<Option<CountedToken>&&>(held).ok_or(Refusal::closed);
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 1);
+        CountedToken const taken = static_cast<Result<CountedToken, Refusal>&&>(moved).expect("the Option was full");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 23);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
+// The error of a callee converts to the error of the caller through an
+// implicit conversion that does not throw.
+struct NetRefusal {
+    Refusal cause = Refusal::full;
+    constexpr NetRefusal(Refusal from) noexcept : cause{from} {}
+};
+
+[[nodiscard]] Result<int, NetRefusal> quarter_of(int value) noexcept {
+    if (value % 4 != 0) return err(Refusal::closed);
+    return half_of(value).match([](int half) noexcept -> Result<int, NetRefusal> { return half / 2; },
+                                [](Refusal refusal) noexcept -> Result<int, NetRefusal> { return err(refusal); });
+}
+
+void test_error_conversion() {
+    CRUCIBLE_FATAL_INVARIANT(quarter_of(12).expect("twelve has a quarter") == 3);
+    NetRefusal const refused = quarter_of(6).err().expect("six has no quarter");
+    CRUCIBLE_FATAL_INVARIANT(refused.cause == Refusal::closed);
+}
+
+// some() deduces the payload from the value, with no conversion.
+void test_free_some() {
+    using ::foundation::core::some;
+    Option<int> const seven = some(7);
+    CRUCIBLE_FATAL_INVARIANT(seven.is_some());
+    SlotNumber const slot{5};
+    Option<SlotNumber> const held = some(slot);
+    CRUCIBLE_FATAL_INVARIANT(
+        held.match([](SlotNumber const& kept) noexcept { return kept.raw; }, []() noexcept { return std::uint32_t{0}; })
+        == 5u);
+}
+
 }  // namespace
 
 int main() {
@@ -443,5 +500,8 @@ int main() {
     test_result_owning_value();
     test_result_linear_error();
     test_result_agrees_with_plain_model();
+    test_ok_or();
+    test_error_conversion();
+    test_free_some();
     return 0;
 }

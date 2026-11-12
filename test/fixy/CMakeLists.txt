@@ -5284,6 +5284,9 @@ fixy_neg_compile_test(neg_core_result_linear_value_or_drops_fallback
 fixy_neg_compile_test(neg_core_result_linear_error_copied
   "passing .const foundation::core::Result<int, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >. as .this. argument discards qualifiers"
   "in call to .constexpr foundation::core::Option<E> foundation::core::Result<T, E>::err\\(\\) && requires !\\(DroppablePayload<E>\\)")
+fixy_neg_compile_test(neg_core_option_ok_or_linear_error
+  "no matching function for call to .foundation::core::Option<int>::ok_or\\(fixy::Linear<int>\\)."
+  "required for the satisfaction of .DroppablePayload<E>. \\[with E = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>\\]")
 
 # ── Brands: identity per mint ────────────────────────────────────────
 #

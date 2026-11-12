@@ -42,6 +42,7 @@ using ::foundation::core::TextView;
 using ::foundation::core::none;
 using ::foundation::core::NoValue;
 using ::foundation::core::Option;
+using ::foundation::core::some;
 
 using ::foundation::core::Err;
 using ::foundation::core::err;

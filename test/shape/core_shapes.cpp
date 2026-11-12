@@ -160,6 +160,29 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
     return std::move(option).expect("the probe gets a full Option");
 }
 
+// The match of an Option is one test of the tag.
+[[gnu::used]] std::uint32_t option_match(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).match([](std::uint32_t value) noexcept { return value * 3u; },
+                                   []() noexcept { return 0u; });
+}
+
+// A loop over an Option makes zero turns or one turn.
+[[gnu::used]] std::uint32_t option_loop(fixy::Option<std::uint32_t> option, std::uint32_t total) noexcept {
+    for (std::uint32_t const& value : option) {
+        total += value;
+    }
+    return total;
+}
+
+[[gnu::used]] std::uint32_t option_value_or(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).value_or(7u);
+}
+
+// ok_or gives the payload of an Option as a Result, in the same register.
+[[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).ok_or(Code32::gone);
+}
+
 // A Result of a value of four bytes and an error of four bytes, as a
 // function gives it back: in one register.  The value is the low word and
 // the tag is bit 32, as in std::expected.  expect adds one test and one
@@ -310,6 +333,26 @@ struct RawWindow final {
 [[gnu::used]] std::uint32_t option_expect_raw(std::optional<std::uint32_t> option) noexcept { return *option; }
 
 [[gnu::used]] RawWindow option_expect_niche_raw(RawWindow window) noexcept { return window; }
+
+[[gnu::used]] std::uint32_t option_match_raw(std::optional<std::uint32_t> option) noexcept {
+    return option ? *option * 3u : 0u;
+}
+
+[[gnu::used]] std::uint32_t option_loop_raw(std::optional<std::uint32_t> option, std::uint32_t total) noexcept {
+    if (option) {
+        total += *option;
+    }
+    return total;
+}
+
+[[gnu::used]] std::uint32_t option_value_or_raw(std::optional<std::uint32_t> option) noexcept {
+    return option.value_or(7u);
+}
+
+[[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
+    if (option) return *option;
+    return std::unexpected(Code32::gone);
+}
 
 [[gnu::used]] std::uint32_t result_expect_raw(std::expected<std::uint32_t, Code32> result) noexcept { return *result; }
 
