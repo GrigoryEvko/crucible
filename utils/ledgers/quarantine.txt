@@ -460,7 +460,7 @@ test/dag_neg/ | raw-pointer-object | 7 | - | -
 test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 102 | - | -
-test/fixy/ | c-library-call | 1522 | - | -
+test/fixy/ | c-library-call | 1508 | - | -
 test/fixy/ | c-library-object | 10 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -

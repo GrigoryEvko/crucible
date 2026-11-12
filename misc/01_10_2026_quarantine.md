@@ -13,7 +13,7 @@ The method is the one that Stage A to Stage D used: stages, units in worktrees, 
 
 ## 1. Decisions
 
-The owner approved these decisions on 2026-09-30, 2026-10-01, 2026-10-03 and 2026-10-08.
+The owner approved these decisions on 2026-09-30, 2026-10-01, 2026-10-03, 2026-10-08 and 2026-11-12.
 
 | Id | Decision |
 |---|---|
@@ -28,11 +28,12 @@ The owner approved these decisions on 2026-09-30, 2026-10-01, 2026-10-03 and 202
 | D9 | 2026-10-01: the Debug build type drops `-fharden-compares`, `-fharden-conditional-branches` and `-fharden-control-flow-redundancy`. These flags defend a binary against fault injection and find no defect in a test. Every other build type keeps the first two. `-fharden-control-flow-redundancy` was in Debug only, so no build has it after this change. |
 | D10 | 2026-10-01: build speed comes from how the tree uses C++, not from a changed compiler. No GCC rebuild in Stage 0. ccache stays at its present limit (one Debug build fills about 0.2 GB). |
 | D11 | 2026-10-03: the local guard run and the local test runs are the only gates. Nobody watches GitHub CI after a landing. Main goes to GitHub in one sync about once a day, and after each sync one person reads the last run. |
-| D12 | 2026-10-03: a thin base. This decision makes D2 narrower. glibc keeps only the thread start, signals, `dlopen`, the `mem*` functions that GCC calls, `clock_gettime`, and `malloc` behind one allocation door of the Ref family. The owner decision of 2026-10-11 adds three calls to this list. The exit hook door `src/fixy/os/ExitHooks.cpp` calls `atexit` and `at_quick_exit`, and the thread door `src/fixy/os/ThreadTasks.cpp` calls `pthread_atfork` for its fork hook. Each other door uses Linux UAPI headers and one syscall primitive for each architecture (R4, R5). |
+| D12 | 2026-10-03: a thin base. This decision makes D2 narrower. glibc keeps only the thread start, signals, `dlopen`, the `mem*` functions that GCC calls, `clock_gettime`, and `malloc` behind one allocation door of the Ref family. The owner decision of 2026-10-11 adds three calls to this list. The exit hook door `src/fixy/os/ExitHooks.cpp` calls `atexit` and `at_quick_exit`, and the thread door `src/fixy/os/ThreadTasks.cpp` calls `pthread_atfork` for its fork hook. The owner decision of 2026-11-12 (P4 of section 11.11) adds five calls for the process door of the Os family: `fork`, `waitpid`, `pipe2`, `dup3` and `_exit`. Each other door uses Linux UAPI headers and one syscall primitive for each architecture (R4, R5). |
 | D13 | 2026-10-03: no replacement of the C runtime inside the process. The base writes no general-purpose `malloc`, no vDSO parser, and no thread or TLS setup of its own, because the vessel shares one process with Python and PyTorch. A binary with no glibc is possible only as a separate daemon, later (section 17). |
 | D14 | 2026-10-03: fast hardware access has one shape. The kernel does the control plane one time: mappings, queues and the IOMMU. User space does the data plane: ring writes, doorbell writes and polls, with no syscall for each operation. The IOMMU stays on. A user-space driver through VFIO is only for a device that Crucible owns alone. AF_XDP is out of scope, because the networking scope is the scope of NCCL. |
 | D15 | 2026-10-03: the utils system of section 18 is Stage 1B, a part of Stage 1 (section 8.6a). The S1 gate includes the end state of Stage 1B: `utils/` holds only the files of the new system. Stage 1B deletes each source file of the inventory, or moves it to its target path. The owner approved the decisions 0 to 22 of section 18.23. |
 | D16 | 2026-10-08: the base floor has a door directory of its own. `include/foundation/os/` holds the declarations, and `src/foundation/os/` holds the door files. The directory holds the raw system call primitive for x86_64 and aarch64. It also holds the two calls of the floor: the write of the Report sink and the read of `/proc` for the debugger probe. Each door of `fixy/os` uses that primitive. Each system header still has exactly one door file, and a header that the floor uses has its door in foundation. Rule R4 then has two door directories: `fixy/os` and `foundation/os`. Unit 2b creates the directory of foundation. |
+| D17 | 2026-11-12: the base keeps the design of the older half of fixy, and it grows to ten families and fifteen verbs. Protocol and Check join the eight families, and five iteration verbs join the ten verbs. Appendix E.1 and section 11.11 give each of the twelve decisions of that day, with its reason. |
 
 ---
 
@@ -47,7 +48,7 @@ These rules hold for the whole migration and after it.
   - A door uses the Linux UAPI headers (`<linux/*.h>`, `<asm/unistd.h>`) and the syscall primitive of its architecture (x86_64 and aarch64). It does not use a glibc header, except for the calls that D12 keeps in glibc.
   - One door unit includes UAPI headers or glibc headers, never both, because some of their declarations conflict.
   - A door uses only the system calls that both architectures have: the `*at` and `p*` forms, for example `openat`, `fstatat`, `ppoll` and `dup3`.
-  - A deny list in the rule table holds each system call that the base never issues raw, because glibc owns its state: `rt_sigaction` and the other signal calls, `clone` and `clone3`, `set_robust_list`, `set_tid_address`, `arch_prctl` and each call that sets the TLS register, and `exit`. The plugin refuses a raw call of a denied number.
+  - A deny list in the rule table holds each system call that the base never issues raw, because glibc owns its state: `rt_sigaction` and the other signal calls, `clone` and `clone3`, `set_robust_list`, `set_tid_address`, `arch_prctl` and each call that sets the TLS register, and `exit`. The plugin refuses a raw call of a denied number. The owner decision of 2026-11-12 (P4) keeps each of these calls denied. The process door of the Os family starts a child only through glibc `fork`, and ends it only through glibc `_exit`. Thus, the reason of the deny row of `clone` also names a child process.
   - The platform floor states a minimum kernel version. A start-up check refuses an older kernel with a clear message, because a raw system call has no glibc fallback.
 - **R5. Zero runtime library use.** No object in `libcrucible.a` and no binary other than the vessel library references a libstdc++ symbol outside a short allowlist. A link-level guard proves this. On 2026-10-03 the rule grew to libc (D12). The symbol ledger holds the libc symbols and the libstdc++ symbols of `libfoundation.a`, `libfixy.a` and `libcrucible.a`, with one allowlist for each library:
   - `libfoundation.a` references only the `mem*` functions that GCC calls (`memcpy`, `memmove`, `memset`, `memcmp`), the libgcc helpers (for example `__udivti3`), `__stack_chk_fail` and `__tls_get_addr`. This allowlist is a condition of the S2 gate (section 9.3). On 2026-10-09 the ledger holds these ratchet rows of `libfoundation.a` outside it: nine C runtime symbols (`abort`, `fwrite`, `getenv`, `stderr`, `strcmp`, `strlen`, `__fprintf_chk`, `flockfile` and `funlockfile`), and `std::__glibcxx_assert_fail` in the Debug build.
@@ -62,8 +63,8 @@ These rules hold for the whole migration and after it.
   - a new-expression or a delete-expression
   - an `assert` expansion
 - **R7. The opt-out region.** The only exception to R6 is a region that the macros `CRUCIBLE_I_KNOW_WHAT_IM_DOING("reason")` and `CRUCIBLE_END_I_KNOW_WHAT_IM_DOING` open and close. The reason is mandatory. Each region is a row of a ledger that can only shrink. Section 16 gives the permitted reasons.
-- **R8. Extend, do not escape.** When the base does not support a thing, a unit sends a request to the extension lane (section 17). The new primitive joins one of the eight families, uses the shared verbs, and comes from a real call site. An opt-out region is never a way around a missing primitive.
-- **R9. A small, uniform surface.** Eight families: Choice, Record, Region, Ref, Atomic, Scalar, Report, Os. Ten shared verbs (section 11.1). We do not copy the std API. Each type gets only the operations that the tree calls.
+- **R8. Extend, do not escape.** When the base does not support a thing, a unit sends a request to the extension lane (section 17). The new primitive joins one of the ten families, uses the shared verbs, and obeys the design bar of the base (R9). An opt-out region is never a way around a missing primitive.
+- **R9. A uniform surface.** Ten families: Choice, Record, Region, Ref, Atomic, Scalar, Report, Os, Protocol and Check (D17). Fifteen shared verbs (section 11.1). We do not copy the std API. Each type gets the full design of its family. That design gives one surface of the shared verbs. It is total and safe, with no hidden effect and zero cost on the hot path. This is the design bar of the base (owner, 2026-10-02, CLAUDE.md §XXII "The design bar of the base").
 - **R10. Clean cuts.** Each change moves every producer and every consumer at once. No shim, no alias for an old name, no deprecated path. Each commit builds and passes.
 - **R11. The ratchet.** From Stage 1, the count of violations can only fall. The ledger counts each file, kind and entity, and the findings that each opt-out region covers. A change that raises a count fails the local test run (D11).
 - **R12. Zero hot-path cost.** A family operation on the hot path compiles to the same instructions as the code it replaces. The proof comes from a type (an index type, a fixed extent, a memory order in the operation name), not from a branch at each access.
@@ -118,8 +119,8 @@ All numbers are measured unless marked (E).
 |---|---|
 | Base | `include/foundation`, `include/fixy`, `src/foundation`, `src/fixy` |
 | Quarantined tree | Every other directory with C++ source |
-| Family | One of the eight primitive groups that replace std (section 11) |
-| Verb | One of the ten operation names that every family uses with the same meaning |
+| Family | One of the ten primitive groups that replace std (section 11) |
+| Verb | One of the fifteen operation names that each family uses with the same meaning |
 | Door | The one base file that owns a system header or an unsafe operation |
 | Rule table | The one data file that lists layers, allowed headers, doors and admitted std names. The plugin and the layer guard read it |
 | Ledger | A committed list of counts or rows that can only shrink |
@@ -232,12 +233,13 @@ The final report gives, in this order:
                  | G2 Scalar, Record           |
                  | G3 Ref, Atomic              |
                  | G4 Region  G5 Report  G6 Os |
+                 | G7 Protocol  G8 Check       |
                  | extension lane opens        |
                  +--------------+--------------+
                                 | S3 gate
                  +--------------v--------------+
                  | Stage 4: base onto families |
-                 | slices 4.1 to 4.9           |
+                 | slices 4.1 to 4.11          |
                  +--------------+--------------+
                                 | S4 gate
                  +--------------v--------------+
@@ -655,7 +657,7 @@ Section 18 is the design reference. Section 18.22 gives the parity protocol, the
 |---|---|---|---|
 | `lock-free-asserts` | `tsast` | The rule of `check-lock-free-asserts.py`: each `std::atomic` of `include/crucible/{canopy,cntp,topology,warden}/` has a lock-free assert. Its 2 markers become admit rows. The 27 objects of today are in quarantined files | The Stage 5 units cntp, observe and rest move these objects to `fixy::Atomic`. The last of the three deletes the rule, with its module, its plants, its ledger, its registry row and its `path` rows (section 14.3) |
 | `banned`, kind `vector-reserve` | `tsast` | The reserve ban of `check-banned-calls.py` on the base files. No base file calls `reserve` today. The rule `quarantine` reads no std name in a base file outside the files of the language, and on 2026-10-09, 47 base files include `<vector>` | The slice of Stage 4 that removes the last base include of `<vector>` deletes the kind. Then the include rules refuse the header (section 13.4) |
-| `banned`, kind `process-start` | `tsast` | The spawn ban of `check-banned-calls.py` on the base files and on `vessel/`. No configuration of the ledger compiles `vessel/torch` (decision 5). Its one row names the ATen operator `clone` in a macro table of `vessel/torch/`, and it becomes an admit row with that reason | The base part goes in the last slice of Stage 4 (section 13.4). Then the include allowance and the libc rows of R5 refuse each route to a process start. The vessel part goes in the Stage 5 unit vessel, if a configuration of the ledger then compiles `vessel/torch`. When the two parts go, the kind goes |
+| `banned`, kind `process-start` | `tsast` | The spawn ban of `check-banned-calls.py` on the base files and on `vessel/`. No configuration of the ledger compiles `vessel/torch` (decision 5). Its one row names the ATen operator `clone` in a macro table of `vessel/torch/`, and it becomes an admit row with that reason | The base part goes in the last slice of Stage 4 (section 13.4). Then the include allowance and the libc rows of R5 refuse each process start outside the process door (P4 of section 11.11). The vessel part goes in the Stage 5 unit vessel, if a configuration of the ledger then compiles `vessel/torch`. When the two parts go, the kind goes |
 | `syscalls` | `plugin`, owner | Each claim as a row of its ledger, and owner rows for the doors. On 2026-10-01 the script held 39 claims: 5 in base files and 34 in quarantined files. On 2026-10-09 the ledger holds 101 rows of the base configuration: 52 of base files (47 in the door directories, 4 in `fixy/session/Watch.h` and 1 in `fixy/concurrent/Pipeline.h`) and 49 of quarantined files. The configuration x86_64-debug-tsan adds 2 rows of `src/foundation/os/Intercepted.cpp`. The rule stays after the migration, because it holds each raw system call outside a door | Each raw call in a door directory keeps its claim row. Unit 2b added the deny list of R4 as rule-table rows and the kind `denied-syscall`. The calls of `Watch.h` and `Pipeline.h` move into doors with their code. A Stage 5 unit that moves a call of a quarantined row into an Os door removes its row |
 
 The kind `file-stream` of the rule `banned` stays, and no subsequent stage deletes it. It reads the runtime directories that `RUNTIME_DIRECTORIES` of `banned.py` names, and each of these directories is quarantined. The plant `plant-file-streams` of the rule `quarantine` shows that the plugin refuses each object of a file stream in a compiled quarantined file. The plugin also refuses an object in the body of a generic lambda. But the rule `quarantine` gives no finding for an `#include <fstream>` that no source code of the unit uses. The kind refuses that include in each file of these directories, also in a source file of `src/` (plant `plant-stream-include`).
@@ -795,7 +797,7 @@ Each of the seven conditions holds, so Stage 2 is done on 2026-11-12.
 
 ## 10. Stage 3: the primitive families
 
-**Goal.** The eight families are on main with the full design of section 11, with tests, fixtures and zero hot-path cost. Seven families live in `include/foundation/core/`, and `include/fixy/Core.h` puts their public names into namespace `fixy`. The Os family lives in the two door directories of D16: its types in `include/foundation/os/`, and its doors in `include/fixy/os/`. No caller outside the base moves yet.
+**Goal.** The ten families are on main with the full design of section 11, with tests, fixtures and zero hot-path cost. Seven families live in `include/foundation/core/`, and `include/fixy/Core.h` puts their public names into namespace `fixy`. The Os family lives in the two door directories of D16: its types in `include/foundation/os/`, and its doors in `include/fixy/os/`. The units of G7 and G8 choose the homes of Protocol and Check (sections 11.12 and 11.13). No caller outside the base moves yet.
 
 **The state on 2026-11-12** (main at d36be7daf). The first parts of six families are on main: Choice, Scalar, Ref, Atomic, Region with its text types, and Report. CLAUDE.md §XXII "The families on main" gives their rules. Record has no part on main. The Os family has the doors of Stage 2 (section 9) and no part in `foundation/core`.
 
@@ -805,25 +807,27 @@ Each of the seven conditions holds, so Stage 2 is done on 2026-11-12.
 |---|---|---|---|---|
 | G1 | Choice | S2 gate | one unit | `Option`, `Result`, `Err`, `Unit`, `none` and `niche` |
 | G2 | Scalar, Record | G1 | two units | `decode` and `enum_from` of Scalar |
-| G3 | Ref (with the bump arena of `include/crucible/Arena.h`), Atomic | G2 | two units | `Box` and `mint_box`. `Atomic`, `CacheLine` and `Tally` |
-| G4 | Region | G3 | one unit, the largest | `View`, `copy`, `fill`, `TextView`, `CText` and `FixedText` |
+| G3 | Ref (with the bump arena of `include/crucible/Arena.h`), Atomic. The dereference and `view()` of `Box` and `CacheLine` (P6) | G2 | two units | `Box` and `mint_box`. `Atomic`, `CacheLine` and `Tally` |
+| G4 | Region, with the iteration verbs (P3) and the results of `append` and of the `push` of a table (P6) | G3 | one unit, the largest | `View`, `copy`, `fill`, `TextView`, `CText` and `FixedText` |
 | G5 | Report | G4 | one unit | `Site`, `Fmt`, `report`, `fatal`, `unreachable` and `format` |
-| G6 | Os | G5 | one unit | `Errno` and the doors of section 9 |
+| G6 | Os, with the process door (P4) | G5 | one unit | `Errno` and the doors of section 9 |
+| G7 | Protocol (P1) | G5 | one unit | none |
+| G8 | Check (P2) | G6 | one unit | none |
 
-The groups are serial, because each family uses the ones before it. A part of a later group can land early when it uses only operations that are on main. The parts of G3, G4 and G5 in the table landed in this way.
+The groups are serial, because each family uses the ones before it. G7 uses Scalar, Region, Record and Report only, so it can run beside G6. A part of a later group can land early when it uses only operations that are on main. The parts of G3, G4 and G5 in the table landed in this way.
 
-The phases of `misc/12_10_2026_linear.md` land with the groups that its section 11 (item 4) names: phase B with G3, and phase C with G3 and G4. A proposal of section 11.11 gets no group until the owner approves it (section 17).
+The phases of `misc/12_10_2026_linear.md` land with the groups that its section 11 (item 4) names: phase B with G3, and phase C with G3 and G4. The owner decided each proposal of section 11.11 on 2026-11-12, and the table gives the group of each approved proposal.
 
 ### 10.2 Instructions for each family unit
 
-1. **The API.** Build the full API of the family in section 11, as one part of one language (CLAUDE.md §XXII, "The design bar of the base"). An operation stays in the design also when no call site uses it at this time. The owner made this decision on 2026-10-02. It replaces the rule that a type gets only the operations that the tree calls (the last sentence of R9, and the first rule of section 17). Before the first commit, write the design of the unit against the bar:
+1. **The API.** Build the full API of the family in section 11, as one part of one language (CLAUDE.md §XXII, "The design bar of the base"). An operation stays in the design also when no call site uses it at this time. The owner made this decision on 2026-10-02. It replaced an earlier rule of R9 and of section 17, which gave a type only the operations that the tree called. Before the first commit, write the design of the unit against the bar:
    - Each operation, with its contract, its cost and its verb of section 11.1
    - Each place where main, this plan and the bar do not agree, with the side that wins
    - The probes, the tests, the fixtures and the adversarial cases
    - The order of the commits. The operations with call sites in the census come first.
 
-   An operation with no verb of section 11.1 and no name in the list of its family goes to the owner (section 11.11).
-2. **The implementation.** Use only the allowance of the layer of the family and the builtins of R3. The layer of the seven families of `foundation/core` is F0 primitives. The Os family uses F0 doors and X3 os. No std runtime type appears in a signature or a data member. Each check of a family calls `fatal()` of the Report family, so it does the same work in each build and with each contract semantic. A check of a family is not a `CRUCIBLE_PRE`, because the ignore semantic removes a contract check.
+   An operation with no verb of section 11.1 and no name in the list of its family goes to the owner (section 17).
+2. **The implementation.** Use only the allowance of the layer of the family and the builtins of R3. The layer of the seven families of `foundation/core` is F0 primitives. The Os family uses F0 doors and X3 os. Check uses the process door, so its layer is above X3 os. No std runtime type appears in a signature or a data member. Each check of a family calls `fatal()` of the Report family, so it does the same work in each build and with each contract semantic. A check of a family is not a `CRUCIBLE_PRE`, because the ignore semantic removes a contract check.
 3. **The layout.** The check file of the family states the size of each type with a `static_assert` (R13). `Option<Ref<T>>` has the size of one pointer. `Option<Id>` has the size of the id. A sum of plain parts of at most 16 bytes returns in registers under the x86-64 System V ABI, and a probe of item 6 shows it.
 4. **The tests.**
    - A unit test for each operation, in one test file for each subject (R17).
@@ -842,7 +846,7 @@ The phases of `misc/12_10_2026_linear.md` land with the groups that its section 
 
 QDESIGN and the designs of 2026-10-17 found these defects. Each one is on main at d36be7daf. The unit of its family fixes it, with a witness that goes red on the old code:
 - A Release build has no `_GLIBCXX_ASSERTIONS`, so a subscript of `std::array`, `std::span` and `std::vector` has no check, and `fixy::FixedArray::operator[]` forwards to it. CLAUDE.md §V states this fact. The Region family makes each index checked by its type.
-- `fixy/OwnedRegion.h` merges into `View` and the Ref family (Appendix E, slice 4.3). Its arena door `mint_owned_region` takes a type that is not implicit-lifetime. The requirement of the Ref family: `BumpArena::array` takes only a type of `ImplicitLifetimeThroughout`, and no door of Ref or Region gives a run of bytes the type of a proof.
+- The arena door `mint_owned_region` of `fixy/OwnedRegion.h` takes a type that is not implicit-lifetime. The header stays (Appendix E.1), so slice 4.3 fixes its door with the requirement of the Ref family: `BumpArena::array` takes only a type of `ImplicitLifetimeThroughout`, and no door of Ref or Region gives a run of bytes the type of a proof.
 - `AtomicMonotonic` of `fixy/Mutation.h` takes a memory order as an argument, and it has relaxed reads. The Atomic family puts the order in the operation name.
 - `foundation/AlignedBuffer.h` merges into `HeapArray` of the Region family (Appendix E, slice 4.3). `AlignedBuffer::allocate` leaves the heap bytes with no initial value. The requirement of the Region family: each mint of a `HeapArray` fills each element with zero or with a fill value. Only an implicit-lifetime element gets a view that only writes.
 - CLAUDE.md §II.4 shows an arena that starts a lifetime with `std::start_lifetime_as`, and `include/crucible/Arena.h` does not. The reset is on main as `ArenaEpoch`. The Ref unit corrects the text.
@@ -861,11 +865,11 @@ These parts come from D12 to D14 and the rules R18 to R20. Each one gets its wit
 
 ### 10.4 The extension lane opens
 
-At the S3 gate, the extension lane opens (section 17). It stays open until Stage 6. A request for a new family or a new verb goes to the owner. Section 11.11 lists the proposals that wait at this time.
+At the S3 gate, the extension lane opens (section 17). It stays open until Stage 6. A request for a new family or a new verb goes to the owner. Section 11.11 gives the decisions of the owner of 2026-11-12, and no proposal waits at this time.
 
 ### 10.5 The S3 gate
 
-- All eight families are on main with the full API of section 11, with the tests and fixtures of section 10.2. An operation that waits has an owner decision.
+- All ten families are on main with the full API of section 11, with the tests and fixtures of section 10.2. An operation that waits has an owner decision.
 - The protocol check of section 10.2 (item 9) passes for each family type.
 - The rule `codegen-shapes` holds each hot-path cost claim, and the benches show it for Region and Atomic.
 - The adversarial ledger of each family is empty, or each row has an owner decision.
@@ -894,8 +898,7 @@ The work of G1 changes `Choice.h` after d36be7daf, so the state of the Choice fa
 **The column "State"** of each API table has one of three values:
 - `main`: the operation is on main at d36be7daf
 - `design`: a source of the list designs it
-- `new`: this section designs it first
-- `P6` or a different proposal: the operation waits for the owner (section 11.11).
+- `new`: this section designs it first.
 
 **The load** of each family comes from two sources. The first is the quarantine findings of the main build on 2026-11-12 (`guard list --kind std-object` and `--kind std-entity`) and the counts of `utils/ledgers/quarantine.txt` at d36be7daf. The main build can be older than d36be7daf: `guard list` gave 6,954 objects and 14,651 names, and the ledger counts 7,531 and 16,521. So no count of a family is the reason of a decision. The second source is the call sites that the pilot migration of the MetaLog path found missing in the base.
 
@@ -914,7 +917,7 @@ The work of G1 changes `Choice.h` after d36be7daf, so the state of the Choice fa
 
 ### 11.1 The shared verbs: one protocol set
 
-The ten verbs and the prefix `mint_` are the shared operations of the language. Each verb is one protocol: one receiver form, one result form, one law and one cost, the same in each family. A type that gives a verb obeys its row. No type gives a different meaning under a verb name.
+The fifteen verbs and the prefix `mint_` are the shared operations of the language. Each verb is one protocol: one receiver form, one result form, one law and one cost, the same in each family. A type that gives a verb obeys its row. No type gives a different meaning under a verb name.
 
 | Verb | Receiver and result | Law | Cost | Types |
 |---|---|---|---|---|
@@ -923,17 +926,22 @@ The ten verbs and the prefix `mint_` are the shared operations of the language. 
 | `expect(why)` | `&&`, with a `Fmt<>` that holds the reason and the `Site`. Gives the value | The value, or the fatal exit with the reason. A search for `expect(` finds each one | one branch to a cold call | `Option`, `Result`, `OneOf` (`expect<T>`) |
 | `get(key)` | `&` and `const&`. Gives `Option<Ref<T>>` or `Option<Ref<T const>>` | Checked lookup by a key that can miss. It never ends the process | one explicit branch | the regions with an index, the tables with a key, `OneOf` with a type (`get<T>()`) |
 | `at(proof)` | `&` and `const&`. Gives `T&` or `T const&` | Total lookup with a proof value: `Index<N>`, `BrandedIndex<Brand>` or `StaticIndex<I>` | no branch | `FixedArray`, a `View` of a fixed extent, a `View` in a branded scope, `Record`, and `Pack` as `pack_at_t` |
-| `view()` | `&` and `const&`. The `&&` form is deleted | A borrow of the whole owner as a `View` or a `Ref`. The borrow stays in a frame below the frame of its owner (section 11.10) | none | `FixedArray`, `FixedList`, `HeapArray`, `FixedText`, `Box` and `CacheLine` (P6 for the two). A growable owner only through `with_view` |
+| `view()` | `&` and `const&`. The `&&` form is deleted | A borrow of the whole owner as a `View` or a `Ref`. The borrow stays in a frame below the frame of its owner (section 11.10) | none | `FixedArray`, `FixedList`, `HeapArray`, `FixedText`, `Box` and `CacheLine`. A growable owner only through `with_view` |
 | `size()` | `const`. Gives `std::size_t`, a static constant for a fixed extent | The count of elements | none | the regions, the tables, `Record`, and `Pack` as `pack_size_v` |
-| `push(v)` | `&`. Gives `Result<Ref<T>, Full<T>>` | Adds into a fixed capacity. The element does not move while its owner lives and holds it. A full owner refuses, and `Full<T>` gives a linear value back | one compare | `FixedList`, and the tables as `push(key, value)` |
-| `append(alloc, v)` | `&`, with the allocation capability first. The result waits for the owner (P6 of section 11.11) | Adds, and grows if full. A growth can move each element, so the verb gives no reference | a visible O(n) event at each growth | `GrowList`, `GrowText`, `HeapRing` |
+| `push(v)` | `&`. Gives `Result<Ref<T>, Full<T>>` | Adds into a fixed capacity. The element does not move while its owner lives and holds it. A full owner refuses, and `Full<T>` gives a linear value back. A table also refuses a key that it holds, and its error names the reason | one compare | `FixedList`, and the tables as `push(key, value)` |
+| `append(alloc, v)` | `&`, with the allocation capability first. Gives `Result<Unit, Full<T>>` | Adds, and grows up to the maximum that the owner states at its mint. A growth past the maximum refuses, and `Full<T>` gives a linear value back. A growth can move each element, so the verb gives no reference | a visible O(n) event at each growth | `GrowList`, `GrowText`, `HeapRing` |
 | `consume()` | `&&`. Gives `T` | Takes the value out of an owner that always holds one, and ends the owner | a move | `Box`, `Linear<T>` |
+| `enumerate()` | `&` and `const&`. Gives each element with its proven index | Visits each element one time, in order. The index is the index of `indices()` | the loop bound | the regions of section 11.4. A growable owner only through `with_view` |
+| `zip(a, b)` | A free function of two regions. Gives the pairs of their elements | A fixed extent proves the counts equal. A dynamic extent gives `Result<..., LengthMismatch>` | the loop bound | as `enumerate()` |
+| `reverse()` | `&` and `const&` | Visits each element one time, from the last element | the loop bound | as `enumerate()` |
+| `windows<N>()` | `&` and `const&`. Gives each run as a `View<T, N>` | Each run of N consecutive elements, with a step of one | the loop bound | as `enumerate()` |
+| `chunks<N>()` | `&` and `const&`. Gives each run as a `View<T, N>`, and the rest as a separate `View` | Each run of N elements, with a step of N | the loop bound | as `enumerate()` |
 | `mint_*` | A free function, `[[nodiscard]]` and `noexcept`, with one concept as its constraint (§XXI) | The only door to a proof, a token, an owner of an allocation or a refined value | the cost of its check | `mint_box`, `mint_heap_array`, `mint_grow_list`, the mints of the Os doors |
 
 `Full<T>` is the `Full` of the approved verb, with the value of a linear `T` in it, so the caller gets the value back (`misc/12_10_2026_linear.md`, section 11, item 10). For each other `T` it is empty, and the value ends with the refusal.
 
 **The language protocols.** These operators and forms are not verbs. The families give them with one meaning:
-- Dereference: `*x` and `x->member` are only on a type with no empty state: `Ref`, `Box`, and `CacheLine` after P6. A type that can be empty has no dereference.
+- Dereference: `*x` and `x->member` are only on a type with no empty state: `Ref`, `Box` and `CacheLine`. A type that can be empty has no dereference.
 - Compare: `==` and `<=>`, defaulted, on two values of one type only, where each part has the operator. Never with a different type and never with `none`. `Unit`, the sums of Choice, `Record`, `Id` and `Digest` give them.
 - Structured binding: `Record` only, through the hook `get<I>` that the language names. The plugin kind `binding-hook` refuses a direct call of the hook (section 11.3).
 - `template for (auto& part : record)`: each part of a `Record`.
@@ -944,16 +952,16 @@ The ten verbs and the prefix `mint_` are the shared operations of the language. 
 3. A verb that consumes takes `&&`. A verb that borrows from an owner takes `&` or `const&`, and its `&&` form is deleted. A borrowed type such as `View` or `Ref` owns nothing, so it gives its verbs on each value category.
 4. Absence is a sum. A verb that can miss gives an `Option` or a `Result`. A verb that cannot miss takes a proof.
 5. The row of a verb states its cost, and a probe of the rule `codegen-shapes` holds each hot-path claim.
-6. A new verb waits for the owner (section 17). Section 11.11 lists the verbs that wait.
+6. A new verb waits for the owner (section 17). The owner approved the five iteration verbs on 2026-11-12 (P3 of section 11.11).
 
-The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLookup`, `Borrowable`, `Sized`, `BoundedSink`, `GrowingSink`, `Owner`) live in `include/foundation/core/Verbs.h` (new). Generic code takes each type that gives a verb through them, and the protocol check of item 2 reads them.
+The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLookup`, `Borrowable`, `Sized`, `BoundedSink`, `GrowingSink`, `Owner`, and one concept for each iteration verb) live in `include/foundation/core/Verbs.h` (new). Generic code takes each type that gives a verb through them, and the protocol check of item 2 reads them.
 
 **Where the sources do not agree about a verb.**
 - `consume`: main wins. `Option` and `Result` have no `consume()`, and `expect` and `match` take its place. `consume` stays for an owner that always holds a value.
-- `get`: the verb is the checked lookup with a key. `Box::get()` and `CacheLine::get()` of main borrow with no key, and `Ref::get()` of QDESIGN does the same. Main wins until the owner decides P6 of section 11.11, which gives the dereference and `view()` in their place. `Ref` takes the dereference and no `get()`.
+- `get`: the verb is the checked lookup with a key. `Box::get()` and `CacheLine::get()` of main borrow with no key, and `Ref::get()` of QDESIGN does the same. The owner decided P6 of section 11.11 on 2026-11-12: the dereference and `view()` take the place of the two `get()`, and group G3 changes each caller. `Ref` takes the dereference and no `get()`.
 - `match`: the `visit_kind` of QDESIGN is the verb `match` on a `Ref` of a kind family.
-- `push`: QDESIGN gives `Result<Ref<T>, Full>`, and a refusal then drops a linear value. `Full<T>` gives it back, as the linear design decides. The refusal of a key that a table holds waits for the owner (P6).
-- `append`: QDESIGN gives `Ref<T>`, which dangles at the next growth, so `append` gives no reference. Its result form and the maximum of a growable owner wait for the owner (P6).
+- `push`: QDESIGN gives `Result<Ref<T>, Full>`, and a refusal then drops a linear value. `Full<T>` gives it back, as the linear design decides. A table also refuses a key that it holds (P6, owner, 2026-11-12).
+- `append`: QDESIGN gives `Ref<T>`, which dangles at the next growth, so `append` gives no reference. It gives `Result<Unit, Full<T>>`, and each growable owner states a maximum at its mint (P6, owner, 2026-11-12).
 - The hook `get<I>` of a structured binding is a name that the language fixes, and not the verb.
 
 ### 11.2 Choice: `Option`, `Result`, `OneOf`, `CRUCIBLE_TRY`
@@ -1037,7 +1045,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 - The fatal unwrap is `expect(Fmt<>)` (main). The `Fmt<>` holds the reason and the `Site`, as the `ExpectWhy` of QDESIGN does.
 - An `Option` builds only through `some`, and a `Result` builds from `T` (main). An implicit `Option` from `T` hides the choice of the author in `return false;` of an `Option<bool>`.
 - A moved-from owning `Result` or `OneOf` keeps its tag (design). The attack ledger pins it.
-- `map`, `and_then` and `or_else` wait for the owner (section 11.11).
+- The owner rejected `map`, `and_then` and `or_else` on 2026-11-12 (P5 of section 11.11). `match` and `CRUCIBLE_TRY` are the roads to a payload.
 
 **The recipes.**
 
@@ -1099,7 +1107,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 **Where the sources do not agree.**
 - QDESIGN gives a free `at<I>(record)`. The member `record.at(fixy::index<I>())` is the form of Region, so the families have one form.
 - QDESIGN gives `apply(record, fn)`. A binding pack does the same with no name, so `apply` goes.
-- R9 cut the API to the calls of the tree. The design bar keeps `pack_unique_v` and the compares.
+- The first form of R9 cut the API to the calls of the tree. The design bar keeps `pack_unique_v` and the compares.
 - `std::weak_ordering` has no admit row. `<=>` takes parts with a strong or a partial order, until a call site makes the admit row necessary.
 
 **The recipes.**
@@ -1121,11 +1129,13 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 
 **The headers.** `include/foundation/core/Region.h` and `include/foundation/core/Text.h` (main), and one header for each owner kind (design): `Array.h`, `List.h`, `Ring.h`, `Table.h` and `Algorithms.h`. `Text.h` uses no other family, so the Report family can take a `TextView`.
 
-**The merges.** Slice 4.3 merges seven base headers into the family (Appendix E):
+**The merges.** Slice 4.3 merges five base headers into the family (Appendix E):
 - `fixy/FixedArray.h` into `FixedArray`
 - `foundation/AlignedBuffer.h` into `HeapArray`, whose `Align` states the alignment
 - `foundation/SwissTableBuffer.h` into the storage of the tables
-- `fixy/Borrowed.h`, `fixy/ScopedView.h`, `fixy/OwnedRegion.h` and `fixy/SharedRegion.h` into `View` and the Ref family. Their brands go to `Ref<T, Brand>`, `BrandedIndex<Brand>` and the region capability of section 11.10.
+- `fixy/Borrowed.h` and `fixy/SharedRegion.h` into `View` and the Ref family. Their brands go to `Ref<T, Brand>`, `BrandedIndex<Brand>` and the region capability of section 11.10.
+
+`fixy/OwnedRegion.h` and `fixy/ScopedView.h` stay, as the owner decided on 2026-11-12 (Appendix E.1).
 
 **The kinds.**
 
@@ -1139,6 +1149,8 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 The fixed ring stays `fixy::CyclicBuffer` of `fixy/CyclicBuffer.h`, which keeps the last N elements, and slice 4.3 rebuilds its reads on `Index<N>` (Appendix E). Arena memory comes from `BumpArena::array` of the Ref family as a `View`. A table does not grow: a larger table is a new table, and the caller moves each entry with `take` and `push`.
 
 **The proofs of an index.** `Index<N>` proves `i < N` (design). `Index<N>::check(i)` gives an `Option`, and `index<I>()` of the Scalar family converts when `I < N`. A `View` has no brand (main, and phase D of `misc/12_10_2026_linear.md`). `mint_branded_scope(view, body)` gives the body the view with a fresh brand (design). In the body, `index(i)` gives `Option<BrandedIndex<Brand>>` and `indices()` gives each index, an index of 4 bytes that proves `i` below the count of that view. Only that scope makes such an index, and the count of a view never changes.
+
+**The iteration verbs.** Each region gives `enumerate()`, `reverse()`, `windows<N>()` and `chunks<N>()`, and `zip(a, b)` takes two regions (section 11.1). Record gives the pairs of `enumerate()` and `zip`. A growable owner gives the five verbs only through `with_view`. The owner approved them on 2026-11-12 (P3 of section 11.11), and group G4 builds them.
 
 **The API of `View<T, Extent>`.**
 
@@ -1171,11 +1183,11 @@ The constructor from raw parts is private, and only the doors of the base reach 
 | `clear()` | `FixedList`, a droppable element only | Ends each element | the count | - | new |
 | `mint_heap_array(alloc, count, fill)` | `HeapArray` | Each element is `fill`. `Align` states the alignment of the storage, as `AlignedBuffer` does | one allocation | `mint_*` | design |
 | `mint_heap_array_written(alloc, count, body)` | `HeapArray` of an implicit-lifetime `T` | The body gets a view that only writes, and the mint gives the array after the body | one allocation | `mint_*` | design |
-| `mint_grow_list(maximum)`, `mint_heap_ring(minimum, maximum)` | `GrowList`, `GrowText`, `HeapRing` | Empty, with no allocation. The maximum bounds each growth (the principle P5 of the linear design). The maximum of a `GrowList` waits for P6 | none | `mint_*` | new |
-| `append(alloc, v)` | `GrowList`, `GrowText`, `HeapRing` | Gives no reference, and its result waits for the owner (P6). A `HeapRing` doubles its capacity from its minimum up to its maximum | a visible O(n) event at each growth | `append` | design |
+| `mint_grow_list(maximum)`, `mint_heap_ring(minimum, maximum)` | `GrowList`, `GrowText`, `HeapRing` | Empty, with no allocation. The maximum bounds each growth (the principle P5 of the linear design). Each growable owner states its maximum here (P6) | none | `mint_*` | new |
+| `append(alloc, v)` | `GrowList`, `GrowText`, `HeapRing` | `Result<Unit, Full<T>>` (P6). A growth past the maximum refuses, and `Full<T>` gives a linear value back. It gives no reference. A `HeapRing` doubles its capacity from its minimum up to its maximum | a visible O(n) event at each growth | `append` | design |
 | `with_view(std::move(owner), body)` | `GrowList`, `GrowText`, `HeapRing` | The body gets a `View`, or a `RingView` that counts from the oldest element, and cannot reach the owner. So no growth happens while the view lives. Gives the owner back | none | - | design |
 | `freeze(std::move(list))` | `GrowList` | Gives a `HeapArray<T>` of the elements | none | - | design |
-| `push(key, value)` | `FixedTable`, `HeapTable` | `Result<Ref<V>, Full<V>>` for a full table. The refusal of a key that the table holds waits for the owner (P6) | one probe | `push` | design |
+| `push(key, value)` | `FixedTable`, `HeapTable` | Gives `Ref<V>`, or a refusal for a full table or for a key that the table holds (P6). The refusal names the reason and gives a linear value back | one probe | `push` | design |
 | `get(key)`, `take(key)` | `FixedTable`, `HeapTable` | `Option<Ref<V>>`, and `Option<V>` that moves the value out | one probe | `get` | design |
 | `for (entry : table)` | `FixedTable`, `HeapTable` | Each entry as `Record<K, Ref<V>>`, in slot order. The order is a function of the keys and a fixed seed | the capacity | `for` | design |
 | `mint_heap_table(alloc, capacity)` | `HeapTable` | Empty, with a fixed capacity | one allocation | `mint_*` | design |
@@ -1216,8 +1228,8 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 - QDESIGN gives `Ref<T>` from `append` of a `GrowList`, which dangles at the next growth. `append` gives no reference, and a growable owner gives its elements only in `with_view`.
 - QDESIGN gives a table that grows through `rehash_into`. The table of the iteration detector has a fixed capacity, and a growth is a new table.
 - `FixedArray` is in `include/fixy/FixedArray.h`, in the layer X1. The family gives it in `foundation/core`, in the layer F0 primitives, and slice 4.3 merges the old header.
-- Appendix E merges `fixy/OwnedRegion.h` into `View` and the Ref family. Section 4 of the linear design keeps that header in X1 as the CSL view of a region: the region capability and a `Permission`. The owner decides which form slice 4.3 takes.
-- QDESIGN keeps `fixy/ScopedView.h` as it is, and Appendix E merges it. A `ScopedView` also proves a state of its carrier, and a `Ref<T, Brand>` holds no state. The owner decides which type holds that proof after slice 4.3.
+- The first header map merged `fixy/OwnedRegion.h` into `View` and the Ref family. Section 4 of the linear design keeps that header in X1 as the CSL view of a region: the region capability and a `Permission`. The owner decided on 2026-11-12 that the header stays, and slice 4.3 rebuilds it on `View` (Appendix E.1).
+- QDESIGN keeps `fixy/ScopedView.h` as it is, and the first header map merged it. A `ScopedView` also proves a state of its carrier, and a `Ref<T, Brand>` holds no state. The owner decided on 2026-11-12 that the header stays (Appendix E.1).
 
 **The recipes.**
 
@@ -1236,7 +1248,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `T* p, size_t n` parameters | `fixy::View<T> v` | mechanical signature, judgment body |
 | `std::vector<T>`, known maximum | `FixedList<T, N>` | judgment (N) |
 | `std::vector<T>`, size known at build | `HeapArray<T>` | judgment |
-| `std::vector<T>`, unbounded, cold | `GrowList<T>`. `push_back(x)` becomes `list.append(alloc, x)`, with the result form of P6 | judgment (the caller holds an `Alloc`) |
+| `std::vector<T>`, unbounded, cold | `GrowList<T>`. `push_back(x)` becomes `list.append(alloc, x)`, and the caller handles the `Full` error | judgment (the caller holds an `Alloc` and states a maximum) |
 | `std::string` | `FixedText<N>` or `GrowText` | judgment |
 | `memcpy(dst, src, n)` | `fixy::copy(dst_view, src_view)` | judgment (n becomes view lengths) |
 | `memcpy(&x, p, sizeof x)` | `x = fixy::load<T>(window)` | mechanical when the window exists |
@@ -1257,7 +1269,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 
 **The header.** `include/foundation/core/Ref.h` (main), with the parts of the linear design in `foundation/core/Credit.h` and `foundation/core/Identity.h` (section 11.10). `Ref.h` and `Region.h` include `Credit.h`, and `Region.h` never includes `Ref.h`.
 
-**The merges.** Slice 4.3 merges `fixy/Borrowed.h`, `fixy/ScopedView.h`, `fixy/OwnedRegion.h` and `fixy/SharedRegion.h` into `View` and the Ref family (Appendix E). A borrow of one object becomes a `Ref<T, Brand>`, and a borrow of a run becomes a `View` (section 11.4).
+**The merges.** Slice 4.3 merges `fixy/Borrowed.h` and `fixy/SharedRegion.h` into `View` and the Ref family (Appendix E). `fixy/ScopedView.h` and `fixy/OwnedRegion.h` stay (Appendix E.1). A borrow of one object becomes a `Ref<T, Brand>`, and a borrow of a run becomes a `View` (section 11.4).
 
 **The API.**
 
@@ -1272,8 +1284,8 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `downcast<Derived>(ref)` | `Option<Ref<Derived>>`, for `KindTagged<Base, Derived>` | one compare | - | design |
 | `mint_box<T>(alloc, args...)` | The one door to a `Box`: it allocates, builds the object and gives the `Box` | one allocation | `mint_*` | main |
 | `*box`, `box->member` | A borrow of the object. The `&&` forms are deleted | one test of a moved-from `Box` | dereference | main |
-| `box.get()` | `T&`, a borrow with no key | one test of a moved-from `Box` | - | main |
-| `box.view()` | `Ref<T>`. P6 gives it in place of `get()` | one test of a moved-from `Box` | `view` | P6 |
+| `box.get()` | `T&`, a borrow with no key. Group G3 removes it, and `*box` and `box.view()` take its place (P6) | one test of a moved-from `Box` | - | main |
+| `box.view()` | `Ref<T>` | one test of a moved-from `Box` | `view` | new |
 | `std::move(box).consume()` | Moves the object out and frees the storage | a move | `consume` | main |
 | `BumpArena::make<T>(alloc, args...)` | A trivially destructible `T`. Gives `Ref<T, Brand>` of the arena brand | the bump | - | design |
 | `BumpArena::array<T>(alloc, count)` | `ImplicitLifetimeThroughout<T>`. Gives `View<T>` | the bump | - | design |
@@ -1293,7 +1305,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 **The load.** Objects: `std::unique_ptr` 118 and `std::shared_ptr` 4. Names: `std::unique_ptr::operator->` 177, `std::unique_ptr::get` 70 and `std::make_unique` 68. The ledger holds 2,513 raw pointer objects, 102 raw function pointers and 80 raw new-expressions and delete-expressions. The pilot found two call sites. The four payloads of the background stages of `include/crucible/BackgroundThread.h` become a `Box`. The `std::unique_ptr` owners of `include/crucible/Vigil.h` (the ring, the MetaLog, the Cipher, the senses and the watchdog) and of `BackgroundThread.h` (the pipeline) become a `Box`.
 
 **Where the sources do not agree.**
-- `Box::get()` of main and `Ref::get()` of QDESIGN borrow with no key, and the verb `get` is the checked lookup. `Ref` takes the dereference only. `Box::get()` stays until the owner decides P6 (section 11.1).
+- `Box::get()` of main and `Ref::get()` of QDESIGN borrow with no key, and the verb `get` is the checked lookup. `Ref` takes the dereference only. The owner decided P6 on 2026-11-12, and group G3 removes `Box::get()` (section 11.1).
 - `visit_kind` of QDESIGN is the verb `match` on a `Ref` of a kind family.
 - The base has no counted reference (`misc/12_10_2026_linear.md`, section 11, item 2). A `std::shared_ptr` becomes an owner with a scope, an epoch or a lease.
 - A `Box` tests for a moved-from object at each access (main). The rule `must-consume` replaces the test when it becomes an error (linear design, section 6).
@@ -1339,7 +1351,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `fetch_max_acq_rel(v)`, `fetch_min_acq_rel(v)` | For an `AtomicCount` | one locked operation, or a compare-and-swap loop | main |
 | `load_owned(proof)` | The relaxed load of the sole writer. The proof is `SoleWriter<Role, Brand>`, the linear permission of the writer of the cell, so another thread cannot call it | one load | design |
 | `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` is one pointer with a niche, so the cell is lock-free | as `Atomic` | design |
-| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `get()` borrows the cell (main). P6 gives `*line`, `line->member` and `line.view()` in its place | none | main, P6 |
+| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line`, `line->member` and `line.view()` borrow the cell. Group G3 removes `get()` of main (P6) | none | main, new |
 | `Tally` | A statistics counter. `add(n)` is a fetch-add with acq_rel order, and `read()` is an acquire load. A value of a `Tally` orders no other data | one locked add | main |
 | the relaxed and seq_cst operations of `ChaseLevDeque`, and `fence_seq_cst` | `detail` code of the base, with a citation of the algorithm | as the algorithm | design |
 
@@ -1354,7 +1366,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 **Where the sources do not agree.**
 - QDESIGN gives `cas_acq_rel` a `Result<Unit, T>`. Main gives `CasRefusal<T>`, which names the value that the cell held.
 - QDESIGN gives `load_owned`. Main has no relaxed operation, because the tree has no proof type `SoleWriter` (CLAUDE.md §XXII). The design keeps `load_owned` for G3, with the proof type.
-- `CacheLine::get()` of main borrows with no key. Main wins until the owner decides P6 (section 11.1).
+- `CacheLine::get()` of main borrows with no key. The owner decided P6 on 2026-11-12: group G3 gives the dereference and `view()` in its place (section 11.1).
 - QDESIGN puts `PublishOnce` and `OneShotFlag` beside `Atomic`. Appendix E rebuilds them in place in `fixy/handle/`, and this section agrees.
 
 **The recipes.**
@@ -1421,12 +1433,12 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 **The load.** The ledger holds 301 findings of `<limits>` and 213 of `std::bit_cast` (the kinds `replace-pending`). Names: `std::bit_cast` 76, `std::min` 63 and `std::max` 50. The macro `CRUCIBLE_STRONG_ID` makes each id of `include/crucible/Types.h`. The pilot found one call site: `fixy::min`.
 
 **Where the sources do not agree.**
-- R9 cut the API to the calls of the tree. The design bar keeps `countl_one`, the float limits and `gcd`.
+- The first form of R9 cut the API to the calls of the tree. The design bar keeps `countl_one`, the float limits and `gcd`.
 - QDESIGN gates `enum_from` on a scoped enum. Main gates it on `Enumerated`, because an unscoped enumeration with a fixed type has the same hazard.
 - QDESIGN gives `clamp` a `pre` specifier, which the tree refuses (§XII). `Bounds` proves the order of the bounds, so `clamp` has no branch.
 - QDESIGN gives `abs`. `unsigned_abs` shows its unsigned result, so a change of `std::abs` cannot give a modular value with no sign.
 - `fixy/Checked.h` declares `checked_*`, `wrapping_*` and `saturating_*` with the same parameters, and two declarations of one name are ill-formed. So the re-export of the three sets waits for slice 4.10, which merges `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` into the family (Appendix E).
-- QDESIGN moves Philox into Scalar, and the G2 Scalar design does not name it. This section keeps the move, because the Check proposal of section 11.11 uses a generator of the base.
+- QDESIGN moves Philox into Scalar, and the G2 Scalar design does not name it. This section keeps the move, because the Check family (section 11.13) uses a generator of the base.
 
 **The recipes.**
 
@@ -1540,8 +1552,11 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | the I/O door | Files and sockets on `io_uring` with registered buffers and files, and a fallback with plain system calls that a start-up probe selects (section 10.3a) | design |
 | time | `Instant`, `Duration` (`Quantity<Nanosecond, std::int64_t>`), `MonotonicClock`, `Deadline`. The hot path reads the cycle counter, and the wall clock calls glibc `clock_gettime` (section 10.3a) | main for `MonotonicClock` and `Deadline`, design |
 | the BPF owners | `bpf::Object`, `bpf::Map`, `bpf::Link`: linear owners of the libbpf handles | design |
+| the process door | For a Test context only. `spawn_child(test_ctx, body)` gives `Result<Child, Errno>`, and `wait(child)` gives the exit code or the signal. `pipe` and `redirect` give the output of the child, and `exit_now(code)` ends a child with no exit hooks. The door calls glibc `fork`, `waitpid`, `pipe2`, `dup3` and `_exit` (D12), because glibc owns the fork handlers and the state of its threads. Group G6 builds it (P4 of section 11.11) | new |
 
-`fixy/os/OwnedFile.h` merges into the file doors of the family in slice 4.1 (Appendix E), so `std::FILE` leaves each public signature. Appendix E asks the owner where `fixy/os/CipherDurable.h` goes.
+R4 gives each system header one door, and `<unistd.h>` has the door `src/foundation/os/Intercepted.cpp` at this time. The G6 unit gives the process door its headers inside that rule.
+
+`fixy/os/OwnedFile.h` merges into the file doors of the family in slice 4.1 (Appendix E), so `std::FILE` leaves each public signature. The owner decided on 2026-11-12 that `fixy/os/CipherDurable.h` moves to `include/crucible/cipher/`, because no base file and no production file includes it (Appendix E.1).
 
 **The family list.** The names of the two tables.
 
@@ -1558,11 +1573,11 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 - `__cxa_begin_catch` and `__cxa_end_catch` of the `try` and `catch` around `std::filesystem`
 - The 21 `host-ratchet` imports of libbpf of `libcrucible_perf.a`, which the BPF owners take.
 
-**The load.** Objects: `std::jthread` 96, `std::filesystem::path` 52, `std::chrono::time_point` 26, `std::thread` 15, `std::chrono::duration` 14, `std::stop_token` 13, `std::error_code` 12, `std::basic_ifstream` 12, `std::latch` 6, `std::basic_ofstream` 5, `std::lock_guard` 5 and `std::mutex` 3. Names: `std::jthread::join` 63, `std::chrono::steady_clock::now` 48 and `std::error_code::message` 39. C calls: `__errno_location` 60, `close` 56, `read` 23, `getenv` 16, `setenv` 13, `sched_getaffinity` 11, `mkdtemp` 11 and `syscall` 8. The calls of a child process (`fork` 27, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80) wait for the process door of section 11.11. The pilot found one call site: the background pipeline takes a thread type of the family in place of `std::jthread`.
+**The load.** Objects: `std::jthread` 96, `std::filesystem::path` 52, `std::chrono::time_point` 26, `std::thread` 15, `std::chrono::duration` 14, `std::stop_token` 13, `std::error_code` 12, `std::basic_ifstream` 12, `std::latch` 6, `std::basic_ofstream` 5, `std::lock_guard` 5 and `std::mutex` 3. Names: `std::jthread::join` 63, `std::chrono::steady_clock::now` 48 and `std::error_code::message` 39. C calls: `__errno_location` 60, `close` 56, `read` 23, `getenv` 16, `setenv` 13, `sched_getaffinity` 11, `mkdtemp` 11 and `syscall` 8. The calls of a child process (`fork` 27, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80) go to the process door (P4 of section 11.11). The pilot found one call site: the background pipeline takes a thread type of the family in place of `std::jthread`.
 
 **Where the sources do not agree.**
 - Section 10 of this plan gave the eight families one home in `foundation/core`. D16 puts the Os family in the two door directories, and main agrees.
-- QDESIGN gives `exit_now(code)`. A process exit outside the abort door is a part of the process door, which waits for the owner (section 11.11).
+- QDESIGN gives `exit_now(code)`. A process exit outside the abort door is a part of the process door, which the owner approved on 2026-11-12 (P4 of section 11.11).
 
 **The recipes.**
 
@@ -1581,6 +1596,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `std::chrono::nanoseconds`, a duration in a plain integer | `fixy::time::Duration` | mechanical |
 | `mkdtemp`, `std::filesystem::remove_all` in a test | `temp_dir` and the directory doors | judgment |
 | `std::thread` or `std::jthread` that a class keeps | `fixy::thread::Thread`, with `join() &&` at the end of its owner | judgment |
+| `fork` and `waitpid` in a test | `expect_dies` of the Check family for a death test, and else the process door (`spawn_child`, `wait`) | judgment |
 
 ### 11.10 Ownership, borrows and memory
 
@@ -1599,54 +1615,77 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | Os | A handle that holds a `Permission`, such as `Thread`, is linear with a release door | 11, item 6 | A |
 | Each family | Each exit from linearity is a named door of the door roster | 2 (P10), 4 | A |
 
-### 11.11 The features with no design, and the proposals that wait for the owner
+### 11.11 The features with no design, and the decisions of the owner
 
-QDESIGN and the designs of 2026-10-17 give no design to five features. Each one gets a home in a family, or a proposal of a new family or a new verb. A proposal waits for a yes from the owner (section 17), and no unit builds it before that yes.
+QDESIGN and the designs of 2026-10-17 gave no design to five features. Each one got a home in a family, or a proposal of a new family or a new verb. The table also holds two more proposals. P5 is a question of the unit design of G1. P6 changes three verb rows of section 11.1 and the API of main. The owner decided each proposal on 2026-11-12, and approved each recommendation of this plan.
 
-| Feature | Home | Status |
-|---|---|---|
-| Equality, order, hash, format and a byte codec, derived by reflection | a new family, Protocol | P1 waits for the owner |
-| The test language: death tests, property tests with Philox generators and shrinking, the helper of a std oracle | a new family, Check | P2 waits for the owner |
-| The iteration verbs `enumerate`, `zip`, `reverse`, `windows` and `chunks` | new verbs, given by Region and Record | P3 waits for the owner |
-| Strong ids, and quantities with units | Scalar (section 11.7): `Id`, `Digest` and `Quantity` | designed in this section. No new family and no new verb |
-| A process door | Os | P4 waits for the owner, because it changes D12 |
-| One meaning of `get`, the result of `append`, and the refusal of a present key | the verbs of section 11.1 | P6 waits for the owner |
+| Feature | Home | Decision of 2026-11-12 | Group of Stage 3 |
+|---|---|---|---|
+| Equality, order, hash, format and a byte codec, derived by reflection | the new family Protocol (section 11.12) | P1 approved | G7 |
+| The test language: death tests, property tests with Philox generators and shrinking, the helper of a std oracle | the new family Check (section 11.13) | P2 approved | G8 |
+| The iteration verbs `enumerate`, `zip`, `reverse`, `windows` and `chunks` | new verbs of section 11.1, given by Region and Record (section 11.4) | P3 approved | G4 |
+| Strong ids, and quantities with units | Scalar (section 11.7): `Id`, `Digest` and `Quantity` | designed in section 11.7, with no new family and no new verb | G2 |
+| A process door | Os (section 11.9) | P4 approved | G6 |
+| `map`, `and_then` and `or_else` on `Option` and `Result` | Choice (section 11.2) | P5 rejected | - |
+| One meaning of `get`, the result of `append`, and the refusal of a present key | the verbs of section 11.1, with Ref, Atomic and Region | P6 approved | G3 and G4 |
 
-The unit design of G1 also leaves one question to the owner, P5. The protocol set of section 11.1 adds P6, because it changes three approved verb rows or the API of main.
+**P1. The Protocol family: approved.** Reason: each type writes equality, order, hash, format and a byte image by hand today. Examples are `reflect_hash` of `foundation/reflect/Hash.h`, the serializer of `include/crucible/Serialize.h` and the macros of `include/crucible/Types.h`. The design bar asks for a derivation by reflection, and DetSafe asks for a hash and a byte image with no padding. Section 11.12 gives the design, and group G7 builds it after G5.
 
-**P1. The Protocol family.**
-- What: one reflection walk derives five operations for a type that opts in through an annotation. They are `equal(a, b)`, `order(a, b)`, `hash(a)`, the format of a struct, and a byte codec of `encode(value, out)` and `decode<T>(bytes)`. The walk refuses what `decode` refuses: a pointer, a reference, a union and a read of padding. The codec writes fixed widths in little-endian order. `decode` of a byte view is the form of `decode` of the Scalar family over a run of bytes. Its `Result` holds the position of an error.
-- Reason: each type writes these operations by hand today. Examples are `reflect_hash` of `foundation/reflect/Hash.h`, the serializer of `include/crucible/Serialize.h` and the macros of `include/crucible/Types.h`. The design bar asks for a derivation by reflection, and DetSafe asks for a hash and a byte image with no padding.
-- Changes outside sections 10 and 11: R9 and section 4 (nine families), a row of section 1, CLAUDE.md §XXII, and a group after G5 in section 10.1.
-- Depends on: Scalar (`Digest` and the bit operations), Region (`bytes` and `View`), Record, and Report (`Formattable`). `equal` of Region becomes the form of `equal` over a view.
+**P2. The Check family: approved.** Reason: `test/` holds 11,641 `std-entity` findings and 3,291 `c-library-call` findings. The harness repeats death tests, property loops and oracles by hand in each file, with `fork`, `waitpid`, `fprintf` and `abort`. Section 11.13 gives the design. Group G8 builds it after the process door of G6 (P4), and after Philox moves into the Scalar family (section 11.7).
 
-**P2. The Check family.**
-- What: the test language, for a Test context only. `expect_dies(body, text)` runs the body in a child and expects `SIGABRT` with the text on standard error. `property(seed, count, body)` takes Philox generators of the base and shrinks a failure to a minimal input with the same seed. `oracle(...)` runs a family operation and its std form over Philox inputs inside one `ORACLE:` region. `pass(name)` writes the `PASSED` line through `report`, and the assert macro of the tests calls `fatal()` with its text.
-- Reason: `test/` holds 11,641 `std-entity` findings and 3,291 `c-library-call` findings. The harness repeats death tests, property loops and oracles by hand in each file, with `fork`, `waitpid`, `fprintf` and `abort`.
-- Changes outside sections 10 and 11: R9 and section 4, a row of section 1, the unit `harness` of wave 5A (section 14.1), and CLAUDE.md §XIII and §XXII.
-- Depends on: P4, Philox in the Scalar family (section 11.7), and Report.
+**P3. The iteration verbs: approved.** Reason: a loop with an index is the largest source of a raw subscript: `std::array::operator[]` 892, `std::vector::operator[]` 286 and `std::span::operator[]` 153. A reverse loop writes `while (i-- > 0)`, and a loop over windows adds an offset by hand. Each verb removes a branch or an index from such a loop. Section 11.1 gives the five rows, and group G4 builds them with the Region family.
 
-**P3. The iteration verbs.**
-- What: `enumerate()` gives each element with its proven index. `zip(a, b)` gives the pairs of two views: a fixed extent proves the counts equal, and a dynamic extent gives `Result<..., LengthMismatch>`. `reverse()` visits from the last element. `windows<N>()` gives each run of N consecutive elements with a step of one, as a `View<T, N>`. `chunks<N>()` gives each run of N elements with a step of N, and the rest as a separate `View`. Each one is a borrow with no allocation, and its cost is the loop bound.
-- Reason: a loop with an index is the largest source of a raw subscript: `std::array::operator[]` 892, `std::vector::operator[]` 286 and `std::span::operator[]` 153. A reverse loop writes `while (i-- > 0)`, and a loop over windows adds an offset by hand. Each verb removes a branch or an index from such a loop.
-- Changes outside sections 10 and 11: R9 and section 4 (fifteen verbs), and CLAUDE.md §XXII.
+**P4. The process door: approved.** Reason: the tests call `fork` 27 times, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80, and each death test repeats them. The Check family uses the door. Section 11.9 gives the door, and group G6 builds it. The decision changes three texts of this plan:
+- D12 keeps five more calls in glibc: `fork`, `waitpid`, `pipe2`, `dup3` and `_exit`. R5 then admits them in `libfixy.a`, each one only in its door.
+- The deny list of R4 keeps `clone`, `clone3`, `fork`, `vfork`, `exit` and `exit_group` as raw calls. The process door starts a child only through glibc `fork`, so the reason of the deny row of `clone` also names a child process.
+- The end state of the kind `process-start` of the rule `banned` (section 8.6a). After the last slice of Stage 4, the include allowance and the libc rows of R5 refuse each process start outside the process door.
 
-**P4. The process door.**
-- What: doors of the Os family for a child process, for a Test context only. `spawn_child(test_ctx, body)` gives `Result<Child, Errno>`, and `wait(child)` gives the exit code or the signal. `pipe` and `redirect` give the output of the child, and `exit_now(code)` ends a child with no exit hooks. The doors call glibc `fork`, `waitpid`, `pipe2`, `dup3` and `_exit`, because glibc owns the fork handlers and the state of its threads.
-- Reason: the tests call `fork` 27 times, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80, and each death test repeats them. P2 uses the door.
-- Changes outside sections 10 and 11: the glibc list of D12, the deny list of R4 (`clone`) and the R5 allowlist of `libfixy.a`. It also changes the end state of the kind `process-start` of the rule `banned` (sections 8.6a and 13.4).
+**P5. `map`, `and_then` and `or_else` on `Option` and `Result`: rejected,** as the unit design of G1 recommends. Reason: `match` and `CRUCIBLE_TRY` cover each pattern of the recipes of section 11.2. The three verbs give a second road to the same result, and law 1 of section 11.1 permits one name for one meaning.
 
-**P5. `map`, `and_then` and `or_else` on `Option` and `Result`.**
-- What: three new verbs of the Choice family.
-- Reason against them, the recommendation of the unit design of G1: `match` and `CRUCIBLE_TRY` cover each pattern of the recipes of section 11.2, so the verbs add a second road to the same result.
-- Changes outside sections 10 and 11: R9 and section 4.
+**P6. Three changes to the verbs of section 11.1: approved.** Reason: the design bar asks for one meaning for each name, and for no hidden end of the process. QDESIGN gives `append` a `Ref<T>`, which dangles at the next growth, and gives no refusal for a key that a table holds. The three parts:
+- `Box::get()` and `CacheLine::get()` of main go, and the dereference and `view()` take their place. Then `get` has one meaning, the checked lookup with a key, as law 1 asks. Group G3 changes `foundation/core/Ref.h` and `foundation/core/Atomic.h`, and each caller of the two `get()`.
+- `append(alloc, v)` gives `Result<Unit, Full<T>>`, and each growable owner states a maximum at its mint. The principle P5 of the linear design gives each size a budget. A growth past the maximum then refuses, and the process does not end. Group G4 builds it.
+- `push(key, value)` of a table refuses a key that the table holds. The refusal gives the reason, a full table or a key that the table holds, and a linear value back. Group G4 builds it.
 
-**P6. Three changes to the verbs of section 11.1.**
-- What, part 1: `Box::get()` and `CacheLine::get()` of main go, and the dereference and `view()` take their place. Then `get` has one meaning, the checked lookup with a key, as law 1 asks.
-- What, part 2: `append(alloc, v)` gives `Result<Unit, Full<T>>`, and each growable owner states a maximum at its mint. The principle P5 of the linear design gives each size a budget. A growth past the maximum then refuses, and the process does not end.
-- What, part 3: `push(key, value)` of a table refuses a key that the table holds. The refusal gives the reason (full, or a key that the table holds) and a linear value back.
-- Reason: the design bar asks for one meaning for each name and for no hidden end of the process. QDESIGN gives `append` a `Ref<T>`, which dangles at the next growth, and gives no refusal for a key that a table holds.
-- Changes outside sections 10 and 11: the API of `foundation/core/Ref.h` and `foundation/core/Atomic.h` on main, and CLAUDE.md §XXII "The families on main". Each caller of `get()` changes too.
+### 11.12 Protocol: `equal`, `order`, `hash`, the format of a struct and the byte codec
+
+**The idea.** One reflection walk derives five operations for a type that opts in through an annotation, so no type writes them by hand. The owner approved the family on 2026-11-12 (P1 of section 11.11).
+
+**The home.** Group G7 builds the family after G5 (section 10.1). The unit chooses the header and the layer, and `include/fixy/Core.h` gives the public names in namespace `fixy` (D8).
+
+**The API.**
+
+| Operation | Contract | Cost | State |
+|---|---|---|---|
+| `equal(a, b)` | Each part in declaration order, with no read of padding. `equal` of Region becomes the form of `equal` over a view | one compare for each part | new |
+| `order(a, b)` | Lexicographic, in declaration order | one compare for each part | new |
+| `hash(a)` | A `Digest` of each part, with no read of padding. The same value gives the same hash on each target (DetSafe) | one pass over the parts | new |
+| the format of a struct | Each part with its reflected name, through `Formattable` of the Report family | the format | new |
+| `encode(value, out)`, `decode<T>(bytes)` | Fixed widths in little-endian order. `decode` of a byte view is the form of `decode` of the Scalar family over a run of bytes. Its `Result` holds the position of an error | one pass over the bytes | new |
+
+**The gate.** The walk refuses what `decode` refuses: a pointer, a reference, a union and a read of padding.
+
+**Depends on.** Scalar (`Digest` and the bit operations), Region (`bytes` and `View`), Record, and Report (`Formattable`).
+
+### 11.13 Check: the test language
+
+**The idea.** The tests get one language for a death test, a property test, a std oracle and the pass line. Each operation takes a Test context, so no production code can call it. The owner approved the family on 2026-11-12 (P2 of section 11.11).
+
+**The home.** Group G8 builds the family after G6 (section 10.1). A death test uses the process door of the Os family, so the layer of the family is above X3 os. The unit chooses the header and the layer.
+
+**The API.**
+
+| Operation | Contract | Cost | State |
+|---|---|---|---|
+| `expect_dies(body, text)` | Runs the body in a child, and expects `SIGABRT` with the text on standard error | one child process | new |
+| `property(seed, count, body)` | Philox generators of the base give the inputs. A failure shrinks to a minimal input with the same seed | the count of the runs | new |
+| `oracle(...)` | Runs a family operation and its std form over Philox inputs, inside one `ORACLE:` region (section 16) | the count of the runs | new |
+| `pass(name)` | Writes the `PASSED` line through `report` | one write | new |
+| the assert macro of the tests | Calls `fatal()` with its text | one branch to a cold call | new |
+
+**Depends on.** The process door of the Os family (P4, group G6), Philox in the Scalar family (section 11.7), and Report.
+
+**The migration.** The harness unit of wave 5A moves the assert macro, the pass line and the death tests of `test/` to the family (section 14.1).
 
 ---
 
@@ -1699,27 +1738,26 @@ Appendix E gives each base header a verdict, a family and a slice. The last colu
 
 | Slice | Content | Callers | Rows of Appendix E |
 |---|---|---|---|
-| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched. The slice also removes each system type from the public signatures of the doors (R4). A base record replaces each struct of the kernel or of the C library, and a base type replaces each integer typedef of the C library. On 2026-10-09, seventeen public signatures hold a system type. In `fixy/os/Time.h`, `PtpClockReader::caps()` holds `::ptp_clock_caps`, `nanos_from_timespec` holds `std::timespec`, and `clockid_for` holds `::clockid_t`. `mint_file`, `mint_durable_truncate_file` and `mint_durable_append_file` of `fixy/os/Fs.h` and the three mints of `fixy/os/CipherDurable.h` hold `::mode_t`. `file_size` of `fixy/os/Fs.h`, `mint_mmap` of `fixy/os/Mmap.h`, `OwnedMmap::mint_region` of `fixy/os/OwnedMmap.h` and the two overloads of `zerocopy_transfer` of `fixy/os/Io.h` hold `::off_t`. `OwnedFile::get()` and `OwnedFile::release()` of `fixy/os/OwnedFile.h` and `Topology::log_summary` of `fixy/os/Topology.h` hold `std::FILE*` | about 133 base uses, many callers in crucible and test | Rebuild: `fixy/os/` CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time, CipherDurable. Merge: `fixy/os/OwnedFile.h` |
+| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched. The slice also removes each system type from the public signatures of the doors (R4). A base record replaces each struct of the kernel or of the C library, and a base type replaces each integer typedef of the C library. On 2026-10-09, seventeen public signatures held a system type. Commit 288f2561b moved `Topology::log_summary` to the Report sink, and `fixy/os/CipherDurable.h` with its three mints moves to `include/crucible/cipher/` before this slice (Appendix E.1). Thirteen signatures stay for the slice. In `fixy/os/Time.h`, `PtpClockReader::caps()` holds `::ptp_clock_caps`, `nanos_from_timespec` holds `std::timespec`, and `clockid_for` holds `::clockid_t`. `mint_file`, `mint_durable_truncate_file` and `mint_durable_append_file` of `fixy/os/Fs.h` hold `::mode_t`. `file_size` of `fixy/os/Fs.h`, `mint_mmap` of `fixy/os/Mmap.h`, `OwnedMmap::mint_region` of `fixy/os/OwnedMmap.h` and the two overloads of `zerocopy_transfer` of `fixy/os/Io.h` hold `::off_t`. `OwnedFile::get()` and `OwnedFile::release()` of `fixy/os/OwnedFile.h` hold `std::FILE*`. `OwnedFile.h` merges into the file doors after the Region family is on main (section 9.3) | about 133 base uses, many callers in crucible and test | Rebuild: `fixy/os/` CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time. Merge: `fixy/os/OwnedFile.h` |
 | 4.2 Choice in concurrent and wrappers | A pop of a ring or a channel, a load of `AtomicSnapshot` and a step of a session decorator give `Option`. `admit_refined` and the version gate of `EpochVersioned` return `Result`. The checked operations of `Checked.h` go to the Scalar family in 4.10 | the rings are on hot paths: check the disassembly | Rebuild: `fixy/` Refined, EpochVersioned. `fixy/channels/` Endpoint, SwmrSession. `fixy/concurrent/` AtomicSnapshot, SpscRing, MpscRing, PermissionedSpscChannel, PermissionedMpscChannel. `fixy/session/` CrashTransport, Recording, Transport, Checkpoint, EventLog |
-| 4.3 Region in the wrappers | `fixy/FixedArray.h` merges into the fixed array of the Region family, which has no `operator[](size_t)`, no `data()` and no raw iterator. `Borrowed`, `ScopedView`, `OwnedRegion` and `SharedRegion` merge into `View` and the Ref family, with brands. `AlignedBuffer` and `SwissTableBuffer` merge into the Region family. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList`. Each other `std::span`, `std::string_view` and `std::array` of a base API that runs at run time goes to the Region family | every caller of those accessors | Rebuild: `foundation/` Lifetime, Simd, contracts/Decide, reflect/EnumName, reflect/Enumerate. `fixy/` Mutation, ConstantTime, SipHash, Federation, CyclicBuffer, session/Classified, session/EventLog, session/Witnessed. Merge: `foundation/` AlignedBuffer, SwissTableBuffer. `fixy/` Borrowed, ScopedView, OwnedRegion, SharedRegion, FixedArray |
-| 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock` and each other holder of a `std::atomic` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base. `CpuPinned` and `session/Watch.h` use `Atomic` at this time | few callers outside | Rebuild: `foundation/` ChannelBinding, effects/Ctx, permissions/SharedPermission. `fixy/` Mutation, channels/LazyEstablishedChannel, concurrent/MpscRing, concurrent/ChaseLevDeque, handle/Once, handle/OneShotFlag, handle/PublishCommit, handle/PublishOnce, os/SpinLock, session/CrashTransport, session/VigilModeCell |
+| 4.3 Region in the wrappers | `fixy/FixedArray.h` merges into the fixed array of the Region family, which has no `operator[](size_t)`, no `data()` and no raw iterator. `Borrowed` and `SharedRegion` merge into `View` and the Ref family. A `View` has no brand: their brands go to `Ref<T, Brand>`, `BrandedIndex<Brand>` and the region capability (sections 11.4 and 11.10). `OwnedRegion` stays as the CSL view of a region, and the slice rebuilds its accessors on `View`. Its arena door then takes only an implicit-lifetime type (section 10.3). `ScopedView` stays as it is (Appendix E.1). `AlignedBuffer` and `SwissTableBuffer` merge into the Region family. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList`. Each other `std::span`, `std::string_view` and `std::array` of a base API that runs at run time goes to the Region family | every caller of those accessors | Rebuild: `foundation/` Lifetime, Simd, contracts/Decide, reflect/EnumName, reflect/Enumerate. `fixy/` Mutation, OwnedRegion, ConstantTime, SipHash, Federation, CyclicBuffer, session/Classified, session/EventLog, session/Witnessed. Merge: `foundation/` AlignedBuffer, SwissTableBuffer. `fixy/` Borrowed, SharedRegion, FixedArray |
+| 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock` and each other holder of a `std::atomic` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base. `CpuPinned` and `session/Watch.h` use `Atomic` at this time. `SetOnce` of `fixy/handle/Once.h` merges into `WriteOnceNonNull` of `fixy/Mutation.h` before this slice (Appendix E.1) | few callers outside | Rebuild: `foundation/` ChannelBinding, effects/Ctx, permissions/SharedPermission. `fixy/` Mutation, channels/LazyEstablishedChannel, concurrent/MpscRing, concurrent/ChaseLevDeque, handle/Once, handle/OneShotFlag, handle/PublishCommit, handle/PublishOnce, os/SpinLock, session/CrashTransport, session/VigilModeCell |
 | 4.5 Report in the base | `fail_invariant`, the diag runtime sink, `JsonEmitter`, and every `std::source_location` in a public API move to `Site` and the Report sink | few callers outside | Rebuild: `foundation/diag/` Runtime, JsonEmitter. `fixy/session/` Entry, Mint, AsyncChannel, Stepping, Handle, Delegate, Watch, Flow, CrashTransport, Checkpoint |
 | 4.6 Os internals | `Path` stops using `std::filesystem::path`. Each `try`/`catch` site that unit 2b did not remove goes. Unit 2b moves Topology off `ifstream`, `filesystem`, `set` and `map`, and unit 2c moves `std::jthread` to the thread door | callers of Path | Rebuild: `fixy/os/` Path, Topology |
-| 4.7 Record in the base | `pair` and `tuple` in base APIs and in the stage and pipeline runners become `Record` or `Pack` | few callers outside | Rebuild: `foundation/permissions/` Permission, PermissionFork, ReadView. `fixy/` Federation, concurrent/Pipeline, concurrent/Spawn, concurrent/Stage, session/Flow |
+| 4.7 Record in the base | `pair` and `tuple` in base APIs and in the stage and pipeline runners become `Record` or `Pack` | few callers outside | Rebuild: `foundation/permissions/` Permission, PermissionFork, ReadView. `fixy/` Federation, OwnedRegion, concurrent/Pipeline, concurrent/Spawn, concurrent/Stage, session/Flow |
 | 4.8 Foundation remainder | the other runtime uses in foundation (233 runtime, 367 constexpr data, 36 in src/foundation) | none outside | Rebuild: `foundation/algebra/lattices/` AffinityLattice, HappensBefore, StrongCounterLattice, MonotoneLattice |
 | 4.9 Fixy remainder | the other runtime uses in fixy, one unit for each directory: concurrent, session, os, handle, top level | none outside | Rebuild: `fixy/` SelfContained, os/ThreadName |
 | 4.10 Scalar in the base | `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` merge into the Scalar family, and the checked operations return `Option`. Each `std::numeric_limits`, `std::bit_cast`, operation on bits and operation on a floating value of the base goes to the Scalar family | 9 production files include `foundation/Saturate.h` | Merge: `foundation/Saturate.h`, `fixy/` Saturate, Saturated, Checked. Rebuild: `fixy/fp/Polynomial.h` |
-| 4.11 Deletes | each delete row of Appendix E that the owner approves | tests only | Delete (proposal): `foundation/reflect/RawEscape.h` |
+| 4.11 Deletes | The rule `escape-doors` of the quarantine plugin gets two cases that `foundation/reflect/RawEscape.h` refuses and the rule does not. They are a public data member, and a member that a public base or a using-declaration gives. Each case gets a plant and a control. Then the slice deletes the header and its six fixtures (owner, 2026-11-12) | tests only | Delete: `foundation/reflect/RawEscape.h` |
 
 ### 13.2 Order and parallelism
 
 | Wave | Slices | Reason |
 |---|---|---|
-| 4-I | 4.3, 4.4, 4.5, 4.7, 4.10 | the slices change different APIs, and a shared file takes a merge of main. On 2026-11-12, the rows of 4.10 had 66 direct includers outside the base, and 26 of them also include a header of a row of the four other slices |
+| 4-I | 4.3, 4.4, 4.5, 4.7, 4.10, 4.11 | the slices change different APIs, and a shared file takes a merge of main. On 2026-11-12, the rows of 4.10 had 66 direct includers outside the base, and 26 of them also include a header of a row of the four other slices. 4.11 changes the plugin and deletes a header that only tests include, so it shares no file with the other slices |
 | 4-II | 4.1, then 4.2 | 4.1 and 4.2 touch many of the same caller files, so they run one after the other |
 | 4-III | 4.6 | needs the Os results of 4.1 |
 | 4-IV | 4.8 and the five units of 4.9, in parallel | internal only |
-| no wave | 4.11 | a delete row becomes work only after the owner approves it. Then it can run in each wave, because only tests include the header |
 
 ### 13.3 Special care
 
@@ -1735,7 +1773,7 @@ Appendix E gives each base header a verdict, a family and a slice. The last colu
 - The link guard (R5) passes for `libcrucible.a`. Its first allowlist: `__cxa_guard_acquire`, `__cxa_guard_release`, `__cxa_guard_abort`, `__cxa_atexit`, `__gxx_personality_v0`, and `operator new` and `operator delete` only if the Ref family uses them.
 - The libc rows of the symbol ledger (R5) hold no ratchet row for `libfixy.a`. Each libc symbol of `libfixy.a` is a call that D12 keeps in glibc, in its door.
 - The kinds `vector-reserve` and `process-start` of the rule `banned` have no base part. The include rules refuse `<vector>` and each header of a process start in a base file outside its door.
-- Each rebuild row and each merge row of Appendix E is on main, and each delete row that the owner approved.
+- The change of each rebuild row, each merge row and each delete row of Appendix E is on main.
 - The full suite passes in every preset.
 
 ---
@@ -1748,7 +1786,7 @@ Appendix E gives each base header a verdict, a family and a slice. The last colu
 
 | Wave | Unit | Directory | Findings at census | Notes |
 |---|---|---|---|---|
-| 5A | harness | `test/test_assert.h`, the pass-print helper, the runner `main` | about 5,000 test findings | `assert` becomes `fixy::fatal("assert: {}", #cond)`. The pass print becomes one harness function. `argv` enters through `fixy::os::args` |
+| 5A | harness | `test/test_assert.h`, the pass-print helper, the runner `main` | about 5,000 test findings | The harness takes the Check family (section 11.13). `assert` becomes the assert macro of Check, which calls `fixy::fatal("assert: {}", #cond)`. The pass print becomes `pass(name)`, and each death test becomes `expect_dies`. `argv` enters through `fixy::os::args` |
 | 5A | small | `examples/`, `src/` | 38 and 879 | |
 | 5B | core-ir | `include/crucible/` IR, Expr, ExprPool, Graph, MerkleDag, Arena users | part of 6,247 | ExprPool and MerkleDag hold most raw pointers |
 | 5B | vigil | BackgroundThread, Vigil, TraceRing, MetaLog, RegionCache | part | hot paths: benches before and after |
@@ -1847,7 +1885,7 @@ The extension lane is one unit that stays open from the S3 gate until Stage 6. I
 3. The request asks for a new family or a new verb. The lane stops and asks the owner.
 
 **Rules:**
-- A new operation needs at least one real call site.
+- A new operation is a part of the full design of its family, as the design bar of the base asks (R9, CLAUDE.md §XXII "The design bar of the base").
 - A new operation obeys section 10.2 in full.
 - The lane lands at most one change for each request, so migrating units can merge often.
 
@@ -3161,11 +3199,18 @@ The scratchpad ends with the session. Copy the reports into `misc/` before the s
 
 ## Appendix E. The header map
 
-This appendix gives each header of `include/foundation` and `include/fixy` a verdict, a family and a slice of section 13.1. The census reads main at d36be7daf on 2026-11-12. The two directories hold 264 headers and 76,285 lines. The language files (`include/foundation/core/*.h` and `include/fixy/Core.h`) hold 2,382 of these lines.
+**Decision.** The owner decided each question of this appendix on 2026-11-12, and E.1 gives each decision with its reason.
 
-### E.1 The open question for the owner
+This appendix gives each header of `include/foundation` and `include/fixy` a verdict, a family and a slice of section 13.1. The census reads main at d36be7daf on 2026-11-12. The two directories hold 264 headers and 76,285 lines. The language files (`include/foundation/core/*.h` and `include/fixy/Core.h`) hold 2,382 of these lines. `fixy/os/CipherDurable.h` (257 lines) leaves the base by the decision of E.1, so the map holds 263 headers and 76,028 lines.
 
-The older half of fixy is the graded wrappers, the collision catalog, the sessions and the permissions. Do we rebuild it on the core families, or do we keep it? No delete row becomes work before the owner answers, and each delete row is a proposal.
+### E.1 The decisions of the owner (2026-11-12)
+
+**The older half of fixy: keep its design.** The older half is the graded wrappers, the collision catalog, the sessions and the permissions. Stage 4 rebuilds only the 33 headers of the four groups that hold a std type at run time. Each of the 33 is already a rebuild row of E.3. The remainder slices change the std names of the 97 keep headers to the compile-time forms of Region and Record. The row-hash golden moves only where a reflected name of a type changes (section 13.3). These are the reasons:
+1. The core families are value types: a choice, a region, an owner, an atomic cell, a scalar, a report and a door. The older half is the type-level layer, which no family replaces: a grade, an effect row, a protocol and a permission tree. No family gives a lattice, a projection or a split manifest.
+2. Two goldens pin the behavior of the older half. `test/session_oracle/golden.csv` pins the answers of published mechanized proofs of the session relations, and `utils/tools/row_hash_golden.txt` pins the row hash of each carrier.
+3. The linear design of `misc/12_10_2026_linear.md` moves the brands into the core, one slice at a time, in its phases B to D. So a rebuild of the whole group is not necessary.
+
+The collision catalog reaches production through one binding, in `vessel/torch/record_kernel.h`. It is a part of the older half, so it keeps its design too, and the map gives it remainder work only.
 
 | Group | Headers | Lines | Keep rows: headers, lines, std findings | Rebuild rows: headers, lines, std findings |
 |---|---|---|---|---|
@@ -3181,28 +3226,21 @@ A std finding is a finding of a base kind or of a kind `replace-pending:` of the
 - The sessions: `fixy/session/`
 - The permissions: `foundation/permissions/`, `fixy/channels/`, and PermissionFork, PermissionedSpscChannel and PermissionedMpscChannel of `fixy/concurrent/`.
 
-The two answers have these costs:
-- **Keep.** The older half keeps its design. Stage 4 rebuilds the 33 headers that hold a std type at run time. The remainder slices change the std names of the 97 keep headers to the compile-time forms of Region and Record. The row-hash golden moves only where a reflected name of a type changes (section 13.3).
-- **Rebuild.** Each of the 130 headers gets a new implementation on the families. Examples are the graded carriers on Record, the protocols on the type lists of Record, and the permission brands on the brands of the Ref family. The work touches 45,915 lines and each caller. 165 production files reach `fixy/Refined.h` through their includes, and 30 production files reach `foundation/permissions/Permission.h`. The row-hash golden, the session-oracle golden and the fixtures of the four groups change.
+97 of the 130 headers hold no std type at run time. Their std use is reflection results, the texts of a refusal, type lists, tags and std functions that a slice changes one for one.
 
-The recommendation is to keep the older half, with the rebuild rows of E.3. These are the reasons:
-1. The families are the value vocabulary of the base: a choice, a region, an owner, an atomic cell, a scalar, a report and a door. The older half is the type vocabulary: a grade, an effect row, a protocol and a permission tree. No family gives a lattice, a projection or a split manifest.
-2. 97 of the 130 headers hold no std type at run time. Their std use is reflection results, the texts of a refusal, type lists, tags and std functions that a slice changes one for one. A remainder slice changes these names, and the design does not change.
-3. The 33 headers that hold a std type at run time are rebuild rows in the two answers, because the goal of Stage 4 applies to each base header.
-4. Two goldens pin the behavior of the older half. `test/session_oracle/golden.csv` pins the answers of published mechanized proofs of the session relations, and `utils/tools/row_hash_golden.txt` pins the row hash of each carrier. A new implementation must give the same answers again.
-5. The brand and borrow design of `misc/12_10_2026_linear.md` moves the brands into the core in its phases B to D. That design changes the permissions one slice at a time, where a family gives a better form. A rebuild of the whole group is then not necessary.
-
-Three smaller questions:
-- The collision catalog reaches production through one binding, in `vessel/torch/record_kernel.h`. The recommendation is to keep it. The map gives it remainder work only.
-- `SetOnce` of `fixy/handle/Once.h` has the members of `WriteOnceNonNull` of `fixy/Mutation.h`. The proposal is to merge the two in slice 4.4.
-- `fixy/os/CipherDurable.h` holds the durable writers of the Cipher, but no production file includes it, because `include/crucible/Cipher.h` writes through `fixy/os/Fs.h`. Does the base keep it, or does it move to `include/crucible/cipher/` when the Cipher uses it?
+**The other decisions of 2026-11-12.**
+- **`foundation/reflect/RawEscape.h`: delete it, after a change of the plugin.** The rule `escape-doors` of the quarantine plugin reads each public function of a base header. The header also refuses two cases that the rule does not refuse. They are a public data member, and a member that a public base or a using-declaration gives. Slice 4.11 gives the rule these two cases, each with a plant. Then it deletes the header and its six fixtures, because the rule is then the one holder of the check.
+- **`SetOnce` of `fixy/handle/Once.h`: merge it into `WriteOnceNonNull` of `fixy/Mutation.h`, before Stage 4.** The two classes have the same members, and law 1 of section 11.1 permits one name for one meaning. `Once.h` keeps `Once` and `Lazy`, and it stays a rebuild row of slice 4.4.
+- **`fixy/os/CipherDurable.h`: move it out of the base to `include/crucible/cipher/`, before Stage 4.** No base file and no production file includes it, because `include/crucible/Cipher.h` writes through `fixy/os/Fs.h`. Only tests and fixtures include it. The map holds no row for it.
+- **`fixy/OwnedRegion.h`: it stays, and it is not merged.** Section 4 of the linear design keeps it in X1 as the CSL view of a region: the region capability and a `Permission`. Its `span()` and `cspan()` give a `std::span`, and its split gives a `std::tuple`, at run time. Thus, E.2 makes it a rebuild row of slices 4.3 and 4.7.
+- **`fixy/ScopedView.h`: it stays, and it is not merged.** A `ScopedView` proves a state of its carrier, and a `Ref` cannot hold that proof. Its std use is in a reflection walk only, so E.2 makes it a keep row.
 
 ### E.2 The verdicts
 
 - **Keep.** The header keeps its role, its public API and its data. Its std use is in a constant evaluation only: a reflection result, a name text, a type list or a constant table. A std function that a slice changes one for one is a keep use too, such as `std::exchange`, `std::bit_cast` or `std::popcount`. An empty tag type, such as `std::in_place_t`, is a keep use too. The slice of a keep row changes only these names. A dash in the slice column tells that the header has no std finding.
 - **Rebuild.** The header keeps its role, but a std type or a C library call is in a public signature, in a stored member or in code that runs at run time. A header whose API a slice text or a merge row changes is a rebuild row too, such as `fixy/CyclicBuffer.h` and `fixy/session/Witnessed.h`. The slice gives the header a new implementation on the family, and each caller changes with it.
 - **Merge.** A family type or a different header gives the same thing. The slice moves each caller to the target and removes the header. The core does not hold the target of a merge row at this time. Each target is a planned part of a Stage 3 group.
-- **Delete (proposal).** A second holder gives the same thing. Nothing happens before the owner approves the row, and slice 4.11 has no wave until then (section 13.2).
+- **Delete.** A second holder gives the same thing. Slice 4.11 deletes the header after the second holder covers each case of the header. The owner approved each delete row on 2026-11-12 (E.1).
 
 The family column names the families of section 11. The findings of each header and the rows `until FAMILY` of `utils/rule-table.txt` give them. Os names a door of the Os family.
 
@@ -3251,7 +3289,7 @@ A group row names its directory, its members and the count of its members.
 | `foundation/reflect/Anchor.h` | Keep | – | – | No std finding |
 | `foundation/reflect/`: EnumPins, Hash, Instance, Signature, TypeComponents (5) | Keep | Region, Record | 4.8 | The std use is the text and the reflection results of a constant evaluation |
 | `foundation/reflect/`: EnumName, Enumerate (2) | Rebuild | Region | 4.3 | The name of an enumerator and `bits_to_string` give `std::string_view` at run time |
-| `foundation/reflect/RawEscape.h` | Delete (proposal) | – | 4.11 | The rule `escape-doors` of the quarantine plugin overlaps it: the rule reads each public function of a base header. This header also refuses a public data member, and a member that a public base or a using-declaration gives. First give the rule these two cases with plants, then delete the header and its six fixtures |
+| `foundation/reflect/RawEscape.h` | Delete | – | 4.11 | The rule `escape-doors` of the quarantine plugin overlaps it: the rule reads each public function of a base header. This header also refuses a public data member, and a member that a public base or a using-declaration gives. First give the rule these two cases with plants, then delete the header and its six fixtures (E.1) |
 | `fixy/`: Aliases, Ctx, Tags, Tagged, Throws (5) | Keep | – | – | No std finding. The library records of `Tagged.h` come from a payload of a caller |
 | `fixy/`: Qtt, Secret, Stale, Machine (4) | Keep | Choice | 4.9 | The std use is the tag `std::in_place`, and in `Secret.h` the constant table of the policies |
 | `fixy/`: Bands, GradedFacade, CanonicalOrder (3) | Keep | Region, Record | 4.9 | The std use is the name text, the type lists and the reflection results of a constant evaluation |
@@ -3262,7 +3300,9 @@ A group row names its directory, its members and the count of its members.
 | `fixy/Predicates.h` | Keep | Region, Ref | 4.9 | A constant evaluation reads the implication relation. The one std use at run time is a `std::bit_cast` of a pointer, which goes to the address of the Ref family |
 | `fixy/SelfContained.h` | Rebuild | Region, Choice, Record, Scalar | 4.9 | The gate runs in a constant evaluation, but `equal_by_members` reads `std::optional`, `std::variant` and a range through `std::ranges` and `std::bit_cast` at run time |
 | `fixy/Bits.h` | Keep | Scalar, Region | 4.10 | `std::popcount` and the name text |
-| `fixy/`: Borrowed, ScopedView, OwnedRegion, SharedRegion (4) | Merge | Region and Ref (G3, G4, planned) | 4.3 | A borrow with an owner tag and a brand is a `View` or a `Ref` of the core, with brands |
+| `fixy/`: Borrowed, SharedRegion (2) | Merge | Region and Ref (G3, G4, planned) | 4.3 | A borrow of one object is a `Ref<T, Brand>`, and a borrow of a run is a `View`. A `View` has no brand, so the brands go to `Ref<T, Brand>`, `BrandedIndex<Brand>` and the region capability (section 11.4) |
+| `fixy/OwnedRegion.h` | Rebuild | Region, Record | 4.3, 4.7 | The CSL view of a region stays (E.1). `span()` and `cspan()` give a `std::span`, and the split gives a `std::tuple` at run time. The arena door takes a type that is not implicit-lifetime (section 10.3) |
+| `fixy/ScopedView.h` | Keep | Region | 4.9 | The proof of a state of a carrier stays (E.1). The std use is the reflection walk of a constant evaluation |
 | `fixy/FixedArray.h` | Merge | Region (G4, planned) | 4.3 | The core gives the fixed array |
 | `fixy/ConstantTime.h` | Rebuild | Region | 4.3 | The primitives take `std::span` at run time |
 | `fixy/SipHash.h` | Rebuild | Region, Scalar | 4.3 | The key and the message are `std::array` and `std::span` at run time, and a round calls `std::rotl` |
@@ -3287,13 +3327,13 @@ A group row names its directory, its members and the count of its members.
 | `fixy/concurrent/`: Spawn, Stage (2) | Rebuild | Record, Region, Choice | 4.7 | The fork and the stage hold a `std::tuple` or a `std::array` at run time |
 | `fixy/fp/Canonicalize.h` | Keep | Scalar | 4.10 | `std::bit_cast` and `std::isnan` |
 | `fixy/fp/Polynomial.h` | Rebuild | Scalar, Region | 4.10 | The coefficients are a `std::array` at run time, and the evaluation calls `std::fma` and `std::bit_cast` |
-| `fixy/handle/Once.h` | Rebuild | Atomic | 4.4 | The gate holds a `std::atomic`. `SetOnce` has the members of `WriteOnceNonNull` of `fixy/Mutation.h`. A proposal: merge the two in this slice |
+| `fixy/handle/Once.h` | Rebuild | Atomic | 4.4 | The gate of `Once` holds a `std::atomic`. `SetOnce` merges into `WriteOnceNonNull` of `fixy/Mutation.h` before Stage 4 (E.1) |
 | `fixy/handle/`: OneShotFlag, PublishCommit, PublishOnce (3) | Rebuild | Atomic, Report | 4.4 | A `std::atomic` at run time. `PublishOnce.h` also reports a second publish with `fprintf` and `abort` |
 | `fixy/os/`: ClockSource, ExitHooks, Futex, MonotonicClock, NumaCounters, SchedClass, Signal, ThreadTasks (8) | Keep | Os | – | The doors and the tags of fixy/os. No std finding |
 | `fixy/os/AtomPack.h` | Keep | Region | 4.9 | The folds of an atom pack run in a constant evaluation |
 | `fixy/os/Fd.h` | Keep | Ref | 4.9 | `std::exchange` in the moves of the handle |
 | `fixy/os/ThreadName.h` | Rebuild | Region | 4.9 | The name is a `std::array` of characters at run time |
-| `fixy/os/`: CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time, CipherDurable (10) | Rebuild | Os, Choice | 4.1 | The door gives `std::expected` with `std::error_code`, or with a plain `int` in `CpuPinned.h` and `Sched.h`. `Fs.h`, `Io.h`, `Mmap.h`, `OwnedMmap.h`, `Time.h` and `CipherDurable.h` also hold a system type in a public signature |
+| `fixy/os/`: CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time (9) | Rebuild | Os, Choice | 4.1 | The door gives `std::expected` with `std::error_code`, or with a plain `int` in `CpuPinned.h` and `Sched.h`. `Fs.h`, `Io.h`, `Mmap.h`, `OwnedMmap.h` and `Time.h` also hold a system type in a public signature. `CipherDurable.h` leaves the base (E.1) |
 | `fixy/os/OwnedFile.h` | Merge | Os (G6, planned) | 4.1 | The Os family replaces the stdio stream, and `std::FILE` leaves the public signatures |
 | `fixy/os/Path.h` | Rebuild | Os, Region | 4.6 | A `Tagged` over `std::filesystem::path` |
 | `fixy/os/SpinLock.h` | Rebuild | Atomic, Os | 4.4 | The bare lock holds `std::atomic_flag`, and the guard takes `std::try_to_lock_t` |
@@ -3316,8 +3356,8 @@ A group row names its directory, its members and the count of its members.
 
 | Verdict | Rows | Headers | Lines |
 |---|---|---|---|
-| Keep | 43 | 179 | 45,414 |
-| Rebuild | 47 | 72 | 27,663 |
-| Merge | 6 | 12 | 2,982 |
-| Delete (proposal) | 1 | 1 | 226 |
-| Total | 97 | 264 | 76,285 |
+| Keep | 44 | 180 | 45,831 |
+| Rebuild | 48 | 72 | 27,939 |
+| Merge | 6 | 10 | 2,032 |
+| Delete | 1 | 1 | 226 |
+| Total | 99 | 263 | 76,028 |

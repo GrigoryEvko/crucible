@@ -3107,11 +3107,11 @@ The reason text starts with its class. A region includes only the smallest span 
 
 When a quarantined line must use a primitive that the base does not have, the base gets the primitive. One owner changes `include/foundation/core/` and `include/fixy/Core.h`. Send that owner the operation and its call site.
 
-The owner adds the primitive to `include/foundation/core/`, and `include/fixy/Core.h` gives its name in namespace `fixy` through a using-declaration. The primitive is part of one of the eight families of plan §11: Choice, Record, Region, Ref, Atomic, Scalar, Report and Os. Do not write a std type, a std function, a raw pointer or a C array in its place.
+The owner adds the primitive to `include/foundation/core/`, and `include/fixy/Core.h` gives its name in namespace `fixy` through a using-declaration. The primitive is part of one of the ten families of plan §11: Choice, Record, Region, Ref, Atomic, Scalar, Report, Os, Protocol and Check. Do not write a std type, a std function, a raw pointer or a C array in its place.
 
 ### The design bar of the base
 
-The base (`foundation` and `fixy`) is a language in C++. All the code of Crucible will use this language, and no other language. Each family gets its full design, and not only the operations that the tree calls at this time. This decision of the owner (2026-10-02) replaces the rule of the plan that a type gets only the operations that the tree calls (R9, plan §10.2 and §17).
+The base (`foundation` and `fixy`) is a language in C++. All the code of Crucible will use this language, and no other language. Each family gets its full design, and not only the operations that the tree calls at this time. This decision of the owner (2026-10-02) replaced an earlier rule of the plan, which gave a type only the operations that the tree called. R9 and plan §17 state the bar.
 
 Each type of the base has these properties:
 - **One interface.** The families use the shared verbs of plan §11.1. One meaning has the same name in each family, and no two names have almost the same meaning.
@@ -3123,7 +3123,7 @@ Each type of the base has these properties:
 
 ### The families on main
 
-`include/foundation/core/` holds the first part of six families: Choice, Region, Ref, Atomic, Report and Scalar. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record and Os are planned. The other types of the six families are planned too. If the code and plan §11 do not agree, the code is correct:
+`include/foundation/core/` holds the first part of six families: Choice, Region, Ref, Atomic, Report and Scalar. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record, Os, Protocol and Check are planned. The other types of the six families are planned too. If the code and plan §11 do not agree, the code is correct:
 - `Option` has no `consume()`. Its fatal unwrap is `expect(reason)`. A loop of zero or one turns, `match()` and `value_or()` are the other operations that read the payload.
 - `cas_acq_rel(expected, desired)` of `Atomic` gives a `Result<Unit, CasRefusal<T>>`. The error holds the value that the cell held.
 - `Atomic<T>` accepts only a value that is trivially copyable, has one bit pattern for each value, and has lock-free atomic operations. `Atomic` rejects a type with padding and a floating-point type.
