@@ -152,11 +152,6 @@ inline constexpr ::foundation::fail_closed::edge<Idle, Busy> idle_to_busy{};
 }  // namespace idle_edges
 using IdleMachine = ::fixy::Machine<Idle, ^^idle_edges>;
 
-// The channel-indexed classification of the corpus, named once.
-using Channel = ::fixy::corpus::DischargeAxis;
-template <Channel C, class Grade>
-using classified_on = ::fixy::corpus::detail::is_classified_on_<C, Grade>;
-
 }  // namespace armed_roster_witness
 
 // The split that the spawn fit reads, declared beside its tags.
@@ -603,21 +598,6 @@ struct foundation::contracts::armed_cell<::fixy::is_already_consume_disciplined>
     using refuses = witnesses<int, void*, std::unique_ptr<int>>;
 };
 
-// A carrier is classified on every channel.  A declassification is
-// classified on each channel its policy does not name.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::is_classified_on_> {
-    using accepts =
-        witnesses<w::classified_on<w::Channel::IO, at::as_secret>, w::classified_on<w::Channel::Bg, at::constant_time>,
-                  w::classified_on<w::Channel::Bg, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-                  w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
-    using refuses = witnesses<
-        w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-        w::classified_on<w::Channel::Staleness, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
-        w::classified_on<w::Channel::IO, at::as_public>, w::classified_on<w::Channel::Bg, at::as_internal>,
-        w::classified_on<w::Channel::IO, int>>;
-};
-
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_internal_> {
     using accepts = witnesses<at::as_internal>;
@@ -644,20 +624,6 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_row_observable_> {
     using accepts = witnesses<Row<Effect::IO>, Row<Effect::Alloc>, Row<Effect::Init, Effect::Block>, at::with_io>;
     using refuses = witnesses<Row<Effect::Init>, Row<Effect::Test>, Row<>, at::with_init, at::with<>>;
-};
-
-// Only AuthorizedReplay discharges an axis, and it discharges staleness
-// alone.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::can_discharge_> {
-    using accepts = witnesses<::fixy::corpus::detail::can_discharge_<
-        ::fixy::corpus::DischargeAxis::Staleness, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
-    using refuses =
-        witnesses<::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::IO,
-                                                         at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
-                  ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness,
-                                                         at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-                  ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness, int>>;
 };
 
 template <>

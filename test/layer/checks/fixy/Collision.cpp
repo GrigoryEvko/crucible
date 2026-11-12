@@ -209,6 +209,13 @@ static_assert(!live_rules<CT, at::coroutine, Session>::E044_ok);
 static_assert(live_rules<at::as_public, at::coroutine, Session>::valid);
 static_assert(live_rules<at::as_internal, at::coroutine, Session>::valid, "internal is below the carrier");
 static_assert(live_rules<at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::coroutine, Session>::valid);
+static_assert(live_rules<at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::coroutine, Session>::valid,
+              "each policy whose mask names IO licenses the send");
+static_assert(!live_rules<at::declassify<::fixy::tags::secret_policy::HashForCompare>, at::coroutine, Session>::I004_ok,
+              "a policy that names no channel leaves the send classified");
+static_assert(
+    !live_rules<at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>, at::coroutine, Session>::I004_ok,
+    "the replay policy licenses no export");
 static_assert(live_rules<at::coroutine, at::protocol<::fixy::pole::proto::None>>::valid, "no session");
 static_assert(live_rules<Session>::valid, "a synchronous session sends at no time the scheduler chooses");
 
@@ -229,6 +236,14 @@ static_assert(rules_of<std::expected<int, plain_error>, at::as_internal>::valid)
 static_assert(rules_of<::fixy::Secret<std::expected<int, plain_error>>>::valid,
               "the error inside a Secret is secret, and the discriminant with it");
 static_assert(live_rules<at::ctrl::throws<SecretError>>::valid);
+static_assert(
+    !rules_of<int, at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::ctrl::throws<plain_error>>::I002_ok,
+    "no policy licenses the failure channel");
+static_assert(!rules_of<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<>>::I002_ok,
+              "no policy licenses a thrown failure");
+static_assert(
+    rules_of<int, at::declassify<::fixy::tags::secret_policy::AuditedLogging>, at::ctrl::throws<SecretError>>::valid,
+    "a Secret error stays classified on the failure channel");
 
 static_assert(!rules_of<std::expected<int, SecretError>, CT>::I003_ok);
 static_assert(rules_of<std::expected<int, SecretError>, CT>::I002_ok, "a Secret error isolates I003");

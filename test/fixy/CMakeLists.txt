@@ -669,6 +669,18 @@ fixy_neg_compile_test(neg_rule_i002_thrown_unseen_family
   "Collision rule\\(s\\) I002:"
   "${_fixy_tier5_member}")
 
+# A declassification discharges I002 and I004 only on a channel that the
+# mask of its policy names.  No policy names the failure channel, and a
+# policy that names no channel leaves the send of a session classified.
+fixy_neg_compile_test(neg_rule_i002_declassified_plain_error
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i004_declassify_without_send_license
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I004:"
+  "${_fixy_tier5_member}")
+
 # R004: a suspension, a live session handle and a frame that is not
 # linear.  One fixture states the handle with the session atom and
 # suspends on ControlFlow.  The other has a session handle as its payload

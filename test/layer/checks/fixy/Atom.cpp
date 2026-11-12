@@ -131,7 +131,43 @@ static_assert(IsClassifiedCarrier<constant_time> && IsConstantTime<constant_time
 static_assert(IsClassifiedCarrier<as_classified> && !IsConstantTime<as_classified>);
 static_assert(!IsClassifiedCarrier<as_internal> && !IsClassifiedCarrier<as_public>);
 static_assert(!IsClassifiedCarrier<declassify<::fixy::tags::secret_policy::AuditedLogging>>,
-              "a declassified grade is not a carrier. fixy/Corpus.h reads its policy for each channel");
+              "a declassified grade is not a carrier. IsClassifiedOn reads its policy for each channel");
+
+// The mask of each policy.  A policy that licenses a channel is a decision
+// that a reviewer must see, so each mask has a pin.
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuthorizedReplay) == DischargeAxis::Staleness,
+              "AuthorizedReplay must discharge Staleness and nothing else.  It is the only policy that licenses "
+              "the replay window, so a change here removes the sole discharge path for the staleness reject.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuditedLogging) == DischargeAxis::IO,
+              "AuditedLogging licenses the log line it writes, which goes out through IO, and nothing else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::WireSerialize) == DischargeAxis::IO,
+              "WireSerialize licenses the serialized frame on the wire, which goes out through IO, and nothing "
+              "else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::UserDisplay) == DischargeAxis::IO,
+              "UserDisplay licenses the rendered display, which goes out through IO, and nothing else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::HashForCompare) == DischargeAxis::None,
+              "HashForCompare releases a hash of the value and names no channel.  A binding that sends the hash "
+              "out needs an export policy.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::LengthOnly) == DischargeAxis::None,
+              "LengthOnly releases only size metadata and names no channel.  Size is an information channel, but "
+              "no axis in DischargeAxis names it.");
+static_assert(discharge_mask_of(^^int) == DischargeAxis::None, "a type that is not a policy licenses nothing");
+
+// A carrier is classified on each channel.  A declassification is
+// classified on each channel that its policy does not name, and no policy
+// names Bg or Failure.  A type that is not a Security grade is classified
+// on no channel.
+static_assert(IsClassifiedOn<as_secret, DischargeAxis::IO> && IsClassifiedOn<constant_time, DischargeAxis::Bg>);
+static_assert(IsClassifiedOn<typename axis_traits<Axis::Security>::strict, DischargeAxis::Failure>);
+static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::WireSerialize>, DischargeAxis::Bg>);
+static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::AuthorizedReplay>, DischargeAxis::IO>);
+static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::AuditedLogging>, DischargeAxis::Failure>,
+              "no policy licenses the failure channel");
+static_assert(IsClassifiedOn<declassify<::fixy::tags::secret_policy::HashForCompare>, DischargeAxis::IO>);
+static_assert(!IsClassifiedOn<declassify<::fixy::tags::secret_policy::WireSerialize>, DischargeAxis::IO>);
+static_assert(!IsClassifiedOn<declassify<::fixy::tags::secret_policy::AuthorizedReplay>, DischargeAxis::Staleness>);
+static_assert(!IsClassifiedOn<as_public, DischargeAxis::IO> && !IsClassifiedOn<as_internal, DischargeAxis::Bg>);
+static_assert(!IsClassifiedOn<int, DischargeAxis::IO>, "a type that is not a Security grade makes no claim");
 static_assert(!IsClassifiedCarrier<int> && !IsConstantTime<int>, "a type that is not a grade makes no claim");
 static_assert(!IsSecurityGrade<int>, "a type that is not a Security grade has no class");
 static_assert(!IsSecurityGrade<affine>, "an atom on another axis has no Security class");

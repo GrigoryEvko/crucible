@@ -1245,7 +1245,16 @@ struct rules_of {
     static constexpr ::fixy::atom::SecurityClass security_class =
         detail::security_class_or_refuse_<typename G::template on<Axis::Security>>();
     static constexpr bool constant_time = security_class == ::fixy::atom::SecurityClass::ConstantTime;
-    static constexpr bool classified = constant_time || security_class == ::fixy::atom::SecurityClass::Classified;
+
+    // A declassification discharges a rule only on a channel that the mask
+    // of its policy names, in fixy/Atom.h.  I004 reads the channel of a
+    // send, which is an export through IO.  I002 reads the failure, which
+    // no policy licenses, so a declassification leaves each failure
+    // classified.
+    static constexpr bool classified_on_send =
+        ::fixy::atom::IsClassifiedOn<typename G::template on<Axis::Security>, ::fixy::atom::DischargeAxis::IO>;
+    static constexpr bool classified_on_failure =
+        ::fixy::atom::IsClassifiedOn<typename G::template on<Axis::Security>, ::fixy::atom::DischargeAxis::Failure>;
 
     // The payload rule's side of the failure reads the payload, as the
     // replay claim does, so it stands down under the pack-only view.
@@ -1283,7 +1292,7 @@ struct rules_of {
     // classified async session is refused both ways: E044 when it claims
     // constant time, I004 when it does not.  That is the theorem.  The
     // one remedy is a synchronous constant-time region, or a
-    // declassification before the send.
+    // declassification before the send under a policy that licenses IO.
     static constexpr bool E044_ok = !(constant_time && concurrent);
 
     // A constant-time binding is classified, so every S010 trip is also a
@@ -1294,7 +1303,7 @@ struct rules_of {
 
     static constexpr bool session_protocol =
         detail::is_session_protocol_<typename G::template on<Axis::Protocol>>::value;
-    static constexpr bool I004_ok = !(classified && concurrent && session_protocol && !constant_time);
+    static constexpr bool I004_ok = !(classified_on_send && concurrent && session_protocol && !constant_time);
 
     // I003 needs no condition beyond the failure path.  A constant-time
     // body works on classified data by definition, and the caller of a
@@ -1303,7 +1312,7 @@ struct rules_of {
     // fixy::ct::eq traps on a length mismatch for this reason.
     static constexpr bool I003_ok = !(constant_time && fails);
 
-    static constexpr bool I002_ok = !(classified && fails_with_plain_error);
+    static constexpr bool I002_ok = !(classified_on_failure && fails_with_plain_error);
 
     // ── The session family ───────────────────────────────────────────
     //
@@ -1540,15 +1549,16 @@ struct rules_of {
         static_assert(I004_ok, "I004: classified x a suspension or a Bg row x a session protocol, without constant "
                                "time. The peer sees each send, and the time of each send follows the classified "
                                "data. Send from a synchronous binding that states atom::constant_time, or "
-                               "declassify before the send.");
+                               "declassify before the send under a policy whose mask licenses IO: AuditedLogging, "
+                               "WireSerialize or UserDisplay.");
         static_assert(I003_ok, "I003: constant time x a failure path. The caller branches on success or failure, "
                                "so the discriminant leaks the condition that chose it, and that condition reads "
                                "classified data. Select the result with fixy::ct::select and fail after a "
                                "declassification, or trap as fixy::ct::eq does.");
         static_assert(I002_ok, "I002: classified x a failure whose error type is not fixy::Secret. The error value "
-                               "leaves the classified binding and carries what the body knew when it failed. "
-                               "Wrap the error type in fixy::Secret, declassify with a named policy, or state "
-                               "atom::as_public.");
+                               "leaves the classified binding and carries what the body knew when it failed. No "
+                               "declassification policy licenses the failure channel. Wrap the error type in "
+                               "fixy::Secret, or state atom::as_public.");
         static_assert(R004_ok, "R004: a suspension x a live session handle x a frame that is not linear. The "
                                "suspension makes the frame a continuation that holds the handle. A continuation "
                                "that is dropped drops the protocol, and one that is resumed twice does one step two "

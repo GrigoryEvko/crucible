@@ -17,15 +17,11 @@
 //
 // What a declassification discharges
 // ----------------------------------
-// A policy licenses exactly the channels its mask names.  A binding that
-// names declassify<Policy> stays classified on every other channel, so a
-// policy written for one export does not open another.  AuthorizedReplay
-// licenses Staleness.  AuditedLogging, WireSerialize and UserDisplay
-// license IO, because each names an export: a log, a wire and a display.
-// HashForCompare and LengthOnly release a value derived from the secret
-// and name no channel.  No policy licenses Bg: a crossing into a
-// background context makes the scheduling depend on the value, and a
-// release of the value does not license that.
+// A policy licenses exactly the channels its mask names, and a binding
+// that names declassify<Policy> stays classified on each other channel.
+// fixy/Atom.h holds the mask of each policy, discharge_mask_of, beside the
+// Security atoms, so the collision rules read the same masks.  No policy
+// licenses Bg.
 //
 // Over grades, not over the pack
 // ------------------------------
@@ -64,52 +60,6 @@
 
 namespace fixy::corpus {
 
-// ---------------------------------------------------------------------
-// What a declassification discharges.
-//
-// A declassification policy authorizes exactly the axis it names.  The
-// information-erasure literature is explicit on this: a policy written
-// to authorize an export channel says nothing about temporal replay,
-// so it must not silence a replay reject.  Hence the per-axis mask
-// rather than a single "some declassify is present" test.
-
-enum class DischargeAxis : std::uint32_t {
-    None = 0u,
-    Staleness = 1u << 0,
-    IO = 1u << 1,
-    Bg = 1u << 2,
-};
-
-[[nodiscard]] constexpr DischargeAxis operator|(DischargeAxis a, DischargeAxis b) noexcept {
-    return DischargeAxis{std::to_underlying(a) | std::to_underlying(b)};
-}
-[[nodiscard]] constexpr DischargeAxis operator&(DischargeAxis a, DischargeAxis b) noexcept {
-    return DischargeAxis{std::to_underlying(a) & std::to_underlying(b)};
-}
-[[nodiscard]] constexpr bool discharge_axis_contains(DischargeAxis mask, DischargeAxis axis) noexcept {
-    return (std::to_underlying(mask) & std::to_underlying(axis)) != 0u;
-}
-
-// The mask of each policy, as one closed function.  A function that is
-// not a template has no specialization, so no other file can widen the
-// mask of a shipped policy.  A trait or a variable template would be
-// open: an explicit specialization in any translation unit changes the
-// answer that every later read in that unit sees.  A type that the
-// function does not name licenses nothing, so a policy added to
-// fixy/Tags.h licenses nothing until it is named here.
-//
-// AuthorizedReplay licenses the replay window.  The three exports each
-// name an output channel, and IO is the channel of each: a log line, a
-// serialized frame on a wire, and a rendered display.
-[[nodiscard]] consteval DischargeAxis discharge_mask_of(std::meta::info policy) noexcept {
-    const std::meta::info named = std::meta::dealias(policy);
-    if (named == ^^::fixy::tags::secret_policy::AuthorizedReplay) return DischargeAxis::Staleness;
-    if (named == ^^::fixy::tags::secret_policy::AuditedLogging) return DischargeAxis::IO;
-    if (named == ^^::fixy::tags::secret_policy::WireSerialize) return DischargeAxis::IO;
-    if (named == ^^::fixy::tags::secret_policy::UserDisplay) return DischargeAxis::IO;
-    return DischargeAxis::None;
-}
-
 namespace detail {
 
 // A policy that licenses a channel is a decision a reviewer must see.
@@ -132,7 +82,7 @@ template <class Anchor = void>
             using Policy = [:member:];
             if constexpr (std::derived_from<Policy, ::fixy::tags::secret_policy::secret_policy_base>
                           && !std::is_same_v<Policy, ::fixy::tags::secret_policy::secret_policy_base>) {
-                if (discharge_mask_of(member) != DischargeAxis::None) ++count;
+                if (::fixy::atom::discharge_mask_of(member) != ::fixy::atom::DischargeAxis::None) ++count;
             }
         }
     }
@@ -159,37 +109,16 @@ using grade_on = typename ::fixy::collision::grades<Atoms...>::template on<A>;
 template <class... Atoms>
 using binding_row_on = ::fixy::atom::binding_row_of_t<grade_on<Axis::Effect, Atoms...>, Atoms...>;
 
-// Whether a declassification licenses one channel: the mask of its
-// policy names the channel.  A grade that is not a declassification
-// licenses nothing.
-template <DischargeAxis Channel, class G>
-struct can_discharge_ : std::false_type {};
-template <DischargeAxis Channel, class Policy>
-struct can_discharge_<Channel, ::fixy::atom::declassify<Policy>>
-    : std::bool_constant<discharge_axis_contains(discharge_mask_of(^^Policy), Channel)> {};
-
-// The two Security readings, each a reading of the one closed relation
-// fixy/Atom.h declares beside the Security atoms.  A type that is not a
-// Security grade makes no Security claim, so each answers false for it.
-// Every Security atom IS a Security grade, which fixy/Atom.h's roster
-// walk proves, so a new point on the axis cannot fall through to that
-// false answer and pass as public.
-
-// Whether the value is classified on one channel.  A classified carrier
-// is classified on every channel: the strict pole counts, because a
-// binding that says nothing about Security is classified, and
-// constant_time counts, because it states the classification too.  A
-// declassification is classified on each channel that its mask does not
-// name.  So an export policy leaves the value a secret where replay or a
-// background crossing is concerned, and the replay policy leaves it a
-// secret on the way out.
-template <DischargeAxis Channel, class G>
-struct is_classified_on_ : std::false_type {};
-template <DischargeAxis Channel, ::fixy::atom::IsSecurityGrade G>
-struct is_classified_on_<Channel, G>
-    : std::bool_constant<::fixy::atom::IsClassifiedCarrier<G>
-                         || (::fixy::atom::security_class_of(^^G) == ::fixy::atom::SecurityClass::Declassified
-                             && !can_discharge_<Channel, G>::value)> {};
+// The Security readings, each a reading of the one closed relation that
+// fixy/Atom.h declares beside the Security atoms.  Whether the value is
+// classified on one channel is ::fixy::atom::IsClassifiedOn: a carrier is
+// classified on each channel, and a declassification on each channel that
+// the mask of its policy does not name.  So an export policy leaves the
+// value a secret where replay or a background crossing is concerned, and
+// the replay policy leaves it a secret on the way out.  Every Security
+// atom IS a Security grade, which fixy/Atom.h's roster walk proves, so a
+// new point on the axis cannot fall through to a false answer and pass as
+// public.
 
 // The Internal tier sits below the strict pole, so a binding reaches it
 // only by writing as_internal.  It carries no declassification, so no
@@ -272,7 +201,7 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
-        const bool classified_on_io = detail::is_classified_on_<DischargeAxis::IO, Security>::value;
+        const bool classified_on_io = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::IO>;
         const bool has_io = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::IO);
         return classified_on_io && has_io;
     }
@@ -305,7 +234,7 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
-        const bool classified_on_bg = detail::is_classified_on_<DischargeAxis::Bg, Security>::value;
+        const bool classified_on_bg = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Bg>;
         const bool has_bg = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::Bg);
         return classified_on_bg && has_bg;
     }
@@ -337,7 +266,8 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Staleness = detail::grade_on<Axis::Staleness, Atoms...>;
-        const bool classified_on_replay = detail::is_classified_on_<DischargeAxis::Staleness, Security>::value;
+        const bool classified_on_replay =
+            ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Staleness>;
         const bool has_stale = detail::is_stale_<Staleness>::value;
         return classified_on_replay && has_stale;
     }

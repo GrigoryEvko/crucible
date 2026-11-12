@@ -430,12 +430,15 @@ template <IsEffectGrade Grade, class... Atoms>
 using binding_row_of_t = ::foundation::effects::row_union_t<effect_row_of_t<Grade>, lifted_row_of_t<Atoms...>>;
 
 // `declassify<Policy>` names the policy that licenses a drop to the public
-// level.  A policy licenses exactly the channels that its mask in
-// fixy/Corpus.h names.  On each other channel the binding stays classified.
+// level.  A policy licenses exactly the channels that its mask names, in
+// discharge_mask_of below.  On each other channel the binding stays
+// classified.
 
 template <typename Policy>
     requires IsDeclassificationPolicy<Policy>
-struct declassify final : atom_of<Axis::Security> {};
+struct declassify final : atom_of<Axis::Security> {
+    using policy = Policy;
+};
 
 // One atom per point of the security lattice, ordered unclassified, public,
 // internal, classified, secret.  `as_public` differs from `declassify<P>` in
@@ -551,9 +554,9 @@ concept IsSecurityGrade = detail::security_class_answer_of_(^^Grade).is_grade;
 
 // The two readings every rule shares.  A carrier holds classified data,
 // with or without the timing claim.  A declassified grade is not a
-// carrier.  fixy/Corpus.h reads its policy for each channel, because a
-// policy licenses only the channels of its mask.  A type that is not a
-// Security grade satisfies neither.
+// carrier.  IsClassifiedOn below reads its policy for each channel,
+// because a policy licenses only the channels of its mask.  A type that is
+// not a Security grade satisfies neither.
 template <class Grade>
 concept IsClassifiedCarrier = IsSecurityGrade<Grade>
                            && (security_class_of(^^Grade) == SecurityClass::Classified
@@ -561,6 +564,70 @@ concept IsClassifiedCarrier = IsSecurityGrade<Grade>
 
 template <class Grade>
 concept IsConstantTime = IsSecurityGrade<Grade> && security_class_of(^^Grade) == SecurityClass::ConstantTime;
+
+// ---------------------------------------------------------------------
+// The channels that a declassification licenses, as one closed relation.
+//
+// A policy licenses exactly the channels that its mask names.  A binding
+// that names declassify<Policy> stays classified on each other channel, so
+// a policy written for one export does not open another.  The
+// information-erasure literature is explicit on this: a policy written to
+// license an export says nothing about temporal replay, so it must not
+// silence a replay reject.
+//
+// AuthorizedReplay licenses Staleness.  AuditedLogging, WireSerialize and
+// UserDisplay license IO, because each names an export: a log, a wire and a
+// display.  HashForCompare and LengthOnly release a value derived from the
+// secret and name no channel.  No policy licenses Bg: a crossing into a
+// background context makes the scheduling depend on the value, and a
+// release of the value does not license that.  No policy licenses Failure:
+// the error and the discriminant of a failure carry what the body knew
+// when it failed, and a release of a value does not license that either.
+enum class DischargeAxis : std::uint32_t {
+    None = 0u,
+    Staleness = 1u << 0,  // the stale-replay window of the Staleness axis
+    IO = 1u << 1,  // an export through IO: a log line, a frame on a wire, a display
+    Bg = 1u << 2,  // a crossing into a background context
+    Failure = 1u << 3,  // the error and the discriminant that a failing body gives its caller
+};
+
+[[nodiscard]] constexpr DischargeAxis operator|(DischargeAxis lhs, DischargeAxis rhs) noexcept {
+    return DischargeAxis{std::to_underlying(lhs) | std::to_underlying(rhs)};
+}
+[[nodiscard]] constexpr DischargeAxis operator&(DischargeAxis lhs, DischargeAxis rhs) noexcept {
+    return DischargeAxis{std::to_underlying(lhs) & std::to_underlying(rhs)};
+}
+[[nodiscard]] constexpr bool discharge_axis_contains(DischargeAxis mask, DischargeAxis channel) noexcept {
+    return (std::to_underlying(mask) & std::to_underlying(channel)) != 0u;
+}
+
+// The mask of each policy.  The function is not a template, so no other
+// file can widen the mask of a shipped policy.  A trait or a variable
+// template would be open: an explicit specialization in any translation
+// unit changes the answer that each later read in that unit sees.  A type
+// that the function does not name licenses nothing, so a policy added to
+// fixy/Tags.h licenses nothing until it is named here.
+[[nodiscard]] consteval DischargeAxis discharge_mask_of(std::meta::info policy) noexcept {
+    const std::meta::info named = std::meta::dealias(policy);
+    if (named == ^^::fixy::tags::secret_policy::AuthorizedReplay) return DischargeAxis::Staleness;
+    if (named == ^^::fixy::tags::secret_policy::AuditedLogging) return DischargeAxis::IO;
+    if (named == ^^::fixy::tags::secret_policy::WireSerialize) return DischargeAxis::IO;
+    if (named == ^^::fixy::tags::secret_policy::UserDisplay) return DischargeAxis::IO;
+    return DischargeAxis::None;
+}
+
+// Whether the value is classified on one channel.  A classified carrier is
+// classified on each channel: the strict pole counts, because a binding
+// that says nothing about Security is classified, and constant_time counts,
+// because it states the classification too.  A declassification is
+// classified on each channel that the mask of its policy does not name.  A
+// type that is not a Security grade is classified on no channel.  The
+// relation of the Security grades decides that a grade is a
+// declassification before the concept reads its policy.
+template <class Grade, DischargeAxis Channel>
+concept IsClassifiedOn = IsClassifiedCarrier<Grade>
+                      || (IsSecurityGrade<Grade> && security_class_of(^^Grade) == SecurityClass::Declassified
+                          && !discharge_axis_contains(discharge_mask_of(^^typename Grade::policy), Channel));
 
 template <typename Proto>
     requires IsSessionProtocol<Proto>

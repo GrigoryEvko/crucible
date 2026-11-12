@@ -4,24 +4,6 @@
 
 namespace fixy::corpus {
 
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuthorizedReplay) == DischargeAxis::Staleness,
-              "AuthorizedReplay must discharge Staleness and nothing else.  It is the only policy that licenses "
-              "the replay window, so a change here removes the sole discharge path for the staleness reject.");
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuditedLogging) == DischargeAxis::IO,
-              "AuditedLogging licenses the log line it writes, which goes out through IO, and nothing else.");
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::WireSerialize) == DischargeAxis::IO,
-              "WireSerialize licenses the serialized frame on the wire, which goes out through IO, and nothing "
-              "else.");
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::UserDisplay) == DischargeAxis::IO,
-              "UserDisplay licenses the rendered display, which goes out through IO, and nothing else.");
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::HashForCompare) == DischargeAxis::None,
-              "HashForCompare releases a hash of the value and names no channel.  A binding that sends the hash "
-              "out needs an export policy.");
-static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::LengthOnly) == DischargeAxis::None,
-              "LengthOnly releases only size metadata and names no channel.  Size is an information channel, but "
-              "no axis in DischargeAxis names it.");
-static_assert(discharge_mask_of(^^int) == DischargeAxis::None, "a type that is not a policy licenses nothing");
-
 static_assert(detail::non_none_policy_count_() == 4,
               "Exactly four secret_policy tags license a channel: AuthorizedReplay for Staleness, and "
               "AuditedLogging, WireSerialize and UserDisplay for IO.  A policy that licenses a channel needs a "

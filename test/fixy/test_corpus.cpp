@@ -203,23 +203,23 @@ static_assert(!corpus::ghost_runtime_observable::matches<int, at::affine, at::as
 
 // ---------------------------------------------------------------------
 // The discharge masks are what the policies say: the replay policy names
-// Staleness, the three export policies name IO, and no policy names Bg.
+// Staleness, the three export policies name IO, and no policy names Bg or
+// Failure.
 
-static_assert(corpus::discharge_mask_of(^^policy::AuthorizedReplay) == corpus::DischargeAxis::Staleness);
-static_assert(corpus::discharge_mask_of(^^policy::AuditedLogging) == corpus::DischargeAxis::IO);
-static_assert(corpus::discharge_mask_of(^^policy::WireSerialize) == corpus::DischargeAxis::IO);
-static_assert(corpus::discharge_mask_of(^^policy::HashForCompare) == corpus::DischargeAxis::None);
-static_assert(corpus::discharge_mask_of(^^policy::LengthOnly) == corpus::DischargeAxis::None);
-static_assert(corpus::discharge_mask_of(^^policy::UserDisplay) == corpus::DischargeAxis::IO);
-static_assert(corpus::discharge_mask_of(^^int) == corpus::DischargeAxis::None, "a non-policy discharges nothing");
+static_assert(at::discharge_mask_of(^^policy::AuthorizedReplay) == at::DischargeAxis::Staleness);
+static_assert(at::discharge_mask_of(^^policy::AuditedLogging) == at::DischargeAxis::IO);
+static_assert(at::discharge_mask_of(^^policy::WireSerialize) == at::DischargeAxis::IO);
+static_assert(at::discharge_mask_of(^^policy::HashForCompare) == at::DischargeAxis::None);
+static_assert(at::discharge_mask_of(^^policy::LengthOnly) == at::DischargeAxis::None);
+static_assert(at::discharge_mask_of(^^policy::UserDisplay) == at::DischargeAxis::IO);
+static_assert(at::discharge_mask_of(^^int) == at::DischargeAxis::None, "a non-policy discharges nothing");
 
-static_assert(corpus::discharge_axis_contains(corpus::DischargeAxis::Staleness | corpus::DischargeAxis::IO,
-                                              corpus::DischargeAxis::IO));
-static_assert(corpus::discharge_axis_contains(corpus::DischargeAxis::Staleness | corpus::DischargeAxis::IO,
-                                              corpus::DischargeAxis::Staleness));
-static_assert(!corpus::discharge_axis_contains(corpus::DischargeAxis::Staleness, corpus::DischargeAxis::IO));
-static_assert(!corpus::discharge_axis_contains(corpus::DischargeAxis::None, corpus::DischargeAxis::Bg));
-static_assert((corpus::DischargeAxis::Staleness & corpus::DischargeAxis::IO) == corpus::DischargeAxis::None);
+static_assert(at::discharge_axis_contains(at::DischargeAxis::Staleness | at::DischargeAxis::IO, at::DischargeAxis::IO));
+static_assert(at::discharge_axis_contains(at::DischargeAxis::Staleness | at::DischargeAxis::IO,
+                                          at::DischargeAxis::Staleness));
+static_assert(!at::discharge_axis_contains(at::DischargeAxis::Staleness, at::DischargeAxis::IO));
+static_assert(!at::discharge_axis_contains(at::DischargeAxis::None, at::DischargeAxis::Bg));
+static_assert((at::DischargeAxis::Staleness & at::DischargeAxis::IO) == at::DischargeAxis::None);
 
 // ---------------------------------------------------------------------
 // The gate reaches the corpus, and reports the entry.
@@ -319,9 +319,9 @@ static_assert(every_entry_is_a_named_tag());
     if (matched != "classified_io_without_declassify") return 8;
     if (!corpus::corpus_entry_name_for_v<int>.empty()) return 9;
 
-    const auto mask = corpus::DischargeAxis::Staleness | corpus::DischargeAxis::Bg;
-    if (!corpus::discharge_axis_contains(mask, corpus::DischargeAxis::Bg)) return 10;
-    if (corpus::discharge_axis_contains(mask, corpus::DischargeAxis::IO)) return 11;
+    const auto mask = at::DischargeAxis::Staleness | at::DischargeAxis::Bg;
+    if (!at::discharge_axis_contains(mask, at::DischargeAxis::Bg)) return 10;
+    if (at::discharge_axis_contains(mask, at::DischargeAxis::IO)) return 11;
     return 0;
 }
 #pragma GCC diagnostic pop

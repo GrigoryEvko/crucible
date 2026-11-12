@@ -185,9 +185,10 @@ using UnverifiedInt = ::fixy::fn<int, ::fixy::atom::trust_unverified>;
 // establishment, asserted.
 template <class Grade>
 inline constexpr bool classified_on_every_channel =
-    ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::IO, Grade>::value
-    && ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::Bg, Grade>::value
-    && ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::Staleness, Grade>::value;
+    ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::IO>
+    && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Bg>
+    && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Staleness>
+    && ::fixy::atom::IsClassifiedOn<Grade, ::fixy::atom::DischargeAxis::Failure>;
 static_assert(classified_on_every_channel<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>);
 static_assert(classified_on_every_channel<::fixy::atom::as_classified>);
 static_assert(classified_on_every_channel<::fixy::atom::as_secret>);
