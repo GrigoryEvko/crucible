@@ -1185,7 +1185,7 @@ crucible_neg_compile_test(neg_quarantine_override_missing_permission
     "candidate expects 6 arguments, 5 provided")
 crucible_neg_compile_test(neg_quarantine_operator_authority_no_ctx
     "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid for permission_row<Tag> == Row<>"
-    "In instantiation of .constexpr foundation::permissions::Permission<Tag, Brand> foundation::permissions::mint_permission_root\\(const Args& \\.\\.\\.\\) .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{\\}")
+    "In instantiation of .constexpr foundation::permissions::Permission<Tag, typename foundation::brand::undeducible_brand<Brand>::type> foundation::permissions::mint_permission_root\\(const Args& \\.\\.\\.\\) .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{\\}")
 crucible_neg_compile_test(neg_quarantine_operator_authority_bg_ctx
     "no matching function for call to .mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>\\(const fixy::BgDrainCtx&\\)."
     "required for the satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{foundation::effects::ExecCtx<foundation::effects::Bg, ")

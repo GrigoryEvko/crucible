@@ -670,13 +670,17 @@ concept PermissionCombineNArgs = detail::MintArgs<1, 0, Args...>
 // The root mint is where a brand is born, so the fresh brand is its
 // last template parameter, after the argument pack.  A caller can name
 // the tag and nothing else: an explicit third argument is absorbed by
-// the pack and fails deduction, which is what stops a caller minting a
-// second token of an identity it already holds.  Every other mint
-// carries the brand of the token it consumes.
+// the pack and fails deduction.  The result type holds the brand in
+// undeducible_brand_t, so the address of the mint with a target type that
+// names a held brand, and an explicit specialization for such a brand,
+// set no brand either (foundation/Brand.h).  Together the two stop a
+// caller minting a second token of an identity it already holds.  Every
+// other mint carries the brand of the token it consumes.
 
 template <typename Tag, typename... Args, typename Brand = CRUCIBLE_FRESH_BRAND>
     requires PermissionRootArgs<Tag, Args...>
-[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept;
+[[nodiscard]] constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
+mint_permission_root(Args const&...) noexcept;
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
@@ -742,7 +746,8 @@ private:
 
     template <typename Tag, typename... Args, typename Brand>
         requires PermissionRootArgs<Tag, Args...>
-    friend constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept;
+    friend constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
+    mint_permission_root(Args const&...) noexcept;
 
     template <typename L, typename R, typename... Args>
         requires PermissionSplitArgs<L, R, Args...>
@@ -905,7 +910,8 @@ template <typename Tag, typename Brand>
 // mints its own brand the two are two types.
 template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
-[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept {
+[[nodiscard]] constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
+mint_permission_root(Args const&...) noexcept {
     // With a context, the fit concept proves the row of the tag.  Without
     // one, the facts read the row one time.
     constexpr detail::rows_facts facts =

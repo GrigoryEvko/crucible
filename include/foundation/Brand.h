@@ -40,10 +40,21 @@
 // defaulted last template parameter.  A lambda expression in a default
 // template argument yields a distinct closure type each time the
 // default is used, which is what makes the brand fresh per call site.
-// The parameter comes after every parameter pack the mint declares, so
-// a caller cannot spell a brand it already holds and mint a second
-// token of the same identity: the pack absorbs the argument first.
 // Measured on GCC 16.2.1 in this dialect, in test/foundation/test_brand.cpp.
+//
+// Two rules keep a caller from a second token of a brand that it holds.
+// The parameter comes after every parameter pack of the mint, so the pack
+// takes each explicit argument, and no caller spells the brand.  The pack
+// does not stop deduction.  The address of a mint with a target function
+// type deduces each template parameter from that type, and so does the
+// declared type of an explicit specialization.  A brand that the result
+// type names directly then comes from a type that names a held brand, and
+// the fresh default does not apply.  So the result type of a mint holds
+// its brand in undeducible_brand_t, which deduction cannot set, and each
+// use of the mint takes the fresh default.  The negative fixture
+// neg_brand_root_mint_address binds the root mint to a function reference
+// with a held brand, which deduces as an address does, and the check
+// AddressTakesBrand of test_brand.cpp holds the address itself.
 //
 // DefaultBrand is the erased identity.  Every spelling that names no
 // brand, `Permission<Tag>` and the like, is on it, and under it every
@@ -114,10 +125,24 @@ struct inherited_or_fresh_brand<Carrier, Fresh> {
 template <class Carrier, class Fresh>
 using inherited_or_fresh_brand_t = typename inherited_or_fresh_brand<Carrier, Fresh>::type;
 
+// The brand of the result of a mint, in a context where template argument
+// deduction cannot set it (the fresh brand, below).  The member type of a
+// class template is such a context, so a target type and the declared type
+// of a specialization set no brand.  The rule specialization-home refuses
+// a specialization of the class outside this header.
+template <class Brand>
+struct undeducible_brand {
+    using type = Brand;
+};
+
+template <class Brand>
+using undeducible_brand_t = typename undeducible_brand<Brand>::type;
+
 }  // namespace foundation::brand
 
 // The fresh brand, for a mint's LAST template parameter and nowhere
 // else.  Written as a macro because the lambda must appear in the
 // default argument itself: an alias would be evaluated once and every
-// mint would share one brand.
+// mint would share one brand.  The result type of the mint names the
+// parameter through undeducible_brand_t, so no deduction replaces it.
 #define CRUCIBLE_FRESH_BRAND decltype([] {})

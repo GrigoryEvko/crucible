@@ -36,6 +36,10 @@ static_assert(std::is_same_v<inherited_or_fresh_brand_t<Carrier, int>, int>);
 static_assert(std::is_same_v<inherited_or_fresh_brand_t<BrandedFresh, int>, BrandedFresh::brand_type>);
 static_assert(std::is_same_v<inherited_or_fresh_brand_t<BrandedFresh const&, int>, BrandedFresh::brand_type>);
 
+// The undeducible brand is the brand itself.  The check AddressTakesBrand of
+// test/foundation/test_brand.cpp shows that a target type sets no brand.
+static_assert(std::is_same_v<undeducible_brand_t<BrandedFresh::brand_type>, BrandedFresh::brand_type>);
+
 }  // namespace detail::brand_self_test
 
 }  // namespace foundation::brand

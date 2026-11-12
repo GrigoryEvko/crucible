@@ -66,6 +66,13 @@ template <class Tag, int Which>
     return perm::mint_permission_root<Tag>();
 }
 
+// The address of the root mint takes the fresh brand of its own use, as a
+// call does.  A target type that names a held brand sets no brand, so no
+// address gives a second token of a held brand.
+template <class Held>
+concept AddressTakesBrand =
+    requires { static_cast<perm::Permission<Region, Held> (*)() noexcept>(&perm::mint_permission_root<Region>); };
+
 [[nodiscard]] int one_site_is_one_brand() {
     static_assert(std::is_same_v<decltype(mint_concrete<1>()), decltype(mint_concrete<2>())>,
                   "a concrete call inside a template is resolved once, so its brand is shared by every instantiation");
@@ -83,6 +90,8 @@ template <class Tag, int Which>
         // sound because the tokens never overlap in time.
         static_assert(std::is_same_v<Loop, decltype(perm::mint_permission_root<Region>())> == false,
                       "a second site inside the body is still a second brand");
+        static_assert(!AddressTakesBrand<Loop::brand_type>,
+                      "the address of the mint with a target type of the held brand gives no second token of it");
         ::foundation::linear::drop(std::move(token));
         ++minted;
     }

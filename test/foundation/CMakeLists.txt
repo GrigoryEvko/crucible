@@ -1349,6 +1349,13 @@ foundation_neg_compile_test(neg_brand_root_mint_refuses_spelled_brand
   "constraints not satisfied"
   "PermissionRootArgs<Tag, Args \\.\\.\\.>")
 
+# The result type holds the brand in undeducible_brand_t, so the target type
+# of the root mint as a function sets no brand, and a binding to a target
+# with a held brand is refused.
+foundation_neg_compile_test(neg_brand_root_mint_address
+  "invalid initialization of non-const reference of type .foundation::permissions::Permission<\\{anonymous\\}::Region, foundation::permissions::<lambda\\(\\)> > \\(&\\)\\(\\) noexcept. from an rvalue of type .<unresolved overloaded function type>."
+  "neg_brand_root_mint_address\\.cpp:21:[0-9]+: error:")
+
 # Erasure runs one way.
 foundation_neg_compile_test(neg_brand_erased_token_does_not_rebrand
   "no matching function for call to .foundation::permissions::Permission<\\{anonymous\\}::Region, \\{anonymous\\}::HeldBrand>::Permission\\("
