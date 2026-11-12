@@ -2064,6 +2064,67 @@ foundation_neg_compile_test(neg_core_surface_not_class
   "no matching function for call to .closed_surface<int>\\(foundation::core::TextView\\)."
   "the expression .is_class_v<T> \\[with T = int\\]. evaluated to .false.")
 
+# ── The Record family ─────────────────────────────────────────────────
+#
+# A Record is an aggregate of parts that are objects, not arrays and not
+# cv-qualified, with a move that does not throw.  It has no converting
+# constructor, and its list initialization refuses a narrowing conversion.
+# A structured binding names each part.  == and <=> compare two Records of
+# one type only, and only when each part has the operator.  The Pack
+# operations take a Pack only, an index below the count, and a type that is
+# in the Pack one time.
+foundation_test(test_core_record)
+foundation_test(test_core_record_oracle)
+
+foundation_neg_compile_test(neg_core_record_reference_part
+  "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."
+  "the expression .\\(... && RecordElement<Ts>\\) \\[with Ts = \\{int&, int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_const_part
+  "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."
+  "the expression .\\(... && RecordElement<Ts>\\) \\[with Ts = \\{const int, int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_array_part
+  "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."
+  "the expression .\\(... && RecordElement<Ts>\\) \\[with Ts = \\{int.4.\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_throwing_move_part
+  "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."
+  "the expression .\\(... && RecordElement<Ts>\\) \\[with Ts = \\{ThrowingMove\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_narrowing_init
+  "narrowing conversion of .300. from .int. to .unsigned char."
+  "neg_core_record_narrowing_init.cpp:10")
+foundation_neg_compile_test(neg_core_record_from_other_parts
+  "conversion from .Record<unsigned char, unsigned char>. to non-scalar type .Record<int, int>. requested"
+  "neg_core_record_from_other_parts.cpp:10")
+foundation_neg_compile_test(neg_core_record_binding_count
+  "only 2 names provided for structured binding"
+  "neg_core_record_binding_count.cpp:8")
+foundation_neg_compile_test(neg_core_record_equal_needs_equal
+  "no match for .operator==. \\(operand types are .const foundation::core::Record<int, NoEquality>. and .const foundation::core::Record<int, NoEquality>.\\)"
+  "the expression .\\(RecordEqualPart<Ts> && ...\\) \\[with Ts = \\{int, NoEquality\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_equal_floating_part
+  "no match for .operator==. \\(operand types are .const foundation::core::Record<int, double>. and .const foundation::core::Record<int, double>.\\)"
+  "the expression .\\(RecordEqualPart<Ts> && ...\\) \\[with Ts = \\{int, double\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_equal_other_types
+  "no match for .operator==. \\(operand types are .const foundation::core::Record<int, int>. and .const foundation::core::Record<long int, long int>.\\)"
+  "neg_core_record_equal_other_types.cpp:9")
+foundation_neg_compile_test(neg_core_record_order_other_category
+  "no match for .operator<=>. \\(operand types are .const foundation::core::Record<int, SignedOrder>. and .const foundation::core::Record<int, SignedOrder>.\\)"
+  "the expression .\\(RecordOrderedPart<Ts> && ...\\) \\[with Ts = \\{int, SignedOrder\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_pack_size_not_a_pack
+  "use of invalid variable template .pack_size_v<foundation::core::Record<int, long int> >."
+  "required for the satisfaction of .PackType<P>. \\[with P = foundation::core::Record<int, long int>\\]")
+foundation_neg_compile_test(neg_core_pack_concat_not_a_pack
+  "template constraint failure for .template<class ... Ps>  requires \\(... && PackType<Ps>\\) using foundation::core::pack_concat_t"
+  "the expression .\\(... && PackType<Ps>\\) \\[with Ps = \\{foundation::core::Pack<int>, long int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_pack_at_out_of_range
+  "template constraint failure for .template<class ... Ts> template<long unsigned int I>  requires  I < sizeof ... \\(Ts ...\\) using foundation::core::detail::PackParts<foundation::core::Pack<Ts ...> >::at = typename foundation::core::detail::PackAt<I, Ts ...>::type."
+  "the expression .I < sizeof ... \\(Ts ...\\) \\[with I = 2; Ts = \\{int, long int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_pack_index_of_absent
+  "no matching function for call to .foundation::core::detail::PackParts<foundation::core::Pack<int, long int> >::index_of<char>\\(\\)."
+  "the expression .\\(count<T>\\) == 1 \\[with Ts = \\{int, long int\\}; T = char\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_pack_index_of_twice
+  "no matching function for call to .foundation::core::detail::PackParts<foundation::core::Pack<int, long int, int> >::index_of<int>\\(\\)."
+  "the expression .\\(count<T>\\) == 1 \\[with Ts = \\{int, long int, int\\}; T = int\\]. evaluated to .false.")
+
 # ── The Ref family: the allocation door and Box ───────────────────────
 #
 # The allocation door refuses a request of zero bytes and an alignment that

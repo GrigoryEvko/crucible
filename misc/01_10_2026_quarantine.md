@@ -1070,35 +1070,35 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 
 ### 11.3 Record: `Record<Ts...>`, `Pack<Ts...>`
 
-**The idea.** A product whose parts have meanings is a named struct. A generic product is `Record<Ts...>`, and a list of types is `Pack<Ts...>`. Neither is `std::tuple`. The family has no part on main.
+**The idea.** A product whose parts have meanings is a named struct. A generic product is `Record<Ts...>`, and a list of types is `Pack<Ts...>`. Neither is `std::tuple`. Main holds `Record` and `Pack` with each operation of this section, but `at`, which waits for `foundation/core/Index.h`.
 
-**The header.** `include/foundation/core/Record.h`, a file of the language. It includes `<cstddef>`, `<compare>`, `<type_traits>`, `<utility>` and `foundation/core/Index.h` of the Scalar family, and no `<tuple>`.
+**The header.** `include/foundation/core/Record.h`, a file of the language. It includes `<compare>`, `<concepts>`, `<cstddef>`, `<type_traits>` and `<utility>`, and no `<tuple>`. The access `at` adds `foundation/core/Index.h`.
 
-**The gate.** `RecordElement<T>`: an object type that is not an array, not cv-qualified, not a reference and not `void`. A reference part hides a borrow, so a borrow is a `Ref` or a `View`. A const part blocks the move of a linear part. A C array part is a `FixedArray`. A `Pinned` part is valid, and the `Record` is then pinned too.
+**The gate.** `RecordElement<T>`: an object type that is not an array, not cv-qualified, not abstract, not a reference and not `void`, whose destructor and move do not throw. A reference part hides a borrow, so a borrow is a `Ref` or a `View`. A const part blocks the move of a linear part. A C array part is a `FixedArray`. A `Pinned` part is valid, and the `Record` is then pinned too.
 
-**The layout.** `Record<Ts...>` derives from one flat base of cells, one cell for each part: `RecordCell<I, T>` with one `[[no_unique_address]]` member. The instantiation depth is two for each count of parts, where a recursive tuple has a depth of N. A `Record` is an aggregate with no converting constructor, and the default member initializer of each cell gives each part its value. It is trivially copyable and structural when each part is. Empty parts collapse: `sizeof(Record<TokenA, TokenB>)` is 1. The parts are in declaration order. When no part gives its tail padding to the next part, each offset equals the offset of a hand-written struct. The check file asserts this by reflection for twelve shapes.
+**The layout.** `Record<Ts...>` derives from one flat base of cells, one cell for each part: `RecordCell<I, T>` with one member. The instantiation depth is two for each count of parts, where a recursive tuple has a depth of N. A `Record` is an aggregate with no converting constructor, and the default member initializer of each cell gives each part its value. It is trivially copyable and structural when each part is. Only an empty part is a `[[no_unique_address]]` member, so empty parts collapse: `sizeof(Record<TokenA, TokenB>)` is 1. Each other part takes its full size, so no part sits in the tail padding of a different part, and a copy of the bytes of one part writes no other part. The parts are in declaration order. Each offset equals the offset of a hand-written struct where only an empty member has `[[no_unique_address]]`. The check file asserts this by reflection for twelve shapes.
 
 **The API.**
 
 | Operation | Contract | Cost | Verb | State |
 |---|---|---|---|---|
-| `Record<A, B>{a, b}` | Aggregate initialization. A narrowing conversion does not compile | none | - | design |
-| `Record(Ts...) -> Record<Ts...>` | The deduction guide. `return {std::move(value), std::move(next)};` builds a return | none | - | design |
+| `Record<A, B>{a, b}` | Aggregate initialization. A narrowing conversion does not compile | none | - | main |
+| `Record(Ts...) -> Record<Ts...>` | The deduction guide. `return {std::move(value), std::move(next)};` builds a return | none | - | main |
 | `at(index<I>())` | `&` and `const&`, for `I` below the count of parts | one member access | `at` | design |
 | `at(index<I>())` on `&&` | Deleted: "write auto [first, second] = std::move(record)", because a move of one part drops the others | - | - | design |
-| `size()` | `static consteval` | none | `size` | design |
-| `types` | `Pack<Ts...>` | none | - | design |
-| `auto [a, b] = record;` | The protocol of `std::tuple_size` and `std::tuple_element` (their class forms) and the hidden friend hook `get<I>`. `auto [a, b] = std::move(record)` moves each part one time | none | binding | design |
-| `auto [...parts] = record;` | A binding pack, in place of `std::apply` | none | binding | design |
-| `template for (auto& part : record)` | Each part, in order | the count of parts | `for` of a product | design |
-| `==`, `<=>` | Defaulted and lexicographic, for one `Record` type only. `<=>` only for parts with a strong or a partial order | one compare for each part | compare | design |
-| copy, move | Defaulted. A move-only part makes the `Record` move-only | as the parts | - | design |
+| `size()` | `static consteval` | none | `size` | main |
+| `types` | `Pack<Ts...>` | none | - | main |
+| `auto [a, b] = record;` | The protocol of `std::tuple_size` and `std::tuple_element` (their class forms) and the hidden friend hook `get<I>`. `auto [a, b] = std::move(record)` moves each part one time. A binding in a quarantined file gives no finding | none | binding | main |
+| `auto [...parts] = record;` | A binding pack, in place of `std::apply`. GCC 16 permits it only in a template | none | binding | main |
+| `template for (auto& part : record)` | Each part, in order. GCC 16 gives `-Wshadow` for each expansion of a destructurable expression, and the plugin gives the finding `std::tuple_element::type` for it in a quarantined file | the count of parts | `for` of a product | main |
+| `==`, `<=>` | Lexicographic folds over the parts, for one `Record` type only. A cell has no operator, because a `Record` converts to each base. `==` needs no floating part, because the tree refuses `==` of a floating value. `<=>` only for parts with a strong or a partial order | one compare for each part | compare | main |
+| copy, move | Defaulted. A move-only part makes the `Record` move-only | as the parts | - | main |
 
-**The API of `Pack<Ts...>`.** An empty class for deduction only, as `std::index_sequence`. Its operations are variable templates and aliases (R14), each with an instantiation depth of one: `pack_size_v<P>` (verb `size`), `pack_at_t<I, P>` (verb `at`), `pack_contains_v<T, P>`, `pack_index_of_v<T, P>` (one occurrence of `T` only), `pack_concat_t<Ps...>`, `pack_apply_t<Template, P>` and `pack_unique_v<P>`. `std::meta::substitute(^^Pack, args)` and `template_of(type) == ^^Pack` work, because `Pack` is a plain variadic class template.
+**The API of `Pack<Ts...>`.** An empty class for deduction only, as `std::index_sequence`, on main. It has no member, and the gate `PackType` reads its template by reflection. Its operations are variable templates and aliases (R14), each with an instantiation depth of one: `pack_size_v<P>` (verb `size`), `pack_at_t<I, P>` (verb `at`), `pack_contains_v<T, P>`, `pack_index_of_v<T, P>` (one occurrence of `T` only), `pack_concat_t<Ps...>`, `pack_apply_t<Template, P>` and `pack_unique_v<P>`. `std::meta::substitute(^^Pack, args)` and `template_of(type) == ^^Pack` work, because `Pack` is a plain variadic class template.
 
 **The binding hook.** The language finds the hook `get<I>` through argument-dependent lookup, so a quarantined `get<0>(record)` compiles as a second form of `at`. The plugin kind `binding-hook` refuses a call of the annotated hook outside the initializer of a decomposition (design). A binding of a family type gives no finding of the protocol names.
 
-**The family list.** `Record`, `Pack`, `types`, `pack_size_v`, `pack_at_t`, `pack_contains_v`, `pack_index_of_v`, `pack_concat_t`, `pack_apply_t`, `pack_unique_v`.
+**The family list.** `Record`, `Pack`, `types`, `part`, `pack_size_v`, `pack_at_t`, `pack_contains_v`, `pack_index_of_v`, `pack_concat_t`, `pack_apply_t`, `pack_unique_v`. `part` is the one data member of a cell. It is public, because the aggregate initialization gives it its value and a structural type has only public members, so a public base of each `Record` holds it.
 
 **Removes.** The row `allow F0_core <tuple> until Record`. The rows `admit std::tuple_size` and `admit std::tuple_element` in `include/foundation/core/` stay, because they hold the protocol of the family. The family has no R5 import.
 

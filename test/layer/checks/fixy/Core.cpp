@@ -17,6 +17,15 @@ static_assert(std::is_same_v<decltype(::fixy::none), decltype(::foundation::core
 static_assert(::fixy::Option<int>{::fixy::none}.is_none());
 static_assert(std::is_same_v<decltype(::fixy::some(7)), ::foundation::core::Option<int>>);
 static_assert(::fixy::some(7).is_some());
+static_assert(std::is_same_v<::fixy::Record<int, long>, ::foundation::core::Record<int, long>>);
+static_assert(std::is_same_v<::fixy::Pack<int, long>, ::foundation::core::Pack<int, long>>);
+static_assert(::fixy::pack_size_v<::fixy::Pack<int, long>> == 2);
+static_assert(std::is_same_v<::fixy::pack_at_t<1, ::fixy::Pack<int, long>>, long>);
+static_assert(::fixy::pack_contains_v<long, ::fixy::Pack<int, long>>);
+static_assert(::fixy::pack_index_of_v<long, ::fixy::Pack<int, long>> == 1);
+static_assert(std::is_same_v<::fixy::pack_concat_t<::fixy::Pack<int>, ::fixy::Pack<long>>, ::fixy::Pack<int, long>>);
+static_assert(std::is_same_v<::fixy::pack_apply_t<::fixy::Record, ::fixy::Pack<int, long>>, ::fixy::Record<int, long>>);
+static_assert(::fixy::pack_unique_v<::fixy::Pack<int, long>>);
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
 static_assert(std::is_same_v<::fixy::Ref<int>, ::foundation::core::Ref<int>>);
 static_assert(std::is_same_v<::fixy::Address, ::foundation::core::Address>);

@@ -557,6 +557,7 @@ test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes
 test/foundation/ | opted-out | 5 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
 test/foundation/ | opted-out | 11 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | opted-out | 21 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
+test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -568,6 +569,7 @@ test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of
 test/foundation/ | region | 1 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
 test/foundation/ | region | 2 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | region | 1 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
+test/foundation/ | region | 1 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error

@@ -906,6 +906,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::ParseError,
      "the error of a parse() of a text: a kind and a position in the text, and never a value in a kernel "
      "signature"},
+    {^^::foundation::core::Record,
+     "a product of values: it holds its parts and makes no claim about them, and a binding gives out each part"},
+    {^^::foundation::core::Pack, "a list of types for deduction only: it holds no value"},
     {^^::foundation::core::Index,
      "the proof of an index below a count: a number whose bound is its type, and it makes no claim about an element"},
     {^^::foundation::core::StaticIndex, "the proof of a constant index: it holds nothing, and the index is its type"},

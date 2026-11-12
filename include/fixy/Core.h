@@ -26,6 +26,7 @@
 #include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -61,6 +62,16 @@ using ::foundation::core::Err;
 using ::foundation::core::err;
 using ::foundation::core::Result;
 using ::foundation::core::Unit;
+
+using ::foundation::core::Pack;
+using ::foundation::core::pack_apply_t;
+using ::foundation::core::pack_at_t;
+using ::foundation::core::pack_concat_t;
+using ::foundation::core::pack_contains_v;
+using ::foundation::core::pack_index_of_v;
+using ::foundation::core::pack_size_v;
+using ::foundation::core::pack_unique_v;
+using ::foundation::core::Record;
 
 using ::foundation::core::Box;
 using ::foundation::core::mint_box;

@@ -5286,6 +5286,21 @@ fixy_neg_compile_test(neg_core_option_ok_or_linear_error
   "no matching function for call to .foundation::core::Option<int>::ok_or\\(fixy::Linear<int>\\)."
   "required for the satisfaction of .DroppablePayload<E>. \\[with E = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>\\]")
 
+# A Record with a linear part is linear: it does not copy, and a binding by
+# value of an lvalue Record copies the Record, so it does not compile.
+fixy_test(test_core_record_linear)
+
+fixy_neg_compile_test(neg_core_record_linear_copied
+  "use of deleted function .foundation::core::Record<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, int>::Record\\(const foundation::core::Record<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, int>&\\)."
+  "use of deleted function .foundation::core::detail::RecordCells<std::integer_sequence<long unsigned int, 0, 1>, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, int>::RecordCells\\(const"
+  "use of deleted function .foundation::core::detail::RecordCell<0, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, false, false>::RecordCell\\(const"
+  "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
+fixy_neg_compile_test(neg_core_record_linear_binding_of_lvalue
+  "use of deleted function .foundation::core::Record<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >::Record\\(const foundation::core::Record<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >&\\)."
+  "use of deleted function .foundation::core::detail::RecordCells<std::integer_sequence<long unsigned int, 0>, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >::RecordCells\\(const"
+  "use of deleted function .foundation::core::detail::RecordCell<0, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, false, false>::RecordCell\\(const"
+  "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
+
 # ── Brands: identity per mint ────────────────────────────────────────
 #
 # A region carries the brand of the permission it was built from, and a

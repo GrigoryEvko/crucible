@@ -572,6 +572,16 @@ PROBES: tuple[Probe, ...] = (
         "path, these flags add a copy of the value and a second bounds compare of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
+    # The Record family.
+    Probe("record_return", "a Record of two words returns in two registers, as a struct of the same members does"),
+    Probe("record_binding", "a binding of a Record reads each part in place, as a member access of a struct does"),
+    Probe("record_equal", "== of a Record compares each part in order, as a hand-written compare of the members does"),
+    Probe(
+        "record_order",
+        "<=> of a Record compares the parts in order and stops at the first part that is not equivalent, as the "
+        "defaulted <=> of a struct of the same members does",
+    ),
+    Probe("record_pass_tokens", "a Record of two empty parts takes one byte, and a pass moves no byte"),
     # The Scalar family.
     Probe(
         "scalar_checked_add",

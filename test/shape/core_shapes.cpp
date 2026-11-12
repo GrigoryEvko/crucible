@@ -271,6 +271,42 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
     }
 }
 
+// ── Record ──────────────────────────────────────────────────────────────────
+
+// Two empty parts of different types.
+struct TokenA final {};
+struct TokenB final {};
+
+// A Record of two words, as a function gives it back: in two registers.
+[[gnu::used]] fixy::Record<std::uint64_t, std::uint64_t> record_return(std::uint64_t first,
+                                                                       std::uint64_t second) noexcept {
+    return {first, second};
+}
+
+// A binding reads the parts in place.
+[[gnu::used]] std::uint64_t record_binding(fixy::Record<std::uint64_t, std::uint64_t> record) noexcept {
+    auto const& [low, high] = record;
+    return low + high;
+}
+
+// == compares each part in order.
+[[gnu::used]] bool record_equal(fixy::Record<std::uint32_t, std::uint32_t> const& left,
+                                fixy::Record<std::uint32_t, std::uint32_t> const& right) noexcept {
+    return left == right;
+}
+
+// <=> compares the parts in order, and it stops at the first part that is not
+// equivalent.
+[[gnu::used]] bool record_order(fixy::Record<std::uint32_t, std::uint32_t> left,
+                                fixy::Record<std::uint32_t, std::uint32_t> right) noexcept {
+    return std::is_lt(left <=> right);
+}
+
+// Two empty parts take one byte, and a pass moves no byte.
+[[gnu::used]] fixy::Record<TokenA, TokenB> record_pass_tokens(fixy::Record<TokenA, TokenB> tokens) noexcept {
+    return tokens;
+}
+
 // ── Scalar ──────────────────────────────────────────────────────────────────
 
 // fixy/Checked.h holds the names of the three arithmetic sets until slice
@@ -532,6 +568,40 @@ result_try_convert_raw(std::expected<std::uint32_t, Code8> result) noexcept {
             std::unreachable();
     }
 }
+
+// The raw form of a Record is a struct with the same members.
+struct RawWords final {
+    std::uint64_t first;
+    std::uint64_t second;
+};
+
+// A hand-written struct.  Its == is the compare of the members by hand, and
+// its <=> is the defaulted <=> of the struct.
+struct RawPair32 final {
+    std::uint32_t first;
+    std::uint32_t second;
+
+    friend std::strong_ordering operator<=>(RawPair32 const&, RawPair32 const&) noexcept = default;
+};
+
+struct RawTokens final {
+    [[no_unique_address]] TokenA first;
+    [[no_unique_address]] TokenB second;
+};
+
+[[gnu::used]] RawWords record_return_raw(std::uint64_t first, std::uint64_t second) noexcept {
+    return RawWords{first, second};
+}
+
+[[gnu::used]] std::uint64_t record_binding_raw(RawWords record) noexcept { return record.first + record.second; }
+
+[[gnu::used]] bool record_equal_raw(RawPair32 const& left, RawPair32 const& right) noexcept {
+    return left.first == right.first && left.second == right.second;
+}
+
+[[gnu::used]] bool record_order_raw(RawPair32 left, RawPair32 right) noexcept { return std::is_lt(left <=> right); }
+
+[[gnu::used]] RawTokens record_pass_tokens_raw(RawTokens tokens) noexcept { return tokens; }
 
 [[gnu::used]] std::optional<std::uint32_t> scalar_checked_add_raw(std::uint32_t left, std::uint32_t right) noexcept {
     std::uint32_t sum = 0;
