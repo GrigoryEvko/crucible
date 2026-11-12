@@ -1,13 +1,22 @@
 #pragma once
 
-// The Scalar family, its first part: the checked decode of a value from the
-// bits of another value, and the checked enumerator of an underlying value.
+// The Scalar family: the copy of a value from the bits of another value,
+// and the checked enumerator of an underlying value.
 //
-//   enum_from<E>(raw)   the enumerator of E whose value is raw, or no value
-//   decode<To>(source)  a To with the bits of source, or no value when a
-//                       bool of To would hold a byte other than 0 or 1, or an
-//                       enumeration of To would hold a value that names no
-//                       enumerator
+//   enum_from<E>(raw)    the enumerator of E whose value is raw, or no value
+//   decode<To>(source)   a To with the bits of source, or no value when a
+//                        bool of To would hold a byte other than 0 or 1, an
+//                        enumeration of To would hold a value that names no
+//                        enumerator, or a part of To with a niche would hold
+//                        its empty value
+//   bit_cast<To>(source) a To with the bits of source, with no check: each
+//                        bit pattern is a value of a BitValid To
+//
+// A part that declares a niche (Choice.h) has an empty value that no valid
+// value holds, such as the reserved value of an id.  decode gives no value
+// for those bytes, so the bytes of a file or of the wire never make such a
+// value, and Option::some never sees one.  The test reads only a bool, and
+// no empty value and no key of the niche.
 //
 // std::bit_cast copies the bits into each type.  A bool from a byte other
 // than 0 or 1 is undefined behavior, and the result then changes with the
@@ -34,9 +43,11 @@
 // part whose bytes are not its whole value: a pointer, a member pointer, a
 // reference, a union, a bit-field, an empty class and a class whose values
 // only its own constructors make (detail::is_plain_at).  So decode makes no
-// token, no key and no address.  A part of To with no bool and no
-// enumeration gets no check, so a decode into such a type is the bit copy
-// alone.
+// token, no key and no address.  A part of To with no bool, no enumeration
+// and no niche gets no check, so a decode into such a type is the bit copy
+// alone, and bit_cast is that copy for a To with no checked part.  The
+// source has no padding bit: float and double are sources, and long double
+// is not.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
@@ -226,14 +237,50 @@ inline constexpr int max_plain_depth = 64;
     return true;
 }
 
+// True when the class or enumeration declares a niche: niche<T> is a
+// specialization, which carries no annotation UndeclaredNiche.  The rule
+// specialization-home admits a specialization of niche only in the file that
+// defines the type, so each unit that names the type sees the same answer.
+[[nodiscard]] consteval bool declares_niche_at(std::meta::info type) {
+    if (!std::meta::is_class_type(type) && !std::meta::is_enum_type(type)) return false;
+    return !::foundation::linear::carries_annotation(std::meta::substitute(^^niche, {type}), ^^UndeclaredNiche);
+}
+
+// True when each bit of a value of the type is a value bit.  float and
+// double have no padding bit, although std::has_unique_object_representations
+// is false for them: -0 and +0 compare equal.  long double has 80 value bits
+// in 16 bytes on x86_64.  A class has no padding bit when its bases and its
+// members have none and fill its whole size.  The caller makes sure that the
+// type is plain, so no part is empty and none is a bit-field.  Linear in the
+// number of subobject declarations that the walk reaches.
+[[nodiscard]] consteval bool has_no_padding_bit_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (std::meta::is_array_type(type)) return has_no_padding_bit_at(std::meta::remove_all_extents(type));
+    if (type == ^^float || type == ^^double) return true;
+    if (!std::meta::is_class_type(type)) return std::meta::has_unique_object_representations(type);
+    std::size_t covered = 0;
+    for (std::size_t index = 0; index < base_count(type); ++index) {
+        std::meta::info const part = base_type_at(type, index);
+        if (!has_no_padding_bit_at(part)) return false;
+        covered += std::meta::size_of(part);
+    }
+    for (std::size_t index = 0; index < member_count(type); ++index) {
+        std::meta::info const part = member_type_at(type, index);
+        if (!has_no_padding_bit_at(part)) return false;
+        covered += std::meta::size_of(part);
+    }
+    return covered == std::meta::size_of(type);
+}
+
 // True when a value of the type can hold a byte that names no value: the
-// type is or holds a bool, or an enumeration with at least one enumerator.
-// A part with no such leaf gets no check.  The caller makes sure that the
-// type is plain.
+// type is or holds a bool, an enumeration with at least one enumerator, or a
+// class or an enumeration that declares a niche.  A part with no such leaf
+// gets no check.  The caller makes sure that the type is plain.
 [[nodiscard]] consteval bool has_checked_leaf_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
     if (std::meta::is_array_type(type)) return has_checked_leaf_at(std::meta::remove_all_extents(type));
     if (type == ^^bool) return true;
+    if (declares_niche_at(type)) return true;
     if (std::meta::is_enum_type(type)) return has_enumerators(type);
     if (!std::meta::is_class_type(type)) return false;
     for (std::size_t index = 0; index < base_count(type); ++index) {
@@ -251,15 +298,15 @@ struct ByteImage final {
     unsigned char bytes[Size];
 };
 
-// The underlying value of the enumeration E at offset, read from its bytes.
-template <class E, std::size_t Size>
-[[nodiscard]] constexpr std::underlying_type_t<E> read_underlying(ByteImage<Size> const& image,
-                                                                  std::size_t offset) noexcept {
-    using Underlying = std::underlying_type_t<E>;
-    ByteImage<sizeof(Underlying)> part{};
-    for (std::size_t index = 0; index < sizeof(Underlying); ++index)
+// The part of type T at offset, made from its bytes.  The caller makes sure
+// that each bool and each enumeration of T holds a value, so the bit copy
+// makes no bool with a byte other than 0 or 1.
+template <class T, std::size_t Size>
+[[nodiscard]] constexpr T read_part(ByteImage<Size> const& image, std::size_t offset) noexcept {
+    ByteImage<sizeof(T)> part{};
+    for (std::size_t index = 0; index < sizeof(T); ++index)
         part.bytes[index] = image.bytes[offset + index];
-    return __builtin_bit_cast(Underlying, part);
+    return __builtin_bit_cast(T, part);
 }
 
 template <class T, std::size_t Size>
@@ -273,21 +320,22 @@ template <class T, std::size_t Size, std::size_t... Base, std::size_t... Member>
             && ...);
 }
 
-// True when the bytes at offset hold a value of T: each bool byte is 0 or
-// 1, and each enumeration value names an enumerator.  Linear in the number
-// of checked leaves of T.
+// True when the bytes at offset hold a value of each bool and each
+// enumeration of T: each bool byte is 0 or 1, and each enumeration value
+// names an enumerator.  An enumeration with no enumerator takes each value.
+// The niche of T itself is the test of holds_value_of.
 template <class T, std::size_t Size>
-[[nodiscard]] constexpr bool holds_value_of(ByteImage<Size> const& image, std::size_t offset) noexcept {
+[[nodiscard]] constexpr bool holds_leaf_values_of(ByteImage<Size> const& image, std::size_t offset) noexcept {
     using Bare = std::remove_cv_t<T>;
-    if constexpr (!has_checked_leaf_at(^^Bare)) {
-        return true;
-    } else if constexpr (std::same_as<Bare, bool>) {
+    if constexpr (std::same_as<Bare, bool>) {
         return image.bytes[offset] <= 1;
     } else if constexpr (std::is_enum_v<Bare>) {
-        if constexpr (std::same_as<std::underlying_type_t<Bare>, bool>) {
+        if constexpr (!has_enumerators(^^Bare)) {
+            return true;
+        } else if constexpr (std::same_as<std::underlying_type_t<Bare>, bool>) {
             return image.bytes[offset] <= 1 && names_enumerator<Bare>(image.bytes[offset] == 1);
         } else {
-            return names_enumerator<Bare>(read_underlying<Bare>(image, offset));
+            return names_enumerator<Bare>(read_part<std::underlying_type_t<Bare>>(image, offset));
         }
     } else if constexpr (std::is_array_v<Bare>) {
         using Element = std::remove_extent_t<Bare>;
@@ -301,6 +349,24 @@ template <class T, std::size_t Size>
     }
 }
 
+// True when the bytes at offset hold a value of T: each bool and each
+// enumeration holds a value, and a part that declares a niche does not hold
+// its empty value, which no valid value holds.  The parts come first, so the
+// bit copy of a part with a niche makes no bool with a byte other than 0 or
+// 1.  Linear in the number of checked leaves of T.
+template <class T, std::size_t Size>
+[[nodiscard]] constexpr bool holds_value_of(ByteImage<Size> const& image, std::size_t offset) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (!has_checked_leaf_at(^^Bare)) {
+        return true;
+    } else if constexpr (declares_niche_at(^^Bare)) {
+        return holds_leaf_values_of<Bare>(image, offset)
+            && !NicheRead<Bare>::holds_empty(read_part<Bare>(image, offset));
+    } else {
+        return holds_leaf_values_of<Bare>(image, offset);
+    }
+}
+
 }  // namespace detail
 
 // An enumeration that enum_from can decode: it has at least one enumerator.
@@ -310,14 +376,21 @@ concept Enumerated = std::is_enum_v<E> && detail::has_enumerators(^^E);
 // A type To that decode can make from the bits of a From.  The two have one
 // size, they are trivially copyable, and each is plain: the walk of
 // detail::is_plain_at accepts it.  Each bit of From is a value bit, so no
-// padding bit of the source becomes a value bit of To.  An array of bytes
-// has this property.  To is not an array and not cv-qualified, because a
-// function cannot return such a type.
+// padding bit of the source becomes a value bit of To.  An array of bytes,
+// a float and a double have this property.  To is not an array and not
+// cv-qualified, because a function cannot return such a type.
 template <class To, class From>
 concept DecodableFrom =
     std::is_object_v<To> && !std::is_array_v<To> && std::same_as<To, std::remove_cv_t<To>>
     && std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From> && sizeof(To) == sizeof(From)
-    && std::has_unique_object_representations_v<From> && detail::is_plain_at(^^To, 0) && detail::is_plain_at(^^From, 0);
+    && detail::is_plain_at(^^To, 0) && detail::is_plain_at(^^From, 0) && detail::has_no_padding_bit_at(^^From);
+
+// A type of which each bit pattern of its bytes is a value: plain, with no
+// bool, no enumeration with an enumerator and no part that declares a niche.
+// An integer, a float, an enumeration with no enumerator such as std::byte,
+// and a class or an array of such parts are bit valid.
+template <class T>
+concept BitValid = std::is_object_v<T> && detail::is_plain_at(^^T, 0) && !detail::has_checked_leaf_at(^^T);
 
 // The enumerator of E whose value is raw, or no value when no enumerator of
 // E has the value raw.
@@ -328,15 +401,33 @@ template <Enumerated E>
 }
 
 // A To with the bits of source, or no value when a bool of To would hold a
-// byte other than 0 or 1, or an enumeration of To would hold a value that
-// names no enumerator.  The check reads the bytes before a To exists.
-// Linear in the number of checked leaves of To.
+// byte other than 0 or 1, an enumeration of To would hold a value that names
+// no enumerator, or a part of To that declares a niche would hold its empty
+// value.  The check of each bool and each enumeration reads the bytes before
+// a To exists.  Linear in the number of checked leaves of To.
 template <class To, class From>
     requires DecodableFrom<To, From>
 [[nodiscard]] constexpr Option<To> decode(From const& source) noexcept {
     auto const image = __builtin_bit_cast(detail::ByteImage<sizeof(To)>, source);
-    if (!detail::holds_value_of<To>(image, 0)) return none;
-    return Option<To>::some(__builtin_bit_cast(To, image));
+    if constexpr (detail::has_checked_leaf_at(^^To)) {
+        if (!detail::holds_leaf_values_of<To>(image, 0)) return none;
+    }
+    // Each leaf holds a value, so the copy makes a To.  The test of the niche
+    // of To reads the value that Option::some gets, so the compiler removes
+    // the test in some().
+    To const value = __builtin_bit_cast(To, image);
+    if constexpr (detail::declares_niche_at(^^To)) {
+        if (detail::NicheRead<To>::holds_empty(value)) return none;
+    }
+    return Option<To>::some(value);
+}
+
+// A To with the bits of source.  Each bit pattern is a value of a bit valid
+// To, so the copy has no check and no failure.
+template <class To, class From>
+    requires BitValid<To> && DecodableFrom<To, From>
+[[nodiscard]] constexpr To bit_cast(From const& source) noexcept {
+    return __builtin_bit_cast(To, source);
 }
 
 }  // namespace foundation::core

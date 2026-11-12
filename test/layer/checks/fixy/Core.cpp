@@ -98,5 +98,19 @@ static_assert(::fixy::countr_zero(8u) == 3 && ::fixy::countl_one(0xF0000000u) ==
 static_assert(::fixy::has_single_bit(64u) && ::fixy::bit_floor(100u) == 64u && ::fixy::bit_ceil(100u).is_some());
 static_assert(::fixy::rotl(std::uint8_t{0x81}, 1) == 3 && ::fixy::rotr(std::uint8_t{0x81}, 1) == 0xC0);
 static_assert(::fixy::low_mask<std::uint16_t>(4) == 15 && ::fixy::byteswap(std::uint16_t{0x1234}) == 0x3412);
+static_assert(::fixy::fp::is_nan(::fixy::quiet_nan_of<double>) && !::fixy::fp::is_inf(1.0f));
+static_assert(::fixy::fp::is_finite(0.0));
+static_assert(::fixy::fp::is_normal(1.0) && ::fixy::fp::sign_bit(-0.0) && ::fixy::fp::abs(-2.0) > 1.0);
+static_assert(::fixy::fp::copy_sign(2.0f, -1.0f) < 0.0f && ::fixy::fp::sqrt(4.0) > 1.0);
+static_assert(::fixy::fp::fma(2.0, 3.0, 1.0) > 6.0 && ::fixy::fp::total_key(0.0) == 0x8000000000000000u);
+static_assert(std::is_same_v<decltype(::fixy::swap), decltype(::foundation::core::swap)>);
+static_assert(::fixy::Exchangeable<int> && !::fixy::Exchangeable<int const>);
+static_assert(std::is_same_v<decltype(::fixy::exchange(std::declval<int&>(), 1)), int>);
+static_assert(::fixy::bit_cast<std::uint32_t>(1.0f) == 0x3F800000u
+              && ::fixy::BitValid<float> && !::fixy::BitValid<bool>);
+static_assert(::fixy::DecodableFrom<bool, std::uint8_t> && !::fixy::Enumerated<int>);
+struct CoreTag;
+static_assert(sizeof(::fixy::Option<::fixy::Id<CoreTag, std::uint32_t>>) == 4);
+static_assert(::fixy::Digest<CoreTag>{5}.raw() == 5u);
 
 }  // namespace fixy::detail::core_checks

@@ -8,12 +8,14 @@
 #include <foundation/core/Scalar.h>
 
 #include "../test_assert.h"
+#include "philox_stream.h"
 
 #include <cstdint>
 #include <utility>
 
 namespace {
 
+using ::foundation::core::bit_cast;
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
 
@@ -68,6 +70,23 @@ struct Triple {
 struct Words {
     std::uint64_t low = 0;
     std::uint64_t high = 0;
+};
+
+// A word whose highest value is the empty value of its niche, through the
+// members of the niche protocol, and a class that holds one beside a bool.
+struct NicheWord {
+    std::uint32_t value = 0;
+
+    [[nodiscard]] static constexpr NicheWord niche_empty(::foundation::core::niche_key<NicheWord> const&) noexcept {
+        return NicheWord{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<NicheWord> const&) const noexcept {
+        return value == 0xFFFFFFFFu;
+    }
+};
+struct FlaggedWord {
+    NicheWord word{};
+    bool is_ready = false;
 };
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: decode walks a C array of enumerations, the array form of a quarantined type")
@@ -198,6 +217,40 @@ void test_decode_keeps_each_bit_pattern_of_a_plain_type() {
     assert(decode<double>(opaque(std::uint64_t{0x7FF0000000000001})).is_some());
 }
 
+// The empty value of a niche gives no value, as the whole To and as a part,
+// and each other value of the word decodes.  The bool beside the part is
+// checked too.
+void test_decode_refuses_the_empty_value_of_a_niche() {
+    assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFFu})).is_none());
+    assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFEu})).is_some());
+    assert(decode<NicheWord>(opaque(std::uint32_t{0})).expect("0 is no empty value").value == 0);
+    ::foundation::test::PhiloxStream stream{90};
+    for (int index = 0; index < 100000; ++index) {
+        std::uint32_t const word = stream.next_word();
+        std::uint64_t const flag = stream.below(3);
+        std::uint64_t const bits = (flag << 32) | word;
+        bool const is_value = flag <= 1 && word != 0xFFFFFFFFu;
+        assert(decode<FlaggedWord>(opaque(bits)).is_some() == is_value);
+    }
+    assert(decode<FlaggedWord>(opaque(std::uint64_t{0x00000001FFFFFFFF})).is_none());
+    assert(decode<FlaggedWord>(opaque(std::uint64_t{0x00000000FFFFFFFF})).is_none());
+}
+
+// bit_cast keeps each bit, and a float source is a source: each pattern
+// goes to a word and back.
+void test_bit_cast_keeps_each_bit() {
+    ::foundation::test::PhiloxStream stream{91};
+    for (int index = 0; index < 100000; ++index) {
+        std::uint64_t const wide = stream.next_wide();
+        auto const narrow = static_cast<std::uint32_t>(wide);
+        double const as_double = bit_cast<double>(opaque(wide));
+        float const as_float = bit_cast<float>(opaque(narrow));
+        assert(bit_cast<std::uint64_t>(opaque(as_double)) == wide);
+        assert(bit_cast<std::uint32_t>(opaque(as_float)) == narrow);
+        assert(decode<std::uint64_t>(opaque(as_double)).expect("each bit of a double is a value bit") == wide);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -208,6 +261,8 @@ int main() {
     test_decode_checks_a_base_and_a_nested_member();
     test_decode_checks_each_element_of_an_array();
     test_decode_keeps_each_bit_pattern_of_a_plain_type();
+    test_decode_refuses_the_empty_value_of_a_niche();
+    test_bit_cast_keeps_each_bit();
     crucible::test::pass("test_core_scalar: all tests passed\n");
     return 0;
 }

@@ -342,6 +342,7 @@ crucible_test(test_compute_vit test_compute_vit.cpp test_compute_vit_reference.c
 crucible_test(test_end_to_end test_end_to_end.cpp test_end_to_end_replay.cpp test_end_to_end_pool.cpp
   test_end_to_end_multi_iteration.cpp)
 crucible_test(test_philox)
+crucible_test(test_philox_golden)
 crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
 crucible_test(test_arena_alloc_class)

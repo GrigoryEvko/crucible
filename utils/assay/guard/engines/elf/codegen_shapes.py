@@ -678,9 +678,7 @@ PROBES: tuple[Probe, ...] = (
         "scalar_checked_add_wide",
         "checked_add of a word is the add and the carry flag of the raw form.  The Option comes back in two registers "
         "with no store on each path, because its tag is a word of eight bytes and the cells hold no padding byte.  "
-        "std::optional goes through the stack on each path, and at -O1 the targets of the branches are different.  "
-        f"{HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
-        branches=True,
+        "std::optional goes through the stack on each path, so the family side has fewer instructions",
     ),
     Probe(
         "scalar_checked_div",
@@ -748,6 +746,51 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe("scalar_low_mask", "low_mask is the two range tests and the shift of the raw form"),
+    Probe("scalar_bit_cast", "bit_cast of a double to a word is the one movq of std::bit_cast, with no check"),
+    Probe(
+        "scalar_decode_bool",
+        "decode of a bool is the one compare of the byte with 1 of the raw form, and the Option comes back in one "
+        "register.  At -O3 the empty Option builds its byte and its tag in two cleared registers and merges them, "
+        "where std::optional clears one register, so the family side has three more plain instructions",
+        longer=3,
+    ),
+    Probe(
+        "scalar_id_decode",
+        "decode of an Id gives the word with no compare.  The Option of an Id is the word, and the highest word, "
+        "its niche, is the empty Option.  The raw form compares the word with the highest word and builds a tag",
+    ),
+    Probe("scalar_fp_is_nan", "fp::is_nan is the quiet compare of the value with itself of std::isnan"),
+    Probe("scalar_fp_abs", "fp::abs is the one and of the sign mask of std::fabs"),
+    Probe(
+        "scalar_fp_sqrt",
+        "fp::sqrt is a quiet compare with 0, one branch and the sqrtsd of std::sqrt.  The family gives the canonical "
+        "NaN from a constant for a negative value or a NaN, and std::sqrt calls the library sqrt for errno, so the "
+        f"family side has no call and the two branches are different.  {HARDENED_BUILDS}.  These flags add a second "
+        "test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
+        "scalar_fp_fma",
+        "fp::fma is the fma of std::fma: one vfmadd with an FMA instruction, and a call of fma of libm for "
+        "-march=x86-64",
+    ),
+    Probe("scalar_fp_total_key", "fp::total_key is the shift, the or and the xor of the raw form"),
+    Probe("scalar_exchange", "exchange of a word is the load and the store of std::exchange"),
+    Probe("scalar_swap", "swap of two words is the two loads and the two stores of std::swap"),
+    Probe(
+        "scalar_quantity_add",
+        "checked_add of two quantities of four bytes is the add and the carry flag of the raw form, and the Option "
+        "comes back in one register",
+    ),
+    Probe(
+        "scalar_quantity_to_finer",
+        "convert to a finer unit is the one checked multiply by the quotient of the ratios of the raw form",
+    ),
+    Probe(
+        "scalar_quantity_to_coarser",
+        "convert to a coarser unit is the division by a constant of the raw form, and it multiplies the quotient back "
+        "where the raw form takes the remainder",
+    ),
     Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),

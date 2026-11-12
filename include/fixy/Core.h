@@ -22,18 +22,22 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
+#include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/Values.h>
 
 namespace fixy {
 
@@ -127,8 +131,12 @@ using ::foundation::core::zip;
 // FixedArray of the Region family stays in foundation::core until the merge of
 // fixy/FixedArray.h, which declares a fixy::FixedArray of its own.
 
+using ::foundation::core::bit_cast;
+using ::foundation::core::BitValid;
+using ::foundation::core::DecodableFrom;
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
+using ::foundation::core::Enumerated;
 
 using ::foundation::core::Arithmetic;
 using ::foundation::core::fits_each_value;
@@ -183,5 +191,39 @@ using ::foundation::core::low_mask;
 using ::foundation::core::popcount;
 using ::foundation::core::rotl;
 using ::foundation::core::rotr;
+
+using ::foundation::core::exchange;
+using ::foundation::core::Exchangeable;
+
+using ::foundation::core::Digest;
+using ::foundation::core::Id;
+
+// The arithmetic of a Quantity is a set of overloads of checked_*, wrapping_*
+// and saturating_* in foundation::core, which argument-dependent lookup
+// finds.  The units keep their namespace unit.
+using ::foundation::core::convert;
+using ::foundation::core::Quantity;
+using ::foundation::core::QuantityUnit;
+namespace unit = ::foundation::core::unit;
+
+// The object swap stays in an inline namespace, because classes of namespace
+// fixy, such as fixy::FixedArray, declare a hidden friend named swap.
+inline namespace values {
+using ::foundation::core::swap;
+}  // namespace values
+
+// The operations of a floating value keep their namespace fp.
+namespace fp {
+using ::foundation::core::fp::abs;
+using ::foundation::core::fp::copy_sign;
+using ::foundation::core::fp::fma;
+using ::foundation::core::fp::is_finite;
+using ::foundation::core::fp::is_inf;
+using ::foundation::core::fp::is_nan;
+using ::foundation::core::fp::is_normal;
+using ::foundation::core::fp::sign_bit;
+using ::foundation::core::fp::sqrt;
+using ::foundation::core::fp::total_key;
+}  // namespace fp
 
 }  // namespace fixy

@@ -4,9 +4,13 @@
 
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Compare.h>
+#include <foundation/core/Id.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Verbs.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace foundation::core {
 
@@ -121,6 +125,10 @@ struct Words {
     std::uint64_t low = 0;
     std::uint64_t high = 0;
 };
+struct HalfWords {
+    std::uint32_t low = 0;
+    std::uint32_t high = 0;
+};
 // Six bytes of members and two bytes of padding.
 struct Padded {
     std::uint32_t key = 0;
@@ -153,9 +161,11 @@ static_assert(DecodableFrom<Words, Words> && DecodableFrom<std::uint32_t, std::u
 static_assert(DecodableFrom<Extremes, std::int64_t>);
 // The two types must have one size.
 static_assert(!DecodableFrom<std::uint32_t, std::uint16_t> && !DecodableFrom<std::uint16_t, std::uint32_t>);
-// Each bit of the source is a value bit.
-static_assert(!DecodableFrom<std::uint64_t, Padded> && !DecodableFrom<std::uint32_t, float>);
-static_assert(!DecodableFrom<std::uint64_t, double>);
+// Each bit of the source is a value bit.  A float and a double have no
+// padding bit, and long double has 80 value bits in 16 bytes on x86_64.
+static_assert(!DecodableFrom<std::uint64_t, Padded> && DecodableFrom<std::uint32_t, float>);
+static_assert(DecodableFrom<std::uint64_t, double> && !DecodableFrom<Words, long double>);
+static_assert(DecodableFrom<std::uint64_t, HalfWords> && DecodableFrom<HalfWords, double>);
 // A function cannot return an array or a cv-qualified value.
 static_assert(!DecodableFrom<std::uint8_t[4], std::uint32_t> && !DecodableFrom<std::uint32_t const, std::uint32_t>);
 // An address, an empty class and a bit-field are refused.  The negative
@@ -191,26 +201,78 @@ static_assert(decodes_nested_parts());
 static_assert(decode<Nested>(Triple{0x0905, 0x0501, 0}).is_none());
 static_assert(decode<Nested>(Triple{0x09FE, 0x0503, 0}).is_none());
 
+// A word whose highest value is the empty value of its niche, through the
+// members of the niche protocol.
+struct NicheWord {
+    std::uint32_t value = 0;
+
+    [[nodiscard]] static constexpr NicheWord niche_empty(niche_key<NicheWord> const&) noexcept {
+        return NicheWord{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<NicheWord> const&) const noexcept {
+        return value == 0xFFFFFFFFu;
+    }
+};
+// A niche part beside a bool, and three bytes of padding.
+struct FlaggedWord {
+    NicheWord word{};
+    bool is_ready = false;
+};
+static_assert(sizeof(Option<NicheWord>) == sizeof(NicheWord) && sizeof(FlaggedWord) == 8);
+
+// decode gives no value for the empty value of a niche, of the whole To and
+// of a part.  The bool of a part is checked before the niche.
+static_assert(decode<NicheWord>(std::uint32_t{7}).is_some() && decode<NicheWord>(std::uint32_t{0xFFFFFFFEu}).is_some());
+static_assert(decode<NicheWord>(std::uint32_t{0xFFFFFFFFu}).is_none());
+static_assert(decode<FlaggedWord>(std::uint64_t{0x0000000100000007}).is_some());
+static_assert(decode<FlaggedWord>(std::uint64_t{0x00000001FFFFFFFF}).is_none());
+static_assert(decode<FlaggedWord>(std::uint64_t{0x0000000200000007}).is_none());
+
+// ── The bit copy ──────────────────────────────────────────────────────
+
+// Each bit pattern of a bit valid type is a value: no bool, no enumeration
+// with an enumerator and no niche.
+static_assert(BitValid<std::uint32_t> && BitValid<float> && BitValid<double> && BitValid<Strong>);
+static_assert(BitValid<std::byte> && BitValid<Words> && BitValid<Triple> && BitValid<HalfWords>);
+static_assert(!BitValid<bool> && !BitValid<Contiguous> && !BitValid<Switch> && !BitValid<Flagged>);
+static_assert(!BitValid<NicheWord> && !BitValid<FlaggedWord> && !BitValid<int*> && !BitValid<Annotated>);
+static_assert(!BitValid<HoldsSeal> && !BitValid<Token> && !BitValid<void> && !BitValid<int&>);
+
+// The IEEE 754 bits of 1.0 and of -0.0f, and back.
+static_assert(bit_cast<std::uint64_t>(1.0) == 0x3FF0000000000000u && bit_cast<std::uint32_t>(-0.0f) == 0x80000000u);
+static_assert(bit_cast<std::uint32_t>(bit_cast<float>(std::uint32_t{0x7FC00001u})) == 0x7FC00001u);
+static_assert(bit_cast<Words>(Words{1, 2}).high == 2 && bit_cast<Strong>(std::uint8_t{200}) == Strong{200});
+static_assert(std::is_same_v<decltype(bit_cast<double>(std::uint64_t{0})), double>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.7: each name of the API table and of
 // the gates, and the accessors lo and hi of Bounds and the halves low and
 // high of WideProduct, which the design of the unit gives.
 inline constexpr TextView scalar_names{
-    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid fits_each_value "
-    "max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of quiet_nan_of "
+    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid Exchangeable "
+    "fits_each_value max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of "
+    "quiet_nan_of "
     "signaling_nan_of min max Bounds of lo hi bounds clamp compare fits unsigned_abs abs_diff narrow "
     "wrapping_narrow saturating_narrow widen enum_from checked_add checked_sub checked_mul checked_div checked_rem "
     "checked_neg checked_shl checked_shr wrapping_add wrapping_sub wrapping_mul wrapping_neg wrapping_shl "
     "wrapping_shr saturating_add saturating_sub saturating_mul gcd widening_mul WideProduct low high popcount "
     "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "
     "byteswap bit_cast decode is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
-    "swap Philox4x32 generate Id raw Digest Quantity convert niche_empty is_niche_empty"};
+    "swap Philox4x32 generate Id raw Digest Quantity QuantityUnit convert dimension ratio Byte Element Nanosecond "
+    "Microsecond Millisecond Second Cycle Memory Count Time Clock"};
 
 CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint8_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint64_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Bounds<int>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Bounds<double>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Quantity<unit::Byte, std::uint64_t>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Quantity<unit::Second, std::int8_t>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Second);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Memory);
+struct SurfaceTag;
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Id<SurfaceTag, std::uint32_t>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Digest<SurfaceTag>);
 
 }  // namespace detail::scalar_checks
 

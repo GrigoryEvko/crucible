@@ -27,6 +27,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -604,6 +605,50 @@ struct TokenB final {};
 
 [[gnu::used]] std::uint64_t scalar_low_mask(int count) noexcept { return fixy::low_mask<std::uint64_t>(count); }
 
+[[gnu::used]] std::uint64_t scalar_bit_cast(double value) noexcept { return fixy::bit_cast<std::uint64_t>(value); }
+
+[[gnu::used]] fixy::Option<bool> scalar_decode_bool(std::uint8_t byte) noexcept { return fixy::decode<bool>(byte); }
+
+using ProbeSlotId = fixy::Id<struct ProbeSlotTag, std::uint32_t>;
+
+[[gnu::used]] fixy::Option<ProbeSlotId> scalar_id_decode(std::uint32_t word) noexcept {
+    return fixy::decode<ProbeSlotId>(word);
+}
+
+[[gnu::used]] bool scalar_fp_is_nan(double value) noexcept { return fixy::fp::is_nan(value); }
+
+[[gnu::used]] double scalar_fp_abs(double value) noexcept { return fixy::fp::abs(value); }
+
+[[gnu::used]] double scalar_fp_sqrt(double value) noexcept { return fixy::fp::sqrt(value); }
+
+[[gnu::used]] double scalar_fp_fma(double left, double right, double addend) noexcept {
+    return fixy::fp::fma(left, right, addend);
+}
+
+[[gnu::used]] std::uint64_t scalar_fp_total_key(double value) noexcept { return fixy::fp::total_key(value); }
+
+[[gnu::used]] std::uint64_t scalar_exchange(std::uint64_t& slot, std::uint64_t value) noexcept {
+    return fixy::exchange(slot, value);
+}
+
+[[gnu::used]] void scalar_swap(std::uint64_t& left, std::uint64_t& right) noexcept { fixy::swap(left, right); }
+
+using ProbeBytes = fixy::Quantity<fixy::unit::Byte, std::uint32_t>;
+
+[[gnu::used]] fixy::Option<ProbeBytes> scalar_quantity_add(ProbeBytes left, ProbeBytes right) noexcept {
+    return ::foundation::core::checked_add(left, right);
+}
+
+[[gnu::used]] fixy::Option<fixy::Quantity<fixy::unit::Nanosecond, std::uint32_t>>
+scalar_quantity_to_finer(fixy::Quantity<fixy::unit::Microsecond, std::uint32_t> value) noexcept {
+    return fixy::convert<fixy::unit::Nanosecond>(value);
+}
+
+[[gnu::used]] fixy::Option<fixy::Quantity<fixy::unit::Second, std::uint32_t>>
+scalar_quantity_to_coarser(fixy::Quantity<fixy::unit::Millisecond, std::uint32_t> value) noexcept {
+    return fixy::convert<fixy::unit::Second>(value);
+}
+
 // ── Linear and the permission tokens ────────────────────────────────────────
 
 struct ProbeRegion final {
@@ -1103,6 +1148,57 @@ struct RawBounds final {
     if (count <= 0) return 0;
     if (count >= 64) return ~std::uint64_t{0};
     return (std::uint64_t{1} << count) - 1;
+}
+
+[[gnu::used]] std::uint64_t scalar_bit_cast_raw(double value) noexcept { return std::bit_cast<std::uint64_t>(value); }
+
+[[gnu::used]] std::optional<bool> scalar_decode_bool_raw(std::uint8_t byte) noexcept {
+    if (byte > 1) return std::nullopt;
+    return byte == 1;
+}
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_id_decode_raw(std::uint32_t word) noexcept {
+    if (word == std::numeric_limits<std::uint32_t>::max()) return std::nullopt;
+    return word;
+}
+
+[[gnu::used]] bool scalar_fp_is_nan_raw(double value) noexcept { return std::isnan(value); }
+
+[[gnu::used]] double scalar_fp_abs_raw(double value) noexcept { return std::fabs(value); }
+
+[[gnu::used]] double scalar_fp_sqrt_raw(double value) noexcept { return std::sqrt(value); }
+
+[[gnu::used]] double scalar_fp_fma_raw(double left, double right, double addend) noexcept {
+    return std::fma(left, right, addend);
+}
+
+[[gnu::used]] std::uint64_t scalar_fp_total_key_raw(double value) noexcept {
+    auto const bits = std::bit_cast<std::uint64_t>(value);
+    auto const spread = static_cast<std::uint64_t>(static_cast<std::int64_t>(bits) >> 63);
+    return bits ^ (spread | (std::uint64_t{1} << 63));
+}
+
+[[gnu::used]] std::uint64_t scalar_exchange_raw(std::uint64_t& slot, std::uint64_t value) noexcept {
+    return std::exchange(slot, value);
+}
+
+[[gnu::used]] void scalar_swap_raw(std::uint64_t& left, std::uint64_t& right) noexcept { std::swap(left, right); }
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_quantity_add_raw(std::uint32_t left, std::uint32_t right) noexcept {
+    std::uint32_t sum = 0;
+    if (__builtin_add_overflow(left, right, &sum)) return std::nullopt;
+    return sum;
+}
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_quantity_to_finer_raw(std::uint32_t value) noexcept {
+    std::uint32_t product = 0;
+    if (__builtin_mul_overflow(value, 1000u, &product)) return std::nullopt;
+    return product;
+}
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_quantity_to_coarser_raw(std::uint32_t value) noexcept {
+    if (value % 1000u != 0) return std::nullopt;
+    return value / 1000u;
 }
 
 // The raw form of a token is an empty class that the ABI passes in no

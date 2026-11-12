@@ -2385,6 +2385,9 @@ foundation_neg_compile_test(neg_core_atomic_writer_not_sole_writer
 # refused: an address, a union, a bit-field, an empty class and a sealed
 # class.  enum_from refuses an enumeration with no enumerator.
 foundation_test(test_core_scalar)
+# Each operation of the family gives the answer of its std form for each
+# input that the std form defines.
+foundation_test(test_core_scalar_oracle)
 
 foundation_neg_compile_test(neg_core_decode_pointer_member
   "no matching function for call to .decode<HoldsAddress>\\(uint64_t\\)."
@@ -2397,7 +2400,16 @@ foundation_neg_compile_test(neg_core_decode_size_mismatch
   "the expression .sizeof \\(To\\) == sizeof \\(From\\) \\[with To = unsigned int; From = short unsigned int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_decode_padded_source
   "no matching function for call to .decode<uint64_t>\\(Padded\\)."
-  "the expression .has_unique_object_representations_v<From> \\[with From = Padded\\]. evaluated to .false.")
+  "the expression .has_no_padding_bit_at\\(.*\\(\\^\\^ From\\) \\[with From = Padded\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bit_cast_bool
+  "no matching function for call to .bit_cast<bool>\\(uint8_t\\)."
+  "the expression .!has_checked_leaf_at\\(.*\\(\\^\\^ T\\) \\[with T = bool\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bit_cast_enumeration
+  "no matching function for call to .bit_cast<Phase>\\(uint8_t\\)."
+  "the expression .!has_checked_leaf_at\\(.*\\(\\^\\^ T\\) \\[with T = Phase\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bit_cast_niche
+  "no matching function for call to .bit_cast<NicheWord>\\(uint32_t\\)."
+  "the expression .!has_checked_leaf_at\\(.*\\(\\^\\^ T\\) \\[with T = NicheWord\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_enum_from_no_enumerator
   "no matching function for call to .enum_from<Strong>\\(int\\)."
   "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
@@ -2481,6 +2493,62 @@ foundation_neg_compile_test(neg_core_scalar_popcount_signed
 foundation_neg_compile_test(neg_core_scalar_rotl_bool
   "no matching function for call to .rotl\\(bool, int\\)."
   "the expression .!\\(same_as<T, bool>\\) \\[with T = bool\\]. evaluated to .false.")
+
+# The operations of a floating value.  Each one takes float or double, so
+# long double and an integer do not compile.
+foundation_test(test_core_scalar_float)
+
+foundation_neg_compile_test(neg_core_scalar_fp_long_double
+  "no matching function for call to .is_nan\\(long double\\)."
+  "required for the satisfaction of .Float<T>. \\[with T = long double\\]")
+foundation_neg_compile_test(neg_core_scalar_fp_sqrt_integer
+  "no matching function for call to .sqrt\\(int\\)."
+  "required for the satisfaction of .Float<T>. \\[with T = int\\]")
+
+# exchange and swap move a value with no throw.  A Pinned type does not
+# move, and a const object cannot take a value.
+foundation_test(test_core_scalar_values)
+
+foundation_neg_compile_test(neg_core_scalar_exchange_pinned
+  "no matching function for call to .exchange\\(Anchored&, Anchored\\)."
+  "the expression .is_nothrow_move_constructible_v<T> \\[with T = Anchored\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_swap_const
+  "no match for call to .\\(const foundation::core::detail::SwapValues\\) \\(const int&, const int&\\)."
+  "required for the satisfaction of .Exchangeable<T>. \\[with T = const int\\]")
+
+# An Id holds an unsigned word of a tag class, with no default constructor
+# and no arithmetic.  Its highest word is the niche of its Option.
+foundation_test(test_core_scalar_id)
+
+foundation_neg_compile_test(neg_core_scalar_id_signed_word
+  "template constraint failure for .template<class Tag, class Word>  requires \\(UnsignedInteger<Word>\\) && \\(is_class_v<Tag>\\) class foundation::core::Id."
+  "required for the satisfaction of .UnsignedInteger<Word>. \\[with Word = int\\]")
+foundation_neg_compile_test(neg_core_scalar_id_tag_not_a_class
+  "template constraint failure for .template<class Tag, class Word>  requires \\(UnsignedInteger<Word>\\) && \\(is_class_v<Tag>\\) class foundation::core::Id."
+  "the expression .is_class_v<Tag> \\[with Tag = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_id_arithmetic
+  "no match for .operator\\+. \\(operand types are .const SlotId. \\{aka .const foundation::core::Id<SlotTag, unsigned int>.\\} and .const SlotId."
+  "neg_core_scalar_id_arithmetic.cpp:12:")
+foundation_neg_compile_test(neg_core_scalar_id_default
+  "no matching function for call to .foundation::core::Id<SlotTag, unsigned int>::Id\\(\\)."
+  "neg_core_scalar_id_default.cpp:11:")
+
+# A Quantity holds an Integer in one unit of namespace unit.  Two units do
+# not meet in one operation, and a conversion keeps the dimension.
+foundation_test(test_core_scalar_quantity)
+
+foundation_neg_compile_test(neg_core_scalar_quantity_not_a_unit
+  "template constraint failure for .template<class UnitTag, class Rep>  requires \\(QuantityUnit<UnitTag>\\) && \\(Integer<Rep>\\) class foundation::core::Quantity."
+  "required for the satisfaction of .QuantityUnit<UnitTag>. \\[with UnitTag = Kibibyte\\]")
+foundation_neg_compile_test(neg_core_scalar_quantity_float_rep
+  "template constraint failure for .template<class UnitTag, class Rep>  requires \\(QuantityUnit<UnitTag>\\) && \\(Integer<Rep>\\) class foundation::core::Quantity."
+  "required for the satisfaction of .Integer<Rep>. \\[with Rep = double\\]")
+foundation_neg_compile_test(neg_core_scalar_quantity_two_units
+  "no matching function for call to .checked_add\\(const foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>&, const foundation::core::Quantity<foundation::core::unit::Element, long unsigned int>&\\)."
+  "deduced conflicting types for parameter .UnitTag. \\(.foundation::core::unit::Byte. and .foundation::core::unit::Element.\\)")
+foundation_neg_compile_test(neg_core_scalar_quantity_two_dimensions
+  "no matching function for call to .convert<foundation::core::unit::Byte>\\(const foundation::core::Quantity<foundation::core::unit::Second, long int>&\\)."
+  "required for the satisfaction of .ConvertibleUnits<FromUnit, ToUnit>. \\[with FromUnit = foundation::core::unit::Second; ToUnit = foundation::core::unit::Byte\\]")
 
 # ── The Region family: View, copy and fill ────────────────────────────
 #

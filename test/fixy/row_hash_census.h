@@ -439,6 +439,8 @@ inline constexpr std::string_view kMachinery =
     "machinery that computes over grades at compile time; nothing here is a value in a signature";
 
 inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
+    {^^::foundation::core::unit, "the units and the dimensions of a Quantity: tags that a type names at compile "
+                                 "time, and none of them is a value"},
     {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor and the owner of a "
                          "guarded map: words and memory of the kernel interface that carry no grade"},
     {^^::fixy::tags::source, kGradeVocabulary},
@@ -940,6 +942,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::WideProduct, kPayload},
     {^^::foundation::core::Bounds,
      "a proof that a range has lo <= hi and no NaN: the argument of clamp, never a value in a kernel signature"},
+    {^^::foundation::core::Quantity,
+     "a number with a unit: its unit is a part of its type, and it makes no claim that a grade carries"},
+    {^^::foundation::core::Id, "a number whose kind is its tag: an id, which makes no claim that a grade carries"},
+    {^^::foundation::core::Digest, "a hash whose kind is its tag: a value, which makes no claim that a grade carries"},
     {^^::foundation::core::SurfaceVerdict,
      "the answer of the protocol check of a family type: a text of a constant evaluation, never a value in a "
      "kernel signature"},

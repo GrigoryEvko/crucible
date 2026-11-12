@@ -1394,7 +1394,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **The idea.** Each operation on a fundamental value is total: no input is undefined. An input that can fail gives an `Option`. A type that proves the result gives the value with no check. No operation reads `errno`, a locale or a global, and no operation calls `fatal()`. A strong type gives a meaning to a number, and a quantity gives it a unit.
 
-**The headers.** `include/foundation/core/Number.h`, `Arithmetic.h`, `Compare.h`, `Convert.h`, `Bits.h` and `Scalar.h` (main), and `Float.h`, `Values.h`, `Id.h`, `Quantity.h` and `Philox.h` (design). `Number.h` holds the gates and the limits, and it includes no `<meta>`, so a lower header such as `Report.h` can include it. `StaticIndex<I>` and `index<I>()` are in `include/foundation/core/Index.h` of the Region family (section 11.4). The builtins of R3 replace `<bit>`, `<limits>`, `<numeric>`, `<cmath>` and `<climits>`: `__builtin_clzg`, `__builtin_ctzg`, `__builtin_popcountg`, `__builtin_bswap16` to `64`, the overflow builtins, `__builtin_bit_cast`, `__builtin_sqrt`, `__builtin_fma`, the classification builtins, and the macros `__FLT_*`, `__DBL_*` and `__CHAR_BIT__`. The modular forms use the overflow builtins only, so no result changes with `-fno-strict-overflow`.
+**The headers.** `include/foundation/core/Number.h`, `Arithmetic.h`, `Compare.h`, `Convert.h`, `Bits.h`, `Float.h`, `Values.h`, `Quantity.h`, `Id.h` and `Scalar.h` (main), and `Philox.h` (design). `fixy/Core.h` gives the operations of `Float.h` in namespace `fixy::fp`. The object `swap` is in an inline namespace, in `foundation::core` and in `fixy`, so a hidden friend named `swap` in a class of the namespace does not conflict with it. `Number.h` holds the gates and the limits, and it includes no `<meta>`, so a lower header such as `Report.h` can include it. `StaticIndex<I>` and `index<I>()` are in `include/foundation/core/Index.h` of the Region family (section 11.4). The builtins of R3 replace `<bit>`, `<limits>`, `<numeric>`, `<cmath>` and `<climits>`: `__builtin_clzg`, `__builtin_ctzg`, `__builtin_popcountg`, `__builtin_bswap16` to `64`, the overflow builtins, `__builtin_bit_cast`, `__builtin_sqrt`, `__builtin_fma`, the classification builtins, and the macros `__FLT_*`, `__DBL_*` and `__CHAR_BIT__`. The modular forms use the overflow builtins only, so no result changes with `-fno-strict-overflow`.
 
 **The merges.** Slice 4.10 merges `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` into the family (Appendix E). The checked operations then give an `Option`. The owner decided two parts of the map on 2026-11-12:
 - `safe_add_all` and `safe_struct_bytes` have no caller outside `fixy/Checked.h` and its tests. Slice 4.10 deletes them, and the family gets no name for them.
@@ -1409,6 +1409,8 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `Enumerated<E>`, `DecodableFrom<To, From>` | An enumeration with an enumerator, and a decode with no pointer, reference, union, bit-field, empty class or sealed class | main |
 | `BitValid<T>` | Each bit pattern of the value bytes is a value. `std::byte` is valid | design |
 | `fits_each_value<From, To>` | Each value of `From` is a value of `To`, from the value bits and the signedness | design |
+| `Exchangeable<T>` | An object type that is not an array and not cv-qualified, with a move constructor and a move assignment that do not throw. A `Pinned` type is refused | new |
+| `QuantityUnit<U>` | A unit tag of namespace `unit`. The gate names each tag | new |
 
 **The API.**
 
@@ -1428,11 +1430,11 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | Static index | `StaticIndex<I>`, `index<I>()` | The proof of a constant index for `at` | none | design |
 | Values | `exchange(slot, value)`, `swap` (a function object) | A type that moves with `noexcept` and is not `Pinned` | a move | design |
 | Random | `Philox4x32`, with a `FixedArray` counter and key | The counter-based generator of `include/crucible/Philox.h`, which moves into the base: the same counter and key give the same bits on each target | about ten integer instructions | design |
-| Strong ids | `Id<Tag, Word>` | An explicit construction from a `Word`, `raw()`, `==` and `<=>`, and no arithmetic. The value `max_of<Word>` is the empty value of `Option<Id>`, through the member niche protocol of section 11.2 | none | new |
+| Strong ids | `Id<Tag, Word>` | An explicit construction from a `Word`, `raw()`, `==` and `<=>`, and no arithmetic. The owner decided on 2026-11-12: no default constructor and no `none()`, and absence is `Option<Id>`. The value `max_of<Word>` is the empty value of `Option<Id>`, through a specialization of the niche protocol of section 11.2, so `Option<Id>` has the size of the word and `decode` gives no value for that word | none | new |
 | Digests | `Digest<Tag>` | A 64-bit hash value with a meaning: an explicit construction, `raw()`, `==` and `<=>`, and no arithmetic. Each value is valid, so it has no niche | none | new |
-| Quantities | `Quantity<Unit, Rep>` | A number with a unit. A unit is a tag with a dimension and a ratio to the base unit of its dimension. The checked, wrapping and saturating operations take two values of one unit. A product or a quotient with a plain number keeps the unit. `convert<ToUnit>(q)` gives `Option`, and it has no check when the ratio divides | the operation of `Rep` | new |
+| Quantities | `Quantity<UnitTag, Rep>` | A number with a unit. A unit is a tag of namespace `unit` with a dimension and a ratio to the base unit of its dimension. The checked, wrapping and saturating operations take two values of one unit. A product or a quotient with a plain number keeps the unit. `convert<ToUnit>(q)` gives `Option`, and it compiles only when one ratio divides the other (owner, 2026-11-12). The identity conversion has no check. A conversion to a finer unit uses `checked_mul`, and a conversion to a coarser unit gives no value when the number is not a whole number of the target unit | the operation of `Rep` | new |
 
-`Id` and `Digest` replace the macros `CRUCIBLE_STRONG_ID` and `CRUCIBLE_STRONG_HASH` of `include/crucible/Types.h`, in Stage 5. The base units of `Quantity` are bytes, elements, nanoseconds and cycles. `Duration` of the Os family is `Quantity<Nanosecond, std::int64_t>` (section 11.9).
+`Id` and `Digest` replace the macros `CRUCIBLE_STRONG_ID` and `CRUCIBLE_STRONG_HASH` of `include/crucible/Types.h`, in Stage 5. The unit core-ir of wave 5B (section 14.1) moves `include/crucible/Types.h` and each caller of the two macros. A caller of `none()` then holds an `Option<Id>`, so that move is no mechanical change. The base units of `Quantity` are bytes, elements, nanoseconds and cycles. The owner approved these units on 2026-11-12: `unit::Byte`, `unit::Element`, `unit::Nanosecond`, `unit::Cycle`, `unit::Microsecond`, `unit::Millisecond` and `unit::Second`, with the dimensions `unit::Memory`, `unit::Count`, `unit::Time` and `unit::Clock`. The gate `QuantityUnit` names each unit, so no other header adds one. A later change adds a unit with the caller that needs it. `Duration` of the Os family is `Quantity<Nanosecond, std::int64_t>` (section 11.9).
 
 **The family list.** Each name of the API table and of the gates. `parse` belongs to the Report family (section 11.8).
 
@@ -1463,7 +1465,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `std::clamp(v, lo, hi)` | `fixy::clamp(v, fixy::bounds<lo, hi>())`, or `Bounds<T>::of(lo, hi)` for run-time bounds | mechanical for constant bounds |
 | `std::cmp_less(a, b)`, `std::in_range<T>(v)` | `fixy::compare(a, b) < 0`, `fixy::fits<T>(v)` | mechanical |
 | `std::abs(v)` of an integer | `fixy::unsigned_abs(v)` | judgment (the unsigned result) |
-| `CRUCIBLE_STRONG_ID(Name, Word)` | `using Name = fixy::Id<NameTag, Word>;` | mechanical |
+| `CRUCIBLE_STRONG_ID(Name, Word)` | `using Name = fixy::Id<NameTag, Word>;`, and `Option<Name>` for each value that can be `none()` | judgment (each use of `none()`) |
 | a size or a time as a plain integer | `fixy::Quantity<Unit, Rep>` | judgment (the unit) |
 
 ### 11.8 Report: `Site`, `Fmt`, `format`, `report`, `fatal`, `unreachable`, `parse`
