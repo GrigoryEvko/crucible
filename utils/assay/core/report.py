@@ -76,7 +76,7 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Buffer, Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -193,8 +193,12 @@ def escape_property(text: str) -> str:
 
 
 def write_line(text: str, *, is_error: bool = False) -> None:
-    """Write one line to the standard output, or to the standard error when is_error is True."""
-    print(text, file=sys.stderr if is_error else sys.stdout)
+    """Write one line to the standard output, or to the standard error when is_error is True, and flush the stream.
+
+    Python keeps the output to a pipe or a file in a buffer.  The flush lets a reader of such a stream see each line
+    at once, such as the log of a landing that runs in the background.
+    """
+    print(text, file=sys.stderr if is_error else sys.stdout, flush=True)
 
 
 def self_test_main(argv: list[str], self_test: Callable[[], int], module: str) -> int:
@@ -511,6 +515,33 @@ def self_test() -> int:
     sample = Finding("warning", "include/fixy/Refined.h", 12, "step-memory", "1.5 GB, 50% over 1 GB")
     expect("text has the format", sample.text()
            == "include/fixy/Refined.h:12: warning: [step-memory] 1.5 GB, 50% over 1 GB")
+
+    class Recorded(io.RawIOBase):
+        """A raw stream that keeps each byte that reaches it."""
+
+        def __init__(self) -> None:
+            """Start with no byte."""
+            super().__init__()
+            self.data = bytearray()
+
+        def writable(self) -> bool:
+            """Tell that the stream takes writes."""
+            return True
+
+        def write(self, chunk: Buffer, /) -> int:
+            """Keep the bytes of one write."""
+            data = bytes(chunk)
+            self.data += data
+            return len(data)
+
+    for name, redirect in (("output", contextlib.redirect_stdout), ("error", contextlib.redirect_stderr)):
+        raw = Recorded()
+        buffered = io.TextIOWrapper(io.BufferedWriter(raw), encoding="utf-8")
+        with redirect(buffered):
+            write_line("one line", is_error=name == "error")
+            reached = bytes(raw.data)
+        expect(f"write_line flushes each line of the standard {name}, so a reader of a pipe sees it at once",
+               reached == b"one line\n")
     expect("parse_line reads text back", parse_line(sample.text()) == sample)
     expect("parse_line refuses a free line", parse_line("STALE something") is None)
     expect("annotation escapes", Finding("error", "a,b:c.h", 3, "object-size", "100% of x").annotation()
