@@ -109,6 +109,9 @@ public:
     [[nodiscard]] std::size_t l1d_per_core_bytes() const noexcept { return l1d_; }
     [[nodiscard]] std::size_t l1i_per_core_bytes() const noexcept { return l1i_; }
     [[nodiscard]] std::size_t l2_per_core_bytes() const noexcept { return l2_; }
+    // The size of one L3 instance: the L3 of the first online CPU.  A host
+    // with more than one L3 instance, such as a part with more than one
+    // chiplet, has more L3 than this in total.
     [[nodiscard]] std::size_t l3_total_bytes() const noexcept { return l3_; }
     [[nodiscard]] std::size_t cache_line_bytes() const noexcept { return line_; }
 
@@ -128,10 +131,13 @@ public:
     // know whether one specific core has a sibling.
     [[nodiscard]] std::size_t smt_factor() const noexcept { return cores_ == 0 ? 1 : threads_ / cores_; }
 
-    // How many CPUs this process is allowed to run on, which under a container
-    // or a cgroup is fewer than the machine has.  Thread-pool sizing and every
-    // parallelism decision reads this rather than the core count, or it spawns
-    // threads the process is not permitted to spread onto.
+    // The count of the CPUs of the process: the count of the affinity mask of
+    // the thread group leader when the library loads (THE CPUS OF THE PROCESS
+    // in src/fixy/os/Topology.cpp).  A launcher such as taskset, or the cpuset
+    // of a container, can make it fewer than the machine has.  A CPU quota
+    // does not make it smaller, and a pin of a thread does not change it.
+    // Thread-pool sizing and each parallelism decision read this and not the
+    // core count, so no decision spreads past the CPUs of the process.
     [[nodiscard]] std::size_t process_cpu_count() const noexcept { return process_cpus_; }
 
     // Probed rather than assumed: it is 4 KB on most hosts but 16 KB on some

@@ -417,11 +417,8 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    // The first call to Topology::instance() probes the host one time, and
-    // it counts the usable CPUs from the affinity of the calling thread.  A
-    // thread that holds a pin to one CPU gives a count of 1, and the rule
-    // then decides sequential for each tier.  So this call comes before the
-    // placement pin and before the first Run.
+    // The count of the usable CPUs is the count of the process when the
+    // library loads, so the placement pin below does not change it.
     const auto& topo = fc::Topology::instance();
     const std::size_t default_forced_workers =
         std::max<std::size_t>(2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));

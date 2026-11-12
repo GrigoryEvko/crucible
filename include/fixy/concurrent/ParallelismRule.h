@@ -10,9 +10,10 @@
 // fits a core's L2 is already hot in that core, so a second worker adds
 // invalidation traffic and no bandwidth, and the rule keeps it
 // sequential.  Past L2 the factor is still capped by what the memory
-// hierarchy can stream.  Inside the shared L3 the workers stay on one
-// socket, so coherence traffic does not cross it.  Beyond L3 the work
-// is bandwidth-bound, the factor tracks how many L2-sized pieces the
+// hierarchy can stream.  A set that fits one L3 instance gets at most the
+// CPUs that share one instance, and the intent to stay on one NUMA node.
+// The L3 size is the size of one instance, not of a socket.  Beyond L3
+// the work is bandwidth-bound, the factor tracks how many L2-sized pieces the
 // set divides into, and spreading over NUMA nodes puts independent
 // memory controllers to work.
 //
@@ -172,8 +173,8 @@ public:
         const auto& topo = Topology::instance();
         const std::size_t ws = budget.working_set_bytes();
 
-        // What the process may run on, which under a CPU quota is less
-        // than what the host has.
+        // The CPUs of the process, which a launcher mask or a cpuset can
+        // make fewer than the CPUs of the host.  A CPU quota does not.
         const std::size_t process_cpus = topo.process_cpu_count();
         const std::size_t socket_cores = topo.cores_per_socket();
         const std::size_t cores_avail = process_cpus == 0 ? 1 : process_cpus;
@@ -191,8 +192,9 @@ public:
             return dec;
         }
 
-        // The set fits one socket's shared L3, so the workers stay on
-        // that socket and the coherence traffic never leaves it.
+        // The set fits one L3 instance.  The factor is at most the count
+        // of the CPUs of the largest L3 group, which cores_per_socket
+        // gives, and the intent keeps the workers on one NUMA node.
         if (dec.tier == Tier::L3Resident) {
             constexpr std::size_t max_factor = parallelism_rule_detail::kL3ResidentMaxFactor;
             const std::size_t usable_on_socket = cores_avail < cores_per_socket ? cores_avail : cores_per_socket;

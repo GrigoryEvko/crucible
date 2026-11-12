@@ -32,6 +32,22 @@
 //   throws, so the probe has no handler of an exception.  A failed allocation
 //   of a vector ends the process, as each failed allocation of the tree does.
 //
+// THE CPUS OF THE PROCESS
+//   Linux keeps an affinity mask for each thread, and no mask for the
+//   process.  The count of the CPUs of the process is the count of the mask
+//   of the thread group leader when the library loads, before main.  No
+//   thread of the program can pin itself before that read, so a later pin of
+//   a thread, the leader too, does not change the count.  A launcher such as
+//   taskset sets the mask that the read gives.
+//
+//   The kernel clips the mask of each task to the effective CPUs of its
+//   cpuset, so the probe reads no file of the cpuset.  The probe reads no CPU
+//   quota of the cgroup (cpu.max), so a quota does not make the count
+//   smaller.  The read runs one time for each library that links the probe,
+//   in a constructor of priority 102, after the start-up check of the kernel
+//   floor at 101.  A child of fork keeps the count of its parent, as it keeps
+//   each other fact of a topology that the parent probed.
+//
 // THE PARSE
 //   The parsers below read a number as std::from_chars reads it: an optional
 //   minus sign for a signed number and one or more decimal digits, with no
@@ -353,12 +369,14 @@ private:
     return cpus;
 }
 
-// The CPUs that the process can run on: the count of the affinity mask, as
-// CPU_COUNT gives it after sched_getaffinity(3).  Zero when the call fails,
-// which the caller reads as "use the count of the online CPUs".
+// The count of the CPUs in the affinity mask of the thread group leader, as
+// CPU_COUNT gives it after sched_getaffinity(2) (THE CPUS OF THE PROCESS).
+// The id of the process is the thread id of its leader.  Zero when the call
+// fails, which the caller reads as "use the count of the online CPUs".
 [[nodiscard]] std::size_t probe_process_cpu_count_() noexcept {
+    long const leader = os_door::raw_syscall(os_door::Syscall::getpid);
     std::uint64_t mask[kAffinityWords]{};
-    return os_door::result_of(os_door::raw_syscall(os_door::Syscall::sched_getaffinity, 0, sizeof mask,
+    return os_door::result_of(os_door::raw_syscall(os_door::Syscall::sched_getaffinity, leader, sizeof mask,
                                                    static_cast<void const*>(mask)))
         .match(
             [&mask](std::uint64_t) {
@@ -374,6 +392,20 @@ private:
                 return count;
             },
             [](os_door::Errno) { return std::size_t{0}; });
+}
+
+// The count of the CPUs of the process (THE CPUS OF THE PROCESS).  The
+// constructor below writes it one time, before main, and no code writes it
+// after that.  Each read comes after the write: the thread of the read starts
+// after main starts, or it reaches the library through the dlopen that ran
+// the write.  So the read needs no atomic.  Zero when the read failed.
+constinit std::size_t process_cpu_count_at_load = 0;
+
+// The read of THE CPUS OF THE PROCESS.  The priority 102 comes after the
+// start-up check of the kernel floor (101), so the raw calls run on a kernel
+// that the check admitted, and before each constructor with no priority.
+[[gnu::constructor(102)]] void record_process_cpu_count() noexcept {
+    process_cpu_count_at_load = probe_process_cpu_count_();
 }
 
 // The count of the online CPUs of the host, from the list of the kernel, as
@@ -630,7 +662,7 @@ Topology::Topology(std::string_view sysfs_root) noexcept {
     // The online CPUs of the host, then the CPUs of the process, then one
     // CPU, as the count of the standard library falls back.
     std::size_t const online = topology_detail::probe_online_cpu_count_();
-    std::size_t const allowed = topology_detail::probe_process_cpu_count_();
+    std::size_t const allowed = topology_detail::process_cpu_count_at_load;
     cores_ = online != 0 ? online : allowed != 0 ? allowed : 1;
     threads_ = cores_;
 

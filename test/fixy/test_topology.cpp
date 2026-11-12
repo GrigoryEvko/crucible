@@ -3,7 +3,11 @@
 // bounds a value, relates two values, or names the small set a value
 // may come from, and never pins the number itself.
 
+#include <fixy/Core.h>
+#include <fixy/os/Sched.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Topology.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -147,6 +151,30 @@ void test_process_cpu_count_sane() {
     // Equality is not asserted: the run may be inside a restricted
     // group, and that is a legitimate environment.
     CRUCIBLE_TEST_REQUIRE(t.process_cpu_count() >= 1);
+}
+
+// The count of the CPUs of the process does not change with the thread that
+// reads it.  A worker that holds a pin to one CPU of the process reads the
+// count that the main thread reads.  On a host that gives the process one
+// CPU, the two counts are equal for each probe, and the test says so.
+void test_process_cpu_count_ignores_the_pin_of_the_reader() {
+    using ::foundation::algebra::lattices::AffinityMask;
+    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> const ctx{eff::testing::bg()};
+    std::size_t const main_count = Topology::instance().process_cpu_count();
+    AffinityMask const allowed = ::fixy::sched::read_affinity(ctx).expect("the kernel gives the mask of the thread");
+    std::uint16_t cpu = 0;
+    while (cpu < AffinityMask::kMaxCore && !allowed.contains(cpu)) {
+        ++cpu;
+    }
+    CRUCIBLE_TEST_REQUIRE(allowed.contains(cpu));
+    std::size_t pinned_count = 0;
+    auto reader = [&pinned_count]() noexcept { pinned_count = Topology::reprobe_snapshot().process_cpu_count; };
+    ::fixy::thread::ThreadOptions const options{.affinity = AffinityMask::single(cpu)};
+    CRUCIBLE_TEST_REQUIRE(::fixy::thread::run_joined(ctx, options, reader).is_ok());
+    CRUCIBLE_TEST_REQUIRE(pinned_count == main_count);
+    if (main_count < 2) {
+        ::fixy::report(::fixy::Sink::Err, "the process has one CPU, so this host cannot show the fault\n");
+    }
 }
 
 void test_page_size_typical() {
@@ -429,6 +457,8 @@ int main() {
     run_test("test_singleton_identity", test_singleton_identity);
     run_test("test_basic_positive_values", test_basic_positive_values);
     run_test("test_process_cpu_count_sane", test_process_cpu_count_sane);
+    run_test("test_process_cpu_count_ignores_the_pin_of_the_reader",
+             test_process_cpu_count_ignores_the_pin_of_the_reader);
     run_test("test_page_size_typical", test_page_size_typical);
     run_test("test_cache_clusters_alias", test_cache_clusters_alias);
     run_test("test_log_summary_emits", test_log_summary_emits);

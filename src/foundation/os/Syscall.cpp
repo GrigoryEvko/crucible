@@ -198,6 +198,8 @@ constexpr long kNoCall = -1;
             return __NR_mbind;
         case Syscall::move_pages:
             return __NR_move_pages;
+        case Syscall::getpid:
+            return __NR_getpid;
         default:
             return kNoCall;
     }
@@ -368,6 +370,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::sched_setaffinity:
         case Syscall::sched_setscheduler:
         case Syscall::setpriority:
+        case Syscall::getpid:
         default:
             break;
     }

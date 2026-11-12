@@ -1799,10 +1799,10 @@ The decision rule (`fixy::concurrent::ParallelismRule::recommend` in `include/fi
 |---|---|---|
 | `≤ L1d per core` | **SEQUENTIAL** | Already hot in one core's L1; threading thrashes |
 | `≤ L2 per core` | **SEQUENTIAL** | L2 is private; thread #2 cold-misses everything |
-| `≤ L3 total` | **PARALLEL = min(cores per socket, usable CPUs, 4)**, NUMA-local | Within socket, cores share L3 bandwidth |
+| `≤ L3 of one instance` | **PARALLEL = min(CPUs of the largest L3 group, usable CPUs, 4)**, NUMA-local | The CPUs of one L3 instance share its bandwidth |
 | `> L3` (DRAM-bound) | **PARALLEL = min(usable CPUs, ws / L2 per core)**, NUMA spread on a host with more than one node | Memory-channel-bound; scale until channels saturate |
 
-The working set is the saturated sum of the read and written bytes. The factor rounds down to the ladder 1, 2, 4, 8, 16, so no factor is more than 16. "Usable CPUs" is the CPU count of the process, which a CPU quota can make smaller than the host count. The rule reads no per-item time and no caller hint. A caller that wants parallelism for expensive compute over cheap data is outside the rule and dispatches directly.
+The working set is the saturated sum of the read and written bytes. The factor rounds down to the ladder 1, 2, 4, 8, 16, so no factor is more than 16. "Usable CPUs" is the CPU count of the process: the count of the affinity mask of the thread group leader when the library loads. A launcher mask or a cpuset can make it smaller than the host count, and a later pin of a thread does not change it. No code reads a CPU quota of a cgroup. The L3 size is the size of one L3 instance, such as the L3 of one chiplet, and not the L3 of a socket. The rule reads no per-item time and no caller hint. A caller that wants parallelism for expensive compute over cheap data is outside the rule and dispatches directly.
 
 The promise: **never regresses**. If the rule says sequential, parallel must not be measurably faster (within 5%, measured by `bench/bench_no_regression.cpp`). If it says parallel, the speedup must justify the sync cost.
 

@@ -85,6 +85,7 @@ enum class Syscall : std::uint8_t {
     setpriority,
     mbind,
     move_pages,
+    getpid,
 };
 
 // True when the call can wait with no bound for another thread or process,
