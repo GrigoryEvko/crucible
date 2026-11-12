@@ -1,8 +1,9 @@
 #pragma once
 
-// The Linux kernel caps a thread name at TASK_COMM_LEN, 16 bytes counting the
-// terminator, and truncates anything longer without an error.  Bounding the
-// name type keeps an over-long name from ever reaching the kernel.
+// The witness that the calling thread carries a name.  The name is a
+// ThreadName of fixy/os/ThreadTasks.h, the one type of the name of a thread:
+// a literal of 1 to 15 characters, the bound of TASK_COMM_LEN, so no name
+// that the kernel would cut reaches the kernel.
 //
 // Naming writes to the calling thread's entry under /proc, so the mint takes an
 // init-phase context.  Code that holds no context cannot name a thread.
@@ -13,34 +14,13 @@
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
-#include <array>
 #include <cstddef>
 #include <type_traits>
 
 namespace fixy {
 
-template <std::size_t N>
-struct ThreadNameLiteral {
-    // N counts the terminator of the source literal, so the kernel's cap of 15
-    // visible characters is a bound of 16 here.
-    static_assert(N >= 1, "ThreadNameLiteral: degenerate empty literal");
-    static_assert(N <= 16, "thread name exceeds TASK_COMM_LEN (15 visible chars + "
-                           "NUL); the Linux kernel would SILENTLY truncate it — shorten the name.");
-
-    std::array<char, N> data{};
-
-    consteval ThreadNameLiteral(const char (&literal)[N]) noexcept {
-        for (std::size_t index = 0; index < N; ++index) {
-            data[index] = literal[index];
-        }
-    }
-
-    [[nodiscard]] constexpr const char* c_str() const noexcept { return data.data(); }
-
-    static constexpr std::size_t visible_length = N - 1;
-};
-
-template <ThreadNameLiteral Name>
+template <::fixy::thread::ThreadName Name>
+    requires(Name.is_named())
 class ThreadNamed;
 
 // The right arm goes through the named capability lift rather than reading the
@@ -51,8 +31,8 @@ concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::foundation::effects::Init>
     || ::foundation::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::foundation::effects::Effect::Init>;
 
-template <ThreadNameLiteral Name, typename Ctx>
-    requires CtxIsInitPhase<Ctx>
+template <::fixy::thread::ThreadName Name, typename Ctx>
+    requires(Name.is_named() && CtxIsInitPhase<Ctx>)
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept;
 
 // The witness carries the name in its type, so a consumer can demand proof that
@@ -67,15 +47,16 @@ template <ThreadNameLiteral Name, typename Ctx>
 // ownership of the claim cannot.  The seal member makes the type not trivially
 // copyable, and the user-provided constructor makes it no implicit-lifetime
 // type, so neither std::bit_cast nor std::start_lifetime_as builds one.
-template <ThreadNameLiteral Name>
+template <::fixy::thread::ThreadName Name>
+    requires(Name.is_named())
 class [[nodiscard]] ThreadNamed {
 public:
-    static constexpr ThreadNameLiteral name = Name;
+    static constexpr ::fixy::thread::ThreadName name = Name;
     using row_discipline = ThreadNamed;
     using row_payload = ::foundation::diag::row_payloads<>;
 
-    [[nodiscard]] static constexpr const char* c_str() noexcept { return Name.c_str(); }
-    [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return Name.visible_length; }
+    [[nodiscard]] static constexpr const char* c_str() noexcept { return name.c_str(); }
+    [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return name.visible_length(); }
 
     ThreadNamed(const ThreadNamed&) = delete("a thread-name witness is bound to the thread that minted it; a copy "
                                              "could reach a thread that carries no such name");
@@ -90,8 +71,8 @@ private:
 
     constexpr ThreadNamed() noexcept {}
 
-    template <ThreadNameLiteral FriendName, typename FriendCtx>
-        requires CtxIsInitPhase<FriendCtx>
+    template <::fixy::thread::ThreadName FriendName, typename FriendCtx>
+        requires(FriendName.is_named() && CtxIsInitPhase<FriendCtx>)
     friend ThreadNamed<FriendName> mint_thread_name(FriendCtx const&) noexcept;
 };
 
@@ -99,7 +80,7 @@ namespace detail::thread_name_extract {
 
 template <typename T>
 inline constexpr bool is_thread_named_v = false;
-template <ThreadNameLiteral Name>
+template <::fixy::thread::ThreadName Name>
 inline constexpr bool is_thread_named_v<ThreadNamed<Name>> = true;
 
 }  // namespace detail::thread_name_extract
@@ -117,10 +98,10 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 // Not constexpr: the body performs a kernel side effect.  The thread door of
 // fixy/os/ThreadTasks.h gives the name, and the name type excludes the one
 // failure of the call.
-template <ThreadNameLiteral Name, typename Ctx>
-    requires CtxIsInitPhase<Ctx>
+template <::fixy::thread::ThreadName Name, typename Ctx>
+    requires(Name.is_named() && CtxIsInitPhase<Ctx>)
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept {
-    ::fixy::thread::detail::name_calling_thread(Name.c_str());
+    ::fixy::thread::detail::name_calling_thread(Name);
     return ThreadNamed<Name>{};
 }
 

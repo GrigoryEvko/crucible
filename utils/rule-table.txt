@@ -297,7 +297,6 @@ allow X3_os <climits> until Scalar | CHAR_BIT
 allow X3_os <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
 allow X3_os <ctime> until Os | the clock calls and the time structures of the C library
 allow X3_os <filesystem> until Os | std::filesystem::path
-allow X3_os <mutex> until Os | the lock tag std::try_to_lock_t
 allow X3_os <system_error> until Os | std::error_code, std::system_category and std::errc of the doors of fixy/os
 allow X5_session <any> until Ref | the classification names std::any to refuse a payload that erases its type
 

@@ -1,5 +1,6 @@
 // Tests of the futex door of fixy/os/Futex.h: the end of each wait, the
-// wakes, the deadline, and a signal that reaches a thread that waits.  The
+// wakes, the deadline, a signal that reaches a thread that waits, and a
+// signal that ends a wait as interrupted.  The
 // tsan preset runs the same binary, and the signal test shows there that the
 // route of the primitive marks a futex wait as a blocking call (THE
 // SANITIZERS of foundation/os/Syscall.h).
@@ -24,11 +25,19 @@ constinit ::foundation::core::Atomic<std::uint32_t> handler_runs{0};
 
 void record_the_signal(int) noexcept { static_cast<void>(handler_runs.fetch_add_acq_rel(1)); }
 
+// The count of the runs of the handler of the interrupt test.
+constinit ::foundation::core::Atomic<std::uint32_t> interrupt_runs{0};
+
+void record_the_interrupt(int) noexcept { static_cast<void>(interrupt_runs.fetch_add_acq_rel(1)); }
+
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a signal reaches a thread that waits in the futex door")
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace {
 
@@ -49,6 +58,57 @@ namespace {
 [[nodiscard]] std::uint64_t calling_thread() noexcept { return ::pthread_self(); }
 
 [[nodiscard]] bool send_the_signal(std::uint64_t thread) noexcept { return ::pthread_kill(thread, SIGUSR1) == 0; }
+
+// Installs the handler of SIGUSR2 with no SA_RESTART.  A signal that ends a
+// futex wait with no deadline then makes the wait give EINTR, and the kernel
+// does not start the wait again.
+[[nodiscard]] bool install_the_interrupting_handler() noexcept {
+    struct ::sigaction action{};
+    action.sa_handler = record_the_interrupt;
+    action.sa_flags = 0;
+    static_cast<void>(::sigemptyset(&action.sa_mask));
+    return ::sigaction(SIGUSR2, &action, nullptr) == 0;
+}
+
+[[nodiscard]] bool send_the_interrupt(std::uint64_t thread) noexcept { return ::pthread_kill(thread, SIGUSR2) == 0; }
+
+// The id of the calling thread for the kernel.
+[[nodiscard]] std::uint64_t calling_thread_id() noexcept { return static_cast<std::uint64_t>(::gettid()); }
+
+// True when the kernel reports the thread with the id THREAD_ID asleep in the
+// futex system call.  The first field of /proc/self/task/ID/syscall is the
+// number of the call in which the thread sleeps, and the file of a thread
+// that runs holds "running".
+[[nodiscard]] bool sleeps_in_futex(std::uint64_t thread_id) noexcept {
+    char path[64] = "/proc/self/task/";
+    std::size_t length = 16;
+    char digits[24]{};
+    std::size_t count = 0;
+    do {
+        digits[count] = static_cast<char>('0' + thread_id % 10U);
+        ++count;
+        thread_id /= 10U;
+    } while (thread_id != 0U);
+    while (count > 0) {
+        --count;
+        path[length] = digits[count];
+        ++length;
+    }
+    __builtin_memcpy(path + length, "/syscall", 9);
+    int const descriptor = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) return false;
+    char text[64]{};
+    long const read_count = ::read(descriptor, text, sizeof text - 1);
+    static_cast<void>(::close(descriptor));
+    if (read_count <= 0) return false;
+    long number = 0;
+    std::size_t index = 0;
+    while (text[index] >= '0' && text[index] <= '9') {
+        number = number * 10 + (text[index] - '0');
+        ++index;
+    }
+    return index > 0 && text[index] == ' ' && number == SYS_futex;
+}
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -171,6 +231,51 @@ void test_a_signal_reaches_a_waiter() {
     CRUCIBLE_FATAL_INVARIANT(was_handler_seen.load_acquire());
 }
 
+// A signal whose handler does not restart ends a wait with no deadline as
+// interrupted.  A signal that is pending before the wait cannot do it: a
+// blocked signal does not end the wait, and an unblocked one runs its handler
+// before the wait starts.  So the signaling thread sends the signal only when
+// the kernel reports the waiter asleep in the futex call.  No step waits for
+// a time.  The count of the reads has a bound, so a fault fails the test and
+// does not hang it.
+void test_a_signal_interrupts_a_waiter() {
+    CRUCIBLE_FATAL_INVARIANT(install_the_interrupting_handler());
+    BlockCtx const ctx{eff::testing::bg()};
+    FutexWord word{0};
+    core::Atomic<std::uint64_t> waiter_thread{0};
+    core::Atomic<std::uint64_t> waiter_id{0};
+    core::Atomic<bool> was_interrupted{false};
+    auto waiter = [&]() noexcept {
+        waiter_id.store_release(calling_thread_id());
+        waiter_thread.store_release(calling_thread());
+        while (word.load_acquire() == 0) {
+            WaitEnd const end = futex::wait(ctx, word, 0).expect("a wait on a word of the process is valid");
+            if (end == WaitEnd::interrupted) {
+                was_interrupted.store_release(true);
+            }
+        }
+    };
+    auto signaler = [&]() noexcept {
+        std::uint64_t thread = waiter_thread.load_acquire();
+        while (thread == 0) {
+            CRUCIBLE_SPIN_PAUSE;
+            thread = waiter_thread.load_acquire();
+        }
+        std::uint64_t const thread_id = waiter_id.load_acquire();
+        constexpr std::uint32_t kLargestReadCount = 10000000;
+        for (std::uint32_t reads = 0; reads < kLargestReadCount && !was_interrupted.load_acquire(); ++reads) {
+            if (sleeps_in_futex(thread_id)) {
+                CRUCIBLE_FATAL_INVARIANT(send_the_interrupt(thread));
+            }
+        }
+        word.store_release(1);
+        static_cast<void>(futex::wake_all(ctx, word).expect("a wake is valid"));
+    };
+    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, signaler).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(was_interrupted.load_acquire());
+    CRUCIBLE_FATAL_INVARIANT(interrupt_runs.load_acquire() != 0);
+}
+
 }  // namespace
 
 int main() {
@@ -179,5 +284,6 @@ int main() {
     test_a_deadline_ends_the_wait();
     test_a_wake_ends_the_wait();
     test_a_signal_reaches_a_waiter();
+    test_a_signal_interrupts_a_waiter();
     return 0;
 }

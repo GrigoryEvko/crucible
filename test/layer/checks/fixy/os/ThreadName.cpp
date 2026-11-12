@@ -18,8 +18,9 @@ static_assert(!std::is_trivially_copyable_v<ThreadNamed<"x">>,
               "std::bit_cast must not build a thread-name witness from bytes");
 static_assert(!std::is_implicit_lifetime_v<ThreadNamed<"x">> && !std::is_aggregate_v<ThreadNamed<"x">>,
               "std::start_lifetime_as and aggregate initialization must not build a thread-name witness");
-static_assert(ThreadNameLiteral<2>{"x"}.visible_length == 1);
-static_assert(ThreadNameLiteral<16>{"123456789012345"}.visible_length == 15);
+static_assert(::fixy::thread::ThreadName{"x"}.visible_length() == 1);
+static_assert(::fixy::thread::ThreadName{"123456789012345"}.visible_length() == 15);
+static_assert(!::fixy::thread::ThreadName{}.is_named());
 
 namespace detail::thread_name_invariants {
 

@@ -60,14 +60,13 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
-#include <atomic>
 #include <cstdint>
-#include <mutex>
 #include <type_traits>
 
 // The claims the carriers in this header make that no lattice grades.
@@ -130,19 +129,19 @@ public:
     // core keeps its waiters spinning until it runs again.  Work that can
     // lose its core in the section takes the blocking lock.
     void lock() noexcept {
-        while (flag_.test_and_set(std::memory_order_acquire)) {
-            while (flag_.test(std::memory_order_acquire)) {
+        while (is_held_.exchange_acq_rel(true)) {
+            while (is_held_.load_acquire()) {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
     }
 
-    [[nodiscard]] bool try_lock() noexcept { return !flag_.test_and_set(std::memory_order_acquire); }
+    [[nodiscard]] bool try_lock() noexcept { return !is_held_.exchange_acq_rel(true); }
 
-    void unlock() noexcept { flag_.clear(std::memory_order_release); }
+    void unlock() noexcept { is_held_.store_release(false); }
 
 private:
-    std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+    ::foundation::core::Atomic<bool> is_held_{false};
 };
 
 // A lock whose waiter sleeps on a futex until the holder releases.  The
@@ -260,6 +259,13 @@ template <typename Ctx, WaitStrategy Strategy>
 concept CtxMayAcquire =
     (waits_in_kernel(Strategy) && CtxMayBlock<Ctx>) || (!waits_in_kernel(Strategy) && CtxMayAcquireSpin<Ctx>);
 
+// The tag of a guard that tries the gate one time and does not wait.  Its
+// constructor is explicit, so a braced list {} does not make one.
+struct try_acquire_t {
+    explicit constexpr try_acquire_t() noexcept = default;
+};
+inline constexpr try_acquire_t try_acquire{};
+
 template <typename Tag, WaitStrategy Strategy, typename Brand = ::foundation::brand::DefaultBrand>
 class GateGuard;
 
@@ -339,7 +345,7 @@ public:
 
     template <typename Ctx>
         requires CtxMayAcquire<Ctx, Strategy>
-    explicit GateGuard(std::try_to_lock_t, Ctx const& /*ctx*/, lock_type& lock, permission_t& /*proof*/) noexcept
+    explicit GateGuard(try_acquire_t, Ctx const& /*ctx*/, lock_type& lock, permission_t& /*proof*/) noexcept
         : lock_{lock}, acquired_{lock.try_lock()} {}
 
     GateGuard(const GateGuard&) = delete("two guards over one gate would release it twice");
@@ -364,7 +370,7 @@ template <typename Ctx, typename Tag, WaitStrategy Strategy, typename Brand>
 GateGuard(Ctx const&, Gate<Tag, Strategy>&, perm::Permission<Tag, Brand>&) -> GateGuard<Tag, Strategy, Brand>;
 
 template <typename Ctx, typename Tag, WaitStrategy Strategy, typename Brand>
-GateGuard(std::try_to_lock_t, Ctx const&, Gate<Tag, Strategy>&, perm::Permission<Tag, Brand>&)
+GateGuard(try_acquire_t, Ctx const&, Gate<Tag, Strategy>&, perm::Permission<Tag, Brand>&)
     -> GateGuard<Tag, Strategy, Brand>;
 
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>

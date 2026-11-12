@@ -4470,7 +4470,7 @@ fixy_neg_compile_test(neg_os_thread_named_moved
 
 fixy_neg_compile_test(neg_os_thread_named_bit_cast
   "no matching function for call to .bit_cast<fixy::ThreadNamed<"
-  "the expression .is_trivially_copyable_v<_To> \\[with _To = fixy::ThreadNamed<fixy::ThreadNameLiteral<7>\\{\\{.forged.\\}\\}>\\]. evaluated to .false.")
+  "the expression .is_trivially_copyable_v<_To> \\[with _To = fixy::ThreadNamed<fixy::thread::ThreadName\\{.forged[^}]*\\}>\\]. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_thread_named_start_as_array
   "no matching function for call to .start_as_array<Witness>"

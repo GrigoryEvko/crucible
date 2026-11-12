@@ -949,7 +949,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::BoundedBelow, kVocabulary},
     {^^::fixy::DivisibleBy, kVocabulary},
     {^^::fixy::retag_policy, kMetafunction},
-    {^^::fixy::ThreadNameLiteral, "a string literal usable as a template argument; ThreadNamed folds it"},
     {^^::fixy::Cyclic, kPayload},
     {^^::fixy::CyclicBuffer, kPayload},
     {^^::fixy::FixedArray, kPayload},
@@ -1183,6 +1182,8 @@ inline constexpr StatedZero kZeros[] = {
 
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
     {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},
+    {^^::fixy::spin::try_acquire_t, "the tag that selects the guard that tries a gate one time: it holds no value and "
+                                    "makes no claim"},
     {^^::fixy::time::ClockReader, kFactory},
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},

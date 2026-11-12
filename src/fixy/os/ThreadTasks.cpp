@@ -53,8 +53,8 @@ void* start_task(void* argument) noexcept {
     [[maybe_unused]] ::fixy::signal::ThreadSignalStack const signal_stack =
         ::fixy::signal::ThreadSignalStack::install_on_calling_thread();
     thread_task const& task = *static_cast<thread_task const*>(argument);
-    if (task.name != nullptr) {
-        name_calling_thread(task.name);
+    if (task.name != nullptr && task.name->is_named()) {
+        name_calling_thread(*task.name);
     }
     task.run(task.frame);
     return nullptr;
@@ -95,9 +95,9 @@ private:
 
 }  // namespace
 
-char const* name_text_(ThreadName const& name) noexcept { return name.text_; }
-
-void name_calling_thread(char const* name) noexcept { static_cast<void>(::pthread_setname_np(::pthread_self(), name)); }
+void name_calling_thread(ThreadName const& name) noexcept {
+    static_cast<void>(::pthread_setname_np(::pthread_self(), name.c_str()));
+}
 
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept {
@@ -105,10 +105,9 @@ run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions cons
     {
         StartAttributes const attributes{options};
         if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
-        char const* const name = name_text_(options.name);
         std::size_t started = 0;
         for (thread_task& task : tasks) {
-            task.name = name;
+            task.name = &options.name;
             ::pthread_t handle{};
             int const code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
             if (code != 0) [[unlikely]] {

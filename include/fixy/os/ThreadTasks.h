@@ -70,6 +70,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::thread {
 
@@ -79,28 +80,36 @@ inline constexpr std::size_t default_stack_bytes = std::size_t{8} << 20;
 // One page of 4 KiB.  glibc rounds a guard up to the page size of the host.
 inline constexpr std::size_t default_guard_bytes = std::size_t{4} << 10;
 
-class ThreadName;
-
 namespace detail {
 
 struct thread_task;
 
-[[nodiscard]] char const* name_text_(ThreadName const& name) noexcept;
-
 }  // namespace detail
 
 // The name of a thread: a literal of 1 to 15 characters, the bound of the
-// name of a task of the Linux kernel.  A name comes only from a string
-// literal, so its text has static storage and outlives each thread.  A
-// default name is empty, and a thread with no name keeps the name of the
-// thread that starts it.
+// name of a task of the Linux kernel, which cuts a longer name with no
+// error.  A name comes only from a string literal, and it holds its own
+// copy of the characters, with zero bytes after them.  A default name is
+// empty, and a thread with no name keeps the name of the thread that starts
+// it.
+//
+// The class is structural, so a name is also a template argument:
+// ThreadNamed<"crucible-bg"> of fixy/os/ThreadName.h names its thread in
+// its type.  A structural class has public members, so the characters are
+// const, and no code changes a name after its constructor.
 class ThreadName {
 public:
-    constexpr ThreadName() noexcept = default;
+    // The bytes of a name: 15 characters and the zero after them.
+    static constexpr std::size_t capacity = 16;
+
+    char const text[capacity];
+
+    constexpr ThreadName() noexcept : text{} {}
 
     template <std::size_t Length>
-        requires(Length >= 2 && Length <= 16)
-    consteval ThreadName(char const (&literal)[Length]) noexcept : text_{literal} {
+        requires(Length >= 2 && Length <= capacity)
+    consteval ThreadName(char const (&literal)[Length]) noexcept
+        : ThreadName{literal, std::make_index_sequence<capacity>{}} {
         // A zero byte before the end would cut the name, and a literal
         // always ends with one.  A read past a constant array, or a zero
         // byte at the wrong place, stops the constant evaluation.
@@ -110,16 +119,30 @@ public:
         if (literal[Length - 1] != '\0') name_holds_a_zero_byte_();
     }
 
-    [[nodiscard]] constexpr bool is_named() const noexcept { return text_ != nullptr; }
+    [[nodiscard]] constexpr bool is_named() const noexcept { return text[0] != '\0'; }
+
+    // The characters with the zero after them.
+    [[nodiscard]] constexpr char const* c_str() const noexcept { return text; }
+
+    // The count of the characters, without the zero.
+    [[nodiscard]] constexpr std::size_t visible_length() const noexcept {
+        std::size_t length = 0;
+        while (length < capacity && text[length] != '\0') {
+            ++length;
+        }
+        return length;
+    }
 
 private:
+    // Each byte of the name: a character of the literal, or a zero after
+    // the literal.
+    template <std::size_t Length, std::size_t... Index>
+    consteval ThreadName(char const (&literal)[Length], std::index_sequence<Index...>) noexcept
+        : text{(Index < Length ? literal[Index] : '\0')...} {}
+
     // Not constexpr, so a call of it stops the constant evaluation of the
     // constructor, and the diagnostic names it.
     static void name_holds_a_zero_byte_() noexcept;
-
-    friend char const* detail::name_text_(ThreadName const& name) noexcept;
-
-    char const* text_ = nullptr;
 };
 
 // The options of each thread of one call (THE OPTIONS).
@@ -139,12 +162,13 @@ concept CtxStartsThreads =
 namespace detail {
 
 // One task.  The caller writes the frame and the function, and the door
-// writes the name and the handle.  The frame lives in the frame of the
-// caller, which waits in the door until each thread has joined.
+// writes the name and the handle.  The frame and the options of the name
+// live in the frame of the caller, which waits in the door until each
+// thread has joined.
 struct thread_task {
     void* frame = nullptr;
     void (*run)(void* frame) noexcept = nullptr;
-    char const* name = nullptr;
+    ThreadName const* name = nullptr;
     std::uint64_t handle = 0;
 };
 
@@ -154,11 +178,10 @@ struct thread_task {
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
 
-// Gives the calling thread a name: a text of at most 15 characters with a
-// zero byte at its end.  The caller holds the bound in its type, as
-// mint_thread_name of fixy/os/ThreadName.h does.  ERANGE is the only failure
-// of the call, and the bound excludes it, so the door reads no error.
-void name_calling_thread(char const* name) noexcept;
+// Gives the calling thread a name.  The type holds the bound of the name,
+// so ERANGE, the only failure of the call, cannot occur, and the door reads
+// no error.
+void name_calling_thread(ThreadName const& name) noexcept;
 
 template <typename Body>
 void run_body_(void* frame) noexcept {

@@ -13,7 +13,6 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
-#include <mutex>
 #include <optional>
 #include <thread>
 
@@ -52,7 +51,7 @@ struct BlockingCase {
 // its way out, so the gate is as it was after the call.
 template <typename Ctx, typename Gate, typename Proof>
 [[nodiscard]] bool is_free(Ctx const& ctx, Gate& gate, Proof& proof) {
-    spin::GateGuard probe{std::try_to_lock, ctx, gate, proof};
+    spin::GateGuard probe{spin::try_acquire, ctx, gate, proof};
     return probe.was_acquired();
 }
 
@@ -94,7 +93,7 @@ template <typename Case>
     {
         // The gate is held, so the try guard must report that it did not
         // acquire, and must not release on destruction.
-        spin::GateGuard guard{std::try_to_lock, ctx, gate, proof};
+        spin::GateGuard guard{spin::try_acquire, ctx, gate, proof};
         if (guard.was_acquired()) {
             std::fprintf(stderr, "%s: the try guard claimed a gate that was already held\n", Case::name);
             return 1;
