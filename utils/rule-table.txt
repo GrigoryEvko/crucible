@@ -674,6 +674,10 @@ witness <foundation/core/Region.h> private | foundation::core::detail::ChunkCurs
 # A HeapArray comes only from mint_heap_array, so no pointer that a caller
 # holds becomes an owner, and the destructor frees only storage of the door.
 witness <foundation/core/Array.h> private | foundation::core::HeapArray<int> | foundation::core::HeapArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+# A cursor of enumerate() or zip comes only from its range, so no position
+# that a caller holds becomes an index, and no pointer becomes a pair.
+witness <foundation/core/Array.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Array.h> private | foundation::core::detail::ZipCursor<int, int, forge::brand> | foundation::core::detail::ZipCursor<int, int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<int*>(), forge::rvalue<int*>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

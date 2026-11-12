@@ -135,6 +135,77 @@ static_assert(view_reads() == 7 + 8 + 9 + 10 + 10);
 }
 static_assert(get_reads() == 8);
 
+// enumerate() gives a Record of the proven index and a Ref to the element.
+// Only a View of a fixed extent and a FixedArray have indices(), so only
+// they have enumerate().  The loop of a temporary array is refused.
+template <class Elements>
+concept Enumerates = requires(Elements& elements) { elements.enumerate(); };
+template <class Array>
+concept EnumeratesTemporary = requires { std::declval<Array>().enumerate(); };
+static_assert(Enumerates<View<int, 4>> && Enumerates<FixedArray<int, 4>> && Enumerates<FixedArray<int, 4> const>);
+static_assert(!Enumerates<View<int>> && !Enumerates<HeapArray<int>>);
+static_assert(!EnumeratesTemporary<FixedArray<int, 4>> && !EnumeratesTemporary<FixedArray<int, 4> const>);
+
+// The target of a Ref of each brand.  Each call of enumerate() or zip gives
+// its Refs a fresh brand, so a check reads the parts of a pair and the
+// target of each Ref, and never names the brand.
+template <class R>
+struct RefTargetOf;
+template <class T, class Brand>
+struct RefTargetOf<Ref<T, Brand>> {
+    using type = T;
+};
+template <class R>
+using ref_target_t = typename RefTargetOf<R>::type;
+
+// The aliases are local to the body, so no fresh brand leaves the scope of
+// its call.  zip of two Views of one fixed extent gives the loop, and a pair
+// holds two pointers.  When a View has a dynamic extent, zip gives a Result
+// (enumerate_and_zip).  The fixture neg_core_zip_different_fixed_extents
+// holds the refusal of two different fixed extents, because a concept that
+// reads the function template zip is an open read.
+[[nodiscard]] consteval bool pairs_hold_an_index_and_refs() noexcept {
+    using ConstEnumeratedPair = decltype(*std::declval<FixedArray<int, 4> const&>().enumerate().begin());
+    using EnumeratedPair = decltype(*std::declval<View<int, 4>>().enumerate().begin());
+    using ZippedPair = decltype(*zip(std::declval<View<int, 4>>(), std::declval<View<long const, 4>>()).begin());
+    return std::is_same_v<pack_at_t<0, typename ConstEnumeratedPair::types>, Index<4>>
+        && std::is_same_v<ref_target_t<pack_at_t<1, typename ConstEnumeratedPair::types>>, int const>
+        && std::is_same_v<ref_target_t<pack_at_t<1, typename EnumeratedPair::types>>, int>
+        && std::is_same_v<ref_target_t<pack_at_t<0, typename ZippedPair::types>>, int>
+        && std::is_same_v<ref_target_t<pack_at_t<1, typename ZippedPair::types>>, long const>
+        && sizeof(ZippedPair) == 2 * sizeof(void*);
+}
+static_assert(pairs_hold_an_index_and_refs());
+
+// enumerate and zip in a constant evaluation.
+[[nodiscard]] consteval int enumerate_and_zip() noexcept {
+    FixedArray<int, 4> const weights{1, 2, 3, 4};
+    FixedArray<int, 4> values{};
+    for (auto const [position, element] : values.enumerate()) {
+        *element = static_cast<int>(position.raw()) + 10;
+    }
+    int total = 0;
+    for (auto const [weight, value] : zip(weights.view(), values.view())) {
+        total += *weight * *value;
+    }
+    View<int const> const head = values.view().window(0, 2).expect("two elements fit");
+    return total + (zip(head, weights.view()).is_err() ? 1 : 0);
+}
+static_assert(enumerate_and_zip() == 1 * 10 + 2 * 11 + 3 * 12 + 4 * 13 + 1);
+
+// Two calls of enumerate() or zip give two fresh brands, so a Ref of one
+// loop is not a Ref of the other loop.
+[[nodiscard]] consteval bool two_calls_give_two_brands() noexcept {
+    FixedArray<int, 2> const values{1, 2};
+    auto const first_loop = values.enumerate();
+    auto const second_loop = values.enumerate();
+    auto const first_pairs = zip(values.view(), values.view());
+    auto const second_pairs = zip(values.view(), values.view());
+    return !std::same_as<decltype(first_loop), decltype(second_loop)>
+        && !std::same_as<decltype(first_pairs), decltype(second_pairs)>;
+}
+static_assert(two_calls_give_two_brands());
+
 // A HeapArray holds a pointer and a count.  It moves, it does not copy, and
 // the allocation capability is the first argument of its one door.
 struct AllocationTag final {

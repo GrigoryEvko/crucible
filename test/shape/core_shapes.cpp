@@ -277,6 +277,42 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return sum;
 }
 
+// Each element of a View of a fixed extent with its proven index.
+[[gnu::used]] std::uint32_t view_enumerate_sum(fixy::View<std::uint32_t const, 64> view) noexcept {
+    std::uint32_t sum = 0;
+    for (auto const [position, element] : view.enumerate()) {
+        sum += *element * static_cast<std::uint32_t>(position.raw());
+    }
+    return sum;
+}
+
+// The pairs of two Views of one fixed extent: the type proves the counts
+// equal, so the loop has no compare before its first step.
+[[gnu::used]] std::uint32_t view_zip_fixed_sum(fixy::View<std::uint32_t const, 64> left,
+                                               fixy::View<std::uint32_t const, 64> right) noexcept {
+    std::uint32_t sum = 0;
+    for (auto const [first, second] : fixy::zip(left, right)) {
+        sum += *first * *second;
+    }
+    return sum;
+}
+
+// The pairs of two Views of a dynamic extent: the compare of the counts, and
+// the loop over the pairs.
+[[gnu::used]] std::uint32_t view_zip_sum(fixy::View<std::uint32_t const> left,
+                                         fixy::View<std::uint32_t const> right) noexcept {
+    return fixy::zip(left, right)
+        .match(
+            [](auto pairs) noexcept {
+                std::uint32_t sum = 0;
+                for (auto const [first, second] : pairs) {
+                    sum += *first * *second;
+                }
+                return sum;
+            },
+            [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -714,6 +750,40 @@ struct RawText final {
     std::uint32_t const* const end = first + count / 4 * 4;
     for (std::uint32_t const* cursor = first; cursor != end; cursor += 4) {
         sum += cursor[0] ^ cursor[3];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_enumerate_sum_raw(std::uint32_t const* first) noexcept {
+    std::uint32_t sum = 0;
+    std::uint32_t position = 0;
+    for (std::uint32_t const* cursor = first; cursor != first + 64; ++cursor) {
+        sum += *cursor * position;
+        ++position;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_zip_fixed_sum_raw(std::uint32_t const* left, std::uint32_t const* right) noexcept {
+    std::uint32_t sum = 0;
+    std::uint32_t const* other = right;
+    for (std::uint32_t const* cursor = left; cursor != left + 64; ++cursor) {
+        sum += *cursor * *other;
+        ++other;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_zip_sum_raw(std::uint32_t const* left, std::size_t left_count,
+                                             std::uint32_t const* right, std::size_t right_count) noexcept {
+    std::uint32_t sum = 0;
+    if (left_count != right_count) {
+        return sum;
+    }
+    std::uint32_t const* other = right;
+    for (std::uint32_t const* cursor = left; cursor != left + left_count; ++cursor) {
+        sum += *cursor * *other;
+        ++other;
     }
     return sum;
 }

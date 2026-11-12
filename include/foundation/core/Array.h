@@ -6,8 +6,27 @@
 //   FixedArray<T, N>    N elements inline, in the object itself
 //   HeapArray<T, Align> count elements on the heap, at the alignment Align
 //
-// This header also defines get(position) of a View, because it includes
-// the Ref family, and Region.h does not.
+// This header also defines get(position) and enumerate() of a View, and the
+// free function zip(first, second), because it includes the Ref and Record
+// families, and Region.h does not.
+//
+// THE PAIRS
+//   view.enumerate()    each element of a View of a fixed extent with its
+//                       proven index: a Record<Index<N>, Ref<T>>.  A View of
+//                       a dynamic extent has no indices(), so it has no
+//                       enumerate()
+//   zip(first, second)  each pair of the elements at one position of two
+//                       Views: a Record<Ref<A>, Ref<B>>.  Two Views of one
+//                       fixed extent give the loop, because the type proves
+//                       the counts equal.  Two Views of different fixed
+//                       extents do not compile.  When a View has a dynamic
+//                       extent, zip gives a Result, with LengthMismatch when
+//                       the counts differ
+//
+// A Record refuses a reference part, so a pair borrows each element through
+// a Ref, which is never null and has the size of a pointer.  The binding
+// `auto [index, element] = pair;` gives the parts, and *element reaches the
+// element.
 //
 // A FixedArray fills each element at its construction.  The default
 // constructor value-initializes each element, so an array of integers holds
@@ -25,6 +44,7 @@
 //   at(index)           the element at an Index<N> or at index<I>(), with no
 //                       check: the type of the index proves the bound
 //   indices()           each Index<N>, in order
+//   enumerate()         each element with its Index<N>, in order
 //
 // A FixedArray has no operator[], no data() and no pointer to its
 // elements, so no read takes an index that no check proved.  An index from
@@ -42,7 +62,8 @@
 //                       comes first, so each allocation shows at its call.
 //                       A count of zero allocates nothing
 //   size(), view(), the loop, get(position), and the iteration verbs, as
-//                       a FixedArray gives them
+//                       a FixedArray gives them.  No type holds the count of a
+//                       HeapArray, so it has no indices() and no enumerate()
 //
 // A HeapArray owns its storage alone.  A move gives the storage to the
 // target and leaves the source empty, and the destructor ends each element
@@ -56,6 +77,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -81,7 +103,176 @@ template <::foundation::brand::IsBrand Brand, class T>
     return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
 }
 
+// The cursors of enumerate() and zip obey the rule of a ViewCursor: each
+// cursor knows the end of its loop, a read or a step at the end ends the
+// process in each build, and the optimizer removes the two checks in a loop
+// that compares the cursor with the end first.  A cursor comes only from its
+// range, and the seal refuses std::bit_cast and a lifetime start over bytes.
+
+template <class Element, std::size_t Count, class Brand>
+class EnumerateCursor;
+
+template <class First, class Second, class Brand>
+class ZipCursor;
+
+// The position of a loop over the elements of a View<Element, Count> with
+// their indexes: the first element, and the position of the next element.
+// The read compares the position with Count first, so the Index of each
+// step is an index of indices(), and the type of the View proves the read
+// below its count.  The position is a full word, also when the Index holds
+// a 32-bit word, so the loop needs one loop variable: the position and the
+// offset of the element at the same time.  Each Ref has the brand of the
+// call of enumerate() that made the range.
+template <class Element, std::size_t Count, class Brand>
+class EnumerateCursor {
+    Element* first_ = nullptr;
+    std::size_t at_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class EnumerateRange<Element, Count, Brand>;
+
+    constexpr EnumerateCursor(Element* first, std::size_t at) noexcept : first_{first}, at_{at} {}
+
+public:
+    [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> operator*() const noexcept {
+        if (at_ >= Count) [[unlikely]] {
+            fatal("a read through the end cursor of an enumerate loop over a View");
+        }
+        return {Index<Count>{static_cast<IndexWord<Count>>(at_)}, RefDoor::lend<Brand>(first_[at_])};
+    }
+
+    constexpr EnumerateCursor& operator++() noexcept {
+        if (at_ >= Count) [[unlikely]] {
+            fatal("a step past the end cursor of an enumerate loop over a View");
+        }
+        ++at_;
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(EnumerateCursor const& left, EnumerateCursor const& right) noexcept {
+        return left.at_ == right.at_;
+    }
+};
+
+// The elements of a View of the fixed extent Count, each with its index.
+template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
+class EnumerateRange {
+    Element* first_ = nullptr;
+
+public:
+    constexpr explicit EnumerateRange(View<Element, Count> elements) noexcept : first_{elements.first_} {}
+
+    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> begin() const noexcept {
+        return EnumerateCursor<Element, Count, Brand>{first_, 0};
+    }
+    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> end() const noexcept {
+        return EnumerateCursor<Element, Count, Brand>{first_, Count};
+    }
+};
+
+// The position of a loop over the pairs of two Views of one count: the
+// next element and the end of the first View, and the next element of the
+// second View.  The range proved the two counts equal, so the end of the
+// first View is the end of the loop, and the second pointer never passes
+// the end of its View.  Each Ref has the brand of the call of zip that made
+// the range.
+template <class First, class Second, class Brand>
+class ZipCursor {
+    First* first_at_ = nullptr;
+    First* first_end_ = nullptr;
+    Second* second_at_ = nullptr;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class ZipRange<First, Second, Brand>;
+
+    constexpr ZipCursor(First* first_at, First* first_end, Second* second_at) noexcept
+        : first_at_{first_at}, first_end_{first_end}, second_at_{second_at} {}
+
+public:
+    [[nodiscard]] constexpr Record<Ref<First, Brand>, Ref<Second, Brand>> operator*() const noexcept {
+        if (first_at_ == first_end_) [[unlikely]] {
+            fatal("a read through the end cursor of a zip loop over two Views");
+        }
+        return {RefDoor::lend<Brand>(*first_at_), RefDoor::lend<Brand>(*second_at_)};
+    }
+
+    constexpr ZipCursor& operator++() noexcept {
+        if (first_at_ == first_end_) [[unlikely]] {
+            fatal("a step past the end cursor of a zip loop over two Views");
+        }
+        ++first_at_;
+        ++second_at_;
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(ZipCursor const& left, ZipCursor const& right) noexcept {
+        return left.first_at_ == right.first_at_;
+    }
+};
+
+// The pairs of the elements of two Views of one count.  The constructor
+// compares the two counts, and two counts that differ end the process in
+// each build.  zip compares them first, or the types of the Views prove
+// them equal, so the optimizer removes this compare.
+template <class First, class Second, ::foundation::brand::IsBrand Brand>
+class ZipRange {
+    View<First> first_;
+    Second* second_ = nullptr;
+
+public:
+    constexpr ZipRange(View<First> first, View<Second> second) noexcept : first_{first}, second_{second.first_} {
+        if (first.size() != second.size()) [[unlikely]] {
+            fatal("a zip of two Views of {} and {} elements", first.size(), second.size());
+        }
+    }
+
+    // The count of pairs: the count of each View.
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return first_.size(); }
+
+    [[nodiscard]] constexpr ZipCursor<First, Second, Brand> begin() const noexcept {
+        First* const first = first_.first_;
+        return ZipCursor<First, Second, Brand>{first, first + first_.size(), second_};
+    }
+    [[nodiscard]] constexpr ZipCursor<First, Second, Brand> end() const noexcept {
+        First* const end = first_.first_ + first_.size();
+        return ZipCursor<First, Second, Brand>{end, end, second_ + first_.size()};
+    }
+};
+
 }  // namespace detail
+
+// The pairs of two Views of one fixed extent.  The type proves the counts
+// equal, so the loop needs no compare before its first step.  Each Ref of
+// one call has the fresh brand of that call, and the pack refuses each
+// explicit argument.
+template <class... Refused, class First, class Second, std::size_t Extent,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
+[[nodiscard]] constexpr detail::ZipRange<First, Second, Fresh> zip(View<First, Extent> first,
+                                                                   View<Second, Extent> second) noexcept {
+    return detail::ZipRange<First, Second, Fresh>{first, second};
+}
+
+// Two Views of different fixed extents have no pair for each element of the
+// longer View, and the types show it at compile time.
+template <class First, std::size_t FirstExtent, class Second, std::size_t SecondExtent>
+    requires(FirstExtent != dynamic_extent && SecondExtent != dynamic_extent && FirstExtent != SecondExtent)
+void zip(View<First, FirstExtent>, View<Second, SecondExtent>) =
+    delete("two Views of different fixed extents have different counts, so the longer View has elements with no pair");
+
+// The pairs of two Views when a View has a dynamic extent: the loop, or
+// LengthMismatch when the counts differ.  One compare.  Each Ref of one call
+// has the fresh brand of that call.
+template <class... Refused, class First, std::size_t FirstExtent, class Second, std::size_t SecondExtent,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && (FirstExtent == dynamic_extent || SecondExtent == dynamic_extent))
+[[nodiscard]] constexpr Result<detail::ZipRange<First, Second, Fresh>, LengthMismatch>
+zip(View<First, FirstExtent> first, View<Second, SecondExtent> second) noexcept {
+    if (first.size() != second.size()) {
+        return err(LengthMismatch{});
+    }
+    return detail::ZipRange<First, Second, Fresh>{first, second};
+}
 
 // The element of an owner of the Region family: an object type that is not
 // an array and not cv-qualified, whose destructor does not throw.  A const
@@ -194,10 +385,25 @@ public:
     // `for (Index<N> index : array.indices())`.
     [[nodiscard]] static constexpr IndexRange<N> indices() noexcept { return IndexRange<N>{}; }
 
-    // The iteration verbs of the View of the elements: each element from
-    // the last, each run of Width consecutive elements, and each run of
-    // Width elements with the rest.  The loop of a temporary array is
-    // refused, because its runs would dangle.
+    // The iteration verbs of the View of the elements: each element with
+    // its index, each element from the last, each run of Width consecutive
+    // elements, and each run of Width elements with the rest.  The loop of a
+    // temporary array is refused, because its elements would dangle.
+    // Each Ref of one call of enumerate() has the fresh brand of that call,
+    // and the pack refuses each explicit argument.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr auto enumerate() & noexcept {
+        return detail::EnumerateRange<T, N, Fresh>{view()};
+    }
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr auto enumerate() const& noexcept {
+        return detail::EnumerateRange<T const, N, Fresh>{view()};
+    }
+    void enumerate() const&& =
+        delete("a loop over a temporary FixedArray points into an object that the full expression ends");
+
     [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
     void reverse() const&& =

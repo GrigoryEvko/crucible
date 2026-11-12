@@ -118,6 +118,7 @@ using ::foundation::core::mint_heap_array;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
+using ::foundation::core::zip;
 // FixedArray of the Region family stays in foundation::core until the merge of
 // fixy/FixedArray.h, which declares a fixy::FixedArray of its own.
 

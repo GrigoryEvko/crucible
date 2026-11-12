@@ -2552,6 +2552,20 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
   "use of deleted function .void foundation::core::HeapArray<T, Align>::view\\(\\) && \\[with T = int; long unsigned int Align = 4\\]."
   "a view of a temporary HeapArray points into storage that the full expression frees")
 
+# enumerate() needs the proven indexes of indices(), so a View of a dynamic
+# extent has none.  zip of two Views of different fixed extents is refused
+# at compile time, and the loop of a temporary array is refused.
+foundation_neg_compile_test(neg_core_view_enumerate_dynamic_extent
+  "no matching function for call to .foundation::core::View<const int>::enumerate\\(\\) const."
+  "the expression .Extent != foundation::core::dynamic_extent \\[with Extent = 18446744073709551615\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_zip_different_fixed_extents
+  "use of deleted function .void foundation::core::zip\\("
+  "\\[with First = const int; long unsigned int FirstExtent = 4; Second = const int; long unsigned int SecondExtent = 5\\]"
+  "two Views of different fixed extents have different counts, so the longer View has elements with no pair")
+foundation_neg_compile_test(neg_core_fixed_array_enumerate_of_temporary
+  "use of deleted function .void foundation::core::FixedArray<T, N>::enumerate\\(\\) const && \\[with T = int; long unsigned int N = 4\\]."
+  "a loop over a temporary FixedArray points into an object that the full expression ends")
+
 # ── The door directory of the base floor: foundation/os ───────────────
 #
 # The file door reads a file of /proc into a FixedText, gives the error of

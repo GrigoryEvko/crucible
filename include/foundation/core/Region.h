@@ -116,7 +116,8 @@ template <::foundation::brand::IsBrand Brand, class T>
 [[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept;
 
 // The loops of the iteration verbs reverse(), windows<W>() and chunks<W>()
-// of a View, and their cursors.
+// of a View, and their cursors.  Array.h defines the loops of enumerate()
+// and zip(first, second), because their elements are Records of Refs.
 template <class Element>
 class ReverseRange;
 template <class Element>
@@ -129,6 +130,10 @@ template <class Element, std::size_t Width>
 class ChunkRange;
 template <class Element, std::size_t Width>
 class ChunkCursor;
+template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
+class EnumerateRange;
+template <class First, class Second, ::foundation::brand::IsBrand Brand>
+class ZipRange;
 
 }  // namespace detail
 
@@ -204,6 +209,10 @@ class View {
     friend class detail::ChunkCursor;
     template <class Element, std::size_t Width>
     friend class detail::ChunkRange;
+    template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
+    friend class detail::EnumerateRange;
+    template <class First, class Second, ::foundation::brand::IsBrand Brand>
+    friend class detail::ZipRange;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -281,6 +290,21 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const noexcept {
         return detail::element_at_<Fresh>(first_, size(), position);
+    }
+
+    // The loop `for (auto [index, element] : view.enumerate())` reads each
+    // element with its proven index, in order.  Each step gives a Record of
+    // the Index<Extent> of indices() and a Ref to the element, and each Ref
+    // of one call has the fresh brand of that call.  Only a View of a fixed
+    // extent has indices(), so only that View has enumerate().  The pack
+    // refuses each explicit argument.  Array.h defines the range, because
+    // this header does not include the Record and Ref families.  A unit that
+    // calls enumerate() without Array.h gets a compile error, because the
+    // range is incomplete.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
+    [[nodiscard]] constexpr auto enumerate() const noexcept {
+        return detail::EnumerateRange<T, Extent, Fresh>{*this};
     }
 
     // The loop `for (T& element : view.reverse())` reads each element one

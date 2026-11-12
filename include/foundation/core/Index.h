@@ -14,7 +14,8 @@
 // does no check: the type proves the bound, and the check ran one time,
 // where the index was made.  The only roads to an Index are check(), the
 // conversion from a StaticIndex, the conversion from an Index of a smaller
-// N, and the loop of an IndexRange.  The constructor from a number is
+// N, the loop of an IndexRange, and the loop of enumerate() of a View of
+// the fixed extent N.  The constructor from a number is
 // private, and the seal refuses std::bit_cast and a lifetime start over
 // bytes, so no number becomes an Index without its check.
 //
@@ -71,6 +72,13 @@ namespace detail {
 template <std::size_t Count>
 using IndexWord = std::conditional_t<(Count <= 0xFFFFFFFFull), std::uint32_t, std::size_t>;
 
+// The cursor of an enumerate loop of foundation/core/Array.h.  It keeps the
+// position of the loop as a full word, so the position is also the offset
+// of the element, and it makes the Index of each step from the position
+// after its compare with the count.
+template <class Element, std::size_t Count, class Brand>
+class EnumerateCursor;
+
 }  // namespace detail
 
 template <std::size_t Count>
@@ -86,6 +94,8 @@ class Index final {
     friend class Index;
     friend class IndexCursor<Count>;
     friend struct niche<Index>;
+    template <class Element, std::size_t OtherCount, class Brand>
+    friend class detail::EnumerateCursor;
 
     constexpr explicit Index(Word value) noexcept : value_{value} {}
 

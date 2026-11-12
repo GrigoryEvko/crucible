@@ -505,6 +505,21 @@ PROBES: tuple[Probe, ...] = (
     Probe("view_windows_sum", "a loop over windows<2>() of a View is the loop of a raw pointer over each run"),
     Probe("view_chunks_sum", "a loop over chunks<4>() of a View is the loop of a raw pointer with a step of four"),
     Probe(
+        "view_enumerate_sum", "a loop over enumerate() of a View of a fixed extent is the counted loop of a raw pointer"
+    ),
+    Probe(
+        "view_zip_fixed_sum", "a zip loop over two Views of one fixed extent is the counted loop of two raw pointers"
+    ),
+    Probe(
+        "view_zip_sum",
+        "a zip loop over two Views of a dynamic extent is the compare of the two counts and the loop of two raw "
+        "pointers, with no call.  The family side tests an empty loop with a compare of two pointers, and the raw side "
+        "tests the count, so the second tests that the hardening adds go to a different compare.  "
+        f"{HARDENED_BUILDS}",
+        checks=(TRAP,),
+        branches=True,
+    ),
+    Probe(
         "box_read",
         f"A read through the dereference of a Box adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
         "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",

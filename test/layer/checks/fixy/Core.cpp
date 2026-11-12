@@ -3,6 +3,7 @@
 #include <fixy/Core.h>
 
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -42,6 +43,14 @@ static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRef
 static_assert(std::is_same_v<::fixy::Result<::fixy::Unit, ::fixy::LengthMismatch>,
                              ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch>>);
 static_assert(std::is_same_v<decltype(::fixy::err(::fixy::LengthMismatch{})), ::fixy::Err<::fixy::LengthMismatch>>);
+// fixy::zip is the zip of the Region family.  Each call gives a fresh
+// brand, so the check counts the pairs of one call.
+[[nodiscard]] consteval std::size_t fixy_zip_pairs() noexcept {
+    ::foundation::core::FixedArray<int, 3> const left{1, 2, 3};
+    ::foundation::core::FixedArray<int, 3> const right{4, 5, 6};
+    return ::fixy::zip(left.view(), right.view()).size();
+}
+static_assert(fixy_zip_pairs() == 3);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(::fixy::AtomicValue<int> && ::fixy::AtomicCount<int> && ::fixy::AtomicBits<unsigned>);
 static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fixy::AtomicBits<int>);

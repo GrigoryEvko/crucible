@@ -1,4 +1,5 @@
-// Microbench of the scans and the reads of the Region family on one thread.
+// Microbench of the scans, the loops and the reads of the Region family on
+// one thread.
 //
 // Each row is one pass over a run of 4096 elements of 32 bits, which the
 // cache of the core holds after the first pass.  The rule codegen-shapes
@@ -86,6 +87,36 @@ int main() {
                   for (fixy::View<std::uint32_t const, 4> chunk : run.chunks<4>()) {
                       sum += chunk.at(fixy::index<0>()) ^ chunk.at(fixy::index<3>());
                   }
+                  bench::do_not_optimize(sum);
+              }));
+
+    print_row("View enumerate(), 4096 elements", bench::run("View enumerate()", [&] {
+                  std::uint32_t sum = 0;
+                  for (auto const [position, element] : values.enumerate()) {
+                      sum += *element ^ static_cast<std::uint32_t>(position.raw());
+                  }
+                  bench::do_not_optimize(sum);
+              }));
+
+    print_row("zip of two fixed Views, 4096 pairs", bench::run("zip of two fixed Views", [&] {
+                  std::uint32_t sum = 0;
+                  for (auto const [first, second] : fixy::zip(values.view(), same_values.view())) {
+                      sum += *first * *second;
+                  }
+                  bench::do_not_optimize(sum);
+              }));
+
+    print_row("zip of two dynamic Views, 4096 pairs", bench::run("zip of two dynamic Views", [&] {
+                  std::uint32_t const sum = fixy::zip(run, same_run)
+                                                .match(
+                                                    [](auto pairs) noexcept {
+                                                        std::uint32_t total = 0;
+                                                        for (auto const [first, second] : pairs) {
+                                                            total += *first * *second;
+                                                        }
+                                                        return total;
+                                                    },
+                                                    [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
                   bench::do_not_optimize(sum);
               }));
 
